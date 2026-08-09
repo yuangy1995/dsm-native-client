@@ -29,6 +29,12 @@ public enum DownloadTaskState
     Error,
 }
 
+public enum DownloadTaskControlAction
+{
+    Pause,
+    Resume,
+}
+
 public sealed record DownloadTask(
     string Id,
     string Title,
@@ -124,3 +130,13 @@ public sealed record DownloadStationSnapshot(
     DownloadTaskPage Tasks,
     DownloadActivitySection Activity,
     DownloadDefaultDestinationSection DefaultDestination);
+
+public sealed record DownloadTaskControlRequest(
+    Guid ProfileId,
+    DownloadTask Task,
+    DownloadTaskControlAction Action);
+
+public sealed record DownloadTaskControlOutcome(
+    MutationResult Result,
+    string TaskId,
+    DownloadTask? Task);

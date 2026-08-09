@@ -52,7 +52,7 @@
 | NAS | 只有少量只读摘要，远少于 macOS 21 类管理页 | 只补健康与必要只读诊断；配置、电源、账号和长时分析不是当前缺口 |
 | iPad | 只按 horizontal size class 分支，缺实际宽度、键盘、指针和拖放设计 | 补齐当前范围的自适应生产力；多窗口后续 |
 
-立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前分支已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、PHOTO-01 有界时间线、Chat 只读消息、Download 只读详情、NAS 健康、VMM Guest、Container 实例和本地设置闭环；PhotosPicker、照片基础 EXIF、照片受限写、Chat 写/实时/附件以及其他后续能力仍未实现。后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口只属于后续候选或当前排除项。
+立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前分支已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、PHOTO-01 有界时间线、Chat 只读消息、Download 单任务详情与受限暂停/继续、NAS 健康、VMM Guest、Container 实例和本地设置闭环；PhotosPicker、照片基础 EXIF、照片受限写、Chat 写/实时/附件以及 Download 创建/删除/高级设置等其他后续能力仍未实现。后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口只属于后续候选或当前排除项。
 
 ## 3. 移动范围与 macOS 语义基线
 
@@ -545,7 +545,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 - 局域网、公网直连、QuickConnect 中继和证书变化。
 - 普通账号、受限管理员、功能无权限、套件未安装和 capability 缺失。
 - 当前记录的 DSM build + 套件完整版本；未记录环境的内部写必须关闭。
-- 对已经实现的单文件上传、FILE-07 单对象分享链接和 FILE-03 单项新建文件夹/重命名，验证成功、权限拒绝、冲突、超时、提交未知、取消后复查和回读不一致；FILE-03 未确认结果在核对前不得重放。未实现的 FILE-05/09、PHOTO-03、Chat/Download/NAS 写不进入本矩阵。
+- 对已经实现的单文件上传、FILE-07 单对象分享链接、FILE-03 单项新建文件夹/重命名和 Download 单任务暂停/继续，验证成功、权限拒绝、冲突、超时、提交未知、取消后复查和回读不一致；FILE-03 与 Download 未确认结果在核对前不得重放。未实现的 FILE-05/09、PHOTO-03、Chat/NAS 写和 Download 创建/删除/高级设置不进入本矩阵。
 
 ## 14. 关键风险
 

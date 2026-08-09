@@ -523,6 +523,7 @@ extension MobileAppModel {
         cancelSelectedModuleLoad()
         fileShareLinkModel.deactivate()
         deactivateFileLocations()
+        deactivateDownloads()
         photoLibraryModel.deactivate()
         chatModel.deactivate()
         nasHealthModel.deactivate()

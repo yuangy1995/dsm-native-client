@@ -479,8 +479,31 @@
   <data name="DownloadStationErrorMessage.Text" xml:space="preserve"><value>请检查与 NAS 的连接，然后重试。</value></data>
   <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>下载任务不可用</value></data>
   <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>这台 NAS 暂不提供受支持的 Download Station 只读查看功能。</value></data>
-  <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>仅供查看</value></data>
-  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>任务在 NAS 上运行，此页面不会更改任务。</value></data>
+  <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>受限控制</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>你可以一次暂停或继续一个任务。创建、删除和设置更改仍请在 DSM 中完成。</value></data>
+  <data name="DownloadStationPause.Content" xml:space="preserve"><value>暂停</value></data>
+  <data name="DownloadStationPause.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>暂停此下载任务</value></data>
+  <data name="DownloadStationResume.Content" xml:space="preserve"><value>继续</value></data>
+  <data name="DownloadStationResume.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>继续此下载任务</value></data>
+  <data name="DownloadStationControlProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在更新此下载任务</value></data>
+  <data name="DownloadStationControlPausingTitle" xml:space="preserve"><value>正在暂停任务…</value></data>
+  <data name="DownloadStationControlResumingTitle" xml:space="preserve"><value>正在继续任务…</value></data>
+  <data name="DownloadStationControlInProgressMessage" xml:space="preserve"><value>正在等待 NAS 确认更改。</value></data>
+  <data name="DownloadStationControlPausedTitle" xml:space="preserve"><value>任务已暂停</value></data>
+  <data name="DownloadStationControlResumedTitle" xml:space="preserve"><value>任务已继续</value></data>
+  <data name="DownloadStationControlSuccessMessage" xml:space="preserve"><value>NAS 已确认任务状态。</value></data>
+  <data name="DownloadStationControlCancelledTitle" xml:space="preserve"><value>更改已取消</value></data>
+  <data name="DownloadStationControlCancelledMessage" xml:space="preserve"><value>请求已在发送前取消。</value></data>
+  <data name="DownloadStationControlReviewTitle" xml:space="preserve"><value>重试前请先核对任务</value></data>
+  <data name="DownloadStationControlReviewMessage" xml:space="preserve"><value>NAS 可能已收到请求，但 App 无法确认结果。再次更改前，请刷新并核对该任务。</value></data>
+  <data name="DownloadStationControlUnsupportedTitle" xml:space="preserve"><value>无法在这里更改此任务</value></data>
+  <data name="DownloadStationControlUnsupportedMessage" xml:space="preserve"><value>请在 DSM 的 Download Station 中处理此任务。</value></data>
+  <data name="DownloadStationControlPermissionTitle" xml:space="preserve"><value>你没有所需权限</value></data>
+  <data name="DownloadStationControlPermissionMessage" xml:space="preserve"><value>请联系管理员获取权限，然后刷新任务列表。</value></data>
+  <data name="DownloadStationControlConflictTitle" xml:space="preserve"><value>任务已发生变化</value></data>
+  <data name="DownloadStationControlConflictMessage" xml:space="preserve"><value>请刷新任务列表，然后重新选择任务。</value></data>
+  <data name="DownloadStationControlFailureTitle" xml:space="preserve"><value>无法更改任务</value></data>
+  <data name="DownloadStationControlFailureMessage" xml:space="preserve"><value>请检查连接、刷新任务列表，然后重试。</value></data>
   <data name="DownloadStationRefreshError.Title" xml:space="preserve"><value>无法刷新任务</value></data>
   <data name="DownloadStationRefreshError.Message" xml:space="preserve"><value>当前仍显示上次读取的任务。请检查连接后重试。</value></data>
   <data name="DownloadStationLoadMoreError.Title" xml:space="preserve"><value>无法加载更多任务</value></data>

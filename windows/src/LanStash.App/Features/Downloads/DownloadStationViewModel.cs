@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using LanStash.App.Localization;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
 
@@ -12,7 +13,9 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
     private readonly Dictionary<Guid, ProfileState> _profiles = [];
     private IDownloadStationRepository? _repository;
     private CancellationTokenSource? _requestCancellation;
+    private CancellationTokenSource? _controlCancellation;
     private long _generation;
+    private long _controlGeneration;
     private Guid? _activeProfileId;
     private DownloadStationContentState _contentState = DownloadStationContentState.Loading;
     private DownloadTaskFilter _filter;
@@ -22,6 +25,10 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
     private bool _isLoadingMore;
     private bool _hasRefreshError;
     private bool _hasLoadMoreError;
+    private bool _isControllingTask;
+    private DownloadTaskControlNoticeKind _controlNoticeKind;
+    private string _controlNoticeTitle = string.Empty;
+    private string _controlNoticeMessage = string.Empty;
     private DownloadActivitySection _activity = new(
         DownloadStationSectionStatus.Unavailable,
         null);
@@ -119,6 +126,53 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
     public bool HasError => ContentState == DownloadStationContentState.Error;
     public bool IsUnavailable => ContentState == DownloadStationContentState.Unavailable;
     public bool HasSelection => SelectedTask is not null;
+    public bool IsControllingTask
+    {
+        get => _isControllingTask;
+        private set
+        {
+            if (SetProperty(ref _isControllingTask, value))
+            {
+                RaiseControlProperties();
+            }
+        }
+    }
+    public bool CanPauseSelectedTask => SelectedTask is { State: DownloadTaskState.Waiting or
+        DownloadTaskState.Downloading or DownloadTaskState.Checking } &&
+        !IsControllingTask &&
+        _repository is { Availability.Status: DownloadStationAvailabilityStatus.Available };
+    public bool CanResumeSelectedTask => SelectedTask is { State: DownloadTaskState.Paused } &&
+        !IsControllingTask &&
+        _repository is { Availability.Status: DownloadStationAvailabilityStatus.Available };
+    public DownloadTaskControlNoticeKind ControlNoticeKind
+    {
+        get => _controlNoticeKind;
+        private set
+        {
+            if (SetProperty(ref _controlNoticeKind, value))
+            {
+                RaiseControlProperties();
+            }
+        }
+    }
+    public bool HasControlNotice => ControlNoticeKind != DownloadTaskControlNoticeKind.None;
+    public bool IsControlNoticeSuccess =>
+        ControlNoticeKind == DownloadTaskControlNoticeKind.Success;
+    public bool IsControlNoticeWarning =>
+        ControlNoticeKind is DownloadTaskControlNoticeKind.NeedsReview or
+            DownloadTaskControlNoticeKind.Conflict or
+            DownloadTaskControlNoticeKind.Permission or
+            DownloadTaskControlNoticeKind.Unsupported;
+    public string ControlNoticeTitle
+    {
+        get => _controlNoticeTitle;
+        private set => SetProperty(ref _controlNoticeTitle, value);
+    }
+    public string ControlNoticeMessage
+    {
+        get => _controlNoticeMessage;
+        private set => SetProperty(ref _controlNoticeMessage, value);
+    }
     public bool HasActivity => _activity.Status == DownloadStationSectionStatus.Available &&
         _activity.Value is not null;
     public bool HasActivityError => _activity.Status == DownloadStationSectionStatus.Failed;
@@ -138,6 +192,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(repository);
         SaveCurrentProfileState();
         CancelRequest();
+        CancelControl();
         _repository = repository;
         ActiveProfileId = repository.ProfileId;
 
@@ -148,6 +203,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
             SelectedTask = null;
             SetActivity(new(DownloadStationSectionStatus.Unavailable, null));
             ResetErrors();
+            ClearControlNotice();
             ContentState = DownloadStationContentState.Unavailable;
             return;
         }
@@ -170,6 +226,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         ThrowIfDisposed();
         SaveCurrentProfileState();
         CancelRequest();
+        CancelControl();
         _repository = null;
         ActiveProfileId = null;
         Tasks.Clear();
@@ -178,6 +235,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         SearchText = string.Empty;
         Filter = DownloadTaskFilter.All;
         ResetErrors();
+        ClearControlNotice();
         ContentState = DownloadStationContentState.Loading;
     }
 
@@ -283,6 +341,58 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         if (CurrentProfile is { } profile)
         {
             profile.SelectedTaskId = SelectedTask?.Id;
+        }
+        ClearControlNotice();
+    }
+
+    public async Task ControlSelectedTaskAsync(DownloadTaskControlAction action)
+    {
+        ThrowIfDisposed();
+        if (IsControllingTask ||
+            _repository is not { Availability.Status: DownloadStationAvailabilityStatus.Available } repository ||
+            CurrentProfile is not { } profile ||
+            SelectedTask is not { } selected ||
+            !CanControl(action, selected.State))
+        {
+            return;
+        }
+
+        var request = BeginControl();
+        IsControllingTask = true;
+        SetControlNotice(
+            DownloadTaskControlNoticeKind.InProgress,
+            action == DownloadTaskControlAction.Pause
+                ? "DownloadStationControlPausingTitle"
+                : "DownloadStationControlResumingTitle",
+            "DownloadStationControlInProgressMessage");
+        try
+        {
+            var outcome = await repository.ControlTaskAsync(
+                new DownloadTaskControlRequest(
+                    repository.ProfileId,
+                    selected.Task,
+                    action),
+                request.Cancellation.Token);
+            if (!IsCurrentControl(request.Generation, repository))
+            {
+                return;
+            }
+
+            ApplyControlOutcome(action, profile, outcome);
+            if (outcome.Result.Status == MutationResultStatus.ConfirmedSuccess)
+            {
+                await LoadFirstPageAsync(profile, preserveContentOnFailure: true);
+            }
+        }
+        catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (IsCurrentControl(request.Generation, repository))
+            {
+                IsControllingTask = false;
+            }
         }
     }
 
@@ -401,6 +511,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
                 : DownloadStationContentState.FilteredEmpty;
         RestoreSelection(profile);
         RaisePropertyChanged(nameof(CanLoadMore));
+        RaiseControlProperties();
     }
 
     private static bool MatchesFilter(DownloadTaskState state, DownloadTaskFilter filter) =>
@@ -457,8 +568,19 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         return (_generation, cancellation);
     }
 
+    private (long Generation, CancellationTokenSource Cancellation) BeginControl()
+    {
+        CancelControl();
+        var cancellation = _controlCancellation = new CancellationTokenSource();
+        return (_controlGeneration, cancellation);
+    }
+
     private bool IsCurrent(long generation, IDownloadStationRepository repository) =>
         !_disposed && generation == _generation &&
+        ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId;
+
+    private bool IsCurrentControl(long generation, IDownloadStationRepository repository) =>
+        !_disposed && generation == _controlGeneration &&
         ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId;
 
     private IDownloadStationRepository RequireRepository() => _repository ??
@@ -477,10 +599,116 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         IsLoadingMore = false;
     }
 
+    private void CancelControl()
+    {
+        _controlGeneration++;
+        _controlCancellation?.Cancel();
+        _controlCancellation?.Dispose();
+        _controlCancellation = null;
+        IsControllingTask = false;
+    }
+
     private void ResetErrors()
     {
         HasRefreshError = false;
         HasLoadMoreError = false;
+    }
+
+    private static bool CanControl(DownloadTaskControlAction action, DownloadTaskState state) =>
+        action switch
+        {
+            DownloadTaskControlAction.Pause => state is DownloadTaskState.Waiting or
+                DownloadTaskState.Downloading or DownloadTaskState.Checking,
+            DownloadTaskControlAction.Resume => state == DownloadTaskState.Paused,
+            _ => false,
+        };
+
+    private void ApplyControlOutcome(
+        DownloadTaskControlAction action,
+        ProfileState profile,
+        DownloadTaskControlOutcome outcome)
+    {
+        if (outcome.Task is { } task)
+        {
+            ReplaceTask(profile, task);
+        }
+        var (kind, titleKey, messageKey) = ControlNoticeFor(action, outcome.Result);
+        SetControlNotice(kind, titleKey, messageKey);
+    }
+
+    private void ReplaceTask(ProfileState profile, DownloadTask task)
+    {
+        profile.AllTasks = profile.AllTasks
+            .Select(item => string.Equals(item.Id, task.Id, StringComparison.Ordinal)
+                ? new DownloadTaskItem(task)
+                : item)
+            .ToArray();
+        ApplyFilter(profile);
+    }
+
+    private static (DownloadTaskControlNoticeKind Kind, string TitleKey, string MessageKey)
+        ControlNoticeFor(DownloadTaskControlAction action, MutationResult result)
+    {
+        return result.Status switch
+        {
+            MutationResultStatus.ConfirmedSuccess => (
+                DownloadTaskControlNoticeKind.Success,
+                action == DownloadTaskControlAction.Pause
+                    ? "DownloadStationControlPausedTitle"
+                    : "DownloadStationControlResumedTitle",
+                "DownloadStationControlSuccessMessage"),
+            MutationResultStatus.CancelledBeforeSubmission => (
+                DownloadTaskControlNoticeKind.Cancelled,
+                "DownloadStationControlCancelledTitle",
+                "DownloadStationControlCancelledMessage"),
+            MutationResultStatus.SubmittedButUnverified or
+                MutationResultStatus.CancellationRequestedAfterSubmission => (
+                    DownloadTaskControlNoticeKind.NeedsReview,
+                    "DownloadStationControlReviewTitle",
+                    "DownloadStationControlReviewMessage"),
+            MutationResultStatus.Unsupported => (
+                DownloadTaskControlNoticeKind.Unsupported,
+                "DownloadStationControlUnsupportedTitle",
+                "DownloadStationControlUnsupportedMessage"),
+            _ when result.ErrorCategory == MutationErrorCategory.Permission => (
+                DownloadTaskControlNoticeKind.Permission,
+                "DownloadStationControlPermissionTitle",
+                "DownloadStationControlPermissionMessage"),
+            _ when result.ErrorCategory == MutationErrorCategory.Conflict => (
+                DownloadTaskControlNoticeKind.Conflict,
+                "DownloadStationControlConflictTitle",
+                "DownloadStationControlConflictMessage"),
+            _ => (
+                DownloadTaskControlNoticeKind.Failure,
+                "DownloadStationControlFailureTitle",
+                "DownloadStationControlFailureMessage"),
+        };
+    }
+
+    private void SetControlNotice(
+        DownloadTaskControlNoticeKind kind,
+        string titleKey,
+        string messageKey)
+    {
+        ControlNoticeKind = kind;
+        ControlNoticeTitle = LocalizationService.Current.Get(titleKey);
+        ControlNoticeMessage = LocalizationService.Current.Get(messageKey);
+    }
+
+    private void ClearControlNotice()
+    {
+        ControlNoticeKind = DownloadTaskControlNoticeKind.None;
+        ControlNoticeTitle = string.Empty;
+        ControlNoticeMessage = string.Empty;
+    }
+
+    private void RaiseControlProperties()
+    {
+        RaisePropertyChanged(nameof(CanPauseSelectedTask));
+        RaisePropertyChanged(nameof(CanResumeSelectedTask));
+        RaisePropertyChanged(nameof(HasControlNotice));
+        RaisePropertyChanged(nameof(IsControlNoticeSuccess));
+        RaisePropertyChanged(nameof(IsControlNoticeWarning));
     }
 
     private void SetActivity(DownloadActivitySection activity)
@@ -511,9 +739,13 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         }
         _disposed = true;
         _generation++;
+        _controlGeneration++;
         _requestCancellation?.Cancel();
         _requestCancellation?.Dispose();
         _requestCancellation = null;
+        _controlCancellation?.Cancel();
+        _controlCancellation?.Dispose();
+        _controlCancellation = null;
     }
 
     private sealed class ProfileState

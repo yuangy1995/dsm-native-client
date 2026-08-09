@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
@@ -14,6 +15,9 @@ public sealed partial class DsmRepository
     private const string PublicDownloadStatisticApi = "SYNO.DownloadStation.Statistic";
     private const int PublicDownloadApiVersion = 1;
     private const int MaximumTaskPageSize = 100;
+    private const int MaximumTaskReadbackItems = 5_000;
+    private static readonly ConditionalWeakTable<IDsmApiClient, DownloadTaskControlApiState>
+        DownloadTaskControlStates = new();
 
     private static readonly IReadOnlySet<DownloadStationReadFeature> PublicDownloadTaskFeatures =
         new HashSet<DownloadStationReadFeature>
@@ -46,6 +50,9 @@ public sealed partial class DsmRepository
 
     DownloadStationAvailability IDownloadStationRepository.Availability =>
         PublicDownloadAvailability;
+
+    private DownloadTaskControlApiState DownloadTaskControlState =>
+        DownloadTaskControlStates.GetValue(_api, _ => new DownloadTaskControlApiState());
 
     public async Task<DownloadTaskPage> ListTasksAsync(
         int offset,
@@ -124,6 +131,225 @@ public sealed partial class DsmRepository
             new(DownloadStationSectionStatus.Unavailable, null));
     }
 
+    public async Task<DownloadTaskControlOutcome> ControlTaskAsync(
+        DownloadTaskControlRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return DownloadControlOutcome(
+                request.Action,
+                request.Task.Id,
+                MutationResultStatus.CancelledBeforeSubmission,
+                submitted: false,
+                requiresRefresh: false,
+                task: null,
+                errorCategory: null,
+                diagnosticTag: DownloadControlDiagnostic(request.Action, "cancelled-before-submission"));
+        }
+
+        if (request.ProfileId != _profile.Id || _session.ProfileId != _profile.Id)
+        {
+            return DownloadControlOutcome(
+                request.Action,
+                request.Task.Id,
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                requiresRefresh: false,
+                task: null,
+                errorCategory: MutationErrorCategory.Validation,
+                diagnosticTag: DownloadControlDiagnostic(request.Action, "profile-mismatch"));
+        }
+
+        var taskId = request.Task.Id.Trim();
+        if (string.IsNullOrEmpty(taskId) || !string.Equals(taskId, request.Task.Id, StringComparison.Ordinal))
+        {
+            return DownloadControlOutcome(
+                request.Action,
+                request.Task.Id,
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                requiresRefresh: false,
+                task: null,
+                errorCategory: MutationErrorCategory.Validation,
+                diagnosticTag: DownloadControlDiagnostic(request.Action, "invalid-task"));
+        }
+
+        if (!DownloadControlAccepts(request.Action, request.Task.State))
+        {
+            return DownloadControlOutcome(
+                request.Action,
+                taskId,
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                requiresRefresh: false,
+                task: null,
+                errorCategory: MutationErrorCategory.Conflict,
+                diagnosticTag: DownloadControlDiagnostic(request.Action, "invalid-state"));
+        }
+
+        if (!HasControllablePublicDownloadStationContract)
+        {
+            return DownloadControlOutcome(
+                request.Action,
+                taskId,
+                MutationResultStatus.Unsupported,
+                submitted: false,
+                requiresRefresh: false,
+                task: null,
+                errorCategory: MutationErrorCategory.Unsupported,
+                diagnosticTag: DownloadControlDiagnostic(request.Action, "unsupported"));
+        }
+
+        var reviewKey = DownloadTaskControlReviewKey.From(_profile.Id, _session, taskId, request.Action);
+        var activeKey = new DownloadTaskControlActiveKey(_profile.Id, taskId);
+        var state = DownloadTaskControlState;
+        if (!state.TryClaim(activeKey))
+        {
+            return DownloadControlOutcome(
+                request.Action,
+                taskId,
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                requiresRefresh: false,
+                task: null,
+                errorCategory: MutationErrorCategory.Conflict,
+                diagnosticTag: DownloadControlDiagnostic(request.Action, "duplicate-submission"));
+        }
+
+        try
+        {
+            if (state.TryGetReview(reviewKey, out var pendingReview))
+            {
+                return await FinishDownloadControlAsync(
+                    pendingReview,
+                    submittedStatus: MutationResultStatus.SubmittedButUnverified,
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+
+            DownloadTask current;
+            try
+            {
+                current = await LoadExactDownloadTaskAsync(taskId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return DownloadControlOutcome(
+                    request.Action,
+                    taskId,
+                    MutationResultStatus.CancelledBeforeSubmission,
+                    submitted: false,
+                    requiresRefresh: false,
+                    task: null,
+                    errorCategory: null,
+                    diagnosticTag: DownloadControlDiagnostic(request.Action, "cancelled-during-preflight"));
+            }
+            catch (DsmException error)
+            {
+                return DownloadControlOutcome(
+                    request.Action,
+                    taskId,
+                    MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    requiresRefresh: false,
+                    task: null,
+                    errorCategory: DownloadControlErrorCategory(error),
+                    diagnosticTag: DownloadControlDiagnostic(request.Action, "preflight-failed"));
+            }
+            catch (JsonException)
+            {
+                return DownloadControlOutcome(
+                    request.Action,
+                    taskId,
+                    MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    requiresRefresh: false,
+                    task: null,
+                    errorCategory: MutationErrorCategory.Server,
+                    diagnosticTag: DownloadControlDiagnostic(request.Action, "preflight-invalid-response"));
+            }
+            catch (IOException)
+            {
+                return DownloadControlOutcome(
+                    request.Action,
+                    taskId,
+                    MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    requiresRefresh: false,
+                    task: null,
+                    errorCategory: MutationErrorCategory.Network,
+                    diagnosticTag: DownloadControlDiagnostic(request.Action, "preflight-read-failed"));
+            }
+
+            if (!DownloadControlBaselineMatches(request.Task, current) ||
+                !DownloadControlAccepts(request.Action, current.State))
+            {
+                return DownloadControlOutcome(
+                    request.Action,
+                    taskId,
+                    MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    requiresRefresh: false,
+                    task: current,
+                    errorCategory: MutationErrorCategory.Conflict,
+                    diagnosticTag: DownloadControlDiagnostic(request.Action, "baseline-changed"));
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return DownloadControlOutcome(
+                    request.Action,
+                    taskId,
+                    MutationResultStatus.CancelledBeforeSubmission,
+                    submitted: false,
+                    requiresRefresh: false,
+                    task: current,
+                    errorCategory: null,
+                    diagnosticTag: DownloadControlDiagnostic(request.Action, "cancelled-before-write"));
+            }
+
+            var review = new DownloadTaskControlReview(reviewKey, taskId, request.Action);
+            try
+            {
+                _ = await CallPublicDownloadAsync(
+                    PublicDownloadTaskApi,
+                    DownloadControlMethod(request.Action),
+                    new Dictionary<string, string>
+                    {
+                        ["id"] = taskId,
+                    },
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                state.StoreReview(review);
+                return await FinishDownloadControlAsync(
+                    review,
+                    submittedStatus: MutationResultStatus.CancellationRequestedAfterSubmission,
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                state.StoreReview(review);
+                return await FinishDownloadControlAsync(
+                    review,
+                    submittedStatus: MutationResultStatus.SubmittedButUnverified,
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+
+            state.StoreReview(review);
+            return await FinishDownloadControlAsync(
+                review,
+                submittedStatus: MutationResultStatus.SubmittedButUnverified,
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            state.Release(activeKey);
+        }
+    }
+
     private async Task<DownloadActivitySection> LoadPublicDownloadActivityAsync(
         CancellationToken cancellationToken)
     {
@@ -176,6 +402,12 @@ public sealed partial class DsmRepository
         _capabilities.TryGetValue(apiName, out var capability) &&
         capability.MinVersion <= PublicDownloadApiVersion &&
         capability.MaxVersion >= PublicDownloadApiVersion;
+
+    private bool HasControllablePublicDownloadStationContract =>
+        _capabilities.TryGetValue(PublicDownloadTaskApi, out var capability) &&
+        capability.MinVersion <= PublicDownloadApiVersion &&
+        capability.MaxVersion >= PublicDownloadApiVersion &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
 
     private Task<JsonObject> CallPublicDownloadAsync(
         string apiName,
@@ -246,6 +478,191 @@ public sealed partial class DsmRepository
             _ => DownloadTaskState.Unknown,
         };
 
+    private async Task<DownloadTask> LoadExactDownloadTaskAsync(
+        string taskId,
+        CancellationToken cancellationToken)
+    {
+        var allTasks = await LoadAllPublicDownloadTasksAsync(cancellationToken).ConfigureAwait(false);
+        return allTasks.SingleOrDefault(task => string.Equals(task.Id, taskId, StringComparison.Ordinal))
+            ?? throw InvalidDownloadStationResponse();
+    }
+
+    private async Task<IReadOnlyList<DownloadTask>> LoadAllPublicDownloadTasksAsync(
+        CancellationToken cancellationToken)
+    {
+        var offset = 0;
+        var total = -1;
+        var tasks = new List<DownloadTask>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        while (offset < MaximumTaskReadbackItems)
+        {
+            var page = await ListTasksAsync(offset, MaximumTaskPageSize, cancellationToken)
+                .ConfigureAwait(false);
+            if (total >= 0 && page.SourceTotal != total)
+            {
+                throw InvalidDownloadStationResponse();
+            }
+            total = page.SourceTotal;
+            foreach (var task in page.Tasks)
+            {
+                if (!seen.Add(task.Id))
+                {
+                    throw InvalidDownloadStationResponse();
+                }
+                tasks.Add(task);
+            }
+            if (!page.HasMore)
+            {
+                return tasks;
+            }
+            if (page.NextOffset is not int nextOffset || nextOffset <= offset)
+            {
+                throw InvalidDownloadStationResponse();
+            }
+            offset = nextOffset;
+        }
+        throw InvalidDownloadStationResponse();
+    }
+
+    private async Task<DownloadTaskControlOutcome> FinishDownloadControlAsync(
+        DownloadTaskControlReview review,
+        MutationResultStatus submittedStatus,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var current = await LoadExactDownloadTaskAsync(review.TaskId, cancellationToken)
+                .ConfigureAwait(false);
+            if (DownloadControlConfirmed(review.Action, current.State))
+            {
+                DownloadTaskControlState.ClearReview(review.Key);
+                return DownloadControlOutcome(
+                    review.Action,
+                    review.TaskId,
+                    MutationResultStatus.ConfirmedSuccess,
+                    submitted: true,
+                    requiresRefresh: false,
+                    task: current,
+                    errorCategory: null,
+                    diagnosticTag: DownloadControlDiagnostic(review.Action, "confirmed"));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            submittedStatus = MutationResultStatus.CancellationRequestedAfterSubmission;
+        }
+        catch
+        {
+        }
+
+        DownloadTaskControlState.StoreReview(review);
+        return DownloadControlOutcome(
+            review.Action,
+            review.TaskId,
+            submittedStatus,
+            submitted: true,
+            requiresRefresh: true,
+            task: null,
+            errorCategory: MutationErrorCategory.Unknown,
+            diagnosticTag: DownloadControlDiagnostic(review.Action, "readback-unverified"));
+    }
+
+    private static bool DownloadControlBaselineMatches(
+        DownloadTask baseline,
+        DownloadTask current) =>
+        string.Equals(baseline.Id, current.Id, StringComparison.Ordinal) &&
+        baseline.State == current.State &&
+        string.Equals(baseline.RawStatus, current.RawStatus, StringComparison.Ordinal);
+
+    private static bool DownloadControlAccepts(
+        DownloadTaskControlAction action,
+        DownloadTaskState state) =>
+        action switch
+        {
+            DownloadTaskControlAction.Pause => state is DownloadTaskState.Waiting or
+                DownloadTaskState.Downloading or DownloadTaskState.Checking,
+            DownloadTaskControlAction.Resume => state == DownloadTaskState.Paused,
+            _ => false,
+        };
+
+    private static bool DownloadControlConfirmed(
+        DownloadTaskControlAction action,
+        DownloadTaskState state) =>
+        action switch
+        {
+            DownloadTaskControlAction.Pause => state == DownloadTaskState.Paused,
+            DownloadTaskControlAction.Resume => state is DownloadTaskState.Waiting or
+                DownloadTaskState.Downloading or DownloadTaskState.Checking or
+                DownloadTaskState.Seeding,
+            _ => false,
+        };
+
+    private static string DownloadControlMethod(DownloadTaskControlAction action) =>
+        action switch
+        {
+            DownloadTaskControlAction.Pause => "pause",
+            DownloadTaskControlAction.Resume => "resume",
+            _ => throw new ArgumentOutOfRangeException(nameof(action)),
+        };
+
+    private static string DownloadControlOperation(DownloadTaskControlAction action) =>
+        action switch
+        {
+            DownloadTaskControlAction.Pause => "downloadPause",
+            DownloadTaskControlAction.Resume => "downloadResume",
+            _ => throw new ArgumentOutOfRangeException(nameof(action)),
+        };
+
+    private static string DownloadControlDiagnostic(
+        DownloadTaskControlAction action,
+        string suffix) =>
+        $"download-station.{DownloadControlMethod(action)}.{suffix}";
+
+    private static MutationErrorCategory DownloadControlErrorCategory(DsmException error)
+    {
+        if (error.AuthenticationFailure || error.Code is 106 or 107 or 119 or 401)
+        {
+            return MutationErrorCategory.Authentication;
+        }
+        return error.Code switch
+        {
+            105 => MutationErrorCategory.Permission,
+            102 or 103 => MutationErrorCategory.Unsupported,
+            _ => MutationErrorCategory.Server,
+        };
+    }
+
+    private static DownloadTaskControlOutcome DownloadControlOutcome(
+        DownloadTaskControlAction action,
+        string taskId,
+        MutationResultStatus status,
+        bool submitted,
+        bool requiresRefresh,
+        DownloadTask? task,
+        MutationErrorCategory? errorCategory,
+        string diagnosticTag)
+    {
+        var succeeded = status == MutationResultStatus.ConfirmedSuccess ? 1 : 0;
+        var failed = status is MutationResultStatus.ConfirmedFailure or
+            MutationResultStatus.PermissionDenied or
+            MutationResultStatus.Unsupported ? 1 : 0;
+        var unknown = status is MutationResultStatus.SubmittedButUnverified or
+            MutationResultStatus.CancellationRequestedAfterSubmission ? 1 : 0;
+        return new(
+            new MutationResult(
+                1,
+                status,
+                DownloadControlOperation(action),
+                submitted,
+                requiresRefresh,
+                new MutationResultCounts(succeeded, failed, unknown),
+                errorCategory,
+                localizationKey: $"download-station.{DownloadControlMethod(action)}.{status.ToString().ToLowerInvariant()}",
+                diagnosticTag),
+            taskId,
+            task);
+    }
+
     private static string? StableDownloadId(JsonNode? node)
     {
         if (node is not JsonValue value)
@@ -299,4 +716,75 @@ public sealed partial class DsmRepository
         new(
             UserText.Key("WinShared17bab1054ab28010"),
             UserText.Key("WinSharedefc81ced18eb3bb0"));
+
+    private readonly record struct DownloadTaskControlActiveKey(Guid ProfileId, string TaskId);
+
+    private readonly record struct DownloadTaskControlReviewKey(
+        Guid ProfileId,
+        Guid SessionProfileId,
+        string SessionId,
+        string TaskId,
+        DownloadTaskControlAction Action)
+    {
+        public static DownloadTaskControlReviewKey From(
+            Guid profileId,
+            DsmSession session,
+            string taskId,
+            DownloadTaskControlAction action) =>
+            new(profileId, session.ProfileId, session.Sid, taskId, action);
+    }
+
+    private sealed record DownloadTaskControlReview(
+        DownloadTaskControlReviewKey Key,
+        string TaskId,
+        DownloadTaskControlAction Action);
+
+    private sealed class DownloadTaskControlApiState
+    {
+        private readonly object _gate = new();
+        private readonly HashSet<DownloadTaskControlActiveKey> _active = [];
+        private readonly Dictionary<DownloadTaskControlReviewKey, DownloadTaskControlReview> _reviews = [];
+
+        public bool TryClaim(DownloadTaskControlActiveKey key)
+        {
+            lock (_gate)
+            {
+                return _active.Add(key);
+            }
+        }
+
+        public void Release(DownloadTaskControlActiveKey key)
+        {
+            lock (_gate)
+            {
+                _active.Remove(key);
+            }
+        }
+
+        public bool TryGetReview(
+            DownloadTaskControlReviewKey key,
+            out DownloadTaskControlReview review)
+        {
+            lock (_gate)
+            {
+                return _reviews.TryGetValue(key, out review!);
+            }
+        }
+
+        public void StoreReview(DownloadTaskControlReview review)
+        {
+            lock (_gate)
+            {
+                _reviews[review.Key] = review;
+            }
+        }
+
+        public void ClearReview(DownloadTaskControlReviewKey key)
+        {
+            lock (_gate)
+            {
+                _reviews.Remove(key);
+            }
+        }
+    }
 }

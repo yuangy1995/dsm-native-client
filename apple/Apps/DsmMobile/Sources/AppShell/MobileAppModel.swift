@@ -54,6 +54,10 @@ final class MobileAppModel {
     @ObservationIgnored var selectedModuleLoadTask: Task<Void, Never>?
     @ObservationIgnored var selectedModuleLoadGeneration: UInt64 = 0
     @ObservationIgnored var downloadStationLoadOverride: (@Sendable () async throws -> DownloadStationSnapshot)?
+    @ObservationIgnored var downloadStationControlOverride:
+        (@Sendable (DownloadTaskControlRequest) async throws -> DownloadTaskControlOutcome)?
+    @ObservationIgnored var downloadControlTask: Task<Void, Never>?
+    @ObservationIgnored var downloadControlGeneration: UInt64 = 0
 
     var isConnected = false
     var activeProfile: NasProfile? {
@@ -62,6 +66,7 @@ final class MobileAppModel {
             if activeProfile?.id != oldValue?.id {
                 fileShareLinkModel.deactivate()
                 deactivateFileLocations()
+                deactivateDownloads()
                 photoLibraryModel.deactivate()
                 chatModel.deactivate()
                 nasHealthModel.deactivate()
@@ -81,6 +86,9 @@ final class MobileAppModel {
     var pathHistory: [String] = []
     var files: [FileItem] = []
     var downloadSnapshot: DownloadStationSnapshot?
+    var downloadControlTaskID: String?
+    var downloadControlAction: DownloadStationTaskAction?
+    var downloadControlFeedback: MobileDownloadControlFeedback?
     var conversations: [ChatConversation] = []
     var systemOverview: NasSystemOverview?
     var storageSnapshot: NasStorageSnapshot?

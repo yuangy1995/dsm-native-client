@@ -304,6 +304,64 @@ public sealed class DownloadStationViewModelTests
         Assert.Equal(item.ErrorText, errorWithoutDetail.ErrorText);
     }
 
+    [Fact]
+    public async Task PauseSuccessSubmitsFrozenTaskAndRefreshesCurrentList()
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(
+            0, 1, 1, null, Task("task-1", DownloadTaskState.Downloading))));
+        repository.ControlResults.Enqueue(ControlOutcome(
+            "downloadPause",
+            MutationResultStatus.ConfirmedSuccess,
+            submitted: true,
+            requiresRefresh: false,
+            task: Task("task-1", DownloadTaskState.Paused)));
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(
+            0, 1, 1, null, Task("task-1", DownloadTaskState.Paused))));
+        using var model = new DownloadStationViewModel();
+
+        await model.ActivateAsync(repository);
+        model.SelectTask(model.Tasks.Single());
+        Assert.True(model.CanPauseSelectedTask);
+
+        await model.ControlSelectedTaskAsync(DownloadTaskControlAction.Pause);
+
+        var request = Assert.Single(repository.ControlRequests);
+        Assert.Equal(profile, request.ProfileId);
+        Assert.Equal("task-1", request.Task.Id);
+        Assert.Equal(DownloadTaskControlAction.Pause, request.Action);
+        Assert.Equal(DownloadTaskControlNoticeKind.Success, model.ControlNoticeKind);
+        Assert.False(model.CanPauseSelectedTask);
+        Assert.True(model.CanResumeSelectedTask);
+        Assert.Equal(2, repository.SnapshotRequests.Count);
+    }
+
+    [Fact]
+    public async Task UnknownControlResultShowsReviewWithoutPretendingRefreshSucceeded()
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(
+            0, 1, 1, null, Task("task-1", DownloadTaskState.Downloading))));
+        repository.ControlResults.Enqueue(ControlOutcome(
+            "downloadPause",
+            MutationResultStatus.SubmittedButUnverified,
+            submitted: true,
+            requiresRefresh: true,
+            task: null));
+        using var model = new DownloadStationViewModel();
+
+        await model.ActivateAsync(repository);
+        model.SelectTask(model.Tasks.Single());
+        await model.ControlSelectedTaskAsync(DownloadTaskControlAction.Pause);
+
+        Assert.Equal(DownloadTaskControlNoticeKind.NeedsReview, model.ControlNoticeKind);
+        Assert.True(model.HasControlNotice);
+        Assert.Single(repository.ControlRequests);
+        Assert.Single(repository.SnapshotRequests);
+    }
+
     private static FakeDownloadStationRepository Available(Guid profileId) =>
         new(profileId, available: true);
 
@@ -339,6 +397,38 @@ public sealed class DownloadStationViewModelTests
             "downloads",
             null);
 
+    private static DownloadTaskControlOutcome ControlOutcome(
+        string operation,
+        MutationResultStatus status,
+        bool submitted,
+        bool requiresRefresh,
+        DownloadTask? task) =>
+        new(
+            new MutationResult(
+                1,
+                status,
+                operation,
+                submitted,
+                requiresRefresh,
+                CountsFor(status),
+                status == MutationResultStatus.SubmittedButUnverified
+                    ? MutationErrorCategory.Unknown
+                    : null,
+                localizationKey: null,
+                diagnosticTag: "download-station.test"),
+            task?.Id ?? "task-1",
+            task);
+
+    private static MutationResultCounts CountsFor(MutationResultStatus status) =>
+        status switch
+        {
+            MutationResultStatus.ConfirmedSuccess => new(1, 0, 0),
+            MutationResultStatus.SubmittedButUnverified or
+                MutationResultStatus.CancellationRequestedAfterSubmission => new(0, 0, 1),
+            MutationResultStatus.CancelledBeforeSubmission => new(0, 0, 0),
+            _ => new(0, 1, 0),
+        };
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         for (var attempt = 0; attempt < 100 && !condition(); attempt++)
@@ -362,8 +452,10 @@ public sealed class DownloadStationViewModelTests
                 : new HashSet<DownloadStationReadFeature>());
         public Queue<object> SnapshotResults { get; } = new();
         public Queue<object> PageResults { get; } = new();
+        public Queue<object> ControlResults { get; } = new();
         public List<(int Offset, int Limit)> SnapshotRequests { get; } = [];
         public List<(int Offset, int Limit)> PageRequests { get; } = [];
+        public List<DownloadTaskControlRequest> ControlRequests { get; } = [];
         public List<CancellationToken> SnapshotTokens { get; } = [];
 
         public Task<DownloadStationSnapshot> LoadSnapshotAsync(
@@ -383,6 +475,14 @@ public sealed class DownloadStationViewModelTests
         {
             PageRequests.Add((offset, limit));
             return Result<DownloadTaskPage>(PageResults.Dequeue());
+        }
+
+        public Task<DownloadTaskControlOutcome> ControlTaskAsync(
+            DownloadTaskControlRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ControlRequests.Add(request);
+            return Result<DownloadTaskControlOutcome>(ControlResults.Dequeue());
         }
 
         private static Task<T> Result<T>(object value) => value switch

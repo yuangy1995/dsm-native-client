@@ -58,6 +58,12 @@ public sealed partial class DownloadStationPage : Page, IDisposable
     private async void LoadMore_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.LoadMoreAsync);
 
+    private async void Pause_Click(object sender, RoutedEventArgs e) =>
+        await RunAsync(() => _viewModel.ControlSelectedTaskAsync(DownloadTaskControlAction.Pause));
+
+    private async void Resume_Click(object sender, RoutedEventArgs e) =>
+        await RunAsync(() => _viewModel.ControlSelectedTaskAsync(DownloadTaskControlAction.Resume));
+
     private void SearchBox_TextChanged(
         AutoSuggestBox sender,
         AutoSuggestBoxTextChangedEventArgs args)
@@ -169,6 +175,23 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         LoadMoreProgress.Visibility = Visible(_viewModel.IsLoadingMore);
         NoSelectionState.Visibility = Visible(!_viewModel.HasSelection);
         TaskDetailState.Visibility = Visible(_viewModel.HasSelection);
+        PauseButton.Visibility = Visible(_viewModel.CanPauseSelectedTask);
+        PauseButton.IsEnabled = _viewModel.CanPauseSelectedTask;
+        ResumeButton.Visibility = Visible(_viewModel.CanResumeSelectedTask);
+        ResumeButton.IsEnabled = _viewModel.CanResumeSelectedTask;
+        ControlProgress.IsActive = _viewModel.IsControllingTask;
+        ControlProgress.Visibility = Visible(_viewModel.IsControllingTask);
+        DownloadControlNotice.IsOpen = _viewModel.HasControlNotice;
+        DownloadControlNotice.Severity = _viewModel.ControlNoticeKind switch
+        {
+            DownloadTaskControlNoticeKind.Success => InfoBarSeverity.Success,
+            DownloadTaskControlNoticeKind.NeedsReview or
+                DownloadTaskControlNoticeKind.Conflict or
+                DownloadTaskControlNoticeKind.Permission or
+                DownloadTaskControlNoticeKind.Unsupported => InfoBarSeverity.Warning,
+            DownloadTaskControlNoticeKind.Failure => InfoBarSeverity.Error,
+            _ => InfoBarSeverity.Informational,
+        };
         TaskList.SelectedItem = _viewModel.SelectedTask;
         if (!string.Equals(SearchBox.Text, _viewModel.SearchText, StringComparison.Ordinal))
         {

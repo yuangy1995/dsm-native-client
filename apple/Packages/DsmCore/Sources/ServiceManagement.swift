@@ -120,6 +120,28 @@ public enum DownloadStationTaskAction: String, Sendable {
     case finish
 }
 
+public struct DownloadTaskControlRequest: Equatable, Sendable {
+    public let task: DownloadStationTask
+    public let action: DownloadStationTaskAction
+
+    public init(task: DownloadStationTask, action: DownloadStationTaskAction) {
+        self.task = task
+        self.action = action
+    }
+}
+
+public struct DownloadTaskControlOutcome: Equatable, Sendable {
+    public let result: MutationResult
+    public let taskID: String
+    public let task: DownloadStationTask?
+
+    public init(result: MutationResult, taskID: String, task: DownloadStationTask?) {
+        self.result = result
+        self.taskID = taskID
+        self.task = task
+    }
+}
+
 public struct ContainerInstance: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
@@ -527,6 +549,9 @@ public protocol ServiceManagementRepository: Sendable {
     func loadDownloadStationSettings() async throws -> DownloadStationSettings
     func saveDownloadStationSettings(_ settings: DownloadStationSettings) async throws
     func controlDownloadTasks(ids: [String], action: DownloadStationTaskAction) async throws
+    func controlDownloadTaskResult(
+        _ request: DownloadTaskControlRequest
+    ) async throws -> DownloadTaskControlOutcome
     func deleteDownloadTasks(ids: [String], removeData: Bool) async throws
     func deleteDownloadTasksResult(ids: [String], removeData: Bool) async throws -> MutationResult
 
@@ -561,6 +586,34 @@ public protocol ServiceManagementRepository: Sendable {
 }
 
 public extension ServiceManagementRepository {
+    func controlDownloadTaskResult(
+        _ request: DownloadTaskControlRequest
+    ) async throws -> DownloadTaskControlOutcome {
+        let operation: String
+        switch request.action {
+        case .pause:
+            operation = "downloadPause"
+        case .resume:
+            operation = "downloadResume"
+        case .finish:
+            operation = "downloadControl"
+        }
+        return try DownloadTaskControlOutcome(
+            result: MutationResult(
+                status: .unsupported,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                localizationKey: "download-task.control.unsupported",
+                diagnosticTag: "download-task.control.unsupported"
+            ),
+            taskID: request.task.id,
+            task: nil
+        )
+    }
+
     func deleteDownloadTasksResult(
         ids: [String],
         removeData: Bool

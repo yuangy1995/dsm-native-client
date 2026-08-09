@@ -479,8 +479,31 @@
   <data name="DownloadStationErrorMessage.Text" xml:space="preserve"><value>Check the connection to your NAS, then try again.</value></data>
   <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>Download tasks aren’t available</value></data>
   <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>This NAS doesn’t offer the supported read-only Download Station view.</value></data>
-  <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>View only</value></data>
-  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>Tasks run on your NAS. This page does not change them.</value></data>
+  <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>Limited controls</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>You can pause or resume one task at a time. Create, delete, and settings changes stay in DSM.</value></data>
+  <data name="DownloadStationPause.Content" xml:space="preserve"><value>Pause</value></data>
+  <data name="DownloadStationPause.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Pause this download task</value></data>
+  <data name="DownloadStationResume.Content" xml:space="preserve"><value>Resume</value></data>
+  <data name="DownloadStationResume.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Resume this download task</value></data>
+  <data name="DownloadStationControlProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Updating this download task</value></data>
+  <data name="DownloadStationControlPausingTitle" xml:space="preserve"><value>Pausing task…</value></data>
+  <data name="DownloadStationControlResumingTitle" xml:space="preserve"><value>Resuming task…</value></data>
+  <data name="DownloadStationControlInProgressMessage" xml:space="preserve"><value>Waiting for the NAS to confirm the change.</value></data>
+  <data name="DownloadStationControlPausedTitle" xml:space="preserve"><value>Task paused</value></data>
+  <data name="DownloadStationControlResumedTitle" xml:space="preserve"><value>Task resumed</value></data>
+  <data name="DownloadStationControlSuccessMessage" xml:space="preserve"><value>The NAS confirmed the task status.</value></data>
+  <data name="DownloadStationControlCancelledTitle" xml:space="preserve"><value>Change cancelled</value></data>
+  <data name="DownloadStationControlCancelledMessage" xml:space="preserve"><value>The request was cancelled before it was sent.</value></data>
+  <data name="DownloadStationControlReviewTitle" xml:space="preserve"><value>Check the task before trying again</value></data>
+  <data name="DownloadStationControlReviewMessage" xml:space="preserve"><value>The NAS may have received the request, but the app could not confirm the result. Refresh and check the task before changing it again.</value></data>
+  <data name="DownloadStationControlUnsupportedTitle" xml:space="preserve"><value>This task can’t be changed here</value></data>
+  <data name="DownloadStationControlUnsupportedMessage" xml:space="preserve"><value>Use Download Station in DSM for this task.</value></data>
+  <data name="DownloadStationControlPermissionTitle" xml:space="preserve"><value>You don’t have permission</value></data>
+  <data name="DownloadStationControlPermissionMessage" xml:space="preserve"><value>Ask an administrator for access, then refresh the task list.</value></data>
+  <data name="DownloadStationControlConflictTitle" xml:space="preserve"><value>The task changed</value></data>
+  <data name="DownloadStationControlConflictMessage" xml:space="preserve"><value>Refresh the task list and choose the task again.</value></data>
+  <data name="DownloadStationControlFailureTitle" xml:space="preserve"><value>Couldn’t change the task</value></data>
+  <data name="DownloadStationControlFailureMessage" xml:space="preserve"><value>Check the connection, refresh the task list, then try again.</value></data>
   <data name="DownloadStationRefreshError.Title" xml:space="preserve"><value>Couldn’t refresh tasks</value></data>
   <data name="DownloadStationRefreshError.Message" xml:space="preserve"><value>Showing the last available task list. Check the connection, then try again.</value></data>
   <data name="DownloadStationLoadMoreError.Title" xml:space="preserve"><value>Couldn’t load more tasks</value></data>

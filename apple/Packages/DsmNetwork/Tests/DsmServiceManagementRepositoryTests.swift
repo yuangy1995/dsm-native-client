@@ -300,6 +300,120 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertFalse(request.url?.absoluteString.contains("REDACTED_SESSION") == true)
     }
 
+    func test单任务暂停继续固定官方V1且必须回读确认() async throws {
+        let transport = MockHTTPTransport(responses: [
+            downloadTaskListResponse(id: "task-1", status: "downloading"),
+            response(#"{"success":true}"#),
+            downloadTaskListResponse(id: "task-1", status: "paused"),
+            downloadTaskListResponse(id: "task-1", status: "paused"),
+            response(#"{"success":true}"#),
+            downloadTaskListResponse(id: "task-1", status: "downloading"),
+        ])
+        let repository = try makeRepository(
+            apiNames: [
+                DsmAPIName.downloadStationTask,
+                DsmAPIName.downloadStation2Task,
+            ],
+            transport: transport
+        )
+
+        let pause = try await repository.controlDownloadTaskResult(
+            DownloadTaskControlRequest(
+                task: downloadTask(id: "task-1", status: "downloading"),
+                action: .pause
+            )
+        )
+        let resume = try await repository.controlDownloadTaskResult(
+            DownloadTaskControlRequest(
+                task: downloadTask(id: "task-1", status: "paused"),
+                action: .resume
+            )
+        )
+
+        XCTAssertEqual(pause.result.status, .confirmedSuccess)
+        XCTAssertEqual(pause.task?.status, "paused")
+        XCTAssertEqual(resume.result.status, .confirmedSuccess)
+        XCTAssertEqual(resume.task?.status, "downloading")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, [
+            "list", "pause", "list", "list", "resume", "list"
+        ])
+        XCTAssertTrue(requests.allSatisfy {
+            requestValue("api", in: $0) == DsmAPIName.downloadStationTask
+                && requestValue("version", in: $0) == "1"
+        })
+        XCTAssertFalse(requests.contains {
+            requestValue("api", in: $0) == DsmAPIName.downloadStation2Task
+        })
+    }
+
+    func test单任务控制状态漂移时返回冲突且零提交() async throws {
+        let transport = MockHTTPTransport(responses: [
+            downloadTaskListResponse(id: "task-1", status: "paused"),
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationTask],
+            transport: transport
+        )
+
+        let result = try await repository.controlDownloadTaskResult(
+            DownloadTaskControlRequest(
+                task: downloadTask(id: "task-1", status: "downloading"),
+                action: .pause
+            )
+        )
+
+        XCTAssertEqual(result.result.status, .confirmedFailure)
+        XCTAssertEqual(result.result.errorCategory, .conflict)
+        XCTAssertFalse(result.result.submitted)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list"])
+    }
+
+    func test单任务控制提交后取消会保存核对且第二次只回读() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(downloadTaskListResponse(id: "task-1", status: "downloading")),
+            .waitUntilCancelled,
+            .response(downloadTaskListResponse(id: "task-1", status: "downloading")),
+            .response(downloadTaskListResponse(id: "task-1", status: "paused")),
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationTask],
+            transport: transport
+        )
+        let controlledTask = downloadTask(id: "task-1", status: "downloading")
+        let first = Task {
+            try await repository.controlDownloadTaskResult(
+                DownloadTaskControlRequest(
+                    task: controlledTask,
+                    action: .pause
+                )
+            )
+        }
+        while await transport.recordedRequests().count < 2 {
+            await Task.yield()
+        }
+
+        first.cancel()
+        let cancelled = try await first.value
+        let replay = try await repository.controlDownloadTaskResult(
+            DownloadTaskControlRequest(
+                task: controlledTask,
+                action: .pause
+            )
+        )
+
+        XCTAssertEqual(cancelled.result.status, .cancellationRequestedAfterSubmission)
+        XCTAssertTrue(cancelled.result.requiresRefresh)
+        XCTAssertEqual(replay.result.status, .confirmedSuccess)
+        XCTAssertEqual(replay.task?.status, "paused")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.filter { requestValue("method", in: $0) == "pause" }.count,
+            1
+        )
+    }
+
     func test拒绝不支持的下载链接且不发送请求() async throws {
         let transport = MockHTTPTransport(responses: [])
         let repository = try makeRepository(
@@ -1466,6 +1580,16 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
 
     private func response(_ json: String) -> DsmHTTPResponse {
         DsmHTTPResponse(data: Data(json.utf8), statusCode: 200)
+    }
+
+    private func downloadTask(id: String, status: String) -> DownloadStationTask {
+        DownloadStationTask(id: id, title: "示例任务", status: status)
+    }
+
+    private func downloadTaskListResponse(id: String, status: String) -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"tasks":[{"id":"\#(id)","title":"示例任务","status":"\#(status)"}],"offset":0,"total":1}}"#
+        )
     }
 
     private func containerListResponse(ids: [String]) -> String {

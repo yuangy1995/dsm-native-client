@@ -25,6 +25,9 @@ extension MobileAppModel {
         if selectedModule == .chat, module != .chat {
             chatModel.deactivate()
         }
+        if selectedModule == .downloads, module != .downloads {
+            deactivateDownloads()
+        }
         if selectedModule == .nasSettings, module != .nasSettings {
             nasHealthModel.deactivate()
         }

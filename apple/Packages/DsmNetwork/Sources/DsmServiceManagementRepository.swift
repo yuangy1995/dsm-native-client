@@ -149,15 +149,28 @@ private enum SupplementaryServiceResult: Sendable {
     }
 }
 
+private struct DownloadTaskControlKey: Hashable, Sendable {
+    let taskID: String
+    let action: String
+}
+
+private struct DownloadTaskControlReview: Sendable {
+    let key: DownloadTaskControlKey
+}
+
 /// Download Station、VMM 与 Container Manager 的套件适配器。
 /// Container Manager 以及无公开接口时的套件分支均属于 DSM 内部接口。
 public actor DsmServiceManagementRepository: ServiceManagementRepository,
     VirtualMachineInventoryReading, ContainerInventoryReading {
+    private static let downloadControlReadbackLimit = 5_000
+    private static let downloadControlPageSize = 500
     private let capabilities: CapabilitySet
     private let credential: DsmSessionCredential
     private let baseURL: URL
     private let client: DsmAPIClient
     private let transport: any DsmHTTPTransport
+    private var activeDownloadControlKeys: Set<DownloadTaskControlKey> = []
+    private var pendingDownloadControlReviews: [DownloadTaskControlKey: DownloadTaskControlReview] = [:]
     private var activeContainerDeletionIDs: Set<String> = []
     private var activeVirtualMachineDeletionIDs: Set<String> = []
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
@@ -416,6 +429,190 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             method: action.rawValue,
             parameters: ["id": .string(ids.joined(separator: ","))]
         )
+    }
+
+    public func controlDownloadTaskResult(
+        _ request: DownloadTaskControlRequest
+    ) async throws -> DownloadTaskControlOutcome {
+        guard let taskID = Self.nonEmpty(request.task.id) else {
+            return try downloadControlOutcome(
+                status: .confirmedFailure,
+                action: request.action,
+                taskID: request.task.id,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .validation,
+                tag: "download-task.control.invalid"
+            )
+        }
+        guard Self.downloadControlMethod(for: request.action) != nil else {
+            return try downloadControlOutcome(
+                status: .unsupported,
+                action: request.action,
+                taskID: taskID,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                tag: "download-task.control.unsupported"
+            )
+        }
+        guard officialDownloadTaskV1Capability() != nil else {
+            return try downloadControlOutcome(
+                status: .unsupported,
+                action: request.action,
+                taskID: taskID,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                tag: "download-task.control.unsupported"
+            )
+        }
+        if Task.isCancelled {
+            return try downloadControlOutcome(
+                status: .cancelledBeforeSubmission,
+                action: request.action,
+                taskID: taskID,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0),
+                errorCategory: nil,
+                tag: "download-task.control.cancelled-before"
+            )
+        }
+
+        let key = DownloadTaskControlKey(taskID: taskID, action: request.action.rawValue)
+        if pendingDownloadControlReviews[key] != nil {
+            return try await finishDownloadControlReview(
+                key: key,
+                action: request.action,
+                statusIfUnconfirmed: .submittedButUnverified
+            )
+        }
+        guard !activeDownloadControlKeys.contains(key) else {
+            return try downloadControlOutcome(
+                status: .confirmedFailure,
+                action: request.action,
+                taskID: taskID,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .conflict,
+                tag: "download-task.control.duplicate"
+            )
+        }
+        activeDownloadControlKeys.insert(key)
+        defer {
+            activeDownloadControlKeys.remove(key)
+        }
+
+        let baseline: DownloadStationTask
+        do {
+            guard let loaded = try await loadOfficialDownloadControlTask(id: taskID) else {
+                return try downloadControlConflictOutcome(action: request.action, taskID: taskID)
+            }
+            baseline = loaded
+        } catch let error as AppError where error.category == .cancelled {
+            return try downloadControlOutcome(
+                status: .cancelledBeforeSubmission,
+                action: request.action,
+                taskID: taskID,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0),
+                errorCategory: nil,
+                tag: "download-task.control.cancelled-before"
+            )
+        }
+        guard Self.normalizedDownloadTaskStatus(baseline.status)
+            == Self.normalizedDownloadTaskStatus(request.task.status),
+            Self.canSubmitDownloadControl(action: request.action, status: baseline.status) else {
+            return try downloadControlConflictOutcome(action: request.action, taskID: taskID)
+        }
+        if Task.isCancelled {
+            return try downloadControlOutcome(
+                status: .cancelledBeforeSubmission,
+                action: request.action,
+                taskID: taskID,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0),
+                errorCategory: nil,
+                tag: "download-task.control.cancelled-before"
+            )
+        }
+
+        guard let method = Self.downloadControlMethod(for: request.action) else {
+            return try downloadControlOutcome(
+                status: .unsupported,
+                action: request.action,
+                taskID: taskID,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                tag: "download-task.control.unsupported"
+            )
+        }
+
+        do {
+            try await callOfficialDownloadTaskV1Void(
+                method: method,
+                parameters: ["id": .string(taskID)]
+            )
+            pendingDownloadControlReviews[key] = DownloadTaskControlReview(key: key)
+            return try await finishDownloadControlReview(
+                key: key,
+                action: request.action,
+                statusIfUnconfirmed: .submittedButUnverified
+            )
+        } catch let error as AppError {
+            switch error.category {
+            case .cancelled:
+                pendingDownloadControlReviews[key] = DownloadTaskControlReview(key: key)
+                return try await finishDownloadControlReview(
+                    key: key,
+                    action: request.action,
+                    statusIfUnconfirmed: .cancellationRequestedAfterSubmission
+                )
+            case .permissionDenied:
+                return try downloadControlOutcome(
+                    status: .permissionDenied,
+                    action: request.action,
+                    taskID: taskID,
+                    task: nil,
+                    submitted: true,
+                    requiresRefresh: true,
+                    counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                    errorCategory: .permission,
+                    tag: "download-task.control.permission"
+                )
+            default:
+                pendingDownloadControlReviews[key] = DownloadTaskControlReview(key: key)
+                return try await finishDownloadControlReview(
+                    key: key,
+                    action: request.action,
+                    statusIfUnconfirmed: .submittedButUnverified
+                )
+            }
+        } catch {
+            pendingDownloadControlReviews[key] = DownloadTaskControlReview(key: key)
+            return try await finishDownloadControlReview(
+                key: key,
+                action: request.action,
+                statusIfUnconfirmed: .submittedButUnverified
+            )
+        }
     }
 
     public func deleteDownloadTasks(ids: [String], removeData: Bool) async throws {
@@ -2050,6 +2247,341 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         capabilities[DsmAPIName.downloadStationTask]?.selectedVersion != nil
             ? DsmAPIName.downloadStationTask
             : DsmAPIName.downloadStation2Task
+    }
+
+    private func officialDownloadTaskV1Capability() -> ApiCapability? {
+        guard let capability = capabilities[DsmAPIName.downloadStationTask],
+              capability.selectedVersion != nil,
+              capability.minVersion <= 1,
+              capability.maxVersion >= 1,
+              capability.requestFormat == .form else {
+            return nil
+        }
+        return capability
+    }
+
+    private func callOfficialDownloadTaskV1(
+        method: String,
+        parameters: [String: DsmParameterValue]
+    ) async throws -> ServiceJSON {
+        guard let capability = officialDownloadTaskV1Capability() else {
+            throw unavailableError()
+        }
+        do {
+            return try await client.call(
+                path: capability.path,
+                api: capability.name,
+                version: 1,
+                method: method,
+                requestFormat: capability.requestFormat,
+                parameters: parameters,
+                credential: credential,
+                as: ServiceJSON.self
+            )
+        } catch let error as DsmNetworkError {
+            throw DsmErrorMapper.map(error)
+        }
+    }
+
+    private func callOfficialDownloadTaskV1Void(
+        method: String,
+        parameters: [String: DsmParameterValue]
+    ) async throws {
+        guard let capability = officialDownloadTaskV1Capability() else {
+            throw unavailableError()
+        }
+        do {
+            try await client.callVoid(
+                path: capability.path,
+                api: capability.name,
+                version: 1,
+                method: method,
+                requestFormat: capability.requestFormat,
+                parameters: parameters,
+                credential: credential
+            )
+        } catch let error as DsmNetworkError {
+            throw DsmErrorMapper.map(error)
+        }
+    }
+
+    private func loadOfficialDownloadControlTask(id taskID: String) async throws -> DownloadStationTask? {
+        var offset = 0
+        var expectedTotal: Int?
+        var found: DownloadStationTask?
+        var seenIDs: Set<String> = []
+
+        while offset < Self.downloadControlReadbackLimit {
+            let limit = min(
+                Self.downloadControlPageSize,
+                Self.downloadControlReadbackLimit - offset
+            )
+            let value = try await callOfficialDownloadTaskV1(
+                method: "list",
+                parameters: [
+                    "offset": .integer(offset),
+                    "limit": .integer(limit),
+                    "additional": .stringArray(["detail", "transfer"])
+                ]
+            )
+            let objects = value.objects(for: ["tasks", "task", "items", "list"])
+            let tasks = objects.compactMap(Self.downloadTask)
+            guard tasks.count == objects.count, tasks.count <= limit else {
+                throw invalidServiceResponse()
+            }
+            if let pageOffset = value.firstInteger(["offset"]),
+               pageOffset != Int64(offset) {
+                throw invalidServiceResponse()
+            }
+            if let totalValue = value.firstInteger(["total"]) {
+                let total = Int(totalValue)
+                guard total >= offset + tasks.count else {
+                    throw invalidServiceResponse()
+                }
+                if let expectedTotal {
+                    guard expectedTotal == total else {
+                        throw invalidServiceResponse()
+                    }
+                } else {
+                    expectedTotal = total
+                }
+            }
+
+            for task in tasks {
+                guard seenIDs.insert(task.id).inserted else {
+                    throw invalidServiceResponse()
+                }
+                if task.id == taskID {
+                    guard found == nil else {
+                        throw invalidServiceResponse()
+                    }
+                    found = task
+                }
+            }
+
+            if let expectedTotal, offset + tasks.count >= expectedTotal {
+                break
+            }
+            if tasks.count < limit {
+                break
+            }
+            guard !tasks.isEmpty else {
+                throw invalidServiceResponse()
+            }
+            offset += tasks.count
+        }
+        return found
+    }
+
+    private func finishDownloadControlReview(
+        key: DownloadTaskControlKey,
+        action: DownloadStationTaskAction,
+        statusIfUnconfirmed: MutationResultStatus
+    ) async throws -> DownloadTaskControlOutcome {
+        do {
+            if let task = try await loadOfficialDownloadControlTask(id: key.taskID),
+               Self.confirmsDownloadControl(action: action, status: task.status) {
+                pendingDownloadControlReviews[key] = nil
+                return try downloadControlOutcome(
+                    status: .confirmedSuccess,
+                    action: action,
+                    taskID: key.taskID,
+                    task: task,
+                    submitted: true,
+                    requiresRefresh: true,
+                    counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0),
+                    errorCategory: nil,
+                    tag: "download-task.control.confirmed"
+                )
+            }
+        } catch {
+            pendingDownloadControlReviews[key] = DownloadTaskControlReview(key: key)
+            return try downloadControlUnknownOutcome(
+                action: action,
+                taskID: key.taskID,
+                status: statusIfUnconfirmed,
+                category: Self.downloadControlErrorCategory(error)
+            )
+        }
+        pendingDownloadControlReviews[key] = DownloadTaskControlReview(key: key)
+        return try downloadControlUnknownOutcome(
+            action: action,
+            taskID: key.taskID,
+            status: statusIfUnconfirmed,
+            category: .unknown
+        )
+    }
+
+    private func downloadControlConflictOutcome(
+        action: DownloadStationTaskAction,
+        taskID: String
+    ) throws -> DownloadTaskControlOutcome {
+        try downloadControlOutcome(
+            status: .confirmedFailure,
+            action: action,
+            taskID: taskID,
+            task: nil,
+            submitted: false,
+            requiresRefresh: false,
+            counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+            errorCategory: .conflict,
+            tag: "download-task.control.conflict"
+        )
+    }
+
+    private func downloadControlUnknownOutcome(
+        action: DownloadStationTaskAction,
+        taskID: String,
+        status: MutationResultStatus,
+        category: MutationErrorCategory
+    ) throws -> DownloadTaskControlOutcome {
+        try downloadControlOutcome(
+            status: status,
+            action: action,
+            taskID: taskID,
+            task: nil,
+            submitted: true,
+            requiresRefresh: true,
+            counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 1),
+            errorCategory: category,
+            tag: status == .cancellationRequestedAfterSubmission
+                ? "download-task.control.cancelled-after"
+                : "download-task.control.unverified"
+        )
+    }
+
+    private func downloadControlOutcome(
+        status: MutationResultStatus,
+        action: DownloadStationTaskAction,
+        taskID: String,
+        task: DownloadStationTask?,
+        submitted: Bool,
+        requiresRefresh: Bool,
+        counts: MutationResultCounts,
+        errorCategory: MutationErrorCategory?,
+        tag: String
+    ) throws -> DownloadTaskControlOutcome {
+        try DownloadTaskControlOutcome(
+            result: MutationResult(
+                status: status,
+                operation: Self.downloadControlOperation(for: action),
+                submitted: submitted,
+                requiresRefresh: requiresRefresh,
+                counts: counts,
+                errorCategory: errorCategory,
+                localizationKey: tag,
+                diagnosticTag: tag
+            ),
+            taskID: taskID,
+            task: task
+        )
+    }
+
+    private func invalidServiceResponse() -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: true,
+            safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+        )
+    }
+
+    private static func downloadControlOperation(for action: DownloadStationTaskAction) -> String {
+        switch action {
+        case .pause:
+            "downloadPause"
+        case .resume:
+            "downloadResume"
+        case .finish:
+            "downloadControl"
+        }
+    }
+
+    private static func downloadControlMethod(for action: DownloadStationTaskAction) -> String? {
+        switch action {
+        case .pause:
+            "pause"
+        case .resume:
+            "resume"
+        case .finish:
+            nil
+        }
+    }
+
+    private static func normalizedDownloadTaskStatus(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+    }
+
+    private static func canSubmitDownloadControl(
+        action: DownloadStationTaskAction,
+        status: String
+    ) -> Bool {
+        let status = normalizedDownloadTaskStatus(status)
+        switch action {
+        case .pause:
+            return [
+                "waiting",
+                "downloading",
+                "checking",
+                "hash_checking",
+                "filehosting_waiting",
+                "extracting",
+                "seeding"
+            ].contains(status)
+        case .resume:
+            return status == "paused"
+        case .finish:
+            return false
+        }
+    }
+
+    private static func confirmsDownloadControl(
+        action: DownloadStationTaskAction,
+        status: String
+    ) -> Bool {
+        let status = normalizedDownloadTaskStatus(status)
+        switch action {
+        case .pause:
+            return status == "paused"
+        case .resume:
+            return [
+                "waiting",
+                "downloading",
+                "checking",
+                "hash_checking",
+                "filehosting_waiting",
+                "extracting",
+                "seeding"
+            ].contains(status)
+        case .finish:
+            return false
+        }
+    }
+
+    private static func downloadControlErrorCategory(_ error: Error) -> MutationErrorCategory {
+        guard let error = error as? AppError else {
+            return .unknown
+        }
+        switch error.category {
+        case .authenticationRequired, .otpRequired:
+            return .authentication
+        case .permissionDenied:
+            return .permission
+        case .networkUnavailable, .timeout, .tlsUntrusted, .tlsCertificateChanged:
+            return .network
+        case .apiUnavailable, .versionUnsupported:
+            return .unsupported
+        case .conflict, .notFound:
+            return .conflict
+        case .serverBusy, .invalidResponse, .unknown, .remoteStorageFull, .partialFailure:
+            return .server
+        case .cancelled:
+            return .unknown
+        case .localStorageFull:
+            return .unknown
+        }
     }
 
     private func apiURL(path: String) -> URL {

@@ -300,6 +300,39 @@
                             </Grid>
                             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                                 <StackPanel Padding="0,16,0,0" Spacing="16">
+                                    <InfoBar
+                                        x:Name="DownloadControlNotice"
+                                        AutomationProperties.LiveSetting="Polite"
+                                        IsClosable="False"
+                                        IsOpen="False"
+                                        Message="{Binding ControlNoticeMessage}"
+                                        Title="{Binding ControlNoticeTitle}" />
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button
+                                            x:Uid="DownloadStationPause"
+                                            x:Name="PauseButton"
+                                            MinHeight="44"
+                                            Click="Pause_Click" />
+                                        <Button
+                                            x:Uid="DownloadStationResume"
+                                            x:Name="ResumeButton"
+                                            Grid.Column="1"
+                                            MinHeight="44"
+                                            Click="Resume_Click" />
+                                        <ProgressRing
+                                            x:Uid="DownloadStationControlProgress"
+                                            x:Name="ControlProgress"
+                                            Grid.Column="2"
+                                            Width="28"
+                                            Height="28"
+                                            IsActive="False"
+                                            Visibility="Collapsed" />
+                                    </Grid>
                                     <ProgressBar
                                         IsIndeterminate="{Binding SelectedTask.IsProgressUnknown}"
                                         MinHeight="4"

@@ -22,6 +22,19 @@ public enum DownloadTaskFilter
     Paused,
 }
 
+public enum DownloadTaskControlNoticeKind
+{
+    None,
+    InProgress,
+    Success,
+    NeedsReview,
+    Cancelled,
+    Conflict,
+    Permission,
+    Unsupported,
+    Failure,
+}
+
 public sealed record DownloadTaskItem(DownloadTask Task)
 {
     public string Id => Task.Id;

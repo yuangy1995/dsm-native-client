@@ -25,7 +25,7 @@ struct MobileDownloadsView: View {
             taskList
         }
         .sheet(item: $selectedTask) { task in
-            MobileDownloadTaskDetailView(task: task)
+            MobileDownloadTaskDetailView(model: model, initialTask: task)
         }
     }
 
@@ -91,8 +91,13 @@ private struct DownloadTaskRow: View {
 }
 
 private struct MobileDownloadTaskDetailView: View {
-    let task: DownloadStationTask
+    @Bindable var model: MobileAppModel
+    let initialTask: DownloadStationTask
     @Environment(\.dismiss) private var dismiss
+
+    private var task: DownloadStationTask {
+        model.downloadTask(id: initialTask.id) ?? initialTask
+    }
 
     var body: some View {
         NavigationStack {
@@ -100,12 +105,14 @@ private struct MobileDownloadTaskDetailView: View {
                 Section {
                     Label(
                         L10n.string("mobile.downloads.read-only.notice"),
-                        systemImage: "eye"
+                        systemImage: "pause.circle"
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .combine)
                 }
+
+                controlSection
 
                 Section(L10n.string("ui.1932da4d4dba4ed0")) {
                     LabeledContent(
@@ -160,6 +167,87 @@ private struct MobileDownloadTaskDetailView: View {
                     )
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var controlSection: some View {
+        if model.feedbackForDownloadTask(task) != nil
+            || model.canPauseDownloadTask(task)
+            || model.canResumeDownloadTask(task)
+            || model.isControllingDownloadTask {
+            Section(L10n.string("mobile.downloads.control.section")) {
+                if let feedback = model.feedbackForDownloadTask(task) {
+                    DownloadControlFeedbackView(model: model, feedback: feedback)
+                }
+                if model.canPauseDownloadTask(task) {
+                    Button {
+                        model.controlDownloadTask(task, action: .pause)
+                    } label: {
+                        Label(
+                            L10n.string("mobile.downloads.control.pause"),
+                            systemImage: "pause.fill"
+                        )
+                    }
+                    .frame(minHeight: MobileMetrics.minimumTouchTarget)
+                    .accessibilityHint(L10n.string("mobile.downloads.control.pause.hint"))
+                }
+                if model.canResumeDownloadTask(task) {
+                    Button {
+                        model.controlDownloadTask(task, action: .resume)
+                    } label: {
+                        Label(
+                            L10n.string("mobile.downloads.control.resume"),
+                            systemImage: "play.fill"
+                        )
+                    }
+                    .frame(minHeight: MobileMetrics.minimumTouchTarget)
+                    .accessibilityHint(L10n.string("mobile.downloads.control.resume.hint"))
+                }
+                if model.isControllingDownloadTask {
+                    ProgressView()
+                        .accessibilityLabel(
+                            L10n.string("mobile.downloads.control.in-progress.message")
+                        )
+                }
+            }
+        }
+    }
+}
+
+private struct DownloadControlFeedbackView: View {
+    @Bindable var model: MobileAppModel
+    let feedback: MobileDownloadControlFeedback
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(model.title(for: feedback), systemImage: systemImage)
+                .font(.headline)
+            Text(model.message(for: feedback))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var systemImage: String {
+        switch feedback.kind {
+        case .inProgress:
+            return "clock"
+        case .success:
+            return "checkmark.circle"
+        case .needsReview:
+            return "exclamationmark.triangle"
+        case .cancelled:
+            return "xmark.circle"
+        case .conflict:
+            return "arrow.triangle.2.circlepath"
+        case .permission:
+            return "lock"
+        case .unsupported:
+            return "slash.circle"
+        case .failure:
+            return "exclamationmark.circle"
         }
     }
 }

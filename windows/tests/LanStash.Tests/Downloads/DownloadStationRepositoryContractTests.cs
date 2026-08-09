@@ -280,6 +280,129 @@ public sealed class DownloadStationRepositoryContractTests
         Assert.Empty(api.Requests);
     }
 
+    [Fact]
+    public async Task PauseAndResumeUseOfficialTaskV1AndRequireReadbackConfirmation()
+    {
+        var pausePages = new Queue<JsonObject>(new[]
+        {
+            Page(0, 1, TaskItem("task-1", "downloading")),
+            Page(0, 1, TaskItem("task-1", "paused")),
+        });
+        var pauseApi = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "list" => pausePages.Dequeue(),
+            "pause" => new JsonObject(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var pauseRepository = (IDownloadStationRepository)CreateRepository(
+            pauseApi,
+            Capability(PublicTaskApi));
+
+        var paused = await pauseRepository.ControlTaskAsync(new(
+            ProfileId,
+            TaskBaseline("task-1", "downloading"),
+            DownloadTaskControlAction.Pause));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, paused.Result.Status);
+        Assert.Equal("downloadPause", paused.Result.Operation);
+        Assert.False(paused.Result.RequiresRefresh);
+        Assert.Equal("task-1", paused.TaskId);
+        Assert.Equal(DownloadTaskState.Paused, paused.Task!.State);
+        Assert.Collection(
+            pauseApi.Requests,
+            request => Assert.Equal("list", request.Method),
+            request =>
+            {
+                Assert.Equal(PublicTaskApi, request.ApiName);
+                Assert.Equal(1, request.Version);
+                Assert.Equal("pause", request.Method);
+                Assert.Equal(new[] { "id" }, request.Parameters.Keys.Order(StringComparer.Ordinal));
+                Assert.Equal("task-1", request.Parameters["id"]);
+            },
+            request => Assert.Equal("list", request.Method));
+
+        var resumePages = new Queue<JsonObject>(new[]
+        {
+            Page(0, 1, TaskItem("task-1", "paused")),
+            Page(0, 1, TaskItem("task-1", "waiting")),
+        });
+        var resumeApi = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "list" => resumePages.Dequeue(),
+            "resume" => new JsonObject(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var resumeRepository = (IDownloadStationRepository)CreateRepository(
+            resumeApi,
+            Capability(PublicTaskApi));
+
+        var resumed = await resumeRepository.ControlTaskAsync(new(
+            ProfileId,
+            TaskBaseline("task-1", "paused"),
+            DownloadTaskControlAction.Resume));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, resumed.Result.Status);
+        Assert.Equal("downloadResume", resumed.Result.Operation);
+        Assert.Equal(DownloadTaskState.Waiting, resumed.Task!.State);
+        Assert.Equal("resume", resumeApi.Requests[1].Method);
+        Assert.Equal("task-1", resumeApi.Requests[1].Parameters["id"]);
+    }
+
+    [Fact]
+    public async Task BaselineDriftOrWrongStateReturnsConflictWithoutSubmittingControlRequest()
+    {
+        var api = new DownloadRecordingApiClient(_ => Page(
+            0,
+            1,
+            TaskItem("task-1", "paused")));
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi));
+
+        var result = await repository.ControlTaskAsync(new(
+            ProfileId,
+            TaskBaseline("task-1", "downloading"),
+            DownloadTaskControlAction.Pause));
+
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Result.Status);
+        Assert.Equal(MutationErrorCategory.Conflict, result.Result.ErrorCategory);
+        Assert.Single(api.Requests);
+        Assert.Equal("list", api.Requests[0].Method);
+    }
+
+    [Fact]
+    public async Task PostSubmitCancellationStoresReviewAndSecondCallOnlyReadsBack()
+    {
+        var listPages = new Queue<JsonObject>(new[]
+        {
+            Page(0, 1, TaskItem("task-1", "downloading")),
+            Page(0, 1, TaskItem("task-1", "downloading")),
+            Page(0, 1, TaskItem("task-1", "paused")),
+        });
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "list" => listPages.Dequeue(),
+            "pause" => throw new OperationCanceledException("after synthetic submit"),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi));
+        var baseline = new DownloadTaskControlRequest(
+            ProfileId,
+            TaskBaseline("task-1", "downloading"),
+            DownloadTaskControlAction.Pause);
+
+        var first = await repository.ControlTaskAsync(baseline);
+        var second = await repository.ControlTaskAsync(baseline);
+
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
+        Assert.True(first.Result.RequiresRefresh);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        Assert.Equal(1, api.Requests.Count(request => request.Method == "pause"));
+        Assert.Equal(3, api.Requests.Count(request => request.Method == "list"));
+    }
+
     public static IEnumerable<object[]> InvalidPages()
     {
         yield return [new JsonObject { ["offset"] = 1, ["total"] = 0, ["tasks"] = new JsonArray() }];
@@ -347,6 +470,33 @@ public sealed class DownloadStationRepositoryContractTests
         long integer => JsonValue.Create(integer)!,
         _ => throw new ArgumentOutOfRangeException(nameof(id)),
     };
+
+    private static DownloadTask TaskBaseline(string id, string status) =>
+        new(
+            id,
+            $"Task {id}",
+            status,
+            DownloadTaskStateFor(status),
+            100,
+            12,
+            3,
+            4,
+            5,
+            "/synthetic",
+            null);
+
+    private static DownloadTaskState DownloadTaskStateFor(string status) =>
+        status switch
+        {
+            "waiting" => DownloadTaskState.Waiting,
+            "downloading" => DownloadTaskState.Downloading,
+            "paused" => DownloadTaskState.Paused,
+            "finished" => DownloadTaskState.Finished,
+            "hash_checking" => DownloadTaskState.Checking,
+            "seeding" => DownloadTaskState.Seeding,
+            "error" => DownloadTaskState.Error,
+            _ => DownloadTaskState.Unknown,
+        };
 
     private sealed record DownloadApiRequest(
         string ApiName,

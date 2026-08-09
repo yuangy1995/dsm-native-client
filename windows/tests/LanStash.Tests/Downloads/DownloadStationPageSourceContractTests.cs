@@ -26,7 +26,7 @@ public sealed class DownloadStationPageSourceContractTests
     }
 
     [Fact]
-    public void PageUsesExplicitLoadMoreLocalFiltersAndReadOnlyDetails()
+    public void PageUsesExplicitLoadMoreLocalFiltersAndLimitedTaskControls()
     {
         var xaml = Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml.cs");
@@ -42,6 +42,14 @@ public sealed class DownloadStationPageSourceContractTests
         Assert.Contains("SelectedTask.DestinationText", xaml);
         Assert.Contains("SelectedTask.ErrorText", xaml);
         Assert.Contains("SelectedTask.StatusText", xaml);
+        Assert.Contains("x:Name=\"PauseButton\"", xaml);
+        Assert.Contains("x:Name=\"ResumeButton\"", xaml);
+        Assert.Contains("Click=\"Pause_Click\"", xaml);
+        Assert.Contains("Click=\"Resume_Click\"", xaml);
+        Assert.Contains("x:Name=\"DownloadControlNotice\"", xaml);
+        Assert.Contains("_viewModel.ControlSelectedTaskAsync(DownloadTaskControlAction.Pause)", source);
+        Assert.Contains("_viewModel.ControlSelectedTaskAsync(DownloadTaskControlAction.Resume)", source);
+        Assert.Contains("DownloadTaskControlNoticeKind.NeedsReview", source);
         Assert.DoesNotContain("RawStatus", xaml + source);
         Assert.Contains("IsIndeterminate=\"{x:Bind IsProgressUnknown}\"", xaml);
     }
@@ -69,7 +77,7 @@ public sealed class DownloadStationPageSourceContractTests
     }
 
     [Fact]
-    public void PageHasAbsolutelyNoManagementCommandsOrHandlers()
+    public void PageOnlyExposesSingleTaskPauseAndResume()
     {
         var downloadFeature =
             Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml") +
@@ -78,13 +86,16 @@ public sealed class DownloadStationPageSourceContractTests
 
         foreach (var forbidden in new[]
         {
-            "CreateDownload", "CreateTask", "PauseTask", "ResumeTask", "DeleteTask",
+            "CreateDownload", "CreateTask", "DeleteTask", "DeleteDownload",
             "SaveSettings", "LoadSettings", "ControlDownloads", "create_click",
-            "pause_click", "resume_click", "delete_click", "settings_click"
+            "delete_click", "settings_click", "force_complete", "removeData"
         })
         {
             Assert.DoesNotContain(forbidden, downloadFeature, StringComparison.OrdinalIgnoreCase);
         }
+        Assert.Contains("Pause_Click", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("Resume_Click", downloadFeature, StringComparison.Ordinal);
+        Assert.DoesNotContain("DownloadTaskControlAction.Finish", downloadFeature, StringComparison.Ordinal);
         Assert.DoesNotContain("SYNO.DownloadStation2.Task", downloadFeature, StringComparison.Ordinal);
     }
 

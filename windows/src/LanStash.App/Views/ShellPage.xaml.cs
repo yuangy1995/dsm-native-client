@@ -581,6 +581,25 @@ public sealed partial class ShellPage : Page
             int limit,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<DownloadTaskControlOutcome> ControlTaskAsync(
+            DownloadTaskControlRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new DownloadTaskControlOutcome(
+                new MutationResult(
+                    1,
+                    MutationResultStatus.Unsupported,
+                    request.Action == DownloadTaskControlAction.Pause
+                        ? "downloadPause"
+                        : "downloadResume",
+                    submitted: false,
+                    requiresRefresh: false,
+                    counts: new MutationResultCounts(0, 1, 0),
+                    MutationErrorCategory.Unsupported,
+                    localizationKey: "download-station.control.unsupported",
+                    diagnosticTag: "download-station.control.unavailable"),
+                request.Task.Id,
+                null));
     }
 
     private sealed class UnavailableFilePreviewRepository(Guid profileId)

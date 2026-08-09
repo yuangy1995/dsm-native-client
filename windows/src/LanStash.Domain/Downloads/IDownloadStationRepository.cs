@@ -14,4 +14,8 @@ public interface IDownloadStationRepository
         int offset,
         int limit,
         CancellationToken cancellationToken = default);
+
+    Task<DownloadTaskControlOutcome> ControlTaskAsync(
+        DownloadTaskControlRequest request,
+        CancellationToken cancellationToken = default);
 }
