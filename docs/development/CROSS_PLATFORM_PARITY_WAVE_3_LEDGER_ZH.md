@@ -1,6 +1,6 @@
 # Windows / Apple 移动端功能对齐账本：第 3 波
 
-> 状态：A0/W0 共享契约与 A1/W1 Files 受限入口已落盘；Apple 本机聚焦/完整测试与 GitHub Apple Build 通过，Windows GitHub Windows Build 通过；Photos 受限入口待后续切片接入
+> 状态：A0/W0 共享契约、A1/W1 Files 受限入口和 A2/W2 Photos 受限恢复入口已落盘；Files 基线已通过 GitHub Apple/Windows/Repository 门禁，Photos 入口已整理为单条简体中文功能提交，并通过 Apple/Windows/Repository 最终云端门禁
 > 基线提交：`1c7ee4851feb00903327b0599a0d29ea421be8c9`（`完善跨端文件复制移动与照片导入`）
 > 当前范围：Windows/iPhone/iPad `FILE-09 移入回收站与从回收站恢复`
 > 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；永久删除、清空回收站、目录或批量恢复、跨 NAS 恢复、覆盖恢复、猜测原路径、内部 Core RecycleBin 清理接口、Chat/Download/NAS 写操作
@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- |
 | Apple/Windows 单项移入回收站 | Apple 共享层已有 `moveToRecycleResult`、Delete v2 任务、已发现回收站入口校验和精确回读；Windows W0 已新增 `IFileRecycleRepository`、Delete v2 transport、Repository 源码与契约测试，并通过 GitHub Windows Build | 在 Files 中对单个普通本地文件显示“移入回收站”；提交一次；通过独立回读确认原路径消失且 `#recycle` 目标文件出现后才显示成功 | profile/repository/canonical item/generation 冻结；权限、已发现回收站入口与普通本地来源门；提交未知进入核对 blocker；目录、`#recycle`、remote、virtual 和回收站后代不允许再次移入回收站 | 永久删除、清空回收站、目录删除、多项批量删除、后台队列、删除后立即自动恢复 |
 | Apple/Windows 单项恢复 | Apple 共享层已有 `restoreFromRecycleResult`，复用 CopyMove v3 `remove_src=true`、`overwrite=false` 与独立回读；Windows W0 已新增同义 Restore 结果链与二次提交 blocker，并通过 GitHub Windows Build | 在只读回收站位置中对单个可解析普通文件显示“恢复”；使用受限结果型契约将文件移回同共享原位置；严格回读确认回收站源消失且目标出现 | 只接受同共享根、单个普通文件、无覆盖、普通本地原目标；提交后取消、断线或坏回读只核对不重放；未确认结果跨页面重建保持 blocker | 猜测被移动过的原目录、跨共享恢复、覆盖恢复、恢复目录、恢复到用户另选目录、永久删除 |
-| Photos 回收站入口 | Photos 已有文件夹、时间线、预览、导入和只读回收站位置；照片内管理仍是受限范围 | 首片只让 Photos 中位于回收站路径的普通文件复用同一恢复结果链；普通照片删除/批量管理可后续拆分 | 必须复用 Files 的结果型恢复契约和当前 photo item canonical revision；不新增 Foto 私有 API | 删除系统图库项目、目录或批量恢复、整库管理、智能相册回收站、批量照片恢复 |
+| Photos 回收站入口 | Photos 已有文件夹、时间线、预览、导入和只读回收站位置；本切片已在 iPhone/iPad 网格、时间线和查看器，以及 Windows 文件夹/时间线视图中仅对 `#recycle` 普通文件接入恢复 | 首片只让 Photos 中位于回收站路径的普通文件复用同一恢复结果链；普通照片删除/批量管理可后续拆分 | 复用 Files 的结果型恢复契约和当前 photo item canonical revision；Windows 复用同一 `FileRecycleViewModel` 与 session blocker；不新增 Foto 私有 API | 删除系统图库项目、目录或批量恢复、整库管理、智能相册回收站、批量照片恢复 |
 
 ## 3. 交互转换
 
@@ -99,12 +99,12 @@
 ## 8. 当前验证证据
 
 - 当前基线提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 已通过第 2 波四组云端门禁，但该证据只覆盖 FILE-05 与 PHOTO-03A。
-- Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，并通过 `DsmFileRepositoryTests` 107/107；`RecycleLocation`、`discoverRecycleLocations()` 和 FILE-05 `copyMoveResult` 继续作为契约事实来源。Apple Files UI 已接入单个普通本地文件移入回收站与回收站位置恢复，本机 iPhone 17 Pro iOS 26.5 模拟器聚焦 42/42 与完整 DsmMobile 375/375 通过；提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Apple Build` run `31318490495` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建和 macOS 打包。真实 iPad 交互、真机和真实 NAS 回收站行为仍待验收。
-- Windows 已新增 `IFileRecycleRepository`、`FileRecycle*` 领域模型、Delete v2 start/status transport、`DsmRepository.FileRecycle` 与 `Files/Recycle` 聚焦测试源码；Windows Files UI 已接入 WinUI ContentDialog 受限入口、普通/回收站来源门和 session blocker，并通过本机 XAML/resw XML、本地化和源码形态静态门。提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Windows Build` run `31318490511` 已通过 830/830 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；同提交 `Repository Check` run `31318490509` 通过。真实 Windows 设备、Narrator、键盘、系统生命周期和真实 NAS 副作用仍待验收。
+- Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，并通过 `DsmFileRepositoryTests` 107/107；`RecycleLocation`、`discoverRecycleLocations()` 和 FILE-05 `copyMoveResult` 继续作为契约事实来源。Apple Files UI 已接入单个普通本地文件移入回收站与回收站位置恢复，本机 iPhone 17 Pro iOS 26.5 模拟器聚焦 42/42 与完整 DsmMobile 375/375 通过；提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Apple Build` run `31318490495` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建和 macOS 打包。Photos 受限恢复入口已在网格、时间线和查看器中复用同一恢复流程，本机聚焦 `MobileFileRecycleActionPresentationTests` 与 `MobilePhotoViewerPresentationTests` 通过；单条功能提交已通过 GitHub `Apple Build`。真实 iPad 交互、真机和真实 NAS 回收站行为仍待验收。
+- Windows 已新增 `IFileRecycleRepository`、`FileRecycle*` 领域模型、Delete v2 start/status transport、`DsmRepository.FileRecycle` 与 `Files/Recycle` 聚焦测试源码；Windows Files UI 已接入 WinUI ContentDialog 受限入口、普通/回收站来源门和 session blocker，并通过本机 XAML/resw XML、本地化和源码形态静态门。提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Windows Build` run `31318490511` 已通过 830/830 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；同提交 `Repository Check` run `31318490509` 通过。Photos 受限恢复入口已在文件夹视图、时间线选择和 Shell profile 门中复用同一恢复 ViewModel 与对话框；单条功能提交已通过 GitHub `Windows Build` 与 `Repository Check`。真实 Windows 设备、Narrator、键盘、系统生命周期和真实 NAS 副作用仍待验收。
 - 请求契约已有 `contracts/request-fixtures/file-station/delete/synthetic-task/request.json`；恢复首片复用现有 CopyMove v3 合成形态，Windows W0 已新增 Delete start/status typed transport 与契约测试。
 
 ## 9. 本波完成后继续对照的剩余项
 
-- Windows：FILE-09 Photos 受限恢复入口、文件夹/受限批量传输、Chat 核心与附件、Download 创建与低风险单任务控制、NAS 管理、统一 ModuleAvailability 和 W5/W6 系统集成。
-- iPhone/iPad：FILE-09 Photos 受限恢复入口、PHOTO-03 其余 NAS 内管理、Chat 文字/附件、Download 创建与单任务控制，以及 M8/M9 其余生产力与自动化。
+- Windows：文件夹/受限批量传输、Chat 核心与附件、Download 创建与低风险单任务控制、NAS 管理、统一 ModuleAvailability 和 W5/W6 系统集成。
+- iPhone/iPad：PHOTO-03 其余 NAS 内管理、Chat 文字/附件、Download 创建与单任务控制，以及 M8/M9 其余生产力与自动化。
 - 两端：目录复制移动和跨 NAS 操作必须另建有界契约；永久删除、清空回收站和覆盖恢复必须另建危险写契约；没有版本化证据的内部写继续关闭。

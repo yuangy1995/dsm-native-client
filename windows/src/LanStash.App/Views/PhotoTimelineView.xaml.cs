@@ -21,6 +21,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private IPhotoTimelineDataSource? _source;
     private PhotoThumbnailScheduler? _thumbnails;
     private Func<PhotoItem, Task>? _save;
+    private Func<PhotoItem, bool>? _canRestore;
+    private Func<PhotoItem, Task>? _restore;
     private CancellationTokenSource _thumbnailCancellation = new();
     private bool _syncingControls;
     private bool _disposed;
@@ -34,11 +36,18 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         UpdateState();
     }
 
-    internal void Initialize(IPhotoTimelineDataSource source, PhotoThumbnailScheduler thumbnails, Func<PhotoItem, Task> save)
+    internal void Initialize(
+        IPhotoTimelineDataSource source,
+        PhotoThumbnailScheduler thumbnails,
+        Func<PhotoItem, Task> save,
+        Func<PhotoItem, bool>? canRestore = null,
+        Func<PhotoItem, Task>? restore = null)
     {
         _source = source;
         _thumbnails = thumbnails;
         _save = save;
+        _canRestore = canRestore;
+        _restore = restore;
     }
 
     internal async Task ShowAsync(PhotoSpace space)
@@ -72,11 +81,26 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     internal bool CanSaveSelected =>
         TimelineGrid.SelectedItem is PhotoTimelineEntry entry && _viewModel.CanSave(entry.Item);
 
+    internal bool CanRestoreSelected =>
+        TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+        _canRestore?.Invoke(entry.Item) == true;
+
+    internal bool HasSelectedItem(PhotoItem item) =>
+        TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+        HasSameRevision(entry.Item, item);
+
     internal async Task SaveSelectedAsync()
     {
         if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
             _viewModel.CanSave(entry.Item) && _save is not null)
             await _save(entry.Item);
+    }
+
+    internal async Task RestoreSelectedAsync()
+    {
+        if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+            _canRestore?.Invoke(entry.Item) == true && _restore is not null)
+            await _restore(entry.Item);
     }
 
     internal void ClearSelection() => TimelineGrid.SelectedItem = null;
@@ -94,6 +118,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private void TimelineGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateState();
     private async void Save_Click(object sender, RoutedEventArgs e)
     { await SaveSelectedAsync(); }
+    private async void Restore_Click(object sender, RoutedEventArgs e)
+    { await RestoreSelectedAsync(); }
     private async void SaveAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     { if (CanSaveSelected) { args.Handled = true; await SaveSelectedAsync(); } }
 
@@ -143,6 +169,13 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         SearchBox.IsEnabled = _viewModel.HasCompletedSnapshot;
         FilterPicker.IsEnabled = _viewModel.HasCompletedSnapshot;
         SaveButton.IsEnabled = CanSaveSelected;
+        RestoreButton.Content = LocalizationService.Current.Get("FileRecycleRestoreAction");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            RestoreButton,
+            LocalizationService.Current.Get(
+                "FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"));
+        RestoreButton.IsEnabled = CanRestoreSelected;
+        RestoreButton.Visibility = CanRestoreSelected ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void TimelineGrid_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)

@@ -13,6 +13,7 @@ struct MobilePhotosView: View {
     @State private var timeline = MobilePhotoTimelineModel()
     @State private var viewer = MobilePhotoViewerModel()
     @State private var photoImport = MobilePhotoImportModel()
+    @State private var recycleAction = MobileFileRecycleActionModel()
     @State private var showsPreviewInspector = false
     @State private var showsPreviewFullScreen = false
     @State private var showsPreviewDetails = false
@@ -64,6 +65,15 @@ struct MobilePhotosView: View {
                 EmptyView()
             }
         }
+        .sheet(isPresented: recycleActionPresentationBinding) {
+            if let repository = model.fileRepository {
+                MobileFileRecycleActionView(
+                    recycleAction: recycleAction,
+                    repository: repository,
+                    didConfirm: recycleActionDidConfirm
+                )
+            }
+        }
         .alert(L10n.string("mobile.documents.error-title"), isPresented: documentFailureBinding) {
             Button(L10n.string("mobile.documents.dismiss")) {
                 model.documentTransferController.clearFailure()
@@ -96,6 +106,7 @@ struct MobilePhotosView: View {
             timeline.cancelAllWork()
             viewer.close()
             photoImport.cancelPreparation()
+            recycleAction.deactivate()
         }
     }
 
@@ -141,7 +152,8 @@ struct MobilePhotosView: View {
                     compact: horizontalSizeClass != .regular,
                     onOpenPhoto: openPhoto,
                     onSaveCopy: saveCopy,
-                    onShare: share
+                    onShare: share,
+                    onRestoreFromRecycle: beginRestoreFromRecycle
                 )
             } else {
                 albumContent
@@ -175,6 +187,7 @@ struct MobilePhotosView: View {
                 onOpenPhoto: openPhoto,
                 onSaveCopy: saveCopy,
                 onShare: share,
+                onRestoreFromRecycle: beginRestoreFromRecycle,
                 onLoadMore: loadMore
             )
         }
@@ -226,10 +239,11 @@ struct MobilePhotosView: View {
                 ToolbarItem(placement: .bottomBar) {
                     MobilePhotoViewerNavigationControls(
                         state: viewer.state,
-                        onPrevious: openPreviousPhoto,
-                        onNext: openNextPhoto,
-                        onSaveCopy: saveCurrentPhotoCopy,
-                        onShare: shareCurrentPhoto
+                        onPrevious: { openPreviousPhoto() },
+                        onNext: { openNextPhoto() },
+                        onSaveCopy: { saveCurrentPhotoCopy() },
+                        onShare: { shareCurrentPhoto() },
+                        onRestoreFromRecycle: restoreCurrentPhotoFromRecycleAction
                     )
                 }
             }
@@ -497,6 +511,10 @@ struct MobilePhotosView: View {
             profileID: model.activeProfile?.id,
             repositoryIdentity: model.fileRepository.map { ObjectIdentifier($0) }
         )
+        recycleAction.activate(
+            profileID: model.activeProfile?.id,
+            repository: model.fileRepository
+        )
         if viewer.activate(
             profileID: model.activeProfile?.id,
             fileRepository: model.fileRepository
@@ -580,6 +598,21 @@ struct MobilePhotosView: View {
         share(item)
     }
 
+    private var canRestoreCurrentPhotoFromRecycle: Bool {
+        guard let item = viewer.state.selectedItem else { return false }
+        return canRestoreFromRecycle(item)
+    }
+
+    private var restoreCurrentPhotoFromRecycleAction: (() -> Void)? {
+        guard canRestoreCurrentPhotoFromRecycle else { return nil }
+        return { restoreCurrentPhotoFromRecycle() }
+    }
+
+    private func restoreCurrentPhotoFromRecycle() {
+        guard let item = viewer.state.selectedItem else { return }
+        beginRestoreFromRecycle(item)
+    }
+
     private func adaptPreviewPresentation(to sizeClass: UserInterfaceSizeClass?) {
         guard preview.state.phase != .inactive else { return }
         if sizeClass == .regular {
@@ -606,6 +639,46 @@ struct MobilePhotosView: View {
             onShare(item)
         } else {
             startDownload(item, intent: .share)
+        }
+    }
+
+    private func canRestoreFromRecycle(_ item: PhotoLibraryItem) -> Bool {
+        guard let item = canonicalPhotoItem(item),
+              let activeProfileID = model.activeProfile?.id,
+              let repository = model.fileRepository,
+              repository.profileID == activeProfileID,
+              let parentPath = Self.parentPath(of: item.path) else { return false }
+        return MobileFileRecycleActionModel.canRestoreFromRecycle(
+            item: item.fileItem,
+            parentPath: parentPath,
+            source: .recycle,
+            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
+            profileID: activeProfileID
+        )
+    }
+
+    private func beginRestoreFromRecycle(_ item: PhotoLibraryItem) {
+        guard let item = canonicalPhotoItem(item),
+              canRestoreFromRecycle(item),
+              let repository = model.fileRepository,
+              let parentPath = Self.parentPath(of: item.path) else { return }
+        recycleAction.beginRestoreFromRecycle(
+            item: item.fileItem,
+            parentPath: parentPath,
+            source: .recycle,
+            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
+            repository: repository
+        )
+    }
+
+    private func recycleActionDidConfirm(_ success: MobileFileRecycleActionSuccess) async {
+        if viewer.state.selectedItem?.path == success.sourcePath {
+            closePreview()
+        }
+        if browseMode == .timeline {
+            await timeline.refresh()
+        } else {
+            await library.reload()
         }
     }
 
@@ -670,6 +743,19 @@ struct MobilePhotosView: View {
         case .networkUnavailable: L10n.string("mobile.documents.error-network")
         case .unknown, .none: L10n.string("mobile.documents.error-unknown")
         }
+    }
+
+    private var recycleActionPresentationBinding: Binding<Bool> {
+        Binding(
+            get: { recycleAction.isPresented },
+            set: { if !$0 { recycleAction.dismiss() } }
+        )
+    }
+
+    private static func parentPath(of path: String) -> String? {
+        let components = path.split(separator: "/")
+        guard components.count >= 2 else { return nil }
+        return "/" + components.dropLast().joined(separator: "/")
     }
 }
 

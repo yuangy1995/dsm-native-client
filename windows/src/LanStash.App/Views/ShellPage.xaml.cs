@@ -317,10 +317,17 @@ public sealed partial class ShellPage : Page
                 if (_photos is null || _photosProfileId != photoProfile.Id)
                 {
                     _photos?.Dispose();
+                    var photoRecycleRepository = _app.Repository as IFileRecycleRepository;
+                    if (photoRecycleRepository?.ProfileId != photoProfile.Id)
+                    {
+                        photoRecycleRepository = null;
+                    }
                     _photos = new PhotosPage(
                         photoRepository,
                         photoProfile.Id.ToString(),
-                        photoTransferPicker);
+                        photoTransferPicker,
+                        recycleRepository: photoRecycleRepository,
+                        recycleReviewBlocker: FileRecycleReviewBlocker.Current);
                     _photosProfileId = photoProfile.Id;
                 }
                 ContentFrame.Content = _photos;

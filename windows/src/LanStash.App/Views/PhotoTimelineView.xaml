@@ -18,6 +18,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="PhotoTimelineSearch" x:Name="SearchBox" MinHeight="44"
                      TextChanged="SearchBox_TextChanged" />
@@ -31,6 +32,8 @@
                     MinHeight="44" Click="Refresh_Click" />
             <Button x:Uid="PhotoTimelineSave" x:Name="SaveButton" Grid.Column="3"
                     MinHeight="44" Click="Save_Click" />
+            <Button x:Name="RestoreButton" Grid.Column="4"
+                    MinHeight="44" Click="Restore_Click" Visibility="Collapsed" />
         </Grid>
 
         <StackPanel Grid.Row="1" Spacing="8">

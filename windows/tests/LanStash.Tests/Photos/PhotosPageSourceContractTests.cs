@@ -97,6 +97,46 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("sourceProfileId != parsedProfileId", source);
     }
 
+    [Fact]
+    public void RecycleRestoreIsRestrictedToPhotoItemsInRecyclePaths()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var page = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
+        var recycle = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.Recycle.cs");
+        var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
+        var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
+        var dialog = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Files/Recycle/FileRecycleDialogContent.cs");
+        var shell = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+
+        Assert.Contains("x:Name=\"PhotoRestoreFromRecycleButton\"", xaml);
+        Assert.Contains("x:Uid=\"FileRecycleRestore\"", xaml);
+        Assert.Contains("Click=\"RestorePhotoFromRecycle_Click\"", xaml);
+        Assert.Contains("x:Name=\"RestoreButton\"", timelineXaml);
+        Assert.Contains("InitializePhotoRecycle(recycleRepository, recycleReviewBlocker);", page);
+        Assert.Contains("CanRestorePhotoItem", page);
+        Assert.Contains("RestorePhotoItemAsync", page);
+        Assert.Contains("recycleRepository: photoRecycleRepository", shell);
+        Assert.Contains("recycleReviewBlocker: FileRecycleReviewBlocker.Current", shell);
+
+        Assert.Contains("new FileRecycleViewModel(", recycle);
+        Assert.Contains("FileRecycleOperation.Restore", recycle);
+        Assert.Contains("FileLocationSource.Recycle", recycle);
+        Assert.Contains("PhotoTimelineViewModel.ContainsCanonicalPath", recycle);
+        Assert.Contains("CanDelete: true", recycle);
+        Assert.Contains("FileRecycleDialogContent.Build(model, localization)", recycle);
+        Assert.Contains("await TimelineView.RefreshAsync()", recycle);
+        Assert.Contains("await RunLocationChangeAsync(_viewModel.RefreshAsync)", recycle);
+        Assert.DoesNotContain("MoveToRecycleAsync", recycle);
+        Assert.DoesNotContain("DeleteFilesAsync", recycle);
+        Assert.DoesNotContain("DeleteFileAsync", recycle);
+
+        Assert.Contains("CanRestoreSelected", timeline);
+        Assert.Contains("RestoreSelectedAsync", timeline);
+        Assert.Contains("FileRecycleRestoreAction", timeline);
+        Assert.Contains("FileRecycleStatusAutomationName", dialog);
+    }
+
     [Theory]
     [InlineData("PhotoBrowserSpace")]
     [InlineData("PhotoBrowserBreadcrumbs")]

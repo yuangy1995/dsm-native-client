@@ -51,6 +51,32 @@ final class MobileFileRecycleActionPresentationTests: XCTestCase {
         XCTAssertFalse(locations.contains("beginMoveToRecycle"))
     }
 
+    func test照片页只对回收站项目复用恢复流程() throws {
+        let photos = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
+        let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
+        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
+        let timeline = try sourceFile("Sources/Features/Photos/Timeline/MobilePhotoTimelineView.swift")
+        let viewer = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerView.swift")
+
+        XCTAssertTrue(photos.contains("@State private var recycleAction = MobileFileRecycleActionModel()"))
+        XCTAssertTrue(photos.contains("MobileFileRecycleActionView("))
+        XCTAssertTrue(photos.contains("onRestoreFromRecycle: beginRestoreFromRecycle"))
+        XCTAssertTrue(photos.contains("MobileFileRecycleActionModel.canRestoreFromRecycle("))
+        XCTAssertTrue(photos.contains("source: .recycle"))
+        XCTAssertTrue(photos.contains("recycleActionDidConfirm"))
+        XCTAssertTrue(photos.contains("await timeline.refresh()"))
+        XCTAssertTrue(photos.contains("await library.reload()"))
+        XCTAssertTrue(photos.contains("recycleAction.deactivate()"))
+        XCTAssertFalse(photos.contains("beginMoveToRecycle("))
+
+        XCTAssertTrue(grid.contains("item.fileItem.isRecyclePath"))
+        XCTAssertTrue(grid.contains("restoreDestinationPath(for: item.path)"))
+        XCTAssertTrue(cell.contains("\"mobile.files.recycle.restore.action\""))
+        XCTAssertTrue(timeline.contains("\"mobile.files.recycle.restore.action\""))
+        XCTAssertTrue(viewer.contains("onRestoreFromRecycle"))
+        XCTAssertTrue(viewer.contains("\"mobile.files.recycle.restore.action\""))
+    }
+
     private func sourceFile(_ relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let appRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()

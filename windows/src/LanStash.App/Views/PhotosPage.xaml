@@ -140,6 +140,13 @@
                 Click="Save_Click"
                 Icon="Save"
                 MinHeight="44" />
+            <AppBarButton
+                x:Uid="FileRecycleRestore"
+                x:Name="PhotoRestoreFromRecycleButton"
+                Click="RestorePhotoFromRecycle_Click"
+                Icon="Undo"
+                MinHeight="44"
+                Visibility="Collapsed" />
             <CommandBar.SecondaryCommands>
                 <AppBarButton
                     x:Uid="PhotoBrowserFilter"

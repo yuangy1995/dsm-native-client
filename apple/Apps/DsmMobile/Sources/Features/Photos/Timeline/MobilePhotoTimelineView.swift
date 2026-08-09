@@ -10,6 +10,7 @@ struct MobilePhotoTimelineView: View {
     let onOpenPhoto: (PhotoLibraryItem) -> Void
     let onSaveCopy: (PhotoLibraryItem) -> Void
     let onShare: (PhotoLibraryItem) -> Void
+    let onRestoreFromRecycle: (PhotoLibraryItem) -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -124,7 +125,10 @@ struct MobilePhotoTimelineView: View {
                                             loadThumbnail: { await model.thumbnailData(for: item) },
                                             onOpen: { onOpenPhoto(item) },
                                             onSaveCopy: { onSaveCopy(item) },
-                                            onShare: { onShare(item) }
+                                            onShare: { onShare(item) },
+                                            onRestoreFromRecycle: canRestoreFromRecycle(item)
+                                                ? { onRestoreFromRecycle(item) }
+                                                : nil
                                         )
                                     }
                                 }
@@ -249,6 +253,10 @@ struct MobilePhotoTimelineView: View {
         return date.formatted(.dateTime.year().month(.wide).locale(L10n.locale))
     }
 
+    private func canRestoreFromRecycle(_ item: PhotoLibraryItem) -> Bool {
+        item.fileItem.isRecyclePath &&
+            MobileFileRecycleActionModel.restoreDestinationPath(for: item.path) != nil
+    }
 }
 
 private struct TimelinePhotoCell: View {
@@ -257,6 +265,7 @@ private struct TimelinePhotoCell: View {
     let onOpen: () -> Void
     let onSaveCopy: () -> Void
     let onShare: () -> Void
+    let onRestoreFromRecycle: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var thumbnail: UIImage?
@@ -280,6 +289,9 @@ private struct TimelinePhotoCell: View {
             Menu {
                 Button(L10n.string("mobile.photos.action.save-copy"), action: onSaveCopy)
                 Button(L10n.string("mobile.photos.action.share"), action: onShare)
+                if let onRestoreFromRecycle {
+                    Button(L10n.string("mobile.files.recycle.restore.action"), action: onRestoreFromRecycle)
+                }
             } label: {
                 Image(systemName: "ellipsis").frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
             }

@@ -8,6 +8,7 @@ public sealed class FileRecyclePageSourceContractTests
         var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
         var page = Read("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
         var partial = Read("windows/src/LanStash.App/Views/FilesPage.Recycle.cs");
+        var dialog = Read("windows/src/LanStash.App/Features/Files/Recycle/FileRecycleDialogContent.cs");
         var model = Read("windows/src/LanStash.App/Features/Files/Recycle/FileRecycleViewModel.cs");
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
 
@@ -19,6 +20,8 @@ public sealed class FileRecyclePageSourceContractTests
         Assert.Contains("MoveToRecycleAsync", model);
         Assert.Contains("RestoreFromRecycleAsync", model);
         Assert.Contains("ContentDialog", partial);
+        Assert.Contains("FileRecycleDialogContent.Build(model, localization)", partial);
+        Assert.Contains("FileRecycleStatusAutomationName", dialog);
         Assert.Contains("FileRecycleReviewBlocker.Current", shell);
         Assert.Contains("recycleRepository:", shell);
         Assert.Contains("recycleReviewBlocker:", shell);
@@ -29,16 +32,17 @@ public sealed class FileRecyclePageSourceContractTests
     public void RecycleActionsStayBehindReadOnlyAndReviewSafetyDoors()
     {
         var partial = Read("windows/src/LanStash.App/Views/FilesPage.Recycle.cs");
+        var dialog = Read("windows/src/LanStash.App/Features/Files/Recycle/FileRecycleDialogContent.cs");
         var model = Read("windows/src/LanStash.App/Features/Files/Recycle/FileRecycleViewModel.cs");
 
         Assert.Contains("FileLocationSource.Remote", model);
         Assert.Contains("FileLocationSource.Recycle", model);
         Assert.Contains("CanMoveToRecycle()", partial);
         Assert.Contains("CanRestoreFromRecycle()", partial);
-        Assert.Contains("FileRecyclePresentationState.NeedsReview", partial);
+        Assert.Contains("FileRecyclePresentationState.NeedsReview", dialog);
         Assert.Contains("model.State != FileRecyclePresentationState.ConfirmedSuccess", partial);
-        Assert.Contains("AutomationLiveSetting.Assertive", partial);
-        Assert.Contains("AutomationLiveSetting.Polite", partial);
+        Assert.Contains("AutomationLiveSetting.Assertive", dialog);
+        Assert.Contains("AutomationLiveSetting.Polite", dialog);
         Assert.DoesNotContain("DeleteFilesAsync", partial);
         Assert.DoesNotContain("DeleteFileAsync", partial);
         Assert.DoesNotContain("RemoveAsync", partial);

@@ -13,6 +13,7 @@ struct MobilePhotoGrid: View {
     let onOpenPhoto: (PhotoLibraryItem) -> Void
     let onSaveCopy: (PhotoLibraryItem) -> Void
     let onShare: (PhotoLibraryItem) -> Void
+    let onRestoreFromRecycle: (PhotoLibraryItem) -> Void
     let onLoadMore: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -37,7 +38,8 @@ struct MobilePhotoGrid: View {
                         onOpenFolder: onOpenFolder,
                         onOpenPhoto: onOpenPhoto,
                         onSaveCopy: onSaveCopy,
-                        onShare: onShare
+                        onShare: onShare,
+                        onRestoreFromRecycle: canRestoreFromRecycle(item) ? onRestoreFromRecycle : nil
                     )
                 }
             }
@@ -79,5 +81,11 @@ struct MobilePhotoGrid: View {
 
     private var prefetchIdentity: String {
         items.prefix(MobilePhotoLibraryModel.prefetchLimit).map(\.id).joined(separator: "|")
+    }
+
+    private func canRestoreFromRecycle(_ item: PhotoLibraryItem) -> Bool {
+        !item.isFolder &&
+            item.fileItem.isRecyclePath &&
+            MobileFileRecycleActionModel.restoreDestinationPath(for: item.path) != nil
     }
 }

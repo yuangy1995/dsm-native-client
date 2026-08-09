@@ -1,4 +1,5 @@
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Photos;
 using LanStash.App.Features.Photos.Import;
 using LanStash.App.Features.Photos.Timeline;
@@ -38,14 +39,18 @@ public sealed partial class PhotosPage : Page, IDisposable
     internal PhotosPage(
         IPhotoRepository repository,
         string profileId,
-        WindowsTransferPickerService transfers)
+        WindowsTransferPickerService transfers,
+        IFileRecycleRepository? recycleRepository = null,
+        FileRecycleReviewBlocker? recycleReviewBlocker = null)
         : this(
             new RepositoryPhotoBrowserDataSource(repository),
             new PhotoBrowserViewModel(),
             new PhotoThumbnailScheduler(),
             profileId,
             transfers,
-            new RepositoryPhotoTimelineDataSource(repository))
+            new RepositoryPhotoTimelineDataSource(repository),
+            recycleRepository,
+            recycleReviewBlocker)
     {
     }
 
@@ -55,7 +60,9 @@ public sealed partial class PhotosPage : Page, IDisposable
         PhotoThumbnailScheduler thumbnails,
         string profileId,
         WindowsTransferPickerService transfers,
-        IPhotoTimelineDataSource? timelineDataSource = null)
+        IPhotoTimelineDataSource? timelineDataSource = null,
+        IFileRecycleRepository? recycleRepository = null,
+        FileRecycleReviewBlocker? recycleReviewBlocker = null)
     {
         EnsureMatchingProfile(dataSource.ProfileId, profileId);
         InitializeComponent();
@@ -66,11 +73,17 @@ public sealed partial class PhotosPage : Page, IDisposable
         _cacheRegistration = AppSettingsService.Current.Caches.Register(thumbnails);
         _profileId = profileId;
         _transfers = transfers;
+        InitializePhotoRecycle(recycleRepository, recycleReviewBlocker);
         InitializePhotoImport();
         if (_timelineDataSource is not null)
         {
             EnsureMatchingProfile(_timelineDataSource.ProfileId, profileId);
-            TimelineView.Initialize(_timelineDataSource, thumbnails, SaveTimelineItemAsync);
+            TimelineView.Initialize(
+                _timelineDataSource,
+                thumbnails,
+                SaveTimelineItemAsync,
+                CanRestorePhotoItem,
+                RestorePhotoItemAsync);
         }
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -135,6 +148,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         CancelThumbnailRequests();
         TimelineView.HideTimeline();
         DeactivatePhotoImport();
+        ClosePhotoRecycleDialog();
     }
 
     private void ViewModel_PropertyChanged(
@@ -582,6 +596,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         UpButton.IsEnabled = _viewModel.CanGoUp && !_viewModel.IsLoading;
         RefreshButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsLoadingMore;
         SaveButton.IsEnabled = CanSaveSelectedImage();
+        UpdatePhotoRecycleControls();
         SpacePicker.IsEnabled = !_viewModel.IsLoading && _viewModel.Spaces.Count > 1;
         FilterButton.IsEnabled = !_viewModel.IsLoading;
         FilterAllItem.IsChecked = _viewModel.Filter == PhotoBrowserFilter.All;
@@ -693,6 +708,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         Unloaded -= PhotosPage_Unloaded;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         DisposePhotoImport();
+        ClosePhotoRecycleDialog();
         CancelThumbnailRequests();
         _locationCancellation.Dispose();
         _viewModel.Dispose();

@@ -8,6 +8,7 @@ struct MobilePhotoViewerNavigationControls: View {
     let onNext: () -> Void
     let onSaveCopy: () -> Void
     let onShare: () -> Void
+    let onRestoreFromRecycle: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -50,6 +51,13 @@ struct MobilePhotoViewerNavigationControls: View {
                 systemImage: "square.and.arrow.up",
                 action: onShare
             )
+            if let onRestoreFromRecycle {
+                actionButton(
+                    key: "mobile.files.recycle.restore.action",
+                    systemImage: "arrow.uturn.backward",
+                    action: onRestoreFromRecycle
+                )
+            }
         }
     }
 

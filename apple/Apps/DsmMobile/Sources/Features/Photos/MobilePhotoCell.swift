@@ -11,6 +11,7 @@ struct MobilePhotoCell: View {
     let onOpenPhoto: (PhotoLibraryItem) -> Void
     let onSaveCopy: (PhotoLibraryItem) -> Void
     let onShare: (PhotoLibraryItem) -> Void
+    let onRestoreFromRecycle: ((PhotoLibraryItem) -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var thumbnail: UIImage?
@@ -40,6 +41,11 @@ struct MobilePhotoCell: View {
                 Menu {
                     Button(L10n.string("mobile.photos.action.save-copy")) { onSaveCopy(item) }
                     Button(L10n.string("mobile.photos.action.share")) { onShare(item) }
+                    if let onRestoreFromRecycle {
+                        Button(L10n.string("mobile.files.recycle.restore.action")) {
+                            onRestoreFromRecycle(item)
+                        }
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(maxWidth: .infinity, minHeight: 44)
