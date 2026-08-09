@@ -58,6 +58,8 @@ final class MobileAppModel {
         (@Sendable (DownloadTaskControlRequest) async throws -> DownloadTaskControlOutcome)?
     @ObservationIgnored var downloadStationCreateOverride:
         (@Sendable (DownloadTaskCreateRequest) async throws -> DownloadTaskCreateOutcome)?
+    @ObservationIgnored var downloadStationCreateFileOverride:
+        (@Sendable (DownloadTaskFileCreateRequest) async throws -> DownloadTaskCreateOutcome)?
     @ObservationIgnored var downloadStationDeleteOverride:
         (@Sendable ([String], Bool) async throws -> MutationResult)?
     @ObservationIgnored var downloadControlTask: Task<Void, Never>?

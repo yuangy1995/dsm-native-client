@@ -49,6 +49,16 @@
                     </StackPanel>
                 </Button>
                 <Button
+                    x:Uid="DownloadStationCreateFileTask"
+                    x:Name="CreateFileTaskButton"
+                    MinHeight="44"
+                    Click="CreateFileTask_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE8E5;" FontSize="16" />
+                        <TextBlock x:Uid="DownloadStationCreateFileTaskLabel" />
+                    </StackPanel>
+                </Button>
+                <Button
                     x:Uid="DownloadStationRefresh"
                     x:Name="RefreshButton"
                     MinHeight="44"

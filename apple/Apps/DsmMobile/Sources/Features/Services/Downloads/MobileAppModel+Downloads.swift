@@ -77,7 +77,11 @@ extension MobileAppModel {
     var canCreateDownloadTask: Bool {
         !isCreatingDownloadTask &&
         activeProfile != nil &&
-        (serviceRepository != nil || downloadStationCreateOverride != nil)
+        (
+            serviceRepository != nil ||
+            downloadStationCreateOverride != nil ||
+            downloadStationCreateFileOverride != nil
+        )
     }
 
     var downloadCreateDefaultDestination: String? {
@@ -264,6 +268,65 @@ extension MobileAppModel {
                 await MainActor.run {
                     self?.finishDownloadCreateFailure(
                         uri: uri,
+                        generation: generation
+                    )
+                }
+            }
+        }
+    }
+
+    func createDownloadTask(fileURL: URL) {
+        let displayName = fileURL.lastPathComponent.isEmpty
+            ? fileURL.path
+            : fileURL.lastPathComponent
+        guard !isCreatingDownloadTask else { return }
+        guard activeProfile != nil,
+              serviceRepository != nil || downloadStationCreateFileOverride != nil else {
+            downloadCreateFeedback = MobileDownloadCreateFeedback(
+                uri: displayName,
+                kind: .unsupported
+            )
+            return
+        }
+
+        downloadCreateGeneration &+= 1
+        let generation = downloadCreateGeneration
+        let request = DownloadTaskFileCreateRequest(
+            fileURL: fileURL,
+            destination: downloadCreateDefaultDestination
+        )
+        let repository = serviceRepository
+        let override = downloadStationCreateFileOverride
+        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: displayName, kind: .inProgress)
+        downloadCreateTask = Task { [weak self] in
+            do {
+                let outcome: DownloadTaskCreateOutcome
+                if let override {
+                    outcome = try await override(request)
+                } else if let repository {
+                    outcome = try await repository.createDownloadTaskFileResult(request)
+                } else {
+                    return
+                }
+                try Task.checkCancellation()
+                await MainActor.run {
+                    self?.finishDownloadCreate(
+                        outcome,
+                        uri: displayName,
+                        generation: generation
+                    )
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.finishDownloadCreateCancellation(
+                        uri: displayName,
+                        generation: generation
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self?.finishDownloadCreateFailure(
+                        uri: displayName,
                         generation: generation
                     )
                 }

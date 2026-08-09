@@ -574,6 +574,54 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertTrue(bodyText.contains(fileURL.lastPathComponent))
     }
 
+    func test任务文件创建结果固定官方V1且回读确认任务() async throws {
+        let transport = MockHTTPTransport(responses: [
+            downloadTaskListResponse(ids: []),
+            response(#"{"success":true,"data":{"taskid":"task-file-1"}}"#),
+            downloadTaskListResponse(
+                ids: ["task-file-1"],
+                destination: "downloads"
+            ),
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationTask],
+            transport: transport
+        )
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-task-\(UUID().uuidString).torrent")
+        try Data("d4:infod4:name4:testee".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let outcome = try await repository.createDownloadTaskFileResult(
+            DownloadTaskFileCreateRequest(
+                fileURL: fileURL,
+                destination: "downloads"
+            )
+        )
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.result.operation, "downloadCreate")
+        XCTAssertEqual(outcome.taskID, "task-file-1")
+        XCTAssertEqual(outcome.task?.destination, "downloads")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, [
+            "list", "create", "list"
+        ])
+        let create = try XCTUnwrap(requests.first {
+            requestValue("method", in: $0) == "create"
+        })
+        XCTAssertEqual(requestValue("api", in: create), DsmAPIName.downloadStationTask)
+        XCTAssertEqual(requestValue("version", in: create), "1")
+        XCTAssertNil(requestValue("unzip_password", in: create))
+        XCTAssertFalse(create.url?.absoluteString.contains("REDACTED_SESSION") == true)
+        let bodies = await transport.recordedUploadBodies()
+        let body = try XCTUnwrap(bodies.first)
+        let bodyText = try XCTUnwrap(String(data: body, encoding: .utf8))
+        XCTAssertTrue(bodyText.contains("name=\"destination\"\r\n\r\ndownloads"))
+        XCTAssertTrue(bodyText.contains("name=\"file\""))
+        XCTAssertTrue(bodyText.contains(fileURL.lastPathComponent))
+    }
+
     func test保存下载设置后回读确认() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true}"#),

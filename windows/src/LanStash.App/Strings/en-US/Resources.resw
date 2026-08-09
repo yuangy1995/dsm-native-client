@@ -473,6 +473,8 @@
   <data name="DownloadStationDescription.Text" xml:space="preserve"><value>Add links and view download tasks on this NAS.</value></data>
   <data name="DownloadStationCreateTaskLabel.Text" xml:space="preserve"><value>Add link</value></data>
   <data name="DownloadStationCreateTask.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Add a URL or magnet link</value></data>
+  <data name="DownloadStationCreateFileTaskLabel.Text" xml:space="preserve"><value>Add file</value></data>
+  <data name="DownloadStationCreateFileTask.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Add a .torrent, .nzb, or .txt task file</value></data>
   <data name="DownloadStationRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
   <data name="DownloadStationDetailStatus.Text" xml:space="preserve"><value>Status</value></data>
   <data name="DownloadStationDetailProgress.Text" xml:space="preserve"><value>Progress</value></data>

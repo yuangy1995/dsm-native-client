@@ -1510,6 +1510,165 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         }
     }
 
+    public async Task<DownloadTaskFileCreateTransportResult> CreateDownloadTaskFromFileAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        DownloadTaskFileCreateRequest upload,
+        IProgress<long>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(
+                capability.Name,
+                "SYNO.DownloadStation.Task",
+                StringComparison.Ordinal) ||
+            capability.MinVersion > 1 ||
+            capability.MaxVersion < 1 ||
+            !string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+            !IsSafeWebApiPath(capability.Path) ||
+            profile.Id != session.ProfileId ||
+            upload.ProfileId != profile.Id)
+        {
+            return new DownloadTaskFileCreateTransportResult(
+                DownloadTaskFileCreateTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported,
+                DiagnosticTag: "download-station.create.file.unsupported");
+        }
+
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("api", capability.Name),
+            new("version", "1"),
+            new("method", "create"),
+            new("_sid", session.Sid),
+        };
+        if (!string.IsNullOrWhiteSpace(upload.Destination))
+        {
+            fields.Add(new("destination", upload.Destination));
+        }
+
+        var boundary = $"LanStashDownload-{Guid.NewGuid():N}";
+        using var content = new ExactLengthMultipartUploadContent(
+            boundary,
+            fields,
+            upload.FileName,
+            upload.Content,
+            upload.Length,
+            progress);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri(
+                GetBaseUri(profile),
+                capability.Path.StartsWith('/')
+                    ? capability.Path
+                    : $"/webapi/{capability.Path}"))
+        {
+            Content = content,
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
+        if (!string.IsNullOrWhiteSpace(session.SynoToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
+        }
+
+        SetNasConnectionContext(request, profile);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new DownloadTaskFileCreateTransportResult(
+                DownloadTaskFileCreateTransportStatus.CancelledBeforeSubmission,
+                DiagnosticTag: "download-station.create.file.cancelled-before-submit");
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            // SendAsync 是任务文件创建的唯一提交边界；跨过此点后任何不确定结果都禁止重放。
+            response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new DownloadTaskFileCreateTransportResult(
+                DownloadTaskFileCreateTransportStatus.CancellationRequestedAfterSubmission,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "download-station.create.file.cancelled-after-submit");
+        }
+        catch (Exception error) when (
+            error is HttpRequestException or IOException or InvalidOperationException)
+        {
+            return new DownloadTaskFileCreateTransportResult(
+                DownloadTaskFileCreateTransportStatus.SubmittedButUnverified,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "download-station.create.file.network-unverified");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                return new DownloadTaskFileCreateTransportResult(
+                    DownloadTaskFileCreateTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                        ? MutationErrorCategory.Authentication
+                        : MutationErrorCategory.Server,
+                    DiagnosticTag: "download-station.create.file.http-unverified");
+            }
+
+            JsonObject? envelope;
+            try
+            {
+                await using var responseStream = await response.Content
+                    .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                envelope = await JsonNode.ParseAsync(
+                    responseStream,
+                    cancellationToken: cancellationToken).ConfigureAwait(false) as JsonObject;
+            }
+            catch (OperationCanceledException)
+            {
+                return new DownloadTaskFileCreateTransportResult(
+                    DownloadTaskFileCreateTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "download-station.create.file.cancelled-after-submit");
+            }
+            catch (Exception error) when (
+                error is JsonException or HttpRequestException or IOException)
+            {
+                return new DownloadTaskFileCreateTransportResult(
+                    DownloadTaskFileCreateTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "download-station.create.file.response-unverified");
+            }
+
+            var success = StrictNativeBool(envelope, "success");
+            if (success == true)
+            {
+                var taskId = StableJsonString(
+                    envelope?["data"]?["taskid"] ??
+                    envelope?["data"]?["task_id"] ??
+                    envelope?["data"]?["taskId"] ??
+                    envelope?["data"]?["id"]);
+                return new DownloadTaskFileCreateTransportResult(
+                    DownloadTaskFileCreateTransportStatus.Accepted,
+                    TaskId: taskId,
+                    DiagnosticTag: "download-station.create.file.accepted");
+            }
+
+            var code = StrictNativeInt(envelope?["error"] as JsonObject, "code");
+            if (success != false || code is null)
+            {
+                return new DownloadTaskFileCreateTransportResult(
+                    DownloadTaskFileCreateTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "download-station.create.file.response-unverified");
+            }
+            return ConfirmedDownloadTaskFileCreateFailure(code);
+        }
+    }
+
     public async Task<FileShareLinkTransportResult> CreateFileShareLinkAsync(
         NasProfile profile,
         DsmSession session,
@@ -1683,6 +1842,28 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             ? result
             : null;
 
+    private static string? StableJsonString(JsonNode? node)
+    {
+        if (node is not JsonValue value)
+        {
+            return null;
+        }
+        if (value.TryGetValue<string>(out var text))
+        {
+            var trimmed = text.Trim();
+            return trimmed.Length == 0 ? null : trimmed;
+        }
+        if (value.TryGetValue<long>(out var longValue))
+        {
+            return longValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        if (value.TryGetValue<int>(out var intValue))
+        {
+            return intValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return null;
+    }
+
     private static bool IsSafeWebApiPath(string path) =>
         !string.IsNullOrWhiteSpace(path) &&
         !Uri.TryCreate(path, UriKind.Absolute, out _) &&
@@ -1750,6 +1931,24 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             FileUploadTransportStatus.ConfirmedFailure,
             category,
             diagnostic);
+    }
+
+    private static DownloadTaskFileCreateTransportResult ConfirmedDownloadTaskFileCreateFailure(int? code)
+    {
+        var category = code switch
+        {
+            105 or 115 => MutationErrorCategory.Permission,
+            106 or 107 or 119 => MutationErrorCategory.Authentication,
+            1805 => MutationErrorCategory.Conflict,
+            _ => MutationErrorCategory.Server,
+        };
+        var diagnostic = code is >= 100 and <= 9999
+            ? $"download-station.create.file.dsm-{code}"
+            : "download-station.create.file.dsm-failure";
+        return new DownloadTaskFileCreateTransportResult(
+            DownloadTaskFileCreateTransportStatus.ConfirmedFailure,
+            ErrorCategory: category,
+            DiagnosticTag: diagnostic);
     }
 
     private Task<JsonObject> PostAsync(

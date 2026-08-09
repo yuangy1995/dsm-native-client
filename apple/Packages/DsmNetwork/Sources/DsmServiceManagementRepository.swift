@@ -126,15 +126,6 @@ private enum ServiceJSON: Decodable, Sendable {
     }
 }
 
-private struct ServiceVoidEnvelope: Decodable {
-    struct Failure: Decodable {
-        let code: Int
-    }
-
-    let success: Bool
-    let error: Failure?
-}
-
 private enum SupplementaryServiceResult: Sendable {
     case available(ServiceJSON)
     case unavailable
@@ -170,9 +161,14 @@ private struct DownloadTaskCreateReview: Sendable {
     let destination: String?
 }
 
+private enum DownloadTaskCreateSource: Sendable {
+    case uri(String)
+    case file(URL, unzipPassword: String?)
+}
+
 private struct PreparedDownloadTaskCreateRequest: Sendable {
     let key: DownloadTaskCreateKey
-    let uri: String
+    let source: DownloadTaskCreateSource
     let destination: String?
 }
 
@@ -289,6 +285,18 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
+    public func createDownloadTaskFileResult(
+        _ request: DownloadTaskFileCreateRequest
+    ) async throws -> DownloadTaskCreateOutcome {
+        let validation = try Self.validatedDownloadFileCreateRequest(request)
+        switch validation {
+        case .failure(let outcome):
+            return outcome
+        case .success(let prepared):
+            return try await performDownloadTaskCreate(prepared)
+        }
+    }
+
     public func createDownloadTask(
         fileURL: URL,
         destination: String?,
@@ -301,10 +309,6 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 safeUserMessage: L10n.string("shared.8308afa6a7f31906")
             )
         }
-        guard let binaryTransport = transport as? any DsmBinaryHTTPTransport else {
-            throw unavailableError()
-        }
-
         let normalizedURL = fileURL.standardizedFileURL
         let allowedExtensions = ["torrent", "nzb", "txt"]
         guard normalizedURL.isFileURL,
@@ -328,75 +332,11 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             throw validationError(L10n.string("shared.799f04c59bdac5e7"))
         }
 
-        guard let capability = capabilities[DsmAPIName.downloadStationTask],
-              capability.selectedVersion != nil else {
-            throw unavailableError()
-        }
-        let boundary = "LanStashDownload-\(UUID().uuidString)"
-        var multipartFields: [String: String] = [:]
-        if let destination = Self.nonEmpty(destination) {
-            multipartFields["destination"] = destination
-        }
-        if let unzipPassword = Self.nonEmpty(unzipPassword) {
-            multipartFields["unzip_password"] = unzipPassword
-        }
-        let bodyURL = try createDownloadMultipartBody(
-            localURL: normalizedURL,
-            boundary: boundary,
-            fields: multipartFields
+        _ = try await callOfficialDownloadTaskV1FileCreate(
+            fileURL: normalizedURL,
+            destination: destination,
+            unzipPassword: unzipPassword
         )
-        defer { try? FileManager.default.removeItem(at: bodyURL) }
-
-        var endpoint = apiURL(path: capability.path)
-        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
-            throw validationError(L10n.string("shared.6a5dbf096a38ba4f"))
-        }
-        let queryItems = [
-            URLQueryItem(name: "api", value: capability.name),
-            URLQueryItem(name: "version", value: String(capability.selectedVersion ?? 1)),
-            URLQueryItem(name: "method", value: "create")
-        ]
-        components.queryItems = queryItems
-        guard let resolvedEndpoint = components.url else {
-            throw validationError(L10n.string("shared.6a5dbf096a38ba4f"))
-        }
-        endpoint = resolvedEndpoint
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue(
-            "multipart/form-data; boundary=\(boundary)",
-            forHTTPHeaderField: "Content-Type"
-        )
-        if let cookie = credential.cookieHeaderValue {
-            request.setValue(cookie, forHTTPHeaderField: "Cookie")
-        }
-        if let synoToken = credential.synoToken, !synoToken.isEmpty {
-            request.setValue(synoToken, forHTTPHeaderField: "X-SYNO-TOKEN")
-        }
-        let bodySize = try bodyURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        request.setValue(String(bodySize), forHTTPHeaderField: "Content-Length")
-
-        let response = try await binaryTransport.upload(request, from: bodyURL) { _, _ in }
-        guard (200..<300).contains(response.statusCode),
-              let envelope = try? JSONDecoder().decode(ServiceVoidEnvelope.self, from: response.data)
-        else {
-            throw AppError(
-                category: .invalidResponse,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
-            )
-        }
-        if let code = envelope.error?.code {
-            throw DsmErrorMapper.map(.api(code: code, requestID: UUID()))
-        }
-        guard envelope.success else {
-            throw AppError(
-                category: .invalidResponse,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
-            )
-        }
     }
 
     public func loadDownloadStationSettings() async throws -> DownloadStationSettings {
@@ -2320,6 +2260,98 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
+    private func callOfficialDownloadTaskV1FileCreate(
+        fileURL: URL,
+        destination: String?,
+        unzipPassword: String?
+    ) async throws -> ServiceJSON {
+        guard let capability = officialDownloadTaskV1Capability(),
+              let binaryTransport = transport as? any DsmBinaryHTTPTransport else {
+            throw unavailableError()
+        }
+
+        let accessed = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let boundary = "LanStashDownload-\(UUID().uuidString)"
+        var multipartFields: [String: String] = [:]
+        if let destination = Self.nonEmpty(destination) {
+            multipartFields["destination"] = destination
+        }
+        if let unzipPassword = Self.nonEmpty(unzipPassword) {
+            multipartFields["unzip_password"] = unzipPassword
+        }
+        let bodyURL = try createDownloadMultipartBody(
+            localURL: fileURL,
+            boundary: boundary,
+            fields: multipartFields
+        )
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+
+        var endpoint = apiURL(path: capability.path)
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            throw validationError(L10n.string("shared.6a5dbf096a38ba4f"))
+        }
+        components.queryItems = [
+            URLQueryItem(name: "api", value: capability.name),
+            URLQueryItem(name: "version", value: "1"),
+            URLQueryItem(name: "method", value: "create")
+        ]
+        guard let resolvedEndpoint = components.url else {
+            throw validationError(L10n.string("shared.6a5dbf096a38ba4f"))
+        }
+        endpoint = resolvedEndpoint
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue(
+            "multipart/form-data; boundary=\(boundary)",
+            forHTTPHeaderField: "Content-Type"
+        )
+        if let cookie = credential.cookieHeaderValue {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
+        if let synoToken = credential.synoToken, !synoToken.isEmpty {
+            request.setValue(synoToken, forHTTPHeaderField: "X-SYNO-TOKEN")
+        }
+        let bodySize = try bodyURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        request.setValue(String(bodySize), forHTTPHeaderField: "Content-Length")
+
+        let response = try await binaryTransport.upload(request, from: bodyURL) { _, _ in }
+        guard (200..<300).contains(response.statusCode) else {
+            throw AppError(
+                category: .invalidResponse,
+                isRetryable: true,
+                safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+            )
+        }
+        let envelope: ServiceJSON
+        do {
+            envelope = try JSONDecoder().decode(ServiceJSON.self, from: response.data)
+        } catch {
+            throw AppError(
+                category: .invalidResponse,
+                isRetryable: true,
+                safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+            )
+        }
+        if let code = envelope["error"]?.firstInteger(["code"]) {
+            throw DsmErrorMapper.map(.api(code: Int(code), requestID: UUID()))
+        }
+        guard envelope.firstBoolean(["success"]) == true else {
+            throw AppError(
+                category: .invalidResponse,
+                isRetryable: true,
+                safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+            )
+        }
+        return envelope["data"] ?? .object([:])
+    }
+
     private func callOfficialDownloadTaskV1Void(
         method: String,
         parameters: [String: DsmParameterValue]
@@ -2374,9 +2406,87 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                     values: [normalizedURI, normalizedDestination ?? ""]
                 )
             ),
-            uri: normalizedURI,
+            source: .uri(normalizedURI),
             destination: normalizedDestination
         ))
+    }
+
+    private static func validatedDownloadFileCreateRequest(
+        _ request: DownloadTaskFileCreateRequest
+    ) throws -> DownloadTaskCreateValidation {
+        let normalizedURL = request.fileURL.standardizedFileURL
+        let normalizedDestination = Self.nonEmpty(request.destination)
+        let normalizedPassword = Self.nonEmpty(request.unzipPassword)
+        let allowedExtensions = ["torrent", "nzb", "txt"]
+        guard normalizedURL.isFileURL,
+              allowedExtensions.contains(normalizedURL.pathExtension.lowercased()),
+              normalizedDestination?.contains(where: \.isNewline) != true,
+              normalizedDestination?.contains("\0") != true,
+              normalizedPassword?.contains(where: \.isNewline) != true,
+              normalizedPassword?.contains("\0") != true else {
+            return .failure(try downloadCreateOutcome(
+                status: .confirmedFailure,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .validation,
+                tag: "download-task.create.invalid-file"
+            ))
+        }
+
+        let accessed = normalizedURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                normalizedURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        do {
+            let values = try normalizedURL.resourceValues(
+                forKeys: [.isRegularFileKey, .isReadableKey, .fileSizeKey]
+            )
+            guard values.isRegularFile == true,
+                  values.isReadable != false,
+                  (values.fileSize ?? 0) <= 100 * 1_024 * 1_024 else {
+                return .failure(try downloadCreateOutcome(
+                    status: .confirmedFailure,
+                    taskID: nil,
+                    task: nil,
+                    submitted: false,
+                    requiresRefresh: false,
+                    counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                    errorCategory: .validation,
+                    tag: "download-task.create.invalid-file"
+                ))
+            }
+            return .success(PreparedDownloadTaskCreateRequest(
+                key: DownloadTaskCreateKey(
+                    digest: Self.downloadCreateDigest(
+                        kind: "file",
+                        values: [
+                            normalizedURL.lastPathComponent,
+                            String(values.fileSize ?? 0),
+                            normalizedDestination ?? "",
+                            normalizedPassword ?? ""
+                        ]
+                    )
+                ),
+                source: .file(normalizedURL, unzipPassword: normalizedPassword),
+                destination: normalizedDestination
+            ))
+        } catch {
+            return .failure(try downloadCreateOutcome(
+                status: .confirmedFailure,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .validation,
+                tag: "download-task.create.invalid-file"
+            ))
+        }
     }
 
     private func performDownloadTaskCreate(
@@ -2468,16 +2578,9 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             )
         }
 
-        var parameters: [String: DsmParameterValue] = ["uri": .string(request.uri)]
-        if let destination = request.destination {
-            parameters["destination"] = .string(destination)
-        }
         let response: ServiceJSON
         do {
-            response = try await callOfficialDownloadTaskV1(
-                method: "create",
-                parameters: parameters
-            )
+            response = try await submitDownloadTaskCreate(request)
         } catch let error as AppError where error.category == .permissionDenied {
             return try Self.downloadCreateOutcome(
                 status: .permissionDenied,
@@ -2527,6 +2630,28 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             review,
             statusIfUnconfirmed: .submittedButUnverified
         )
+    }
+
+    private func submitDownloadTaskCreate(
+        _ request: PreparedDownloadTaskCreateRequest
+    ) async throws -> ServiceJSON {
+        switch request.source {
+        case .uri(let uri):
+            var parameters: [String: DsmParameterValue] = ["uri": .string(uri)]
+            if let destination = request.destination {
+                parameters["destination"] = .string(destination)
+            }
+            return try await callOfficialDownloadTaskV1(
+                method: "create",
+                parameters: parameters
+            )
+        case .file(let fileURL, let unzipPassword):
+            return try await callOfficialDownloadTaskV1FileCreate(
+                fileURL: fileURL,
+                destination: request.destination,
+                unzipPassword: unzipPassword
+            )
+        }
     }
 
     private func finishDownloadCreateReview(

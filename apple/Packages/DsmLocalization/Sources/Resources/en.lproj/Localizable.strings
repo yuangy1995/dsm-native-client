@@ -2963,6 +2963,11 @@
 "mobile.downloads.read-only.notice" = "Download tasks run on your NAS. You can add a link, pause or resume one task, and delete one task without removing downloaded files.";
 "mobile.downloads.create.action" = "Add Link";
 "mobile.downloads.create.action.hint" = "Create a Download Station task from a URL or magnet link";
+"mobile.downloads.create.menu" = "Add Task";
+"mobile.downloads.create.menu.hint" = "Create a Download Station task from a link or task file";
+"mobile.downloads.create.link.action" = "Add Link";
+"mobile.downloads.create.file.action" = "Import Task File";
+"mobile.downloads.create.file.action.hint" = "Choose a .torrent, .nzb, or .txt file to create a Download Station task.";
 "mobile.downloads.create.title" = "Add Download Link";
 "mobile.downloads.create.url.label" = "URL or magnet link";
 "mobile.downloads.create.url.placeholder" = "Paste a URL or magnet link";
@@ -2984,8 +2989,8 @@
 "mobile.downloads.create.conflict.message" = "Refresh Download Station and check the task list before trying again.";
 "mobile.downloads.create.permission.title" = "You don’t have permission";
 "mobile.downloads.create.permission.message" = "Ask an administrator for access, then refresh Download Station.";
-"mobile.downloads.create.unsupported.title" = "This link can’t be added here";
-"mobile.downloads.create.unsupported.message" = "Use Download Station in DSM for this link or NAS.";
+"mobile.downloads.create.unsupported.title" = "This task can’t be added here";
+"mobile.downloads.create.unsupported.message" = "Use Download Station in DSM for this task or NAS.";
 "mobile.downloads.create.failure.title" = "Couldn’t create the task";
 "mobile.downloads.create.failure.message" = "Check the connection and refresh Download Station before trying again.";
 "mobile.downloads.control.section" = "Task controls";

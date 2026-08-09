@@ -1,11 +1,13 @@
 import DsmCore
 import DsmLocalization
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct MobileDownloadsView: View {
     @Bindable var model: MobileAppModel
     @State private var selectedTask: DownloadStationTask?
     @State private var isShowingCreateTask = false
+    @State private var isImportingTaskFile = false
 
     var body: some View {
         MobilePageStateView(
@@ -31,13 +33,39 @@ struct MobileDownloadsView: View {
         .sheet(isPresented: $isShowingCreateTask) {
             MobileDownloadCreateTaskView(model: model)
         }
+        .fileImporter(
+            isPresented: $isImportingTaskFile,
+            allowedContentTypes: mobileDownloadTaskFileTypes,
+            allowsMultipleSelection: false,
+            onCompletion: handleTaskFileImport
+        )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    isShowingCreateTask = true
+                Menu {
+                    Button {
+                        isShowingCreateTask = true
+                    } label: {
+                        Label(
+                            L10n.string("mobile.downloads.create.link.action"),
+                            systemImage: "link"
+                        )
+                    }
+                    .disabled(!model.canCreateDownloadTask)
+                    .accessibilityHint(L10n.string("mobile.downloads.create.action.hint"))
+
+                    Button {
+                        isImportingTaskFile = true
+                    } label: {
+                        Label(
+                            L10n.string("mobile.downloads.create.file.action"),
+                            systemImage: "doc.badge.plus"
+                        )
+                    }
+                    .disabled(!model.canCreateDownloadTask)
+                    .accessibilityHint(L10n.string("mobile.downloads.create.file.action.hint"))
                 } label: {
                     Label(
-                        L10n.string("mobile.downloads.create.action"),
+                        L10n.string("mobile.downloads.create.menu"),
                         systemImage: "plus"
                     )
                 }
@@ -46,7 +74,7 @@ struct MobileDownloadsView: View {
                     minWidth: MobileMetrics.minimumTouchTarget,
                     minHeight: MobileMetrics.minimumTouchTarget
                 )
-                .accessibilityHint(L10n.string("mobile.downloads.create.action.hint"))
+                .accessibilityHint(L10n.string("mobile.downloads.create.menu.hint"))
             }
         }
     }
@@ -61,6 +89,12 @@ struct MobileDownloadsView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .accessibilityElement(children: .combine)
+            }
+
+            if let feedback = model.downloadCreateFeedback {
+                Section {
+                    DownloadCreateFeedbackView(model: model, feedback: feedback)
+                }
             }
 
             Section {
@@ -79,7 +113,27 @@ struct MobileDownloadsView: View {
         }
         .listStyle(.insetGrouped)
     }
+
+    private func handleTaskFileImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result,
+              let url = urls.first else {
+            return
+        }
+        model.createDownloadTask(fileURL: url)
+    }
 }
+
+private let mobileDownloadTaskFileTypes: [UTType] = {
+    var types = [
+        UTType(filenameExtension: "torrent"),
+        UTType(filenameExtension: "nzb"),
+        UTType(filenameExtension: "txt")
+    ].compactMap { $0 }
+    if !types.contains(.plainText) {
+        types.append(.plainText)
+    }
+    return types
+}()
 
 private struct MobileDownloadCreateTaskView: View {
     @Bindable var model: MobileAppModel

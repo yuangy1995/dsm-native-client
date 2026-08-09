@@ -36,6 +36,23 @@ public interface IDownloadStationRepository
             null,
             null));
 
+    Task<DownloadTaskCreateOutcome> CreateTaskFromFileAsync(
+        DownloadTaskFileCreateRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new DownloadTaskCreateOutcome(
+            new MutationResult(
+                1,
+                MutationResultStatus.Unsupported,
+                "downloadCreate",
+                submitted: false,
+                requiresRefresh: false,
+                new MutationResultCounts(0, 1, 0),
+                MutationErrorCategory.Unsupported,
+                "download-station.create.unsupported",
+                "download-station.create.unsupported"),
+            null,
+            null));
+
     Task<DownloadTaskDeleteOutcome> DeleteTaskAsync(
         DownloadTaskDeleteRequest request,
         CancellationToken cancellationToken = default) =>

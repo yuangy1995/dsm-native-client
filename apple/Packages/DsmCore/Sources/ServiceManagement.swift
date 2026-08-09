@@ -152,6 +152,18 @@ public struct DownloadTaskCreateRequest: Equatable, Sendable {
     }
 }
 
+public struct DownloadTaskFileCreateRequest: Equatable, Sendable {
+    public let fileURL: URL
+    public let destination: String?
+    public let unzipPassword: String?
+
+    public init(fileURL: URL, destination: String?, unzipPassword: String? = nil) {
+        self.fileURL = fileURL
+        self.destination = destination
+        self.unzipPassword = unzipPassword
+    }
+}
+
 public struct DownloadTaskCreateOutcome: Equatable, Sendable {
     public let result: MutationResult
     public let taskID: String?
@@ -566,6 +578,9 @@ public protocol ServiceManagementRepository: Sendable {
     func createDownloadTaskResult(
         _ request: DownloadTaskCreateRequest
     ) async throws -> DownloadTaskCreateOutcome
+    func createDownloadTaskFileResult(
+        _ request: DownloadTaskFileCreateRequest
+    ) async throws -> DownloadTaskCreateOutcome
     func createDownloadTask(
         fileURL: URL,
         destination: String?,
@@ -613,6 +628,25 @@ public protocol ServiceManagementRepository: Sendable {
 public extension ServiceManagementRepository {
     func createDownloadTaskResult(
         _ request: DownloadTaskCreateRequest
+    ) async throws -> DownloadTaskCreateOutcome {
+        try DownloadTaskCreateOutcome(
+            result: MutationResult(
+                status: .unsupported,
+                operation: "downloadCreate",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                localizationKey: "download-task.create.unsupported",
+                diagnosticTag: "download-task.create.unsupported"
+            ),
+            taskID: nil,
+            task: nil
+        )
+    }
+
+    func createDownloadTaskFileResult(
+        _ request: DownloadTaskFileCreateRequest
     ) async throws -> DownloadTaskCreateOutcome {
         try DownloadTaskCreateOutcome(
             result: MutationResult(

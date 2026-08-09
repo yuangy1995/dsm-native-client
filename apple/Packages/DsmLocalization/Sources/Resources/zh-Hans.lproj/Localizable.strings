@@ -2963,6 +2963,11 @@
 "mobile.downloads.read-only.notice" = "下载任务在 NAS 上运行。你可以添加链接、一次暂停或继续一个任务，并删除一个任务且不移除已下载文件。";
 "mobile.downloads.create.action" = "添加链接";
 "mobile.downloads.create.action.hint" = "通过网址或磁力链接创建 Download Station 任务";
+"mobile.downloads.create.menu" = "添加任务";
+"mobile.downloads.create.menu.hint" = "通过链接或任务文件创建 Download Station 任务";
+"mobile.downloads.create.link.action" = "添加链接";
+"mobile.downloads.create.file.action" = "导入任务文件";
+"mobile.downloads.create.file.action.hint" = "选择 .torrent、.nzb 或 .txt 文件创建 Download Station 任务。";
 "mobile.downloads.create.title" = "添加下载链接";
 "mobile.downloads.create.url.label" = "网址或磁力链接";
 "mobile.downloads.create.url.placeholder" = "粘贴网址或磁力链接";
@@ -2984,8 +2989,8 @@
 "mobile.downloads.create.conflict.message" = "请刷新 Download Station 并核对任务列表后再试。";
 "mobile.downloads.create.permission.title" = "你没有所需权限";
 "mobile.downloads.create.permission.message" = "请联系管理员获取权限，然后刷新 Download Station。";
-"mobile.downloads.create.unsupported.title" = "无法在这里添加此链接";
-"mobile.downloads.create.unsupported.message" = "请在 DSM 的 Download Station 中处理此链接或 NAS。";
+"mobile.downloads.create.unsupported.title" = "无法在这里添加此任务";
+"mobile.downloads.create.unsupported.message" = "请在 DSM 的 Download Station 中处理此任务或 NAS。";
 "mobile.downloads.create.failure.title" = "无法创建任务";
 "mobile.downloads.create.failure.message" = "请检查连接并刷新 Download Station 后再试。";
 "mobile.downloads.control.section" = "任务控制";

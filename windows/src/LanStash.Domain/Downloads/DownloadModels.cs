@@ -146,10 +146,92 @@ public sealed record DownloadTaskCreateRequest(
     string Uri,
     string? Destination);
 
+/// <summary>
+/// Download Station 任务文件创建请求。调用方拥有并负责关闭 Content。
+/// </summary>
+public sealed class DownloadTaskFileCreateRequest
+{
+    public const long MaximumLength = 100L * 1024 * 1024;
+
+    public Guid ProfileId { get; }
+    public Stream Content { get; }
+    public long Length { get; }
+    public string FileName { get; }
+    public string? Destination { get; }
+
+    public DownloadTaskFileCreateRequest(
+        Guid profileId,
+        Stream content,
+        long length,
+        string fileName,
+        string? destination)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (!content.CanRead)
+        {
+            throw new ArgumentException("download.create.file.stream_not_readable", nameof(content));
+        }
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (length > MaximumLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), "download.create.file.too_large");
+        }
+        if (!IsValidTaskFileName(fileName))
+        {
+            throw new ArgumentException("download.create.file.invalid_name", nameof(fileName));
+        }
+        var normalizedDestination = string.IsNullOrWhiteSpace(destination)
+            ? null
+            : destination.Trim();
+        if (normalizedDestination is not null &&
+            (normalizedDestination.Length == 0 || normalizedDestination.Any(char.IsControl)))
+        {
+            throw new ArgumentException("download.create.file.invalid_destination", nameof(destination));
+        }
+
+        ProfileId = profileId;
+        Content = content;
+        Length = length;
+        FileName = fileName.Trim();
+        Destination = normalizedDestination;
+    }
+
+    public override string ToString() => nameof(DownloadTaskFileCreateRequest);
+
+    private static bool IsValidTaskFileName(string value)
+    {
+        var fileName = value.Trim();
+        if (fileName.Length == 0 ||
+            fileName is "." or ".." ||
+            fileName.IndexOfAny(['/', '\\', '\r', '\n', '\0']) >= 0)
+        {
+            return false;
+        }
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        return extension is ".torrent" or ".nzb" or ".txt";
+    }
+}
+
 public sealed record DownloadTaskCreateOutcome(
     MutationResult Result,
     string? TaskId,
     DownloadTask? Task);
+
+public enum DownloadTaskFileCreateTransportStatus
+{
+    Accepted,
+    ConfirmedFailure,
+    CancelledBeforeSubmission,
+    CancellationRequestedAfterSubmission,
+    SubmittedButUnverified,
+    Unsupported,
+}
+
+public sealed record DownloadTaskFileCreateTransportResult(
+    DownloadTaskFileCreateTransportStatus Status,
+    string? TaskId = null,
+    MutationErrorCategory? ErrorCategory = null,
+    string? DiagnosticTag = null);
 
 public sealed record DownloadTaskDeleteRequest(
     Guid ProfileId,

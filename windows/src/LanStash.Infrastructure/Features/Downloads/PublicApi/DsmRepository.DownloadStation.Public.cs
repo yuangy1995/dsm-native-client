@@ -1100,6 +1100,22 @@ public sealed partial class DsmRepository
                 session.ProfileId,
                 session.Sid,
                 DownloadCreateDigest("uri", uri, destination ?? string.Empty));
+
+        public static DownloadTaskCreateReviewKey FromFile(
+            Guid profileId,
+            DsmSession session,
+            string fileName,
+            long length,
+            string? destination) =>
+            new(
+                profileId,
+                session.ProfileId,
+                session.Sid,
+                DownloadCreateDigest(
+                    "file",
+                    fileName,
+                    length.ToString(CultureInfo.InvariantCulture),
+                    destination ?? string.Empty));
     }
 
     private sealed record DownloadTaskCreateReview(

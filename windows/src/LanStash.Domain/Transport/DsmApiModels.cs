@@ -245,4 +245,16 @@ public interface IDsmApiClient
             FileUploadTransportStatus.Unsupported,
             MutationErrorCategory.Unsupported,
             "file.upload.unsupported"));
+
+    Task<DownloadTaskFileCreateTransportResult> CreateDownloadTaskFromFileAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        DownloadTaskFileCreateRequest request,
+        IProgress<long>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new DownloadTaskFileCreateTransportResult(
+            DownloadTaskFileCreateTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "download-station.create.file.unsupported"));
 }

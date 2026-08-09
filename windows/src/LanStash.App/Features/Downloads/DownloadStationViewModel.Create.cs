@@ -136,6 +136,97 @@ public sealed partial class DownloadStationViewModel
         }
     }
 
+    public async Task CreateTaskFromFileAsync(string? filePath)
+    {
+        ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(filePath) ||
+            _repository is not { Availability.Status: DownloadStationAvailabilityStatus.Available } repository ||
+            CurrentProfile is not { } profile)
+        {
+            return;
+        }
+
+        var request = BeginCreate();
+        IsCreatingTask = true;
+        SetCreateNotice(
+            DownloadTaskCreateNoticeKind.InProgress,
+            "DownloadStationCreateInProgressTitle",
+            "DownloadStationCreateInProgressMessage");
+        try
+        {
+            var fileInfo = new FileInfo(filePath);
+            await using var stream = fileInfo.OpenRead();
+            var outcome = await repository.CreateTaskFromFileAsync(
+                new DownloadTaskFileCreateRequest(
+                    repository.ProfileId,
+                    stream,
+                    fileInfo.Length,
+                    fileInfo.Name,
+                    DestinationForCreate(profile)),
+                request.Cancellation.Token);
+            if (!IsCurrentCreate(request.Generation, repository))
+            {
+                return;
+            }
+
+            ApplyCreateOutcome(profile, outcome);
+            if (outcome.Result.Status == MutationResultStatus.ConfirmedSuccess)
+            {
+                await LoadFirstPageAsync(profile, preserveContentOnFailure: true);
+            }
+        }
+        catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
+        {
+        }
+        catch (ArgumentException)
+        {
+            if (IsCurrentCreate(request.Generation, repository))
+            {
+                SetCreateNotice(
+                    DownloadTaskCreateNoticeKind.Unsupported,
+                    "DownloadStationCreateUnsupportedTitle",
+                    "DownloadStationCreateUnsupportedMessage");
+            }
+        }
+        catch (IOException)
+        {
+            if (IsCurrentCreate(request.Generation, repository))
+            {
+                SetCreateNotice(
+                    DownloadTaskCreateNoticeKind.Failure,
+                    "DownloadStationCreateFailureTitle",
+                    "DownloadStationCreateFailureMessage");
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            if (IsCurrentCreate(request.Generation, repository))
+            {
+                SetCreateNotice(
+                    DownloadTaskCreateNoticeKind.Failure,
+                    "DownloadStationCreateFailureTitle",
+                    "DownloadStationCreateFailureMessage");
+            }
+        }
+        catch
+        {
+            if (IsCurrentCreate(request.Generation, repository))
+            {
+                SetCreateNotice(
+                    DownloadTaskCreateNoticeKind.NeedsReview,
+                    "DownloadStationCreateReviewTitle",
+                    "DownloadStationCreateReviewMessage");
+            }
+        }
+        finally
+        {
+            if (IsCurrentCreate(request.Generation, repository))
+            {
+                IsCreatingTask = false;
+            }
+        }
+    }
+
     private (long Generation, CancellationTokenSource Cancellation) BeginCreate()
     {
         CancelCreate();

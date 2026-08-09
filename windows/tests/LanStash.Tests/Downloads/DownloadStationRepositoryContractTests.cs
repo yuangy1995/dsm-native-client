@@ -509,6 +509,117 @@ public sealed class DownloadStationRepositoryContractTests
     }
 
     [Fact]
+    public async Task CreateFileUsesOfficialTaskV1FileTransportAndRequiresStableTaskReadback()
+    {
+        var listPages = new Queue<JsonObject>(new[]
+        {
+            EmptyPage(),
+            Page(0, 1, TaskItem("created-file", "waiting")),
+        });
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "list" => listPages.Dequeue(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        api.FileCreateResults.Enqueue(new DownloadTaskFileCreateTransportResult(
+            DownloadTaskFileCreateTransportStatus.Accepted,
+            TaskId: "created-file",
+            DiagnosticTag: "download-station.create.file.accepted"));
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi, 1, 9),
+            Capability("SYNO.DownloadStation2.Task", 1, 2));
+        await using var content = new MemoryStream([0x64, 0x38, 0x3A, 0x61]);
+
+        var outcome = await repository.CreateTaskFromFileAsync(new(
+            ProfileId,
+            content,
+            content.Length,
+            "synthetic.torrent",
+            "/synthetic"));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, outcome.Result.Status);
+        Assert.Equal("downloadCreate", outcome.Result.Operation);
+        Assert.Equal("created-file", outcome.TaskId);
+        Assert.Equal("created-file", outcome.Task!.Id);
+        var fileRequest = Assert.Single(api.FileCreateRequests);
+        Assert.Equal(ProfileId, fileRequest.ProfileId);
+        Assert.Equal("synthetic.torrent", fileRequest.FileName);
+        Assert.Equal(4, fileRequest.Length);
+        Assert.Equal("/synthetic", fileRequest.Destination);
+        Assert.Collection(
+            api.Requests,
+            request => Assert.Equal("list", request.Method),
+            request => Assert.Equal("list", request.Method));
+        Assert.DoesNotContain(
+            api.Requests,
+            request => string.Equals(request.ApiName, "SYNO.DownloadStation2.Task", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CreateFilePostSubmitCancellationStoresReviewAndSecondCallDoesNotUploadAgain()
+    {
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "list" => EmptyPage(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        api.FileCreateResults.Enqueue(new DownloadTaskFileCreateTransportResult(
+            DownloadTaskFileCreateTransportStatus.CancellationRequestedAfterSubmission,
+            ErrorCategory: MutationErrorCategory.Network,
+            DiagnosticTag: "download-station.create.file.cancelled-after-submit"));
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi));
+        await using var content = new MemoryStream([0x64, 0x38, 0x3A, 0x61]);
+        var request = new DownloadTaskFileCreateRequest(
+            ProfileId,
+            content,
+            content.Length,
+            "synthetic.torrent",
+            null);
+
+        var first = await repository.CreateTaskFromFileAsync(request);
+        var second = await repository.CreateTaskFromFileAsync(request);
+
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
+        Assert.True(first.Result.RequiresRefresh);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
+        Assert.Single(api.FileCreateRequests);
+        Assert.Equal(1, api.Requests.Count(item => item.Method == "list"));
+    }
+
+    [Fact]
+    public async Task CreateFileTransportThrowAfterBoundaryStoresReviewAndSecondCallDoesNotUploadAgain()
+    {
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "list" => EmptyPage(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        api.FileCreateResults.Enqueue(new InvalidOperationException("after synthetic submit"));
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi));
+        await using var content = new MemoryStream([0x64, 0x38, 0x3A, 0x61]);
+        var request = new DownloadTaskFileCreateRequest(
+            ProfileId,
+            content,
+            content.Length,
+            "synthetic.torrent",
+            null);
+
+        var first = await repository.CreateTaskFromFileAsync(request);
+        var second = await repository.CreateTaskFromFileAsync(request);
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.True(first.Result.RequiresRefresh);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
+        Assert.Single(api.FileCreateRequests);
+        Assert.Equal(1, api.Requests.Count(item => item.Method == "list"));
+    }
+
+    [Fact]
     public async Task DeleteTaskUsesOfficialTaskV1WithoutRemovingDownloadedDataAndRequiresDisappearance()
     {
         var listPages = new Queue<JsonObject>(new[]
@@ -691,6 +802,8 @@ public sealed class DownloadStationRepositoryContractTests
         Func<DownloadApiRequest, JsonObject> response) : IDsmApiClient
     {
         public List<DownloadApiRequest> Requests { get; } = [];
+        public Queue<object> FileCreateResults { get; } = [];
+        public List<DownloadTaskFileCreateRequest> FileCreateRequests { get; } = [];
 
         public Task<JsonObject> CallAsync(
             NasProfile profile,
@@ -710,6 +823,24 @@ public sealed class DownloadStationRepositoryContractTests
                     StringComparer.Ordinal));
             Requests.Add(request);
             return Task.FromResult(response(request));
+        }
+
+        public Task<DownloadTaskFileCreateTransportResult> CreateDownloadTaskFromFileAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            DownloadTaskFileCreateRequest request,
+            IProgress<long>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.Equal(PublicTaskApi, capability.Name);
+            Assert.Equal(1, capability.MinVersion);
+            Assert.True(capability.MaxVersion >= 1);
+            Assert.Equal(ProfileId, profile.Id);
+            Assert.Equal(ProfileId, session.ProfileId);
+            FileCreateRequests.Add(request);
+            return Result<DownloadTaskFileCreateTransportResult>(FileCreateResults.Dequeue());
         }
 
         public Uri GetBaseUri(NasProfile profile) => new("https://nas.invalid");
@@ -737,5 +868,13 @@ public sealed class DownloadStationRepositoryContractTests
             long offset,
             long length,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        private static Task<T> Result<T>(object value) => value switch
+        {
+            T result => Task.FromResult(result),
+            Task<T> task => task,
+            Exception error => Task.FromException<T>(error),
+            _ => throw new InvalidOperationException(value.GetType().Name),
+        };
     }
 }

@@ -320,6 +320,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
 
         RefreshButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsUnavailable;
         CreateTaskButton.IsEnabled = _viewModel.CanCreateTask;
+        CreateFileTaskButton.IsEnabled = _viewModel.CanCreateTask;
         DownloadCreateNotice.IsOpen = _viewModel.HasCreateNotice;
         DownloadCreateNotice.Severity = _viewModel.CreateNoticeKind switch
         {

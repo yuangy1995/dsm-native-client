@@ -35,8 +35,8 @@ public sealed class CertificateConnectionContextTests
         var api = Read("windows/src/LanStash.Infrastructure/DsmApiClient.cs");
         var quickConnect = Read("windows/src/LanStash.Infrastructure/DsmQuickConnectResolver.cs");
 
-        Assert.Equal(11, Count(api, "_http.SendAsync("));
-        Assert.Equal(7, Count(api, "SetNasConnectionContext(request, profile);"));
+        Assert.Equal(12, Count(api, "_http.SendAsync("));
+        Assert.Equal(8, Count(api, "SetNasConnectionContext(request, profile);"));
         Assert.Equal(2, Count(api, "WindowsCertificateTrustHandler.SetConnectionContext("));
         Assert.DoesNotContain("SetConnectionContext", quickConnect, StringComparison.Ordinal);
         foreach (var credential in new[] { "_sid", "SynoToken", "Cookie", "passwd" })

@@ -394,6 +394,51 @@ public sealed class DownloadStationViewModelTests
     }
 
     [Fact]
+    public async Task CreateFileUsesDefaultDestinationAddsConfirmedTaskAndDoesNotExposeLocalPath()
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(new DownloadStationSnapshot(
+            profile,
+            Page(0, 0, 0, null),
+            new(DownloadStationSectionStatus.Unavailable, null),
+            new(DownloadStationSectionStatus.Available, "/downloads")));
+        repository.FileCreateResults.Enqueue(CreateOutcome(
+            MutationResultStatus.ConfirmedSuccess,
+            submitted: true,
+            requiresRefresh: true,
+            task: Task("created-file", DownloadTaskState.Waiting)));
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(
+            0, 1, 1, null, Task("created-file", DownloadTaskState.Waiting))));
+        using var model = new DownloadStationViewModel();
+        var filePath = Path.Combine(
+            Path.GetTempPath(),
+            $"lanstash-{Guid.NewGuid():N}.torrent");
+        await File.WriteAllBytesAsync(filePath, [0x64, 0x38, 0x3A, 0x61]);
+        try
+        {
+            await model.ActivateAsync(repository);
+            await model.CreateTaskFromFileAsync(filePath);
+
+            var request = Assert.Single(repository.FileCreateRequests);
+            Assert.Equal(profile, request.ProfileId);
+            Assert.Equal("lanstash-", request.FileName[..9]);
+            Assert.EndsWith(".torrent", request.FileName, StringComparison.Ordinal);
+            Assert.Equal("/downloads", request.Destination);
+            Assert.Equal(4, request.Length);
+            Assert.Equal(DownloadTaskCreateNoticeKind.Success, model.CreateNoticeKind);
+            Assert.Equal("created-file", Assert.Single(model.Tasks).Id);
+            Assert.DoesNotContain(filePath, model.CreateNoticeTitle, StringComparison.Ordinal);
+            Assert.DoesNotContain(filePath, model.CreateNoticeMessage, StringComparison.Ordinal);
+            Assert.Equal(2, repository.SnapshotRequests.Count);
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
+    }
+
+    [Fact]
     public async Task DeleteTaskRemovesConfirmedTaskAndRefreshes()
     {
         var profile = Guid.NewGuid();
@@ -581,11 +626,13 @@ public sealed class DownloadStationViewModelTests
         public Queue<object> PageResults { get; } = new();
         public Queue<object> ControlResults { get; } = new();
         public Queue<object> CreateResults { get; } = new();
+        public Queue<object> FileCreateResults { get; } = new();
         public Queue<object> DeleteResults { get; } = new();
         public List<(int Offset, int Limit)> SnapshotRequests { get; } = [];
         public List<(int Offset, int Limit)> PageRequests { get; } = [];
         public List<DownloadTaskControlRequest> ControlRequests { get; } = [];
         public List<DownloadTaskCreateRequest> CreateRequests { get; } = [];
+        public List<DownloadTaskFileCreateRequest> FileCreateRequests { get; } = [];
         public List<DownloadTaskDeleteRequest> DeleteRequests { get; } = [];
         public List<CancellationToken> SnapshotTokens { get; } = [];
 
@@ -622,6 +669,14 @@ public sealed class DownloadStationViewModelTests
         {
             CreateRequests.Add(request);
             return Result<DownloadTaskCreateOutcome>(CreateResults.Dequeue());
+        }
+
+        public Task<DownloadTaskCreateOutcome> CreateTaskFromFileAsync(
+            DownloadTaskFileCreateRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            FileCreateRequests.Add(request);
+            return Result<DownloadTaskCreateOutcome>(FileCreateResults.Dequeue());
         }
 
         public Task<DownloadTaskDeleteOutcome> DeleteTaskAsync(

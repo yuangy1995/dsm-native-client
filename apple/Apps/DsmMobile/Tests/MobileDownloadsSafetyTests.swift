@@ -91,6 +91,58 @@ final class MobileDownloadsSafetyTests: XCTestCase {
     }
 
     @MainActor
+    func test任务文件创建成功会使用当前默认目标并插入确认任务() async throws {
+        let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = MobileAppModel(defaults: defaults)
+        let profile = try NasProfile(
+            displayName: "测试设备",
+            host: "nas.example.invalid",
+            port: 5_001
+        )
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mobile-task-\(UUID().uuidString).torrent")
+        try Data("d4:infod4:name4:testee".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        model.activeProfile = profile
+        model.downloadSnapshot = DownloadStationSnapshot(
+            source: .official,
+            tasks: [],
+            defaultDestination: "/downloads"
+        )
+        model.downloadStationCreateFileOverride = { request in
+            XCTAssertEqual(request.fileURL, fileURL)
+            XCTAssertEqual(request.destination, "/downloads")
+            XCTAssertNil(request.unzipPassword)
+            return try DownloadTaskCreateOutcome(
+                result: MutationResult(
+                    status: .confirmedSuccess,
+                    operation: "downloadCreate",
+                    submitted: true,
+                    requiresRefresh: true,
+                    counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0)
+                ),
+                taskID: "file-created-1",
+                task: DownloadStationTask(
+                    id: "file-created-1",
+                    title: "种子任务",
+                    status: "waiting",
+                    destination: "/downloads"
+                )
+            )
+        }
+
+        model.createDownloadTask(fileURL: fileURL)
+        for _ in 0..<50 where model.downloadCreateFeedback?.kind != .success {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(model.downloadCreateFeedback?.kind, .success)
+        XCTAssertEqual(model.downloadSnapshot?.tasks.first?.id, "file-created-1")
+    }
+
+    @MainActor
     func test单任务删除成功只移除任务且不删除已下载文件() async throws {
         let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -163,7 +215,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertEqual(model.downloadDeleteFeedback?.kind, .needsReview)
     }
 
-    func test下载页面和模型仅开放单链接创建单任务暂停继续和删除入口() throws {
+    func test下载页面和模型仅开放单链接和任务文件创建单任务暂停继续和删除入口() throws {
         let view = try sourceFile(
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
@@ -172,7 +224,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         )
 
         for forbidden in [
-            "createDownloadTask(fileURL", "controlDownloadTasks", "deleteDownloadTasks(",
+            "repository.createDownloadTask(fileURL:", "controlDownloadTasks", "deleteDownloadTasks(",
             "saveDownloadStationSettings", "removeData: true",
             "force_complete", "unzipPassword", "DownloadStation2"
         ] {
@@ -180,14 +232,22 @@ final class MobileDownloadsSafetyTests: XCTestCase {
             XCTAssertFalse(model.contains(forbidden), "Model: \(forbidden)")
         }
         XCTAssertTrue(view.contains("MobileDownloadCreateTaskView"))
+        XCTAssertTrue(view.contains(".fileImporter("))
+        XCTAssertTrue(view.contains("UTType(filenameExtension: \"torrent\")"))
+        XCTAssertTrue(view.contains("UTType(filenameExtension: \"nzb\")"))
+        XCTAssertTrue(view.contains("UTType(filenameExtension: \"txt\")"))
         XCTAssertTrue(view.contains("TextField("))
         XCTAssertTrue(view.contains("model.createDownloadTask(uri: uri)"))
+        XCTAssertTrue(view.contains("model.createDownloadTask(fileURL: url)"))
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .pause)"))
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .resume)"))
         XCTAssertTrue(view.contains("model.deleteDownloadTask(task)"))
         XCTAssertTrue(view.contains("confirmationDialog("))
         XCTAssertTrue(model.contains("createDownloadTask(uri rawURI: String)"))
+        XCTAssertTrue(model.contains("createDownloadTask(fileURL: URL)"))
         XCTAssertTrue(model.contains("DownloadTaskCreateRequest("))
+        XCTAssertTrue(model.contains("DownloadTaskFileCreateRequest("))
+        XCTAssertTrue(model.contains("createDownloadTaskFileResult(request)"))
         XCTAssertTrue(model.contains("controlDownloadTask(_ task: DownloadStationTask"))
         XCTAssertTrue(model.contains("DownloadTaskControlRequest(task: task, action: action)"))
         XCTAssertTrue(model.contains("deleteDownloadTask(_ task: DownloadStationTask)"))
@@ -222,6 +282,8 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(view.contains("mobile.downloads.read-only.notice"))
         XCTAssertTrue(view.contains("mobile.downloads.create.url.label"))
         XCTAssertTrue(view.contains("mobile.downloads.create.url.help"))
+        XCTAssertTrue(view.contains("mobile.downloads.create.file.action.hint"))
+        XCTAssertTrue(view.contains("mobile.downloads.create.menu.hint"))
         XCTAssertTrue(view.contains("interactiveDismissDisabled(model.isCreatingDownloadTask)"))
         XCTAssertTrue(view.contains("mobile.downloads.control.pause.hint"))
         XCTAssertTrue(view.contains("mobile.downloads.control.resume.hint"))
