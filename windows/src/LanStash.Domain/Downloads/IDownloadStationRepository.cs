@@ -35,4 +35,20 @@ public interface IDownloadStationRepository
                 "download-station.create.unsupported"),
             null,
             null));
+
+    Task<DownloadTaskDeleteOutcome> DeleteTaskAsync(
+        DownloadTaskDeleteRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new DownloadTaskDeleteOutcome(
+            new MutationResult(
+                1,
+                MutationResultStatus.Unsupported,
+                "downloadTaskDelete",
+                submitted: false,
+                requiresRefresh: false,
+                new MutationResultCounts(0, 1, 0),
+                MutationErrorCategory.Unsupported,
+                "download-station.delete.unsupported",
+                "download-station.delete.unsupported"),
+            request.Task.Id));
 }

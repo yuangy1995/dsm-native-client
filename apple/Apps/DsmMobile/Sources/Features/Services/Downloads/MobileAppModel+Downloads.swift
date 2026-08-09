@@ -35,6 +35,22 @@ struct MobileDownloadCreateFeedback: Equatable {
     let kind: MobileDownloadCreateFeedbackKind
 }
 
+enum MobileDownloadDeleteFeedbackKind: Equatable {
+    case inProgress
+    case success
+    case needsReview
+    case cancelled
+    case conflict
+    case permission
+    case unsupported
+    case failure
+}
+
+struct MobileDownloadDeleteFeedback: Equatable {
+    let taskID: String
+    let kind: MobileDownloadDeleteFeedbackKind
+}
+
 extension MobileAppModel {
     var downloadPageState: MobilePageState {
         if isLoading, downloadSnapshot == nil {
@@ -52,6 +68,10 @@ extension MobileAppModel {
 
     var isCreatingDownloadTask: Bool {
         downloadCreateTask != nil
+    }
+
+    var isDeletingDownloadTask: Bool {
+        downloadDeleteTaskID != nil
     }
 
     var canCreateDownloadTask: Bool {
@@ -81,6 +101,11 @@ extension MobileAppModel {
         downloadCreateTask?.cancel()
         downloadCreateTask = nil
         downloadCreateFeedback = nil
+        downloadDeleteGeneration &+= 1
+        downloadDeleteTask?.cancel()
+        downloadDeleteTask = nil
+        downloadDeleteTaskID = nil
+        downloadDeleteFeedback = nil
     }
 
     func downloadTask(id: String) -> DownloadStationTask? {
@@ -95,9 +120,22 @@ extension MobileAppModel {
         !isControllingDownloadTask && Self.canResumeDownloadTaskStatus(task.status)
     }
 
+    func canDeleteDownloadTask(_ task: DownloadStationTask) -> Bool {
+        !isDeletingDownloadTask &&
+        !isControllingDownloadTask &&
+        downloadTask(id: task.id) != nil &&
+        activeProfile != nil &&
+        (serviceRepository != nil || downloadStationDeleteOverride != nil)
+    }
+
     func feedbackForDownloadTask(_ task: DownloadStationTask) -> MobileDownloadControlFeedback? {
         guard downloadControlFeedback?.taskID == task.id else { return nil }
         return downloadControlFeedback
+    }
+
+    func deleteFeedbackForDownloadTask(_ task: DownloadStationTask) -> MobileDownloadDeleteFeedback? {
+        guard downloadDeleteFeedback?.taskID == task.id else { return nil }
+        return downloadDeleteFeedback
     }
 
     func controlDownloadTask(_ task: DownloadStationTask, action: DownloadStationTaskAction) {
@@ -233,6 +271,64 @@ extension MobileAppModel {
         }
     }
 
+    func deleteDownloadTask(_ task: DownloadStationTask) {
+        guard !isDeletingDownloadTask else { return }
+        guard canDeleteDownloadTask(task) else {
+            downloadDeleteFeedback = MobileDownloadDeleteFeedback(
+                taskID: task.id,
+                kind: .unsupported
+            )
+            return
+        }
+
+        downloadDeleteGeneration &+= 1
+        let generation = downloadDeleteGeneration
+        let repository = serviceRepository
+        let override = downloadStationDeleteOverride
+        downloadDeleteTaskID = task.id
+        downloadDeleteFeedback = MobileDownloadDeleteFeedback(
+            taskID: task.id,
+            kind: .inProgress
+        )
+        downloadDeleteTask = Task { [weak self] in
+            do {
+                let result: MutationResult
+                if let override {
+                    result = try await override([task.id], false)
+                } else if let repository {
+                    result = try await repository.deleteDownloadTasksResult(
+                        ids: [task.id],
+                        removeData: false
+                    )
+                } else {
+                    return
+                }
+                try Task.checkCancellation()
+                await MainActor.run {
+                    self?.finishDownloadDelete(
+                        result,
+                        taskID: task.id,
+                        generation: generation
+                    )
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.finishDownloadDeleteCancellation(
+                        taskID: task.id,
+                        generation: generation
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self?.finishDownloadDeleteFailure(
+                        taskID: task.id,
+                        generation: generation
+                    )
+                }
+            }
+        }
+    }
+
     func dismissDownloadCreateFeedback() {
         guard !isCreatingDownloadTask else { return }
         downloadCreateFeedback = nil
@@ -336,6 +432,48 @@ extension MobileAppModel {
         }
     }
 
+    func title(for feedback: MobileDownloadDeleteFeedback) -> String {
+        switch feedback.kind {
+        case .inProgress:
+            return L10n.string("mobile.downloads.delete.deleting.title")
+        case .success:
+            return L10n.string("mobile.downloads.delete.success.title")
+        case .needsReview:
+            return L10n.string("mobile.downloads.delete.review.title")
+        case .cancelled:
+            return L10n.string("mobile.downloads.delete.cancelled.title")
+        case .conflict:
+            return L10n.string("mobile.downloads.delete.conflict.title")
+        case .permission:
+            return L10n.string("mobile.downloads.delete.permission.title")
+        case .unsupported:
+            return L10n.string("mobile.downloads.delete.unsupported.title")
+        case .failure:
+            return L10n.string("mobile.downloads.delete.failure.title")
+        }
+    }
+
+    func message(for feedback: MobileDownloadDeleteFeedback) -> String {
+        switch feedback.kind {
+        case .inProgress:
+            return L10n.string("mobile.downloads.delete.deleting.message")
+        case .success:
+            return L10n.string("mobile.downloads.delete.success.message")
+        case .needsReview:
+            return L10n.string("mobile.downloads.delete.review.message")
+        case .cancelled:
+            return L10n.string("mobile.downloads.delete.cancelled.message")
+        case .conflict:
+            return L10n.string("mobile.downloads.delete.conflict.message")
+        case .permission:
+            return L10n.string("mobile.downloads.delete.permission.message")
+        case .unsupported:
+            return L10n.string("mobile.downloads.delete.unsupported.message")
+        case .failure:
+            return L10n.string("mobile.downloads.delete.failure.message")
+        }
+    }
+
     private func finishDownloadControl(
         _ outcome: DownloadTaskControlOutcome,
         action: DownloadStationTaskAction,
@@ -415,6 +553,43 @@ extension MobileAppModel {
         downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .needsReview)
     }
 
+    private func finishDownloadDelete(
+        _ result: MutationResult,
+        taskID: String,
+        generation: UInt64
+    ) {
+        guard generation == downloadDeleteGeneration else { return }
+        downloadDeleteTask = nil
+        downloadDeleteTaskID = nil
+        if result.status == .confirmedSuccess {
+            removeDownloadTask(id: taskID)
+        }
+        downloadDeleteFeedback = MobileDownloadDeleteFeedback(
+            taskID: taskID,
+            kind: Self.feedbackKind(forDeleteResult: result)
+        )
+    }
+
+    private func finishDownloadDeleteCancellation(taskID: String, generation: UInt64) {
+        guard generation == downloadDeleteGeneration else { return }
+        downloadDeleteTask = nil
+        downloadDeleteTaskID = nil
+        downloadDeleteFeedback = MobileDownloadDeleteFeedback(
+            taskID: taskID,
+            kind: .cancelled
+        )
+    }
+
+    private func finishDownloadDeleteFailure(taskID: String, generation: UInt64) {
+        guard generation == downloadDeleteGeneration else { return }
+        downloadDeleteTask = nil
+        downloadDeleteTaskID = nil
+        downloadDeleteFeedback = MobileDownloadDeleteFeedback(
+            taskID: taskID,
+            kind: .needsReview
+        )
+    }
+
     private func replaceDownloadTask(_ task: DownloadStationTask) {
         guard let snapshot = downloadSnapshot,
               let index = snapshot.tasks.firstIndex(where: { $0.id == task.id }) else {
@@ -439,6 +614,18 @@ extension MobileAppModel {
         } else {
             tasks.insert(task, at: 0)
         }
+        downloadSnapshot = DownloadStationSnapshot(
+            source: snapshot.source,
+            tasks: tasks,
+            downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
+            uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
+            defaultDestination: snapshot.defaultDestination
+        )
+    }
+
+    private func removeDownloadTask(id: String) {
+        guard let snapshot = downloadSnapshot else { return }
+        let tasks = snapshot.tasks.filter { $0.id != id }
         downloadSnapshot = DownloadStationSnapshot(
             source: snapshot.source,
             tasks: tasks,
@@ -484,6 +671,25 @@ extension MobileAppModel {
             return result.errorCategory == .conflict ? .conflict : .failure
         case .partialSuccess:
             return .needsReview
+        }
+    }
+
+    private static func feedbackKind(
+        forDeleteResult result: MutationResult
+    ) -> MobileDownloadDeleteFeedbackKind {
+        switch result.status {
+        case .confirmedSuccess:
+            return .success
+        case .submittedButUnverified, .cancellationRequestedAfterSubmission, .partialSuccess:
+            return .needsReview
+        case .cancelledBeforeSubmission:
+            return .cancelled
+        case .permissionDenied:
+            return .permission
+        case .unsupported:
+            return .unsupported
+        case .confirmedFailure:
+            return result.errorCategory == .conflict ? .conflict : .failure
         }
     }
 

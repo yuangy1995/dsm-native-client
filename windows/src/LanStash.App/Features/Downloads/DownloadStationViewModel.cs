@@ -80,6 +80,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
             if (SetProperty(ref _selectedTask, value))
             {
                 RaisePropertyChanged(nameof(HasSelection));
+                RaisePropertyChanged(nameof(CanDeleteSelectedTask));
             }
         }
     }
@@ -134,15 +135,18 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
             if (SetProperty(ref _isControllingTask, value))
             {
                 RaiseControlProperties();
+                RaiseDeleteProperties();
             }
         }
     }
     public bool CanPauseSelectedTask => SelectedTask is { State: DownloadTaskState.Waiting or
         DownloadTaskState.Downloading or DownloadTaskState.Checking } &&
         !IsControllingTask &&
+        !IsDeletingTask &&
         _repository is { Availability.Status: DownloadStationAvailabilityStatus.Available };
     public bool CanResumeSelectedTask => SelectedTask is { State: DownloadTaskState.Paused } &&
         !IsControllingTask &&
+        !IsDeletingTask &&
         _repository is { Availability.Status: DownloadStationAvailabilityStatus.Available };
     public DownloadTaskControlNoticeKind ControlNoticeKind
     {
@@ -229,6 +233,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         CancelRequest();
         CancelControl();
         CancelCreate();
+        CancelDelete();
         _repository = null;
         ActiveProfileId = null;
         Tasks.Clear();
@@ -239,6 +244,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         ResetErrors();
         ClearControlNotice();
         ClearCreateNotice();
+        ClearDeleteNotice();
         ContentState = DownloadStationContentState.Loading;
     }
 
@@ -346,6 +352,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
             profile.SelectedTaskId = SelectedTask?.Id;
         }
         ClearControlNotice();
+        ClearDeleteNotice();
     }
 
     public async Task ControlSelectedTaskAsync(DownloadTaskControlAction action)
@@ -517,6 +524,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         RestoreSelection(profile);
         RaisePropertyChanged(nameof(CanLoadMore));
         RaiseControlProperties();
+        RaiseDeleteProperties();
     }
 
     private static bool MatchesFilter(DownloadTaskState state, DownloadTaskFilter filter) =>
@@ -752,6 +760,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         _controlCancellation?.Dispose();
         _controlCancellation = null;
         CancelCreate();
+        CancelDelete();
     }
 
     private sealed class ProfileState

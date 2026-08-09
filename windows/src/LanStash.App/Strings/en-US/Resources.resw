@@ -495,7 +495,7 @@
   <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>Download tasks aren’t available</value></data>
   <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>This NAS doesn’t offer the supported read-only Download Station view.</value></data>
   <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>Limited controls</value></data>
-  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>You can add a link and pause or resume one task at a time. Delete and settings changes stay in DSM.</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>You can add a link, pause or resume one task, and delete one task without removing downloaded files. Settings changes stay in DSM.</value></data>
   <data name="DownloadStationCreateTitle" xml:space="preserve"><value>Add download link</value></data>
   <data name="DownloadStationCreateUriLabel" xml:space="preserve"><value>URL or magnet link</value></data>
   <data name="DownloadStationCreateUriPlaceholder" xml:space="preserve"><value>Paste a URL or magnet link</value></data>
@@ -542,6 +542,27 @@
   <data name="DownloadStationControlConflictMessage" xml:space="preserve"><value>Refresh the task list and choose the task again.</value></data>
   <data name="DownloadStationControlFailureTitle" xml:space="preserve"><value>Couldn’t change the task</value></data>
   <data name="DownloadStationControlFailureMessage" xml:space="preserve"><value>Check the connection, refresh the task list, then try again.</value></data>
+  <data name="DownloadStationDelete.Content" xml:space="preserve"><value>Delete task</value></data>
+  <data name="DownloadStationDelete.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Delete this download task without removing downloaded files</value></data>
+  <data name="DownloadStationDeleteConfirmTitle" xml:space="preserve"><value>Delete this task?</value></data>
+  <data name="DownloadStationDeleteConfirmMessage" xml:space="preserve"><value>This removes the task from Download Station. Downloaded files on your NAS are not deleted.</value></data>
+  <data name="DownloadStationDeleteConfirmSubmit" xml:space="preserve"><value>Delete task</value></data>
+  <data name="DownloadStationDeleteInProgressTitle" xml:space="preserve"><value>Deleting task…</value></data>
+  <data name="DownloadStationDeleteInProgressMessage" xml:space="preserve"><value>Waiting for the NAS to confirm that the task was removed.</value></data>
+  <data name="DownloadStationDeleteSuccessTitle" xml:space="preserve"><value>Task deleted</value></data>
+  <data name="DownloadStationDeleteSuccessMessage" xml:space="preserve"><value>The task was removed from Download Station. Downloaded files were not deleted.</value></data>
+  <data name="DownloadStationDeleteCancelledTitle" xml:space="preserve"><value>Deletion cancelled</value></data>
+  <data name="DownloadStationDeleteCancelledMessage" xml:space="preserve"><value>The task was not deleted.</value></data>
+  <data name="DownloadStationDeleteReviewTitle" xml:space="preserve"><value>Check Download Station before trying again</value></data>
+  <data name="DownloadStationDeleteReviewMessage" xml:space="preserve"><value>The NAS may have received the request, but the app could not confirm the result. Refresh and check Download Station before deleting it again.</value></data>
+  <data name="DownloadStationDeleteUnsupportedTitle" xml:space="preserve"><value>This task can’t be deleted here</value></data>
+  <data name="DownloadStationDeleteUnsupportedMessage" xml:space="preserve"><value>Use Download Station in DSM for this task or NAS.</value></data>
+  <data name="DownloadStationDeletePermissionTitle" xml:space="preserve"><value>You don’t have permission</value></data>
+  <data name="DownloadStationDeletePermissionMessage" xml:space="preserve"><value>Ask an administrator for access, then refresh the task list.</value></data>
+  <data name="DownloadStationDeleteConflictTitle" xml:space="preserve"><value>The task changed</value></data>
+  <data name="DownloadStationDeleteConflictMessage" xml:space="preserve"><value>Refresh the task list and choose the task again.</value></data>
+  <data name="DownloadStationDeleteFailureTitle" xml:space="preserve"><value>Couldn’t delete the task</value></data>
+  <data name="DownloadStationDeleteFailureMessage" xml:space="preserve"><value>Check the connection, refresh the task list, then try again.</value></data>
   <data name="DownloadStationRefreshError.Title" xml:space="preserve"><value>Couldn’t refresh tasks</value></data>
   <data name="DownloadStationRefreshError.Message" xml:space="preserve"><value>Showing the last available task list. Check the connection, then try again.</value></data>
   <data name="DownloadStationLoadMoreError.Title" xml:space="preserve"><value>Couldn’t load more tasks</value></data>

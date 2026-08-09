@@ -150,3 +150,11 @@ public sealed record DownloadTaskCreateOutcome(
     MutationResult Result,
     string? TaskId,
     DownloadTask? Task);
+
+public sealed record DownloadTaskDeleteRequest(
+    Guid ProfileId,
+    DownloadTask Task);
+
+public sealed record DownloadTaskDeleteOutcome(
+    MutationResult Result,
+    string TaskId);

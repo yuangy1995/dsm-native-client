@@ -70,6 +70,9 @@ public sealed partial class DownloadStationPage : Page, IDisposable
     private async void Resume_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(() => _viewModel.ControlSelectedTaskAsync(DownloadTaskControlAction.Resume));
 
+    private async void Delete_Click(object sender, RoutedEventArgs e) =>
+        await ShowDeleteTaskDialogAsync();
+
     private void SearchBox_TextChanged(
         AutoSuggestBox sender,
         AutoSuggestBoxTextChangedEventArgs args)
@@ -254,6 +257,41 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         UpdateState();
     }
 
+    private async Task ShowDeleteTaskDialogAsync()
+    {
+        if (!_viewModel.CanDeleteSelectedTask)
+        {
+            return;
+        }
+
+        var content = new TextBlock
+        {
+            Text = LocalizationService.Current.Get("DownloadStationDeleteConfirmMessage"),
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 520,
+        };
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = LocalizationService.Current.Get("DownloadStationDeleteConfirmTitle"),
+            Content = content,
+            PrimaryButtonText = LocalizationService.Current.Get("DownloadStationDeleteConfirmSubmit"),
+            CloseButtonText = LocalizationService.Current.Get("ActionCancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+        {
+            await RunAsync(_viewModel.DeleteSelectedTaskAsync);
+        }
+        else
+        {
+            UpdateState();
+        }
+    }
+
     private async Task RunAsync(Func<Task> operation)
     {
         try
@@ -308,8 +346,15 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         PauseButton.IsEnabled = _viewModel.CanPauseSelectedTask;
         ResumeButton.Visibility = Visible(_viewModel.CanResumeSelectedTask);
         ResumeButton.IsEnabled = _viewModel.CanResumeSelectedTask;
-        ControlProgress.IsActive = _viewModel.IsControllingTask;
-        ControlProgress.Visibility = Visible(_viewModel.IsControllingTask);
+        DeleteButton.Visibility = Visible(_viewModel.CanDeleteSelectedTask);
+        DeleteButton.IsEnabled = _viewModel.CanDeleteSelectedTask;
+        ControlProgress.IsActive = _viewModel.IsControllingTask || _viewModel.IsDeletingTask;
+        ControlProgress.Visibility = Visible(_viewModel.IsControllingTask || _viewModel.IsDeletingTask);
+        AutomationProperties.SetName(
+            ControlProgress,
+            LocalizationService.Current.Get(_viewModel.IsDeletingTask
+                ? "DownloadStationDeleteInProgressMessage"
+                : "DownloadStationControlInProgressMessage"));
         DownloadControlNotice.IsOpen = _viewModel.HasControlNotice;
         DownloadControlNotice.Severity = _viewModel.ControlNoticeKind switch
         {
@@ -319,6 +364,17 @@ public sealed partial class DownloadStationPage : Page, IDisposable
                 DownloadTaskControlNoticeKind.Permission or
                 DownloadTaskControlNoticeKind.Unsupported => InfoBarSeverity.Warning,
             DownloadTaskControlNoticeKind.Failure => InfoBarSeverity.Error,
+            _ => InfoBarSeverity.Informational,
+        };
+        DownloadDeleteNotice.IsOpen = _viewModel.HasDeleteNotice;
+        DownloadDeleteNotice.Severity = _viewModel.DeleteNoticeKind switch
+        {
+            DownloadTaskDeleteNoticeKind.Success => InfoBarSeverity.Success,
+            DownloadTaskDeleteNoticeKind.NeedsReview or
+                DownloadTaskDeleteNoticeKind.Conflict or
+                DownloadTaskDeleteNoticeKind.Permission or
+                DownloadTaskDeleteNoticeKind.Unsupported => InfoBarSeverity.Warning,
+            DownloadTaskDeleteNoticeKind.Failure => InfoBarSeverity.Error,
             _ => InfoBarSeverity.Informational,
         };
         TaskList.SelectedItem = _viewModel.SelectedTask;

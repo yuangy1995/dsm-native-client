@@ -393,6 +393,61 @@ public sealed class DownloadStationViewModelTests
         Assert.Equal(2, repository.SnapshotRequests.Count);
     }
 
+    [Fact]
+    public async Task DeleteTaskRemovesConfirmedTaskAndRefreshes()
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(
+            0, 1, 1, null, Task("task-1", DownloadTaskState.Finished))));
+        repository.DeleteResults.Enqueue(DeleteOutcome(
+            MutationResultStatus.ConfirmedSuccess,
+            submitted: true,
+            requiresRefresh: false,
+            taskId: "task-1"));
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(0, 0, 0, null)));
+        using var model = new DownloadStationViewModel();
+
+        await model.ActivateAsync(repository);
+        model.SelectTask(model.Tasks.Single());
+        Assert.True(model.CanDeleteSelectedTask);
+
+        await model.DeleteSelectedTaskAsync();
+
+        var request = Assert.Single(repository.DeleteRequests);
+        Assert.Equal(profile, request.ProfileId);
+        Assert.Equal("task-1", request.Task.Id);
+        Assert.Equal(DownloadTaskDeleteNoticeKind.Success, model.DeleteNoticeKind);
+        Assert.Empty(model.Tasks);
+        Assert.Null(model.SelectedTask);
+        Assert.Equal(2, repository.SnapshotRequests.Count);
+    }
+
+    [Fact]
+    public async Task UnknownDeleteResultShowsReviewAndKeepsTaskVisible()
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(
+            0, 1, 1, null, Task("task-1", DownloadTaskState.Finished))));
+        repository.DeleteResults.Enqueue(DeleteOutcome(
+            MutationResultStatus.SubmittedButUnverified,
+            submitted: true,
+            requiresRefresh: true,
+            taskId: "task-1"));
+        using var model = new DownloadStationViewModel();
+
+        await model.ActivateAsync(repository);
+        model.SelectTask(model.Tasks.Single());
+        await model.DeleteSelectedTaskAsync();
+
+        Assert.Equal(DownloadTaskDeleteNoticeKind.NeedsReview, model.DeleteNoticeKind);
+        Assert.True(model.HasDeleteNotice);
+        Assert.Equal("task-1", Assert.Single(model.Tasks).Id);
+        Assert.Single(repository.DeleteRequests);
+        Assert.Single(repository.SnapshotRequests);
+    }
+
     private static FakeDownloadStationRepository Available(Guid profileId) =>
         new(profileId, available: true);
 
@@ -471,6 +526,26 @@ public sealed class DownloadStationViewModelTests
             task?.Id,
             task);
 
+    private static DownloadTaskDeleteOutcome DeleteOutcome(
+        MutationResultStatus status,
+        bool submitted,
+        bool requiresRefresh,
+        string taskId) =>
+        new(
+            new MutationResult(
+                1,
+                status,
+                "downloadTaskDelete",
+                submitted,
+                requiresRefresh,
+                CountsFor(status),
+                status == MutationResultStatus.SubmittedButUnverified
+                    ? MutationErrorCategory.Unknown
+                    : null,
+                localizationKey: null,
+                diagnosticTag: "download-station.delete.test"),
+            taskId);
+
     private static MutationResultCounts CountsFor(MutationResultStatus status) =>
         status switch
         {
@@ -506,10 +581,12 @@ public sealed class DownloadStationViewModelTests
         public Queue<object> PageResults { get; } = new();
         public Queue<object> ControlResults { get; } = new();
         public Queue<object> CreateResults { get; } = new();
+        public Queue<object> DeleteResults { get; } = new();
         public List<(int Offset, int Limit)> SnapshotRequests { get; } = [];
         public List<(int Offset, int Limit)> PageRequests { get; } = [];
         public List<DownloadTaskControlRequest> ControlRequests { get; } = [];
         public List<DownloadTaskCreateRequest> CreateRequests { get; } = [];
+        public List<DownloadTaskDeleteRequest> DeleteRequests { get; } = [];
         public List<CancellationToken> SnapshotTokens { get; } = [];
 
         public Task<DownloadStationSnapshot> LoadSnapshotAsync(
@@ -545,6 +622,14 @@ public sealed class DownloadStationViewModelTests
         {
             CreateRequests.Add(request);
             return Result<DownloadTaskCreateOutcome>(CreateResults.Dequeue());
+        }
+
+        public Task<DownloadTaskDeleteOutcome> DeleteTaskAsync(
+            DownloadTaskDeleteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            DeleteRequests.Add(request);
+            return Result<DownloadTaskDeleteOutcome>(DeleteResults.Dequeue());
         }
 
         private static Task<T> Result<T>(object value) => value switch

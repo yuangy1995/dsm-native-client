@@ -495,7 +495,7 @@
   <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>下载任务不可用</value></data>
   <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>这台 NAS 暂不提供受支持的 Download Station 只读查看功能。</value></data>
   <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>受限控制</value></data>
-  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>你可以添加链接，并一次暂停或继续一个任务。删除和设置更改仍请在 DSM 中完成。</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>你可以添加链接、一次暂停或继续一个任务，并删除一个任务且不移除已下载文件。设置更改仍请在 DSM 中完成。</value></data>
   <data name="DownloadStationCreateTitle" xml:space="preserve"><value>添加下载链接</value></data>
   <data name="DownloadStationCreateUriLabel" xml:space="preserve"><value>网址或磁力链接</value></data>
   <data name="DownloadStationCreateUriPlaceholder" xml:space="preserve"><value>粘贴网址或磁力链接</value></data>
@@ -542,6 +542,27 @@
   <data name="DownloadStationControlConflictMessage" xml:space="preserve"><value>请刷新任务列表，然后重新选择任务。</value></data>
   <data name="DownloadStationControlFailureTitle" xml:space="preserve"><value>无法更改任务</value></data>
   <data name="DownloadStationControlFailureMessage" xml:space="preserve"><value>请检查连接、刷新任务列表，然后重试。</value></data>
+  <data name="DownloadStationDelete.Content" xml:space="preserve"><value>删除任务</value></data>
+  <data name="DownloadStationDelete.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>删除此下载任务且不移除已下载文件</value></data>
+  <data name="DownloadStationDeleteConfirmTitle" xml:space="preserve"><value>要删除此任务吗？</value></data>
+  <data name="DownloadStationDeleteConfirmMessage" xml:space="preserve"><value>这会从 Download Station 中移除任务，不会删除 NAS 上已下载的文件。</value></data>
+  <data name="DownloadStationDeleteConfirmSubmit" xml:space="preserve"><value>删除任务</value></data>
+  <data name="DownloadStationDeleteInProgressTitle" xml:space="preserve"><value>正在删除任务…</value></data>
+  <data name="DownloadStationDeleteInProgressMessage" xml:space="preserve"><value>正在等待 NAS 确认任务已移除。</value></data>
+  <data name="DownloadStationDeleteSuccessTitle" xml:space="preserve"><value>任务已删除</value></data>
+  <data name="DownloadStationDeleteSuccessMessage" xml:space="preserve"><value>任务已从 Download Station 中移除，已下载文件没有被删除。</value></data>
+  <data name="DownloadStationDeleteCancelledTitle" xml:space="preserve"><value>已取消删除</value></data>
+  <data name="DownloadStationDeleteCancelledMessage" xml:space="preserve"><value>任务未被删除。</value></data>
+  <data name="DownloadStationDeleteReviewTitle" xml:space="preserve"><value>再次尝试前请先核对 Download Station</value></data>
+  <data name="DownloadStationDeleteReviewMessage" xml:space="preserve"><value>NAS 可能已收到请求，但 App 无法确认结果。再次删除前，请刷新并核对 Download Station。</value></data>
+  <data name="DownloadStationDeleteUnsupportedTitle" xml:space="preserve"><value>无法在这里删除此任务</value></data>
+  <data name="DownloadStationDeleteUnsupportedMessage" xml:space="preserve"><value>请在 DSM 的 Download Station 中处理此任务或 NAS。</value></data>
+  <data name="DownloadStationDeletePermissionTitle" xml:space="preserve"><value>你没有所需权限</value></data>
+  <data name="DownloadStationDeletePermissionMessage" xml:space="preserve"><value>请联系管理员获取权限，然后刷新任务列表。</value></data>
+  <data name="DownloadStationDeleteConflictTitle" xml:space="preserve"><value>任务已发生变化</value></data>
+  <data name="DownloadStationDeleteConflictMessage" xml:space="preserve"><value>请刷新任务列表，然后重新选择任务。</value></data>
+  <data name="DownloadStationDeleteFailureTitle" xml:space="preserve"><value>无法删除任务</value></data>
+  <data name="DownloadStationDeleteFailureMessage" xml:space="preserve"><value>请检查连接、刷新任务列表，然后重试。</value></data>
   <data name="DownloadStationRefreshError.Title" xml:space="preserve"><value>无法刷新任务</value></data>
   <data name="DownloadStationRefreshError.Message" xml:space="preserve"><value>当前仍显示上次读取的任务。请检查连接后重试。</value></data>
   <data name="DownloadStationLoadMoreError.Title" xml:space="preserve"><value>无法加载更多任务</value></data>

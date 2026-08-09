@@ -250,6 +250,7 @@ private struct MobileDownloadTaskDetailView: View {
     @Bindable var model: MobileAppModel
     let initialTask: DownloadStationTask
     @Environment(\.dismiss) private var dismiss
+    @State private var isConfirmingDelete = false
 
     private var task: DownloadStationTask {
         model.downloadTask(id: initialTask.id) ?? initialTask
@@ -269,6 +270,7 @@ private struct MobileDownloadTaskDetailView: View {
                 }
 
                 controlSection
+                deleteSection
 
                 Section(L10n.string("ui.1932da4d4dba4ed0")) {
                     LabeledContent(
@@ -309,6 +311,21 @@ private struct MobileDownloadTaskDetailView: View {
                         )
                     }
                 }
+            }
+            .confirmationDialog(
+                L10n.string("mobile.downloads.delete.confirm.title", task.title),
+                isPresented: $isConfirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button(
+                    L10n.string("mobile.downloads.delete.confirm.submit"),
+                    role: .destructive
+                ) {
+                    model.deleteDownloadTask(task)
+                }
+                Button(L10n.string("mobile.downloads.delete.confirm.cancel"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("mobile.downloads.delete.confirm.message"))
             }
             .navigationTitle(task.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -369,11 +386,79 @@ private struct MobileDownloadTaskDetailView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private var deleteSection: some View {
+        if model.deleteFeedbackForDownloadTask(task) != nil
+            || model.canDeleteDownloadTask(task)
+            || model.isDeletingDownloadTask {
+            Section(L10n.string("mobile.downloads.delete.section")) {
+                if let feedback = model.deleteFeedbackForDownloadTask(task) {
+                    DownloadDeleteFeedbackView(model: model, feedback: feedback)
+                }
+                if model.canDeleteDownloadTask(task) {
+                    Button(role: .destructive) {
+                        isConfirmingDelete = true
+                    } label: {
+                        Label(
+                            L10n.string("mobile.downloads.delete.action"),
+                            systemImage: "trash"
+                        )
+                    }
+                    .frame(minHeight: MobileMetrics.minimumTouchTarget)
+                    .accessibilityHint(L10n.string("mobile.downloads.delete.action.hint"))
+                }
+                if model.isDeletingDownloadTask {
+                    ProgressView()
+                        .accessibilityLabel(
+                            L10n.string("mobile.downloads.delete.deleting.message")
+                        )
+                }
+            }
+        }
+    }
 }
 
 private struct DownloadControlFeedbackView: View {
     @Bindable var model: MobileAppModel
     let feedback: MobileDownloadControlFeedback
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(model.title(for: feedback), systemImage: systemImage)
+                .font(.headline)
+            Text(model.message(for: feedback))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var systemImage: String {
+        switch feedback.kind {
+        case .inProgress:
+            return "clock"
+        case .success:
+            return "checkmark.circle"
+        case .needsReview:
+            return "exclamationmark.triangle"
+        case .cancelled:
+            return "xmark.circle"
+        case .conflict:
+            return "arrow.triangle.2.circlepath"
+        case .permission:
+            return "lock"
+        case .unsupported:
+            return "slash.circle"
+        case .failure:
+            return "exclamationmark.circle"
+        }
+    }
+}
+
+private struct DownloadDeleteFeedbackView: View {
+    @Bindable var model: MobileAppModel
+    let feedback: MobileDownloadDeleteFeedback
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

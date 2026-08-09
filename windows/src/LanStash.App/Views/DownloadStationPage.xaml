@@ -329,8 +329,16 @@
                                         IsOpen="False"
                                         Message="{Binding ControlNoticeMessage}"
                                         Title="{Binding ControlNoticeTitle}" />
+                                    <InfoBar
+                                        x:Name="DownloadDeleteNotice"
+                                        AutomationProperties.LiveSetting="Polite"
+                                        IsClosable="False"
+                                        IsOpen="False"
+                                        Message="{Binding DeleteNoticeMessage}"
+                                        Title="{Binding DeleteNoticeTitle}" />
                                     <Grid ColumnSpacing="8">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
@@ -346,10 +354,16 @@
                                             Grid.Column="1"
                                             MinHeight="44"
                                             Click="Resume_Click" />
+                                        <Button
+                                            x:Uid="DownloadStationDelete"
+                                            x:Name="DeleteButton"
+                                            Grid.Column="2"
+                                            MinHeight="44"
+                                            Click="Delete_Click" />
                                         <ProgressRing
                                             x:Uid="DownloadStationControlProgress"
                                             x:Name="ControlProgress"
-                                            Grid.Column="2"
+                                            Grid.Column="3"
                                             Width="28"
                                             Height="28"
                                             IsActive="False"
