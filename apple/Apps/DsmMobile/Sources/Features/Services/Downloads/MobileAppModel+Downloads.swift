@@ -19,6 +19,22 @@ struct MobileDownloadControlFeedback: Equatable {
     let kind: MobileDownloadControlFeedbackKind
 }
 
+enum MobileDownloadCreateFeedbackKind: Equatable {
+    case inProgress
+    case success
+    case needsReview
+    case cancelled
+    case conflict
+    case permission
+    case unsupported
+    case failure
+}
+
+struct MobileDownloadCreateFeedback: Equatable {
+    let uri: String
+    let kind: MobileDownloadCreateFeedbackKind
+}
+
 extension MobileAppModel {
     var downloadPageState: MobilePageState {
         if isLoading, downloadSnapshot == nil {
@@ -34,6 +50,22 @@ extension MobileAppModel {
         downloadControlTaskID != nil
     }
 
+    var isCreatingDownloadTask: Bool {
+        downloadCreateTask != nil
+    }
+
+    var canCreateDownloadTask: Bool {
+        !isCreatingDownloadTask &&
+        activeProfile != nil &&
+        (serviceRepository != nil || downloadStationCreateOverride != nil)
+    }
+
+    var downloadCreateDefaultDestination: String? {
+        let destination = downloadSnapshot?.defaultDestination?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return destination?.isEmpty == false ? destination : nil
+    }
+
     func reloadDownloads() {
         selectModule(.downloads)
     }
@@ -45,6 +77,10 @@ extension MobileAppModel {
         downloadControlTaskID = nil
         downloadControlAction = nil
         downloadControlFeedback = nil
+        downloadCreateGeneration &+= 1
+        downloadCreateTask?.cancel()
+        downloadCreateTask = nil
+        downloadCreateFeedback = nil
     }
 
     func downloadTask(id: String) -> DownloadStationTask? {
@@ -139,6 +175,69 @@ extension MobileAppModel {
         }
     }
 
+    func createDownloadTask(uri rawURI: String) {
+        let uri = rawURI.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isCreatingDownloadTask else { return }
+        guard !uri.isEmpty,
+              activeProfile != nil,
+              serviceRepository != nil || downloadStationCreateOverride != nil else {
+            downloadCreateFeedback = MobileDownloadCreateFeedback(
+                uri: uri,
+                kind: .unsupported
+            )
+            return
+        }
+
+        downloadCreateGeneration &+= 1
+        let generation = downloadCreateGeneration
+        let request = DownloadTaskCreateRequest(
+            uri: uri,
+            destination: downloadCreateDefaultDestination
+        )
+        let repository = serviceRepository
+        let override = downloadStationCreateOverride
+        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .inProgress)
+        downloadCreateTask = Task { [weak self] in
+            do {
+                let outcome: DownloadTaskCreateOutcome
+                if let override {
+                    outcome = try await override(request)
+                } else if let repository {
+                    outcome = try await repository.createDownloadTaskResult(request)
+                } else {
+                    return
+                }
+                try Task.checkCancellation()
+                await MainActor.run {
+                    self?.finishDownloadCreate(
+                        outcome,
+                        uri: uri,
+                        generation: generation
+                    )
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.finishDownloadCreateCancellation(
+                        uri: uri,
+                        generation: generation
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self?.finishDownloadCreateFailure(
+                        uri: uri,
+                        generation: generation
+                    )
+                }
+            }
+        }
+    }
+
+    func dismissDownloadCreateFeedback() {
+        guard !isCreatingDownloadTask else { return }
+        downloadCreateFeedback = nil
+    }
+
     func title(for feedback: MobileDownloadControlFeedback) -> String {
         switch feedback.kind {
         case .inProgress:
@@ -195,6 +294,48 @@ extension MobileAppModel {
         }
     }
 
+    func title(for feedback: MobileDownloadCreateFeedback) -> String {
+        switch feedback.kind {
+        case .inProgress:
+            return L10n.string("mobile.downloads.create.creating.title")
+        case .success:
+            return L10n.string("mobile.downloads.create.success.title")
+        case .needsReview:
+            return L10n.string("mobile.downloads.create.review.title")
+        case .cancelled:
+            return L10n.string("mobile.downloads.create.cancelled.title")
+        case .conflict:
+            return L10n.string("mobile.downloads.create.conflict.title")
+        case .permission:
+            return L10n.string("mobile.downloads.create.permission.title")
+        case .unsupported:
+            return L10n.string("mobile.downloads.create.unsupported.title")
+        case .failure:
+            return L10n.string("mobile.downloads.create.failure.title")
+        }
+    }
+
+    func message(for feedback: MobileDownloadCreateFeedback) -> String {
+        switch feedback.kind {
+        case .inProgress:
+            return L10n.string("mobile.downloads.create.creating.message")
+        case .success:
+            return L10n.string("mobile.downloads.create.success.message")
+        case .needsReview:
+            return L10n.string("mobile.downloads.create.review.message")
+        case .cancelled:
+            return L10n.string("mobile.downloads.create.cancelled.message")
+        case .conflict:
+            return L10n.string("mobile.downloads.create.conflict.message")
+        case .permission:
+            return L10n.string("mobile.downloads.create.permission.message")
+        case .unsupported:
+            return L10n.string("mobile.downloads.create.unsupported.message")
+        case .failure:
+            return L10n.string("mobile.downloads.create.failure.message")
+        }
+    }
+
     private func finishDownloadControl(
         _ outcome: DownloadTaskControlOutcome,
         action: DownloadStationTaskAction,
@@ -246,6 +387,34 @@ extension MobileAppModel {
         )
     }
 
+    private func finishDownloadCreate(
+        _ outcome: DownloadTaskCreateOutcome,
+        uri: String,
+        generation: UInt64
+    ) {
+        guard generation == downloadCreateGeneration else { return }
+        downloadCreateTask = nil
+        if outcome.result.status == .confirmedSuccess, let task = outcome.task {
+            upsertDownloadTask(task)
+        }
+        downloadCreateFeedback = MobileDownloadCreateFeedback(
+            uri: uri,
+            kind: Self.feedbackKind(for: outcome.result, confirmedTask: outcome.task)
+        )
+    }
+
+    private func finishDownloadCreateCancellation(uri: String, generation: UInt64) {
+        guard generation == downloadCreateGeneration else { return }
+        downloadCreateTask = nil
+        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .cancelled)
+    }
+
+    private func finishDownloadCreateFailure(uri: String, generation: UInt64) {
+        guard generation == downloadCreateGeneration else { return }
+        downloadCreateTask = nil
+        downloadCreateFeedback = MobileDownloadCreateFeedback(uri: uri, kind: .needsReview)
+    }
+
     private func replaceDownloadTask(_ task: DownloadStationTask) {
         guard let snapshot = downloadSnapshot,
               let index = snapshot.tasks.firstIndex(where: { $0.id == task.id }) else {
@@ -260,6 +429,43 @@ extension MobileAppModel {
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
             defaultDestination: snapshot.defaultDestination
         )
+    }
+
+    private func upsertDownloadTask(_ task: DownloadStationTask) {
+        guard let snapshot = downloadSnapshot else { return }
+        var tasks = snapshot.tasks
+        if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+            tasks[index] = task
+        } else {
+            tasks.insert(task, at: 0)
+        }
+        downloadSnapshot = DownloadStationSnapshot(
+            source: snapshot.source,
+            tasks: tasks,
+            downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
+            uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
+            defaultDestination: snapshot.defaultDestination
+        )
+    }
+
+    private static func feedbackKind(
+        for result: MutationResult,
+        confirmedTask: DownloadStationTask?
+    ) -> MobileDownloadCreateFeedbackKind {
+        switch result.status {
+        case .confirmedSuccess:
+            return confirmedTask == nil ? .needsReview : .success
+        case .submittedButUnverified, .cancellationRequestedAfterSubmission, .partialSuccess:
+            return .needsReview
+        case .cancelledBeforeSubmission:
+            return .cancelled
+        case .permissionDenied:
+            return .permission
+        case .unsupported:
+            return .unsupported
+        case .confirmedFailure:
+            return result.errorCategory == .conflict ? .conflict : .failure
+        }
     }
 
     private static func feedbackKind(for result: MutationResult) -> MobileDownloadControlFeedbackKind {

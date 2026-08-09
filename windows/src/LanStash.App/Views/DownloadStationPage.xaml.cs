@@ -1,6 +1,9 @@
 using LanStash.App.Features.Downloads;
+using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 
@@ -54,6 +57,9 @@ public sealed partial class DownloadStationPage : Page, IDisposable
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.RefreshAsync);
+
+    private async void CreateTask_Click(object sender, RoutedEventArgs e) =>
+        await ShowCreateTaskDialogAsync();
 
     private async void LoadMore_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.LoadMoreAsync);
@@ -137,6 +143,117 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         await RunAsync(_viewModel.RefreshAsync);
     }
 
+    private async void CreateTaskAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!_viewModel.CanCreateTask)
+        {
+            return;
+        }
+        args.Handled = true;
+        await ShowCreateTaskDialogAsync();
+    }
+
+    private async Task ShowCreateTaskDialogAsync()
+    {
+        if (!_viewModel.CanCreateTask)
+        {
+            return;
+        }
+
+        var uriBox = new TextBox
+        {
+            Header = LocalizationService.Current.Get("DownloadStationCreateUriLabel"),
+            PlaceholderText = LocalizationService.Current.Get("DownloadStationCreateUriPlaceholder"),
+            MinHeight = 44,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        AutomationProperties.SetName(
+            uriBox,
+            LocalizationService.Current.Get("DownloadStationCreateUriAutomationName"));
+
+        var destinationText = new TextBlock
+        {
+            Text = LocalizationService.Current.Format(
+                "DownloadStationCreateDestinationText",
+                _viewModel.CreateDestinationText),
+            TextWrapping = TextWrapping.Wrap,
+        };
+
+        var progress = new ProgressRing
+        {
+            Width = 28,
+            Height = 28,
+            IsActive = false,
+            Visibility = Visibility.Collapsed,
+        };
+        AutomationProperties.SetName(
+            progress,
+            LocalizationService.Current.Get("DownloadStationCreateInProgressMessage"));
+
+        var progressMessage = new TextBlock
+        {
+            Text = LocalizationService.Current.Get("DownloadStationCreateInProgressMessage"),
+            TextWrapping = TextWrapping.Wrap,
+            Visibility = Visibility.Collapsed,
+        };
+        AutomationProperties.SetLiveSetting(progressMessage, AutomationLiveSetting.Polite);
+
+        var content = new StackPanel
+        {
+            Spacing = 12,
+            MinWidth = 360,
+            MaxWidth = 520,
+        };
+        content.Children.Add(uriBox);
+        content.Children.Add(destinationText);
+        content.Children.Add(progress);
+        content.Children.Add(progressMessage);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = LocalizationService.Current.Get("DownloadStationCreateTitle"),
+            Content = content,
+            PrimaryButtonText = LocalizationService.Current.Get("DownloadStationCreateSubmit"),
+            CloseButtonText = LocalizationService.Current.Get("ActionCancel"),
+            DefaultButton = ContentDialogButton.Primary,
+            IsPrimaryButtonEnabled = false,
+        };
+
+        uriBox.TextChanged += (_, _) =>
+        {
+            dialog.IsPrimaryButtonEnabled =
+                !string.IsNullOrWhiteSpace(uriBox.Text) && !_viewModel.IsCreatingTask;
+        };
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            if (string.IsNullOrWhiteSpace(uriBox.Text))
+            {
+                args.Cancel = true;
+                return;
+            }
+            var deferral = args.GetDeferral();
+            try
+            {
+                dialog.IsPrimaryButtonEnabled = false;
+                dialog.IsEnabled = false;
+                progress.IsActive = true;
+                progress.Visibility = Visibility.Visible;
+                progressMessage.Visibility = Visibility.Visible;
+                await _viewModel.CreateTaskAsync(uriBox.Text);
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        };
+
+        await dialog.ShowAsync();
+        UpdateState();
+    }
+
     private async Task RunAsync(Func<Task> operation)
     {
         try
@@ -164,6 +281,18 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         ContentState.Visibility = Visible(_viewModel.HasContent);
 
         RefreshButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsUnavailable;
+        CreateTaskButton.IsEnabled = _viewModel.CanCreateTask;
+        DownloadCreateNotice.IsOpen = _viewModel.HasCreateNotice;
+        DownloadCreateNotice.Severity = _viewModel.CreateNoticeKind switch
+        {
+            DownloadTaskCreateNoticeKind.Success => InfoBarSeverity.Success,
+            DownloadTaskCreateNoticeKind.NeedsReview or
+                DownloadTaskCreateNoticeKind.Conflict or
+                DownloadTaskCreateNoticeKind.Permission or
+                DownloadTaskCreateNoticeKind.Unsupported => InfoBarSeverity.Warning,
+            DownloadTaskCreateNoticeKind.Failure => InfoBarSeverity.Error,
+            _ => InfoBarSeverity.Informational,
+        };
         RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError && !_viewModel.HasError;
         ActivitySummary.Visibility = Visible(_viewModel.HasActivity);
         ActivityErrorNotice.IsOpen = _viewModel.HasActivityError;

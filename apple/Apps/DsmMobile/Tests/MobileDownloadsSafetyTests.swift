@@ -43,7 +43,54 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertEqual(model.downloadControlFeedback?.kind, .success)
     }
 
-    func test下载页面和模型仅开放单任务暂停继续入口() throws {
+    @MainActor
+    func test链接创建成功会插入确认任务并显示成功反馈() async throws {
+        let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = MobileAppModel(defaults: defaults)
+        let profile = try NasProfile(
+            displayName: "测试设备",
+            host: "nas.example.invalid",
+            port: 5_001
+        )
+        model.activeProfile = profile
+        model.downloadSnapshot = DownloadStationSnapshot(
+            source: .official,
+            tasks: [],
+            defaultDestination: "/downloads"
+        )
+        model.downloadStationCreateOverride = { request in
+            XCTAssertEqual(request.uri, "magnet:?xt=urn:btih:test")
+            XCTAssertEqual(request.destination, "/downloads")
+            return try DownloadTaskCreateOutcome(
+                result: MutationResult(
+                    status: .confirmedSuccess,
+                    operation: "downloadCreate",
+                    submitted: true,
+                    requiresRefresh: true,
+                    counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0)
+                ),
+                taskID: "created-1",
+                task: DownloadStationTask(
+                    id: "created-1",
+                    title: "新任务",
+                    status: "waiting",
+                    destination: "/downloads"
+                )
+            )
+        }
+
+        model.createDownloadTask(uri: " magnet:?xt=urn:btih:test ")
+        for _ in 0..<50 where model.downloadCreateFeedback?.kind != .success {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(model.downloadCreateFeedback?.kind, .success)
+        XCTAssertEqual(model.downloadSnapshot?.tasks.first?.id, "created-1")
+    }
+
+    func test下载页面和模型仅开放单链接创建与单任务暂停继续入口() throws {
         let view = try sourceFile(
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
         )
@@ -52,15 +99,21 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         )
 
         for forbidden in [
-            "MobileDownloadSheet", "TextField(", "confirmationDialog(",
-            "createDownloadTask", "controlDownloadTasks", "deleteDownloadTasks",
-            "func createDownload", "isCreating", "removeData", "force_complete"
+            "confirmationDialog(",
+            "createDownloadTask(fileURL", "controlDownloadTasks", "deleteDownloadTasks",
+            "saveDownloadStationSettings", "deleteDownloadTasksResult",
+            "removeData", "force_complete", "unzipPassword", "DownloadStation2"
         ] {
             XCTAssertFalse(view.contains(forbidden), "View: \(forbidden)")
             XCTAssertFalse(model.contains(forbidden), "Model: \(forbidden)")
         }
+        XCTAssertTrue(view.contains("MobileDownloadCreateTaskView"))
+        XCTAssertTrue(view.contains("TextField("))
+        XCTAssertTrue(view.contains("model.createDownloadTask(uri: uri)"))
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .pause)"))
         XCTAssertTrue(view.contains("model.controlDownloadTask(task, action: .resume)"))
+        XCTAssertTrue(model.contains("createDownloadTask(uri rawURI: String)"))
+        XCTAssertTrue(model.contains("DownloadTaskCreateRequest("))
         XCTAssertTrue(model.contains("controlDownloadTask(_ task: DownloadStationTask"))
         XCTAssertTrue(model.contains("DownloadTaskControlRequest(task: task, action: action)"))
     }
@@ -90,6 +143,9 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         )
 
         XCTAssertTrue(view.contains("mobile.downloads.read-only.notice"))
+        XCTAssertTrue(view.contains("mobile.downloads.create.url.label"))
+        XCTAssertTrue(view.contains("mobile.downloads.create.url.help"))
+        XCTAssertTrue(view.contains("interactiveDismissDisabled(model.isCreatingDownloadTask)"))
         XCTAssertTrue(view.contains("mobile.downloads.control.pause.hint"))
         XCTAssertTrue(view.contains("mobile.downloads.control.resume.hint"))
         XCTAssertTrue(view.contains("mobile.downloads.control.in-progress.message"))

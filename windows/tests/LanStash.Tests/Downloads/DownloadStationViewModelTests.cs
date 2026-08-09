@@ -362,6 +362,37 @@ public sealed class DownloadStationViewModelTests
         Assert.Single(repository.SnapshotRequests);
     }
 
+    [Fact]
+    public async Task CreateLinkUsesDefaultDestinationAddsConfirmedTaskAndRefreshes()
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(new DownloadStationSnapshot(
+            profile,
+            Page(0, 0, 0, null),
+            new(DownloadStationSectionStatus.Unavailable, null),
+            new(DownloadStationSectionStatus.Available, "/downloads")));
+        repository.CreateResults.Enqueue(CreateOutcome(
+            MutationResultStatus.ConfirmedSuccess,
+            submitted: true,
+            requiresRefresh: true,
+            task: Task("created-1", DownloadTaskState.Waiting)));
+        repository.SnapshotResults.Enqueue(Snapshot(profile, Page(
+            0, 1, 1, null, Task("created-1", DownloadTaskState.Waiting))));
+        using var model = new DownloadStationViewModel();
+
+        await model.ActivateAsync(repository);
+        await model.CreateTaskAsync(" magnet:?xt=urn:btih:test ");
+
+        var request = Assert.Single(repository.CreateRequests);
+        Assert.Equal(profile, request.ProfileId);
+        Assert.Equal("magnet:?xt=urn:btih:test", request.Uri);
+        Assert.Equal("/downloads", request.Destination);
+        Assert.Equal(DownloadTaskCreateNoticeKind.Success, model.CreateNoticeKind);
+        Assert.Equal("created-1", Assert.Single(model.Tasks).Id);
+        Assert.Equal(2, repository.SnapshotRequests.Count);
+    }
+
     private static FakeDownloadStationRepository Available(Guid profileId) =>
         new(profileId, available: true);
 
@@ -419,6 +450,27 @@ public sealed class DownloadStationViewModelTests
             task?.Id ?? "task-1",
             task);
 
+    private static DownloadTaskCreateOutcome CreateOutcome(
+        MutationResultStatus status,
+        bool submitted,
+        bool requiresRefresh,
+        DownloadTask? task) =>
+        new(
+            new MutationResult(
+                1,
+                status,
+                "downloadCreate",
+                submitted,
+                requiresRefresh,
+                CountsFor(status),
+                status == MutationResultStatus.SubmittedButUnverified
+                    ? MutationErrorCategory.Unknown
+                    : null,
+                localizationKey: null,
+                diagnosticTag: "download-station.create.test"),
+            task?.Id,
+            task);
+
     private static MutationResultCounts CountsFor(MutationResultStatus status) =>
         status switch
         {
@@ -453,9 +505,11 @@ public sealed class DownloadStationViewModelTests
         public Queue<object> SnapshotResults { get; } = new();
         public Queue<object> PageResults { get; } = new();
         public Queue<object> ControlResults { get; } = new();
+        public Queue<object> CreateResults { get; } = new();
         public List<(int Offset, int Limit)> SnapshotRequests { get; } = [];
         public List<(int Offset, int Limit)> PageRequests { get; } = [];
         public List<DownloadTaskControlRequest> ControlRequests { get; } = [];
+        public List<DownloadTaskCreateRequest> CreateRequests { get; } = [];
         public List<CancellationToken> SnapshotTokens { get; } = [];
 
         public Task<DownloadStationSnapshot> LoadSnapshotAsync(
@@ -483,6 +537,14 @@ public sealed class DownloadStationViewModelTests
         {
             ControlRequests.Add(request);
             return Result<DownloadTaskControlOutcome>(ControlResults.Dequeue());
+        }
+
+        public Task<DownloadTaskCreateOutcome> CreateTaskAsync(
+            DownloadTaskCreateRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            CreateRequests.Add(request);
+            return Result<DownloadTaskCreateOutcome>(CreateResults.Dequeue());
         }
 
         private static Task<T> Result<T>(object value) => value switch

@@ -457,7 +457,9 @@
   <data name="DownloadStationSpeedValue" xml:space="preserve"><value>{0}/秒</value></data>
   <data name="DownloadStationTaskAutomationName" xml:space="preserve"><value>{0}，{1}，{2}</value></data>
   <data name="DownloadStationTitle.Text" xml:space="preserve"><value>下载任务</value></data>
-  <data name="DownloadStationDescription.Text" xml:space="preserve"><value>查看这台 NAS 上的下载任务及当前进度。</value></data>
+  <data name="DownloadStationDescription.Text" xml:space="preserve"><value>添加链接，并查看这台 NAS 上的下载任务。</value></data>
+  <data name="DownloadStationCreateTaskLabel.Text" xml:space="preserve"><value>添加链接</value></data>
+  <data name="DownloadStationCreateTask.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>添加网址或磁力链接</value></data>
   <data name="DownloadStationRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
   <data name="DownloadStationDetailStatus.Text" xml:space="preserve"><value>状态</value></data>
   <data name="DownloadStationDetailProgress.Text" xml:space="preserve"><value>进度</value></data>
@@ -472,7 +474,7 @@
   <data name="DownloadStationChooseTaskMessage.Text" xml:space="preserve"><value>选择任务以查看当前详情。</value></data>
   <data name="DownloadStationLoading.Text" xml:space="preserve"><value>正在加载下载任务…</value></data>
   <data name="DownloadStationEmptyTitle.Text" xml:space="preserve"><value>没有下载任务</value></data>
-  <data name="DownloadStationEmptyMessage.Text" xml:space="preserve"><value>在 DSM 中创建的任务会显示在这里。</value></data>
+  <data name="DownloadStationEmptyMessage.Text" xml:space="preserve"><value>你在这里或 DSM 中添加的任务会显示在这里。</value></data>
   <data name="DownloadStationFilteredEmptyTitle.Text" xml:space="preserve"><value>没有符合条件的任务</value></data>
   <data name="DownloadStationFilteredEmptyMessage.Text" xml:space="preserve"><value>请尝试其他搜索词或状态筛选。</value></data>
   <data name="DownloadStationErrorTitle.Text" xml:space="preserve"><value>无法加载下载任务</value></data>
@@ -480,7 +482,30 @@
   <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>下载任务不可用</value></data>
   <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>这台 NAS 暂不提供受支持的 Download Station 只读查看功能。</value></data>
   <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>受限控制</value></data>
-  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>你可以一次暂停或继续一个任务。创建、删除和设置更改仍请在 DSM 中完成。</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>你可以添加链接，并一次暂停或继续一个任务。删除和设置更改仍请在 DSM 中完成。</value></data>
+  <data name="DownloadStationCreateTitle" xml:space="preserve"><value>添加下载链接</value></data>
+  <data name="DownloadStationCreateUriLabel" xml:space="preserve"><value>网址或磁力链接</value></data>
+  <data name="DownloadStationCreateUriPlaceholder" xml:space="preserve"><value>粘贴网址或磁力链接</value></data>
+  <data name="DownloadStationCreateUriAutomationName" xml:space="preserve"><value>用于 Download Station 的网址或磁力链接</value></data>
+  <data name="DownloadStationCreateDestinationText" xml:space="preserve"><value>目标位置：{0}</value></data>
+  <data name="DownloadStationCreateDefaultDestination" xml:space="preserve"><value>Download Station 默认位置</value></data>
+  <data name="DownloadStationCreateSubmit" xml:space="preserve"><value>创建任务</value></data>
+  <data name="DownloadStationCreateInProgressTitle" xml:space="preserve"><value>正在创建任务…</value></data>
+  <data name="DownloadStationCreateInProgressMessage" xml:space="preserve"><value>正在等待 NAS 确认新的下载任务。</value></data>
+  <data name="DownloadStationCreateSuccessTitle" xml:space="preserve"><value>任务已创建</value></data>
+  <data name="DownloadStationCreateSuccessMessage" xml:space="preserve"><value>NAS 已确认新的下载任务。</value></data>
+  <data name="DownloadStationCreateCancelledTitle" xml:space="preserve"><value>已取消创建</value></data>
+  <data name="DownloadStationCreateCancelledMessage" xml:space="preserve"><value>任务已在发送前取消。</value></data>
+  <data name="DownloadStationCreateReviewTitle" xml:space="preserve"><value>再次尝试前请先核对 Download Station</value></data>
+  <data name="DownloadStationCreateReviewMessage" xml:space="preserve"><value>NAS 可能已收到请求，但 App 无法确认新任务。再次创建前，请刷新并核对 Download Station。</value></data>
+  <data name="DownloadStationCreateUnsupportedTitle" xml:space="preserve"><value>无法在这里添加此链接</value></data>
+  <data name="DownloadStationCreateUnsupportedMessage" xml:space="preserve"><value>请在 DSM 的 Download Station 中处理此链接或 NAS。</value></data>
+  <data name="DownloadStationCreatePermissionTitle" xml:space="preserve"><value>你没有所需权限</value></data>
+  <data name="DownloadStationCreatePermissionMessage" xml:space="preserve"><value>请联系管理员获取权限，然后刷新任务列表。</value></data>
+  <data name="DownloadStationCreateConflictTitle" xml:space="preserve"><value>下载任务已发生变化</value></data>
+  <data name="DownloadStationCreateConflictMessage" xml:space="preserve"><value>请刷新 Download Station 并核对任务列表后再试。</value></data>
+  <data name="DownloadStationCreateFailureTitle" xml:space="preserve"><value>无法创建任务</value></data>
+  <data name="DownloadStationCreateFailureMessage" xml:space="preserve"><value>请检查连接、刷新任务列表，然后重试。</value></data>
   <data name="DownloadStationPause.Content" xml:space="preserve"><value>暂停</value></data>
   <data name="DownloadStationPause.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>暂停此下载任务</value></data>
   <data name="DownloadStationResume.Content" xml:space="preserve"><value>继续</value></data>

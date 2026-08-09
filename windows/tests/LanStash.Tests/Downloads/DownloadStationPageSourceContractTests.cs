@@ -77,22 +77,27 @@ public sealed class DownloadStationPageSourceContractTests
     }
 
     [Fact]
-    public void PageOnlyExposesSingleTaskPauseAndResume()
+    public void PageOnlyExposesLinkCreateSingleTaskPauseAndResume()
     {
         var downloadFeature =
             Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml") +
             Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml.cs") +
-            Read("windows/src/LanStash.App/Features/Downloads/DownloadStationViewModel.cs");
+            Read("windows/src/LanStash.App/Features/Downloads/DownloadStationViewModel.cs") +
+            Read("windows/src/LanStash.App/Features/Downloads/DownloadStationViewModel.Create.cs");
 
         foreach (var forbidden in new[]
         {
-            "CreateDownload", "CreateTask", "DeleteTask", "DeleteDownload",
+            "CreateDownloadFromFile", "DeleteTask", "DeleteDownload",
             "SaveSettings", "LoadSettings", "ControlDownloads", "create_click",
             "delete_click", "settings_click", "force_complete", "removeData"
         })
         {
             Assert.DoesNotContain(forbidden, downloadFeature, StringComparison.OrdinalIgnoreCase);
         }
+        Assert.Contains("DownloadStationCreateTask", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("ShowCreateTaskDialogAsync", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("_viewModel.CreateTaskAsync(uriBox.Text)", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("new DownloadTaskCreateRequest(", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("Pause_Click", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("Resume_Click", downloadFeature, StringComparison.Ordinal);
         Assert.DoesNotContain("DownloadTaskControlAction.Finish", downloadFeature, StringComparison.Ordinal);

@@ -5,6 +5,7 @@ import SwiftUI
 struct MobileDownloadsView: View {
     @Bindable var model: MobileAppModel
     @State private var selectedTask: DownloadStationTask?
+    @State private var isShowingCreateTask = false
 
     var body: some View {
         MobilePageStateView(
@@ -26,6 +27,27 @@ struct MobileDownloadsView: View {
         }
         .sheet(item: $selectedTask) { task in
             MobileDownloadTaskDetailView(model: model, initialTask: task)
+        }
+        .sheet(isPresented: $isShowingCreateTask) {
+            MobileDownloadCreateTaskView(model: model)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isShowingCreateTask = true
+                } label: {
+                    Label(
+                        L10n.string("mobile.downloads.create.action"),
+                        systemImage: "plus"
+                    )
+                }
+                .disabled(!model.canCreateDownloadTask)
+                .frame(
+                    minWidth: MobileMetrics.minimumTouchTarget,
+                    minHeight: MobileMetrics.minimumTouchTarget
+                )
+                .accessibilityHint(L10n.string("mobile.downloads.create.action.hint"))
+            }
         }
     }
 
@@ -56,6 +78,140 @@ struct MobileDownloadsView: View {
             }
         }
         .listStyle(.insetGrouped)
+    }
+}
+
+private struct MobileDownloadCreateTaskView: View {
+    @Bindable var model: MobileAppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var uri = ""
+
+    private var canSubmit: Bool {
+        !model.isCreatingDownloadTask &&
+        model.downloadCreateFeedback == nil &&
+        !uri.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(
+                        L10n.string("mobile.downloads.create.url.placeholder"),
+                        text: $uri,
+                        axis: .vertical
+                    )
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.URL)
+                    .autocorrectionDisabled()
+                    .accessibilityLabel(L10n.string("mobile.downloads.create.url.label"))
+                    Text(L10n.string("mobile.downloads.create.url.help"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text(L10n.string("mobile.downloads.create.url.label"))
+                }
+
+                Section(L10n.string("mobile.downloads.create.destination.label")) {
+                    if let destination = model.downloadCreateDefaultDestination {
+                        LabeledContent(
+                            L10n.string("ui.0b7e2876922e4662"),
+                            value: destination
+                        )
+                    } else {
+                        Label(
+                            L10n.string("mobile.downloads.create.destination.default"),
+                            systemImage: "folder"
+                        )
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+
+                if let feedback = model.downloadCreateFeedback {
+                    Section {
+                        DownloadCreateFeedbackView(model: model, feedback: feedback)
+                    }
+                }
+            }
+            .navigationTitle(L10n.string("mobile.downloads.create.title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(model.isCreatingDownloadTask)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(closeTitle) {
+                        model.dismissDownloadCreateFeedback()
+                        dismiss()
+                    }
+                    .disabled(model.isCreatingDownloadTask)
+                    .frame(
+                        minWidth: MobileMetrics.minimumTouchTarget,
+                        minHeight: MobileMetrics.minimumTouchTarget
+                    )
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.string("mobile.downloads.create.submit")) {
+                        model.createDownloadTask(uri: uri)
+                    }
+                    .disabled(!canSubmit)
+                    .frame(
+                        minWidth: MobileMetrics.minimumTouchTarget,
+                        minHeight: MobileMetrics.minimumTouchTarget
+                    )
+                }
+            }
+        }
+        .onDisappear {
+            if !model.isCreatingDownloadTask {
+                model.dismissDownloadCreateFeedback()
+            }
+        }
+    }
+
+    private var closeTitle: String {
+        model.downloadCreateFeedback == nil
+            ? L10n.string("mobile.downloads.create.cancel")
+            : L10n.string("mobile.downloads.create.done")
+    }
+}
+
+private struct DownloadCreateFeedbackView: View {
+    @Bindable var model: MobileAppModel
+    let feedback: MobileDownloadCreateFeedback
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(model.title(for: feedback), systemImage: systemImage)
+                .font(.headline)
+            Text(model.message(for: feedback))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            if feedback.kind == .inProgress {
+                ProgressView()
+                    .accessibilityLabel(model.message(for: feedback))
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var systemImage: String {
+        switch feedback.kind {
+        case .inProgress:
+            return "clock"
+        case .success:
+            return "checkmark.circle"
+        case .needsReview:
+            return "exclamationmark.triangle"
+        case .cancelled:
+            return "xmark.circle"
+        case .conflict:
+            return "arrow.triangle.2.circlepath"
+        case .permission:
+            return "lock"
+        case .unsupported:
+            return "slash.circle"
+        case .failure:
+            return "exclamationmark.circle"
+        }
     }
 }
 

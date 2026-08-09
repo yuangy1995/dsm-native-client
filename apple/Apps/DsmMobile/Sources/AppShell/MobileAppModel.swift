@@ -56,8 +56,12 @@ final class MobileAppModel {
     @ObservationIgnored var downloadStationLoadOverride: (@Sendable () async throws -> DownloadStationSnapshot)?
     @ObservationIgnored var downloadStationControlOverride:
         (@Sendable (DownloadTaskControlRequest) async throws -> DownloadTaskControlOutcome)?
+    @ObservationIgnored var downloadStationCreateOverride:
+        (@Sendable (DownloadTaskCreateRequest) async throws -> DownloadTaskCreateOutcome)?
     @ObservationIgnored var downloadControlTask: Task<Void, Never>?
     @ObservationIgnored var downloadControlGeneration: UInt64 = 0
+    @ObservationIgnored var downloadCreateTask: Task<Void, Never>?
+    @ObservationIgnored var downloadCreateGeneration: UInt64 = 0
 
     var isConnected = false
     var activeProfile: NasProfile? {
@@ -89,6 +93,7 @@ final class MobileAppModel {
     var downloadControlTaskID: String?
     var downloadControlAction: DownloadStationTaskAction?
     var downloadControlFeedback: MobileDownloadControlFeedback?
+    var downloadCreateFeedback: MobileDownloadCreateFeedback?
     var conversations: [ChatConversation] = []
     var systemOverview: NasSystemOverview?
     var storageSnapshot: NasStorageSnapshot?

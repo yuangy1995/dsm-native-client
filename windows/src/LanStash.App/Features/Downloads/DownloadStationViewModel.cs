@@ -5,7 +5,7 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.Downloads;
 
-public sealed class DownloadStationViewModel : ObservableObject, IDisposable
+public sealed partial class DownloadStationViewModel : ObservableObject, IDisposable
 {
     public const int DefaultPageSize = 100;
 
@@ -204,6 +204,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
             SetActivity(new(DownloadStationSectionStatus.Unavailable, null));
             ResetErrors();
             ClearControlNotice();
+            ClearCreateNotice();
             ContentState = DownloadStationContentState.Unavailable;
             return;
         }
@@ -227,6 +228,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         SaveCurrentProfileState();
         CancelRequest();
         CancelControl();
+        CancelCreate();
         _repository = null;
         ActiveProfileId = null;
         Tasks.Clear();
@@ -236,6 +238,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         Filter = DownloadTaskFilter.All;
         ResetErrors();
         ClearControlNotice();
+        ClearCreateNotice();
         ContentState = DownloadStationContentState.Loading;
     }
 
@@ -429,7 +432,9 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
             profile.HasMore = snapshot.Tasks.HasMore;
             profile.SourceTotal = snapshot.Tasks.SourceTotal;
             profile.Activity = snapshot.Activity;
+            profile.DefaultDestination = snapshot.DefaultDestination;
             SetActivity(snapshot.Activity);
+            RaisePropertyChanged(nameof(CreateDestinationText));
             profile.Loaded = true;
             ApplyFilter(profile);
         }
@@ -746,6 +751,7 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         _controlCancellation?.Cancel();
         _controlCancellation?.Dispose();
         _controlCancellation = null;
+        CancelCreate();
     }
 
     private sealed class ProfileState
@@ -759,6 +765,9 @@ public sealed class DownloadStationViewModel : ObservableObject, IDisposable
         public DownloadTaskFilter Filter { get; set; }
         public string? SelectedTaskId { get; set; }
         public DownloadActivitySection Activity { get; set; } = new(
+            DownloadStationSectionStatus.Unavailable,
+            null);
+        public DownloadDefaultDestinationSection DefaultDestination { get; set; } = new(
             DownloadStationSectionStatus.Unavailable,
             null);
     }

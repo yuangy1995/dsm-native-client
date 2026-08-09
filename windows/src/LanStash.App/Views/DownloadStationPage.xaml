@@ -9,10 +9,12 @@
         <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="BackAccelerator_Invoked" />
         <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="SearchAccelerator_Invoked" />
         <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="CreateTaskAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid Padding="24,20,24,16" RowSpacing="12">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -35,17 +37,28 @@
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="Wrap" />
             </StackPanel>
-            <Button
-                x:Uid="DownloadStationRefresh"
-                x:Name="RefreshButton"
-                Grid.Column="1"
-                MinHeight="44"
-                Click="Refresh_Click">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon Glyph="&#xE72C;" FontSize="16" />
-                    <TextBlock x:Uid="DownloadStationRefreshLabel" />
-                </StackPanel>
-            </Button>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button
+                    x:Uid="DownloadStationCreateTask"
+                    x:Name="CreateTaskButton"
+                    MinHeight="44"
+                    Click="CreateTask_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE710;" FontSize="16" />
+                        <TextBlock x:Uid="DownloadStationCreateTaskLabel" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    x:Uid="DownloadStationRefresh"
+                    x:Name="RefreshButton"
+                    MinHeight="44"
+                    Click="Refresh_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE72C;" FontSize="16" />
+                        <TextBlock x:Uid="DownloadStationRefreshLabel" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <InfoBar
@@ -58,15 +71,24 @@
         <InfoBar
             x:Uid="DownloadStationActivityError"
             x:Name="ActivityErrorNotice"
-            Grid.Row="2"
+            Grid.Row="3"
             AutomationProperties.LiveSetting="Polite"
             IsClosable="False"
             IsOpen="False"
             Severity="Warning" />
 
+        <InfoBar
+            x:Name="DownloadCreateNotice"
+            Grid.Row="2"
+            AutomationProperties.LiveSetting="Polite"
+            IsClosable="False"
+            IsOpen="False"
+            Message="{Binding CreateNoticeMessage}"
+            Title="{Binding CreateNoticeTitle}" />
+
         <Border
             x:Name="ActivitySummary"
-            Grid.Row="2"
+            Grid.Row="3"
             Padding="16,12"
             Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -103,13 +125,13 @@
         <InfoBar
             x:Uid="DownloadStationRefreshError"
             x:Name="RefreshErrorNotice"
-            Grid.Row="3"
+            Grid.Row="4"
             AutomationProperties.LiveSetting="Polite"
             IsClosable="False"
             IsOpen="False"
             Severity="Warning" />
 
-        <Grid Grid.Row="4">
+        <Grid Grid.Row="5">
             <Grid
                 x:Name="ContentState"
                 ColumnSpacing="12"

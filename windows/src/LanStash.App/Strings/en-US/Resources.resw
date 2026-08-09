@@ -457,7 +457,9 @@
   <data name="DownloadStationSpeedValue" xml:space="preserve"><value>{0}/s</value></data>
   <data name="DownloadStationTaskAutomationName" xml:space="preserve"><value>{0}, {1}, {2}</value></data>
   <data name="DownloadStationTitle.Text" xml:space="preserve"><value>Download Station</value></data>
-  <data name="DownloadStationDescription.Text" xml:space="preserve"><value>View download tasks and their current progress on this NAS.</value></data>
+  <data name="DownloadStationDescription.Text" xml:space="preserve"><value>Add links and view download tasks on this NAS.</value></data>
+  <data name="DownloadStationCreateTaskLabel.Text" xml:space="preserve"><value>Add link</value></data>
+  <data name="DownloadStationCreateTask.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Add a URL or magnet link</value></data>
   <data name="DownloadStationRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
   <data name="DownloadStationDetailStatus.Text" xml:space="preserve"><value>Status</value></data>
   <data name="DownloadStationDetailProgress.Text" xml:space="preserve"><value>Progress</value></data>
@@ -472,7 +474,7 @@
   <data name="DownloadStationChooseTaskMessage.Text" xml:space="preserve"><value>Select a task to view its current details.</value></data>
   <data name="DownloadStationLoading.Text" xml:space="preserve"><value>Loading download tasks…</value></data>
   <data name="DownloadStationEmptyTitle.Text" xml:space="preserve"><value>No download tasks</value></data>
-  <data name="DownloadStationEmptyMessage.Text" xml:space="preserve"><value>Tasks created in DSM will appear here.</value></data>
+  <data name="DownloadStationEmptyMessage.Text" xml:space="preserve"><value>Tasks you add here or in DSM will appear here.</value></data>
   <data name="DownloadStationFilteredEmptyTitle.Text" xml:space="preserve"><value>No matching tasks</value></data>
   <data name="DownloadStationFilteredEmptyMessage.Text" xml:space="preserve"><value>Try another search or status filter.</value></data>
   <data name="DownloadStationErrorTitle.Text" xml:space="preserve"><value>Unable to load download tasks</value></data>
@@ -480,7 +482,30 @@
   <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>Download tasks aren’t available</value></data>
   <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>This NAS doesn’t offer the supported read-only Download Station view.</value></data>
   <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>Limited controls</value></data>
-  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>You can pause or resume one task at a time. Create, delete, and settings changes stay in DSM.</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>You can add a link and pause or resume one task at a time. Delete and settings changes stay in DSM.</value></data>
+  <data name="DownloadStationCreateTitle" xml:space="preserve"><value>Add download link</value></data>
+  <data name="DownloadStationCreateUriLabel" xml:space="preserve"><value>URL or magnet link</value></data>
+  <data name="DownloadStationCreateUriPlaceholder" xml:space="preserve"><value>Paste a URL or magnet link</value></data>
+  <data name="DownloadStationCreateUriAutomationName" xml:space="preserve"><value>URL or magnet link for Download Station</value></data>
+  <data name="DownloadStationCreateDestinationText" xml:space="preserve"><value>Destination: {0}</value></data>
+  <data name="DownloadStationCreateDefaultDestination" xml:space="preserve"><value>Download Station default location</value></data>
+  <data name="DownloadStationCreateSubmit" xml:space="preserve"><value>Create task</value></data>
+  <data name="DownloadStationCreateInProgressTitle" xml:space="preserve"><value>Creating task…</value></data>
+  <data name="DownloadStationCreateInProgressMessage" xml:space="preserve"><value>Waiting for the NAS to confirm the new download task.</value></data>
+  <data name="DownloadStationCreateSuccessTitle" xml:space="preserve"><value>Task created</value></data>
+  <data name="DownloadStationCreateSuccessMessage" xml:space="preserve"><value>The NAS confirmed the new download task.</value></data>
+  <data name="DownloadStationCreateCancelledTitle" xml:space="preserve"><value>Creation cancelled</value></data>
+  <data name="DownloadStationCreateCancelledMessage" xml:space="preserve"><value>The task was cancelled before it was sent.</value></data>
+  <data name="DownloadStationCreateReviewTitle" xml:space="preserve"><value>Check Download Station before trying again</value></data>
+  <data name="DownloadStationCreateReviewMessage" xml:space="preserve"><value>The NAS may have received the request, but the app could not confirm the new task. Refresh and check Download Station before creating it again.</value></data>
+  <data name="DownloadStationCreateUnsupportedTitle" xml:space="preserve"><value>This link can’t be added here</value></data>
+  <data name="DownloadStationCreateUnsupportedMessage" xml:space="preserve"><value>Use Download Station in DSM for this link or NAS.</value></data>
+  <data name="DownloadStationCreatePermissionTitle" xml:space="preserve"><value>You don’t have permission</value></data>
+  <data name="DownloadStationCreatePermissionMessage" xml:space="preserve"><value>Ask an administrator for access, then refresh the task list.</value></data>
+  <data name="DownloadStationCreateConflictTitle" xml:space="preserve"><value>Download task changed</value></data>
+  <data name="DownloadStationCreateConflictMessage" xml:space="preserve"><value>Refresh Download Station and check the task list before trying again.</value></data>
+  <data name="DownloadStationCreateFailureTitle" xml:space="preserve"><value>Couldn’t create the task</value></data>
+  <data name="DownloadStationCreateFailureMessage" xml:space="preserve"><value>Check the connection, refresh the task list, then try again.</value></data>
   <data name="DownloadStationPause.Content" xml:space="preserve"><value>Pause</value></data>
   <data name="DownloadStationPause.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Pause this download task</value></data>
   <data name="DownloadStationResume.Content" xml:space="preserve"><value>Resume</value></data>
