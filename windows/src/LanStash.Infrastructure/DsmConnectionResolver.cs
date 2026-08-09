@@ -4,7 +4,8 @@ namespace LanStash.Infrastructure;
 
 public sealed record DiscoveredConnection(
     NasProfile Profile,
-    IReadOnlyDictionary<string, ApiCapability> Capabilities);
+    IReadOnlyDictionary<string, ApiCapability> Capabilities,
+    DsmConnectionSource Source = DsmConnectionSource.DirectAddress);
 
 /// <summary>
 /// 登录前只使用不含凭据的能力发现探测连接候选。
@@ -26,7 +27,11 @@ public sealed class DsmConnectionResolver(
             var directProfile = profile with { Host = parsed.Host, Port = parsed.Port };
             return new(
                 directProfile,
-                await api.DiscoverAsync(directProfile, cancellationToken));
+                await api.DiscoverAsync(
+                    directProfile,
+                    DsmConnectionSource.DirectAddress,
+                    cancellationToken),
+                DsmConnectionSource.DirectAddress);
         }
 
         updateStatus?.Invoke(UserText.Key("WinSharedaa0582cad267718e"));
@@ -56,7 +61,11 @@ public sealed class DsmConnectionResolver(
             {
                 return new(
                     connectionProfile,
-                    await api.DiscoverAsync(connectionProfile, cancellationToken));
+                    await api.DiscoverAsync(
+                        connectionProfile,
+                        ConnectionSourceFor(endpoint.Kind),
+                        cancellationToken),
+                    ConnectionSourceFor(endpoint.Kind));
             }
             catch (DsmException error)
             {
@@ -71,7 +80,11 @@ public sealed class DsmConnectionResolver(
             var relayProfile = profile with { Host = relay.Host, Port = relay.Port };
             return new(
                 relayProfile,
-                await api.DiscoverAsync(relayProfile, cancellationToken));
+                await api.DiscoverAsync(
+                    relayProfile,
+                    DsmConnectionSource.QuickConnectRelay,
+                    cancellationToken),
+                DsmConnectionSource.QuickConnectRelay);
         }
         catch (DsmException error) when (
             error.Kind == DsmErrorKind.QuickConnectRelayUnavailable &&
@@ -80,4 +93,13 @@ public sealed class DsmConnectionResolver(
             throw lastDirectError;
         }
     }
+
+    internal static DsmConnectionSource ConnectionSourceFor(
+        QuickConnectEndpointKind endpointKind) => endpointKind switch
+        {
+            QuickConnectEndpointKind.Local => DsmConnectionSource.QuickConnectLan,
+            QuickConnectEndpointKind.External => DsmConnectionSource.QuickConnectExternal,
+            QuickConnectEndpointKind.Relay => DsmConnectionSource.QuickConnectRelay,
+            _ => throw new ArgumentOutOfRangeException(nameof(endpointKind)),
+        };
 }

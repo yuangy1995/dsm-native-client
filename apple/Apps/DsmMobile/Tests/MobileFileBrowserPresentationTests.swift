@@ -11,13 +11,20 @@ final class MobileFileBrowserPresentationTests: XCTestCase {
         XCTAssertFalse(source.contains("files.isEmpty"))
     }
 
-    func test旧写入口在移动文件页面与模型扩展中不可达() throws {
+    func test移动文件页面只通过结果型变更模型接入写操作() throws {
         let view = try sourceFile("Sources/Features/Files/MobileFileBrowser.swift")
         let model = try sourceFile("Sources/Features/Files/MobileAppModel+Files.swift")
-        for forbidden in ["createFolder(", "rename(", "delete(", "isCreatingFolder", "itemToRename", "itemToDelete"] {
+        let mutation = try sourceFile(
+            "Sources/Features/Files/Mutation/MobileFileItemMutationModel.swift"
+        )
+        for forbidden in ["delete(", "isCreatingFolder", "itemToRename", "itemToDelete"] {
             XCTAssertFalse(view.contains(forbidden), forbidden)
             XCTAssertFalse(model.contains(forbidden), forbidden)
         }
+        XCTAssertTrue(mutation.contains("createFolderResult("))
+        XCTAssertTrue(mutation.contains("renameResult("))
+        XCTAssertFalse(mutation.contains("repository.createFolder(parentPath:"))
+        XCTAssertFalse(mutation.contains("repository.rename(path:"))
     }
 
     func test文件行主操作与更多菜单不是嵌套按钮() throws {

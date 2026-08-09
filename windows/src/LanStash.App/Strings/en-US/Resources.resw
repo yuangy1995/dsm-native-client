@@ -798,4 +798,59 @@
   <data name="FileLocationsRemotePartial.Message" xml:space="preserve"><value>Available remote folders can still be opened without changing their connection settings.</value></data>
   <data name="FileLocationsRemoteTruncated.Title" xml:space="preserve"><value>Showing a limited list</value></data>
   <data name="FileLocationsRemoteTruncated.Message" xml:space="preserve"><value>The list reached its safe limit, so some remote locations may not be shown.</value></data>
+  <data name="CertificateTrustRetryFailedMessage" xml:space="preserve"><value>The security information was saved, but the connection could not be completed. Start a new connection and review the details again.</value></data>
+  <data name="CertificateTrustFirstTitle" xml:space="preserve"><value>Review this NAS</value></data>
+  <data name="CertificateTrustChangedTitle" xml:space="preserve"><value>Security information changed</value></data>
+  <data name="CertificateTrustInvalidTitle" xml:space="preserve"><value>Can’t connect securely</value></data>
+  <data name="CertificateTrustWarningTitle" xml:space="preserve"><value>Check before continuing</value></data>
+  <data name="CertificateTrustWarningMessage" xml:space="preserve"><value>This NAS uses a certificate that your device does not recognize.</value></data>
+  <data name="CertificateTrustChangedWarningTitle" xml:space="preserve"><value>The saved certificate no longer matches</value></data>
+  <data name="CertificateTrustChangedWarningMessage" xml:space="preserve"><value>Do not continue unless you expected this change and verified it through a trusted channel.</value></data>
+  <data name="CertificateTrustReviewExplanation" xml:space="preserve"><value>Verify that the certificate name is {0} and compare the fingerprint with your NAS or administrator.</value></data>
+  <data name="CertificateTrustCannotApproveExplanation" xml:space="preserve"><value>The certificate name is {0}. This connection cannot be approved here because it does not meet the security requirements.</value></data>
+  <data name="CertificateTrustNasLabel" xml:space="preserve"><value>NAS</value></data>
+  <data name="CertificateTrustAddressLabel" xml:space="preserve"><value>Address entered</value></data>
+  <data name="CertificateTrustConnectionLabel" xml:space="preserve"><value>Connection</value></data>
+  <data name="CertificateTrustConnectionDirect" xml:space="preserve"><value>Direct address</value></data>
+  <data name="CertificateTrustConnectionLan" xml:space="preserve"><value>QuickConnect on this network</value></data>
+  <data name="CertificateTrustConnectionExternal" xml:space="preserve"><value>QuickConnect direct connection</value></data>
+  <data name="CertificateTrustConnectionRelay" xml:space="preserve"><value>QuickConnect relay</value></data>
+  <data name="CertificateTrustPreviousFingerprintLabel" xml:space="preserve"><value>Previously saved fingerprint</value></data>
+  <data name="CertificateTrustPresentedFingerprintLabel" xml:space="preserve"><value>Current fingerprint</value></data>
+  <data name="CertificateTrustPreviousFingerprintAutomationName" xml:space="preserve"><value>Previously saved certificate fingerprint</value></data>
+  <data name="CertificateTrustPresentedFingerprintAutomationName" xml:space="preserve"><value>Current certificate fingerprint</value></data>
+  <data name="CertificateTrustApproveNextStep" xml:space="preserve"><value>Only continue after the fingerprints match.</value></data>
+  <data name="CertificateTrustBlockedNextStep" xml:space="preserve"><value>Cancel and check the NAS address, certificate, and connection with your administrator.</value></data>
+  <data name="CertificateTrustApproveAction" xml:space="preserve"><value>I checked, continue</value></data>
+  <data name="CertificateTrustApproveChangedAction" xml:space="preserve"><value>I verified the change, continue</value></data>
+  <data name="CertificateTrustSubjectUnavailable" xml:space="preserve"><value>Not provided</value></data>
+  <data name="FileMutationCreateFolder.Label" xml:space="preserve"><value>New folder</value></data>
+  <data name="FileMutationCreateFolder.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Create a folder in the current location</value></data>
+  <data name="FileMutationRename.Label" xml:space="preserve"><value>Rename</value></data>
+  <data name="FileMutationRename.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Rename the selected item</value></data>
+  <data name="FileMutationCreateAction" xml:space="preserve"><value>Create folder</value></data>
+  <data name="FileMutationRenameAction" xml:space="preserve"><value>Rename</value></data>
+  <data name="FileMutationReturnToFormAction" xml:space="preserve"><value>Return to form</value></data>
+  <data name="FileMutationCreateTarget" xml:space="preserve"><value>Parent folder: {0}</value></data>
+  <data name="FileMutationRenameTarget" xml:space="preserve"><value>Selected item: {0}</value></data>
+  <data name="FileMutationNameLabel" xml:space="preserve"><value>Name</value></data>
+  <data name="FileMutationNameHelp" xml:space="preserve"><value>Use a name that is unique in this folder.</value></data>
+  <data name="FileMutationNameAutomationName" xml:space="preserve"><value>New folder or item name</value></data>
+  <data name="FileMutationNameError" xml:space="preserve"><value>Enter a different name without slashes or spaces at the beginning or end.</value></data>
+  <data name="FileMutationCancellingMessage" xml:space="preserve"><value>Cancelling. Waiting to learn whether the NAS received the change…</value></data>
+  <data name="FileMutationSubmittingMessage" xml:space="preserve"><value>Applying the change…</value></data>
+  <data name="FileMutationReviewTarget" xml:space="preserve"><value>Check this location: {0}</value></data>
+  <data name="FileMutationReviewTitle" xml:space="preserve"><value>Check the item before continuing</value></data>
+  <data name="FileMutationPermissionTitle" xml:space="preserve"><value>You don’t have permission</value></data>
+  <data name="FileMutationChangedTitle" xml:space="preserve"><value>The item or name changed</value></data>
+  <data name="FileMutationUnsupportedTitle" xml:space="preserve"><value>This change isn’t available</value></data>
+  <data name="FileMutationFailureTitle" xml:space="preserve"><value>Couldn’t complete the change</value></data>
+  <data name="FileMutationCreateFolderTitle" xml:space="preserve"><value>Create a new folder</value></data>
+  <data name="FileMutationRenameTitle" xml:space="preserve"><value>Rename item</value></data>
+  <data name="FileMutationReviewMessage" xml:space="preserve"><value>The result couldn’t be confirmed. Check the folder on your NAS before making this change again.</value></data>
+  <data name="FileMutationCancelledMessage" xml:space="preserve"><value>Nothing was changed. You can return to the form safely.</value></data>
+  <data name="FileMutationPermissionMessage" xml:space="preserve"><value>Your account can’t change this item. Ask an administrator for access, then refresh the folder.</value></data>
+  <data name="FileMutationChangedMessage" xml:space="preserve"><value>The item or requested name is no longer available. Refresh the folder and choose again.</value></data>
+  <data name="FileMutationUnsupportedMessage" xml:space="preserve"><value>This NAS or folder doesn’t support this change. You can continue browsing and saving copies.</value></data>
+  <data name="FileMutationFailureMessage" xml:space="preserve"><value>The change wasn’t completed. Refresh the folder and try again from the current item.</value></data>
 </root>

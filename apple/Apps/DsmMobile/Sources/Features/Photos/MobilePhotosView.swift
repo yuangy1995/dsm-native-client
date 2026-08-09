@@ -11,6 +11,7 @@ struct MobilePhotosView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var browseMode = PhotoBrowseMode.albums
     @State private var timeline = MobilePhotoTimelineModel()
+    @State private var viewer = MobilePhotoViewerModel()
     @State private var showsPreviewInspector = false
     @State private var showsPreviewFullScreen = false
     @State private var showsPreviewDetails = false
@@ -69,22 +70,7 @@ struct MobilePhotosView: View {
         } message: {
             Text(documentFailureMessage)
         }
-        .task(id: model.activeProfile?.id) {
-            model.documentTransferController.setActiveProfile(model.activeProfile?.id)
-            preview.activate(profileID: model.activeProfile?.id)
-            timeline.activate(
-                profileID: model.activeProfile?.id,
-                repository: model.photoRepository,
-                repositoryProfileID: model.fileRepository?.profileID
-            )
-            await library.activate(
-                profileID: model.activeProfile?.id,
-                repository: model.photoRepository
-            )
-            if browseMode == .timeline {
-                await timeline.show(space: library.state.selectedSpace)
-            }
-        }
+        .task(id: activationIdentity) { await activatePhotoContext() }
         .onChange(of: model.activeProfile?.id) { _, _ in
             resetPreviewPresentation()
         }
@@ -100,12 +86,14 @@ struct MobilePhotosView: View {
                !showsPreviewFullScreen,
                !restoresPreviewInspectorAfterFullScreen {
                 preview.close()
+                viewer.close()
                 showsPreviewDetails = false
             }
         }
         .onDisappear {
             library.cancelAllWork()
             timeline.cancelAllWork()
+            viewer.close()
         }
     }
 
@@ -194,8 +182,8 @@ struct MobilePhotosView: View {
         NavigationStack {
             Group {
                 if showsPreviewDetails,
-                   let item = preview.state.details ?? preview.state.selectedItem {
-                    MobileFileDetailsView(item: item)
+                   (preview.state.details ?? preview.state.selectedItem) != nil {
+                    MobilePhotoMetadataView(viewer: viewer, previewState: preview.state)
                 } else {
                     MobileFilePreviewView(
                         state: preview.state,
@@ -232,6 +220,15 @@ struct MobilePhotosView: View {
                         }
                         .accessibilityLabel(L10n.string("mobile.files.preview.action.close"))
                     }
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    MobilePhotoViewerNavigationControls(
+                        state: viewer.state,
+                        onPrevious: openPreviousPhoto,
+                        onNext: openNextPhoto,
+                        onSaveCopy: saveCurrentPhotoCopy,
+                        onShare: shareCurrentPhoto
+                    )
                 }
             }
         }
@@ -397,6 +394,7 @@ struct MobilePhotosView: View {
             return
         }
         guard let repository = model.fileRepository else { return }
+        guard viewer.open(item, visibleItems: visiblePhotoSnapshot) else { return }
         showsPreviewDetails = false
         restoresPreviewInspectorAfterFullScreen = false
         if horizontalSizeClass == .regular {
@@ -439,6 +437,7 @@ struct MobilePhotosView: View {
         showsPreviewFullScreen = false
         showsPreviewInspector = false
         preview.close()
+        viewer.close()
     }
 
     private func previewPresentationDidDismiss() {
@@ -454,6 +453,7 @@ struct MobilePhotosView: View {
         guard !showsPreviewInspector, !showsPreviewFullScreen else { return }
         showsPreviewDetails = false
         preview.close()
+        viewer.close()
     }
 
     private func resetPreviewPresentation() {
@@ -461,6 +461,81 @@ struct MobilePhotosView: View {
         restoresPreviewInspectorAfterFullScreen = false
         showsPreviewFullScreen = false
         showsPreviewInspector = false
+        preview.close()
+        viewer.activate(
+            profileID: model.activeProfile?.id,
+            fileRepository: model.fileRepository
+        )
+    }
+
+    private func activatePhotoContext() async {
+        model.documentTransferController.setActiveProfile(model.activeProfile?.id)
+        if viewer.activate(
+            profileID: model.activeProfile?.id,
+            fileRepository: model.fileRepository
+        ) {
+            showsPreviewDetails = false
+            restoresPreviewInspectorAfterFullScreen = false
+            showsPreviewFullScreen = false
+            showsPreviewInspector = false
+            preview.close()
+        }
+        preview.activate(profileID: model.activeProfile?.id)
+        timeline.activate(
+            profileID: model.activeProfile?.id,
+            repository: model.photoRepository,
+            repositoryProfileID: model.fileRepository?.profileID
+        )
+        await library.activate(
+            profileID: model.activeProfile?.id,
+            repository: model.photoRepository
+        )
+        if browseMode == .timeline {
+            await timeline.show(space: library.state.selectedSpace)
+        }
+    }
+
+    private var activationIdentity: MobilePhotoActivationIdentity {
+        MobilePhotoActivationIdentity(
+            profileID: model.activeProfile?.id,
+            fileRepository: model.fileRepository.map(ObjectIdentifier.init)
+        )
+    }
+
+    private var visiblePhotoSnapshot: [PhotoLibraryItem] {
+        let candidates = browseMode == .timeline ? timeline.visibleItems : state.page.items
+        return candidates.filter { !$0.isFolder }
+    }
+
+    private func openPreviousPhoto() {
+        guard let item = viewer.movePrevious() else { return }
+        openSnapshotPhoto(item)
+    }
+
+    private func openNextPhoto() {
+        guard let item = viewer.moveNext() else { return }
+        openSnapshotPhoto(item)
+    }
+
+    private func openSnapshotPhoto(_ item: PhotoLibraryItem) {
+        guard viewer.state.profileID == model.activeProfile?.id,
+              let repository = model.fileRepository,
+              repository.profileID == item.profileID else {
+            viewer.close()
+            return
+        }
+        showsPreviewDetails = false
+        Task { await preview.open(item.fileItem, service: repository) }
+    }
+
+    private func saveCurrentPhotoCopy() {
+        guard let item = viewer.state.selectedItem else { return }
+        saveCopy(item)
+    }
+
+    private func shareCurrentPhoto() {
+        guard let item = viewer.state.selectedItem else { return }
+        share(item)
     }
 
     private func adaptPreviewPresentation(to sizeClass: UserInterfaceSizeClass?) {
@@ -554,4 +629,9 @@ struct MobilePhotosView: View {
         case .unknown, .none: L10n.string("mobile.documents.error-unknown")
         }
     }
+}
+
+private struct MobilePhotoActivationIdentity: Hashable {
+    let profileID: UUID?
+    let fileRepository: ObjectIdentifier?
 }

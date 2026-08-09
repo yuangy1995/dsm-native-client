@@ -69,6 +69,31 @@
                 Click="Refresh_Click"
                 Icon="Refresh" />
             <AppBarButton
+                x:Uid="FileMutationCreateFolder"
+                x:Name="CreateFolderButton"
+                Click="CreateFolder_Click"
+                Icon="NewFolder"
+                MinHeight="48">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator
+                        Key="N"
+                        Modifiers="Control,Shift"
+                        Invoked="CreateFolderAccelerator_Invoked" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton
+                x:Uid="FileMutationRename"
+                x:Name="RenameButton"
+                Click="RenameItem_Click"
+                Icon="Rename"
+                MinHeight="48">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator
+                        Key="F2"
+                        Invoked="RenameAccelerator_Invoked" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton
                 x:Uid="FileBrowserUpload"
                 x:Name="UploadButton"
                 Click="Upload_Click"

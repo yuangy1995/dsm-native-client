@@ -1,5 +1,6 @@
 using LanStash.App.Features.Files;
 using LanStash.App.Features.Files.Locations;
+using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Files.Preview;
 using LanStash.App.Features.Files.Sharing;
 using LanStash.App.Features.Transfers;
@@ -42,7 +43,9 @@ public sealed partial class FilesPage : Page, IDisposable
         WindowsTransferPickerService transfers,
         IFileShareLinkRepository? shareRepository = null,
         FileShareLinkReviewBlocker? shareReviewBlocker = null,
-        IFileLocationsRepository? locationsRepository = null)
+        IFileLocationsRepository? locationsRepository = null,
+        IFileMutationRepository? mutationRepository = null,
+        FileMutationReviewBlocker? mutationReviewBlocker = null)
         : this(
             new FileBrowserViewModel(new RepositoryFileBrowserDataSource(repository)),
             previewRepository,
@@ -50,7 +53,9 @@ public sealed partial class FilesPage : Page, IDisposable
             transfers,
             shareRepository ?? repository as IFileShareLinkRepository,
             shareReviewBlocker,
-            locationsRepository ?? repository as IFileLocationsRepository)
+            locationsRepository ?? repository as IFileLocationsRepository,
+            mutationRepository ?? repository as IFileMutationRepository,
+            mutationReviewBlocker)
     {
     }
 
@@ -61,7 +66,9 @@ public sealed partial class FilesPage : Page, IDisposable
         WindowsTransferPickerService transfers,
         IFileShareLinkRepository? shareRepository = null,
         FileShareLinkReviewBlocker? shareReviewBlocker = null,
-        IFileLocationsRepository? locationsRepository = null)
+        IFileLocationsRepository? locationsRepository = null,
+        IFileMutationRepository? mutationRepository = null,
+        FileMutationReviewBlocker? mutationReviewBlocker = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -71,7 +78,11 @@ public sealed partial class FilesPage : Page, IDisposable
         _shareRepository = shareRepository?.ProfileId == _profileId
             ? shareRepository
             : null;
+        _mutationRepository = mutationRepository?.ProfileId == _profileId
+            ? mutationRepository
+            : null;
         _shareReviewBlocker = shareReviewBlocker ?? FileShareLinkReviewBlocker.Current;
+        _mutationReviewBlocker = mutationReviewBlocker ?? FileMutationReviewBlocker.Current;
         _transfers = transfers;
         _systemShare = new WindowsSystemShare(
             () => (Application.Current as App)?.MainWindow);
@@ -187,6 +198,7 @@ public sealed partial class FilesPage : Page, IDisposable
             }
 
             CloseShareLinkDialog();
+            CloseMutationDialog();
             await ClosePreviewAsync();
             if (_disposed || !_locationsViewModel.IsActive)
             {
@@ -375,6 +387,7 @@ public sealed partial class FilesPage : Page, IDisposable
             await OpenPreviewAsync(selected);
         }
     }
+
 
     private async void ShareLink_Click(object sender, RoutedEventArgs e) =>
         await ShowShareLinkAsync();
@@ -583,6 +596,7 @@ public sealed partial class FilesPage : Page, IDisposable
         UpdateState();
     }
 
+
     private bool CanOpenShareLink() =>
         !_disposed &&
         !IsReadOnlyLocation() &&
@@ -674,7 +688,9 @@ public sealed partial class FilesPage : Page, IDisposable
     }
 
     private bool IsReadOnlyLocation() =>
-        _locationsViewModel.SelectedSource is FileLocationSource.Remote or FileLocationSource.Recycle;
+        _locationsViewModel.SelectedSource is FileLocationSource.Remote or FileLocationSource.Recycle ||
+        ContainsRecycleSegment(_viewModel.CurrentPath) ||
+        (_viewModel.SelectedItem is { } selected && ContainsRecycleSegment(selected.Path));
 
     private FrameworkElement BuildShareDialogContent(
         FileShareLinkViewModel model,
@@ -1050,6 +1066,7 @@ public sealed partial class FilesPage : Page, IDisposable
             !_viewModel.IsLoading && _viewModel.SelectedItem?.IsDirectory == false;
         PreviewButton.IsEnabled =
             !_viewModel.IsLoading && _viewModel.SelectedItem?.IsDirectory == false;
+        UpdateMutationControls();
         ShareLinkButton.IsEnabled =
             !_viewModel.IsLoading &&
             !_isClosingShareLink &&
@@ -1218,6 +1235,7 @@ public sealed partial class FilesPage : Page, IDisposable
         LocationsPane.CancelOpening();
         _locationsViewModel.Deactivate();
         CloseShareLinkDialog();
+        CloseMutationDialog();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
         {
@@ -1234,6 +1252,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
         _disposed = true;
         CloseShareLinkDialog();
+        CloseMutationDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
@@ -1269,4 +1288,5 @@ public sealed partial class FilesPage : Page, IDisposable
         _isClosingShareLink = true;
         dialog.Hide();
     }
+
 }

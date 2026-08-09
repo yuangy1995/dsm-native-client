@@ -819,6 +819,23 @@ struct DirectorySizePollingPolicy: Sendable {
     )
 }
 
+private enum FileItemMutationPreflight: Sendable {
+    case allowed(expectedDirectory: Bool)
+    case permission
+    case conflict
+}
+
+private struct PendingFileItemMutationReview: Sendable {
+    let paths: Set<String>
+    let expectedDirectory: Bool
+}
+
+private enum FileItemMutationReadback: Sendable {
+    case confirmed(FileItem)
+    case mismatch
+    case unavailable(AppError?)
+}
+
 public actor DsmFileRepository: FileRepository {
     public nonisolated let profileID: UUID
     public nonisolated let allowsVerifiedRestore: Bool
@@ -836,6 +853,9 @@ public actor DsmFileRepository: FileRepository {
     private var activeDeletionPaths: Set<String> = []
     private var activeDirectorySizePaths: Set<String> = []
     private var activeShareLinkPaths: Set<String> = []
+    private var activeFileItemMutationPaths: Set<String> = []
+    /// 提交状态未知的目标只能回读复核，不能再次发送写请求。
+    private var pendingFileItemMutationReviews: [String: PendingFileItemMutationReview] = [:]
 
     public init(
         profile: NasProfile,
@@ -2324,6 +2344,68 @@ public actor DsmFileRepository: FileRepository {
         }
     }
 
+    public func createFolderResult(
+        parentPath: String,
+        name: String
+    ) async throws -> FileItemMutationOutcome {
+        let operation = "createFolder"
+        guard let parent = Self.normalizedMutationPath(parentPath),
+              parent != "/",
+              let normalizedName = Self.normalizedMutationName(name),
+              let destination = Self.appendingMutationName(normalizedName, to: parent),
+              !Self.isRecycleMutationPath(parent) else {
+            return try fileItemMutationOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                failed: 1,
+                errorCategory: .validation,
+                diagnosticTag: "file-station.create-folder.invalid-input"
+            )
+        }
+        let reviewKey = "create:\(destination)"
+        return try await performFileItemMutation(
+            operation: operation,
+            sourcePath: nil,
+            destinationPath: destination,
+            reviewKey: reviewKey,
+            expectedDirectory: true
+        ) { capability in
+            try await self.client.callVoid(
+                path: capability.path,
+                api: capability.name,
+                version: 2,
+                method: "create",
+                requestFormat: .form,
+                parameters: [
+                    "folder_path": .string(parent),
+                    "name": .string(normalizedName),
+                    "force_parent": .boolean(false)
+                ],
+                credential: self.credential
+            )
+        } preflight: {
+            guard let observedParent = try await self.getInfo(paths: [parent])
+                .first(where: { $0.path == parent }),
+                  observedParent.profileID == self.profileID,
+                  Self.hasCanonicalMutationIdentity(observedParent),
+                  observedParent.isDirectory,
+                  !Self.isRemoteMutationItem(observedParent) else {
+                return .conflict
+            }
+            if observedParent.permissions?.canWrite == false { return .permission }
+            guard try await self.getInfo(paths: [destination]).isEmpty else {
+                return .conflict
+            }
+            try await self.checkWritePermission(
+                folderPath: parent,
+                filename: normalizedName,
+                createOnly: true
+            )
+            return .allowed(expectedDirectory: true)
+        }
+    }
+
     public func rename(path: String, newName: String) async throws {
         let capability = try requireCapability(DsmAPIName.fileStationRename)
         do {
@@ -2341,6 +2423,71 @@ public actor DsmFileRepository: FileRepository {
             )
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
+        }
+    }
+
+    public func renameResult(
+        path: String,
+        newName: String
+    ) async throws -> FileItemMutationOutcome {
+        let operation = "rename"
+        guard let source = Self.normalizedMutationPath(path),
+              source.split(separator: "/").count >= 2,
+              let normalizedName = Self.normalizedMutationName(newName),
+              let parent = Self.mutationParentPath(source),
+              let destination = Self.appendingMutationName(normalizedName, to: parent),
+              source != destination,
+              !Self.isRecycleMutationPath(source) else {
+            return try fileItemMutationOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                failed: 1,
+                errorCategory: .validation,
+                diagnosticTag: "file-station.rename.invalid-input"
+            )
+        }
+        let reviewKey = "rename:\(source)->\(destination)"
+        return try await performFileItemMutation(
+            operation: operation,
+            sourcePath: source,
+            destinationPath: destination,
+            reviewKey: reviewKey,
+            expectedDirectory: nil
+        ) { capability in
+            try await self.client.callVoid(
+                path: capability.path,
+                api: capability.name,
+                version: 2,
+                method: "rename",
+                requestFormat: .form,
+                parameters: [
+                    "path": .stringArray([source]),
+                    "name": .stringArray([normalizedName])
+                ],
+                credential: self.credential
+            )
+        } preflight: {
+            guard let observedSource = try await self.getInfo(paths: [source])
+                .first(where: { $0.path == source }),
+                  observedSource.profileID == self.profileID,
+                  Self.hasCanonicalMutationIdentity(observedSource),
+                  !Self.isRemoteMutationItem(observedSource) else {
+                return .conflict
+            }
+            if observedSource.permissions?.canWrite == false ||
+                observedSource.permissions?.canDelete == false {
+                return .permission
+            }
+            guard try await self.getInfo(paths: [destination]).isEmpty else {
+                return .conflict
+            }
+            try await self.checkWritePermission(
+                folderPath: parent,
+                filename: normalizedName,
+                createOnly: true
+            )
+            return .allowed(expectedDirectory: observedSource.isDirectory)
         }
     }
 
@@ -4583,6 +4730,365 @@ public actor DsmFileRepository: FileRepository {
     private static func nonnegativeInt64(_ value: Int64?) -> Int64? {
         guard let value, value >= 0 else { return nil }
         return value
+    }
+
+    private func performFileItemMutation(
+        operation: String,
+        sourcePath: String?,
+        destinationPath: String,
+        reviewKey: String,
+        expectedDirectory: Bool?,
+        submit: (ApiCapability) async throws -> Void,
+        preflight: () async throws -> FileItemMutationPreflight
+    ) async throws -> FileItemMutationOutcome {
+        let mutationPaths = Set([sourcePath, destinationPath].compactMap { $0 })
+        let diagnosticOperation = operation == "createFolder" ? "create-folder" : "rename"
+        let apiName = operation == "createFolder"
+            ? DsmAPIName.fileStationCreateFolder
+            : DsmAPIName.fileStationRename
+        guard let capability = capabilities[apiName],
+              capability.selectedVersion == 2,
+              capability.requestFormat == .form,
+              let listCapability = capabilities[DsmAPIName.fileStationList],
+              (listCapability.selectedVersion ?? 0) >= 2,
+              capabilities[DsmAPIName.fileStationCheckPermission]?.selectedVersion != nil else {
+            return try fileItemMutationOutcome(
+                status: .unsupported,
+                operation: operation,
+                submitted: false,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.\(diagnosticOperation).unsupported"
+            )
+        }
+
+        if let pendingReview = pendingFileItemMutationReviews[reviewKey] {
+            let reviewed = await independentFileItemReadback(
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                expectedDirectory: pendingReview.expectedDirectory
+            )
+            if case .confirmed(let item) = reviewed {
+                pendingFileItemMutationReviews.removeValue(forKey: reviewKey)
+                return try fileItemMutationOutcome(
+                    status: .confirmedSuccess,
+                    operation: operation,
+                    submitted: true,
+                    succeeded: 1,
+                    diagnosticTag: "file-station.\(diagnosticOperation).review-confirmed",
+                    item: item
+                )
+            }
+            if case .unavailable(let error) = reviewed,
+               let error,
+               error.category == .authenticationRequired || error.category == .otpRequired {
+                throw error
+            }
+            pendingFileItemMutationReviews[reviewKey] = pendingReview
+            return try fileItemMutationOutcome(
+                status: .submittedButUnverified,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                diagnosticTag: "file-station.\(diagnosticOperation).review-pending"
+            )
+        }
+        if pendingFileItemMutationReviews.values.contains(where: {
+            !$0.paths.isDisjoint(with: mutationPaths)
+        }) || activeFileItemMutationPaths.contains(where: { active in
+            mutationPaths.contains(where: { Self.deletionPathsOverlap(active, $0) })
+        }) || activeDeletionPaths.contains(where: { active in
+            mutationPaths.contains(where: { Self.deletionPathsOverlap(active, $0) })
+        }) {
+            return try fileItemMutationOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                failed: 1,
+                errorCategory: .conflict,
+                diagnosticTag: "file-station.\(diagnosticOperation).target-busy"
+            )
+        }
+
+        activeFileItemMutationPaths.formUnion(mutationPaths)
+        defer { activeFileItemMutationPaths.subtract(mutationPaths) }
+        if Task.isCancelled {
+            return try fileItemMutationOutcome(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                diagnosticTag: "file-station.\(diagnosticOperation).cancelled-before-preflight"
+            )
+        }
+        var verifiedExpectedDirectory = expectedDirectory
+        do {
+            switch try await preflight() {
+            case .allowed(let observedDirectory):
+                verifiedExpectedDirectory = observedDirectory
+            case .permission:
+                return try fileItemMutationOutcome(
+                    status: .permissionDenied,
+                    operation: operation,
+                    submitted: false,
+                    failed: 1,
+                    errorCategory: .permission,
+                    diagnosticTag: "file-station.\(diagnosticOperation).preflight-rejected"
+                )
+            case .conflict:
+                return try fileItemMutationOutcome(
+                    status: .confirmedFailure,
+                    operation: operation,
+                    submitted: false,
+                    failed: 1,
+                    errorCategory: .conflict,
+                    diagnosticTag: "file-station.\(diagnosticOperation).preflight-rejected"
+                )
+            }
+        } catch {
+            return try fileItemMutationPreflightOutcome(error, operation: operation)
+        }
+        guard let verifiedExpectedDirectory else {
+            preconditionFailure("file-station.mutation.preflight-type-missing")
+        }
+        if Task.isCancelled {
+            return try fileItemMutationOutcome(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                diagnosticTag: "file-station.\(diagnosticOperation).cancelled-after-preflight"
+            )
+        }
+
+        var cancellationRequested = false
+        var submissionErrorCategory: MutationErrorCategory?
+        do {
+            try await submit(capability)
+        } catch let error as DsmNetworkError {
+            switch error {
+            case .invalidRequest:
+                return try fileItemMutationOutcome(
+                    status: .confirmedFailure,
+                    operation: operation,
+                    submitted: false,
+                    failed: 1,
+                    errorCategory: .validation,
+                    diagnosticTag: "file-station.\(diagnosticOperation).invalid-request"
+                )
+            case .api:
+                let mapped = DsmErrorMapper.map(error)
+                if mapped.category == .authenticationRequired || mapped.category == .otpRequired {
+                    throw mapped
+                }
+                return try fileItemMutationOutcome(
+                    status: mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
+                    operation: operation,
+                    submitted: true,
+                    failed: 1,
+                    errorCategory: mutationErrorCategory(for: mapped.category),
+                    diagnosticTag: "file-station.\(diagnosticOperation).rejected"
+                )
+            case .cancelled:
+                cancellationRequested = true
+            case .httpStatus(let code, _):
+                if (400..<500).contains(code) {
+                    let mapped = DsmErrorMapper.map(error)
+                    if mapped.category == .authenticationRequired || mapped.category == .otpRequired {
+                        throw mapped
+                    }
+                    return try fileItemMutationOutcome(
+                        status: mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
+                        operation: operation,
+                        submitted: true,
+                        failed: 1,
+                        errorCategory: mutationErrorCategory(for: mapped.category),
+                        diagnosticTag: "file-station.\(diagnosticOperation).http-rejected"
+                    )
+                }
+                submissionErrorCategory = .server
+            case .transport, .responseTooLarge, .invalidResponse:
+                submissionErrorCategory = mutationErrorCategory(
+                    for: DsmErrorMapper.map(error).category
+                )
+            }
+        } catch is CancellationError {
+            cancellationRequested = true
+        } catch {
+            submissionErrorCategory = .unknown
+        }
+
+        let readback = await independentFileItemReadback(
+            sourcePath: sourcePath,
+            destinationPath: destinationPath,
+            expectedDirectory: verifiedExpectedDirectory
+        )
+        if case .confirmed(let confirmedItem) = readback {
+            pendingFileItemMutationReviews.removeValue(forKey: reviewKey)
+            return try fileItemMutationOutcome(
+                status: .confirmedSuccess,
+                operation: operation,
+                submitted: true,
+                succeeded: 1,
+                diagnosticTag: "file-station.\(diagnosticOperation).confirmed",
+                item: confirmedItem
+            )
+        }
+
+        if case .unavailable(let error) = readback,
+           let error,
+           error.category == .authenticationRequired || error.category == .otpRequired {
+            pendingFileItemMutationReviews[reviewKey] = PendingFileItemMutationReview(
+                paths: mutationPaths,
+                expectedDirectory: verifiedExpectedDirectory
+            )
+            throw error
+        }
+        pendingFileItemMutationReviews[reviewKey] = PendingFileItemMutationReview(
+            paths: mutationPaths,
+            expectedDirectory: verifiedExpectedDirectory
+        )
+        let cancelled = cancellationRequested || Task.isCancelled
+        return try fileItemMutationOutcome(
+            status: cancelled ? .cancellationRequestedAfterSubmission : .submittedButUnverified,
+            operation: operation,
+            submitted: true,
+            requiresRefresh: true,
+            unknown: 1,
+            errorCategory: cancelled ? nil : submissionErrorCategory,
+            diagnosticTag: "file-station.\(diagnosticOperation).readback-unverified"
+        )
+    }
+
+    private func independentFileItemReadback(
+        sourcePath: String?,
+        destinationPath: String,
+        expectedDirectory: Bool?
+    ) async -> FileItemMutationReadback {
+        let repository = self
+        let task = Task {
+            let paths = [sourcePath, destinationPath].compactMap { $0 }
+            return try await repository.getInfo(paths: paths)
+        }
+        let items: [FileItem]
+        do {
+            items = try await task.value
+        } catch let error as AppError {
+            return .unavailable(error)
+        } catch {
+            return .unavailable(nil)
+        }
+        guard let destination = items.first(where: {
+                  $0.path == destinationPath && $0.profileID == profileID
+              }),
+              Self.hasCanonicalMutationIdentity(destination),
+              expectedDirectory.map({ destination.isDirectory == $0 }) ?? true,
+              sourcePath.map({ source in !items.contains(where: { $0.path == source }) }) ?? true else {
+            return .mismatch
+        }
+        return .confirmed(destination)
+    }
+
+    private func fileItemMutationPreflightOutcome(
+        _ error: Error,
+        operation: String
+    ) throws -> FileItemMutationOutcome {
+        let diagnosticOperation = operation == "createFolder" ? "create-folder" : "rename"
+        if error is CancellationError ||
+            (error as? AppError)?.category == .cancelled ||
+            Task.isCancelled {
+            return try fileItemMutationOutcome(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                diagnosticTag: "file-station.\(diagnosticOperation).preflight-cancelled"
+            )
+        }
+        let mapped = (error as? AppError) ?? AppError(
+            category: .unknown,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.7dc6f291445bfb76")
+        )
+        if mapped.category == .authenticationRequired || mapped.category == .otpRequired {
+            throw mapped
+        }
+        return try fileItemMutationOutcome(
+            status: mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
+            operation: operation,
+            submitted: false,
+            failed: 1,
+            errorCategory: mutationErrorCategory(for: mapped.category),
+            diagnosticTag: "file-station.\(diagnosticOperation).preflight-failed"
+        )
+    }
+
+    private func fileItemMutationOutcome(
+        status: MutationResultStatus,
+        operation: String,
+        submitted: Bool,
+        requiresRefresh: Bool = false,
+        succeeded: Int = 0,
+        failed: Int = 0,
+        unknown: Int = 0,
+        errorCategory: MutationErrorCategory? = nil,
+        diagnosticTag: String,
+        item: FileItem? = nil
+    ) throws -> FileItemMutationOutcome {
+        FileItemMutationOutcome(
+            result: try makeMutationResult(
+                status: status,
+                operation: operation,
+                submitted: submitted,
+                requiresRefresh: requiresRefresh,
+                succeeded: succeeded,
+                failed: failed,
+                unknown: unknown,
+                errorCategory: errorCategory,
+                diagnosticTag: diagnosticTag
+            ),
+            item: item
+        )
+    }
+
+    private static func normalizedMutationPath(_ value: String) -> String? {
+        try? canonicalFileLocationPath(value)
+    }
+
+    private static func normalizedMutationName(_ value: String) -> String? {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty,
+              normalized == value,
+              normalized != ".",
+              normalized != "..",
+              normalized.utf8.count <= 255,
+              !normalized.contains("/"),
+              !normalized.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+            return nil
+        }
+        return normalized
+    }
+
+    private static func mutationParentPath(_ path: String) -> String? {
+        let components = path.split(separator: "/")
+        guard components.count >= 2 else { return nil }
+        return "/" + components.dropLast().joined(separator: "/")
+    }
+
+    private static func appendingMutationName(_ name: String, to parent: String) -> String? {
+        normalizedMutationPath(parent + "/" + name)
+    }
+
+    private static func isRecycleMutationPath(_ path: String) -> Bool {
+        path.split(separator: "/").contains { $0.lowercased() == "#recycle" }
+    }
+
+    private static func isRemoteMutationItem(_ item: FileItem) -> Bool {
+        guard let type = item.mountPointType?.lowercased() else { return false }
+        return ["cifs", "nfs", "iso", "remote"].contains(type)
+    }
+
+    private static func hasCanonicalMutationIdentity(_ item: FileItem) -> Bool {
+        normalizedMutationPath(item.path) == item.path &&
+            item.name == item.path.split(separator: "/").last.map(String.init)
     }
 
     /// 文件位置契约只接受已经规范化的绝对路径，避免重复路径在分页后形成幽灵条目。

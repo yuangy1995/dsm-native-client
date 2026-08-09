@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.rename.synthetic-item",
+  "module": "file-station",
+  "operation": "rename",
+  "api": { "name": "SYNO.FileStation.Rename", "method": "rename", "preferredVersion": 2, "resolvedVersion": 2, "resolvedPath": "entry.cgi" },
+  "transport": { "httpMethod": "POST", "requestFormat": "form" },
+  "parameters": [
+    { "name": "name", "valueType": "stringArray", "encodedValue": "[\"<synthetic-new-name>\"]" },
+    { "name": "path", "valueType": "stringArray", "encodedValue": "[\"<synthetic-path>\"]" }
+  ],
+  "authentication": { "required": true, "synoTokenRequired": false, "sessionLocations": ["cookie", "form"], "synoTokenLocations": ["header"] },
+  "policy": { "retryPolicy": "queryStateBeforeDecision", "risk": "standardWrite", "readbackPolicy": "required" },
+  "source": { "kind": "synthetic", "evidence": "publicDocumentation" }
+}

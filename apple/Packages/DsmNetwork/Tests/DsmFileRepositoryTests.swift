@@ -1515,6 +1515,256 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(nameValue.utf8)), ["新名称.txt"])
     }
 
+    func test新建文件夹结果固定V2且仅在独立回读后确认() async throws {
+        let transport = MockHTTPTransport(responses: [
+            mutationInfo(path: "/home", isDirectory: true),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true}"#),
+            mutationInfo(path: "/home/资料", isDirectory: true),
+        ])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationCreateFolder),
+            transport: transport
+        )
+
+        let outcome = try await repository.createFolderResult(
+            parentPath: "/home",
+            name: "资料"
+        )
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.item?.path, "/home/资料")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.compactMap { requestParameter("method", in: $0) },
+            ["getinfo", "getinfo", "write", "create", "getinfo"]
+        )
+        let mutation = try XCTUnwrap(requests.first {
+            requestParameter("method", in: $0) == "create"
+        })
+        XCTAssertEqual(mutation.httpMethod, "POST")
+        XCTAssertEqual(requestParameter("version", in: mutation), "2")
+        XCTAssertEqual(requestParameter("folder_path", in: mutation), "/home")
+        XCTAssertEqual(requestParameter("name", in: mutation), "资料")
+    }
+
+    func test重命名提交断网后只回读不重放并可确认() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(mutationInfo(path: "/home/旧.txt", isDirectory: false)),
+            .response(mutationInfo()),
+            .response(response(#"{"success":true}"#)),
+            .urlError(.networkConnectionLost),
+            .response(mutationInfo(path: "/home/新.txt", isDirectory: false)),
+        ])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationRename),
+            transport: transport
+        )
+
+        let outcome = try await repository.renameResult(
+            path: "/home/旧.txt",
+            newName: "新.txt"
+        )
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.item?.path, "/home/新.txt")
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "rename" }.count, 1)
+        XCTAssertEqual(methods.last, "getinfo")
+    }
+
+    func test新建状态未知后同目标仅回读且不重放() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(mutationInfo(path: "/home", isDirectory: true)),
+            .response(mutationInfo()),
+            .response(response(#"{"success":true}"#)),
+            .urlError(.networkConnectionLost),
+            .response(mutationInfo()),
+            .response(mutationInfo()),
+        ])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationCreateFolder),
+            transport: transport
+        )
+
+        let first = try await repository.createFolderResult(parentPath: "/home", name: "待复核")
+        let second = try await repository.createFolderResult(parentPath: "/home", name: "待复核")
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "create" }.count, 1)
+        XCTAssertEqual(methods.suffix(2), ["getinfo", "getinfo"])
+    }
+
+    func test新建提交成功但回读解析失败会阻断重放直至复核确认() async throws {
+        let transport = MockHTTPTransport(responses: [
+            mutationInfo(path: "/home", isDirectory: true),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"files":"invalid"}}"#),
+            mutationInfo(path: "/home/待确认", isDirectory: true),
+        ])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationCreateFolder),
+            transport: transport
+        )
+
+        let first = try await repository.createFolderResult(parentPath: "/home", name: "待确认")
+        let second = try await repository.createFolderResult(parentPath: "/home", name: "待确认")
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .confirmedSuccess)
+        XCTAssertEqual(second.item?.path, "/home/待确认")
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "create" }.count, 1)
+    }
+
+    func test新建成功响应但合法回读不匹配会阻断二次写() async throws {
+        let transport = MockHTTPTransport(responses: [
+            mutationInfo(path: "/home", isDirectory: true),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true}"#),
+            mutationInfo(),
+            mutationInfo(),
+        ])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationCreateFolder),
+            transport: transport
+        )
+
+        let first = try await repository.createFolderResult(parentPath: "/home", name: "待核对")
+        let second = try await repository.createFolderResult(parentPath: "/home", name: "待核对")
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        XCTAssertTrue(first.result.requiresRefresh)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "create" }.count, 1)
+        XCTAssertEqual(methods.suffix(2), ["getinfo", "getinfo"])
+    }
+
+    func test重命名冻结源类型且类型翻转不能确认成功或重放() async throws {
+        let transport = MockHTTPTransport(responses: [
+            mutationInfo(path: "/home/旧目录", isDirectory: true),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true}"#),
+            mutationInfo(path: "/home/新目录", isDirectory: false),
+            mutationInfo(path: "/home/新目录", isDirectory: false),
+        ])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationRename),
+            transport: transport
+        )
+
+        let first = try await repository.renameResult(path: "/home/旧目录", newName: "新目录")
+        let second = try await repository.renameResult(path: "/home/旧目录", newName: "新目录")
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        XCTAssertNil(first.item)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "rename" }.count, 1)
+    }
+
+    func test文件项变更认证失败原样传播且零写() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":false,"error":{"code":119}}"#),
+        ])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationCreateFolder),
+            transport: transport
+        )
+
+        do {
+            _ = try await repository.createFolderResult(parentPath: "/home", name: "资料")
+            XCTFail("认证失效不应降级为可重试写结果")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .authenticationRequired)
+        }
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods, ["getinfo"])
+    }
+
+    func test同目标新建重入会在写前拒绝且释放锁() async throws {
+        let transport = MockHTTPTransport(steps: [.waitUntilCancelled])
+        let repository = try makeRepository(
+            capabilities: mutationCapabilities(api: DsmAPIName.fileStationCreateFolder),
+            transport: transport
+        )
+        let first = Task {
+            try await repository.createFolderResult(parentPath: "/home", name: "资料")
+        }
+        while await transport.recordedRequests().isEmpty {
+            await Task.yield()
+        }
+
+        let duplicate = try await repository.createFolderResult(parentPath: "/home", name: "资料")
+        XCTAssertEqual(duplicate.result.status, .confirmedFailure)
+        XCTAssertEqual(duplicate.result.errorCategory, .conflict)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+
+        first.cancel()
+        let cancelled = try await first.value
+        XCTAssertEqual(cancelled.result.status, .cancelledBeforeSubmission)
+    }
+
+    func test文件项变更无效路径名称或非FORM能力均不发送请求() async throws {
+        for (path, name) in [("home", "资料"), ("/home", "../资料"), ("/", "资料")] {
+            let transport = MockHTTPTransport(responses: [])
+            let repository = try makeRepository(
+                capabilities: mutationCapabilities(api: DsmAPIName.fileStationCreateFolder),
+                transport: transport
+            )
+            let outcome = try await repository.createFolderResult(parentPath: path, name: name)
+            XCTAssertEqual(outcome.result.status, .confirmedFailure)
+            let requests = await transport.recordedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+
+        let transport = MockHTTPTransport(responses: [])
+        let jsonCapability = ApiCapability(
+            name: DsmAPIName.fileStationRename,
+            path: "entry.cgi",
+            minVersion: 1,
+            maxVersion: 2,
+            requestFormat: .json,
+            selectedVersion: 2
+        )
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationRename: jsonCapability,
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2),
+                DsmAPIName.fileStationCheckPermission: capability(
+                    DsmAPIName.fileStationCheckPermission,
+                    version: 2
+                ),
+            ]),
+            transport: transport
+        )
+        let outcome = try await repository.renameResult(path: "/home/a", newName: "b")
+        XCTAssertEqual(outcome.result.status, .unsupported)
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     func test压缩使用NAS任务并把选项放在请求正文() async throws {
         let transport = MockHTTPTransport(responses: [
             DsmHTTPResponse(data: Data(#"{"success":true,"data":{"taskid":"compress-1"}}"#.utf8), statusCode: 200),
@@ -2689,6 +2939,30 @@ final class DsmFileRepositoryTests: XCTestCase {
 
     private func response(_ body: String) -> DsmHTTPResponse {
         DsmHTTPResponse(data: Data(body.utf8), statusCode: 200)
+    }
+
+    private func mutationInfo(
+        path: String? = nil,
+        isDirectory: Bool = false
+    ) -> DsmHTTPResponse {
+        guard let path else {
+            return response(#"{"success":true,"data":{"files":[]}}"#)
+        }
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return response(
+            #"{"success":true,"data":{"files":[{"name":"\#(name)","path":"\#(path)","isdir":\#(isDirectory),"additional":{"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
+        )
+    }
+
+    private func mutationCapabilities(api: String) -> CapabilitySet {
+        CapabilitySet([
+            api: capability(api, version: 2),
+            DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2),
+            DsmAPIName.fileStationCheckPermission: capability(
+                DsmAPIName.fileStationCheckPermission,
+                version: 2
+            ),
+        ])
     }
 
     private func shareTargetInfo(

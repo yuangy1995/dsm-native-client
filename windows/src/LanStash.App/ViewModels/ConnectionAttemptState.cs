@@ -6,7 +6,10 @@ internal sealed record ConnectAttempt(
     NasProfile Profile,
     string Password,
     string? Otp,
-    bool RememberPassword);
+    bool RememberPassword)
+{
+    public override string ToString() => nameof(ConnectAttempt);
+}
 
 internal static class ConnectionRecoveryPolicy
 {

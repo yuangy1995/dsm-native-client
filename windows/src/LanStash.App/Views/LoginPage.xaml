@@ -3,6 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:domain="using:LanStash.Domain"
+    Loaded="LoginPage_Loaded"
+    Unloaded="LoginPage_Unloaded"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
     <Grid Padding="40">
         <Grid.ColumnDefinitions>
@@ -178,5 +180,84 @@
                 </Grid>
             </StackPanel>
         </Border>
+
+        <ContentDialog
+            x:Name="CertificateTrustDialog"
+            Grid.ColumnSpan="3"
+            DefaultButton="Close"
+            PrimaryButtonClick="CertificateTrustDialog_PrimaryButtonClick"
+            Closing="CertificateTrustDialog_Closing">
+            <ScrollViewer MaxHeight="560" VerticalScrollBarVisibility="Auto">
+                <StackPanel MaxWidth="620" Spacing="16">
+                    <InfoBar
+                        x:Name="CertificateWarningBar"
+                        IsClosable="False"
+                        IsOpen="True"
+                        Severity="Warning"
+                        AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock
+                        x:Name="CertificateExplanation"
+                        TextWrapping="WrapWholeWords" />
+                    <Grid ColumnSpacing="16" RowSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock x:Name="CertificateNasLabel" FontWeight="SemiBold" />
+                        <TextBlock
+                            x:Name="CertificateNasValue"
+                            Grid.Column="1"
+                            TextWrapping="WrapWholeWords" />
+                        <TextBlock
+                            x:Name="CertificateAddressLabel"
+                            Grid.Row="1"
+                            FontWeight="SemiBold" />
+                        <TextBlock
+                            x:Name="CertificateAddressValue"
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            TextWrapping="WrapWholeWords" />
+                        <TextBlock
+                            x:Name="CertificateConnectionLabel"
+                            Grid.Row="2"
+                            FontWeight="SemiBold" />
+                        <TextBlock
+                            x:Name="CertificateConnectionValue"
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            TextWrapping="WrapWholeWords" />
+                    </Grid>
+                    <StackPanel x:Name="PreviousFingerprintPanel" Spacing="6">
+                        <TextBlock x:Name="PreviousFingerprintLabel" FontWeight="SemiBold" />
+                        <TextBox
+                            x:Name="PreviousFingerprintValue"
+                            MinHeight="48"
+                            IsReadOnly="True"
+                            FontFamily="Consolas"
+                            TextWrapping="Wrap"
+                            AutomationProperties.AccessibilityView="Content" />
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <TextBlock x:Name="PresentedFingerprintLabel" FontWeight="SemiBold" />
+                        <TextBox
+                            x:Name="PresentedFingerprintValue"
+                            MinHeight="48"
+                            IsReadOnly="True"
+                            FontFamily="Consolas"
+                            TextWrapping="Wrap"
+                            AutomationProperties.AccessibilityView="Content" />
+                    </StackPanel>
+                    <TextBlock
+                        x:Name="CertificateNextStep"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="WrapWholeWords" />
+                </StackPanel>
+            </ScrollViewer>
+        </ContentDialog>
     </Grid>
 </Page>

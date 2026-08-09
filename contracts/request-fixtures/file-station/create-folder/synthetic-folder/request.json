@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.create-folder.synthetic-folder",
+  "module": "file-station",
+  "operation": "createFolder",
+  "api": { "name": "SYNO.FileStation.CreateFolder", "method": "create", "preferredVersion": 2, "resolvedVersion": 2, "resolvedPath": "entry.cgi" },
+  "transport": { "httpMethod": "POST", "requestFormat": "form" },
+  "parameters": [
+    { "name": "folder_path", "valueType": "string", "encodedValue": "<synthetic-parent>" },
+    { "name": "force_parent", "valueType": "boolean", "encodedValue": "false" },
+    { "name": "name", "valueType": "string", "encodedValue": "<synthetic-name>" }
+  ],
+  "authentication": { "required": true, "synoTokenRequired": false, "sessionLocations": ["cookie", "form"], "synoTokenLocations": ["header"] },
+  "policy": { "retryPolicy": "queryStateBeforeDecision", "risk": "standardWrite", "readbackPolicy": "required" },
+  "source": { "kind": "synthetic", "evidence": "publicDocumentation" }
+}

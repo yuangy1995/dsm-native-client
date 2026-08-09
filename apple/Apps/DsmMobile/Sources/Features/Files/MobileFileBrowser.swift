@@ -18,6 +18,7 @@ struct MobileFileBrowser: View {
 
     private var browser: MobileFileBrowserModel { model.fileBrowserModel }
     private var locations: MobileFileLocationsModel { browser.locations }
+    private var mutation: MobileFileItemMutationModel { browser.mutations }
     private var state: MobileFileBrowserProfileState { browser.state }
     private var preview: MobileFilePreviewModel { model.filePreviewModel }
 
@@ -75,6 +76,15 @@ struct MobileFileBrowser: View {
                 cancelOpenLocation: browser.cancelLocationRequest
             )
         }
+        .sheet(isPresented: mutationPresentationBinding) {
+            if let repository = model.fileRepository {
+                MobileFileItemMutationView(
+                    mutation: mutation,
+                    repository: repository,
+                    didConfirm: mutationDidConfirm
+                )
+            }
+        }
         .alert(L10n.string("mobile.documents.error-title"), isPresented: documentFailureBinding) {
             Button(L10n.string("mobile.documents.dismiss")) {
                 model.documentTransferController.clearFailure()
@@ -95,6 +105,7 @@ struct MobileFileBrowser: View {
             let profileID = model.activeProfile?.id
             let repository = model.fileRepository
             await browser.activate(profileID: profileID, repository: repository)
+            mutation.activate(profileID: profileID, repository: repository)
             locations.activate(profileID: profileID, repository: repository)
             guard let profileID, let repository else { return }
             model.fileShareLinkModel.activate(profileID: profileID, repository: repository)
@@ -120,6 +131,7 @@ struct MobileFileBrowser: View {
         .onDisappear {
             browser.cancelRequest()
             locations.cancelRequest()
+            mutation.deactivate()
             model.fileShareLinkModel.deactivate()
         }
     }
@@ -269,6 +281,16 @@ struct MobileFileBrowser: View {
 
     private func itemMenu(_ item: FileItem) -> some View {
         Menu {
+            if canRename(item) {
+                Button {
+                    beginRename(item)
+                } label: {
+                    Label(
+                        L10n.string("mobile.files.mutation.rename.action"),
+                        systemImage: "pencil"
+                    )
+                }
+            }
             if !state.location.source.isReadOnlyLocation {
                 Button {
                     beginShareLink(for: item)
@@ -348,6 +370,13 @@ struct MobileFileBrowser: View {
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            Button(action: beginCreateFolder) {
+                Image(systemName: "folder.badge.plus")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(!canCreateFolder)
+            .accessibilityLabel(L10n.string("mobile.files.mutation.create.action"))
             sortAndFilterMenu
             Button(action: toggleLayout) {
                 Image(systemName: state.layout == .list ? "square.grid.2x2" : "list.bullet")
@@ -639,6 +668,65 @@ struct MobileFileBrowser: View {
         isImportingFile = true
     }
 
+    private var canCreateFolder: Bool {
+        guard model.fileRepository != nil else { return false }
+        return MobileFileItemMutationModel.canMutate(
+            parentPath: state.currentPath,
+            source: state.location.source,
+            readOnlyRoots: readOnlyMutationRoots
+        )
+    }
+
+    private func canRename(_ item: FileItem) -> Bool {
+        guard let profileID = model.activeProfile?.id else { return false }
+        return MobileFileItemMutationModel.canRename(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            readOnlyRoots: readOnlyMutationRoots,
+            profileID: profileID
+        )
+    }
+
+    private func beginCreateFolder() {
+        guard canCreateFolder, let repository = model.fileRepository else { return }
+        prepareForMutation()
+        mutation.beginCreateFolder(
+            parentPath: state.currentPath,
+            source: state.location.source,
+            readOnlyRoots: readOnlyMutationRoots,
+            repository: repository
+        )
+    }
+
+    private func beginRename(_ item: FileItem) {
+        guard canRename(item), let repository = model.fileRepository else { return }
+        prepareForMutation()
+        mutation.beginRename(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            readOnlyRoots: readOnlyMutationRoots,
+            repository: repository
+        )
+    }
+
+    private func prepareForMutation() {
+        resetPreviewPresentation()
+        preview.close()
+        model.fileShareLinkModel.dismiss()
+    }
+
+    private var readOnlyMutationRoots: [String] {
+        locations.state.remote.folders.map(\.item.path) +
+            locations.state.recycle.locations.map(\.recyclePath)
+    }
+
+    private func mutationDidConfirm(_ success: MobileFileItemMutationSuccess) async {
+        guard let repository = model.fileRepository else { return }
+        await browser.refreshAfterConfirmedMutation(success, repository: repository)
+    }
+
     private func beginShareLink(for item: FileItem) {
         guard !state.location.source.isReadOnlyLocation else { return }
         model.fileShareLinkModel.begin(for: item)
@@ -678,6 +766,13 @@ struct MobileFileBrowser: View {
         Binding(
             get: { model.fileShareLinkModel.state.isPresented },
             set: { if !$0 { model.fileShareLinkModel.dismiss() } }
+        )
+    }
+
+    private var mutationPresentationBinding: Binding<Bool> {
+        Binding(
+            get: { mutation.isPresented },
+            set: { if !$0 { mutation.dismiss() } }
         )
     }
 

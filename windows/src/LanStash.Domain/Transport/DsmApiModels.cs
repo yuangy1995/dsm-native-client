@@ -73,11 +73,23 @@ public interface IDsmApiClient
     Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
         NasProfile profile,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
+        NasProfile profile,
+        DsmConnectionSource source,
+        CancellationToken cancellationToken = default) =>
+        DiscoverAsync(profile, cancellationToken);
     Task<DsmSession> LoginAsync(
         NasProfile profile,
         string password,
         string? otp,
         CancellationToken cancellationToken = default);
+    Task<DsmSession> LoginAsync(
+        NasProfile profile,
+        string password,
+        string? otp,
+        DsmConnectionSource source,
+        CancellationToken cancellationToken = default) =>
+        LoginAsync(profile, password, otp, cancellationToken);
     Task LogoutAsync(
         NasProfile profile,
         DsmSession session,
@@ -115,6 +127,33 @@ public interface IDsmApiClient
             FileShareLinkTransportStatus.Unsupported,
             ErrorCategory: MutationErrorCategory.Unsupported,
             DiagnosticTag: "file.share.create.unsupported"));
+
+    Task<FilePermissionTransportResult> CheckFileMutationPermissionAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        string folderPath, string name,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FilePermissionTransportResult(
+            FilePermissionTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.mutation.permission.unsupported"));
+
+    Task<FileMutationTransportResult> CreateFolderMutationAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        string parentPath, string name,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileMutationTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.create-folder.unsupported"));
+
+    Task<FileMutationTransportResult> RenameFileMutationAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        string path, string newName,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileMutationTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.rename.unsupported"));
 
     Task<DsmBinaryResponse> ReadBinaryAsync(
         NasProfile profile,

@@ -92,6 +92,17 @@ public struct FileItem: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// 新建或重命名单个文件项后的可审计结果。只有独立回读确认目标状态时才携带 `item`。
+public struct FileItemMutationOutcome: Equatable, Sendable {
+    public let result: MutationResult
+    public let item: FileItem?
+
+    public init(result: MutationResult, item: FileItem?) {
+        self.result = result
+        self.item = item
+    }
+}
+
 /// File Station 官方虚拟文件夹接口支持的远程协议。
 public enum FileVirtualProtocol: String, Codable, CaseIterable, Sendable {
     case cifs
@@ -753,7 +764,9 @@ public protocol FileRepository: PhotoFileServing, Sendable {
         progress: @escaping FileTransferProgress
     ) async throws -> MutationResult
     func createFolder(parentPath: String, name: String) async throws
+    func createFolderResult(parentPath: String, name: String) async throws -> FileItemMutationOutcome
     func rename(path: String, newName: String) async throws
+    func renameResult(path: String, newName: String) async throws -> FileItemMutationOutcome
     func copy(
         paths: [String],
         to destinationFolder: String,
@@ -926,6 +939,42 @@ public extension FileRepository {
             category: .apiUnavailable,
             isRetryable: false,
             safeUserMessage: L10n.string("shared.fac438462e2f0a41")
+        )
+    }
+
+    func createFolderResult(
+        parentPath: String,
+        name: String
+    ) async throws -> FileItemMutationOutcome {
+        FileItemMutationOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "createFolder",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.create-folder.unsupported"
+            ),
+            item: nil
+        )
+    }
+
+    func renameResult(
+        path: String,
+        newName: String
+    ) async throws -> FileItemMutationOutcome {
+        FileItemMutationOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "rename",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.rename.unsupported"
+            ),
+            item: nil
         )
     }
 

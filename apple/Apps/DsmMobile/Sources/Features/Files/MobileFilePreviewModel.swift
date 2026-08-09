@@ -441,7 +441,7 @@ final class MobileFilePreviewModel {
     private func isCurrent(item: FileItem, generation requestGeneration: Int) -> Bool {
         generation == requestGeneration
             && state.profileID == item.profileID
-            && state.selectedItem?.path == item.path
+            && state.selectedItem == item
     }
 
     private func stopCurrentOperation() {

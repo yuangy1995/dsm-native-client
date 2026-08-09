@@ -472,6 +472,37 @@ final class MobileFileBrowserModelTests: XCTestCase {
         XCTAssertEqual(model.state.filteredEmptyReason, .query)
     }
 
+    func test确认变更后只在同profileRepository父目录强制刷新并清除查询() async {
+        let profileID = UUID()
+        let folder = item(profileID, "docs", "/docs", kind: .directory)
+        let old = item(profileID, "old", "/docs/old")
+        let created = item(profileID, "new", "/docs/new", kind: .directory)
+        let repository = FileBrowserRepositoryStub(profileID: profileID, pages: [
+            page(path: "", items: [folder], offset: 0, total: 1, hasMore: false),
+            page(path: "/docs", items: [old], offset: 0, total: 1, hasMore: false),
+            page(path: "/docs", items: [old, created], offset: 0, total: 2, hasMore: false),
+        ])
+        let model = MobileFileBrowserModel()
+        await model.activate(profileID: profileID, repository: repository)
+        await model.refresh(repository: repository)
+        await model.openDirectory(folder, repository: repository)
+        model.setQuery("stale-query")
+
+        await model.refreshAfterConfirmedMutation(
+            MobileFileItemMutationSuccess(
+                profileID: profileID,
+                parentPath: "/docs",
+                item: created
+            ),
+            repository: repository
+        )
+
+        XCTAssertEqual(model.state.query, "")
+        XCTAssertEqual(model.state.page.items, [old, created])
+        let calls = await repository.calls()
+        XCTAssertEqual(calls.map(\.0), ["", "/docs", "/docs"])
+    }
+
     private func item(
         _ profileID: UUID,
         _ name: String,

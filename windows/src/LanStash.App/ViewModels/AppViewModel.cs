@@ -7,19 +7,12 @@ using LanStash.Infrastructure;
 
 namespace LanStash.App.ViewModels;
 
-public sealed class AppViewModel : ObservableObject
+public sealed partial class AppViewModel : ObservableObject
 {
-    private readonly HttpClient _http = new(new HttpClientHandler
-    {
-        AllowAutoRedirect = false,
-    })
-    {
-        Timeout = TimeSpan.FromSeconds(45),
-    };
     private readonly ISecureSessionStore _sessionStore = new CredentialSessionStore();
     private readonly ISecurePasswordStore _passwordStore = new CredentialPasswordStore();
-    private readonly IDsmApiClient _api;
-    private readonly DsmConnectionResolver _connectionResolver;
+    private IDsmApiClient? _api;
+    private HttpClient? _activeHttpClient;
     private readonly DesktopCloudDriveService _cloudDrives = new();
     private readonly string _profilesPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -46,10 +39,6 @@ public sealed class AppViewModel : ObservableObject
 
     public AppViewModel()
     {
-        _api = new DsmApiClient(_http);
-        _connectionResolver = new DsmConnectionResolver(
-            _api,
-            new DsmQuickConnectResolver(_http));
     }
 
     public event EventHandler<bool>? ConnectionChanged;
@@ -174,6 +163,7 @@ public sealed class AppViewModel : ObservableObject
 
     public async Task SelectProfileAsync(NasProfile profile)
     {
+        ClearCertificateChallenge();
         var storedPassword = await _passwordStore.LoadAsync(profile.Id).ConfigureAwait(true)
             ?? string.Empty;
         ApplySelectedProfile(profile, storedPassword);
@@ -181,6 +171,7 @@ public sealed class AppViewModel : ObservableObject
 
     public void NewProfile()
     {
+        ClearCertificateChallenge();
         DisplayName = LocalizationService.Current.Get("DefaultNasName");
         Host = string.Empty;
         Port = string.Empty;
@@ -200,6 +191,30 @@ public sealed class AppViewModel : ObservableObject
         {
             return;
         }
+        ClearCertificateChallenge();
+        var profile = new NasProfile(
+            Profiles.FirstOrDefault(item =>
+                string.Equals(item.Host, Host, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Username, Username, StringComparison.Ordinal))?.Id
+                ?? Guid.NewGuid(),
+            string.IsNullOrWhiteSpace(DisplayName) ? "NAS" : DisplayName.Trim(),
+            Host.Trim(),
+            int.TryParse(Port, out var port) ? port : null,
+            Username.Trim(),
+            RememberPassword,
+            AutoLogin && RememberPassword);
+        var input = new ConnectAttempt(
+            profile,
+            Password,
+            string.IsNullOrWhiteSpace(Otp) ? null : Otp,
+            RememberPassword);
+        await ConnectFrozenAttemptAsync(input, certificateRetry: false).ConfigureAwait(true);
+    }
+
+    private async Task ConnectFrozenAttemptAsync(
+        ConnectAttempt input,
+        bool certificateRetry)
+    {
         IsBusy = true;
         ErrorMessage = null;
         var localization = LocalizationService.Current;
@@ -208,23 +223,10 @@ public sealed class AppViewModel : ObservableObject
         var cancellation = attempt.Cancellation;
         try
         {
-            var profile = new NasProfile(
-                Profiles.FirstOrDefault(item =>
-                    string.Equals(item.Host, Host, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(item.Username, Username, StringComparison.Ordinal))?.Id
-                    ?? Guid.NewGuid(),
-                string.IsNullOrWhiteSpace(DisplayName) ? "NAS" : DisplayName.Trim(),
-                Host.Trim(),
-                int.TryParse(Port, out var port) ? port : null,
-                Username.Trim(),
-                RememberPassword,
-                AutoLogin && RememberPassword);
-            var input = new ConnectAttempt(
-                profile,
-                Password,
-                string.IsNullOrWhiteSpace(Otp) ? null : Otp,
-                RememberPassword);
-            var connection = await _connectionResolver.DiscoverAsync(
+            using var connectionContext = await CreateCertificateConnectionAsync(
+                input.Profile.Id,
+                cancellation.Token).ConfigureAwait(true);
+            var connection = await connectionContext.Resolver.DiscoverAsync(
                 input.Profile,
                 status =>
                 {
@@ -236,10 +238,11 @@ public sealed class AppViewModel : ObservableObject
                 cancellation.Token).ConfigureAwait(true);
             _connectionAttempts.ThrowIfNotCurrent(attempt);
             ConnectionStatus = localization.Get("StatusNasFoundSigningIn");
-            var session = await _api.LoginAsync(
+            var session = await connectionContext.Api.LoginAsync(
                 connection.Profile,
                 input.Password,
                 input.Otp,
+                connection.Source,
                 cancellation.Token).ConfigureAwait(true);
             _connectionAttempts.ThrowIfNotCurrent(attempt);
             if (input.RememberPassword)
@@ -265,7 +268,7 @@ public sealed class AppViewModel : ObservableObject
             var repository = new DsmRepository(
                 connection.Profile,
                 session,
-                _api,
+                connectionContext.Api,
                 connection.Capabilities);
             await TryActivateDesktopDrivesAsync(
                 input.Profile.Id,
@@ -283,7 +286,20 @@ public sealed class AppViewModel : ObservableObject
                 connection.Profile,
                 session,
                 repository,
+                connection.Source,
+                connectionContext,
                 startDesktopDriveRecovery: true);
+        }
+        catch (CertificateTrustChallengeException error)
+        {
+            if (_connectionAttempts.IsCurrent(attempt) && !certificateRetry)
+            {
+                PublishCertificateChallenge(attempt, input, error.Challenge);
+            }
+            else if (_connectionAttempts.IsCurrent(attempt))
+            {
+                ErrorMessage = localization.Get("CertificateTrustRetryFailedMessage");
+            }
         }
         catch (DsmException error)
         {
@@ -320,6 +336,18 @@ public sealed class AppViewModel : ObservableObject
         {
             return;
         }
+        ClearCertificateChallenge();
+        await RestoreFrozenAttemptAsync(
+            profile,
+            fallbackToPassword,
+            certificateRetry: false).ConfigureAwait(true);
+    }
+
+    private async Task RestoreFrozenAttemptAsync(
+        NasProfile profile,
+        bool fallbackToPassword,
+        bool certificateRetry)
+    {
         IsBusy = true;
         ErrorMessage = null;
         var localization = LocalizationService.Current;
@@ -340,7 +368,10 @@ public sealed class AppViewModel : ObservableObject
                     UserText.Key("RecoverySignInAgain"),
                     authenticationFailure: true);
             }
-            var connection = await _connectionResolver.DiscoverAsync(
+            using var connectionContext = await CreateCertificateConnectionAsync(
+                profile.Id,
+                cancellation.Token).ConfigureAwait(true);
+            var connection = await connectionContext.Resolver.DiscoverAsync(
                 profile,
                 status =>
                 {
@@ -354,7 +385,7 @@ public sealed class AppViewModel : ObservableObject
             var repository = new DsmRepository(
                 connection.Profile,
                 session,
-                _api,
+                connectionContext.Api,
                 connection.Capabilities);
             _ = await repository.ListFilesAsync(
                 string.Empty,
@@ -367,7 +398,20 @@ public sealed class AppViewModel : ObservableObject
                 connection.Profile,
                 session,
                 repository,
+                connection.Source,
+                connectionContext,
                 startDesktopDriveRecovery: true);
+        }
+        catch (CertificateTrustChallengeException error)
+        {
+            if (_connectionAttempts.IsCurrent(attempt) && !certificateRetry)
+            {
+                PublishCertificateChallenge(attempt, profile, fallbackToPassword, error.Challenge);
+            }
+            else if (_connectionAttempts.IsCurrent(attempt))
+            {
+                ErrorMessage = localization.Get("CertificateTrustRetryFailedMessage");
+            }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -430,7 +474,11 @@ public sealed class AppViewModel : ObservableObject
         }
     }
 
-    public void CancelConnection() => _connectionAttempts.CancelCurrent();
+    public void CancelConnection()
+    {
+        _connectionAttempts.CancelCurrent();
+        ClearCertificateChallenge();
+    }
 
     public void ReportProfileActionError() =>
         ErrorMessage = LocalizationService.Current.Get("ProfileActionErrorMessage");
@@ -472,6 +520,8 @@ public sealed class AppViewModel : ObservableObject
         await PersistProfilesSnapshotAsync(remainingProfiles).ConfigureAwait(true);
         await _sessionStore.RemoveAsync(profile.Id).ConfigureAwait(true);
         await _passwordStore.RemoveAsync(profile.Id).ConfigureAwait(true);
+        await _certificatePins.RemoveAsync(profile.Id).ConfigureAwait(true);
+        ClearCertificateChallenge(profile.Id);
         Profiles.Remove(profile);
         RefreshDesktopDriveMappings();
         if (ActiveProfile?.Id == profile.Id)
@@ -491,9 +541,12 @@ public sealed class AppViewModel : ObservableObject
             {
                 try
                 {
-                    await _api.LogoutAsync(
-                        ActiveConnectionProfile ?? profile,
-                        Session).ConfigureAwait(true);
+                    if (_api is not null)
+                    {
+                        await _api.LogoutAsync(
+                            ActiveConnectionProfile ?? profile,
+                            Session).ConfigureAwait(true);
+                    }
                 }
                 catch
                 {
@@ -514,6 +567,10 @@ public sealed class AppViewModel : ObservableObject
         ActiveConnectionProfile = null;
         Session = null;
         Repository = null;
+        ActiveConnectionSource = null;
+        _api = null;
+        _activeHttpClient?.Dispose();
+        _activeHttpClient = null;
         AvailableModules.Clear();
         ConnectionChanged?.Invoke(this, false);
     }
@@ -805,12 +862,19 @@ public sealed class AppViewModel : ObservableObject
         NasProfile connectionProfile,
         DsmSession session,
         IDsmRepository repository,
+        DsmConnectionSource connectionSource,
+        CertificateConnectionContext connectionContext,
         bool startDesktopDriveRecovery)
     {
+        _activeHttpClient?.Dispose();
+        _activeHttpClient = connectionContext.TakeOwnership();
+        _api = connectionContext.Api;
         ActiveProfile = profile;
         ActiveConnectionProfile = connectionProfile;
         Session = session;
         Repository = repository;
+        ActiveConnectionSource = connectionSource;
+        ClearCertificateChallenge();
         AvailableModules.Clear();
         foreach (var module in Repository.AvailableModules)
         {
@@ -839,6 +903,10 @@ public sealed class AppViewModel : ObservableObject
         ActiveConnectionProfile = null;
         Session = null;
         Repository = null;
+        ActiveConnectionSource = null;
+        _api = null;
+        _activeHttpClient?.Dispose();
+        _activeHttpClient = null;
         AvailableModules.Clear();
         ConnectionChanged?.Invoke(this, false);
     }

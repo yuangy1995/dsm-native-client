@@ -61,6 +61,9 @@ public sealed class ConnectionAttemptGateTests
         Assert.Equal("password-a", attempt.Password);
         Assert.Equal("123456", attempt.Otp);
         Assert.True(attempt.RememberPassword);
+        Assert.Equal(nameof(ConnectAttempt), attempt.ToString());
+        Assert.DoesNotContain("password-a", attempt.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("123456", attempt.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

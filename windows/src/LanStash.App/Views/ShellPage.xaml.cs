@@ -2,6 +2,7 @@ using LanStash.App.Localization;
 using LanStash.App.Features.Settings;
 using LanStash.App.Features.Files.Sharing;
 using LanStash.App.Features.Files.Locations;
+using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Transfers;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
@@ -261,6 +262,11 @@ public sealed partial class ShellPage : Page
                 {
                     locationsRepository = null;
                 }
+                var mutationRepository = repository as IFileMutationRepository;
+                if (mutationRepository?.ProfileId != profile.Id)
+                {
+                    mutationRepository = null;
+                }
                 if (_files is not null && _filesProfileId != profile.Id)
                 {
                     await CloseFilesPageAsync();
@@ -272,7 +278,9 @@ public sealed partial class ShellPage : Page
                     transferPicker,
                     shareRepository,
                     FileShareLinkReviewBlocker.Current,
-                    locationsRepository);
+                    locationsRepository,
+                    mutationRepository,
+                    FileMutationReviewBlocker.Current);
                 _filesProfileId = profile.Id;
                 ContentFrame.Content = _files;
                 return;

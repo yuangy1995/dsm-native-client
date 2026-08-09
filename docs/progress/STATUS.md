@@ -18,7 +18,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 单仓库与文档 | 已完成 | 契约、架构、安全、兼容和平台目录已经建立 |
-| 请求契约与统一写操作结果 | RC0/MR0 已实现，RC1 第二十二批、RC2 首批和 MR2 Chat 会话创建批次已测试 | 请求 Fixture Schema、敏感参数仅记录存在、隐私/危险重试门禁和 CI 已接入；Apple 已对照 File Station、账号/群组、套件、容器/VMM、Download Station、QuickConnect、物理网卡、S.M.A.R.T. 检测、安全、硬件、远程访问、文件服务、远程终端、互联网代理、区域与时间、DDNS 设置及 NAS 电源动作四十八份请求快照，主要危险操作已贯通统一结果语义；官方 File Station 后台任务列表 v3 的 Apple 共享实现与 macOS 传输中心界面已完成并通过 13 项聚焦测试，真实 DSM 只读响应尚未验收，`clear_finished` 保持关闭。当前契约校验器通过 88 份请求 Fixture 与 1 份写结果示例；Android 统一断言此前覆盖 79 份公共请求 Fixture；第 78 批新增 Download Station `Task.edit` v1，第 79 批新增公开 VMM `Guest.Image.create` v1，第 80 批新增公开 VMM `Task.Info.clear`、Download Station BTSearch 目录/列表与 Statistic 当前活动请求。请求方法校验器最小支持官方 lowerCamelCase，仍拒绝首字母大写和非法字符。Android 已从 Repository 实际调用链验证 File Station、容器和公开 VMM 删除，公开 VMM 仅发送 `guest_id`，旧内部接口保留兼容参数；Android Chat 文字、单附件、首次单聊、私人群聊、消息提醒、纯文字定时消息与无附件投票创建已接入稳定结果、防重复及断线/取消后只回读不重放；Windows 当前契约测试已纳入 691 项 .NET 10 xUnit 云端门禁并全部通过，未验证的危险写入口继续保持关闭。打印机 Bonjour 共享和安全扫描状态因证据不足保持关闭 |
+| 请求契约与统一写操作结果 | RC0/MR0 已实现，RC1 第二十二批、RC2 首批和 MR2 Chat 会话创建批次已测试 | 请求 Fixture Schema、敏感参数仅记录存在、隐私/危险重试门禁和 CI 已接入；Apple 已对照 File Station、账号/群组、套件、容器/VMM、Download Station、QuickConnect、物理网卡、S.M.A.R.T. 检测、安全、硬件、远程访问、文件服务、远程终端、互联网代理、区域与时间、DDNS 设置及 NAS 电源动作四十八份请求快照，主要危险操作已贯通统一结果语义；官方 File Station 后台任务列表 v3 的 Apple 共享实现与 macOS 传输中心界面已完成并通过 13 项聚焦测试，真实 DSM 只读响应尚未验收，`clear_finished` 保持关闭。当前契约校验器通过 90 份请求 Fixture 与 1 份写结果示例；Android 统一断言此前覆盖 79 份公共请求 Fixture；第 78 批新增 Download Station `Task.edit` v1，第 79 批新增公开 VMM `Guest.Image.create` v1，第 80 批新增公开 VMM `Task.Info.clear`、Download Station BTSearch 目录/列表与 Statistic 当前活动请求。请求方法校验器最小支持官方 lowerCamelCase，仍拒绝首字母大写和非法字符。Android 已从 Repository 实际调用链验证 File Station、容器和公开 VMM 删除，公开 VMM 仅发送 `guest_id`，旧内部接口保留兼容参数；Android Chat 文字、单附件、首次单聊、私人群聊、消息提醒、纯文字定时消息与无附件投票创建已接入稳定结果、防重复及断线/取消后只回读不重放；Windows 当前契约测试已纳入 691 项 .NET 10 xUnit 云端门禁并全部通过，未验证的危险写入口继续保持关闭。打印机 Bonjour 共享和安全扫描状态因证据不足保持关闭 |
 | 五端双语本地化 | 已实现 | 英语与简体中文资源、跟随系统、英语回退、用户指定语言、本机持久化和跨端资源校验已接入 |
 | API 参考 | 进行中 | 官方与内部 API 已分类；随实机差异继续补充 |
 | 社区兼容性计划 | 第一阶段契约与维护者辅助流程已实现，macOS 草稿导出已实现 | `schemaVersion` 2 必须记录受限源码提交，并以固定 `stage`、错误类别、API 名称/版本、HTTP 状态、是否重试和 `rawResponseIncluded=false` 描述失败，禁止错误正文和原始响应；`testSuiteVersion` 1/2 分别固定 14/19 项能力，报告必须完整列出对应版本全部结果；非 macOS 的桌面云盘结果强制为 `not-supported`。独立 submission 草稿契约不含报告编号、来源和审核状态，macOS 设置页通过字段白名单、预览和隐私确认后原子导出；只读候选工具只向标准输出生成报告和双语矩阵差异，正式报告可用 `supersedes` 建立人工审核的取代链；重复身份和无效关系阻断，相同环境匹配、冲突与状态不一致形成警告。Issue 表单、双 Schema、自定义校验器和固定 `jsonschema 4.25.1` 的 Draft 2020-12 CI 已同步，当前尚无已审核社区报告 |
@@ -28,9 +28,9 @@
 | 照片管理模块 | 进行中 | 文件夹扫描已获实机确认；macOS 时间线、搜索筛选、预览、详情和基础管理源码已实现，等待完整实机与性能验收 |
 | Synology Chat 模块 | 进行中 | macOS 与 Android 均已接入首次单聊、单附件收发、提醒管理、纯文字定时消息、无附件投票创建和 Socket.IO 实时刷新；Android 另具私人群聊创建、本地置顶、未读汇总、图片与视频预览及有界轮询降级，首次单聊和私人群聊已接入稳定结果、防重复、成员回读与取消后不重放；两端内部写操作与实时连接等待新构建实机验收，Android 服务器已读、投票参与/关闭、语音和加密未完成 |
 | NAS 设置模块 | 需要验证 | 已接入存储、USB/eSATA 外接存储与内存压缩只读摘要、套件、任务、账号、系统活动、电源计划只读摘要、日志、连接、文件服务、远程终端、代理、物理网卡、DDNS、区域时间、远程访问、防火墙基础控制、安全防护、局域网发现、风扇/提示音、休眠节能及 UPS；系统活动最多保留 500 项白名单快照，电源计划最多保留 128 条并拒绝歧义星期，外接存储每种连接最多保留 64 项且只解释明确字节字段，内存压缩只保留启用状态、明确字节容量和算法白名单；四者真实 DSM API 响应尚未验证，内存压缩仅在官方页面完成只读观察，电源计划保存、USB 安全弹出和内存压缩设置保持关闭；Android 的文件服务、远程终端、互联网代理、区域与时间、远程访问、当前连接断开、物理网卡、DDNS、安全防护及硬件/休眠/UPS 十类界面已保留八类原始结果、三项计数、异常和草稿/目标，并以共享原子门闩、持久状态卡与专项刷新门禁保护重复提交和未确认结果；远程访问固定使用 QuickConnect v3 与 UPnP v1，严格 Boolean 读取，单端失败保留另一端并以 null 降级；只有已记录环境开放写入，可信中继连接禁止关闭中继，写入使用全局互斥，取消或断线后只回读且不重放；只有本次实际变更字段均回读为明确 Boolean 才完成专项刷新，危险结果核对前阻止切换 NAS 或退出登录；第 53 批又将账号/群组删除与套件启动、停止、卸载迁移为独立持久结构化反馈，Repository 使用完整稳定目标作严格写前基线，写后按操作执行严格专项列表读取，读取失败不折叠为空列表；进行中写入、专项刷新及尚未核对的危险结果会阻止切换 NAS 或退出登录，不能借离页绕过结果门禁；DDNS 测试、保存、立即更新与删除互不隐式串联，密码在请求接管时立即从状态清除，测试不保存，保存/删除模糊结果只回读不重放；安全和硬件设置使用原始双基线、固定版本、字段可信门禁及整体回读，UPS 明确空地址与缺失字段不会混淆，未知原始字段禁止写入；物理网卡另严格校验固定 v1/v2、完整详情、稳定身份和编辑前原始基线，读取失败不再伪装为空列表，刷新后继续编辑会重建最新基线；区域配置与立即校时分阶段确认，当前连接按原始身份专项回读且连接列表读取失败不再伪装为空列表；套件启动/停止/卸载、账号/群组删除、物理网卡、安全设置、S.M.A.R.T. 检测启停、硬件、远程访问、文件服务、远程终端、互联网代理、区域与时间、DDNS 设置及 NAS 关机/重启已区分确认成功、明确拒绝、部分成功、提交未确认与取消，未知结果会要求重新连接、读取相关设置或检查设备后核对，且不自动重放；套件操作会先确认当前状态、许可和影响，写后只通过列表核对，不把请求响应冒充最终状态；DDNS 测试不会隐式保存或立即更新，电源动作接受结果不冒充最终设备状态，模糊电源提交在重新连接并检查 NAS 前不能关闭反馈或再次操作；真实写操作等待专用测试目标实机验收 |
-| iPhone/iPad 客户端 | 第 0 波已实现，长期计划继续推进；需真机验收 | 已完成自适应 Shell、单文件传输与 Activity、大目录浏览、FILE-02 位置、FILE-07 分享链接、FILE-08 只读预览、文件系统照片库与 PHOTO-01 有界时间线、Chat 只读历史、Download 只读详情、NAS 健康、Container/VMM 窄只读清单和 SET-01；最新 FILE-02 移动聚焦 68/68、共享 Package 636 XCTest（2 跳过）+10 Swift Testing、DsmMac/File Provider 无签名构建通过。iPad 最新完整模拟器、真机系统交互与长期范围中的受限写/Chat/Download 控制仍待后续波次 |
+| iPhone/iPad 客户端 | 第 1 波源码与聚焦验证完成，长期计划继续推进；需真机验收 | 在第 0 波自适应 Shell、传输、Files/位置/分享/预览、PHOTO-01、Chat/Download/NAS/Container/VMM 只读与 SET-01 基础上，本波新增 FILE-03 结果型新建文件夹/重命名，以及 PHOTO-02 冻结快照前后查看、iPhone 全屏、iPad Inspector 和基础元数据白名单。最新移动聚焦 60/60、共享 Package 645 XCTest（2 跳过）均通过；当前主机无 iPad Simulator，iPad 云端构建、真机系统交互、真实 NAS 写入与长期范围中的复制移动/Chat/Download 控制仍待后续。 |
 | Android 客户端 | 开发目标完成，需设备验收 | 第 89 批经用户明确授权按移动端场景最终冻结目标：A0–A8 为 187/187（100%），剩余 0 项。三路独立审计与已登录 DSM 复核确认，Chat 服务器已读、Download 单文件优先级、Container 详情/资源/近期日志、单镜像拉取和平板 noVNC 均缺少可复验私有契约、稳定身份或 Android 非持久会话隔离，因此保留为“版本化契约后再评估”，不冒充已实现，也不以猜测请求阻塞当前移动端范围。NAS 级下载配置、容器详细运维、VMM 控制台与高级管理使用 DSM Web/桌面端。纯设备矩阵迁入 A9 并保持 `PENDING_USER_VALIDATION`；Photos 共享空间根目录使用 opaque 令牌、公开 `getinfo` 重读和权限拒绝恢复。 |
-| Windows 客户端 | 第 0 波已实现并通过双架构 CI 编译；需 Windows 实机验收 | 当前分支已完成 Application 可测试边界、Files/位置/预览/传输/分享、Photos/PHOTO-01、Chat 只读、Download/Container/VMM 只读和本地设置；最终正式提交的 GitHub Actions run 31301134782 通过 691/691 xUnit，WinUI win-x64 与 win-arm64 Release 均 0 warning/0 error。证书核对、后续文件写、NAS 管理与真实 Windows/ARM64/NAS/系统集成仍待后续 |
+| Windows 客户端 | 第 1 波候选源码与双架构 CI 已通过；需最终 SHA 复验和 Windows 实机验收 | 在第 0 波 Application 边界、Files/位置/预览/传输/分享、PHOTO-01、只读服务与设置基础上，本波新增自签名证书首次核对、按 profile 指纹、变化阻断、QuickConnect 来源保持和 FILE-03 结果型新建文件夹/重命名。证书与 FILE-03 独立源码终审均无开放 P0/P1；GitHub `Windows Build` run `31306947634` 已通过 756/756 xUnit，WinUI x64/ARM64 均为 0 警告、0 错误。候选修正仍须整理为一条简体中文提交并对最终 SHA 复验；真实证书/NAS 写入、NAS 管理与系统集成仍待后续。 |
 
 ## 当前跨端对齐波次验证快照
 
@@ -40,7 +40,15 @@
 - Android：同一提交的 `Android Build` run `31301134788` 完成单元测试、Debug、Release、R8、仪器测试 APK 编译与 Debug lint；本波未修改 Android 业务源码，该运行用于证明共享契约与资源没有破坏既有目标。
 - 仓库：`Repository Check` run `31301134780` 通过必要文件、JSON、请求契约、隐私、双语资源与硬编码扫描。
 - 共同轻量门禁：双语资源校验当前统计 Apple 3209、Android 1985、Windows 794；请求契约校验 88 个 Fixture 与 1 个写结果示例；差异格式和项目 XML 检查通过。
-- 第 0 波并非长期计划完成。下一波优先补 Windows 证书/能力说明、Apple/Windows FILE-03 结果型新建与重命名契约、PHOTO-02 只读增强和 iPad/M9-A 自动化；其他受限写能力继续按独立契约切片推进。
+- 第 0 波并非长期计划完成；原定的 Windows 证书、Apple/Windows FILE-03 和 PHOTO-02 已进入下述第 1 波候选。待本波云端全绿并合并后，继续按账本推进 Files 有界复制/移动、回收站写、PHOTO-03 主动导入及 Chat/Download 受限控制；其他危险写继续使用独立契约切片。
+
+### 第 1 波当前候选（候选云端门禁已通过，待单提交最终复验）
+
+- 基线：`bd809f8b6854258ac3c0d9370468b82536b7c34d`；功能对齐账本见 [第 1 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_1_LEDGER_ZH.md)。
+- Apple：FILE-03/PHOTO-02 移动聚焦 60/60；共享 Package 645 项、2 项按环境跳过、0 失败。当前主机无 iPad Simulator，不把 iPhone 模拟器结果冒充 iPad 或真机结论。
+- Windows：证书 C0–C3 与 FILE-03 F0–F4 源码完成；两轮未参与实现者对抗终审均无开放 P0/P1。`Windows Build` run `31306947634` 在候选 `f25508b` 通过 756/756 xUnit，WinUI x64/ARM64 均为 0 警告、0 错误。
+- 共同轻量门：请求契约 90 个 Fixture 与 1 个写结果示例通过；双语资源 Apple 3255、Android 1985、Windows 849；Apple strings、Windows resw/XAML XML、本地化、硬编码和 `git diff --check` 通过。
+- 候选 GitHub 结果：`Apple Build` run `31306484946` 与 `Android Build` run `31306484965` 在 `e5ac397` 通过；`Windows Build` run `31306947634` 与 `Repository Check` run `31306947631` 在修正后的 `f25508b` 通过。CI 修正记录将整理为一条简体中文功能提交；最终精确 SHA 仍须重新通过四组工作流，全绿前不更新为已合并。
 
 ## macOS 功能状态
 

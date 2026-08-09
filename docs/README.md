@@ -16,6 +16,11 @@
 
 ## 专项开发计划
 
+- [Windows / Apple 移动端第 1 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_1_LEDGER_ZH.md)
+- [Windows / Apple 移动端第 0 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_0_LEDGER_ZH.md)
+- [macOS 业务语义向 Windows 与 Apple 移动端复制总计划](development/MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)
+- [Windows 对齐 macOS 专项计划](development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)
+- [iPhone / iPad 对齐 macOS 专项计划](development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)
 - [Android 原生客户端完善、进度记录与跨电脑交接计划](development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)
 - [Android 第 85 批功能对齐账本](development/ANDROID_WAVE_85_ALIGNMENT_LEDGER_ZH.md)
 - [Android 点击目标审计矩阵](development/ANDROID_TOUCH_TARGET_AUDIT_MATRIX_ZH.md)

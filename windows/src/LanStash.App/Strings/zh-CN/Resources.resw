@@ -798,4 +798,59 @@
   <data name="FileLocationsRemotePartial.Message" xml:space="preserve"><value>仍可打开已显示的远程文件夹，且不会更改其连接设置。</value></data>
   <data name="FileLocationsRemoteTruncated.Title" xml:space="preserve"><value>仅显示部分位置</value></data>
   <data name="FileLocationsRemoteTruncated.Message" xml:space="preserve"><value>列表已达到安全上限，部分远程位置可能未显示。</value></data>
+  <data name="CertificateTrustRetryFailedMessage" xml:space="preserve"><value>安全信息已保存，但未能完成连接。请重新连接并再次核对详情。</value></data>
+  <data name="CertificateTrustFirstTitle" xml:space="preserve"><value>核对这台 NAS</value></data>
+  <data name="CertificateTrustChangedTitle" xml:space="preserve"><value>安全信息已变化</value></data>
+  <data name="CertificateTrustInvalidTitle" xml:space="preserve"><value>无法安全连接</value></data>
+  <data name="CertificateTrustWarningTitle" xml:space="preserve"><value>继续前请核对</value></data>
+  <data name="CertificateTrustWarningMessage" xml:space="preserve"><value>这台 NAS 使用了此设备尚未识别的证书。</value></data>
+  <data name="CertificateTrustChangedWarningTitle" xml:space="preserve"><value>保存的证书已不匹配</value></data>
+  <data name="CertificateTrustChangedWarningMessage" xml:space="preserve"><value>除非你确认此次变化符合预期，并已通过可信渠道核对，否则请勿继续。</value></data>
+  <data name="CertificateTrustReviewExplanation" xml:space="preserve"><value>请确认该证书名称为 {0}，并与 NAS 或管理员提供的指纹核对。</value></data>
+  <data name="CertificateTrustCannotApproveExplanation" xml:space="preserve"><value>该证书名称为 {0}。此连接不符合安全要求，无法在这里批准。</value></data>
+  <data name="CertificateTrustNasLabel" xml:space="preserve"><value>NAS</value></data>
+  <data name="CertificateTrustAddressLabel" xml:space="preserve"><value>输入的地址</value></data>
+  <data name="CertificateTrustConnectionLabel" xml:space="preserve"><value>连接方式</value></data>
+  <data name="CertificateTrustConnectionDirect" xml:space="preserve"><value>直接地址</value></data>
+  <data name="CertificateTrustConnectionLan" xml:space="preserve"><value>QuickConnect 本地网络</value></data>
+  <data name="CertificateTrustConnectionExternal" xml:space="preserve"><value>QuickConnect 直接连接</value></data>
+  <data name="CertificateTrustConnectionRelay" xml:space="preserve"><value>QuickConnect 中继</value></data>
+  <data name="CertificateTrustPreviousFingerprintLabel" xml:space="preserve"><value>之前保存的指纹</value></data>
+  <data name="CertificateTrustPresentedFingerprintLabel" xml:space="preserve"><value>当前指纹</value></data>
+  <data name="CertificateTrustPreviousFingerprintAutomationName" xml:space="preserve"><value>之前保存的证书指纹</value></data>
+  <data name="CertificateTrustPresentedFingerprintAutomationName" xml:space="preserve"><value>当前证书指纹</value></data>
+  <data name="CertificateTrustApproveNextStep" xml:space="preserve"><value>仅在指纹核对一致后继续。</value></data>
+  <data name="CertificateTrustBlockedNextStep" xml:space="preserve"><value>请取消，并与管理员核对 NAS 地址、证书和连接方式。</value></data>
+  <data name="CertificateTrustApproveAction" xml:space="preserve"><value>我已核对，继续连接</value></data>
+  <data name="CertificateTrustApproveChangedAction" xml:space="preserve"><value>我已核对变化，继续连接</value></data>
+  <data name="CertificateTrustSubjectUnavailable" xml:space="preserve"><value>未提供</value></data>
+  <data name="FileMutationCreateFolder.Label" xml:space="preserve"><value>新建文件夹</value></data>
+  <data name="FileMutationCreateFolder.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>在当前位置新建文件夹</value></data>
+  <data name="FileMutationRename.Label" xml:space="preserve"><value>重命名</value></data>
+  <data name="FileMutationRename.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>重命名所选项目</value></data>
+  <data name="FileMutationCreateAction" xml:space="preserve"><value>创建文件夹</value></data>
+  <data name="FileMutationRenameAction" xml:space="preserve"><value>重命名</value></data>
+  <data name="FileMutationReturnToFormAction" xml:space="preserve"><value>返回表单</value></data>
+  <data name="FileMutationCreateTarget" xml:space="preserve"><value>父文件夹：{0}</value></data>
+  <data name="FileMutationRenameTarget" xml:space="preserve"><value>所选项目：{0}</value></data>
+  <data name="FileMutationNameLabel" xml:space="preserve"><value>名称</value></data>
+  <data name="FileMutationNameHelp" xml:space="preserve"><value>请输入此文件夹中未被使用的名称。</value></data>
+  <data name="FileMutationNameAutomationName" xml:space="preserve"><value>新文件夹或项目名称</value></data>
+  <data name="FileMutationNameError" xml:space="preserve"><value>请输入其他名称，名称不能包含斜杠，开头或结尾不能有空格。</value></data>
+  <data name="FileMutationCancellingMessage" xml:space="preserve"><value>正在取消，并等待确认 NAS 是否已收到这项更改…</value></data>
+  <data name="FileMutationSubmittingMessage" xml:space="preserve"><value>正在应用更改…</value></data>
+  <data name="FileMutationReviewTarget" xml:space="preserve"><value>请核对此位置：{0}</value></data>
+  <data name="FileMutationReviewTitle" xml:space="preserve"><value>继续前请核对项目</value></data>
+  <data name="FileMutationPermissionTitle" xml:space="preserve"><value>你没有所需权限</value></data>
+  <data name="FileMutationChangedTitle" xml:space="preserve"><value>项目或名称已发生变化</value></data>
+  <data name="FileMutationUnsupportedTitle" xml:space="preserve"><value>当前无法进行这项更改</value></data>
+  <data name="FileMutationFailureTitle" xml:space="preserve"><value>无法完成更改</value></data>
+  <data name="FileMutationCreateFolderTitle" xml:space="preserve"><value>新建文件夹</value></data>
+  <data name="FileMutationRenameTitle" xml:space="preserve"><value>重命名项目</value></data>
+  <data name="FileMutationReviewMessage" xml:space="preserve"><value>无法确认更改结果。再次进行相同更改前，请先在 NAS 上核对该文件夹。</value></data>
+  <data name="FileMutationCancelledMessage" xml:space="preserve"><value>未进行任何更改。你可以安全地返回表单。</value></data>
+  <data name="FileMutationPermissionMessage" xml:space="preserve"><value>你的账户无法更改此项目。请联系管理员获取权限，然后刷新文件夹。</value></data>
+  <data name="FileMutationChangedMessage" xml:space="preserve"><value>项目或要使用的名称已不再可用。请刷新文件夹后重新选择。</value></data>
+  <data name="FileMutationUnsupportedMessage" xml:space="preserve"><value>此 NAS 或文件夹不支持这项更改。你仍可继续浏览和保存副本。</value></data>
+  <data name="FileMutationFailureMessage" xml:space="preserve"><value>更改未完成。请刷新文件夹，然后从当前项目重新操作。</value></data>
 </root>

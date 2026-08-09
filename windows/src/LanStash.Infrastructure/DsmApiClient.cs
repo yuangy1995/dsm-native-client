@@ -40,6 +40,15 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
 
     public async Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
         NasProfile profile,
+        CancellationToken cancellationToken = default) =>
+        await DiscoverAsync(
+            profile,
+            DsmConnectionSource.DirectAddress,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
+        NasProfile profile,
+        DsmConnectionSource source,
         CancellationToken cancellationToken = default)
     {
         var data = await PostAsync(
@@ -53,7 +62,8 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
                 ["query"] = "all",
             },
             session: null,
-            cancellationToken).ConfigureAwait(false);
+            source: source,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         var result = new Dictionary<string, ApiCapability>(StringComparer.Ordinal);
         foreach (var (name, node) in data)
         {
@@ -78,6 +88,19 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         NasProfile profile,
         string password,
         string? otp,
+        CancellationToken cancellationToken = default) =>
+        await LoginAsync(
+            profile,
+            password,
+            otp,
+            DsmConnectionSource.DirectAddress,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<DsmSession> LoginAsync(
+        NasProfile profile,
+        string password,
+        string? otp,
+        DsmConnectionSource source,
         CancellationToken cancellationToken = default)
     {
         var parameters = new Dictionary<string, string>
@@ -102,7 +125,8 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             "/webapi/auth.cgi",
             parameters,
             session: null,
-            cancellationToken).ConfigureAwait(false);
+            source: source,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         var sid = data["sid"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(sid))
         {
@@ -235,6 +259,7 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
         }
 
+        SetNasConnectionContext(request, profile);
         HttpResponseMessage response;
         try
         {
@@ -299,6 +324,196 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             return envelope["data"] as JsonObject ?? throw InvalidReadEnvelope();
         }
     }
+
+    public async Task<FilePermissionTransportResult> CheckFileMutationPermissionAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        string folderPath, string name,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.CheckPermission", 3) ||
+            !ValidMutationPath(folderPath, allowSharedRoot: false) ||
+            !ValidMutationName(name))
+        {
+            return new(FilePermissionTransportStatus.Unsupported,
+                MutationErrorCategory.Unsupported, "file.mutation.permission.unsupported");
+        }
+        var result = await SendFileMutationFormAsync(profile, session, capability, 3, "write",
+            new Dictionary<string, string>
+            {
+                ["path"] = folderPath, ["filename"] = name, ["create_only"] = "true",
+            }, cancellationToken, permissionProbe: true).ConfigureAwait(false);
+        return result.Status switch
+        {
+            FileMutationTransportStatus.ResponseReceived => new(FilePermissionTransportStatus.Allowed),
+            FileMutationTransportStatus.ConfirmedFailure when result.ErrorCategory == MutationErrorCategory.Permission =>
+                new(FilePermissionTransportStatus.Denied, result.ErrorCategory, result.DiagnosticTag),
+            FileMutationTransportStatus.CancelledBeforeSubmission or
+                FileMutationTransportStatus.CancellationRequestedAfterSubmission =>
+                new(FilePermissionTransportStatus.Cancelled, result.ErrorCategory, result.DiagnosticTag),
+            FileMutationTransportStatus.Unsupported => new(FilePermissionTransportStatus.Unsupported,
+                result.ErrorCategory, result.DiagnosticTag),
+            _ => new(FilePermissionTransportStatus.Failed, result.ErrorCategory, result.DiagnosticTag),
+        };
+    }
+
+    public Task<FileMutationTransportResult> CreateFolderMutationAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        string parentPath, string name,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.CreateFolder", 2) ||
+            !ValidMutationPath(parentPath, allowSharedRoot: false) || !ValidMutationName(name))
+        {
+            return Task.FromResult(new FileMutationTransportResult(
+                FileMutationTransportStatus.Unsupported, MutationErrorCategory.Unsupported,
+                "file.create-folder.unsupported"));
+        }
+        return SendFileMutationFormAsync(profile, session, capability, 2, "create",
+            new Dictionary<string, string>
+            {
+                ["folder_path"] = parentPath, ["name"] = name, ["force_parent"] = "false",
+            }, cancellationToken, permissionProbe: false);
+    }
+
+    public Task<FileMutationTransportResult> RenameFileMutationAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        string path, string newName,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Rename", 2) ||
+            !ValidMutationPath(path, allowSharedRoot: false) || !ValidMutationName(newName))
+        {
+            return Task.FromResult(new FileMutationTransportResult(
+                FileMutationTransportStatus.Unsupported, MutationErrorCategory.Unsupported,
+                "file.rename.unsupported"));
+        }
+        return SendFileMutationFormAsync(profile, session, capability, 2, "rename",
+            new Dictionary<string, string>
+            {
+                ["path"] = JsonSerializer.Serialize(new[] { path }),
+                ["name"] = JsonSerializer.Serialize(new[] { newName }),
+            }, cancellationToken, permissionProbe: false);
+    }
+
+    private async Task<FileMutationTransportResult> SendFileMutationFormAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability, int version,
+        string method, IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken, bool permissionProbe)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new(FileMutationTransportStatus.CancelledBeforeSubmission,
+                DiagnosticTag: "file.mutation.cancelled-before-submit");
+        }
+        var values = new Dictionary<string, string>(parameters, StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name, ["version"] = version.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            ["method"] = method, ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
+        if (!string.IsNullOrWhiteSpace(session.SynoToken))
+            request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
+        SetNasConnectionContext(request, profile);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                MutationErrorCategory.Network, "file.mutation.cancelled-after-submit");
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network, "file.mutation.network-unverified");
+        }
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var category = response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => MutationErrorCategory.Authentication,
+                    System.Net.HttpStatusCode.Forbidden => MutationErrorCategory.Permission,
+                    _ => MutationErrorCategory.Server,
+                };
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    category, "file.mutation.http-unverified");
+            }
+            try
+            {
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                var envelope = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false) as JsonObject;
+                if (envelope is null || !TryGetNativeBoolean(envelope, "success", out var success))
+                    return new(FileMutationTransportStatus.SubmittedButUnverified,
+                        MutationErrorCategory.Server, "file.mutation.response-unverified");
+                if (success) return new(FileMutationTransportStatus.ResponseReceived);
+                if (envelope["error"] is not JsonObject error ||
+                    !TryGetNativeInt32(error, "code", out var code) || code < 0)
+                    return new(FileMutationTransportStatus.SubmittedButUnverified,
+                        MutationErrorCategory.Server, "file.mutation.response-unverified");
+                var category = code switch
+                {
+                    105 => MutationErrorCategory.Permission,
+                    106 or 107 or 119 or 401 => MutationErrorCategory.Authentication,
+                    _ => MutationErrorCategory.Server,
+                };
+                return new(FileMutationTransportStatus.ConfirmedFailure, category,
+                    permissionProbe ? "file.mutation.permission-denied" : "file.mutation.dsm-failure");
+            }
+            catch (OperationCanceledException)
+            {
+                return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                    MutationErrorCategory.Network, "file.mutation.cancelled-after-submit");
+            }
+            catch (Exception error) when (error is JsonException or IOException or HttpRequestException)
+            {
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    MutationErrorCategory.Server, "file.mutation.response-unverified");
+            }
+        }
+    }
+
+    private bool ValidMutationCapability(NasProfile profile, DsmSession session,
+        ApiCapability capability, string name, int version) =>
+        profile.Id == session.ProfileId && !string.IsNullOrWhiteSpace(session.Sid) &&
+        string.Equals(capability.Name, name, StringComparison.Ordinal) &&
+        version >= capability.MinVersion && version <= capability.MaxVersion &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) &&
+        IsSafeWebApiPath(capability.Path);
+
+    private static bool ValidMutationName(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value == value.Trim() && value is not ("." or "..") &&
+        value.IndexOfAny(['/', '\\', '\r', '\n', '\0']) < 0;
+
+    private static bool ValidMutationPath(string value, bool allowSharedRoot) =>
+        !string.IsNullOrWhiteSpace(value) && value.StartsWith('/') &&
+        (allowSharedRoot || value != "/") && !value.EndsWith('/') &&
+        !value.Contains("//", StringComparison.Ordinal) && !value.Contains('\\') &&
+        value.IndexOfAny(['\r', '\n', '\0']) < 0 &&
+        !value.Split('/').Any(segment => segment is "." or "..");
+
+    private static void SetNasConnectionContext(
+        HttpRequestMessage request,
+        NasProfile profile) =>
+        WindowsCertificateTrustHandler.SetConnectionContext(
+            request,
+            profile.Id,
+            DsmConnectionSource.DirectAddress);
 
     private static bool IsReservedReadParameter(string name) =>
         name.Equals("api", StringComparison.OrdinalIgnoreCase) ||
@@ -440,6 +655,7 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
         }
 
+        SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
@@ -625,6 +841,7 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         {
             request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
         }
+        SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
@@ -814,6 +1031,7 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
         }
 
+        SetNasConnectionContext(request, profile);
         if (cancellationToken.IsCancellationRequested)
         {
             return new FileUploadTransportResult(
@@ -1005,6 +1223,7 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
         }
 
+        SetNasConnectionContext(request, profile);
         HttpResponseMessage response;
         try
         {
@@ -1181,11 +1400,26 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             diagnostic);
     }
 
+    private Task<JsonObject> PostAsync(
+        NasProfile profile,
+        string path,
+        IReadOnlyDictionary<string, string> parameters,
+        DsmSession? session,
+        CancellationToken cancellationToken) =>
+        PostAsync(
+            profile,
+            path,
+            parameters,
+            session,
+            DsmConnectionSource.DirectAddress,
+            cancellationToken);
+
     private async Task<JsonObject> PostAsync(
         NasProfile profile,
         string path,
         IReadOnlyDictionary<string, string> parameters,
         DsmSession? session,
+        DsmConnectionSource source,
         CancellationToken cancellationToken)
     {
         var values = new Dictionary<string, string>(parameters, StringComparer.Ordinal);
@@ -1201,6 +1435,10 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         };
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        WindowsCertificateTrustHandler.SetConnectionContext(
+            request,
+            profile.Id,
+            source);
         if (session is not null)
         {
             request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
