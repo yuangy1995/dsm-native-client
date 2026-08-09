@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
@@ -18,6 +20,8 @@ public sealed partial class DsmRepository
     private const int MaximumTaskReadbackItems = 5_000;
     private static readonly ConditionalWeakTable<IDsmApiClient, DownloadTaskControlApiState>
         DownloadTaskControlStates = new();
+    private static readonly ConditionalWeakTable<IDsmApiClient, DownloadTaskCreateApiState>
+        DownloadTaskCreateStates = new();
 
     private static readonly IReadOnlySet<DownloadStationReadFeature> PublicDownloadTaskFeatures =
         new HashSet<DownloadStationReadFeature>
@@ -53,6 +57,9 @@ public sealed partial class DsmRepository
 
     private DownloadTaskControlApiState DownloadTaskControlState =>
         DownloadTaskControlStates.GetValue(_api, _ => new DownloadTaskControlApiState());
+
+    private DownloadTaskCreateApiState DownloadTaskCreateState =>
+        DownloadTaskCreateStates.GetValue(_api, _ => new DownloadTaskCreateApiState());
 
     public async Task<DownloadTaskPage> ListTasksAsync(
         int offset,
@@ -129,6 +136,218 @@ public sealed partial class DsmRepository
             tasks,
             activity,
             new(DownloadStationSectionStatus.Unavailable, null));
+    }
+
+    public async Task<DownloadTaskCreateOutcome> CreateTaskAsync(
+        DownloadTaskCreateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return DownloadCreateOutcome(
+                MutationResultStatus.CancelledBeforeSubmission,
+                taskId: null,
+                task: null,
+                submitted: false,
+                requiresRefresh: false,
+                errorCategory: null,
+                diagnosticTag: "download-station.create.cancelled-before");
+        }
+
+        if (request.ProfileId != _profile.Id || _session.ProfileId != _profile.Id)
+        {
+            return DownloadCreateOutcome(
+                MutationResultStatus.ConfirmedFailure,
+                taskId: null,
+                task: null,
+                submitted: false,
+                requiresRefresh: false,
+                errorCategory: MutationErrorCategory.Validation,
+                diagnosticTag: "download-station.create.profile-mismatch");
+        }
+
+        if (!TryPrepareDownloadCreateRequest(
+                request,
+                out var normalizedUri,
+                out var normalizedDestination))
+        {
+            return DownloadCreateOutcome(
+                MutationResultStatus.ConfirmedFailure,
+                taskId: null,
+                task: null,
+                submitted: false,
+                requiresRefresh: false,
+                errorCategory: MutationErrorCategory.Validation,
+                diagnosticTag: "download-station.create.invalid-input");
+        }
+
+        if (!HasControllablePublicDownloadStationContract)
+        {
+            return DownloadCreateOutcome(
+                MutationResultStatus.Unsupported,
+                taskId: null,
+                task: null,
+                submitted: false,
+                requiresRefresh: false,
+                errorCategory: MutationErrorCategory.Unsupported,
+                diagnosticTag: "download-station.create.unsupported");
+        }
+
+        var key = DownloadTaskCreateReviewKey.From(
+            _profile.Id,
+            _session,
+            normalizedUri,
+            normalizedDestination);
+        var activeKey = new DownloadTaskCreateActiveKey(_profile.Id, key.Digest);
+        var state = DownloadTaskCreateState;
+        if (!state.TryClaim(activeKey))
+        {
+            return DownloadCreateOutcome(
+                MutationResultStatus.ConfirmedFailure,
+                taskId: null,
+                task: null,
+                submitted: false,
+                requiresRefresh: false,
+                errorCategory: MutationErrorCategory.Conflict,
+                diagnosticTag: "download-station.create.duplicate-submission");
+        }
+
+        try
+        {
+            if (state.TryGetReview(key, out var pendingReview))
+            {
+                return await FinishDownloadCreateAsync(
+                    pendingReview,
+                    submittedStatus: MutationResultStatus.SubmittedButUnverified,
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+
+            IReadOnlySet<string> previousIds;
+            try
+            {
+                previousIds = (await LoadAllPublicDownloadTasksAsync(cancellationToken)
+                    .ConfigureAwait(false))
+                    .Select(task => task.Id)
+                    .ToHashSet(StringComparer.Ordinal);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return DownloadCreateOutcome(
+                    MutationResultStatus.CancelledBeforeSubmission,
+                    taskId: null,
+                    task: null,
+                    submitted: false,
+                    requiresRefresh: false,
+                    errorCategory: null,
+                    diagnosticTag: "download-station.create.cancelled-during-preflight");
+            }
+            catch (DsmException error)
+            {
+                return DownloadCreateOutcome(
+                    MutationResultStatus.ConfirmedFailure,
+                    taskId: null,
+                    task: null,
+                    submitted: false,
+                    requiresRefresh: false,
+                    errorCategory: DownloadControlErrorCategory(error),
+                    diagnosticTag: "download-station.create.preflight-failed");
+            }
+            catch (JsonException)
+            {
+                return DownloadCreateOutcome(
+                    MutationResultStatus.ConfirmedFailure,
+                    taskId: null,
+                    task: null,
+                    submitted: false,
+                    requiresRefresh: false,
+                    errorCategory: MutationErrorCategory.Server,
+                    diagnosticTag: "download-station.create.preflight-invalid-response");
+            }
+            catch (IOException)
+            {
+                return DownloadCreateOutcome(
+                    MutationResultStatus.ConfirmedFailure,
+                    taskId: null,
+                    task: null,
+                    submitted: false,
+                    requiresRefresh: false,
+                    errorCategory: MutationErrorCategory.Network,
+                    diagnosticTag: "download-station.create.preflight-read-failed");
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return DownloadCreateOutcome(
+                    MutationResultStatus.CancelledBeforeSubmission,
+                    taskId: null,
+                    task: null,
+                    submitted: false,
+                    requiresRefresh: false,
+                    errorCategory: null,
+                    diagnosticTag: "download-station.create.cancelled-before-write");
+            }
+
+            var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["uri"] = normalizedUri,
+            };
+            if (normalizedDestination is not null)
+            {
+                parameters["destination"] = normalizedDestination;
+            }
+            var review = new DownloadTaskCreateReview(
+                key,
+                previousIds,
+                ExpectedTaskId: null,
+                normalizedDestination);
+            JsonObject response;
+            try
+            {
+                response = await CallPublicDownloadAsync(
+                    PublicDownloadTaskApi,
+                    "create",
+                    parameters,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                state.StoreReview(review);
+                return await FinishDownloadCreateAsync(
+                    review,
+                    submittedStatus: MutationResultStatus.CancellationRequestedAfterSubmission,
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (DsmException error) when (DownloadControlErrorCategory(error) == MutationErrorCategory.Permission)
+            {
+                return DownloadCreateOutcome(
+                    MutationResultStatus.PermissionDenied,
+                    taskId: null,
+                    task: null,
+                    submitted: true,
+                    requiresRefresh: true,
+                    errorCategory: MutationErrorCategory.Permission,
+                    diagnosticTag: "download-station.create.permission");
+            }
+            catch (Exception)
+            {
+                state.StoreReview(review);
+                return await FinishDownloadCreateAsync(
+                    review,
+                    submittedStatus: MutationResultStatus.SubmittedButUnverified,
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+
+            review = review with { ExpectedTaskId = StableDownloadId(response["taskid"] ?? response["task_id"] ?? response["taskId"] ?? response["id"]) };
+            state.StoreReview(review);
+            return await FinishDownloadCreateAsync(
+                review,
+                submittedStatus: MutationResultStatus.SubmittedButUnverified,
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            state.Release(activeKey);
+        }
     }
 
     public async Task<DownloadTaskControlOutcome> ControlTaskAsync(
@@ -567,6 +786,152 @@ public sealed partial class DsmRepository
             diagnosticTag: DownloadControlDiagnostic(review.Action, "readback-unverified"));
     }
 
+    private async Task<DownloadTaskCreateOutcome> FinishDownloadCreateAsync(
+        DownloadTaskCreateReview review,
+        MutationResultStatus submittedStatus,
+        CancellationToken cancellationToken)
+    {
+        if (review.ExpectedTaskId is null)
+        {
+            DownloadTaskCreateState.StoreReview(review);
+            return DownloadCreateUnknownOutcome(
+                submittedStatus,
+                taskId: null,
+                errorCategory: MutationErrorCategory.Unknown,
+                diagnosticTag: submittedStatus == MutationResultStatus.CancellationRequestedAfterSubmission
+                    ? "download-station.create.cancelled-after"
+                    : "download-station.create.unverified");
+        }
+
+        try
+        {
+            var tasks = await LoadAllPublicDownloadTasksAsync(cancellationToken).ConfigureAwait(false);
+            var confirmed = tasks.SingleOrDefault(task =>
+                string.Equals(task.Id, review.ExpectedTaskId, StringComparison.Ordinal) &&
+                !review.PreviousTaskIds.Contains(task.Id) &&
+                DownloadCreateDestinationMatches(review.Destination, task));
+            if (confirmed is not null)
+            {
+                DownloadTaskCreateState.ClearReview(review.Key);
+                return DownloadCreateOutcome(
+                    MutationResultStatus.ConfirmedSuccess,
+                    review.ExpectedTaskId,
+                    confirmed,
+                    submitted: true,
+                    requiresRefresh: false,
+                    errorCategory: null,
+                    diagnosticTag: "download-station.create.confirmed");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            submittedStatus = MutationResultStatus.CancellationRequestedAfterSubmission;
+        }
+        catch
+        {
+        }
+
+        DownloadTaskCreateState.StoreReview(review);
+        return DownloadCreateUnknownOutcome(
+            submittedStatus,
+            review.ExpectedTaskId,
+            MutationErrorCategory.Unknown,
+            diagnosticTag: submittedStatus == MutationResultStatus.CancellationRequestedAfterSubmission
+                ? "download-station.create.cancelled-after"
+                : "download-station.create.unverified");
+    }
+
+    private static bool TryPrepareDownloadCreateRequest(
+        DownloadTaskCreateRequest request,
+        out string normalizedUri,
+        out string? normalizedDestination)
+    {
+        normalizedUri = request.Uri.Trim();
+        normalizedDestination = string.IsNullOrWhiteSpace(request.Destination)
+            ? null
+            : request.Destination.Trim();
+        if (string.IsNullOrEmpty(normalizedUri) ||
+            normalizedUri.Any(char.IsControl) ||
+            !Uri.TryCreate(normalizedUri, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        var scheme = uri.Scheme.ToLowerInvariant();
+        var validUri = scheme switch
+        {
+            "http" or "https" or "ftp" => !string.IsNullOrWhiteSpace(uri.Host),
+            "magnet" => normalizedUri.Length > "magnet:".Length,
+            _ => false,
+        };
+        if (!validUri)
+        {
+            return false;
+        }
+        if (normalizedDestination is not null &&
+            (string.IsNullOrEmpty(normalizedDestination) ||
+                normalizedDestination.Any(char.IsControl)))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    private static bool DownloadCreateDestinationMatches(
+        string? expected,
+        DownloadTask task)
+    {
+        if (expected is null || string.IsNullOrWhiteSpace(task.Destination))
+        {
+            return true;
+        }
+        return string.Equals(expected, task.Destination.Trim(), StringComparison.Ordinal);
+    }
+
+    private static DownloadTaskCreateOutcome DownloadCreateUnknownOutcome(
+        MutationResultStatus status,
+        string? taskId,
+        MutationErrorCategory errorCategory,
+        string diagnosticTag) =>
+        DownloadCreateOutcome(
+            status,
+            taskId,
+            task: null,
+            submitted: true,
+            requiresRefresh: true,
+            errorCategory,
+            diagnosticTag);
+
+    private static DownloadTaskCreateOutcome DownloadCreateOutcome(
+        MutationResultStatus status,
+        string? taskId,
+        DownloadTask? task,
+        bool submitted,
+        bool requiresRefresh,
+        MutationErrorCategory? errorCategory,
+        string diagnosticTag)
+    {
+        var succeeded = status == MutationResultStatus.ConfirmedSuccess ? 1 : 0;
+        var failed = status is MutationResultStatus.ConfirmedFailure or
+            MutationResultStatus.PermissionDenied or
+            MutationResultStatus.Unsupported ? 1 : 0;
+        var unknown = status is MutationResultStatus.SubmittedButUnverified or
+            MutationResultStatus.CancellationRequestedAfterSubmission ? 1 : 0;
+        return new(
+            new MutationResult(
+                1,
+                status,
+                "downloadCreate",
+                submitted,
+                requiresRefresh,
+                new MutationResultCounts(succeeded, failed, unknown),
+                errorCategory,
+                localizationKey: $"download-station.create.{status.ToString().ToLowerInvariant()}",
+                diagnosticTag),
+            taskId,
+            task);
+    }
+
     private static bool DownloadControlBaselineMatches(
         DownloadTask baseline,
         DownloadTask current) =>
@@ -716,6 +1081,95 @@ public sealed partial class DsmRepository
         new(
             UserText.Key("WinShared17bab1054ab28010"),
             UserText.Key("WinSharedefc81ced18eb3bb0"));
+
+    private readonly record struct DownloadTaskCreateActiveKey(Guid ProfileId, string Digest);
+
+    private readonly record struct DownloadTaskCreateReviewKey(
+        Guid ProfileId,
+        Guid SessionProfileId,
+        string SessionId,
+        string Digest)
+    {
+        public static DownloadTaskCreateReviewKey From(
+            Guid profileId,
+            DsmSession session,
+            string uri,
+            string? destination) =>
+            new(
+                profileId,
+                session.ProfileId,
+                session.Sid,
+                DownloadCreateDigest("uri", uri, destination ?? string.Empty));
+    }
+
+    private sealed record DownloadTaskCreateReview(
+        DownloadTaskCreateReviewKey Key,
+        IReadOnlySet<string> PreviousTaskIds,
+        string? ExpectedTaskId,
+        string? Destination);
+
+    private sealed class DownloadTaskCreateApiState
+    {
+        private readonly object _gate = new();
+        private readonly HashSet<DownloadTaskCreateActiveKey> _active = [];
+        private readonly Dictionary<DownloadTaskCreateReviewKey, DownloadTaskCreateReview> _reviews = [];
+
+        public bool TryClaim(DownloadTaskCreateActiveKey key)
+        {
+            lock (_gate)
+            {
+                return _active.Add(key);
+            }
+        }
+
+        public void Release(DownloadTaskCreateActiveKey key)
+        {
+            lock (_gate)
+            {
+                _active.Remove(key);
+            }
+        }
+
+        public bool TryGetReview(
+            DownloadTaskCreateReviewKey key,
+            out DownloadTaskCreateReview review)
+        {
+            lock (_gate)
+            {
+                return _reviews.TryGetValue(key, out review!);
+            }
+        }
+
+        public void StoreReview(DownloadTaskCreateReview review)
+        {
+            lock (_gate)
+            {
+                _reviews[review.Key] = review;
+            }
+        }
+
+        public void ClearReview(DownloadTaskCreateReviewKey key)
+        {
+            lock (_gate)
+            {
+                _reviews.Remove(key);
+            }
+        }
+    }
+
+    private static string DownloadCreateDigest(string kind, params string[] values)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+        writer.Write(kind);
+        foreach (var value in values)
+        {
+            writer.Write(value.Length);
+            writer.Write(value);
+        }
+        writer.Flush();
+        return Convert.ToHexString(SHA256.HashData(stream.ToArray())).ToLowerInvariant();
+    }
 
     private readonly record struct DownloadTaskControlActiveKey(Guid ProfileId, string TaskId);
 

@@ -140,3 +140,13 @@ public sealed record DownloadTaskControlOutcome(
     MutationResult Result,
     string TaskId,
     DownloadTask? Task);
+
+public sealed record DownloadTaskCreateRequest(
+    Guid ProfileId,
+    string Uri,
+    string? Destination);
+
+public sealed record DownloadTaskCreateOutcome(
+    MutationResult Result,
+    string? TaskId,
+    DownloadTask? Task);

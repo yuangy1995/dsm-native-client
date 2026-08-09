@@ -1,4 +1,5 @@
 import DsmCore
+import CryptoKit
 import Foundation
 import DsmLocalization
 
@@ -158,6 +159,28 @@ private struct DownloadTaskControlReview: Sendable {
     let key: DownloadTaskControlKey
 }
 
+private struct DownloadTaskCreateKey: Hashable, Sendable {
+    let digest: String
+}
+
+private struct DownloadTaskCreateReview: Sendable {
+    let key: DownloadTaskCreateKey
+    let previousTaskIDs: Set<String>
+    let expectedTaskID: String?
+    let destination: String?
+}
+
+private struct PreparedDownloadTaskCreateRequest: Sendable {
+    let key: DownloadTaskCreateKey
+    let uri: String
+    let destination: String?
+}
+
+private enum DownloadTaskCreateValidation: Sendable {
+    case success(PreparedDownloadTaskCreateRequest)
+    case failure(DownloadTaskCreateOutcome)
+}
+
 /// Download Station、VMM 与 Container Manager 的套件适配器。
 /// Container Manager 以及无公开接口时的套件分支均属于 DSM 内部接口。
 public actor DsmServiceManagementRepository: ServiceManagementRepository,
@@ -171,6 +194,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private let transport: any DsmHTTPTransport
     private var activeDownloadControlKeys: Set<DownloadTaskControlKey> = []
     private var pendingDownloadControlReviews: [DownloadTaskControlKey: DownloadTaskControlReview] = [:]
+    private var activeDownloadCreateKeys: Set<DownloadTaskCreateKey> = []
+    private var pendingDownloadCreateReviews: [DownloadTaskCreateKey: DownloadTaskCreateReview] = [:]
     private var activeContainerDeletionIDs: Set<String> = []
     private var activeVirtualMachineDeletionIDs: Set<String> = []
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
@@ -250,6 +275,18 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             parameters["destination"] = .string(destination)
         }
         try await callVoid(api, method: "create", parameters: parameters)
+    }
+
+    public func createDownloadTaskResult(
+        _ request: DownloadTaskCreateRequest
+    ) async throws -> DownloadTaskCreateOutcome {
+        let validation = try Self.validatedDownloadCreateRequest(request)
+        switch validation {
+        case .failure(let outcome):
+            return outcome
+        case .success(let prepared):
+            return try await performDownloadTaskCreate(prepared)
+        }
     }
 
     public func createDownloadTask(
@@ -2303,6 +2340,411 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
         }
+    }
+
+    private static func validatedDownloadCreateRequest(
+        _ request: DownloadTaskCreateRequest
+    ) throws -> DownloadTaskCreateValidation {
+        let normalizedURI = request.uri.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedDestination = Self.nonEmpty(request.destination)
+        guard let url = URL(string: normalizedURI),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https", "ftp", "magnet"].contains(scheme),
+              !normalizedURI.isEmpty,
+              !normalizedURI.contains(where: \.isNewline),
+              !normalizedURI.contains("\0"),
+              (scheme == "magnet" || url.host?.isEmpty == false),
+              normalizedDestination?.contains(where: \.isNewline) != true,
+              normalizedDestination?.contains("\0") != true else {
+            return .failure(try downloadCreateOutcome(
+                status: .confirmedFailure,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .validation,
+                tag: "download-task.create.invalid"
+            ))
+        }
+        return .success(PreparedDownloadTaskCreateRequest(
+            key: DownloadTaskCreateKey(
+                digest: Self.downloadCreateDigest(
+                    kind: "uri",
+                    values: [normalizedURI, normalizedDestination ?? ""]
+                )
+            ),
+            uri: normalizedURI,
+            destination: normalizedDestination
+        ))
+    }
+
+    private func performDownloadTaskCreate(
+        _ request: PreparedDownloadTaskCreateRequest
+    ) async throws -> DownloadTaskCreateOutcome {
+        guard officialDownloadTaskV1Capability() != nil else {
+            return try Self.downloadCreateOutcome(
+                status: .unsupported,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                tag: "download-task.create.unsupported"
+            )
+        }
+        if Task.isCancelled {
+            return try Self.downloadCreateOutcome(
+                status: .cancelledBeforeSubmission,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0),
+                errorCategory: nil,
+                tag: "download-task.create.cancelled-before"
+            )
+        }
+        if let review = pendingDownloadCreateReviews[request.key] {
+            return try await finishDownloadCreateReview(
+                review,
+                statusIfUnconfirmed: .submittedButUnverified
+            )
+        }
+        guard !activeDownloadCreateKeys.contains(request.key) else {
+            return try Self.downloadCreateOutcome(
+                status: .confirmedFailure,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .conflict,
+                tag: "download-task.create.duplicate"
+            )
+        }
+        activeDownloadCreateKeys.insert(request.key)
+        defer {
+            activeDownloadCreateKeys.remove(request.key)
+        }
+
+        let previousIDs: Set<String>
+        do {
+            previousIDs = Set(try await loadAllOfficialDownloadTasks().map(\.id))
+        } catch let error as AppError where error.category == .cancelled {
+            return try Self.downloadCreateOutcome(
+                status: .cancelledBeforeSubmission,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0),
+                errorCategory: nil,
+                tag: "download-task.create.cancelled-before"
+            )
+        } catch {
+            return try Self.downloadCreateOutcome(
+                status: .confirmedFailure,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: Self.downloadCreateErrorCategory(error),
+                tag: "download-task.create.preflight"
+            )
+        }
+        if Task.isCancelled {
+            return try Self.downloadCreateOutcome(
+                status: .cancelledBeforeSubmission,
+                taskID: nil,
+                task: nil,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0),
+                errorCategory: nil,
+                tag: "download-task.create.cancelled-before"
+            )
+        }
+
+        var parameters: [String: DsmParameterValue] = ["uri": .string(request.uri)]
+        if let destination = request.destination {
+            parameters["destination"] = .string(destination)
+        }
+        let response: ServiceJSON
+        do {
+            response = try await callOfficialDownloadTaskV1(
+                method: "create",
+                parameters: parameters
+            )
+        } catch let error as AppError where error.category == .permissionDenied {
+            return try Self.downloadCreateOutcome(
+                status: .permissionDenied,
+                taskID: nil,
+                task: nil,
+                submitted: true,
+                requiresRefresh: true,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .permission,
+                tag: "download-task.create.permission"
+            )
+        } catch let error as AppError where error.category == .cancelled {
+            let review = DownloadTaskCreateReview(
+                key: request.key,
+                previousTaskIDs: previousIDs,
+                expectedTaskID: nil,
+                destination: request.destination
+            )
+            pendingDownloadCreateReviews[request.key] = review
+            return try await finishDownloadCreateReview(
+                review,
+                statusIfUnconfirmed: .cancellationRequestedAfterSubmission
+            )
+        } catch {
+            let review = DownloadTaskCreateReview(
+                key: request.key,
+                previousTaskIDs: previousIDs,
+                expectedTaskID: nil,
+                destination: request.destination
+            )
+            pendingDownloadCreateReviews[request.key] = review
+            return try await finishDownloadCreateReview(
+                review,
+                statusIfUnconfirmed: .submittedButUnverified
+            )
+        }
+
+        let expectedID = Self.downloadCreateTaskID(from: response)
+        let review = DownloadTaskCreateReview(
+            key: request.key,
+            previousTaskIDs: previousIDs,
+            expectedTaskID: expectedID,
+            destination: request.destination
+        )
+        pendingDownloadCreateReviews[request.key] = review
+        return try await finishDownloadCreateReview(
+            review,
+            statusIfUnconfirmed: .submittedButUnverified
+        )
+    }
+
+    private func finishDownloadCreateReview(
+        _ review: DownloadTaskCreateReview,
+        statusIfUnconfirmed: MutationResultStatus
+    ) async throws -> DownloadTaskCreateOutcome {
+        guard let expectedTaskID = review.expectedTaskID else {
+            pendingDownloadCreateReviews[review.key] = review
+            return try Self.downloadCreateUnknownOutcome(
+                status: statusIfUnconfirmed,
+                taskID: nil,
+                category: .unknown
+            )
+        }
+        do {
+            let tasks = try await loadAllOfficialDownloadTasks()
+            if let task = tasks.first(where: {
+                $0.id == expectedTaskID &&
+                    !review.previousTaskIDs.contains($0.id) &&
+                    Self.downloadCreateDestinationMatches(
+                        expected: review.destination,
+                        task: $0
+                    )
+            }) {
+                pendingDownloadCreateReviews[review.key] = nil
+                return try Self.downloadCreateOutcome(
+                    status: .confirmedSuccess,
+                    taskID: expectedTaskID,
+                    task: task,
+                    submitted: true,
+                    requiresRefresh: false,
+                    counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0),
+                    errorCategory: nil,
+                    tag: "download-task.create.confirmed"
+                )
+            }
+        } catch {
+            pendingDownloadCreateReviews[review.key] = review
+            return try Self.downloadCreateUnknownOutcome(
+                status: statusIfUnconfirmed,
+                taskID: expectedTaskID,
+                category: Self.downloadCreateErrorCategory(error)
+            )
+        }
+
+        pendingDownloadCreateReviews[review.key] = review
+        return try Self.downloadCreateUnknownOutcome(
+            status: statusIfUnconfirmed,
+            taskID: expectedTaskID,
+            category: .unknown
+        )
+    }
+
+    private func loadAllOfficialDownloadTasks() async throws -> [DownloadStationTask] {
+        var offset = 0
+        var expectedTotal: Int?
+        var tasks: [DownloadStationTask] = []
+        var seenIDs: Set<String> = []
+
+        while offset < Self.downloadControlReadbackLimit {
+            let limit = min(
+                Self.downloadControlPageSize,
+                Self.downloadControlReadbackLimit - offset
+            )
+            let value = try await callOfficialDownloadTaskV1(
+                method: "list",
+                parameters: [
+                    "offset": .integer(offset),
+                    "limit": .integer(limit),
+                    "additional": .stringArray(["detail", "transfer"])
+                ]
+            )
+            let objects = value.objects(for: ["tasks", "task", "items", "list"])
+            let pageTasks = objects.compactMap(Self.downloadTask)
+            guard pageTasks.count == objects.count, pageTasks.count <= limit else {
+                throw invalidServiceResponse()
+            }
+            if let pageOffset = value.firstInteger(["offset"]),
+               pageOffset != Int64(offset) {
+                throw invalidServiceResponse()
+            }
+            if let totalValue = value.firstInteger(["total"]) {
+                let total = Int(totalValue)
+                guard total >= offset + pageTasks.count else {
+                    throw invalidServiceResponse()
+                }
+                if let expectedTotal {
+                    guard expectedTotal == total else {
+                        throw invalidServiceResponse()
+                    }
+                } else {
+                    expectedTotal = total
+                }
+            }
+            for task in pageTasks {
+                guard seenIDs.insert(task.id).inserted else {
+                    throw invalidServiceResponse()
+                }
+                tasks.append(task)
+            }
+            if let expectedTotal, offset + pageTasks.count >= expectedTotal {
+                break
+            }
+            if pageTasks.count < limit {
+                break
+            }
+            guard !pageTasks.isEmpty else {
+                throw invalidServiceResponse()
+            }
+            offset += pageTasks.count
+        }
+        return tasks
+    }
+
+    private static func downloadCreateDestinationMatches(
+        expected: String?,
+        task: DownloadStationTask
+    ) -> Bool {
+        guard let expected else {
+            return true
+        }
+        guard let destination = Self.nonEmpty(task.destination) else {
+            return true
+        }
+        return destination == expected
+    }
+
+    private static func downloadCreateTaskID(from value: ServiceJSON) -> String? {
+        for key in ["taskid", "task_id", "taskId", "id"] {
+            guard case .string(let raw)? = value[key] else {
+                continue
+            }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, !trimmed.contains(where: \.isNewline), !trimmed.contains("\0") {
+                return trimmed
+            }
+        }
+        return nil
+    }
+
+    private static func downloadCreateDigest(kind: String, values: [String]) -> String {
+        var data = Data(kind.utf8)
+        for value in values {
+            let bytes = Data(value.utf8)
+            var count = UInt32(bytes.count).bigEndian
+            data.append(Data(bytes: &count, count: MemoryLayout<UInt32>.size))
+            data.append(bytes)
+        }
+        return SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private static func downloadCreateErrorCategory(_ error: Error) -> MutationErrorCategory {
+        if let appError = error as? AppError {
+            switch appError.category {
+            case .networkUnavailable, .timeout:
+                return .network
+            case .authenticationRequired, .otpRequired:
+                return .authentication
+            case .permissionDenied:
+                return .permission
+            case .apiUnavailable, .versionUnsupported:
+                return .unsupported
+            case .conflict, .notFound, .serverBusy:
+                return .conflict
+            case .invalidResponse:
+                return .server
+            default:
+                return .unknown
+            }
+        }
+        return .unknown
+    }
+
+    private static func downloadCreateUnknownOutcome(
+        status: MutationResultStatus,
+        taskID: String?,
+        category: MutationErrorCategory
+    ) throws -> DownloadTaskCreateOutcome {
+        try downloadCreateOutcome(
+            status: status,
+            taskID: taskID,
+            task: nil,
+            submitted: true,
+            requiresRefresh: true,
+            counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 1),
+            errorCategory: category,
+            tag: status == .cancellationRequestedAfterSubmission
+                ? "download-task.create.cancelled-after"
+                : "download-task.create.unverified"
+        )
+    }
+
+    private static func downloadCreateOutcome(
+        status: MutationResultStatus,
+        taskID: String?,
+        task: DownloadStationTask?,
+        submitted: Bool,
+        requiresRefresh: Bool,
+        counts: MutationResultCounts,
+        errorCategory: MutationErrorCategory?,
+        tag: String
+    ) throws -> DownloadTaskCreateOutcome {
+        try DownloadTaskCreateOutcome(
+            result: MutationResult(
+                status: status,
+                operation: "downloadCreate",
+                submitted: submitted,
+                requiresRefresh: requiresRefresh,
+                counts: counts,
+                errorCategory: errorCategory,
+                localizationKey: tag,
+                diagnosticTag: tag
+            ),
+            taskID: taskID,
+            task: task
+        )
     }
 
     private func loadOfficialDownloadControlTask(id taskID: String) async throws -> DownloadStationTask? {

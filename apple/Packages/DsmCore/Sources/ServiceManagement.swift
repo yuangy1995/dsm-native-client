@@ -142,6 +142,28 @@ public struct DownloadTaskControlOutcome: Equatable, Sendable {
     }
 }
 
+public struct DownloadTaskCreateRequest: Equatable, Sendable {
+    public let uri: String
+    public let destination: String?
+
+    public init(uri: String, destination: String?) {
+        self.uri = uri
+        self.destination = destination
+    }
+}
+
+public struct DownloadTaskCreateOutcome: Equatable, Sendable {
+    public let result: MutationResult
+    public let taskID: String?
+    public let task: DownloadStationTask?
+
+    public init(result: MutationResult, taskID: String?, task: DownloadStationTask?) {
+        self.result = result
+        self.taskID = taskID
+        self.task = task
+    }
+}
+
 public struct ContainerInstance: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
@@ -541,6 +563,9 @@ public enum VirtualMachinePowerAction: String, Sendable {
 public protocol ServiceManagementRepository: Sendable {
     func loadDownloadStation() async throws -> DownloadStationSnapshot
     func createDownloadTask(uri: String, destination: String?) async throws
+    func createDownloadTaskResult(
+        _ request: DownloadTaskCreateRequest
+    ) async throws -> DownloadTaskCreateOutcome
     func createDownloadTask(
         fileURL: URL,
         destination: String?,
@@ -586,6 +611,25 @@ public protocol ServiceManagementRepository: Sendable {
 }
 
 public extension ServiceManagementRepository {
+    func createDownloadTaskResult(
+        _ request: DownloadTaskCreateRequest
+    ) async throws -> DownloadTaskCreateOutcome {
+        try DownloadTaskCreateOutcome(
+            result: MutationResult(
+                status: .unsupported,
+                operation: "downloadCreate",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                localizationKey: "download-task.create.unsupported",
+                diagnosticTag: "download-task.create.unsupported"
+            ),
+            taskID: nil,
+            task: nil
+        )
+    }
+
     func controlDownloadTaskResult(
         _ request: DownloadTaskControlRequest
     ) async throws -> DownloadTaskControlOutcome {

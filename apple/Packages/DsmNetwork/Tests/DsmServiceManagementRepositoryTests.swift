@@ -414,6 +414,111 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         )
     }
 
+    func test链接创建固定官方V1且必须回读稳定任务ID() async throws {
+        let transport = MockHTTPTransport(responses: [
+            downloadTaskListResponse(ids: []),
+            response(#"{"success":true,"data":{"taskid":"task-1"}}"#),
+            downloadTaskListResponse(
+                ids: ["task-1"],
+                destination: "downloads"
+            ),
+        ])
+        let repository = try makeRepository(
+            apiNames: [
+                DsmAPIName.downloadStationTask,
+                DsmAPIName.downloadStation2Task,
+            ],
+            transport: transport
+        )
+
+        let outcome = try await repository.createDownloadTaskResult(
+            DownloadTaskCreateRequest(
+                uri: "https://example.invalid/synthetic.iso",
+                destination: "downloads"
+            )
+        )
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.result.operation, "downloadCreate")
+        XCTAssertEqual(outcome.taskID, "task-1")
+        XCTAssertEqual(outcome.task?.destination, "downloads")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, [
+            "list", "create", "list"
+        ])
+        let create = try XCTUnwrap(requests.first {
+            requestValue("method", in: $0) == "create"
+        })
+        XCTAssertEqual(requestValue("api", in: create), DsmAPIName.downloadStationTask)
+        XCTAssertEqual(requestValue("version", in: create), "1")
+        XCTAssertEqual(requestValue("uri", in: create), "https://example.invalid/synthetic.iso")
+        XCTAssertEqual(requestValue("destination", in: create), "downloads")
+        XCTAssertFalse(requests.contains {
+            requestValue("api", in: $0) == DsmAPIName.downloadStation2Task
+        })
+    }
+
+    func test链接创建提交后取消会阻止同请求重放() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(downloadTaskListResponse(ids: [])),
+            .waitUntilCancelled,
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationTask],
+            transport: transport
+        )
+        let request = DownloadTaskCreateRequest(
+            uri: "magnet:?xt=urn:btih:synthetic",
+            destination: nil
+        )
+        let first = Task {
+            try await repository.createDownloadTaskResult(request)
+        }
+        while await transport.recordedRequests().count < 2 {
+            await Task.yield()
+        }
+
+        first.cancel()
+        let cancelled = try await first.value
+        let replay = try await repository.createDownloadTaskResult(request)
+
+        XCTAssertEqual(cancelled.result.status, .cancellationRequestedAfterSubmission)
+        XCTAssertTrue(cancelled.result.requiresRefresh)
+        XCTAssertEqual(replay.result.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.filter { requestValue("method", in: $0) == "create" }.count,
+            1
+        )
+    }
+
+    func test链接创建响应缺少任务ID后第二次零提交() async throws {
+        let transport = MockHTTPTransport(responses: [
+            downloadTaskListResponse(ids: []),
+            response(#"{"success":true,"data":{}}"#),
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationTask],
+            transport: transport
+        )
+        let request = DownloadTaskCreateRequest(
+            uri: "https://example.invalid/synthetic.iso",
+            destination: nil
+        )
+
+        let first = try await repository.createDownloadTaskResult(request)
+        let second = try await repository.createDownloadTaskResult(request)
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        XCTAssertTrue(first.result.requiresRefresh)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.filter { requestValue("method", in: $0) == "create" }.count,
+            1
+        )
+    }
+
     func test拒绝不支持的下载链接且不发送请求() async throws {
         let transport = MockHTTPTransport(responses: [])
         let repository = try makeRepository(
@@ -1589,6 +1694,21 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     private func downloadTaskListResponse(id: String, status: String) -> DsmHTTPResponse {
         response(
             #"{"success":true,"data":{"tasks":[{"id":"\#(id)","title":"示例任务","status":"\#(status)"}],"offset":0,"total":1}}"#
+        )
+    }
+
+    private func downloadTaskListResponse(
+        ids: [String],
+        destination: String? = nil
+    ) -> DsmHTTPResponse {
+        let tasks = ids.map { id in
+            if let destination {
+                return #"{"id":"\#(id)","title":"示例任务","status":"waiting","additional":{"detail":{"destination":"\#(destination)"}}}"#
+            }
+            return #"{"id":"\#(id)","title":"示例任务","status":"waiting"}"#
+        }.joined(separator: ",")
+        return response(
+            #"{"success":true,"data":{"tasks":[\#(tasks)],"offset":0,"total":\#(ids.count)}}"#
         )
     }
 
