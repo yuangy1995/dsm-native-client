@@ -4,6 +4,11 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct MobileFileBrowserActivationIdentity: Hashable {
+    let profileID: UUID?
+    let repositoryIdentity: ObjectIdentifier?
+}
+
 struct MobileFileBrowser: View {
     @Bindable var model: MobileAppModel
     @State private var isImportingFile = false
@@ -19,8 +24,15 @@ struct MobileFileBrowser: View {
     private var browser: MobileFileBrowserModel { model.fileBrowserModel }
     private var locations: MobileFileLocationsModel { browser.locations }
     private var mutation: MobileFileItemMutationModel { browser.mutations }
+    private var copyMove: MobileFileCopyMoveModel { browser.copyMove }
     private var state: MobileFileBrowserProfileState { browser.state }
     private var preview: MobileFilePreviewModel { model.filePreviewModel }
+    private var activationIdentity: MobileFileBrowserActivationIdentity {
+        MobileFileBrowserActivationIdentity(
+            profileID: model.activeProfile?.id,
+            repositoryIdentity: model.fileRepository.map { ObjectIdentifier($0) }
+        )
+    }
 
     var body: some View {
         Group {
@@ -85,6 +97,15 @@ struct MobileFileBrowser: View {
                 )
             }
         }
+        .sheet(isPresented: copyMovePresentationBinding) {
+            if let repository = model.fileRepository {
+                MobileFileCopyMoveView(
+                    copyMove: copyMove,
+                    repository: repository,
+                    didConfirm: copyMoveDidConfirm
+                )
+            }
+        }
         .alert(L10n.string("mobile.documents.error-title"), isPresented: documentFailureBinding) {
             Button(L10n.string("mobile.documents.dismiss")) {
                 model.documentTransferController.clearFailure()
@@ -99,13 +120,14 @@ struct MobileFileBrowser: View {
         .fullScreenCover(isPresented: $showsPreviewFullScreen, onDismiss: previewPresentationDidDismiss) {
             previewPresentation
         }
-        .task(id: model.activeProfile?.id) {
+        .task(id: activationIdentity) {
             model.documentTransferController.setActiveProfile(model.activeProfile?.id)
             preview.activate(profileID: model.activeProfile?.id)
             let profileID = model.activeProfile?.id
             let repository = model.fileRepository
             await browser.activate(profileID: profileID, repository: repository)
             mutation.activate(profileID: profileID, repository: repository)
+            copyMove.activate(profileID: profileID, repository: repository)
             locations.activate(profileID: profileID, repository: repository)
             guard let profileID, let repository else { return }
             model.fileShareLinkModel.activate(profileID: profileID, repository: repository)
@@ -132,6 +154,7 @@ struct MobileFileBrowser: View {
             browser.cancelRequest()
             locations.cancelRequest()
             mutation.deactivate()
+            copyMove.deactivate()
             model.fileShareLinkModel.deactivate()
         }
     }
@@ -281,6 +304,24 @@ struct MobileFileBrowser: View {
 
     private func itemMenu(_ item: FileItem) -> some View {
         Menu {
+            if canCopyMove(item) {
+                Button {
+                    beginCopyMove(.copy, item: item)
+                } label: {
+                    Label(
+                        L10n.string("mobile.files.copy-move.copy.action"),
+                        systemImage: "doc.on.doc"
+                    )
+                }
+                Button {
+                    beginCopyMove(.move, item: item)
+                } label: {
+                    Label(
+                        L10n.string("mobile.files.copy-move.move.action"),
+                        systemImage: "folder"
+                    )
+                }
+            }
             if canRename(item) {
                 Button {
                     beginRename(item)
@@ -711,6 +752,32 @@ struct MobileFileBrowser: View {
         )
     }
 
+    private func canCopyMove(_ item: FileItem) -> Bool {
+        guard let profileID = model.activeProfile?.id else { return false }
+        return MobileFileCopyMoveModel.canBegin(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            readOnlyRoots: readOnlyMutationRoots,
+            profileID: profileID
+        )
+    }
+
+    private func beginCopyMove(_ operation: FileCopyMoveOperation, item: FileItem) {
+        guard canCopyMove(item), let repository = model.fileRepository else { return }
+        prepareForMutation()
+        copyMove.begin(
+            operation: operation,
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            readOnlyRoots: readOnlyMutationRoots,
+            repository: repository
+        )
+    }
+
     private func prepareForMutation() {
         resetPreviewPresentation()
         preview.close()
@@ -725,6 +792,11 @@ struct MobileFileBrowser: View {
     private func mutationDidConfirm(_ success: MobileFileItemMutationSuccess) async {
         guard let repository = model.fileRepository else { return }
         await browser.refreshAfterConfirmedMutation(success, repository: repository)
+    }
+
+    private func copyMoveDidConfirm(_ success: MobileFileCopyMoveSuccess) async {
+        guard let repository = model.fileRepository else { return }
+        await browser.refreshAfterConfirmedCopyMove(success, repository: repository)
     }
 
     private func beginShareLink(for item: FileItem) {
@@ -773,6 +845,13 @@ struct MobileFileBrowser: View {
         Binding(
             get: { mutation.isPresented },
             set: { if !$0 { mutation.dismiss() } }
+        )
+    }
+
+    private var copyMovePresentationBinding: Binding<Bool> {
+        Binding(
+            get: { copyMove.isPresented },
+            set: { if !$0 { copyMove.dismiss() } }
         )
     }
 

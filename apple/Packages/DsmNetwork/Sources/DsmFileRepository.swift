@@ -2521,6 +2521,178 @@ public actor DsmFileRepository: FileRepository {
         )
     }
 
+    public func copyMoveResult(
+        _ request: FileCopyMoveRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileCopyMoveOutcome {
+        let operation = request.operation.rawValue
+        guard request.profileID == profileID,
+              request.source.profileID == profileID,
+              request.source.kind == .file,
+              let sourceSize = request.source.sizeBytes,
+              sourceSize >= 0,
+              !request.overwrite,
+              let sourcePath = Self.normalizedMutationPath(request.source.path),
+              sourcePath == request.source.path,
+              sourcePath.split(separator: "/").count >= 2,
+              let destinationFolder = Self.normalizedMutationPath(request.destinationFolderPath),
+              destinationFolder == request.destinationFolderPath,
+              destinationFolder != "/",
+              let destinationPath = Self.appendingMutationName(
+                  request.source.name,
+                  to: destinationFolder
+              ),
+              sourcePath != destinationPath,
+              !destinationFolder.hasPrefix(sourcePath + "/"),
+              !Self.isRecycleMutationPath(sourcePath),
+              !Self.isRecycleMutationPath(destinationFolder),
+              Self.hasCanonicalMutationIdentity(request.source),
+              !Self.isRemoteMutationItem(request.source) else {
+            return try FileCopyMoveOutcome(
+                result: MutationResult(
+                    status: .confirmedFailure,
+                    operation: operation,
+                    submitted: false,
+                    requiresRefresh: false,
+                    counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                    errorCategory: .validation,
+                    diagnosticTag: "file-station.copy-move.invalid-input"
+                ),
+                sourcePath: request.source.path,
+                destinationPath: request.destinationFolderPath,
+                item: nil
+            )
+        }
+
+        guard let capability = capabilities[DsmAPIName.fileStationCopyMove],
+              capability.selectedVersion == 3,
+              capability.requestFormat == .form,
+              let listCapability = capabilities[DsmAPIName.fileStationList],
+              (listCapability.selectedVersion ?? 0) >= 2,
+              capabilities[DsmAPIName.fileStationCheckPermission]?.selectedVersion != nil else {
+            return try FileCopyMoveOutcome(
+                result: MutationResult(
+                    status: .unsupported,
+                    operation: operation,
+                    submitted: false,
+                    requiresRefresh: false,
+                    counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                    errorCategory: .unsupported,
+                    diagnosticTag: "file-station.copy-move.unsupported"
+                ),
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                item: nil
+            )
+        }
+
+        let paths = Set([sourcePath, destinationFolder, destinationPath])
+        if pendingFileItemMutationReviews.values.contains(where: {
+            !$0.paths.isDisjoint(with: paths)
+        }) || activeFileItemMutationPaths.contains(where: { active in
+            paths.contains(where: { Self.deletionPathsOverlap(active, $0) })
+        }) || activeDeletionPaths.contains(where: { active in
+            paths.contains(where: { Self.deletionPathsOverlap(active, $0) })
+        }) {
+            return try FileCopyMoveOutcome(
+                result: MutationResult(
+                    status: .confirmedFailure,
+                    operation: operation,
+                    submitted: false,
+                    requiresRefresh: false,
+                    counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                    errorCategory: .conflict,
+                    diagnosticTag: "file-station.copy-move.target-busy"
+                ),
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                item: nil
+            )
+        }
+        activeFileItemMutationPaths.formUnion(paths)
+        defer { activeFileItemMutationPaths.subtract(paths) }
+
+        let prepared = FileCopyMovePreparedRequest(
+            request: request,
+            sourcePath: sourcePath,
+            destinationFolderPath: destinationFolder,
+            destinationPath: destinationPath
+        )
+        let dependencies = FileCopyMoveMutationDependencies(
+            checkWritePermission: { [weak self] folderPath, filename in
+                guard let self else { throw CancellationError() }
+                try await self.checkWritePermission(
+                    folderPath: folderPath,
+                    filename: filename,
+                    createOnly: true
+                )
+            },
+            submit: { [weak self] prepared, progress in
+                guard let self else {
+                    throw FileCopyMoveSubmissionFailure.cancelled(taskAccepted: false)
+                }
+                try await self.submitCopyMove(
+                    prepared,
+                    capability: capability,
+                    progress: progress
+                )
+            },
+            readItems: { [weak self] paths in
+                guard let self else { throw CancellationError() }
+                return try await self.getInfo(paths: paths)
+            }
+        )
+        return try await FileCopyMoveMutationCoordinator.shared.perform(
+            prepared,
+            dependencies: dependencies,
+            progress: progress
+        )
+    }
+
+    private func submitCopyMove(
+        _ prepared: FileCopyMovePreparedRequest,
+        capability: ApiCapability,
+        progress: @escaping FileTransferProgress
+    ) async throws {
+        if Task.isCancelled {
+            throw FileCopyMoveSubmissionFailure.cancelled(taskAccepted: false)
+        }
+        var taskAccepted = false
+        do {
+            let start = try await client.call(
+                path: capability.path,
+                api: capability.name,
+                version: 3,
+                method: "start",
+                requestFormat: .form,
+                parameters: [
+                    "path": .stringArray([prepared.sourcePath]),
+                    "dest_folder_path": .string(prepared.destinationFolderPath),
+                    "remove_src": .boolean(prepared.request.operation == .move),
+                    "overwrite": .boolean(false),
+                    "accurate_progress": .boolean(true)
+                ],
+                credential: credential,
+                as: TaskStartPayload.self
+            )
+            taskAccepted = true
+            try await pollTask(
+                capability: capability,
+                taskID: start.taskid,
+                progress: progress
+            )
+        } catch let error as DsmNetworkError {
+            if case .cancelled = error {
+                throw FileCopyMoveSubmissionFailure.cancelled(taskAccepted: true)
+            }
+            throw FileCopyMoveSubmissionFailure.network(error, taskAccepted: taskAccepted)
+        } catch is CancellationError {
+            throw FileCopyMoveSubmissionFailure.cancelled(taskAccepted: true)
+        } catch {
+            throw FileCopyMoveSubmissionFailure.unexpected(taskAccepted: true)
+        }
+    }
+
     private func copyMove(
         paths: [String],
         to destinationFolder: String,
@@ -5082,8 +5254,7 @@ public actor DsmFileRepository: FileRepository {
     }
 
     private static func isRemoteMutationItem(_ item: FileItem) -> Bool {
-        guard let type = item.mountPointType?.lowercased() else { return false }
-        return ["cifs", "nfs", "iso", "remote"].contains(type)
+        isRemoteMount(item)
     }
 
     private static func hasCanonicalMutationIdentity(_ item: FileItem) -> Bool {

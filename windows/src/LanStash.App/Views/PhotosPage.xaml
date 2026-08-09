@@ -18,10 +18,15 @@
             Key="S"
             Modifiers="Control"
             Invoked="SaveAccelerator_Invoked" />
+        <KeyboardAccelerator
+            Key="I"
+            Modifiers="Control"
+            Invoked="ImportAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid Padding="24,20,24,16" RowSpacing="12">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -54,12 +59,44 @@
                 SelectionChanged="SpacePicker_SelectionChanged" />
         </Grid>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
-            <RadioButton x:Uid="PhotoModeFolders" x:Name="FoldersMode" GroupName="PhotoMode"
-                         IsChecked="True" MinHeight="44" Click="FoldersMode_Click" />
-            <RadioButton x:Uid="PhotoModeTimeline" x:Name="TimelineMode" GroupName="PhotoMode"
-                         MinHeight="44" Click="TimelineMode_Click" />
-        </StackPanel>
+        <Grid Grid.Row="1" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <RadioButton x:Uid="PhotoModeFolders" x:Name="FoldersMode" GroupName="PhotoMode"
+                             IsChecked="True" MinHeight="44" Click="FoldersMode_Click" />
+                <RadioButton x:Uid="PhotoModeTimeline" x:Name="TimelineMode" GroupName="PhotoMode"
+                             MinHeight="44" Click="TimelineMode_Click" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
+                <AppBarButton
+                    x:Uid="PhotoImportAction"
+                    x:Name="ImportButton"
+                    Click="Import_Click"
+                    Icon="Upload"
+                    MinWidth="48"
+                    MinHeight="48" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+                    <ProgressRing
+                        x:Uid="PhotoImportChoosing"
+                        x:Name="ImportProgress"
+                        Width="20"
+                        Height="20"
+                        IsActive="False"
+                        Visibility="Collapsed" />
+                    <TextBlock
+                        x:Uid="PhotoImportTarget"
+                        x:Name="PhotoImportTargetText"
+                        MaxWidth="420"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextAlignment="Right"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
 
         <BreadcrumbBar
             x:Uid="PhotoBrowserBreadcrumbs"
@@ -129,7 +166,15 @@
             </CommandBar.SecondaryCommands>
         </CommandBar>
 
-        <Grid x:Name="BrowserContentHost" Grid.Row="4">
+        <InfoBar
+            x:Uid="PhotoImportStatus"
+            x:Name="ImportStatus"
+            Grid.Row="4"
+            AutomationProperties.LiveSetting="Polite"
+            IsClosable="False"
+            IsOpen="False" />
+
+        <Grid x:Name="BrowserContentHost" Grid.Row="5">
             <Grid
                 x:Name="ContentState"
                 AutomationProperties.LiveSetting="Polite"
@@ -304,6 +349,6 @@
                     MinHeight="44" />
             </StackPanel>
         </Grid>
-        <local:PhotoTimelineView x:Name="TimelineView" Grid.Row="4" Visibility="Collapsed" />
+        <local:PhotoTimelineView x:Name="TimelineView" Grid.Row="5" Visibility="Collapsed" />
     </Grid>
 </Page>

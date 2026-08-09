@@ -1515,6 +1515,369 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(nameValue.utf8)), ["新名称.txt"])
     }
 
+    func test单文件复制固定V3FORM且独立回读后确认() async throws {
+        let transport = MockHTTPTransport(responses: [
+            copyMoveBaseline(),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"taskid":"copy-1"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            copyMoveReadback(operation: .copy),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+
+        let outcome = try await repository.copyMoveResult(
+            copyMoveRequest(repository: repository, operation: .copy)
+        ) { _, _ in }
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.sourcePath, "/home/source.txt")
+        XCTAssertEqual(outcome.destinationPath, "/archive/source.txt")
+        XCTAssertEqual(outcome.item?.sizeBytes, 12)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.compactMap { requestParameter("method", in: $0) },
+            ["getinfo", "getinfo", "write", "start", "status", "getinfo"]
+        )
+        let start = try XCTUnwrap(requests.first {
+            requestParameter("method", in: $0) == "start"
+        })
+        XCTAssertEqual(start.httpMethod, "POST")
+        XCTAssertEqual(requestParameter("version", in: start), "3")
+        XCTAssertEqual(requestParameter("dest_folder_path", in: start), "/archive")
+        XCTAssertEqual(requestParameter("remove_src", in: start), "false")
+        XCTAssertEqual(requestParameter("overwrite", in: start), "false")
+        XCTAssertEqual(requestParameter("accurate_progress", in: start), "true")
+        let path = try XCTUnwrap(requestParameter("path", in: start))
+        XCTAssertEqual(
+            try JSONDecoder().decode([String].self, from: Data(path.utf8)),
+            ["/home/source.txt"]
+        )
+    }
+
+    func test单文件移动确认目标同大小且源消失() async throws {
+        let transport = MockHTTPTransport(responses: [
+            copyMoveBaseline(),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"taskid":"move-1"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            copyMoveReadback(operation: .move),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+
+        let outcome = try await repository.copyMoveResult(
+            copyMoveRequest(repository: repository, operation: .move)
+        ) { _, _ in }
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        let start = try XCTUnwrap(requests.first {
+            requestParameter("method", in: $0) == "start"
+        })
+        XCTAssertEqual(requestParameter("remove_src", in: start), "true")
+        XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "start" }.count, 1)
+    }
+
+    func test复制源同大小但修改时间漂移会在提交前冲突且零写() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(
+                #"{"success":true,"data":{"files":[{"name":"source.txt","path":"/home/source.txt","isdir":false,"additional":{"size":12,"time":{"mtime":1700000001},"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"archive","path":"/archive","isdir":true,"additional":{"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+        let source = FileItem(
+            profileID: repository.profileID,
+            name: "source.txt",
+            path: "/home/source.txt",
+            kind: .file,
+            sizeBytes: 12,
+            times: FileTimes(
+                modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                createdAt: nil,
+                accessedAt: nil
+            ),
+            permissions: FilePermissions(
+                canRead: true,
+                canWrite: true,
+                canDelete: true,
+                posixMode: nil
+            )
+        )
+
+        let outcome = try await repository.copyMoveResult(
+            FileCopyMoveRequest(
+                profileID: repository.profileID,
+                operation: .copy,
+                source: source,
+                destinationFolderPath: "/archive",
+                overwrite: false
+            )
+        ) { _, _ in }
+
+        XCTAssertEqual(outcome.result.status, .confirmedFailure)
+        XCTAssertFalse(outcome.result.submitted)
+        XCTAssertEqual(outcome.result.errorCategory, .conflict)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods, ["getinfo"])
+        XCTAssertFalse(methods.contains("start"))
+    }
+
+    func test复制开始请求断网后仍回读且不重放() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(copyMoveBaseline()),
+            .response(mutationInfo()),
+            .response(response(#"{"success":true}"#)),
+            .urlError(.networkConnectionLost),
+            .response(copyMoveReadback(operation: .copy)),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+
+        let outcome = try await repository.copyMoveResult(
+            copyMoveRequest(repository: repository, operation: .copy)
+        ) { _, _ in }
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "start" }.count, 1)
+        XCTAssertEqual(methods.last, "getinfo")
+    }
+
+    func test复制目标目录为远程或未知挂载时写前拒绝且零start() async throws {
+        for mountType in ["cifs", "future_remote_type"] {
+            let transport = MockHTTPTransport(responses: [
+                response(
+                    #"{"success":true,"data":{"files":[{"name":"source.txt","path":"/home/source.txt","isdir":false,"additional":{"size":12,"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"archive","path":"/archive","isdir":true,"additional":{"mount_point_type":"\#(mountType)","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
+                ),
+            ])
+            let repository = try makeRepository(
+                capabilities: copyMoveCapabilities(),
+                transport: transport
+            )
+
+            let outcome = try await repository.copyMoveResult(
+                copyMoveRequest(repository: repository, operation: .copy)
+            ) { _, _ in }
+
+            XCTAssertEqual(outcome.result.status, .confirmedFailure)
+            XCTAssertFalse(outcome.result.submitted)
+            let methods = await transport.recordedRequests().compactMap {
+                requestParameter("method", in: $0)
+            }
+            XCTAssertEqual(methods, ["getinfo"])
+            XCTAssertFalse(methods.contains("start"))
+        }
+    }
+
+    func test复制合法回读大小不符会建立blocker且二次只回读() async throws {
+        let transport = MockHTTPTransport(responses: [
+            copyMoveBaseline(),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"taskid":"copy-review"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            copyMoveReadback(operation: .copy, destinationSize: 13),
+            copyMoveReadback(operation: .copy, destinationSize: 13),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+        let request = copyMoveRequest(repository: repository, operation: .copy)
+
+        let first = try await repository.copyMoveResult(request) { _, _ in }
+        let second = try await repository.copyMoveResult(request) { _, _ in }
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        XCTAssertTrue(first.result.requiresRefresh)
+        XCTAssertNil(first.item)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "start" }.count, 1)
+        XCTAssertEqual(methods.suffix(2), ["getinfo", "getinfo"])
+    }
+
+    func test复制未知结果跨Repository重建仍只回读零重放() async throws {
+        let profile = try NasProfile(
+            displayName: "测试设备",
+            host: "nas.example.invalid",
+            port: 5_001
+        )
+        let firstTransport = MockHTTPTransport(responses: [
+            copyMoveBaseline(),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"taskid":"copy-session"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            mutationInfo(),
+        ])
+        let firstRepository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: firstTransport,
+            profile: profile
+        )
+        let first = try await firstRepository.copyMoveResult(
+            copyMoveRequest(repository: firstRepository, operation: .copy)
+        ) { _, _ in }
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+
+        let secondTransport = MockHTTPTransport(responses: [
+            copyMoveReadback(operation: .copy),
+        ])
+        let secondRepository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: secondTransport,
+            profile: profile
+        )
+        let second = try await secondRepository.copyMoveResult(
+            copyMoveRequest(repository: secondRepository, operation: .copy)
+        ) { _, _ in }
+
+        XCTAssertEqual(second.result.status, .confirmedSuccess)
+        let secondMethods = await secondTransport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(secondMethods, ["getinfo"])
+        XCTAssertFalse(secondMethods.contains("start"))
+    }
+
+    func test复制提交后取消仍回读且不成为安全重试() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(copyMoveBaseline()),
+            .response(mutationInfo()),
+            .response(response(#"{"success":true}"#)),
+            .response(response(#"{"success":true,"data":{"taskid":"copy-cancel"}}"#)),
+            .waitUntilCancelled,
+            .response(response(#"{"success":true}"#)),
+            .response(mutationInfo()),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+        let request = copyMoveRequest(repository: repository, operation: .copy)
+        let task = Task {
+            try await repository.copyMoveResult(request) { _, _ in }
+        }
+        while await transport.recordedRequests().count < 5 {
+            await Task.yield()
+        }
+        task.cancel()
+
+        let outcome = try await task.value
+        XCTAssertEqual(outcome.result.status, .cancellationRequestedAfterSubmission)
+        XCTAssertTrue(outcome.result.submitted)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "start" }.count, 1)
+        XCTAssertEqual(methods.filter { $0 == "stop" }.count, 1)
+        XCTAssertEqual(methods.last, "getinfo")
+    }
+
+    func test复制移动拒绝目录覆盖远程回收站与错误profile且零请求() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+        let otherProfileID = UUID()
+        let invalidSources = [
+            FileItem(profileID: repository.profileID, name: "folder", path: "/home/folder", kind: .directory),
+            FileItem(profileID: repository.profileID, name: "item.txt", path: "/home/#recycle/item.txt", kind: .file, sizeBytes: 12),
+            FileItem(profileID: repository.profileID, name: "item.txt", path: "/remote/item.txt", kind: .file, sizeBytes: 12, mountPointType: "cifs"),
+            FileItem(profileID: repository.profileID, name: "item.txt", path: "/remote/item.txt", kind: .file, sizeBytes: 12, mountPointType: "future_remote_type"),
+            FileItem(profileID: otherProfileID, name: "item.txt", path: "/home/item.txt", kind: .file, sizeBytes: 12),
+        ]
+        for source in invalidSources {
+            let outcome = try await repository.copyMoveResult(
+                FileCopyMoveRequest(
+                    profileID: repository.profileID,
+                    operation: .copy,
+                    source: source,
+                    destinationFolderPath: "/archive",
+                    overwrite: false
+                )
+            ) { _, _ in }
+            XCTAssertEqual(outcome.result.status, .confirmedFailure)
+        }
+        let overwrite = try await repository.copyMoveResult(
+            FileCopyMoveRequest(
+                profileID: repository.profileID,
+                operation: .copy,
+                source: copyMoveSource(repository: repository),
+                destinationFolderPath: "/archive",
+                overwrite: true
+            )
+        ) { _, _ in }
+        XCTAssertEqual(overwrite.result.status, .confirmedFailure)
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test复制移动要求V3FORM且写前认证失败原样传播零start() async throws {
+        let unsupportedTransport = MockHTTPTransport(responses: [])
+        let unsupportedRepository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationCopyMove: capability(
+                    DsmAPIName.fileStationCopyMove,
+                    version: 2
+                ),
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2),
+                DsmAPIName.fileStationCheckPermission: capability(
+                    DsmAPIName.fileStationCheckPermission,
+                    version: 2
+                ),
+            ]),
+            transport: unsupportedTransport
+        )
+        let unsupported = try await unsupportedRepository.copyMoveResult(
+            copyMoveRequest(repository: unsupportedRepository, operation: .copy)
+        ) { _, _ in }
+        XCTAssertEqual(unsupported.result.status, .unsupported)
+        let unsupportedRequests = await unsupportedTransport.recordedRequests()
+        XCTAssertTrue(unsupportedRequests.isEmpty)
+
+        let authTransport = MockHTTPTransport(responses: [
+            response(#"{"success":false,"error":{"code":119}}"#),
+        ])
+        let authRepository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: authTransport
+        )
+        do {
+            _ = try await authRepository.copyMoveResult(
+                copyMoveRequest(repository: authRepository, operation: .move)
+            ) { _, _ in }
+            XCTFail("认证失效应原样传播")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .authenticationRequired)
+        }
+        let methods = await authTransport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods, ["getinfo"])
+        XCTAssertFalse(methods.contains("start"))
+    }
+
     func test新建文件夹结果固定V2且仅在独立回读后确认() async throws {
         let transport = MockHTTPTransport(responses: [
             mutationInfo(path: "/home", isDirectory: true),
@@ -2965,6 +3328,69 @@ final class DsmFileRepositoryTests: XCTestCase {
         ])
     }
 
+    private func copyMoveCapabilities() -> CapabilitySet {
+        CapabilitySet([
+            DsmAPIName.fileStationCopyMove: capability(
+                DsmAPIName.fileStationCopyMove,
+                version: 3
+            ),
+            DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2),
+            DsmAPIName.fileStationCheckPermission: capability(
+                DsmAPIName.fileStationCheckPermission,
+                version: 2
+            ),
+        ])
+    }
+
+    private func copyMoveSource(repository: DsmFileRepository) -> FileItem {
+        FileItem(
+            profileID: repository.profileID,
+            name: "source.txt",
+            path: "/home/source.txt",
+            kind: .file,
+            sizeBytes: 12,
+            permissions: FilePermissions(
+                canRead: true,
+                canWrite: true,
+                canDelete: true,
+                posixMode: nil
+            )
+        )
+    }
+
+    private func copyMoveRequest(
+        repository: DsmFileRepository,
+        operation: FileCopyMoveOperation
+    ) -> FileCopyMoveRequest {
+        FileCopyMoveRequest(
+            profileID: repository.profileID,
+            operation: operation,
+            source: copyMoveSource(repository: repository),
+            destinationFolderPath: "/archive",
+            overwrite: false
+        )
+    }
+
+    private func copyMoveBaseline() -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"files":[{"name":"source.txt","path":"/home/source.txt","isdir":false,"additional":{"size":12,"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"archive","path":"/archive","isdir":true,"additional":{"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
+        )
+    }
+
+    private func copyMoveReadback(
+        operation: FileCopyMoveOperation,
+        destinationSize: Int64 = 12
+    ) -> DsmHTTPResponse {
+        let source = operation == .copy
+            ? #"{"name":"source.txt","path":"/home/source.txt","isdir":false,"additional":{"size":12}},"#
+            : ""
+        return response(
+            "{\"success\":true,\"data\":{\"files\":[" + source +
+                "{\"name\":\"source.txt\",\"path\":\"/archive/source.txt\",\"isdir\":false," +
+                "\"additional\":{\"size\":\(destinationSize)}}]}}"
+        )
+    }
+
     private func shareTargetInfo(
         path: String = "/fixture/item.txt",
         canRead: Bool = true,
@@ -3063,9 +3489,10 @@ final class DsmFileRepositoryTests: XCTestCase {
     private func makeRepository(
         capabilities: CapabilitySet,
         transport: MockHTTPTransport,
-        directorySizePollingPolicy: DirectorySizePollingPolicy = .production
+        directorySizePollingPolicy: DirectorySizePollingPolicy = .production,
+        profile suppliedProfile: NasProfile? = nil
     ) throws -> DsmFileRepository {
-        let profile = try NasProfile(
+        let profile = try suppliedProfile ?? NasProfile(
             displayName: "测试设备",
             host: "nas.example.invalid",
             port: 5_001

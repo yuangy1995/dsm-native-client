@@ -345,6 +345,8 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 第 1 波候选已完成 FILE-03 的首个受限写闭环：公开 v2/FORM、父目录/源目标基线、同类型回读、目标互斥、一次提交、提交未知 blocker，以及 remote/recycle/`#recycle` 零入口；移动端只在严格确认后关闭表单并刷新父目录。共享与移动聚焦测试已通过；GitHub `Apple Build` run `31306484946` 进一步通过共享 Package 645 项 XCTest（2 项按环境跳过）、iPhone/iPad 通用应用构建与 macOS 回归。真实 NAS 写入仍为 `PENDING_USER_VALIDATION`，FILE-05/09 不因本项完成而自动开放。
 
+第 2 波候选已实现 FILE-05 的首个受限闭环：单个普通本地文件、同 NAS 普通本地目标、`overwrite=false`，公开 CopyMove v3/FORM、源大小与修改时间冻结、源/目标互斥、一次提交、不可取消独立回读，以及提交未知跨页面 blocker。iPhone/iPad 使用原生目标选择 Sheet；目录、批量、跨 NAS、覆盖、remote/virtual/recycle/`#recycle` 均保持关闭。最新移动聚焦 45/45、共享 FILE-05 聚焦 103/103 通过；共享全量、iPad/macOS 云端回归和真实 NAS 副作用仍待候选 SHA 验证。
+
 ### M4：Photos 精选闭环与主动导入
 
 - 使用共享 `PhotoLibraryRepository`，实现个人/共享空间、文件夹、前台可取消且有上限的用户主动时间线、分页、搜索和年/月定位；不在后台整库扫描。
@@ -356,6 +358,8 @@ M0 冻结产品范围、黄金测试、机械拆分
 出口：浏览、查看、主动导入和受限 NAS 管理的五态与临时文件清理有测试；真实系统图库选择器和格式矩阵后置用户验证。自动扫描/备份不进入本里程碑。
 
 第 1 波候选已完成 PHOTO-02 只读查看增强：冻结当前可见快照、前后导航、iPhone 全屏、iPad Inspector、保存/分享绑定当前 canonical 项目，以及只从已验证本机预览产物读取尺寸、拍摄时间和相机品牌/型号白名单；GPS、MakerNote、设备序列号、私有 Foto 与新增 NAS 请求保持关闭。当前 iPhone 模拟器聚焦 60/60 通过，GitHub `Apple Build` run `31306484946` 已通过 iPhone/iPad 通用应用构建；iPad 运行交互与真机格式矩阵仍待验证。
+
+第 2 波候选已完成 PHOTO-03A 主动单项导入：只用 `PhotosPicker` 选择一项图片或视频，受控临时产物复用既有上传与 Activity，选择取消不改变页面，完成时重新核对 profile、repository、空间、根目录、模式与路径后才刷新。未新增 PhotoKit 整库权限、自动备份、私有 Foto 或平行上传实现；iCloud-only、iPad 与真实 NAS 上传仍为 `PENDING_USER_VALIDATION`。
 
 ### M5-A：文字 Chat 核心
 

@@ -25,6 +25,7 @@ final class MobileFileBrowserModel {
 
     let locations: MobileFileLocationsModel
     let mutations: MobileFileItemMutationModel
+    let copyMove: MobileFileCopyMoveModel
     private(set) var activeProfileID: UUID?
     private(set) var profiles: [UUID: MobileFileBrowserProfileState] = [:]
     @ObservationIgnored private var repositoryIdentity: ObjectIdentifier?
@@ -35,10 +36,12 @@ final class MobileFileBrowserModel {
 
     init(
         locations: MobileFileLocationsModel = MobileFileLocationsModel(),
-        mutations: MobileFileItemMutationModel = MobileFileItemMutationModel()
+        mutations: MobileFileItemMutationModel = MobileFileItemMutationModel(),
+        copyMove: MobileFileCopyMoveModel = MobileFileCopyMoveModel()
     ) {
         self.locations = locations
         self.mutations = mutations
+        self.copyMove = copyMove
     }
 
     var state: MobileFileBrowserProfileState {
@@ -118,6 +121,31 @@ final class MobileFileBrowserModel {
             profile.options = Self.effectiveOptions(
                 profile.directoryOptions,
                 path: success.parentPath
+            )
+        }
+        await replaceContent(repository: repository, forceNetwork: true)
+    }
+
+    /// 复制或移动只刷新仍在显示的原父目录；目标选择从不改变主浏览器位置。
+    func refreshAfterConfirmedCopyMove(
+        _ success: MobileFileCopyMoveSuccess,
+        repository: any MobileFileBrowsing
+    ) async {
+        guard isActive(repository),
+              success.profileID == repository.profileID,
+              state.currentPath == success.sourceParentPath,
+              !state.location.source.isReadOnlyLocation else { return }
+        cancelRequest()
+        updateActive { profile in
+            profile.query = ""
+            profile.caches = profile.caches.filter {
+                $0.key.path != success.sourceParentPath &&
+                    $0.key.path != success.destinationFolderPath
+            }
+            profile.visibleKey = nil
+            profile.options = Self.effectiveOptions(
+                profile.directoryOptions,
+                path: success.sourceParentPath
             )
         }
         await replaceContent(repository: repository, forceNetwork: true)

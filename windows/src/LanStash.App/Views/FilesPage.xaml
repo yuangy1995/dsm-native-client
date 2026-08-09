@@ -94,6 +94,20 @@
                 </AppBarButton.KeyboardAccelerators>
             </AppBarButton>
             <AppBarButton
+                x:Uid="FileCopyMoveCopy"
+                x:Name="CopyFileButton"
+                Click="CopyFile_Click"
+                Icon="Copy"
+                AccessKey="C"
+                MinHeight="48" />
+            <AppBarButton
+                x:Uid="FileCopyMoveMove"
+                x:Name="MoveFileButton"
+                Click="MoveFile_Click"
+                Icon="MoveToFolder"
+                AccessKey="M"
+                MinHeight="48" />
+            <AppBarButton
                 x:Uid="FileBrowserUpload"
                 x:Name="UploadButton"
                 Click="Upload_Click"

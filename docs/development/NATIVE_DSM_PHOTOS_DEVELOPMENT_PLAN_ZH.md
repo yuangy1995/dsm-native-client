@@ -161,6 +161,8 @@ DsmPhotoFeature
 
 PH0–PH5 是 macOS 照片管理首轮，建议投入约 9–12 个有效开发周。内部接口兼容问题不能通过压缩验收时间解决；PH4 可延后发布，不得阻塞 PH1–PH3 的基础照片库。PH6-A 是 Apple 移动当前交付，PH6-B 是独立后续候选，二者不得再合并为同一完成门槛。
 
+第 2 波候选已交付 PH6-A/PH8 的首个主动导入闭环：Apple 只用 PhotosPicker 选择一项图片或视频，Windows 只用 FileOpenPicker 选择一项图片或视频；两端都复用既有上传与 Activity，不申请整库权限、不建立平行上传实现，并在完成时重新核对当前目标后才刷新。Apple 最新聚焦 45/45 通过；Windows 本机缺少 SDK，双架构构建和 xUnit 仍待候选分支 CI。真实选择器、iCloud-only 媒体、Narrator/VoiceOver 与真实 NAS 写入统一记为 `PENDING_USER_VALIDATION`。
+
 ## 8. 每阶段开发顺序
 
 每个里程碑按以下顺序执行：

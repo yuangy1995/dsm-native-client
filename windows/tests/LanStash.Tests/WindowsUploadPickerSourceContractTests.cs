@@ -10,6 +10,7 @@ public sealed class WindowsUploadPickerSourceContractTests
 
         Assert.Contains("new FileOpenPicker(windowId)", source);
         Assert.Contains("PickSingleFileAsync()", source);
+        Assert.Contains("picker.FileTypeFilter.Add(filter)", source);
         Assert.Contains("return result?.Path;", source);
         Assert.Contains("Win32Interop.GetWindowIdFromWindow", source);
         Assert.Contains("WindowNative.GetWindowHandle(window)", source);
@@ -24,7 +25,7 @@ public sealed class WindowsUploadPickerSourceContractTests
             "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
         var method = SliceMethod(
             source,
-            "public async Task<bool> PickAndStartUploadAsync",
+            "private async Task<PhotoMediaUploadStart?> PickAndStartUploadCoreAsync",
             "public void Cancel");
 
         var cancelled = method.IndexOf("if (sourcePath is null)", StringComparison.Ordinal);
@@ -33,7 +34,7 @@ public sealed class WindowsUploadPickerSourceContractTests
         var start = method.IndexOf("_ = RunUploadAsync", StringComparison.Ordinal);
         Assert.True(cancelled >= 0 && openStream > cancelled);
         Assert.True(running > openStream && start > running);
-        Assert.Contains("return false;", method[cancelled..openStream]);
+        Assert.Contains("return null;", method[cancelled..openStream]);
         Assert.DoesNotContain("UploadFileAsync", method[..openStream]);
         Assert.DoesNotContain("RunUploadAsync", method[..openStream]);
     }
@@ -60,12 +61,31 @@ public sealed class WindowsUploadPickerSourceContractTests
     }
 
     [Fact]
+    public void MediaPickerUsesOneFilteredFileAndValidatesTheReturnedExtension()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+
+        Assert.Contains("PickAndStartMediaUploadAsync", source);
+        Assert.Contains("MediaFileTypeFilters", source);
+        Assert.Contains("\".jpg\"", source);
+        Assert.Contains("\".heic\"", source);
+        Assert.Contains("\".mp4\"", source);
+        Assert.Contains("\".mov\"", source);
+        Assert.Contains("MediaFileExtensions.Contains(Path.GetExtension(sourcePath))", source);
+        Assert.Contains("upload.unsupported_media_type", source);
+        Assert.DoesNotContain("PickMultipleFilesAsync", source);
+    }
+
+    [Fact]
     public void UploadUsesUniqueActivityCancellationAndReportsCompletionWithoutPaths()
     {
         var source = ReadRepositoryFile(
             "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
 
-        Assert.Contains("new RunningTransfer(Guid.NewGuid(), profileId, cancellation)", source);
+        Assert.Contains("new RunningTransfer(", source);
+        Assert.Contains("Guid.NewGuid(),", source);
+        Assert.Contains("IsMedia: requiresMediaExtension", source);
         Assert.Contains("item.ActivityId == activityId", source);
         Assert.Contains("running.ActivityId", source);
         Assert.Contains("UploadFinished?.Invoke(new ForegroundUploadFinished(", source);

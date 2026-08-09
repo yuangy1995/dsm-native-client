@@ -1,4 +1,5 @@
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Locations;
 using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Files.Preview;
@@ -45,7 +46,10 @@ public sealed partial class FilesPage : Page, IDisposable
         FileShareLinkReviewBlocker? shareReviewBlocker = null,
         IFileLocationsRepository? locationsRepository = null,
         IFileMutationRepository? mutationRepository = null,
-        FileMutationReviewBlocker? mutationReviewBlocker = null)
+        FileMutationReviewBlocker? mutationReviewBlocker = null,
+        IFileCopyMoveRepository? copyMoveRepository = null,
+        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
+        IFileCopyMoveFolderSource? copyMoveFolderSource = null)
         : this(
             new FileBrowserViewModel(new RepositoryFileBrowserDataSource(repository)),
             previewRepository,
@@ -55,7 +59,11 @@ public sealed partial class FilesPage : Page, IDisposable
             shareReviewBlocker,
             locationsRepository ?? repository as IFileLocationsRepository,
             mutationRepository ?? repository as IFileMutationRepository,
-            mutationReviewBlocker)
+            mutationReviewBlocker,
+            copyMoveRepository ?? repository as IFileCopyMoveRepository,
+            copyMoveReviewBlocker,
+            copyMoveFolderSource ?? CreateCopyMoveFolderSource(
+                profileId, repository, locationsRepository ?? repository as IFileLocationsRepository))
     {
     }
 
@@ -68,7 +76,10 @@ public sealed partial class FilesPage : Page, IDisposable
         FileShareLinkReviewBlocker? shareReviewBlocker = null,
         IFileLocationsRepository? locationsRepository = null,
         IFileMutationRepository? mutationRepository = null,
-        FileMutationReviewBlocker? mutationReviewBlocker = null)
+        FileMutationReviewBlocker? mutationReviewBlocker = null,
+        IFileCopyMoveRepository? copyMoveRepository = null,
+        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
+        IFileCopyMoveFolderSource? copyMoveFolderSource = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -83,6 +94,13 @@ public sealed partial class FilesPage : Page, IDisposable
             : null;
         _shareReviewBlocker = shareReviewBlocker ?? FileShareLinkReviewBlocker.Current;
         _mutationReviewBlocker = mutationReviewBlocker ?? FileMutationReviewBlocker.Current;
+        _copyMoveRepository = copyMoveRepository?.ProfileId == _profileId
+            ? copyMoveRepository
+            : null;
+        _copyMoveFolderSource = copyMoveFolderSource?.ProfileId == _profileId
+            ? copyMoveFolderSource
+            : null;
+        _copyMoveReviewBlocker = copyMoveReviewBlocker ?? FileCopyMoveReviewBlocker.Current;
         _transfers = transfers;
         _systemShare = new WindowsSystemShare(
             () => (Application.Current as App)?.MainWindow);
@@ -199,6 +217,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
             CloseShareLinkDialog();
             CloseMutationDialog();
+            CloseCopyMoveDialog();
             await ClosePreviewAsync();
             if (_disposed || !_locationsViewModel.IsActive)
             {
@@ -1067,6 +1086,7 @@ public sealed partial class FilesPage : Page, IDisposable
         PreviewButton.IsEnabled =
             !_viewModel.IsLoading && _viewModel.SelectedItem?.IsDirectory == false;
         UpdateMutationControls();
+        UpdateCopyMoveControls();
         ShareLinkButton.IsEnabled =
             !_viewModel.IsLoading &&
             !_isClosingShareLink &&
@@ -1236,6 +1256,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _locationsViewModel.Deactivate();
         CloseShareLinkDialog();
         CloseMutationDialog();
+        CloseCopyMoveDialog();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
         {
@@ -1253,6 +1274,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _disposed = true;
         CloseShareLinkDialog();
         CloseMutationDialog();
+        CloseCopyMoveDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
@@ -1268,6 +1290,11 @@ public sealed partial class FilesPage : Page, IDisposable
         _previewViewModel.Dispose();
         _viewModel.Dispose();
     }
+
+    private static IFileCopyMoveFolderSource? CreateCopyMoveFolderSource(
+        string profileId, IDsmRepository repository, IFileLocationsRepository? locations) =>
+        locations is null ? null : new RepositoryFileCopyMoveFolderSource(
+            Guid.Parse(profileId), new RepositoryFileBrowserDataSource(repository), locations);
 
     private void CloseShareLinkDialog()
     {

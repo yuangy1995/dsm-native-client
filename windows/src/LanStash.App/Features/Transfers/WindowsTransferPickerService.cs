@@ -1,5 +1,6 @@
 using LanStash.App.Localization;
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Photos.Import;
 using LanStash.Domain;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -15,7 +16,7 @@ internal interface IWindowsTransferSavePicker
 
 internal interface IWindowsTransferOpenPicker
 {
-    Task<string?> PickSingleFilePathAsync();
+    Task<string?> PickSingleFilePathAsync(IReadOnlyList<string>? fileTypeFilters = null);
 }
 
 internal sealed class WindowsTransferSavePicker(Func<Window?> windowProvider)
@@ -51,7 +52,8 @@ internal sealed class WindowsTransferSavePicker(Func<Window?> windowProvider)
 internal sealed class WindowsTransferOpenPicker(Func<Window?> windowProvider)
     : IWindowsTransferOpenPicker
 {
-    public async Task<string?> PickSingleFilePathAsync()
+    public async Task<string?> PickSingleFilePathAsync(
+        IReadOnlyList<string>? fileTypeFilters = null)
     {
         var window = windowProvider();
         if (window is null)
@@ -62,13 +64,28 @@ internal sealed class WindowsTransferOpenPicker(Func<Window?> windowProvider)
         var windowId = Win32Interop.GetWindowIdFromWindow(
             WindowNative.GetWindowHandle(window));
         var picker = new FileOpenPicker(windowId);
+        if (fileTypeFilters is not null)
+        {
+            foreach (var filter in fileTypeFilters)
+            {
+                picker.FileTypeFilter.Add(filter);
+            }
+        }
         var result = await picker.PickSingleFileAsync();
         return result?.Path;
     }
 }
 
-internal sealed class WindowsTransferPickerService : IDisposable
+internal sealed class WindowsTransferPickerService : IPhotoImportTransferService, IDisposable
 {
+    private static readonly string[] MediaFileTypeFilters =
+    [
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff",
+        ".heic", ".heif", ".webp", ".mp4", ".mov", ".m4v", ".avi",
+        ".mkv", ".webm",
+    ];
+    private static readonly HashSet<string> MediaFileExtensions =
+        new(MediaFileTypeFilters, StringComparer.OrdinalIgnoreCase);
     private readonly object _sync = new();
     private readonly IDsmRepository _repository;
     private readonly SafeFileDownloadService _downloadService;
@@ -92,6 +109,8 @@ internal sealed class WindowsTransferPickerService : IDisposable
     }
 
     public event Action<ForegroundUploadFinished>? UploadFinished;
+    public event Action<PhotoMediaUploadFinished>? MediaUploadFinished;
+    public event Action<PhotoMediaUploadInterrupted>? MediaUploadInterrupted;
 
     public async Task<bool> PickAndStartDownloadAsync(
         string profileId,
@@ -136,15 +155,49 @@ internal sealed class WindowsTransferPickerService : IDisposable
 
     public async Task<bool> PickAndStartUploadAsync(
         string profileId,
-        string folderPath)
+        string folderPath) =>
+        await PickAndStartUploadCoreAsync(
+            profileId,
+            folderPath,
+            fileTypeFilters: null,
+            requiresMediaExtension: false) is not null;
+
+    public Task<PhotoMediaUploadStart?> PickAndStartMediaUploadAsync(
+        string profileId,
+        string folderPath,
+        Guid activityId)
+    {
+        if (activityId == Guid.Empty)
+        {
+            throw new ArgumentOutOfRangeException(nameof(activityId));
+        }
+        return PickAndStartUploadCoreAsync(
+            profileId,
+            folderPath,
+            MediaFileTypeFilters,
+            requiresMediaExtension: true,
+            activityId);
+    }
+
+    private async Task<PhotoMediaUploadStart?> PickAndStartUploadCoreAsync(
+        string profileId,
+        string folderPath,
+        IReadOnlyList<string>? fileTypeFilters,
+        bool requiresMediaExtension,
+        Guid? requestedActivityId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
 
-        var sourcePath = await _openPicker.PickSingleFilePathAsync();
+        var sourcePath = await _openPicker.PickSingleFilePathAsync(fileTypeFilters);
         if (sourcePath is null)
         {
-            return false;
+            return null;
+        }
+        if (requiresMediaExtension &&
+            !MediaFileExtensions.Contains(Path.GetExtension(sourcePath)))
+        {
+            throw new InvalidDataException("upload.unsupported_media_type");
         }
 
         var source = new FileStream(
@@ -188,7 +241,11 @@ internal sealed class WindowsTransferPickerService : IDisposable
         }
 
         var cancellation = new CancellationTokenSource();
-        var running = new RunningTransfer(Guid.NewGuid(), profileId, cancellation);
+        var running = new RunningTransfer(
+            requestedActivityId ?? Guid.NewGuid(),
+            profileId,
+            cancellation,
+            IsMedia: requiresMediaExtension);
         lock (_sync)
         {
             if (_disposed)
@@ -201,7 +258,7 @@ internal sealed class WindowsTransferPickerService : IDisposable
         }
 
         _ = RunUploadAsync(running, request);
-        return true;
+        return new PhotoMediaUploadStart(running.ActivityId);
     }
 
     public void Cancel(string profileId, Guid activityId)
@@ -324,12 +381,22 @@ internal sealed class WindowsTransferPickerService : IDisposable
                 running.ProfileId,
                 upload.FolderPath,
                 result));
+            if (running.IsMedia)
+            {
+                MediaUploadFinished?.Invoke(new PhotoMediaUploadFinished(
+                    running.ActivityId,
+                    running.ProfileId,
+                    upload.FolderPath,
+                    result));
+            }
         }
         catch (OperationCanceledException)
         {
+            NotifyMediaUploadInterrupted(running, upload, isCancelled: true);
         }
         catch
         {
+            NotifyMediaUploadInterrupted(running, upload, isCancelled: false);
             // Activity 使用稳定的本地化状态；源路径和内部异常不会进入界面。
         }
         finally
@@ -343,8 +410,24 @@ internal sealed class WindowsTransferPickerService : IDisposable
         }
     }
 
+    private void NotifyMediaUploadInterrupted(
+        RunningTransfer running,
+        FileUploadRequest upload,
+        bool isCancelled)
+    {
+        if (running.IsMedia)
+        {
+            MediaUploadInterrupted?.Invoke(new PhotoMediaUploadInterrupted(
+                running.ActivityId,
+                running.ProfileId,
+                upload.FolderPath,
+                isCancelled));
+        }
+    }
+
     private sealed record RunningTransfer(
         Guid ActivityId,
         string ProfileId,
-        CancellationTokenSource Cancellation);
+        CancellationTokenSource Cancellation,
+        bool IsMedia = false);
 }

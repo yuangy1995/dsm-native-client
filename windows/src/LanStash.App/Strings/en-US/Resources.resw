@@ -853,4 +853,48 @@
   <data name="FileMutationChangedMessage" xml:space="preserve"><value>The item or requested name is no longer available. Refresh the folder and choose again.</value></data>
   <data name="FileMutationUnsupportedMessage" xml:space="preserve"><value>This NAS or folder doesn’t support this change. You can continue browsing and saving copies.</value></data>
   <data name="FileMutationFailureMessage" xml:space="preserve"><value>The change wasn’t completed. Refresh the folder and try again from the current item.</value></data>
+  <data name="PhotoImportAction.Label" xml:space="preserve"><value>Import</value></data>
+  <data name="PhotoImportAction.AccessKey" xml:space="preserve"><value>I</value></data>
+  <data name="PhotoImportAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Import one photo or video</value></data>
+  <data name="PhotoImportChoosing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choosing a photo or video</value></data>
+  <data name="PhotoImportTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Import destination</value></data>
+  <data name="PhotoImportStatus.Title" xml:space="preserve"><value>Photo import</value></data>
+  <data name="PhotoImportStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo import status</value></data>
+  <data name="PhotoImportFolderTargetMessage" xml:space="preserve"><value>Current folder: {0}</value></data>
+  <data name="PhotoImportTimelineTargetMessage" xml:space="preserve"><value>Top level of {0}: {1}</value></data>
+  <data name="PhotoImportActivityMessage" xml:space="preserve"><value>The upload is now in Activity. You can continue using Photos.</value></data>
+  <data name="PhotoImportSuccessMessage" xml:space="preserve"><value>The item was imported. This location has been refreshed.</value></data>
+  <data name="PhotoImportSuccessElsewhereMessage" xml:space="preserve"><value>The item was imported to the location you selected earlier.</value></data>
+  <data name="PhotoImportNeedsReviewMessage" xml:space="preserve"><value>The upload may have reached the NAS. Check the destination in Activity before importing it again.</value></data>
+  <data name="PhotoImportCancelledMessage" xml:space="preserve"><value>The upload was cancelled before it was sent.</value></data>
+  <data name="PhotoImportPermissionMessage" xml:space="preserve"><value>You don’t have permission to import to this location. Choose another folder or ask an administrator for access.</value></data>
+  <data name="PhotoImportUnsupportedMessage" xml:space="preserve"><value>This location can’t accept photo imports. Choose a regular photo folder.</value></data>
+  <data name="PhotoImportFailureMessage" xml:space="preserve"><value>The import couldn’t be started or completed. Choose the item again and check Activity for details.</value></data>
+  <data name="FileCopyMoveCopy.Label" xml:space="preserve"><value>Copy</value></data>
+  <data name="FileCopyMoveCopy.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Copy the selected file</value></data>
+  <data name="FileCopyMoveMove.Label" xml:space="preserve"><value>Move</value></data>
+  <data name="FileCopyMoveMove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected file</value></data>
+  <data name="FileCopyMove_Dialog_TitleCopy" xml:space="preserve"><value>Copy file</value></data>
+  <data name="FileCopyMove_Dialog_TitleMove" xml:space="preserve"><value>Move file</value></data>
+  <data name="FileCopyMove_Source_Label" xml:space="preserve"><value>Source</value></data>
+  <data name="FileCopyMove_Destination_Label" xml:space="preserve"><value>Destination folder</value></data>
+  <data name="FileCopyMove_Destination_Placeholder" xml:space="preserve"><value>Choose a folder</value></data>
+  <data name="FileCopyMove_ChooseDestination_Button" xml:space="preserve"><value>Choose folder</value></data>
+  <data name="FileCopyMove_Copy_Button" xml:space="preserve"><value>Copy</value></data>
+  <data name="FileCopyMove_Move_Button" xml:space="preserve"><value>Move</value></data>
+  <data name="FileCopyMove_Cancel_Button" xml:space="preserve"><value>Cancel</value></data>
+  <data name="FileCopyMove_Close_Button" xml:space="preserve"><value>Close</value></data>
+  <data name="FileCopyMove_Status_Checking" xml:space="preserve"><value>Checking the file and destination…</value></data>
+  <data name="FileCopyMove_Status_Copying" xml:space="preserve"><value>Copying…</value></data>
+  <data name="FileCopyMove_Status_Moving" xml:space="preserve"><value>Moving…</value></data>
+  <data name="FileCopyMove_Status_SuccessCopy" xml:space="preserve"><value>File copied.</value></data>
+  <data name="FileCopyMove_Status_SuccessMove" xml:space="preserve"><value>File moved.</value></data>
+  <data name="FileCopyMove_Status_Conflict" xml:space="preserve"><value>A file with the same name already exists, or the file changed. Choose another folder and try again.</value></data>
+  <data name="FileCopyMove_Status_Permission" xml:space="preserve"><value>You don’t have permission to use this location. Choose another folder.</value></data>
+  <data name="FileCopyMove_Status_Unknown" xml:space="preserve"><value>The request may have been accepted, but the result could not be confirmed. Refresh before trying again.</value></data>
+  <data name="FileCopyMove_Status_Unsupported" xml:space="preserve"><value>This file or destination can’t be used for this action.</value></data>
+  <data name="FileCopyMove_Status_Error" xml:space="preserve"><value>The action couldn’t be completed. Check the file and destination, then try again.</value></data>
+  <data name="FileCopyMove_Status_Cancelled" xml:space="preserve"><value>The action was cancelled before it was sent.</value></data>
+  <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>File action status</value></data>
+  <data name="FileCopyMove_A11y_DestinationTree" xml:space="preserve"><value>Destination folders</value></data>
 </root>

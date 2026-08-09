@@ -55,6 +55,14 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         UpdateState();
     }
 
+    internal async Task RefreshAsync()
+    {
+        if (_disposed || _source is null) return;
+        await _viewModel.RefreshAsync();
+        LocalizeGroupTitles();
+        UpdateState();
+    }
+
     internal void HideTimeline()
     {
         _viewModel.Cancel();
@@ -73,7 +81,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
 
     internal void ClearSelection() => TimelineGrid.SelectedItem = null;
 
-    private async void Refresh_Click(object sender, RoutedEventArgs e) { await _viewModel.RefreshAsync(); LocalizeGroupTitles(); UpdateState(); }
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
     private void Cancel_Click(object sender, RoutedEventArgs e) { _viewModel.Cancel(); UpdateState(); }
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     { if (!_syncingControls) _viewModel.Query = SearchBox.Text; LocalizeGroupTitles(); UpdateState(); }

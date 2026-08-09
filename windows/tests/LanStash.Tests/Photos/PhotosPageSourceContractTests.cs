@@ -30,7 +30,8 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("new PhotoThumbnailScheduler()", source);
 
         Assert.DoesNotContain("Search", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Upload", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("x:Name=\"ImportButton\"", xaml);
+        Assert.Contains("Import_Click", xaml);
         Assert.DoesNotContain("Delete", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CloudDrive", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Video", xaml, StringComparison.OrdinalIgnoreCase);

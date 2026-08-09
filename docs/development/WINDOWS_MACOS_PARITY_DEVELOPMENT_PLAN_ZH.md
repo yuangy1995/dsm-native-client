@@ -225,6 +225,8 @@ W0 基线、账本与 ZIP/安装器决策门
 
 第 1 波候选已完成 W2 中 FILE-03 的单项新建文件夹/重命名：固定公开 CreateFolder/Rename v2 与 CheckPermission v3，完整严格列表预检、源/目标互斥、一次提交、独立回读、session review blocker、remote/recycle/`#recycle` 三层零写门和 WinUI 原生表单。该结果不包含复制移动、删除、恢复或批量写；真实 NAS 行为和 Windows 构建仍为后置验证。
 
+第 2 波候选已完成 W2 中 FILE-05 的单文件同 NAS 复制/移动：固定 CopyMove v3、普通本地共享根写前门、完整源/目标预检、无覆盖、一次提交、任务轮询、独立回读和跨页面 review blocker；WinUI 使用独立 partial 与 ViewModel 选择目标目录。目录、批量、跨 NAS、覆盖、删除和恢复仍关闭。本机缺少 .NET/Windows SDK，正式 x64/ARM64 构建与 xUnit 结果必须由候选分支 CI 给出。
+
 ### W3-A：预览与文件系统照片库
 
 工作项：

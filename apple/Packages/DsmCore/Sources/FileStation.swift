@@ -103,6 +103,55 @@ public struct FileItemMutationOutcome: Equatable, Sendable {
     }
 }
 
+/// 单个普通本地文件在同一 NAS 内复制或移动的操作类型。
+public enum FileCopyMoveOperation: String, Codable, Sendable {
+    case copy
+    case move
+}
+
+/// 单个普通本地文件的有界复制或移动请求；首版明确不允许覆盖目标。
+public struct FileCopyMoveRequest: Equatable, Sendable {
+    public let profileID: UUID
+    public let operation: FileCopyMoveOperation
+    public let source: FileItem
+    public let destinationFolderPath: String
+    public let overwrite: Bool
+
+    public init(
+        profileID: UUID,
+        operation: FileCopyMoveOperation,
+        source: FileItem,
+        destinationFolderPath: String,
+        overwrite: Bool
+    ) {
+        self.profileID = profileID
+        self.operation = operation
+        self.source = source
+        self.destinationFolderPath = destinationFolderPath
+        self.overwrite = overwrite
+    }
+}
+
+/// 复制或移动后的可审计结果。只有独立回读确认目标状态时才携带 `item`。
+public struct FileCopyMoveOutcome: Equatable, Sendable {
+    public let result: MutationResult
+    public let sourcePath: String
+    public let destinationPath: String
+    public let item: FileItem?
+
+    public init(
+        result: MutationResult,
+        sourcePath: String,
+        destinationPath: String,
+        item: FileItem?
+    ) {
+        self.result = result
+        self.sourcePath = sourcePath
+        self.destinationPath = destinationPath
+        self.item = item
+    }
+}
+
 /// File Station 官方虚拟文件夹接口支持的远程协议。
 public enum FileVirtualProtocol: String, Codable, CaseIterable, Sendable {
     case cifs
@@ -779,6 +828,10 @@ public protocol FileRepository: PhotoFileServing, Sendable {
         overwrite: Bool,
         progress: @escaping FileTransferProgress
     ) async throws
+    func copyMoveResult(
+        _ request: FileCopyMoveRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileCopyMoveOutcome
     func compress(
         paths: [String],
         destinationFilePath: String,
@@ -974,6 +1027,27 @@ public extension FileRepository {
                 errorCategory: .unsupported,
                 diagnosticTag: "file-station.rename.unsupported"
             ),
+            item: nil
+        )
+    }
+
+    func copyMoveResult(
+        _ request: FileCopyMoveRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileCopyMoveOutcome {
+        let separator = request.destinationFolderPath == "/" ? "" : "/"
+        return FileCopyMoveOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: request.operation.rawValue,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.copy-move.unsupported"
+            ),
+            sourcePath: request.source.path,
+            destinationPath: request.destinationFolderPath + separator + request.source.name,
             item: nil
         )
     }

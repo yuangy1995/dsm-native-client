@@ -16,6 +16,7 @@
 
 ## 专项开发计划
 
+- [Windows / Apple 移动端第 2 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)
 - [Windows / Apple 移动端第 1 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_1_LEDGER_ZH.md)
 - [Windows / Apple 移动端第 0 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_0_LEDGER_ZH.md)
 - [macOS 业务语义向 Windows 与 Apple 移动端复制总计划](development/MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)

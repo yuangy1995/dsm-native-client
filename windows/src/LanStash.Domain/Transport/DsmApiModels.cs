@@ -155,6 +155,30 @@ public interface IDsmApiClient
             MutationErrorCategory.Unsupported,
             "file.rename.unsupported"));
 
+    Task<FileCopyMoveStartTransportResult> StartFileCopyMoveAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string sourcePath,
+        string destinationDirectoryPath,
+        bool removeSource,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileCopyMoveStartTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "file.copy-move.unsupported"));
+
+    Task<FileCopyMoveTaskTransportResult> ReadFileCopyMoveStatusAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileCopyMoveTaskTransportResult(
+            FileCopyMoveTaskTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.copy-move.status-unsupported"));
+
     Task<DsmBinaryResponse> ReadBinaryAsync(
         NasProfile profile,
         DsmSession session,

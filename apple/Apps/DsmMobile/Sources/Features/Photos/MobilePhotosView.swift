@@ -12,6 +12,7 @@ struct MobilePhotosView: View {
     @State private var browseMode = PhotoBrowseMode.albums
     @State private var timeline = MobilePhotoTimelineModel()
     @State private var viewer = MobilePhotoViewerModel()
+    @State private var photoImport = MobilePhotoImportModel()
     @State private var showsPreviewInspector = false
     @State private var showsPreviewFullScreen = false
     @State private var showsPreviewDetails = false
@@ -94,6 +95,7 @@ struct MobilePhotosView: View {
             library.cancelAllWork()
             timeline.cancelAllWork()
             viewer.close()
+            photoImport.cancelPreparation()
         }
     }
 
@@ -305,6 +307,27 @@ struct MobilePhotosView: View {
 
     @ToolbarContentBuilder
     private var photosToolbar: some ToolbarContent {
+        if let destination = photoImportDestination,
+           let repository = model.fileRepository {
+            ToolbarItem(placement: .primaryAction) {
+                MobilePhotoImportButton(
+                    importModel: photoImport,
+                    destination: destination,
+                    repository: repository,
+                    controller: model.documentTransferController,
+                    coordinator: model.transferCoordinator,
+                    onConfirmedSuccess: {
+                        guard photoImportDestination == destination else { return }
+                        if browseMode == .timeline {
+                            await timeline.refresh()
+                        } else {
+                            await library.reload()
+                        }
+                    }
+                )
+            }
+        }
+
         if browseMode == .albums, !state.pathHistory.isEmpty {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
@@ -470,6 +493,10 @@ struct MobilePhotosView: View {
 
     private func activatePhotoContext() async {
         model.documentTransferController.setActiveProfile(model.activeProfile?.id)
+        photoImport.activate(
+            profileID: model.activeProfile?.id,
+            repositoryIdentity: model.fileRepository.map { ObjectIdentifier($0) }
+        )
         if viewer.activate(
             profileID: model.activeProfile?.id,
             fileRepository: model.fileRepository
@@ -500,6 +527,21 @@ struct MobilePhotosView: View {
             profileID: model.activeProfile?.id,
             fileRepository: model.fileRepository.map(ObjectIdentifier.init)
         )
+    }
+
+    private var photoImportDestination: MobilePhotoImportDestination? {
+        guard let profileID = model.activeProfile?.id,
+              library.activeProfileID == profileID,
+              let repository = model.fileRepository,
+              repository.profileID == profileID,
+              let space = state.selectedSpace else { return nil }
+        let folderPath = browseMode == .timeline ? space.rootPath : state.currentPath
+        let destination = MobilePhotoImportDestination(
+            profileID: profileID,
+            folderPath: folderPath,
+            spaceRootPath: space.rootPath
+        )
+        return MobilePhotoImportModel.isAllowed(destination) ? destination : nil
     }
 
     private var visiblePhotoSnapshot: [PhotoLibraryItem] {

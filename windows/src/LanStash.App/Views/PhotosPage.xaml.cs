@@ -1,5 +1,6 @@
 using LanStash.App.Features.Files;
 using LanStash.App.Features.Photos;
+using LanStash.App.Features.Photos.Import;
 using LanStash.App.Features.Photos.Timeline;
 using LanStash.App.Features.Settings;
 using LanStash.App.Features.Transfers;
@@ -65,6 +66,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         _cacheRegistration = AppSettingsService.Current.Caches.Register(thumbnails);
         _profileId = profileId;
         _transfers = transfers;
+        InitializePhotoImport();
         if (_timelineDataSource is not null)
         {
             EnsureMatchingProfile(_timelineDataSource.ProfileId, profileId);
@@ -113,11 +115,15 @@ public sealed partial class PhotosPage : Page, IDisposable
     {
         if (_initialized)
         {
+            ActivatePhotoImportPage();
+            UpdatePhotoImportState();
             return;
         }
 
         _initialized = true;
         await RunLocationChangeAsync(() => _viewModel.ActivateAsync(_dataSource));
+        ActivatePhotoImportPage();
+        UpdatePhotoImportState();
         if (TimelineMode.IsChecked == true && _viewModel.SelectedSpace is { } space)
         {
             await TimelineView.ShowAsync(space);
@@ -128,6 +134,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     {
         CancelThumbnailRequests();
         TimelineView.HideTimeline();
+        DeactivatePhotoImport();
     }
 
     private void ViewModel_PropertyChanged(
@@ -161,6 +168,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         PathBreadcrumbs.Visibility = Visibility.Visible;
         BrowserCommandBar.Visibility = Visibility.Visible;
         BrowserContentHost.Visibility = Visibility.Visible;
+        UpdatePhotoImportState();
     }
 
     private async void TimelineMode_Click(object sender, RoutedEventArgs e)
@@ -176,6 +184,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         {
             await TimelineView.ShowAsync(space);
         }
+        UpdatePhotoImportState();
     }
 
     private async void PathBreadcrumbs_ItemClicked(
@@ -586,6 +595,7 @@ public sealed partial class PhotosPage : Page, IDisposable
             ? Visibility.Visible
             : Visibility.Collapsed;
         LoadMoreError.IsOpen = _viewModel.HasLoadMoreError;
+        UpdatePhotoImportState();
     }
 
     private void UpdateSpacePicker()
@@ -682,6 +692,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         Loaded -= PhotosPage_Loaded;
         Unloaded -= PhotosPage_Unloaded;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        DisposePhotoImport();
         CancelThumbnailRequests();
         _locationCancellation.Dispose();
         _viewModel.Dispose();

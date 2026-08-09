@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.copy.synthetic-no-overwrite",
+  "module": "file-station",
+  "operation": "copy",
+  "api": {
+    "name": "SYNO.FileStation.CopyMove",
+    "method": "start",
+    "preferredVersion": 3,
+    "resolvedVersion": 3,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "accurate_progress",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "dest_folder_path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-destination>"
+    },
+    {
+      "name": "overwrite",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "path",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-path>\"]"
+    },
+    {
+      "name": "remove_src",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "taskPoll"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

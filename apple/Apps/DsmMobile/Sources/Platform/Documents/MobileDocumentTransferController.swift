@@ -161,8 +161,10 @@ final class MobileDocumentTransferController {
                 to: destination,
                 in: directory
             )
+            try Task.checkCancellation()
         } catch {
             cleanup(directory)
+            if error is CancellationError { return nil }
             failure = Self.failure(for: error)
             return nil
         }
