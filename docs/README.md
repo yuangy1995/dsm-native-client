@@ -16,6 +16,7 @@
 
 ## 专项开发计划
 
+- [Windows / Apple 移动端第 3 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_3_LEDGER_ZH.md)
 - [Windows / Apple 移动端第 2 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)
 - [Windows / Apple 移动端第 1 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_1_LEDGER_ZH.md)
 - [Windows / Apple 移动端第 0 波功能对齐账本](development/CROSS_PLATFORM_PARITY_WAVE_0_LEDGER_ZH.md)

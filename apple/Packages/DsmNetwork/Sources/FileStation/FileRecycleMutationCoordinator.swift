@@ -1,94 +1,83 @@
 import DsmCore
 import Foundation
 
-struct FileCopyMovePreparedRequest: Sendable {
-    let request: FileCopyMoveRequest
+struct FileRecyclePreparedRequest: Sendable {
+    let profileID: UUID
+    let operation: String
+    let source: FileItem
     let sourcePath: String
-    let destinationFolderPath: String
     let destinationPath: String
-    let operationName: String?
 }
 
-enum FileCopyMovePreflight: Sendable {
-    case allowed(FileItem)
-    case permission
-    case conflict
-}
-
-enum FileCopyMoveSubmissionFailure: Error, Sendable {
+enum FileRecycleSubmissionFailure: Error, Sendable {
     case network(DsmNetworkError, taskAccepted: Bool)
     case cancelled(taskAccepted: Bool)
     case unexpected(taskAccepted: Bool)
 }
 
-struct FileCopyMoveMutationDependencies: Sendable {
-    let checkWritePermission: @Sendable (_ folderPath: String, _ filename: String) async throws -> Void
+struct FileRecycleMutationDependencies: Sendable {
     let submit: @Sendable (
-        FileCopyMovePreparedRequest,
+        FileRecyclePreparedRequest,
         @escaping FileTransferProgress
     ) async throws -> Void
     let readItems: @Sendable ([String]) async throws -> [FileItem]
 }
 
-private struct FileCopyMoveReviewKey: Hashable, Sendable {
+private struct FileRecycleReviewKey: Hashable, Sendable {
     let profileID: UUID
-    let operation: FileCopyMoveOperation
+    let operation: String
     let sourcePath: String
     let destinationPath: String
 }
 
-private struct PendingFileCopyMoveReview: Sendable {
-    let key: FileCopyMoveReviewKey
+private struct PendingFileRecycleReview: Sendable {
+    let key: FileRecycleReviewKey
     let source: FileItem
     let paths: Set<String>
 }
 
-private enum FileCopyMoveReadback: Sendable {
+private enum FileRecyclePreflight: Sendable {
+    case allowed(FileItem)
+    case permission
+    case conflict
+}
+
+private enum FileRecycleReadback: Sendable {
     case confirmed(FileItem)
     case mismatch
     case unavailable(AppError?)
 }
 
-/// 复制/移动的进程会话协调器；集中维护目标锁、提交边界、独立回读和未知结果阻断。
-actor FileCopyMoveMutationCoordinator {
-    static let shared = FileCopyMoveMutationCoordinator()
+/// 单文件移入回收站的进程会话协调器；只在回读确认 `#recycle` 目标后报告成功。
+actor FileRecycleMutationCoordinator {
+    static let shared = FileRecycleMutationCoordinator()
 
-    private var activePathsByKey: [FileCopyMoveReviewKey: Set<String>] = [:]
-    private var pendingReviews: [FileCopyMoveReviewKey: PendingFileCopyMoveReview] = [:]
+    private var activePathsByKey: [FileRecycleReviewKey: Set<String>] = [:]
+    private var pendingReviews: [FileRecycleReviewKey: PendingFileRecycleReview] = [:]
 
-    func perform(
-        _ prepared: FileCopyMovePreparedRequest,
-        dependencies: FileCopyMoveMutationDependencies,
+    func performMoveToRecycle(
+        _ prepared: FileRecyclePreparedRequest,
+        dependencies: FileRecycleMutationDependencies,
         progress: @escaping FileTransferProgress
-    ) async throws -> FileCopyMoveOutcome {
-        let operation = prepared.operationName ?? prepared.request.operation.rawValue
-        let key = FileCopyMoveReviewKey(
-            profileID: prepared.request.profileID,
-            operation: prepared.request.operation,
+    ) async throws -> FileRecycleMutationOutcome {
+        let key = FileRecycleReviewKey(
+            profileID: prepared.profileID,
+            operation: prepared.operation,
             sourcePath: prepared.sourcePath,
             destinationPath: prepared.destinationPath
         )
         if let review = pendingReviews[key] {
-            return try await reviewPending(
-                review,
-                operation: operation,
-                readItems: dependencies.readItems
-            )
+            return try await reviewPending(review, readItems: dependencies.readItems)
         }
 
-        let paths = Set([
-            prepared.sourcePath,
-            prepared.destinationFolderPath,
-            prepared.destinationPath,
-        ])
-        guard !hasOverlap(profileID: prepared.request.profileID, paths: paths) else {
+        let paths = Set([prepared.sourcePath, prepared.destinationPath])
+        guard !hasOverlap(profileID: prepared.profileID, paths: paths) else {
             return try outcome(
                 status: .confirmedFailure,
-                operation: operation,
                 submitted: false,
                 failed: 1,
                 errorCategory: .conflict,
-                diagnosticTag: "file-station.copy-move.target-busy",
+                diagnosticTag: "file-station.recycle.move.target-busy",
                 prepared: prepared
             )
         }
@@ -98,9 +87,8 @@ actor FileCopyMoveMutationCoordinator {
         if Task.isCancelled {
             return try outcome(
                 status: .cancelledBeforeSubmission,
-                operation: operation,
                 submitted: false,
-                diagnosticTag: "file-station.copy-move.cancelled-before-preflight",
+                diagnosticTag: "file-station.recycle.move.cancelled-before-preflight",
                 prepared: prepared
             )
         }
@@ -113,39 +101,36 @@ actor FileCopyMoveMutationCoordinator {
             case .permission:
                 return try outcome(
                     status: .permissionDenied,
-                    operation: operation,
                     submitted: false,
                     failed: 1,
                     errorCategory: .permission,
-                    diagnosticTag: "file-station.copy-move.preflight-rejected",
+                    diagnosticTag: "file-station.recycle.move.preflight-rejected",
                     prepared: prepared
                 )
             case .conflict:
                 return try outcome(
                     status: .confirmedFailure,
-                    operation: operation,
                     submitted: false,
                     failed: 1,
                     errorCategory: .conflict,
-                    diagnosticTag: "file-station.copy-move.preflight-rejected",
+                    diagnosticTag: "file-station.recycle.move.preflight-rejected",
                     prepared: prepared
                 )
             }
         } catch {
-            return try preflightOutcome(error, operation: operation, prepared: prepared)
+            return try preflightOutcome(error, prepared: prepared)
         }
 
         if Task.isCancelled {
             return try outcome(
                 status: .cancelledBeforeSubmission,
-                operation: operation,
                 submitted: false,
-                diagnosticTag: "file-station.copy-move.cancelled-after-preflight",
+                diagnosticTag: "file-station.recycle.move.cancelled-after-preflight",
                 prepared: prepared
             )
         }
 
-        let review = PendingFileCopyMoveReview(
+        let review = PendingFileRecycleReview(
             key: key,
             source: observedSource,
             paths: paths
@@ -155,7 +140,7 @@ actor FileCopyMoveMutationCoordinator {
         var authenticationError: AppError?
         do {
             try await dependencies.submit(prepared, progress)
-        } catch let failure as FileCopyMoveSubmissionFailure {
+        } catch let failure as FileRecycleSubmissionFailure {
             switch failure {
             case .cancelled(let taskAccepted):
                 if taskAccepted {
@@ -163,26 +148,19 @@ actor FileCopyMoveMutationCoordinator {
                 } else {
                     return try outcome(
                         status: .cancelledBeforeSubmission,
-                        operation: operation,
                         submitted: false,
-                        diagnosticTag: "file-station.copy-move.cancelled-before-submit",
+                        diagnosticTag: "file-station.recycle.move.cancelled-before-submit",
                         prepared: prepared
                     )
                 }
-            case .unexpected(let taskAccepted):
-                if taskAccepted {
-                    submissionErrorCategory = .unknown
-                } else {
-                    // 写请求一旦开始，未知异常也不能被当作安全重试。
-                    submissionErrorCategory = .unknown
-                }
+            case .unexpected:
+                submissionErrorCategory = .unknown
             case .network(let error, let taskAccepted):
                 let disposition = classify(error, taskAccepted: taskAccepted)
                 switch disposition {
                 case .explicit(let result):
                     return try outcome(
                         status: result.status,
-                        operation: operation,
                         submitted: result.submitted,
                         failed: 1,
                         errorCategory: result.category,
@@ -199,7 +177,6 @@ actor FileCopyMoveMutationCoordinator {
                 }
             }
         } catch is CancellationError {
-            // submit 闭包在进入网络调用前会把取消包装成明确提交前取消；裸取消保守视为已开始。
             cancellationRequested = true
         } catch {
             submissionErrorCategory = .unknown
@@ -210,11 +187,10 @@ actor FileCopyMoveMutationCoordinator {
             pendingReviews.removeValue(forKey: key)
             return try outcome(
                 status: .confirmedSuccess,
-                operation: operation,
                 submitted: true,
                 succeeded: 1,
-                diagnosticTag: "file-station.copy-move.confirmed",
-                prepared: prepared,
+                diagnosticTag: "file-station.recycle.move.confirmed",
+                review: review,
                 item: item
             )
         }
@@ -229,71 +205,58 @@ actor FileCopyMoveMutationCoordinator {
         let cancelled = cancellationRequested || Task.isCancelled
         return try outcome(
             status: cancelled ? .cancellationRequestedAfterSubmission : .submittedButUnverified,
-            operation: operation,
             submitted: true,
             requiresRefresh: true,
             unknown: 1,
             errorCategory: cancelled ? nil : submissionErrorCategory,
-            diagnosticTag: "file-station.copy-move.readback-unverified",
-            prepared: prepared
+            diagnosticTag: "file-station.recycle.move.readback-unverified",
+            review: review
         )
     }
 
     private func preflight(
-        _ prepared: FileCopyMovePreparedRequest,
-        dependencies: FileCopyMoveMutationDependencies
-    ) async throws -> FileCopyMovePreflight {
+        _ prepared: FileRecyclePreparedRequest,
+        dependencies: FileRecycleMutationDependencies
+    ) async throws -> FileRecyclePreflight {
         let baseline = try await dependencies.readItems([
             prepared.sourcePath,
-            prepared.destinationFolderPath,
+            prepared.destinationPath,
         ])
         guard let observedSource = baseline.first(where: { $0.path == prepared.sourcePath }),
-              observedSource.profileID == prepared.request.profileID,
+              observedSource.profileID == prepared.profileID,
               hasCanonicalIdentity(observedSource),
               observedSource.kind == .file,
-              observedSource.sizeBytes == prepared.request.source.sizeBytes,
-              observedSource.times?.modifiedAt == prepared.request.source.times?.modifiedAt,
-              !isRemote(observedSource),
-              let destinationFolder = baseline.first(where: {
-                  $0.path == prepared.destinationFolderPath
-              }),
-              destinationFolder.profileID == prepared.request.profileID,
-              hasCanonicalIdentity(destinationFolder),
-              destinationFolder.isDirectory,
-              !isRemote(destinationFolder),
-              !isRecyclePath(destinationFolder.path) else {
+              observedSource.sizeBytes == prepared.source.sizeBytes,
+              observedSource.times?.modifiedAt == prepared.source.times?.modifiedAt,
+              !isRecyclePath(observedSource.path),
+              !isRemote(observedSource) else {
             return .conflict
         }
         if observedSource.permissions?.canRead == false ||
-            prepared.request.operation == .move && observedSource.permissions?.canDelete == false ||
-            destinationFolder.permissions?.canWrite == false {
+            observedSource.permissions?.canDelete == false {
             return .permission
         }
-        guard try await dependencies.readItems([prepared.destinationPath]).isEmpty else {
+        guard !baseline.contains(where: {
+            $0.path == prepared.destinationPath && $0.profileID == prepared.profileID
+        }) else {
             return .conflict
         }
-        try await dependencies.checkWritePermission(
-            prepared.destinationFolderPath,
-            prepared.request.source.name
-        )
         return .allowed(observedSource)
     }
 
     private func reviewPending(
-        _ review: PendingFileCopyMoveReview,
-        operation: String,
+        _ review: PendingFileRecycleReview,
         readItems: @escaping @Sendable ([String]) async throws -> [FileItem]
-    ) async throws -> FileCopyMoveOutcome {
+    ) async throws -> FileRecycleMutationOutcome {
         let readback = await independentReadback(review, readItems: readItems)
         switch readback {
         case .confirmed(let item):
             pendingReviews.removeValue(forKey: review.key)
             return try outcome(
                 status: .confirmedSuccess,
-                operation: operation,
                 submitted: true,
                 succeeded: 1,
-                diagnosticTag: "file-station.copy-move.review-confirmed",
+                diagnosticTag: "file-station.recycle.move.review-confirmed",
                 review: review,
                 item: item
             )
@@ -302,18 +265,19 @@ actor FileCopyMoveMutationCoordinator {
                error.category == .authenticationRequired || error.category == .otpRequired {
                 throw error
             }
-            return try pendingOutcome(review, operation: operation)
+            return try pendingOutcome(review)
         case .mismatch:
-            return try pendingOutcome(review, operation: operation)
+            return try pendingOutcome(review)
         }
     }
 
     private func independentReadback(
-        _ review: PendingFileCopyMoveReview,
+        _ review: PendingFileRecycleReview,
         readItems: @escaping @Sendable ([String]) async throws -> [FileItem]
-    ) async -> FileCopyMoveReadback {
-        let paths = [review.key.sourcePath, review.key.destinationPath]
-        let task = Task { try await readItems(paths) }
+    ) async -> FileRecycleReadback {
+        let task = Task {
+            try await readItems([review.key.sourcePath, review.key.destinationPath])
+        }
         let items: [FileItem]
         do {
             items = try await task.value
@@ -328,51 +292,39 @@ actor FileCopyMoveMutationCoordinator {
               hasCanonicalIdentity(destination),
               destination.kind == review.source.kind,
               destination.sizeBytes == review.source.sizeBytes,
+              isRecyclePath(destination.path),
               !isRemote(destination) else {
             return .mismatch
         }
-        let source = items.first(where: {
+        guard !items.contains(where: {
             $0.path == review.key.sourcePath && $0.profileID == review.key.profileID
-        })
-        switch review.key.operation {
-        case .copy:
-            guard let source,
-                  hasCanonicalIdentity(source),
-                  source.kind == review.source.kind,
-                  source.sizeBytes == review.source.sizeBytes,
-                  !isRemote(source) else {
-                return .mismatch
-            }
-        case .move:
-            guard source == nil else { return .mismatch }
+        }) else {
+            return .mismatch
         }
         return .confirmed(destination)
     }
 
     private func preflightOutcome(
         _ error: Error,
-        operation: String,
-        prepared: FileCopyMovePreparedRequest
-    ) throws -> FileCopyMoveOutcome {
+        prepared: FileRecyclePreparedRequest
+    ) throws -> FileRecycleMutationOutcome {
         if error is CancellationError ||
             (error as? AppError)?.category == .cancelled ||
             Task.isCancelled {
             return try outcome(
                 status: .cancelledBeforeSubmission,
-                operation: operation,
                 submitted: false,
-                diagnosticTag: "file-station.copy-move.preflight-cancelled",
+                diagnosticTag: "file-station.recycle.move.preflight-cancelled",
                 prepared: prepared
             )
         }
         guard let mapped = error as? AppError else {
             return try outcome(
                 status: .confirmedFailure,
-                operation: operation,
                 submitted: false,
                 failed: 1,
                 errorCategory: .unknown,
-                diagnosticTag: "file-station.copy-move.preflight-failed",
+                diagnosticTag: "file-station.recycle.move.preflight-failed",
                 prepared: prepared
             )
         }
@@ -381,11 +333,10 @@ actor FileCopyMoveMutationCoordinator {
         }
         return try outcome(
             status: mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
-            operation: operation,
             submitted: false,
             failed: 1,
             errorCategory: mutationCategory(mapped.category),
-            diagnosticTag: "file-station.copy-move.preflight-failed",
+            diagnosticTag: "file-station.recycle.move.preflight-failed",
             prepared: prepared
         )
     }
@@ -405,7 +356,7 @@ actor FileCopyMoveMutationCoordinator {
         case .invalidRequest:
             return taskAccepted
                 ? .review(.validation)
-                : .explicit((.confirmedFailure, false, .validation, "file-station.copy-move.invalid-request"))
+                : .explicit((.confirmedFailure, false, .validation, "file-station.recycle.move.invalid-request"))
         case .api:
             let mapped = DsmErrorMapper.map(error)
             if mapped.category == .authenticationRequired || mapped.category == .otpRequired {
@@ -417,7 +368,7 @@ actor FileCopyMoveMutationCoordinator {
                     mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
                     true,
                     mutationCategory(mapped.category),
-                    "file-station.copy-move.rejected"
+                    "file-station.recycle.move.rejected"
                 ))
         case .httpStatus(let code, _):
             let mapped = DsmErrorMapper.map(error)
@@ -429,7 +380,7 @@ actor FileCopyMoveMutationCoordinator {
                     mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
                     true,
                     mutationCategory(mapped.category),
-                    "file-station.copy-move.http-rejected"
+                    "file-station.recycle.move.http-rejected"
                 ))
             }
             return .review(code >= 500 ? .server : mutationCategory(mapped.category))
@@ -441,23 +392,20 @@ actor FileCopyMoveMutationCoordinator {
     }
 
     private func pendingOutcome(
-        _ review: PendingFileCopyMoveReview,
-        operation: String
-    ) throws -> FileCopyMoveOutcome {
+        _ review: PendingFileRecycleReview
+    ) throws -> FileRecycleMutationOutcome {
         try outcome(
             status: .submittedButUnverified,
-            operation: operation,
             submitted: true,
             requiresRefresh: true,
             unknown: 1,
-            diagnosticTag: "file-station.copy-move.review-pending",
+            diagnosticTag: "file-station.recycle.move.review-pending",
             review: review
         )
     }
 
     private func outcome(
         status: MutationResultStatus,
-        operation: String,
         submitted: Bool,
         requiresRefresh: Bool = false,
         succeeded: Int = 0,
@@ -465,12 +413,11 @@ actor FileCopyMoveMutationCoordinator {
         unknown: Int = 0,
         errorCategory: MutationErrorCategory? = nil,
         diagnosticTag: String,
-        prepared: FileCopyMovePreparedRequest,
+        prepared: FileRecyclePreparedRequest,
         item: FileItem? = nil
-    ) throws -> FileCopyMoveOutcome {
+    ) throws -> FileRecycleMutationOutcome {
         try outcome(
             status: status,
-            operation: operation,
             submitted: submitted,
             requiresRefresh: requiresRefresh,
             succeeded: succeeded,
@@ -486,7 +433,6 @@ actor FileCopyMoveMutationCoordinator {
 
     private func outcome(
         status: MutationResultStatus,
-        operation: String,
         submitted: Bool,
         requiresRefresh: Bool = false,
         succeeded: Int = 0,
@@ -494,12 +440,11 @@ actor FileCopyMoveMutationCoordinator {
         unknown: Int = 0,
         errorCategory: MutationErrorCategory? = nil,
         diagnosticTag: String,
-        review: PendingFileCopyMoveReview,
+        review: PendingFileRecycleReview,
         item: FileItem? = nil
-    ) throws -> FileCopyMoveOutcome {
+    ) throws -> FileRecycleMutationOutcome {
         try outcome(
             status: status,
-            operation: operation,
             submitted: submitted,
             requiresRefresh: requiresRefresh,
             succeeded: succeeded,
@@ -515,7 +460,6 @@ actor FileCopyMoveMutationCoordinator {
 
     private func outcome(
         status: MutationResultStatus,
-        operation: String,
         submitted: Bool,
         requiresRefresh: Bool,
         succeeded: Int,
@@ -526,11 +470,11 @@ actor FileCopyMoveMutationCoordinator {
         sourcePath: String,
         destinationPath: String,
         item: FileItem?
-    ) throws -> FileCopyMoveOutcome {
-        FileCopyMoveOutcome(
+    ) throws -> FileRecycleMutationOutcome {
+        FileRecycleMutationOutcome(
             result: try MutationResult(
                 status: status,
-                operation: operation,
+                operation: "moveToRecycle",
                 submitted: submitted,
                 requiresRefresh: requiresRefresh,
                 counts: MutationResultCounts(
@@ -580,13 +524,13 @@ actor FileCopyMoveMutationCoordinator {
         return canonical
     }
 
+    private func isRecyclePath(_ path: String) -> Bool {
+        path.split(separator: "/").contains { $0.lowercased() == "#recycle" }
+    }
+
     private func isRemote(_ item: FileItem) -> Bool {
         guard let type = item.mountPointType?.lowercased(), !type.isEmpty else { return false }
         return type != "normal" && type != "shared_folder"
-    }
-
-    private func isRecyclePath(_ path: String) -> Bool {
-        path.split(separator: "/").contains { $0.lowercased() == "#recycle" }
     }
 
     private func mutationCategory(_ category: AppErrorCategory) -> MutationErrorCategory {

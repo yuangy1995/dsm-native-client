@@ -547,6 +547,150 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             FileCopyMoveTaskTransportStatus.Running);
     }
 
+    public async Task<FileRecycleStartTransportResult> StartMoveToRecycleAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string sourcePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Delete", 2) ||
+            !ValidMutationPath(sourcePath, allowSharedRoot: false))
+        {
+            return new(FileMutationTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported,
+                DiagnosticTag: "file.recycle.move.unsupported");
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new(FileMutationTransportStatus.CancelledBeforeSubmission,
+                DiagnosticTag: "file.recycle.move.cancelled-before-submit");
+        }
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "2",
+            ["method"] = "start",
+            ["path"] = JsonSerializer.Serialize(new[] { sourcePath }),
+            ["recursive"] = "true",
+            ["accurate_progress"] = "true",
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.recycle.move.cancelled-after-submit");
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.recycle.move.network-unverified");
+        }
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: response.StatusCode switch
+                    {
+                        HttpStatusCode.Unauthorized => MutationErrorCategory.Authentication,
+                        HttpStatusCode.Forbidden => MutationErrorCategory.Permission,
+                        _ => MutationErrorCategory.Server,
+                    },
+                    DiagnosticTag: "file.recycle.move.http-unverified");
+            }
+            try
+            {
+                var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!TryGetNativeBoolean(envelope, "success", out var success))
+                    throw new JsonException();
+                if (!success)
+                {
+                    var code = MutationErrorCode(envelope);
+                    return new(FileMutationTransportStatus.ConfirmedFailure,
+                        ErrorCategory: MutationCategory(code),
+                        DiagnosticTag: "file.recycle.move.dsm-failure");
+                }
+                if (envelope["data"] is not JsonObject data ||
+                    data["taskid"] is not JsonValue taskNode ||
+                    !taskNode.TryGetValue<string>(out var taskId) ||
+                    !ValidCopyMoveTaskId(taskId))
+                    throw new JsonException();
+                return new(FileMutationTransportStatus.ResponseReceived, taskId);
+            }
+            catch (OperationCanceledException)
+            {
+                return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.recycle.move.cancelled-after-submit");
+            }
+            catch (Exception error) when (error is JsonException or IOException or HttpRequestException)
+            {
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "file.recycle.move.response-unverified");
+            }
+        }
+    }
+
+    public async Task<FileRecycleTaskTransportResult> ReadFileRecycleStatusAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Delete", 2) || !ValidCopyMoveTaskId(taskId))
+            return new(FileRecycleTaskTransportStatus.Unsupported,
+                MutationErrorCategory.Unsupported, "file.recycle.status-unsupported");
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "2",
+            ["method"] = "status",
+            ["taskid"] = taskId,
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        using var response = await _http.SendAsync(request,
+            HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new DsmException(UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                UserText.Key("WinShared79c4d60046afa3ff"), (int)response.StatusCode,
+                response.StatusCode == HttpStatusCode.Unauthorized);
+        var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+            .ConfigureAwait(false);
+        if (!TryGetNativeBoolean(envelope, "success", out var success))
+            throw InvalidReadEnvelope();
+        if (!success) throw CopyMoveStatusFailure(MutationErrorCode(envelope));
+        if (envelope["data"] is not JsonObject data ||
+            !TryGetNativeBoolean(data, "finished", out var finished))
+            throw InvalidReadEnvelope();
+        ValidateOptionalNonNegativeNumber(data, "progress");
+        ValidateOptionalNonNegativeInt64(data, "total");
+        ValidateOptionalNonNegativeInt64(data, "processed_size");
+        return new(finished ? FileRecycleTaskTransportStatus.Finished :
+            FileRecycleTaskTransportStatus.Running);
+    }
+
     private static async Task<JsonObject> ReadMutationEnvelopeAsync(
         HttpResponseMessage response, CancellationToken cancellationToken)
     {

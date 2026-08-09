@@ -2586,7 +2586,265 @@ public actor DsmFileRepository: FileRepository {
             )
         }
 
-        let paths = Set([sourcePath, destinationFolder, destinationPath])
+        let prepared = FileCopyMovePreparedRequest(
+            request: request,
+            sourcePath: sourcePath,
+            destinationFolderPath: destinationFolder,
+            destinationPath: destinationPath,
+            operationName: nil
+        )
+        return try await performPreparedCopyMoveResult(
+            prepared,
+            capability: capability,
+            progress: progress
+        )
+    }
+
+    public func moveToRecycleResult(
+        _ request: FileMoveToRecycleRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileRecycleMutationOutcome {
+        let operation = "moveToRecycle"
+        let fallbackDestination = request.recycleLocation.recyclePath + "/" + request.item.name
+        guard request.profileID == profileID,
+              request.item.profileID == profileID,
+              request.item.kind == .file,
+              let sourceSize = request.item.sizeBytes,
+              sourceSize >= 0,
+              let sourcePath = Self.normalizedMutationPath(request.item.path),
+              sourcePath == request.item.path,
+              !Self.isRecycleMutationPath(sourcePath),
+              let sharePath = Self.normalizedMutationPath(request.recycleLocation.sharePath),
+              sharePath == request.recycleLocation.sharePath,
+              let recycleRoot = Self.normalizedMutationPath(request.recycleLocation.recyclePath),
+              recycleRoot == request.recycleLocation.recyclePath,
+              Self.isRecycleMutationPath(recycleRoot),
+              sourcePath.hasPrefix(sharePath + "/"),
+              let destinationPath = Self.normalizedMutationPath(
+                  recycleRoot + String(sourcePath.dropFirst(sharePath.count))
+              ),
+              destinationPath.hasPrefix(recycleRoot + "/"),
+              Self.hasCanonicalMutationIdentity(request.item),
+              !Self.isRemoteMutationItem(request.item) else {
+            return try recycleMutationOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                sourcePath: request.item.path,
+                destinationPath: fallbackDestination,
+                failed: 1,
+                errorCategory: .validation,
+                diagnosticTag: "file-station.recycle.move.invalid-input"
+            )
+        }
+
+        guard let capability = capabilities[DsmAPIName.fileStationDelete],
+              capability.selectedVersion == 2,
+              capability.requestFormat == .form,
+              let listCapability = capabilities[DsmAPIName.fileStationList],
+              (listCapability.selectedVersion ?? 0) >= 2 else {
+            return try recycleMutationOutcome(
+                status: .unsupported,
+                operation: operation,
+                submitted: false,
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.recycle.move.unsupported"
+            )
+        }
+
+        let prepared = FileRecyclePreparedRequest(
+            profileID: request.profileID,
+            operation: operation,
+            source: request.item,
+            sourcePath: sourcePath,
+            destinationPath: destinationPath
+        )
+        return try await performPreparedMoveToRecycleResult(
+            prepared,
+            capability: capability,
+            progress: progress
+        )
+    }
+
+    public func restoreFromRecycleResult(
+        _ request: FileRestoreFromRecycleRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileRecycleMutationOutcome {
+        let operation = "restoreFromRecycle"
+        guard request.profileID == profileID,
+              request.item.profileID == profileID,
+              request.item.kind == .file,
+              let sourceSize = request.item.sizeBytes,
+              sourceSize >= 0,
+              let sourcePath = Self.normalizedMutationPath(request.item.path),
+              sourcePath == request.item.path,
+              Self.isRecycleMutationPath(sourcePath),
+              let recycleLocation = RecycleLocation(recyclePath: sourcePath),
+              let destinationFolder = Self.normalizedMutationPath(
+                  recycleLocation.originalParentPath
+              ),
+              destinationFolder == recycleLocation.originalParentPath,
+              destinationFolder != "/",
+              let destinationPath = Self.normalizedMutationPath(recycleLocation.originalPath),
+              destinationPath == recycleLocation.originalPath,
+              !Self.isRecycleMutationPath(destinationFolder),
+              !Self.isRecycleMutationPath(destinationPath),
+              Self.hasCanonicalMutationIdentity(request.item),
+              !Self.isRemoteMutationItem(request.item) else {
+            return try recycleMutationOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                sourcePath: request.item.path,
+                destinationPath: request.item.path,
+                failed: 1,
+                errorCategory: .validation,
+                diagnosticTag: "file-station.recycle.restore.invalid-input"
+            )
+        }
+
+        guard let capability = capabilities[DsmAPIName.fileStationCopyMove],
+              capability.selectedVersion == 3,
+              capability.requestFormat == .form,
+              let listCapability = capabilities[DsmAPIName.fileStationList],
+              (listCapability.selectedVersion ?? 0) >= 2,
+              capabilities[DsmAPIName.fileStationCheckPermission]?.selectedVersion != nil else {
+            return try recycleMutationOutcome(
+                status: .unsupported,
+                operation: operation,
+                submitted: false,
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.recycle.restore.unsupported"
+            )
+        }
+
+        let copyMoveRequest = FileCopyMoveRequest(
+            profileID: request.profileID,
+            operation: .move,
+            source: request.item,
+            destinationFolderPath: destinationFolder,
+            overwrite: false
+        )
+        let prepared = FileCopyMovePreparedRequest(
+            request: copyMoveRequest,
+            sourcePath: sourcePath,
+            destinationFolderPath: destinationFolder,
+            destinationPath: destinationPath,
+            operationName: operation
+        )
+        let outcome = try await performPreparedCopyMoveResult(
+            prepared,
+            capability: capability,
+            progress: progress
+        )
+        return FileRecycleMutationOutcome(
+            result: outcome.result,
+            sourcePath: outcome.sourcePath,
+            destinationPath: outcome.destinationPath,
+            item: outcome.item
+        )
+    }
+
+    private func performPreparedMoveToRecycleResult(
+        _ prepared: FileRecyclePreparedRequest,
+        capability: ApiCapability,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileRecycleMutationOutcome {
+        let paths = Set([prepared.sourcePath, prepared.destinationPath])
+        if pendingFileItemMutationReviews.values.contains(where: {
+            !$0.paths.isDisjoint(with: paths)
+        }) || activeFileItemMutationPaths.contains(where: { active in
+            paths.contains(where: { Self.deletionPathsOverlap(active, $0) })
+        }) || activeDeletionPaths.contains(where: { active in
+            paths.contains(where: { Self.deletionPathsOverlap(active, $0) })
+        }) {
+            return try recycleMutationOutcome(
+                status: .confirmedFailure,
+                operation: prepared.operation,
+                submitted: false,
+                sourcePath: prepared.sourcePath,
+                destinationPath: prepared.destinationPath,
+                failed: 1,
+                errorCategory: .conflict,
+                diagnosticTag: "file-station.recycle.move.target-busy"
+            )
+        }
+        activeDeletionPaths.formUnion(paths)
+        defer { activeDeletionPaths.subtract(paths) }
+
+        let dependencies = FileRecycleMutationDependencies(
+            submit: { [weak self] prepared, progress in
+                guard let self else {
+                    throw FileRecycleSubmissionFailure.cancelled(taskAccepted: false)
+                }
+                try await self.submitMoveToRecycle(
+                    prepared,
+                    capability: capability,
+                    progress: progress
+                )
+            },
+            readItems: { [weak self] paths in
+                guard let self else { throw CancellationError() }
+                return try await self.getInfo(paths: paths)
+            }
+        )
+        return try await FileRecycleMutationCoordinator.shared.performMoveToRecycle(
+            prepared,
+            dependencies: dependencies,
+            progress: progress
+        )
+    }
+
+    private func recycleMutationOutcome(
+        status: MutationResultStatus,
+        operation: String,
+        submitted: Bool,
+        requiresRefresh: Bool = false,
+        sourcePath: String,
+        destinationPath: String,
+        succeeded: Int = 0,
+        failed: Int = 0,
+        unknown: Int = 0,
+        errorCategory: MutationErrorCategory? = nil,
+        diagnosticTag: String,
+        item: FileItem? = nil
+    ) throws -> FileRecycleMutationOutcome {
+        FileRecycleMutationOutcome(
+            result: try MutationResult(
+                status: status,
+                operation: operation,
+                submitted: submitted,
+                requiresRefresh: requiresRefresh,
+                counts: MutationResultCounts(
+                    succeeded: succeeded,
+                    failed: failed,
+                    unknown: unknown
+                ),
+                errorCategory: errorCategory,
+                diagnosticTag: diagnosticTag
+            ),
+            sourcePath: sourcePath,
+            destinationPath: destinationPath,
+            item: item
+        )
+    }
+
+    private func performPreparedCopyMoveResult(
+        _ prepared: FileCopyMovePreparedRequest,
+        capability: ApiCapability,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileCopyMoveOutcome {
+        let paths = Set([
+            prepared.sourcePath,
+            prepared.destinationFolderPath,
+            prepared.destinationPath,
+        ])
         if pendingFileItemMutationReviews.values.contains(where: {
             !$0.paths.isDisjoint(with: paths)
         }) || activeFileItemMutationPaths.contains(where: { active in
@@ -2597,27 +2855,21 @@ public actor DsmFileRepository: FileRepository {
             return try FileCopyMoveOutcome(
                 result: MutationResult(
                     status: .confirmedFailure,
-                    operation: operation,
+                    operation: prepared.operationName ?? prepared.request.operation.rawValue,
                     submitted: false,
                     requiresRefresh: false,
                     counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
                     errorCategory: .conflict,
                     diagnosticTag: "file-station.copy-move.target-busy"
                 ),
-                sourcePath: sourcePath,
-                destinationPath: destinationPath,
+                sourcePath: prepared.sourcePath,
+                destinationPath: prepared.destinationPath,
                 item: nil
             )
         }
         activeFileItemMutationPaths.formUnion(paths)
         defer { activeFileItemMutationPaths.subtract(paths) }
 
-        let prepared = FileCopyMovePreparedRequest(
-            request: request,
-            sourcePath: sourcePath,
-            destinationFolderPath: destinationFolder,
-            destinationPath: destinationPath
-        )
         let dependencies = FileCopyMoveMutationDependencies(
             checkWritePermission: { [weak self] folderPath, filename in
                 guard let self else { throw CancellationError() }
@@ -2690,6 +2942,48 @@ public actor DsmFileRepository: FileRepository {
             throw FileCopyMoveSubmissionFailure.cancelled(taskAccepted: true)
         } catch {
             throw FileCopyMoveSubmissionFailure.unexpected(taskAccepted: true)
+        }
+    }
+
+    private func submitMoveToRecycle(
+        _ prepared: FileRecyclePreparedRequest,
+        capability: ApiCapability,
+        progress: @escaping FileTransferProgress
+    ) async throws {
+        if Task.isCancelled {
+            throw FileRecycleSubmissionFailure.cancelled(taskAccepted: false)
+        }
+        var taskAccepted = false
+        do {
+            let start = try await client.call(
+                path: capability.path,
+                api: capability.name,
+                version: 2,
+                method: "start",
+                requestFormat: .form,
+                parameters: [
+                    "path": .stringArray([prepared.sourcePath]),
+                    "recursive": .boolean(true),
+                    "accurate_progress": .boolean(true),
+                ],
+                credential: credential,
+                as: TaskStartPayload.self
+            )
+            taskAccepted = true
+            try await pollTask(
+                capability: capability,
+                taskID: start.taskid,
+                progress: progress
+            )
+        } catch let error as DsmNetworkError {
+            if case .cancelled = error {
+                throw FileRecycleSubmissionFailure.cancelled(taskAccepted: true)
+            }
+            throw FileRecycleSubmissionFailure.network(error, taskAccepted: taskAccepted)
+        } catch is CancellationError {
+            throw FileRecycleSubmissionFailure.cancelled(taskAccepted: true)
+        } catch {
+            throw FileRecycleSubmissionFailure.unexpected(taskAccepted: true)
         }
     }
 

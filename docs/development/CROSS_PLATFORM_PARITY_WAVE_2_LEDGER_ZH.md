@@ -1,6 +1,6 @@
 # Windows / Apple 移动端功能对齐账本：第 2 波
 
-> 状态：整理后的单一简体中文功能提交已通过四组云端门禁，等待合并与分支清理
+> 状态：整理后的单一简体中文功能提交已合并到 `main`，四组云端门禁通过，真机与真实 NAS 验收后置
 > 基线提交：`641852b408ae24f8819e4a49cd70df4c8d9e5011`（`完善跨端证书安全、文件操作与照片查看`）
 > 当前范围：Windows/iPhone/iPad `FILE-05 单文件同 NAS 复制与移动`、Windows/iPhone/iPad `PHOTO-03A 用户主动导入单项照片或视频`
 > 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；目录复制、批量或跨 NAS 复制移动、覆盖、回收站恢复或永久删除、自动照片备份、整库照片权限、后台扫描、Chat 写和 Download 写
@@ -12,7 +12,7 @@
 - `关闭`：缺少稳定契约、行为证据或本波授权，生产入口保持隐藏、只读或能力门关闭。
 - 复制与移动只有在稳定源/目标、写前基线、一次提交、真实提交边界、独立写后回读和提交后零自动重放均成立时才允许进入 UI。
 - 主动导入只复用现有上传、临时 artifact 与 Activity 结果链，不建立平行上传实现；系统选择取消不得改变页面基线。
-- 本地只执行形态、资源、请求契约和聚焦低负载测试；Windows x64/ARM64、Apple iPhone/iPad、共享 Package/macOS 回归与 Android 未改动回归交给 GitHub 候选分支。
+- 本地只执行形态、资源、请求契约和聚焦低负载测试；Windows x64/ARM64、Apple iPhone/iPad、共享 Package/macOS 回归与 Android 未改动回归交给 GitHub 分支门禁。
 - 同一功能的验证修正可以产生临时提交；正式历史必须整理为一条语义完整的简体中文提交，最终精确 SHA 重新跑全量门禁后才能合并 `main`。
 
 ## 2. 本波用户结果与边界
@@ -101,19 +101,18 @@
 ## 8. 当前验证证据
 
 - Apple 移动端最新源码在 iPhone 17 Pro、iOS 26.5 Simulator 上完成 FILE-05 与 PHOTO-03A 六组聚焦测试：45/45 通过，0 失败、0 跳过；当前主机没有 iPad Simulator，不把该结果冒充 iPad 运行结论。
-- Apple 共享层的 FILE-05 结果型 CopyMove v3 契约、会话级目标互斥、提交未知 blocker、独立回读及源大小/修改时间冻结已完成；最新 `DsmFileRepositoryTests` 为 103/103 通过。共享 Package、DsmMac 与 File Provider 的最新完整回归仍交由本波最终候选 SHA 的 GitHub 门禁复验。
+- Apple 共享层的 FILE-05 结果型 CopyMove v3 契约、会话级目标互斥、提交未知 blocker、独立回读及源大小/修改时间冻结已完成；最新 `DsmFileRepositoryTests` 为 103/103 通过。最终提交的 GitHub Apple Build 已复验共享 Package、DsmMac 与 File Provider 打包路径。
 - Windows FILE-05 的 Domain、Transport、Infrastructure、WinUI 与 PHOTO-03A 复用 Activity 的源码和聚焦测试已完成；本机缺少 .NET/Windows SDK，因此只完成 XML、资源、请求契约、源码安全门和差异格式检查，明确标记 `BUILD_UNVERIFIED_WINDOWS_SDK_UNAVAILABLE`。
 - 请求契约校验通过 92 份请求 Fixture 与 1 份写结果示例；引用 Fixture 校验通过 3 组、19 个引用；双语资源校验通过 Apple 3297、Android 1985、Windows 893 个键。
 - FILE-05 继续只允许单个普通本地文件、同 NAS 普通本地目录与 `overwrite=false`。未知挂载类型、remote/virtual/recycle/`#recycle`、目录、批量、跨 NAS 和覆盖均在提交前拒绝。
-- 未参与实现者对 PHOTO-03A 的最终只读终审结论为 P0/P1/P2 均为 0；FILE-05 的跨端最终终审和候选分支全量构建完成前，本波不得标记为 `BUILD_VERIFIED` 或已合并。
-- 整理后的单一功能提交 `d5e5bec1be170e53a9c1d41b184e047c1183e706` 云端证据：Apple Build run `31312657926` 通过共享 Package 655 项 XCTest（2 项按环境跳过）、Swift Testing 10 项、iPhone/iPad 通用应用构建及 macOS 打包；Android Build run `31312657918` 通过完整构建与静态门禁；Windows Build run `31312657931` 通过 815/815 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；Repository Check run `31312657970` 通过。
+- 未参与实现者对 PHOTO-03A 和 FILE-05 的最终只读终审结论为 P0/P1/P2 均为 0；最终提交已具备 GitHub `BUILD_VERIFIED` 证据，但不等同真机、系统选择器或真实 NAS 副作用验证。
+- 整理后的单一功能提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9`（`完善跨端文件复制移动与照片导入`）已合并到 `main` 并推送。云端证据：Apple Build run `31313485832` 通过共享 Package 655 项 XCTest（2 项按环境跳过）、Swift Testing 10 项、iPhone/iPad 通用应用构建及 macOS 打包；Android Build run `31313485840` 通过完整构建与静态门禁；Windows Build run `31313485833` 通过 815/815 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；Repository Check run `31313485899` 通过。
 
 ## 9. 云端与提交策略
 
-- 候选分支使用 `codex/` 前缀；只包含本波代码、正式测试、双语资源、生成工程与同步文档。
-- GitHub 运行 Repository Check、Windows x64/ARM64、Apple iPhone/iPad/共享 Package/macOS 回归和 Android 未改动回归。
-- 修复云端问题时允许在候选分支产生简体中文临时提交；功能验收后用 `--force-with-lease` 仅整理该专用分支为一条简体中文功能提交。
-- 最终精确 SHA 全绿且 `main` 无未知新提交后才合并并推送；随后删除本地和远端临时分支。
+- 本波已按 `codex/` 临时分支策略完成验证、整理、合并与本地/远端临时分支清理。
+- GitHub 已在最终提交上运行 Repository Check、Windows x64/ARM64、Apple iPhone/iPad/共享 Package/macOS 回归和 Android 未改动回归。
+- 后续波次继续沿用同一策略：临时修正提交必须整理为一条简体中文功能提交；最终精确 SHA 全绿且 `main` 无未知新提交后才合并并推送。
 
 ## 10. 本波完成后继续对照的剩余项
 

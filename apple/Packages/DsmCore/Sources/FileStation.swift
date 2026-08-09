@@ -152,6 +152,54 @@ public struct FileCopyMoveOutcome: Equatable, Sendable {
     }
 }
 
+/// 将单个普通本地文件移入已发现回收站的请求；首版不接受目录、远程挂载或覆盖语义。
+public struct FileMoveToRecycleRequest: Equatable, Sendable {
+    public let profileID: UUID
+    public let item: FileItem
+    public let recycleLocation: FileRecycleLocation
+
+    public init(
+        profileID: UUID,
+        item: FileItem,
+        recycleLocation: FileRecycleLocation
+    ) {
+        self.profileID = profileID
+        self.item = item
+        self.recycleLocation = recycleLocation
+    }
+}
+
+/// 从 `#recycle` 恢复单个普通文件的请求；目标路径由回收站路径严格反推。
+public struct FileRestoreFromRecycleRequest: Equatable, Sendable {
+    public let profileID: UUID
+    public let item: FileItem
+
+    public init(profileID: UUID, item: FileItem) {
+        self.profileID = profileID
+        self.item = item
+    }
+}
+
+/// 回收站写操作的可审计结果。只有独立回读确认目标状态时才携带 `item`。
+public struct FileRecycleMutationOutcome: Equatable, Sendable {
+    public let result: MutationResult
+    public let sourcePath: String
+    public let destinationPath: String
+    public let item: FileItem?
+
+    public init(
+        result: MutationResult,
+        sourcePath: String,
+        destinationPath: String,
+        item: FileItem?
+    ) {
+        self.result = result
+        self.sourcePath = sourcePath
+        self.destinationPath = destinationPath
+        self.item = item
+    }
+}
+
 /// File Station 官方虚拟文件夹接口支持的远程协议。
 public enum FileVirtualProtocol: String, Codable, CaseIterable, Sendable {
     case cifs
@@ -832,6 +880,14 @@ public protocol FileRepository: PhotoFileServing, Sendable {
         _ request: FileCopyMoveRequest,
         progress: @escaping FileTransferProgress
     ) async throws -> FileCopyMoveOutcome
+    func moveToRecycleResult(
+        _ request: FileMoveToRecycleRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileRecycleMutationOutcome
+    func restoreFromRecycleResult(
+        _ request: FileRestoreFromRecycleRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileRecycleMutationOutcome
     func compress(
         paths: [String],
         destinationFilePath: String,
@@ -1048,6 +1104,49 @@ public extension FileRepository {
             ),
             sourcePath: request.source.path,
             destinationPath: request.destinationFolderPath + separator + request.source.name,
+            item: nil
+        )
+    }
+
+    func moveToRecycleResult(
+        _ request: FileMoveToRecycleRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileRecycleMutationOutcome {
+        let destinationPath = request.recycleLocation.recyclePath + "/" + request.item.name
+        return FileRecycleMutationOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "moveToRecycle",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.recycle.move.unsupported"
+            ),
+            sourcePath: request.item.path,
+            destinationPath: destinationPath,
+            item: nil
+        )
+    }
+
+    func restoreFromRecycleResult(
+        _ request: FileRestoreFromRecycleRequest,
+        progress: @escaping FileTransferProgress
+    ) async throws -> FileRecycleMutationOutcome {
+        let destinationPath = RecycleLocation(recyclePath: request.item.path)?.originalPath
+            ?? request.item.path
+        return FileRecycleMutationOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "restoreFromRecycle",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.recycle.restore.unsupported"
+            ),
+            sourcePath: request.item.path,
+            destinationPath: destinationPath,
             item: nil
         )
     }

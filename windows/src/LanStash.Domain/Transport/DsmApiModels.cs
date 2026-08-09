@@ -179,6 +179,28 @@ public interface IDsmApiClient
             MutationErrorCategory.Unsupported,
             "file.copy-move.status-unsupported"));
 
+    Task<FileRecycleStartTransportResult> StartMoveToRecycleAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string sourcePath,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileRecycleStartTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "file.recycle.move.unsupported"));
+
+    Task<FileRecycleTaskTransportResult> ReadFileRecycleStatusAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileRecycleTaskTransportResult(
+            FileRecycleTaskTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.recycle.status-unsupported"));
+
     Task<DsmBinaryResponse> ReadBinaryAsync(
         NasProfile profile,
         DsmSession session,

@@ -1585,6 +1585,168 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "start" }.count, 1)
     }
 
+    func test单文件移入已发现回收站固定DeleteV2且精确回读确认() async throws {
+        let transport = MockHTTPTransport(responses: [
+            recycleMovePreflight(),
+            response(#"{"success":true,"data":{"taskid":"recycle-move"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            recycleMoveReadback(),
+        ])
+        let repository = try makeRepository(
+            capabilities: recycleMoveCapabilities(),
+            transport: transport
+        )
+
+        let outcome = try await repository.moveToRecycleResult(
+            FileMoveToRecycleRequest(
+                profileID: repository.profileID,
+                item: recycleMoveSource(repository: repository),
+                recycleLocation: FileRecycleLocation(
+                    shareName: "home",
+                    sharePath: "/home",
+                    recyclePath: "/home/#recycle"
+                )
+            )
+        ) { _, _ in }
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.result.operation, "moveToRecycle")
+        XCTAssertEqual(outcome.sourcePath, "/home/docs/a.txt")
+        XCTAssertEqual(outcome.destinationPath, "/home/#recycle/docs/a.txt")
+        XCTAssertEqual(outcome.item?.path, "/home/#recycle/docs/a.txt")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.compactMap { requestParameter("method", in: $0) },
+            ["getinfo", "start", "status", "getinfo"]
+        )
+        let start = try XCTUnwrap(requests.first {
+            requestParameter("method", in: $0) == "start"
+        })
+        XCTAssertEqual(requestParameter("api", in: start), DsmAPIName.fileStationDelete)
+        XCTAssertEqual(requestParameter("version", in: start), "2")
+        XCTAssertEqual(requestParameter("recursive", in: start), "true")
+        let path = try XCTUnwrap(requestParameter("path", in: start))
+        XCTAssertEqual(
+            try JSONDecoder().decode([String].self, from: Data(path.utf8)),
+            ["/home/docs/a.txt"]
+        )
+    }
+
+    func test单文件从回收站恢复固定CopyMoveV3且回读确认() async throws {
+        let transport = MockHTTPTransport(responses: [
+            recycleRestoreBaseline(),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"taskid":"restore-1"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            recycleRestoreReadback(),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+
+        let outcome = try await repository.restoreFromRecycleResult(
+            FileRestoreFromRecycleRequest(
+                profileID: repository.profileID,
+                item: recycleRestoreSource(repository: repository)
+            )
+        ) { _, _ in }
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.result.operation, "restoreFromRecycle")
+        XCTAssertEqual(outcome.sourcePath, "/home/#recycle/docs/a.txt")
+        XCTAssertEqual(outcome.destinationPath, "/home/docs/a.txt")
+        XCTAssertEqual(outcome.item?.path, "/home/docs/a.txt")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(
+            requests.compactMap { requestParameter("method", in: $0) },
+            ["getinfo", "getinfo", "write", "start", "status", "getinfo"]
+        )
+        let start = try XCTUnwrap(requests.first {
+            requestParameter("method", in: $0) == "start"
+        })
+        XCTAssertEqual(requestParameter("api", in: start), DsmAPIName.fileStationCopyMove)
+        XCTAssertEqual(requestParameter("version", in: start), "3")
+        XCTAssertEqual(requestParameter("dest_folder_path", in: start), "/home/docs")
+        XCTAssertEqual(requestParameter("remove_src", in: start), "true")
+        XCTAssertEqual(requestParameter("overwrite", in: start), "false")
+        let path = try XCTUnwrap(requestParameter("path", in: start))
+        XCTAssertEqual(
+            try JSONDecoder().decode([String].self, from: Data(path.utf8)),
+            ["/home/#recycle/docs/a.txt"]
+        )
+    }
+
+    func test回收站恢复未知结果会阻断二次提交只回读() async throws {
+        let transport = MockHTTPTransport(responses: [
+            recycleRestoreBaseline(),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"taskid":"restore-review"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            mutationInfo(),
+            mutationInfo(),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+        let request = FileRestoreFromRecycleRequest(
+            profileID: repository.profileID,
+            item: recycleRestoreSource(repository: repository)
+        )
+
+        let first = try await repository.restoreFromRecycleResult(request) { _, _ in }
+        let second = try await repository.restoreFromRecycleResult(request) { _, _ in }
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        XCTAssertTrue(first.result.requiresRefresh)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "start" }.count, 1)
+        XCTAssertEqual(methods.suffix(2), ["getinfo", "getinfo"])
+    }
+
+    func test回收站写操作拒绝目录伪路径与未发现回收站且零请求() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+        let invalidMove = try await repository.moveToRecycleResult(
+            FileMoveToRecycleRequest(
+                profileID: repository.profileID,
+                item: recycleMoveSource(repository: repository),
+                recycleLocation: FileRecycleLocation(
+                    shareName: "photo",
+                    sharePath: "/photo",
+                    recyclePath: "/photo/#recycle"
+                )
+            )
+        ) { _, _ in }
+        let invalidRestore = try await repository.restoreFromRecycleResult(
+            FileRestoreFromRecycleRequest(
+                profileID: repository.profileID,
+                item: FileItem(
+                    profileID: repository.profileID,
+                    name: "folder",
+                    path: "/home/#recycle/folder",
+                    kind: .directory
+                )
+            )
+        ) { _, _ in }
+
+        XCTAssertEqual(invalidMove.result.status, .confirmedFailure)
+        XCTAssertFalse(invalidMove.result.submitted)
+        XCTAssertEqual(invalidRestore.result.status, .confirmedFailure)
+        XCTAssertFalse(invalidRestore.result.submitted)
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     func test复制源同大小但修改时间漂移会在提交前冲突且零写() async throws {
         let transport = MockHTTPTransport(responses: [
             response(
@@ -3388,6 +3550,72 @@ final class DsmFileRepositoryTests: XCTestCase {
             "{\"success\":true,\"data\":{\"files\":[" + source +
                 "{\"name\":\"source.txt\",\"path\":\"/archive/source.txt\",\"isdir\":false," +
                 "\"additional\":{\"size\":\(destinationSize)}}]}}"
+        )
+    }
+
+    private func recycleMoveCapabilities() -> CapabilitySet {
+        CapabilitySet([
+            DsmAPIName.fileStationDelete: capability(
+                DsmAPIName.fileStationDelete,
+                version: 2
+            ),
+            DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2),
+        ])
+    }
+
+    private func recycleMoveSource(repository: DsmFileRepository) -> FileItem {
+        FileItem(
+            profileID: repository.profileID,
+            name: "a.txt",
+            path: "/home/docs/a.txt",
+            kind: .file,
+            sizeBytes: 12,
+            permissions: FilePermissions(
+                canRead: true,
+                canWrite: true,
+                canDelete: true,
+                posixMode: nil
+            )
+        )
+    }
+
+    private func recycleRestoreSource(repository: DsmFileRepository) -> FileItem {
+        FileItem(
+            profileID: repository.profileID,
+            name: "a.txt",
+            path: "/home/#recycle/docs/a.txt",
+            kind: .file,
+            sizeBytes: 12,
+            permissions: FilePermissions(
+                canRead: true,
+                canWrite: true,
+                canDelete: true,
+                posixMode: nil
+            )
+        )
+    }
+
+    private func recycleMovePreflight() -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"files":[{"name":"a.txt","path":"/home/docs/a.txt","isdir":false,"additional":{"size":12,"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
+        )
+    }
+
+    private func recycleMoveReadback() -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"files":[{"name":"a.txt","path":"/home/#recycle/docs/a.txt","isdir":false,"additional":{"size":12}}]}}"#
+        )
+    }
+
+    private func recycleRestoreBaseline() -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"files":[{"name":"a.txt","path":"/home/#recycle/docs/a.txt","isdir":false,"additional":{"size":12,"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"docs","path":"/home/docs","isdir":true,"additional":{"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
+        )
+    }
+
+    private func recycleRestoreReadback() -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"files":[{"name":"a.txt","path":"/home/docs/a.txt","isdir":false,"additional":{"size":12}}]}}"#
         )
     }
 
