@@ -22,7 +22,9 @@
 
 同一份计划不代表 iPhone、iPad 或 macOS 功能范围相同。只有第 3.3 节明确标为“核心”或“受限”的能力才进入当前交付；其中共享业务出口和对应设备形态出口必须分别通过，不能用 iPhone Simulator 代替 iPad Simulator。开发先完成两种模拟器宽度下的主流程，只能由真机取得的当前范围证据按第 13 节后置。
 
-## 2. 当前 DsmMobile 基线
+## 2. 第 0 波立项时的 DsmMobile 基线（历史快照）
+
+本节记录第 0 波开始前的源码库存，不代表当前分支状态。当前完成度、验证等级、已收窄范围和后续缺口以 [第 0 波跨端对齐账本](CROSS_PLATFORM_PARITY_WAVE_0_LEDGER_ZH.md) 为准。
 
 ### 2.1 已有能力
 
@@ -50,7 +52,7 @@
 | NAS | 只有少量只读摘要，远少于 macOS 21 类管理页 | 只补健康与必要只读诊断；配置、电源、账号和长时分析不是当前缺口 |
 | iPad | 只按 horizontal size class 分支，缺实际宽度、键盘、指针和拖放设计 | 补齐当前范围的自适应生产力；多窗口后续 |
 
-静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口只属于后续候选或当前排除项；现有入口不能用来推断它们已存在，也不能据此要求当前补齐。
+立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前分支已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、PHOTO-01 有界时间线、Chat 只读消息、Download 只读详情、NAS 健康、VMM Guest、Container 实例和本地设置闭环；PhotosPicker、照片基础 EXIF、照片受限写、Chat 写/实时/附件以及其他后续能力仍未实现。后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口只属于后续候选或当前排除项。
 
 ## 3. 移动范围与 macOS 语义基线
 
@@ -84,7 +86,7 @@
 
 ### 3.3 iPhone / iPad 产品范围矩阵
 
-范围标签是产品承诺，不是验证等级：
+范围标签是长期产品承诺，不是验证等级，也不是第 0 波完成清单。第 0 波实际状态以跨端账本第 4 节及最新追加集成结果为准；尚未取得严格写契约、内部 API 版本门或聚焦自动化的受限能力不得由本表推断为已实现或待真机验收：
 
 - **核心（`MOBILE_CORE`）**：当前交付必须完成。
 - **受限（`MOBILE_LIMITED`）**：只完成表内明确子集，未列出的 macOS 动作不是缺口。
@@ -505,7 +507,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 - 当前范围内每个写操作的成功、部分、拒绝、提交未确认、提交后取消和回读不一致。
 - 合成请求 fixture 验证 API 名、版本、方法、路径、参数、认证材料位置和 no-retry 策略。
 - iPhone/iPad UI 测试覆盖五态、导航返回、Tab/Sidebar 状态、确认框和动态文字主流程。
-- PhotosPicker adapter 用 fake 覆盖选择、取消、临时文件形成与清理；不建立整库 PhotoKit 授权、增量游标或备份测试。
+- PHOTO-03 经独立范围升级并开始实现后，PhotosPicker adapter 必须用 fake 覆盖选择、取消、临时文件形成与清理；在此之前不作为第 0 波自动化出口，也不建立整库 PhotoKit 授权、增量游标或备份测试。
 - 当前单窗口状态测试证明切换 profile 后 Route、筛选、选择和草稿不串用。
 - 性能测试覆盖大目录可见窗口、合成照片索引、长聊天、缓存上限和快速滚动取消。
 - 对 `MOBILE_EXCLUDED` 项验证无入口或有准确替代说明，并在 Repository/请求层断言零危险请求；不为其建立完整功能测试套件。
@@ -527,7 +529,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 
 - 前台/后台、系统挂起、系统终止、用户强制结束、设备重启和 App 升级；未完成的前台传输不得在重启后被自动重放。
 - Wi-Fi/蜂窝切换、低数据、低电量、无网、慢网和存储不足。
-- PhotosPicker 选择/取消、iCloud-only 项的主动导入结果，以及 Document Picker/Exporter 和分享 Sheet。
+- 已实现的 Document Picker/Exporter、分享 Sheet、QuickLook/PDFKit/AVKit 与 FILE-07 系统分享；PhotosPicker 和 iCloud-only 主动导入只在 PHOTO-03 源码切片完成后加入本节。
 - 同一窗口切换 NAS 后，任务、选择、筛选和草稿不串用。
 
 ### 13.3 DSM
@@ -535,7 +537,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 - 局域网、公网直连、QuickConnect 中继和证书变化。
 - 普通账号、受限管理员、功能无权限、套件未安装和 capability 缺失。
 - 当前记录的 DSM build + 套件完整版本；未记录环境的内部写必须关闭。
-- 成功、部分成功、权限拒绝、超时、提交未知、取消后复查和回读不一致。
+- 只对已经实现的单文件上传和 FILE-07 单对象分享链接验证成功、权限拒绝、超时、提交未知、取消后复查和回读不一致；未实现的 FILE-03/05/09、PHOTO-03、Chat/Download/NAS 写不进入本矩阵。
 
 ## 14. 关键风险
 

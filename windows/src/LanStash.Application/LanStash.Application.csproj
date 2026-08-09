@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>LanStash.App</RootNamespace>
+    <Platforms>x64;arm64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LanStash.Domain\LanStash.Domain.csproj" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
+    <InternalsVisibleTo Include="LanStash.App" />
+    <InternalsVisibleTo Include="LanStash.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\LanStash.App\CloudDrive\**\*.cs" Link="CloudDrive\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Chat\**\*.cs" Link="Features\Chat\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Containers\**\*.cs" Link="Features\Containers\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Downloads\**\*.cs" Link="Features\Downloads\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Files\**\*.cs" Link="Features\Files\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Photos\**\*.cs" Link="Features\Photos\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Settings\**\*.cs" Link="Features\Settings\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Transfers\ForegroundTransfer*.cs" Link="Features\Transfers\%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\Transfers\SafeFileDownloadService.cs" Link="Features\Transfers\SafeFileDownloadService.cs" />
+    <Compile Include="..\LanStash.App\Features\Transfers\WindowsTransactionalDownloadDestination.cs" Link="Features\Transfers\WindowsTransactionalDownloadDestination.cs" />
+    <Compile Include="..\LanStash.App\Features\VirtualMachines\**\*.cs" Link="Features\VirtualMachines\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Localization\*.cs" Link="Localization\%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\ViewModels\ConnectionAttemptState.cs" Link="ViewModels\ConnectionAttemptState.cs" />
+    <Compile Include="..\LanStash.App\ViewModels\ObservableObject.cs" Link="ViewModels\ObservableObject.cs" />
+  </ItemGroup>
+</Project>

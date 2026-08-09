@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/LanStash.Domain/LanStash.Domain.csproj" />
     <Project Path="src/LanStash.Infrastructure/LanStash.Infrastructure.csproj" />
+    <Project Path="src/LanStash.Application/LanStash.Application.csproj" />
     <Project Path="src/LanStash.App/LanStash.App.csproj" />
   </Folder>
   <Folder Name="/tests/">

@@ -1,6 +1,12 @@
 using LanStash.App.Localization;
+using LanStash.App.Features.Settings;
+using LanStash.App.Features.Files.Sharing;
+using LanStash.App.Features.Files.Locations;
+using LanStash.App.Features.Transfers;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace LanStash.App.Views;
@@ -8,14 +14,44 @@ namespace LanStash.App.Views;
 public sealed partial class ShellPage : Page
 {
     private readonly AppViewModel _app;
+    private readonly AppSettingsService _settings = AppSettingsService.Current;
     private readonly WorkspacePage _workspace;
+    private readonly ForegroundTransferCoordinator _transfers = new();
+    private readonly WindowsTransferPickerService? _transferPicker;
+    private FilesPage? _files;
+    private Guid? _filesProfileId;
+    private PhotosPage? _photos;
+    private Guid? _photosProfileId;
+    private ChatPage? _chat;
+    private Guid? _chatProfileId;
+    private DownloadStationPage? _downloads;
+    private Guid? _downloadsProfileId;
+    private ContainerManagerPage? _containers;
+    private Guid? _containersProfileId;
+    private IContainerManagerRepository? _containerRepository;
+    private VirtualMachineManagerPage? _virtualMachines;
+    private Guid? _virtualMachinesProfileId;
+    private TransferActivityPage? _activity;
 
     public ShellPage(AppViewModel app)
     {
         InitializeComponent();
         _app = app;
         _workspace = new WorkspacePage(app);
+        if (app.ActiveProfile is { } activeProfile && app.Repository is { } repository)
+        {
+            var profileId = activeProfile.Id.ToString();
+            _transfers.ActivateProfile(profileId);
+            _transferPicker = new WindowsTransferPickerService(
+                repository,
+                _transfers,
+                new WindowsTransferSavePicker(
+                    () => (Application.Current as App)?.MainWindow),
+                new WindowsTransferOpenPicker(
+                    () => (Application.Current as App)?.MainWindow));
+        }
         ContentFrame.Content = _workspace;
+        Unloaded += ShellPage_Unloaded;
         var localization = LocalizationService.Current;
         AppNameText.Text = localization.Get("AppName");
         LogoutItem.Content = localization.Get("ActionSignOut");
@@ -24,17 +60,157 @@ public sealed partial class ShellPage : Page
             settingsItem.Content = localization.Get("ModuleSettings");
         }
         ProfileName.Text = app.ActiveProfile?.DisplayName ?? "NAS";
+        AutomationProperties.SetName(
+            ProfileMenuButton,
+            localization.Get("ProfileMenuAutomationName"));
 
-        foreach (var module in app.AvailableModules)
+        _settings.Changed += Settings_Changed;
+        RebuildModuleNavigation(routeHiddenSelectionToSettings: false);
+    }
+
+    private async void ShellPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        try
         {
-            Navigation.MenuItems.Add(new NavigationViewItem
+            try
             {
-                Content = localization.ModuleTitle(module),
-                Icon = new FontIcon { Glyph = module.Glyph() },
-                Tag = module,
-            });
+                await CloseFilesPageAsync();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
         }
-        Navigation.SelectedItem = Navigation.MenuItems.FirstOrDefault();
+        finally
+        {
+            _photos?.Dispose();
+            _photos = null;
+            _photosProfileId = null;
+            _chat?.Dispose();
+            _chat = null;
+            _chatProfileId = null;
+            _downloads?.Dispose();
+            _downloads = null;
+            _downloadsProfileId = null;
+            _containers?.Dispose();
+            _containers = null;
+            _containersProfileId = null;
+            _containerRepository = null;
+            _virtualMachines?.Dispose();
+            _virtualMachines = null;
+            _virtualMachinesProfileId = null;
+            _activity?.Dispose();
+            _activity = null;
+            _transferPicker?.Dispose();
+            _transfers.Dispose();
+            _settings.Changed -= Settings_Changed;
+        }
+    }
+
+    private void ProfileMenu_Opening(object sender, object e)
+    {
+        var localization = LocalizationService.Current;
+        ProfileMenu.Items.Clear();
+        foreach (var profile in _app.Profiles)
+        {
+            var item = new ToggleMenuFlyoutItem
+            {
+                Text = profile.DisplayName,
+                IsChecked = profile.Id == _app.ActiveProfile?.Id,
+                IsEnabled = profile.Id != _app.ActiveProfile?.Id,
+                MinHeight = 44,
+                Tag = profile,
+            };
+            item.Click += SwitchProfile_Click;
+            ProfileMenu.Items.Add(item);
+        }
+        ProfileMenu.Items.Add(new MenuFlyoutSeparator());
+        var addItem = new MenuFlyoutItem
+        {
+            Text = localization.Get("ActionAddNas"),
+            Icon = new FontIcon { Glyph = "\uE710" },
+            MinHeight = 44,
+        };
+        addItem.Click += AddProfile_Click;
+        ProfileMenu.Items.Add(addItem);
+        if (_app.ActiveProfile is not null)
+        {
+            var deleteItem = new MenuFlyoutItem
+            {
+                Text = localization.Get("ActionDeleteNas"),
+                Icon = new FontIcon { Glyph = "\uE74D" },
+                MinHeight = 44,
+            };
+            deleteItem.Click += DeleteProfile_Click;
+            ProfileMenu.Items.Add(deleteItem);
+        }
+    }
+
+    private async void SwitchProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: NasProfile profile })
+        {
+            try
+            {
+                await CloseFilesPageAsync();
+                await _app.SwitchProfileAsync(profile);
+            }
+            catch
+            {
+                _app.ReportProfileActionError();
+            }
+        }
+    }
+
+    private void AddProfile_Click(object sender, RoutedEventArgs e) =>
+        _app.BeginAddingProfile();
+
+    private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (_app.ActiveProfile is not { } profile)
+        {
+            return;
+        }
+        var localization = LocalizationService.Current;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = localization.Get("DialogDeleteNasTitle"),
+            Content = string.Format(
+                localization.Get("DialogDeleteNasMessage"),
+                profile.DisplayName),
+            PrimaryButtonText = localization.Get("ActionDeleteNas"),
+            CloseButtonText = localization.Get("ActionCancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            try
+            {
+                await CloseFilesPageAsync();
+                await _app.RemoveProfileAsync(profile);
+            }
+            catch
+            {
+                await ShowProfileActionErrorAsync();
+            }
+        }
+    }
+
+    private async Task ShowProfileActionErrorAsync()
+    {
+        var localization = LocalizationService.Current;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = localization.Get("ProfileActionErrorTitle"),
+            Content = localization.Get("ProfileActionErrorMessage"),
+            CloseButtonText = localization.Get("ActionClose"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await dialog.ShowAsync();
     }
 
     private async void Navigation_SelectionChanged(
@@ -43,7 +219,7 @@ public sealed partial class ShellPage : Page
     {
         if (args.IsSettingsSelected)
         {
-            ContentFrame.Content = new LanguageSettingsPage(_app);
+            ContentFrame.Content = new AppSettingsPage();
             return;
         }
         if (args.SelectedItem is NavigationViewItem selectedItem
@@ -61,13 +237,366 @@ public sealed partial class ShellPage : Page
             };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
+                await CloseFilesPageAsync();
                 await _app.LogoutAsync();
             }
             return;
         }
         if (args.SelectedItemContainer?.Tag is AppModule module)
         {
+            if (module == AppModule.Files &&
+                _app.Repository is { } repository &&
+                _app.ActiveProfile is { } profile &&
+                _transferPicker is { } transferPicker)
+            {
+                var previewRepository = repository as IFilePreviewRepository ??
+                    new UnavailableFilePreviewRepository(Guid.Empty);
+                var shareRepository = repository as IFileShareLinkRepository;
+                if (shareRepository?.ProfileId != profile.Id)
+                {
+                    shareRepository = null;
+                }
+                var locationsRepository = repository as IFileLocationsRepository;
+                if (locationsRepository?.ProfileId != profile.Id)
+                {
+                    locationsRepository = null;
+                }
+                if (_files is not null && _filesProfileId != profile.Id)
+                {
+                    await CloseFilesPageAsync();
+                }
+                _files ??= new FilesPage(
+                    repository,
+                    previewRepository,
+                    profile.Id.ToString(),
+                    transferPicker,
+                    shareRepository,
+                    FileShareLinkReviewBlocker.Current,
+                    locationsRepository);
+                _filesProfileId = profile.Id;
+                ContentFrame.Content = _files;
+                return;
+            }
+            if (module == AppModule.Transfers &&
+                _app.ActiveProfile is { } activityProfile &&
+                _transferPicker is { } activityPicker)
+            {
+                _activity ??= new TransferActivityPage(
+                    _transfers,
+                    activityPicker,
+                    activityProfile.Id.ToString());
+                ContentFrame.Content = _activity;
+                return;
+            }
+            if (module == AppModule.Photos)
+            {
+                if (_app.Repository is not IPhotoRepository photoRepository ||
+                    _app.ActiveProfile is not { } photoProfile ||
+                    _transferPicker is not { } photoTransferPicker ||
+                    photoRepository.ProfileId != photoProfile.Id)
+                {
+                    ContentFrame.Content = PhotosPage.CreateUnavailableState();
+                    return;
+                }
+                if (_photos is null || _photosProfileId != photoProfile.Id)
+                {
+                    _photos?.Dispose();
+                    _photos = new PhotosPage(
+                        photoRepository,
+                        photoProfile.Id.ToString(),
+                        photoTransferPicker);
+                    _photosProfileId = photoProfile.Id;
+                }
+                ContentFrame.Content = _photos;
+                return;
+            }
+            if (module == AppModule.Chat)
+            {
+                if (_app.Repository is not IChatRepository chatRepository ||
+                    _app.ActiveProfile is not { } chatProfile ||
+                    chatRepository.ProfileId != chatProfile.Id)
+                {
+                    _chat?.Dispose();
+                    _chat = null;
+                    _chatProfileId = null;
+                    ContentFrame.Content = new ChatPage(
+                        new UnavailableChatRepository(Guid.Empty));
+                    return;
+                }
+                if (_chat is null || _chatProfileId != chatProfile.Id)
+                {
+                    _chat?.Dispose();
+                    _chat = new ChatPage(chatRepository);
+                    _chatProfileId = chatProfile.Id;
+                }
+                ContentFrame.Content = _chat;
+                return;
+            }
+            if (module == AppModule.Downloads)
+            {
+                if (_app.Repository is not IDownloadStationRepository downloadRepository ||
+                    _app.ActiveProfile is not { } downloadProfile ||
+                    downloadRepository.ProfileId != downloadProfile.Id)
+                {
+                    _downloads?.Dispose();
+                    _downloads = new DownloadStationPage(
+                        new UnavailableDownloadStationRepository(Guid.Empty));
+                    _downloadsProfileId = null;
+                    ContentFrame.Content = _downloads;
+                    return;
+                }
+                if (_downloads is null || _downloadsProfileId != downloadProfile.Id)
+                {
+                    _downloads?.Dispose();
+                    _downloads = new DownloadStationPage(downloadRepository);
+                    _downloadsProfileId = downloadProfile.Id;
+                }
+                ContentFrame.Content = _downloads;
+                return;
+            }
+            if (module == AppModule.Containers)
+            {
+                if (_app.ActiveProfile is not { } containerProfile ||
+                    _app.Repository is not IContainerManagerRepository containerRepository ||
+                    containerRepository.ProfileId != containerProfile.Id)
+                {
+                    _containers?.Dispose();
+                    _containers = new ContainerManagerPage(
+                        new UnavailableContainerManagerRepository(
+                            _app.ActiveProfile?.Id ?? Guid.Empty));
+                    _containersProfileId = null;
+                    _containerRepository = null;
+                    ContentFrame.Content = _containers;
+                    return;
+                }
+                if (_containers is null ||
+                    _containersProfileId != containerProfile.Id ||
+                    !ReferenceEquals(_containerRepository, containerRepository))
+                {
+                    _containers?.Dispose();
+                    _containers = new ContainerManagerPage(containerRepository);
+                    _containersProfileId = containerProfile.Id;
+                    _containerRepository = containerRepository;
+                }
+                ContentFrame.Content = _containers;
+                return;
+            }
+            if (module == AppModule.VirtualMachines)
+            {
+                if (_app.ActiveProfile is not { } virtualMachineProfile ||
+                    _app.Repository is not IVirtualMachineManagerRepository virtualMachineRepository ||
+                    virtualMachineRepository.ProfileId != virtualMachineProfile.Id)
+                {
+                    _virtualMachines?.Dispose();
+                    _virtualMachines = new VirtualMachineManagerPage(
+                        new UnavailableVirtualMachineManagerRepository(
+                            _app.ActiveProfile?.Id ?? Guid.Empty));
+                    _virtualMachinesProfileId = null;
+                    ContentFrame.Content = _virtualMachines;
+                    return;
+                }
+                if (_virtualMachines is null ||
+                    _virtualMachinesProfileId != virtualMachineProfile.Id)
+                {
+                    _virtualMachines?.Dispose();
+                    _virtualMachines = new VirtualMachineManagerPage(virtualMachineRepository);
+                    _virtualMachinesProfileId = virtualMachineProfile.Id;
+                }
+                ContentFrame.Content = _virtualMachines;
+                return;
+            }
+            ContentFrame.Content = _workspace;
             await _workspace.ShowModuleAsync(module);
         }
+    }
+
+    private async Task CloseFilesPageAsync()
+    {
+        var files = _files;
+        _files = null;
+        _filesProfileId = null;
+        if (files is null)
+        {
+            return;
+        }
+        if (ReferenceEquals(ContentFrame.Content, files))
+        {
+            ContentFrame.Content = _workspace;
+        }
+        try
+        {
+            await files.CloseAsync();
+        }
+        finally
+        {
+            files.Dispose();
+        }
+    }
+
+    private void Settings_Changed(object? sender, AppSettingsChangedEventArgs e)
+    {
+        if (e.ModuleVisibilityChanged)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+                RebuildModuleNavigation(routeHiddenSelectionToSettings: true));
+        }
+    }
+
+    private void RebuildModuleNavigation(bool routeHiddenSelectionToSettings)
+    {
+        var wasSettingsSelected = ReferenceEquals(
+            Navigation.SelectedItem,
+            Navigation.SettingsItem);
+        var selectedModule = (Navigation.SelectedItem as NavigationViewItem)?.Tag is AppModule module
+            ? module
+            : (AppModule?)null;
+        var visibleModules = _app.AvailableModules
+            .Where(module => module != AppModule.Settings)
+            .Where(_settings.IsModuleVisible)
+            .ToArray();
+        Navigation.MenuItems.Clear();
+        var localization = LocalizationService.Current;
+        foreach (var visibleModule in visibleModules)
+        {
+            Navigation.MenuItems.Add(new NavigationViewItem
+            {
+                Content = localization.ModuleTitle(visibleModule),
+                Icon = new FontIcon { Glyph = visibleModule.Glyph() },
+                Tag = visibleModule,
+            });
+        }
+
+        var restored = selectedModule is { } selected
+            ? Navigation.MenuItems.OfType<NavigationViewItem>()
+                .FirstOrDefault(item => item.Tag is AppModule itemModule && itemModule == selected)
+            : null;
+        if (restored is not null)
+        {
+            Navigation.SelectedItem = restored;
+            return;
+        }
+        if (wasSettingsSelected)
+        {
+            Navigation.SelectedItem = Navigation.SettingsItem;
+            return;
+        }
+        if (routeHiddenSelectionToSettings && selectedModule is { } hidden)
+        {
+            DisposeHiddenModulePage(hidden);
+            Navigation.SelectedItem = Navigation.SettingsItem;
+            ContentFrame.Content = new AppSettingsPage();
+            return;
+        }
+        Navigation.SelectedItem = Navigation.MenuItems.FirstOrDefault();
+    }
+
+    private void DisposeHiddenModulePage(AppModule module)
+    {
+        switch (module)
+        {
+            case AppModule.Downloads:
+                _downloads?.Dispose();
+                _downloads = null;
+                _downloadsProfileId = null;
+                break;
+            case AppModule.Containers:
+                _containers?.Dispose();
+                _containers = null;
+                _containersProfileId = null;
+                _containerRepository = null;
+                break;
+            case AppModule.VirtualMachines:
+                _virtualMachines?.Dispose();
+                _virtualMachines = null;
+                _virtualMachinesProfileId = null;
+                break;
+            case AppModule.NasSettings:
+                _workspace.CancelNasSettingsLoad();
+                break;
+        }
+    }
+
+    private sealed class UnavailableChatRepository(Guid profileId) : IChatRepository
+    {
+        public Guid ProfileId { get; } = profileId;
+        public ChatAvailability Availability { get; } = new(
+            ChatAvailabilityStatus.Unavailable,
+            new HashSet<ChatReadFeature>());
+
+        public Task<IReadOnlyList<ChatUser>> ListUsersAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ChatUser>>([]);
+
+        public Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ChatConversation>>([]);
+
+        public Task<ChatMessagePage> ListMessagesAsync(
+            string conversationId,
+            string? beforeCursor,
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class UnavailableDownloadStationRepository(Guid profileId)
+        : IDownloadStationRepository
+    {
+        public Guid ProfileId { get; } = profileId;
+        public DownloadStationAvailability Availability { get; } = new(
+            DownloadStationAvailabilityStatus.Unavailable,
+            new HashSet<DownloadStationReadFeature>());
+
+        public Task<DownloadTaskPage> ListTasksAsync(
+            int offset,
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<DownloadStationSnapshot> LoadSnapshotAsync(
+            int offset,
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class UnavailableFilePreviewRepository(Guid profileId)
+        : IFilePreviewRepository
+    {
+        public Guid ProfileId { get; } = profileId;
+
+        public Task<FileRangeReadResult> ReadFileRangeResultAsync(
+            string remotePath,
+            long offset,
+            long length,
+            string? expectedContentVersion = null,
+            long? expectedTotalLength = null,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class UnavailableVirtualMachineManagerRepository(Guid profileId)
+        : IVirtualMachineManagerRepository
+    {
+        public Guid ProfileId { get; } = profileId;
+        public VirtualMachineManagerAvailability Availability { get; } = new(
+            VirtualMachineManagerAvailabilityStatus.Unavailable,
+            new HashSet<VirtualMachineManagerReadFeature>());
+
+        public Task<VirtualMachineManagerSnapshot> LoadSnapshotAsync(
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class UnavailableContainerManagerRepository(Guid profileId)
+        : IContainerManagerRepository
+    {
+        public Guid ProfileId { get; } = profileId;
+        public ContainerManagerAvailability Availability { get; } = new(
+            ContainerManagerAvailabilityStatus.Unavailable);
+
+        public Task<ContainerManagerSnapshot> LoadSnapshotAsync(
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

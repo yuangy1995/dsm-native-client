@@ -30,9 +30,20 @@ jobs:
         run: dotnet restore LanStash.slnx
 
       - name: 运行测试
+        timeout-minutes: 10
         working-directory: windows
-        run: dotnet test tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore
+        run: >-
+          dotnet test tests/LanStash.Tests/LanStash.Tests.csproj
+          --configuration Release
+          --no-restore
+          --logger "console;verbosity=normal"
+          --blame-hang
+          --blame-hang-timeout 2m
 
-      - name: 构建 WinUI
+      - name: 构建 WinUI x64
         working-directory: windows
         run: dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore
+
+      - name: 构建 WinUI ARM64
+        working-directory: windows
+        run: dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore

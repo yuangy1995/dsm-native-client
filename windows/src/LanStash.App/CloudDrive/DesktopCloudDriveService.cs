@@ -110,6 +110,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
             throw new InvalidOperationException("CloudDriveInvalidName");
         }
         var selectedPolicy = cachePolicy ?? DesktopDriveCachePolicy.Default;
+        DesktopCloudDriveCapabilityGate.EnsureRegistrationEnabled();
         _ = CacheRoot(selectedPolicy);
         _ = await repository.ListFilesAsync(
             scope.Kind == DesktopDriveScopeKind.AllShares
@@ -216,6 +217,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
 
     internal void Reveal(DesktopDriveMapping mapping)
     {
+        DesktopCloudDriveCapabilityGate.EnsureRegistrationEnabled();
         Directory.CreateDirectory(MappingPath(mapping));
         Process.Start(new ProcessStartInfo("explorer.exe", MappingPath(mapping))
         {
@@ -813,6 +815,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
         DesktopDriveMapping mapping,
         IDsmRepository repository)
     {
+        DesktopCloudDriveCapabilityGate.EnsureRegistrationEnabled();
         if (_runtimes.ContainsKey(mapping.Id))
         {
             return;
@@ -978,7 +981,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
             const string valueName = "LanStash";
             using var runKey = Registry.CurrentUser.CreateSubKey(
                 @"Software\Microsoft\Windows\CurrentVersion\Run");
-            if (_mappings.Any(item => item.LaunchAtLogin))
+            if (DesktopCloudDriveCapabilityGate.IsRegistrationEnabled &&
+                _mappings.Any(item => item.LaunchAtLogin))
             {
                 runKey?.SetValue(valueName, $"\"{Environment.ProcessPath}\"");
             }
@@ -1088,8 +1092,12 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 DesktopDriveWindowsNameCodec.BuildSafeSegments(
                     initialItemPaths.Values),
                 StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<long, CancellationTokenSource>
+        private readonly ConcurrentDictionary<long, ActiveRangeRequest>
             _requestCancellations = [];
+        private readonly ConcurrentDictionary<long, CancellationTokenSource>
+            _placeholderRequestCancellations = [];
+        private readonly ConcurrentDictionary<string, SemaphoreSlim>
+            _rangeTransferGates = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, DateTimeOffset>
             _lastAccessWrites = new(StringComparer.Ordinal);
         private readonly object _callbackGate = new();
@@ -1177,9 +1185,25 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 var runtime = FromContext(info.CallbackContext);
                 if (runtime._requestCancellations.TryGetValue(
                     info.RequestKey.Value,
-                    out var cancellation))
+                    out var request))
                 {
-                    cancellation.Cancel();
+                    var parameters =
+                        Marshal.PtrToStructure<CancelFetchDataCallbackParameters>(
+                            parametersPointer);
+                    if (CloudFileCancelRange.CoversOutstandingRange(
+                            request.Offset,
+                            request.Length,
+                            parameters.FileOffset,
+                            parameters.Length))
+                    {
+                        request.Cancellation.Cancel();
+                    }
+                }
+                else if (runtime._placeholderRequestCancellations.TryGetValue(
+                             info.RequestKey.Value,
+                             out var placeholderCancellation))
+                {
+                    placeholderCancellation.Cancel();
                 }
             }
             catch
@@ -1324,6 +1348,11 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 _acceptingCallbacks = false;
                 foreach (var cancellation in _requestCancellations.Values)
                 {
+                    cancellation.Cancellation.Cancel();
+                }
+                foreach (var cancellation in
+                         _placeholderRequestCancellations.Values)
+                {
                     cancellation.Cancel();
                 }
                 if (_activeCallbacks == 0)
@@ -1387,49 +1416,81 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 connectionKey,
                 transferKey,
                 requestKey);
+            var transferLength = length == -1 &&
+                                 offset >= 0 &&
+                                 offset <= fileSize
+                ? fileSize - offset
+                : length;
             using var cancellation = new CancellationTokenSource();
-            _requestCancellations[requestKey.Value] = cancellation;
+            _requestCancellations[requestKey.Value] = new(
+                cancellation,
+                offset,
+                transferLength);
+            var transferGate = _rangeTransferGates.GetOrAdd(
+                remotePath,
+                static _ => new SemaphoreSlim(1, 1));
+            var enteredTransferGate = false;
             try
             {
-                EnsureFreeSpace(length);
-                var remaining = length;
-                var currentOffset = offset;
-                while (remaining > 0)
-                {
-                    var requestLength = Math.Min(remaining, DownloadChunkBytes);
-                    var data = await repository.ReadFileRangeAsync(
-                        remotePath,
-                        currentOffset,
+                EnsureFreeSpace(transferLength);
+                await transferGate.WaitAsync(cancellation.Token)
+                    .ConfigureAwait(false);
+                enteredTransferGate = true;
+                var outcome = await CloudFileRangeTransfer.ExecuteAsync(
+                    remotePath,
+                    offset,
+                    transferLength,
+                    fileSize,
+                    DownloadChunkBytes,
+                    null,
+                    null,
+                    (requestOffset,
                         requestLength,
-                        cancellation.Token).ConfigureAwait(false);
-                    if (data.Length == 0)
+                        expectedContentVersion,
+                        expectedTotalLength,
+                        token) => repository.ReadFileRangeResultAsync(
+                            remotePath,
+                            requestOffset,
+                            requestLength,
+                            expectedContentVersion,
+                            expectedTotalLength,
+                            token),
+                    (chunkOffset, data) =>
                     {
-                        throw new IOException("Remote file returned no data.");
-                    }
-                    if (data.LongLength > requestLength)
-                    {
-                        throw new IOException(
-                            "Remote file returned more data than requested.");
-                    }
-                    var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+                        var handle = GCHandle.Alloc(data, GCHandleType.Pinned);
+                        try
+                        {
+                            ExecuteTransferData(
+                                operation,
+                                handle.AddrOfPinnedObject(),
+                                chunkOffset,
+                                data.LongLength,
+                                CloudFilesInterop.StatusSuccess);
+                        }
+                        finally
+                        {
+                            handle.Free();
+                        }
+                    },
+                    (failureOffset, failureLength) => ExecuteTransferData(
+                        operation,
+                        IntPtr.Zero,
+                        failureOffset,
+                        failureLength,
+                        CloudFilesInterop.StatusUnsuccessful),
+                    cancellation.Token).ConfigureAwait(false);
+                if (outcome.Succeeded)
+                {
                     try
                     {
-                        ExecuteTransferData(
-                            operation,
-                            handle.AddrOfPinnedObject(),
-                            currentOffset,
-                            data.Length,
-                            CloudFilesInterop.StatusSuccess);
+                        await RecordCacheEntryAsync(remotePath, fileSize)
+                            .ConfigureAwait(false);
                     }
-                    finally
+                    catch
                     {
-                        handle.Free();
+                        // 缓存统计失败不能把已完成的数据传输改写为第二个失败终态。
                     }
-                    currentOffset += data.Length;
-                    remaining -= data.Length;
                 }
-                await RecordCacheEntryAsync(remotePath, fileSize)
-                    .ConfigureAwait(false);
             }
             catch (InsufficientLocalSpaceException)
             {
@@ -1437,7 +1498,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                     operation,
                     IntPtr.Zero,
                     offset,
-                    0,
+                    transferLength,
                     CloudFilesInterop.StatusDiskFull);
             }
             catch
@@ -1446,11 +1507,15 @@ internal sealed class DesktopCloudDriveService : IDisposable
                     operation,
                     IntPtr.Zero,
                     offset,
-                    0,
+                    transferLength,
                     CloudFilesInterop.StatusUnsuccessful);
             }
             finally
             {
+                if (enteredTransferGate)
+                {
+                    transferGate.Release();
+                }
                 _requestCancellations.TryRemove(requestKey.Value, out _);
             }
         }
@@ -1609,7 +1674,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 requestKey);
             var allocations = new List<IntPtr>();
             using var cancellation = new CancellationTokenSource();
-            _requestCancellations[requestKey.Value] = cancellation;
+            _placeholderRequestCancellations[requestKey.Value] = cancellation;
             try
             {
                 var listPath =
@@ -1674,7 +1739,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
             }
             finally
             {
-                _requestCancellations.TryRemove(requestKey.Value, out _);
+                _placeholderRequestCancellations.TryRemove(
+                    requestKey.Value,
+                    out _);
                 foreach (var allocation in allocations)
                 {
                     Marshal.FreeHGlobal(allocation);
@@ -1898,6 +1965,10 @@ internal sealed class DesktopCloudDriveService : IDisposable
         {
             foreach (var cancellation in _requestCancellations.Values)
             {
+                cancellation.Cancellation.Cancel();
+            }
+            foreach (var cancellation in _placeholderRequestCancellations.Values)
+            {
                 cancellation.Cancel();
             }
         }
@@ -2092,6 +2163,21 @@ internal sealed class DesktopCloudDriveService : IDisposable
             [FieldOffset(16)] internal long RequiredFileOffset;
             [FieldOffset(24)] internal long RequiredLength;
         }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private struct CancelFetchDataCallbackParameters
+        {
+            [FieldOffset(0)] internal uint ParamSize;
+            [FieldOffset(8)] internal uint Flags;
+            [FieldOffset(16)] internal long FileOffset;
+            [FieldOffset(24)] internal long Length;
+        }
+
+        private sealed record ActiveRangeRequest(
+            CancellationTokenSource Cancellation,
+            long Offset,
+            long Length);
+
     }
 
     internal sealed class InsufficientLocalSpaceException(
@@ -2104,5 +2190,229 @@ internal sealed class DesktopCloudDriveService : IDisposable
         internal long AvailableBytes { get; } = availableBytes;
         internal long ShortageBytes { get; } = shortageBytes;
         internal string? VolumeName { get; } = volumeName;
+    }
+}
+
+internal static class DesktopCloudDriveCapabilityGate
+{
+    private const string RegistrationSwitch =
+        "LanStash.ExperimentalCloudFilesRegistration";
+
+    internal static bool IsRegistrationEnabled =>
+        AppContext.TryGetSwitch(RegistrationSwitch, out var enabled) && enabled;
+
+    internal static void EnsureRegistrationEnabled()
+    {
+        if (!IsRegistrationEnabled)
+        {
+            throw new InvalidOperationException("CloudDrivePendingDeviceValidation");
+        }
+    }
+}
+
+internal sealed record CloudFileRangeTransferOutcome(
+    bool Succeeded,
+    string? StrongContentVersion,
+    long TotalLength);
+
+internal static class CloudFileCancelRange
+{
+    internal static bool CoversOutstandingRange(
+        long requestOffset,
+        long requestLength,
+        long cancelledOffset,
+        long cancelledLength)
+    {
+        if (requestOffset < 0 || requestLength <= 0 || cancelledOffset < 0)
+        {
+            return false;
+        }
+        if (cancelledOffset > requestOffset)
+        {
+            return false;
+        }
+        if (cancelledLength == -1)
+        {
+            return true;
+        }
+        if (cancelledLength <= 0)
+        {
+            return false;
+        }
+
+        var requestEnd = requestLength > long.MaxValue - requestOffset
+            ? long.MaxValue
+            : requestOffset + requestLength;
+        var cancelledEnd = cancelledLength > long.MaxValue - cancelledOffset
+            ? long.MaxValue
+            : cancelledOffset + cancelledLength;
+        return cancelledEnd >= requestEnd;
+    }
+}
+
+internal static class CloudFileRangeTransfer
+{
+    internal const long MaximumBufferedTransferBytes = 64L * 1024 * 1024;
+
+    internal static async Task<CloudFileRangeTransferOutcome> ExecuteAsync(
+        string remotePath,
+        long offset,
+        long length,
+        long fileSize,
+        long chunkSize,
+        string? expectedContentVersion,
+        long? expectedTotalLength,
+        Func<long, long, string?, long?, CancellationToken,
+            Task<FileRangeReadResult>> readRange,
+        Action<long, byte[]> submitData,
+        Action<long, long> submitFailure,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        if (length == -1 && offset <= fileSize)
+        {
+            length = fileSize - offset;
+        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+        ArgumentOutOfRangeException.ThrowIfNegative(fileSize);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkSize);
+
+        var strongContentVersion = expectedContentVersion;
+        var totalLength = expectedTotalLength;
+        try
+        {
+            if (offset != 0 ||
+                length != fileSize ||
+                length > MaximumBufferedTransferBytes)
+            {
+                throw new FileRangeContractException(
+                    FileRangeContractFailure.UnsafeSegmentedRead,
+                    "Cloud Files hydration remains disabled for partial or unbounded transfers until content versions can be persisted across callbacks.");
+            }
+
+            var buffered = new byte[checked((int)length)];
+            var currentOffset = offset;
+            var remaining = length;
+            while (remaining > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var requestLength = Math.Min(remaining, chunkSize);
+                var result = await readRange(
+                    currentOffset,
+                    requestLength,
+                    strongContentVersion,
+                    totalLength,
+                    cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                ValidateResult(result, currentOffset, requestLength);
+
+                if (totalLength is null)
+                {
+                    totalLength = result.TotalLength;
+                    if (totalLength != fileSize)
+                    {
+                        throw new FileRangeContractException(
+                            FileRangeContractFailure.UnexpectedTotalLength,
+                            "The remote length differs from the placeholder length.",
+                            result.StatusCode);
+                    }
+                }
+                else if (result.TotalLength != totalLength)
+                {
+                    throw new FileRangeContractException(
+                        FileRangeContractFailure.UnexpectedTotalLength,
+                        "The remote length changed during hydration.",
+                        result.StatusCode);
+                }
+
+                if (strongContentVersion is null)
+                {
+                    if (!result.CanSafelyReadInSegments ||
+                        string.IsNullOrWhiteSpace(result.ServerContentVersion))
+                    {
+                        throw new FileRangeContractException(
+                            FileRangeContractFailure.UnsafeSegmentedRead,
+                            "Cloud Files hydration requires a strong remote content version before any data is submitted.",
+                            result.StatusCode);
+                    }
+                    strongContentVersion = result.ServerContentVersion;
+                }
+                else if (!result.CanSafelyReadInSegments ||
+                         !string.Equals(
+                             result.ServerContentVersion,
+                             strongContentVersion,
+                             StringComparison.Ordinal))
+                {
+                    throw new FileRangeContractException(
+                        FileRangeContractFailure.ContentVersionMismatch,
+                        "The remote content version changed during hydration.",
+                        result.StatusCode);
+                }
+
+                Buffer.BlockCopy(
+                    result.Bytes,
+                    0,
+                    buffered,
+                    checked((int)(currentOffset - offset)),
+                    checked((int)result.ActualByteCount));
+                currentOffset = checked(currentOffset + result.ActualByteCount);
+                remaining -= result.ActualByteCount;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            submitData(offset, buffered);
+            return new(true, strongContentVersion, totalLength!.Value);
+        }
+        catch
+        {
+            try
+            {
+                submitFailure(offset, length);
+            }
+            catch
+            {
+                // 原生终态提交失败也不能触发第二次终态提交。
+            }
+            return new(false, strongContentVersion, totalLength ?? fileSize);
+        }
+    }
+
+    private static void ValidateResult(
+        FileRangeReadResult result,
+        long requestedOffset,
+        long requestedLength)
+    {
+        if (result.StatusCode != 206)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedStatus,
+                "A ranged read must return HTTP 206.",
+                result.StatusCode);
+        }
+        if (result.RequestedStart != requestedOffset ||
+            result.ResponseStart != requestedOffset)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedRangeStart,
+                "The returned range starts at a different offset.",
+                result.StatusCode);
+        }
+        if (result.RequestedLength != requestedLength ||
+            result.ResponseLength != requestedLength)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedRangeLength,
+                "The returned range length differs from the requested length.",
+                result.StatusCode);
+        }
+        if (result.ActualByteCount != requestedLength ||
+            result.Bytes.LongLength != requestedLength)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedBodyLength,
+                "The returned body length differs from the requested length.",
+                result.StatusCode);
+        }
     }
 }

@@ -159,6 +159,8 @@ owner 与允许修改文件：
 
 Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 专项范围矩阵](APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#33-iphone--ipad-产品范围矩阵)为准。现有入口、共享契约或“可转换”都不能自动升级为移动承诺。
 
+下表是产品能力映射，不表示当前完成度。第 0 波实际源码、验证等级、已收窄范围和下一波缺口以 [第 0 波跨端对齐账本](CROSS_PLATFORM_PARITY_WAVE_0_LEDGER_ZH.md) 为准；Apple 长期“核心/受限”项若尚无对应实现切片，不得从本表推断为已实现或仅待真机验收。
+
 | ID | macOS 用户能力基线 | Windows 等价目标 | Apple 移动候选映射（范围以专项矩阵为准） | 主要证据 |
 | --- | --- | --- | --- | --- |
 | FND-01 · A | 多 NAS 资料、新建/删除/重排、OTP、可选保存密码、自动登录、会话恢复与退出 | Credential Locker、资料选择与独立“切换 NAS/退出登录” | **核心**：Keychain、资料选择器、独立切换与退出 | `LoginViewModel.swift`、`DsmAuthenticationService.swift` |

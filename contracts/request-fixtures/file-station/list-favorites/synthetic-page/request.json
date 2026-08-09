@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.list-favorites.synthetic-page",
+  "module": "file-station",
+  "operation": "listFavoritesPage",
+  "api": {
+    "name": "SYNO.FileStation.Favorite",
+    "method": "list",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "500"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

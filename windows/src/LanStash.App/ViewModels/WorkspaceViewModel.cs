@@ -8,7 +8,6 @@ public enum WorkspaceCategory
 {
     None,
     Overview,
-    Containers,
     VirtualMachines,
     Hosts,
     Storage,
@@ -18,7 +17,6 @@ public enum WorkspaceCategory
     Connections,
     Networks,
     Images,
-    Projects,
     Protection,
     Security,
 }
@@ -37,6 +35,8 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
     private bool _isLoading;
     private string? _message;
     private WorkspaceRow? _selectedItem;
+    private CancellationTokenSource? _nasSettingsLoadCancellation;
+    private long _nasSettingsLoadGeneration;
 
     public ObservableCollection<WorkspaceCategoryOption> Categories { get; } = [];
     public ObservableCollection<WorkspaceRow> Items { get; } = [];
@@ -51,7 +51,6 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
                 RaisePropertyChanged(nameof(Title));
                 RaisePropertyChanged(nameof(CanCreate));
                 RaisePropertyChanged(nameof(CanRename));
-                RaisePropertyChanged(nameof(CanControl));
                 RaisePropertyChanged(nameof(CanDelete));
             }
         }
@@ -108,36 +107,13 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
         }
     }
 
-    public bool CanCreate =>
-        Module is AppModule.Files or AppModule.Downloads ||
-        Module == AppModule.Containers && SelectedCategory == WorkspaceCategory.Networks;
+    public bool CanCreate => Module == AppModule.Files;
 
     public bool CanRename =>
-        SelectedItem is not null &&
-        (Module == AppModule.Files ||
-         Module == AppModule.VirtualMachines && SelectedCategory == WorkspaceCategory.Networks);
-
-    public bool CanControl =>
-        SelectedItem is not null &&
-        (Module is AppModule.Downloads or AppModule.Containers or AppModule.VirtualMachines) &&
-        SelectedCategory is not (
-            WorkspaceCategory.Images or
-            WorkspaceCategory.Networks or
-            WorkspaceCategory.Protection or
-            WorkspaceCategory.Logs);
+        SelectedItem?.Payload is FileItem && Module == AppModule.Files;
 
     public bool CanDelete =>
-        SelectedItem is not null &&
-        (Module == AppModule.Files ||
-         Module == AppModule.Downloads ||
-         Module == AppModule.Containers && SelectedCategory is (
-             WorkspaceCategory.Containers or
-             WorkspaceCategory.Images or
-             WorkspaceCategory.Networks) ||
-         Module == AppModule.VirtualMachines && SelectedCategory is (
-             WorkspaceCategory.VirtualMachines or
-             WorkspaceCategory.Networks or
-             WorkspaceCategory.Images));
+        SelectedItem?.Payload is FileItem && Module == AppModule.Files;
 
     public bool CanManageOffline =>
         Module == AppModule.Files &&
@@ -150,6 +126,10 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
 
     public async Task ShowModuleAsync(AppModule module)
     {
+        if (Module == AppModule.NasSettings && module != AppModule.NasSettings)
+        {
+            CancelNasSettingsLoad();
+        }
         Module = module;
         CurrentPath = string.Empty;
         SelectedItem = null;
@@ -173,12 +153,28 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
         {
             return;
         }
+        var isNasSettingsLoad = Module == AppModule.NasSettings;
+        CancellationTokenSource? nasSettingsCancellation = null;
+        var nasSettingsGeneration = _nasSettingsLoadGeneration;
+        if (isNasSettingsLoad)
+        {
+            nasSettingsCancellation = new CancellationTokenSource();
+            _nasSettingsLoadCancellation = nasSettingsCancellation;
+            nasSettingsGeneration = ++_nasSettingsLoadGeneration;
+        }
         IsLoading = true;
         Message = null;
         SelectedItem = null;
         try
         {
-            var rows = await LoadRowsAsync(repository, search);
+            var rows = await LoadRowsAsync(
+                repository,
+                search,
+                nasSettingsCancellation?.Token ?? CancellationToken.None);
+            if (isNasSettingsLoad && nasSettingsGeneration != _nasSettingsLoadGeneration)
+            {
+                return;
+            }
             Items.Clear();
             foreach (var row in rows)
             {
@@ -189,15 +185,49 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
                 Message = LocalizationService.Current.Get("EmptyNoItems");
             }
         }
+        catch (OperationCanceledException) when (
+            isNasSettingsLoad &&
+            (nasSettingsCancellation?.IsCancellationRequested == true ||
+                nasSettingsGeneration != _nasSettingsLoadGeneration))
+        {
+        }
         catch (DsmException error)
         {
+            if (isNasSettingsLoad && nasSettingsGeneration != _nasSettingsLoadGeneration)
+            {
+                return;
+            }
             Message = LocalizationService.Current.ErrorMessage(error);
         }
         catch
         {
+            if (isNasSettingsLoad && nasSettingsGeneration != _nasSettingsLoadGeneration)
+            {
+                return;
+            }
             Message = LocalizationService.Current.Get("ErrorLoadWorkspace");
         }
         finally
+        {
+            if (!isNasSettingsLoad || nasSettingsGeneration == _nasSettingsLoadGeneration)
+            {
+                IsLoading = false;
+            }
+            if (ReferenceEquals(_nasSettingsLoadCancellation, nasSettingsCancellation))
+            {
+                _nasSettingsLoadCancellation = null;
+            }
+            nasSettingsCancellation?.Dispose();
+        }
+    }
+
+    public void CancelNasSettingsLoad()
+    {
+        _nasSettingsLoadGeneration++;
+        var cancellation = _nasSettingsLoadCancellation;
+        _nasSettingsLoadCancellation = null;
+        cancellation?.Cancel();
+        if (Module == AppModule.NasSettings)
         {
             IsLoading = false;
         }
@@ -224,23 +254,13 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
         await ReloadAsync();
     }
 
-    public async Task CreateAsync(string value, string? secondary = null)
+    public async Task CreateAsync(string value)
     {
         await MutateAsync(async repository =>
         {
-            switch (Module)
+            if (Module == AppModule.Files)
             {
-                case AppModule.Files:
-                    await repository.CreateFolderAsync(CurrentPath, value);
-                    break;
-                case AppModule.Downloads:
-                    await repository.CreateDownloadAsync(
-                        value,
-                        string.IsNullOrWhiteSpace(secondary) ? null : secondary);
-                    break;
-                case AppModule.Containers when SelectedCategory == WorkspaceCategory.Networks:
-                    await repository.CreateContainerNetworkAsync(value, secondary ?? "bridge");
-                    break;
+                await repository.CreateFolderAsync(CurrentPath, value);
             }
         });
     }
@@ -253,16 +273,10 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
             {
                 await repository.RenameAsync(file.Path, name);
             }
-            else if (Module == AppModule.VirtualMachines &&
-                     SelectedCategory == WorkspaceCategory.Networks &&
-                     SelectedItem is not null)
-            {
-                await repository.RenameVirtualMachineNetworkAsync(SelectedItem.Id, name);
-            }
         });
     }
 
-    public async Task ControlSelectedAsync(string action)
+    public async Task DeleteSelectedAsync()
     {
         if (SelectedItem is null)
         {
@@ -270,55 +284,9 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
         }
         await MutateAsync(async repository =>
         {
-            if (Module == AppModule.Downloads)
+            if (Module == AppModule.Files && SelectedItem.Payload is FileItem file)
             {
-                await repository.ControlDownloadsAsync([SelectedItem.Id], action);
-            }
-            else if (Module == AppModule.Containers)
-            {
-                await repository.ControlContainerAsync(SelectedItem.Id, action);
-            }
-            else if (Module == AppModule.VirtualMachines)
-            {
-                await repository.ControlVirtualMachineAsync(SelectedItem.Id, action);
-            }
-        });
-    }
-
-    public async Task DeleteSelectedAsync(bool removeData = false)
-    {
-        if (SelectedItem is null)
-        {
-            return;
-        }
-        await MutateAsync(async repository =>
-        {
-            switch (Module)
-            {
-                case AppModule.Files when SelectedItem.Payload is FileItem file:
-                    await repository.DeleteFilesAsync([file.Path]);
-                    break;
-                case AppModule.Downloads:
-                    await repository.ControlDownloadsAsync([SelectedItem.Id], "delete", removeData);
-                    break;
-                case AppModule.Containers when SelectedCategory == WorkspaceCategory.Containers:
-                    await repository.DeleteContainerAsync(SelectedItem.Id);
-                    break;
-                case AppModule.Containers when SelectedCategory == WorkspaceCategory.Images:
-                    await repository.DeleteContainerImageAsync(SelectedItem.Id);
-                    break;
-                case AppModule.Containers when SelectedCategory == WorkspaceCategory.Networks:
-                    await repository.DeleteContainerNetworkAsync(SelectedItem.Id);
-                    break;
-                case AppModule.VirtualMachines when SelectedCategory == WorkspaceCategory.VirtualMachines:
-                    await repository.DeleteVirtualMachineAsync(SelectedItem.Id);
-                    break;
-                case AppModule.VirtualMachines when SelectedCategory == WorkspaceCategory.Networks:
-                    await repository.DeleteVirtualMachineNetworkAsync(SelectedItem.Id);
-                    break;
-                case AppModule.VirtualMachines when SelectedCategory == WorkspaceCategory.Images:
-                    await repository.DeleteVirtualMachineImageAsync(SelectedItem.Id);
-                    break;
+                await repository.DeleteFilesAsync([file.Path]);
             }
         });
     }
@@ -335,7 +303,8 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
 
     private async Task<IReadOnlyList<WorkspaceRow>> LoadRowsAsync(
         IDsmRepository repository,
-        string? search)
+        string? search,
+        CancellationToken cancellationToken)
     {
         IEnumerable<WorkspaceRow> rows = Module switch
         {
@@ -343,27 +312,10 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
             AppModule.Photos => (await repository.ListFilesAsync("/photo")).Items
                 .Where(item => !item.IsDirectory)
                 .Select(FileRow),
-            AppModule.Chat => (await repository.LoadConversationsAsync()).Select(item =>
-                new WorkspaceRow(
-                    item.Id,
-                    item.Title,
-                    item.LatestMessage ?? LocalizationService.Current.Get("ChatNoNewMessages"),
-                    item.UnreadCount > 0
-                        ? LocalizationService.Current.Format("ChatUnreadCount", item.UnreadCount)
-                        : string.Empty,
-                    "\uE8BD",
-                    item)),
-            AppModule.Downloads => (await repository.LoadDownloadsAsync()).Select(item =>
-                new WorkspaceRow(
-                    item.Id,
-                    item.Title,
-                    item.Destination ?? LocalizationService.Current.Get("DownloadTaskFallback"),
-                    item.Progress is null ? StatusText(item.Status) : $"{item.Progress:P0}",
-                    "\uE896",
-                    item)),
-            AppModule.Containers => RowsForContainer(await repository.LoadContainersAsync()),
-            AppModule.VirtualMachines => RowsForVirtualMachines(await repository.LoadVirtualMachinesAsync()),
-            AppModule.NasSettings => RowsForNasSettings(await repository.LoadNasSettingsAsync()),
+            AppModule.Downloads => [],
+            AppModule.VirtualMachines => [],
+            AppModule.NasSettings => RowsForNasSettings(
+                await repository.LoadNasSettingsAsync(cancellationToken)),
             AppModule.Transfers => [],
             AppModule.Settings => app.ActiveProfile is null
                 ? []
@@ -394,31 +346,6 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
             : await repository.SearchFilesAsync(CurrentPath, search);
         return items.Select(FileRow).ToArray();
     }
-
-    private IEnumerable<WorkspaceRow> RowsForContainer(ContainerSnapshot snapshot) =>
-        SelectedCategory switch
-        {
-            WorkspaceCategory.Images => snapshot.Images.Select(ResourceRow),
-            WorkspaceCategory.Networks => snapshot.Networks.Select(ResourceRow),
-            WorkspaceCategory.Projects => snapshot.Projects.Select(ResourceRow),
-            _ => snapshot.Containers.Select(ResourceRow),
-        };
-
-    private IEnumerable<WorkspaceRow> RowsForVirtualMachines(VirtualMachineSnapshot snapshot) =>
-        SelectedCategory switch
-        {
-            WorkspaceCategory.Hosts => snapshot.Hosts.Select(ResourceRow),
-            WorkspaceCategory.Storage => snapshot.Storages.Select(ResourceRow),
-            WorkspaceCategory.Networks => snapshot.Networks.Select(ResourceRow),
-            WorkspaceCategory.Images => snapshot.Images.Select(ResourceRow),
-            WorkspaceCategory.Protection => snapshot.ProtectionPlans
-                .Concat(snapshot.ProtectionSchedules)
-                .Concat(snapshot.RetentionPolicies)
-                .DistinctBy(item => item.Id)
-                .Select(ResourceRow),
-            WorkspaceCategory.Logs => snapshot.Logs.Select(LogRow),
-            _ => snapshot.Machines.Select(ResourceRow),
-        };
 
     private IEnumerable<WorkspaceRow> RowsForNasSettings(NasSettingsSnapshot snapshot) =>
         SelectedCategory switch
@@ -474,13 +401,6 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
 
     private static WorkspaceCategory[] CategoriesFor(AppModule module) => module switch
     {
-        AppModule.Containers =>
-        [
-            WorkspaceCategory.Containers,
-            WorkspaceCategory.Images,
-            WorkspaceCategory.Networks,
-            WorkspaceCategory.Projects,
-        ],
         AppModule.VirtualMachines =>
         [
             WorkspaceCategory.VirtualMachines,
@@ -508,7 +428,6 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
     private static string CategoryResourceKey(WorkspaceCategory category) => category switch
     {
         WorkspaceCategory.Overview => "CategoryOverview",
-        WorkspaceCategory.Containers => "CategoryContainers",
         WorkspaceCategory.VirtualMachines => "CategoryVirtualMachines",
         WorkspaceCategory.Hosts => "CategoryHosts",
         WorkspaceCategory.Storage => "CategoryStorage",
@@ -518,7 +437,6 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
         WorkspaceCategory.Connections => "CategoryConnections",
         WorkspaceCategory.Networks => "CategoryNetworks",
         WorkspaceCategory.Images => "CategoryImages",
-        WorkspaceCategory.Projects => "CategoryProjects",
         WorkspaceCategory.Protection => "CategoryProtection",
         WorkspaceCategory.Security => "CategorySecurity",
         _ => throw new ArgumentOutOfRangeException(nameof(category)),
@@ -570,7 +488,6 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
     {
         RaisePropertyChanged(nameof(CanCreate));
         RaisePropertyChanged(nameof(CanRename));
-        RaisePropertyChanged(nameof(CanControl));
         RaisePropertyChanged(nameof(CanDelete));
         RaisePropertyChanged(nameof(CanManageOffline));
         RaisePropertyChanged(nameof(SelectedFileIsKeptOffline));

@@ -30,6 +30,9 @@ public sealed partial class WorkspacePage : Page
         UpdateState();
     }
 
+    public void CancelNasSettingsLoad() =>
+        _viewModel.CancelNasSettingsLoad();
+
     private async void CategoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CategoryList.SelectedItem is WorkspaceCategoryOption category)
@@ -56,40 +59,20 @@ public sealed partial class WorkspacePage : Page
 
     private async void Create_Click(object sender, RoutedEventArgs e)
     {
-        var isDownload = _viewModel.Module == AppModule.Downloads;
-        var isNetwork = _viewModel.Module == AppModule.Containers;
         var input = new TextBox
         {
-            Header = isDownload
-                ? L.Get("FieldDownloadAddress")
-                : isNetwork
-                    ? L.Get("FieldNetworkName")
-                    : L.Get("FieldFolderName"),
-            PlaceholderText = isDownload ? "https://…" : string.Empty,
-        };
-        var secondary = new TextBox
-        {
-            Header = isDownload
-                ? L.Get("FieldSaveLocationOptional")
-                : L.Get("FieldNetworkType"),
-            Text = isNetwork ? "bridge" : string.Empty,
-            Visibility = isDownload || isNetwork ? Visibility.Visible : Visibility.Collapsed,
+            Header = L.Get("FieldFolderName"),
         };
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(input);
-        panel.Children.Add(secondary);
         var dialog = CreateDialog(
-            isDownload
-                ? L.Get("DialogNewDownload")
-                : isNetwork
-                    ? L.Get("DialogNewNetwork")
-                    : L.Get("DialogNewFolder"),
+            L.Get("DialogNewFolder"),
             panel,
             L.Get("ActionAdd"));
         if (await dialog.ShowAsync() == ContentDialogResult.Primary &&
             !string.IsNullOrWhiteSpace(input.Text))
         {
-            await RunAsync(() => _viewModel.CreateAsync(input.Text, secondary.Text));
+            await RunAsync(() => _viewModel.CreateAsync(input.Text));
         }
     }
 
@@ -114,34 +97,18 @@ public sealed partial class WorkspacePage : Page
         }
     }
 
-    private async void Start_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => _viewModel.ControlSelectedAsync(
-            _viewModel.Module == AppModule.Downloads ? "resume" : "start"));
-
-    private async void Stop_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(() => _viewModel.ControlSelectedAsync(
-            _viewModel.Module == AppModule.Downloads ? "pause" : "stop"));
-
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
         if (_viewModel.SelectedItem is null)
         {
             return;
         }
-        var removeData = new CheckBox
-        {
-            Content = L.Get("DeleteDownloadedFiles"),
-            Visibility = _viewModel.Module == AppModule.Downloads
-                ? Visibility.Visible
-                : Visibility.Collapsed,
-        };
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(new TextBlock
         {
             Text = L.Format("DeleteItemWarning", _viewModel.SelectedItem.Title),
             TextWrapping = TextWrapping.Wrap,
         });
-        panel.Children.Add(removeData);
         var dialog = CreateDialog(
             L.Get("DialogConfirmDelete"),
             panel,
@@ -149,7 +116,7 @@ public sealed partial class WorkspacePage : Page
         dialog.DefaultButton = ContentDialogButton.Close;
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            await RunAsync(() => _viewModel.DeleteSelectedAsync(removeData.IsChecked == true));
+            await RunAsync(() => _viewModel.DeleteSelectedAsync());
         }
     }
 
@@ -211,12 +178,13 @@ public sealed partial class WorkspacePage : Page
             ? Visibility.Visible
             : Visibility.Collapsed;
         RenameButton.IsEnabled = _viewModel.CanRename;
-        RenameButton.Visibility = _viewModel.Module is AppModule.Files or AppModule.VirtualMachines
+        RenameButton.Visibility = _viewModel.Module == AppModule.Files
             ? Visibility.Visible
             : Visibility.Collapsed;
-        StartButton.Visibility = _viewModel.CanControl ? Visibility.Visible : Visibility.Collapsed;
-        StopButton.Visibility = _viewModel.CanControl ? Visibility.Visible : Visibility.Collapsed;
         DeleteButton.IsEnabled = _viewModel.CanDelete;
+        DeleteButton.Visibility = _viewModel.Module == AppModule.Files
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         KeepOfflineButton.Visibility =
             _viewModel.CanManageOffline && !_viewModel.SelectedFileIsKeptOffline
                 ? Visibility.Visible

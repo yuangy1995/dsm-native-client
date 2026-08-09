@@ -37,6 +37,7 @@ public sealed class AppViewModel : ObservableObject
     private bool _rememberPassword;
     private bool _autoLogin;
     private bool _isInitialized;
+    private readonly ConnectionAttemptGate _connectionAttempts = new();
     private readonly Dictionary<Guid, CancellationTokenSource> _desktopDriveTasks = [];
     private readonly Dictionary<Guid, DesktopDriveOfflineProgress> _desktopDriveProgress = [];
     private readonly Dictionary<Guid, DesktopDrivePlanningProgress> _desktopDrivePlanning = [];
@@ -173,17 +174,9 @@ public sealed class AppViewModel : ObservableObject
 
     public async Task SelectProfileAsync(NasProfile profile)
     {
-        DisplayName = profile.DisplayName;
-        Host = profile.Host;
-        Port = profile.Port?.ToString() ?? string.Empty;
-        Username = profile.Username;
-        Password = await _passwordStore.LoadAsync(profile.Id).ConfigureAwait(true) ?? string.Empty;
-        RememberPassword = !string.IsNullOrEmpty(Password);
-        AutoLogin = profile.AutoLogin && RememberPassword;
-        PasswordLoaded?.Invoke(this, Password);
-        Otp = string.Empty;
-        ErrorMessage = null;
-        ConnectionStatus = null;
+        var storedPassword = await _passwordStore.LoadAsync(profile.Id).ConfigureAwait(true)
+            ?? string.Empty;
+        ApplySelectedProfile(profile, storedPassword);
     }
 
     public void NewProfile()
@@ -211,6 +204,8 @@ public sealed class AppViewModel : ObservableObject
         ErrorMessage = null;
         var localization = LocalizationService.Current;
         ConnectionStatus = localization.Get("StatusCheckingNas");
+        var attempt = _connectionAttempts.Begin();
+        var cancellation = attempt.Cancellation;
         try
         {
             var profile = new NasProfile(
@@ -224,45 +219,98 @@ public sealed class AppViewModel : ObservableObject
                 Username.Trim(),
                 RememberPassword,
                 AutoLogin && RememberPassword);
-            var connection = await _connectionResolver.DiscoverAsync(
+            var input = new ConnectAttempt(
                 profile,
-                status => ConnectionStatus = localization.ResolveUserText(status)).ConfigureAwait(true);
+                Password,
+                string.IsNullOrWhiteSpace(Otp) ? null : Otp,
+                RememberPassword);
+            var connection = await _connectionResolver.DiscoverAsync(
+                input.Profile,
+                status =>
+                {
+                    if (_connectionAttempts.IsCurrent(attempt))
+                    {
+                        ConnectionStatus = localization.ResolveUserText(status);
+                    }
+                },
+                cancellation.Token).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
             ConnectionStatus = localization.Get("StatusNasFoundSigningIn");
             var session = await _api.LoginAsync(
                 connection.Profile,
-                Password,
-                string.IsNullOrWhiteSpace(Otp) ? null : Otp).ConfigureAwait(true);
-            if (RememberPassword)
+                input.Password,
+                input.Otp,
+                cancellation.Token).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
+            if (input.RememberPassword)
             {
-                await _sessionStore.SaveAsync(session).ConfigureAwait(true);
-                await _passwordStore.SaveAsync(profile.Id, Password).ConfigureAwait(true);
+                await _sessionStore.SaveAsync(session, cancellation.Token).ConfigureAwait(true);
+                _connectionAttempts.ThrowIfNotCurrent(attempt);
+                await _passwordStore.SaveAsync(
+                    input.Profile.Id,
+                    input.Password,
+                    cancellation.Token).ConfigureAwait(true);
             }
             else
             {
-                await _sessionStore.RemoveAsync(profile.Id).ConfigureAwait(true);
-                await _passwordStore.RemoveAsync(profile.Id).ConfigureAwait(true);
+                await _sessionStore.RemoveAsync(
+                    input.Profile.Id,
+                    cancellation.Token).ConfigureAwait(true);
+                _connectionAttempts.ThrowIfNotCurrent(attempt);
+                await _passwordStore.RemoveAsync(
+                    input.Profile.Id,
+                    cancellation.Token).ConfigureAwait(true);
             }
-            CompleteConnection(profile, connection.Profile, session, connection.Capabilities);
-            await TryActivateDesktopDrivesAsync(profile.Id).ConfigureAwait(true);
-            await SaveProfileAsync(profile).ConfigureAwait(true);
-            if (!RememberPassword)
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
+            var repository = new DsmRepository(
+                connection.Profile,
+                session,
+                _api,
+                connection.Capabilities);
+            await TryActivateDesktopDrivesAsync(
+                input.Profile.Id,
+                repository).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
+            await SaveProfileForAttemptAsync(input.Profile, attempt).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
+            if (!input.RememberPassword)
             {
                 Password = string.Empty;
                 PasswordLoaded?.Invoke(this, string.Empty);
             }
+            CompleteConnection(
+                input.Profile,
+                connection.Profile,
+                session,
+                repository,
+                startDesktopDriveRecovery: true);
         }
         catch (DsmException error)
         {
-            ErrorMessage = localization.ErrorMessage(error);
+            if (_connectionAttempts.IsCurrent(attempt))
+            {
+                ErrorMessage = localization.ErrorMessage(error);
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // 用户取消只结束本次尝试，保留已填写内容和本机保存的资料。
         }
         catch
         {
-            ErrorMessage = localization.Get("ErrorConnectGeneric");
+            if (_connectionAttempts.IsCurrent(attempt))
+            {
+                ErrorMessage = localization.Get("ErrorConnectGeneric");
+            }
         }
         finally
         {
-            IsBusy = false;
-            ConnectionStatus = null;
+            if (_connectionAttempts.End(attempt))
+            {
+                IsBusy = false;
+                ConnectionStatus = null;
+            }
+            attempt.Dispose();
         }
     }
 
@@ -277,46 +325,104 @@ public sealed class AppViewModel : ObservableObject
         var localization = LocalizationService.Current;
         ConnectionStatus = localization.Get("StatusRestoringLogin");
         var shouldFallbackToPassword = false;
+        var attempt = _connectionAttempts.Begin();
+        var cancellation = attempt.Cancellation;
         try
         {
-            var session = await _sessionStore.LoadAsync(profile.Id).ConfigureAwait(true);
+            var session = await _sessionStore.LoadAsync(
+                profile.Id,
+                cancellation.Token).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
             if (session is null)
             {
                 throw new DsmException(
                     UserText.Key("ErrorSavedLoginExpired"),
-                    UserText.Key("RecoverySignInAgain"));
+                    UserText.Key("RecoverySignInAgain"),
+                    authenticationFailure: true);
             }
             var connection = await _connectionResolver.DiscoverAsync(
                 profile,
-                status => ConnectionStatus = localization.ResolveUserText(status)).ConfigureAwait(true);
+                status =>
+                {
+                    if (_connectionAttempts.IsCurrent(attempt))
+                    {
+                        ConnectionStatus = localization.ResolveUserText(status);
+                    }
+                },
+                cancellation.Token).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
             var repository = new DsmRepository(
                 connection.Profile,
                 session,
                 _api,
                 connection.Capabilities);
-            _ = await repository.ListFilesAsync(string.Empty).ConfigureAwait(true);
-            CompleteConnection(profile, connection.Profile, session, connection.Capabilities);
-            await TryActivateDesktopDrivesAsync(profile.Id).ConfigureAwait(true);
+            _ = await repository.ListFilesAsync(
+                string.Empty,
+                cancellation.Token).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
+            await TryActivateDesktopDrivesAsync(profile.Id, repository).ConfigureAwait(true);
+            _connectionAttempts.ThrowIfNotCurrent(attempt);
+            CompleteConnection(
+                profile,
+                connection.Profile,
+                session,
+                repository,
+                startDesktopDriveRecovery: true);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // 取消恢复不会移除保存的会话、密码或 NAS 资料。
         }
         catch (DsmException error)
         {
-            await _sessionStore.RemoveAsync(profile.Id).ConfigureAwait(true);
-            await SelectProfileAsync(profile).ConfigureAwait(true);
-            shouldFallbackToPassword =
-                fallbackToPassword &&
-                profile.AutoLogin &&
-                !string.IsNullOrEmpty(Password);
-            if (!shouldFallbackToPassword)
+            if (_connectionAttempts.IsCurrent(attempt) &&
+                !ConnectionRecoveryPolicy.ShouldInvalidateSavedSession(error))
             {
-                ErrorMessage = string.IsNullOrEmpty(Password)
-                    ? $"{localization.ResolveUserText(error.Message)} {localization.Get("RecoveryEnterPasswordAgain")}"
-                    : $"{localization.ResolveUserText(error.Message)} {localization.Get("RecoveryPasswordReady")}";
+                ErrorMessage = localization.ErrorMessage(error);
+            }
+            else if (_connectionAttempts.IsCurrent(attempt))
+            {
+                try
+                {
+                    await _sessionStore.RemoveAsync(
+                        profile.Id,
+                        cancellation.Token).ConfigureAwait(true);
+                    _connectionAttempts.ThrowIfNotCurrent(attempt);
+                    var storedPassword = await _passwordStore.LoadAsync(
+                        profile.Id,
+                        cancellation.Token).ConfigureAwait(true) ?? string.Empty;
+                    _connectionAttempts.ThrowIfNotCurrent(attempt);
+                    ApplySelectedProfile(profile, storedPassword);
+                    shouldFallbackToPassword =
+                        fallbackToPassword &&
+                        profile.AutoLogin &&
+                        !string.IsNullOrEmpty(storedPassword);
+                    if (!shouldFallbackToPassword)
+                    {
+                        ErrorMessage = string.IsNullOrEmpty(storedPassword)
+                            ? $"{localization.ResolveUserText(error.Message)} {localization.Get("RecoveryEnterPasswordAgain")}"
+                            : $"{localization.ResolveUserText(error.Message)} {localization.Get("RecoveryPasswordReady")}";
+                    }
+                }
+                catch (OperationCanceledException)
+                    when (cancellation.IsCancellationRequested)
+                {
+                    shouldFallbackToPassword = false;
+                }
             }
         }
         finally
         {
-            IsBusy = false;
-            ConnectionStatus = null;
+            var mayFallback =
+                shouldFallbackToPassword &&
+                _connectionAttempts.IsCurrent(attempt);
+            if (_connectionAttempts.End(attempt))
+            {
+                IsBusy = false;
+                ConnectionStatus = null;
+            }
+            shouldFallbackToPassword = mayFallback;
+            attempt.Dispose();
         }
         if (shouldFallbackToPassword)
         {
@@ -324,19 +430,54 @@ public sealed class AppViewModel : ObservableObject
         }
     }
 
+    public void CancelConnection() => _connectionAttempts.CancelCurrent();
+
+    public void ReportProfileActionError() =>
+        ErrorMessage = LocalizationService.Current.Get("ProfileActionErrorMessage");
+
+    public async Task SwitchProfileAsync(NasProfile profile)
+    {
+        if (IsBusy || ActiveProfile?.Id == profile.Id)
+        {
+            return;
+        }
+        DisconnectCurrentProfileLocally();
+        await SelectProfileAsync(profile).ConfigureAwait(true);
+        await RestoreAsync(profile).ConfigureAwait(true);
+    }
+
+    public void BeginAddingProfile()
+    {
+        CancelConnection();
+        DisconnectCurrentProfileLocally();
+        NewProfile();
+    }
+
     public async Task RemoveProfileAsync(NasProfile profile)
     {
-        foreach (var mapping in _cloudDrives.Mappings
+        var mappings = _cloudDrives.Mappings
                      .Where(item => item.ProfileId == profile.Id)
-                     .ToArray())
+                     .ToArray();
+        foreach (var mapping in mappings)
+        {
+            CancelDesktopDriveTask(mapping);
+        }
+        foreach (var mapping in mappings)
         {
             await _cloudDrives.RemoveAsync(mapping.Id).ConfigureAwait(true);
         }
-        RefreshDesktopDriveMappings();
-        Profiles.Remove(profile);
+        var remainingProfiles = Profiles
+            .Where(item => item.Id != profile.Id)
+            .ToArray();
+        await PersistProfilesSnapshotAsync(remainingProfiles).ConfigureAwait(true);
         await _sessionStore.RemoveAsync(profile.Id).ConfigureAwait(true);
         await _passwordStore.RemoveAsync(profile.Id).ConfigureAwait(true);
-        await PersistProfilesAsync().ConfigureAwait(true);
+        Profiles.Remove(profile);
+        RefreshDesktopDriveMappings();
+        if (ActiveProfile?.Id == profile.Id)
+        {
+            DisconnectCurrentProfileLocally();
+        }
     }
 
     public async Task LogoutAsync()
@@ -648,6 +789,7 @@ public sealed class AppViewModel : ObservableObject
 
     public void Shutdown()
     {
+        CancelConnection();
         StopDesktopDriveRecovery();
         foreach (var cancellation in _desktopDriveTasks.Values)
         {
@@ -662,18 +804,58 @@ public sealed class AppViewModel : ObservableObject
         NasProfile profile,
         NasProfile connectionProfile,
         DsmSession session,
-        IReadOnlyDictionary<string, ApiCapability> capabilities)
+        IDsmRepository repository,
+        bool startDesktopDriveRecovery)
     {
         ActiveProfile = profile;
         ActiveConnectionProfile = connectionProfile;
         Session = session;
-        Repository = new DsmRepository(connectionProfile, session, _api, capabilities);
+        Repository = repository;
         AvailableModules.Clear();
         foreach (var module in Repository.AvailableModules)
         {
             AvailableModules.Add(module);
         }
+        if (startDesktopDriveRecovery)
+        {
+            StartDesktopDriveRecovery(profile.Id);
+        }
         ConnectionChanged?.Invoke(this, true);
+    }
+
+    private void DisconnectCurrentProfileLocally()
+    {
+        StopDesktopDriveRecovery();
+        if (ActiveProfile is { } profile)
+        {
+            foreach (var mapping in _cloudDrives.Mappings
+                         .Where(item => item.ProfileId == profile.Id))
+            {
+                CancelDesktopDriveTask(mapping);
+            }
+            _cloudDrives.DisconnectProfile(profile.Id);
+        }
+        ActiveProfile = null;
+        ActiveConnectionProfile = null;
+        Session = null;
+        Repository = null;
+        AvailableModules.Clear();
+        ConnectionChanged?.Invoke(this, false);
+    }
+
+    private void ApplySelectedProfile(NasProfile profile, string storedPassword)
+    {
+        DisplayName = profile.DisplayName;
+        Host = profile.Host;
+        Port = profile.Port?.ToString() ?? string.Empty;
+        Username = profile.Username;
+        Password = storedPassword;
+        RememberPassword = !string.IsNullOrEmpty(storedPassword);
+        AutoLogin = profile.AutoLogin && RememberPassword;
+        PasswordLoaded?.Invoke(this, storedPassword);
+        Otp = string.Empty;
+        ErrorMessage = null;
+        ConnectionStatus = null;
     }
 
     private async Task LoadProfilesAsync()
@@ -697,25 +879,53 @@ public sealed class AppViewModel : ObservableObject
         }
     }
 
-    private async Task SaveProfileAsync(NasProfile profile)
+    private async Task SaveProfileForAttemptAsync(
+        NasProfile profile,
+        ConnectionAttemptLease attempt)
     {
+        var profiles = Profiles
+            .Where(item => item.Id != profile.Id)
+            .Append(profile)
+            .ToArray();
+        await PersistProfilesSnapshotAsync(
+            profiles,
+            attempt.Cancellation.Token).ConfigureAwait(true);
+        _connectionAttempts.ThrowIfNotCurrent(attempt);
         var existing = Profiles.FirstOrDefault(item => item.Id == profile.Id);
         if (existing is not null)
         {
             Profiles.Remove(existing);
         }
         Profiles.Add(profile);
-        await PersistProfilesAsync().ConfigureAwait(true);
     }
 
     private async Task PersistProfilesAsync()
     {
+        await PersistProfilesSnapshotAsync(Profiles.ToArray()).ConfigureAwait(true);
+    }
+
+    private async Task PersistProfilesSnapshotAsync(
+        IReadOnlyList<NasProfile> profiles,
+        CancellationToken cancellationToken = default)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(_profilesPath)!);
         var temporaryPath = $"{_profilesPath}.tmp";
-        await File.WriteAllTextAsync(
-            temporaryPath,
-            JsonSerializer.Serialize(Profiles.ToArray()));
-        File.Move(temporaryPath, _profilesPath, overwrite: true);
+        try
+        {
+            await File.WriteAllTextAsync(
+                temporaryPath,
+                JsonSerializer.Serialize(profiles),
+                cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryPath, _profilesPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 
     private void RefreshDesktopDriveMappings()
@@ -727,17 +937,18 @@ public sealed class AppViewModel : ObservableObject
         }
     }
 
-    private async Task TryActivateDesktopDrivesAsync(Guid profileId)
+    private async Task TryActivateDesktopDrivesAsync(
+        Guid profileId,
+        IDsmRepository repository)
     {
         try
         {
-            await _cloudDrives.ActivateAsync(profileId, Repository!).ConfigureAwait(true);
+            await _cloudDrives.ActivateAsync(profileId, repository).ConfigureAwait(true);
         }
         catch
         {
             // 云盘位置稍后可重试，不能把已经成功的 NAS 登录判定为失败。
         }
-        StartDesktopDriveRecovery(profileId);
     }
 
     private void StartDesktopDriveRecovery(Guid profileId)

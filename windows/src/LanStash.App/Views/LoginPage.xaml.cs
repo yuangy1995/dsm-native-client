@@ -70,6 +70,9 @@ public sealed partial class LoginPage : Page
         await _viewModel.ConnectAsync();
     }
 
+    private void CancelConnect_Click(object sender, RoutedEventArgs e) =>
+        _viewModel.CancelConnection();
+
     private void UpdateState()
     {
         if (ConnectButton is null)
@@ -77,8 +80,28 @@ public sealed partial class LoginPage : Page
             return;
         }
         ConnectButton.IsEnabled = !_viewModel.IsBusy;
+        AddNasButton.IsEnabled = !_viewModel.IsBusy;
+        ProfileList.IsEnabled = !_viewModel.IsBusy;
+        SetControlsEnabled(ConnectionFields, !_viewModel.IsBusy);
+        CancelConnectButton.Visibility = _viewModel.IsBusy
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         BusyIndicator.IsActive = _viewModel.IsBusy;
         ErrorBar.IsOpen = !string.IsNullOrWhiteSpace(_viewModel.ErrorMessage);
         StatusBar.IsOpen = !string.IsNullOrWhiteSpace(_viewModel.ConnectionStatus);
+    }
+
+    private static void SetControlsEnabled(DependencyObject root, bool isEnabled)
+    {
+        var childCount = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (var index = 0; index < childCount; index++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, index);
+            if (child is Control control)
+            {
+                control.IsEnabled = isEnabled;
+            }
+            SetControlsEnabled(child, isEnabled);
+        }
     }
 }

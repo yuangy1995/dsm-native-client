@@ -1,0 +1,283 @@
+<Page
+    x:Class="LanStash.App.Views.VirtualMachineManagerPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:LanStash.App.Features.VirtualMachines"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+    SizeChanged="Page_SizeChanged">
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="BackAccelerator_Invoked" />
+        <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+    <Page.Resources>
+        <DataTemplate x:Key="VirtualizationResourceTemplate" x:DataType="vm:VirtualizationResourceItem">
+            <Grid
+                Padding="4,8"
+                ColumnSpacing="12"
+                AutomationProperties.Name="{x:Bind AutomationName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="3">
+                    <TextBlock
+                        FontWeight="SemiBold"
+                        Text="{x:Bind Name}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind UsageText}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+                <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{x:Bind HealthText}" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Padding="24,20,24,16" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+                <TextBlock
+                    x:Uid="VirtualMachineManagerTitle"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    AutomationProperties.HeadingLevel="Level1" />
+                <TextBlock
+                    x:Uid="VirtualMachineManagerDescription"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+            <Button
+                x:Uid="VirtualMachineManagerRefresh"
+                x:Name="RefreshButton"
+                Grid.Column="1"
+                MinHeight="44"
+                Click="Refresh_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE72C;" FontSize="16" />
+                    <TextBlock x:Uid="VirtualMachineManagerRefreshLabel" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <InfoBar
+            x:Uid="VirtualMachineManagerReadOnly"
+            Grid.Row="1"
+            IsClosable="False"
+            IsOpen="True"
+            Severity="Informational" />
+        <InfoBar
+            x:Uid="VirtualMachineManagerRefreshError"
+            x:Name="RefreshErrorNotice"
+            Grid.Row="2"
+            AutomationProperties.LiveSetting="Polite"
+            IsClosable="False"
+            IsOpen="False"
+            Severity="Warning" />
+
+        <Grid Grid.Row="3" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="MachineColumn" Width="360" />
+                <ColumnDefinition x:Name="DetailColumn" Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border
+                x:Name="MachinePane"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <Grid Padding="12" RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock
+                        x:Uid="VirtualMachineManagerMachinesHeading"
+                        FontWeight="SemiBold"
+                        AutomationProperties.HeadingLevel="Level2" />
+                    <Grid Grid.Row="1">
+                        <ListView
+                            x:Uid="VirtualMachineManagerMachineList"
+                            x:Name="MachineList"
+                            IsItemClickEnabled="True"
+                            ItemClick="MachineList_ItemClick"
+                            ItemsSource="{Binding Machines}"
+                            SelectionMode="Single">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="MinHeight" Value="68" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:VirtualMachineItem">
+                                    <StackPanel
+                                        Padding="4,8"
+                                        Spacing="4"
+                                        AutomationProperties.Name="{x:Bind AutomationName}">
+                                        <TextBlock
+                                            FontWeight="SemiBold"
+                                            Text="{x:Bind Name}"
+                                            TextTrimming="CharacterEllipsis"
+                                            TextWrapping="Wrap" />
+                                        <TextBlock
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            Text="{x:Bind StatusText}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <StackPanel x:Name="MachinesLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                            <ProgressRing Width="36" Height="36" IsActive="True" />
+                            <TextBlock x:Uid="VirtualMachineManagerMachinesLoading" AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                        <StackPanel x:Name="MachinesEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="300" Spacing="8" Visibility="Collapsed">
+                            <TextBlock x:Uid="VirtualMachineManagerMachinesEmptyTitle" FontWeight="SemiBold" TextAlignment="Center" />
+                            <TextBlock x:Uid="VirtualMachineManagerMachinesEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel x:Name="MachinesErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="300" Spacing="8" Visibility="Collapsed">
+                            <TextBlock x:Uid="VirtualMachineManagerMachinesErrorTitle" FontWeight="SemiBold" TextAlignment="Center" />
+                            <TextBlock x:Uid="VirtualMachineManagerMachinesErrorMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel x:Name="MachinesUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="300" Spacing="8" Visibility="Collapsed">
+                            <TextBlock x:Uid="VirtualMachineManagerUnavailableTitle" FontWeight="SemiBold" TextAlignment="Center" />
+                            <TextBlock x:Uid="VirtualMachineManagerUnavailableMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                    <Button
+                        x:Uid="VirtualMachineManagerViewResources"
+                        x:Name="ResourcesButton"
+                        Grid.Row="2"
+                        MinHeight="44"
+                        HorizontalAlignment="Stretch"
+                        Click="Resources_Click" />
+                </Grid>
+            </Border>
+
+            <Border
+                x:Name="DetailPane"
+                Grid.Column="1"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <Grid Padding="20" RowSpacing="12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button
+                            x:Uid="VirtualMachineManagerBack"
+                            x:Name="BackButton"
+                            MinWidth="44"
+                            MinHeight="44"
+                            Click="Back_Click"
+                            Visibility="Collapsed">
+                            <FontIcon Glyph="&#xE72B;" FontSize="16" />
+                        </Button>
+                        <TextBlock
+                            x:Uid="VirtualMachineManagerDetailsHeading"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            FontSize="20"
+                            FontWeight="SemiBold"
+                            AutomationProperties.HeadingLevel="Level2" />
+                    </Grid>
+                    <Grid x:Name="MachineDetailState" Grid.Row="1" ColumnSpacing="20" RowSpacing="10" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock x:Uid="VirtualMachineManagerDetailName" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="1" Text="{Binding SelectedMachine.Name}" TextWrapping="Wrap" />
+                        <TextBlock x:Uid="VirtualMachineManagerDetailStatus" Grid.Row="1" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedMachine.StatusText}" />
+                        <TextBlock x:Uid="VirtualMachineManagerDetailCpu" Grid.Row="2" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedMachine.CpuText}" />
+                        <TextBlock x:Uid="VirtualMachineManagerDetailMemory" Grid.Row="3" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedMachine.MemoryText}" />
+                        <TextBlock x:Uid="VirtualMachineManagerDetailStorage" Grid.Row="4" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedMachine.StorageText}" />
+                        <TextBlock x:Uid="VirtualMachineManagerDetailHost" Grid.Row="5" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedMachine.HostText}" TextWrapping="Wrap" />
+                    </Grid>
+                    <TextBlock
+                        x:Uid="VirtualMachineManagerChooseMachineMessage"
+                        x:Name="NoSelectionState"
+                        Grid.Row="1"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+
+                    <Pivot x:Name="ResourcePivot" Grid.Row="2">
+                        <PivotItem x:Uid="VirtualMachineManagerHostsTab">
+                            <Grid>
+                                <ListView x:Name="HostsList" ItemsSource="{Binding Hosts}" ItemTemplate="{StaticResource VirtualizationResourceTemplate}" SelectionMode="None" />
+                                <StackPanel x:Name="HostsLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="VirtualMachineManagerSectionLoading" AutomationProperties.LiveSetting="Polite" /></StackPanel>
+                                <StackPanel x:Name="HostsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="HostsErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="HostsUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                            </Grid>
+                        </PivotItem>
+                        <PivotItem x:Uid="VirtualMachineManagerStoragesTab">
+                            <Grid>
+                                <ListView x:Name="StoragesList" ItemsSource="{Binding Storages}" ItemTemplate="{StaticResource VirtualizationResourceTemplate}" SelectionMode="None" />
+                                <StackPanel x:Name="StoragesLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="VirtualMachineManagerSectionLoading" AutomationProperties.LiveSetting="Polite" /></StackPanel>
+                                <StackPanel x:Name="StoragesEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="StoragesErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="StoragesUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                            </Grid>
+                        </PivotItem>
+                        <PivotItem x:Uid="VirtualMachineManagerNetworksTab">
+                            <Grid>
+                                <ListView x:Name="NetworksList" ItemsSource="{Binding Networks}" ItemTemplate="{StaticResource VirtualizationResourceTemplate}" SelectionMode="None" />
+                                <StackPanel x:Name="NetworksLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="VirtualMachineManagerSectionLoading" AutomationProperties.LiveSetting="Polite" /></StackPanel>
+                                <StackPanel x:Name="NetworksEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="NetworksErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="NetworksUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                            </Grid>
+                        </PivotItem>
+                        <PivotItem x:Uid="VirtualMachineManagerImagesTab">
+                            <Grid>
+                                <ListView x:Name="ImagesList" ItemsSource="{Binding Images}" ItemTemplate="{StaticResource VirtualizationResourceTemplate}" SelectionMode="None" />
+                                <StackPanel x:Name="ImagesLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="VirtualMachineManagerSectionLoading" AutomationProperties.LiveSetting="Polite" /></StackPanel>
+                                <StackPanel x:Name="ImagesEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="ImagesErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="ImagesUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                            </Grid>
+                        </PivotItem>
+                    </Pivot>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

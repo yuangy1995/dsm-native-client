@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "photos.get-thumbnail.synthetic-image",
+  "module": "photos",
+  "operation": "getThumbnail",
+  "api": {
+    "name": "SYNO.FileStation.Thumb",
+    "method": "get",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "GET",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-path>"
+    },
+    {
+      "name": "size",
+      "valueType": "string",
+      "encodedValue": "medium"
+    },
+    {
+      "name": "rotate",
+      "valueType": "integer",
+      "encodedValue": "0"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie"
+    ],
+    "synoTokenLocations": [
+      "header"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

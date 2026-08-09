@@ -55,8 +55,6 @@
             <AppBarButton x:Uid="ActionCreate" x:Name="CreateButton" Click="Create_Click" Icon="Add" />
             <AppBarButton x:Uid="ActionUp" x:Name="UpButton" Click="Up_Click" Icon="Up" />
             <AppBarButton x:Uid="ActionRename" x:Name="RenameButton" Click="Rename_Click" Icon="Rename" />
-            <AppBarButton x:Uid="ActionStart" x:Name="StartButton" Click="Start_Click" Icon="Play" />
-            <AppBarButton x:Uid="ActionStop" x:Name="StopButton" Click="Stop_Click" Icon="Stop" />
             <AppBarButton x:Uid="ActionDelete" x:Name="DeleteButton" Click="Delete_Click" Icon="Delete" />
             <AppBarButton
                 x:Uid="CloudDriveKeepSelected"

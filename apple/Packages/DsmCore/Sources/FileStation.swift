@@ -153,6 +153,73 @@ public struct FavoriteLocation: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// 收藏位置的有界规范化分页。`sourceTotal` 是服务端稳定报告的原始数量；
+/// 服务端未报告总数时，它是本次实际消费的原始数量。`total` 是最多 5,000 条
+/// 原始记录经路径规范化和去重后的可浏览数量。
+public struct FileFavoritePage: Equatable, Sendable {
+    public let locations: [FavoriteLocation]
+    public let offset: Int
+    public let nextOffset: Int
+    public let total: Int
+    public let sourceTotal: Int
+    public let hasMore: Bool
+    public let isTruncated: Bool
+
+    public init(
+        locations: [FavoriteLocation],
+        offset: Int,
+        nextOffset: Int,
+        total: Int,
+        sourceTotal: Int,
+        hasMore: Bool,
+        isTruncated: Bool
+    ) {
+        self.locations = locations
+        self.offset = offset
+        self.nextOffset = nextOffset
+        self.total = total
+        self.sourceTotal = sourceTotal
+        self.hasMore = hasMore
+        self.isTruncated = isTruncated
+    }
+}
+
+/// 当前账号可见共享目录下的只读回收站入口。
+public struct FileRecycleLocation: Equatable, Hashable, Sendable {
+    public let shareName: String
+    public let sharePath: String
+    public let recyclePath: String
+
+    public init(shareName: String, sharePath: String, recyclePath: String) {
+        self.shareName = shareName
+        self.sharePath = sharePath
+        self.recyclePath = recyclePath
+    }
+}
+
+/// 回收站发现结果只描述入口，不授予恢复、删除或清空能力。
+public struct FileRecycleDiscoveryResult: Equatable, Sendable {
+    public let profileID: UUID
+    public let locations: [FileRecycleLocation]
+    public let scannedShareCount: Int
+    public let permissionDeniedShareCount: Int
+    public let isTruncated: Bool
+
+    public init(
+        profileID: UUID,
+        locations: [FileRecycleLocation],
+        scannedShareCount: Int,
+        permissionDeniedShareCount: Int,
+        isTruncated: Bool
+    ) {
+        self.profileID = profileID
+        self.locations = locations
+        self.scannedShareCount = scannedShareCount
+        self.permissionDeniedShareCount = permissionDeniedShareCount
+        self.isTruncated = isTruncated
+    }
+}
+
 public struct FileShareLink: Identifiable, Codable, Hashable, Sendable {
     public let id: String
     public let name: String
@@ -175,6 +242,140 @@ public struct FileShareLink: Identifiable, Codable, Hashable, Sendable {
         self.url = url
         self.hasPassword = hasPassword
         self.expiresAt = expiresAt
+    }
+}
+
+public enum FileShareLinkAvailabilityStatus: String, Codable, Hashable, Sendable {
+    case available
+    case unsupported
+}
+
+public struct FileShareLinkAvailability: Codable, Hashable, Sendable {
+    public let status: FileShareLinkAvailabilityStatus
+    public let resolvedVersion: Int?
+
+    public init(status: FileShareLinkAvailabilityStatus, resolvedVersion: Int?) {
+        self.status = status
+        self.resolvedVersion = resolvedVersion
+    }
+
+    public static let unsupported = FileShareLinkAvailability(
+        status: .unsupported,
+        resolvedVersion: nil
+    )
+}
+
+public enum FileShareLinkContractError: Error, Equatable, Sendable {
+    case invalidDate
+    case invalidTarget
+    case invalidPassword
+    case invalidDateRange
+}
+
+/// 分享链接日期使用无时区的公历年月日，网络层只按 `yyyy-MM-dd` 发送。
+public struct FileShareLinkCalendarDate: Codable, Hashable, Comparable, Sendable {
+    public let year: Int
+    public let month: Int
+    public let day: Int
+
+    public init(year: Int, month: Int, day: Int) throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(year: year, month: month, day: day)
+        guard let date = calendar.date(from: components) else {
+            throw FileShareLinkContractError.invalidDate
+        }
+        let resolved = calendar.dateComponents([.year, .month, .day], from: date)
+        guard resolved.year == year, resolved.month == month, resolved.day == day else {
+            throw FileShareLinkContractError.invalidDate
+        }
+        self.year = year
+        self.month = month
+        self.day = day
+    }
+
+    public init(iso8601 value: String) throws {
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts[0].count == 4,
+              parts[1].count == 2,
+              parts[2].count == 2,
+              let year = Int(parts[0]),
+              let month = Int(parts[1]),
+              let day = Int(parts[2]) else {
+            throw FileShareLinkContractError.invalidDate
+        }
+        try self.init(year: year, month: month, day: day)
+    }
+
+    public var iso8601: String {
+        String(format: "%04d-%02d-%02d", year, month, day)
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        (lhs.year, lhs.month, lhs.day) < (rhs.year, rhs.month, rhs.day)
+    }
+}
+
+/// 密码仅在当前创建请求内存中使用，因此该类型刻意不遵循 Codable。
+public struct FileShareLinkCreateRequest: Sendable {
+    public let target: FileItem
+    public let password: String?
+    public let availableOn: FileShareLinkCalendarDate?
+    public let expiresOn: FileShareLinkCalendarDate?
+
+    public init(
+        target: FileItem,
+        password: String? = nil,
+        availableOn: FileShareLinkCalendarDate? = nil,
+        expiresOn: FileShareLinkCalendarDate? = nil
+    ) throws {
+        let normalizedPassword = password?.isEmpty == false ? password : nil
+        guard target.path.hasPrefix("/"), target.path != "/" else {
+            throw FileShareLinkContractError.invalidTarget
+        }
+        guard normalizedPassword?.count ?? 0 <= 16 else {
+            throw FileShareLinkContractError.invalidPassword
+        }
+        if let availableOn, let expiresOn, expiresOn < availableOn {
+            throw FileShareLinkContractError.invalidDateRange
+        }
+        self.target = target
+        self.password = normalizedPassword
+        self.availableOn = availableOn
+        self.expiresOn = expiresOn
+    }
+}
+
+public struct FileShareLinkPage: Codable, Equatable, Sendable {
+    public let links: [FileShareLink]
+    public let offset: Int
+    public let total: Int
+    public let hasMore: Bool
+    public let isTruncated: Bool
+
+    public init(
+        links: [FileShareLink],
+        offset: Int,
+        total: Int,
+        hasMore: Bool,
+        isTruncated: Bool = false
+    ) {
+        self.links = links
+        self.offset = offset
+        self.total = total
+        self.hasMore = hasMore
+        self.isTruncated = isTruncated
+    }
+}
+
+public struct FileShareLinkCreateOutcome: Sendable, Equatable {
+    public let result: MutationResult
+    public let confirmedLink: FileShareLink?
+
+    public init(result: MutationResult, confirmedLink: FileShareLink? = nil) {
+        self.result = result
+        self.confirmedLink = confirmedLink
     }
 }
 
@@ -260,6 +461,45 @@ public struct FilePage: Codable, Equatable, Sendable {
         self.hasMore = hasMore
         self.loadedAt = loadedAt
     }
+}
+
+/// File Station 目录列表使用的稳定排序字段。
+///
+/// 展示文案与公开 API 参数由各平台和网络层分别映射，不能使用本地化字符串参与请求。
+public enum FileListSortField: String, Codable, Hashable, Sendable {
+    case name
+    case size
+    case modifiedTime
+}
+
+public enum FileListSortDirection: String, Codable, Hashable, Sendable {
+    case ascending
+    case descending
+}
+
+public enum FileListTypeFilter: String, Codable, Hashable, Sendable {
+    case all
+    case files
+    case folders
+}
+
+/// 单次目录分页请求的排序与类型筛选；同一分页序列必须始终使用同一组选项。
+public struct FileListOptions: Codable, Equatable, Hashable, Sendable {
+    public let sortField: FileListSortField
+    public let sortDirection: FileListSortDirection
+    public let typeFilter: FileListTypeFilter
+
+    public init(
+        sortField: FileListSortField = .name,
+        sortDirection: FileListSortDirection = .ascending,
+        typeFilter: FileListTypeFilter = .all
+    ) {
+        self.sortField = sortField
+        self.sortDirection = sortDirection
+        self.typeFilter = typeFilter
+    }
+
+    public static let `default` = FileListOptions()
 }
 
 public enum ThumbnailSize: String, Codable, Sendable {
@@ -472,6 +712,7 @@ public protocol FileRepository: PhotoFileServing, Sendable {
     var profileID: UUID { get }
     var allowsVerifiedRestore: Bool { get }
     var allowsRemoteMountManagement: Bool { get }
+    var fileShareLinkAvailability: FileShareLinkAvailability { get }
 
     func listShares(offset: Int, limit: Int) async throws -> FilePage
     func listBackgroundTasks(offset: Int, limit: Int) async throws -> FileBackgroundTaskPage
@@ -548,10 +789,16 @@ public protocol FileRepository: PhotoFileServing, Sendable {
     /// 使用 File Station 官方接口计算远程文件校验值。该操作只读，但大文件可能耗时较长。
     func fileMD5(remotePath: String) async throws -> String
     func listFavorites() async throws -> [FavoriteLocation]
+    func listFavoritesPage(offset: Int, limit: Int) async throws -> FileFavoritePage
+    func discoverRecycleLocations() async throws -> FileRecycleDiscoveryResult
     func addFavorite(path: String, name: String) async throws
     func addFavoriteResult(path: String, name: String) async throws -> MutationResult
     func removeFavorite(path: String) async throws
     func listShareLinks() async throws -> [FileShareLink]
+    func listShareLinksPage(offset: Int, limit: Int) async throws -> FileShareLinkPage
+    func createShareLinkResult(
+        _ request: FileShareLinkCreateRequest
+    ) async throws -> FileShareLinkCreateOutcome
     func createShareLink(paths: [String], password: String?, expiresAt: String?) async throws -> FileShareLink
     func deleteShareLinks(ids: [String]) async throws
     func storageSpaceSummary() async throws -> StorageSpaceSummary?
@@ -565,6 +812,61 @@ public protocol FileRepository: PhotoFileServing, Sendable {
 
 public extension FileRepository {
     var allowsRemoteMountManagement: Bool { false }
+    var fileShareLinkAvailability: FileShareLinkAvailability { .unsupported }
+
+    /// 兼容尚未实现严格分页的既有 Repository；生产网络 Repository 会覆盖此实现。
+    func listFavoritesPage(offset: Int, limit: Int) async throws -> FileFavoritePage {
+        let snapshotLimit = 5_000
+        let requestedOffset = min(max(0, offset), snapshotLimit)
+        let requestedLimit = min(max(1, limit), snapshotLimit - requestedOffset)
+        let raw = try await listFavorites()
+        var seenPaths = Set<String>()
+        let all = raw.filter { seenPaths.insert($0.path).inserted }
+        let bounded = Array(all.prefix(snapshotLimit))
+        let start = min(requestedOffset, bounded.count)
+        let end = min(start + requestedLimit, bounded.count)
+        return FileFavoritePage(
+            locations: Array(bounded[start..<end]),
+            offset: start,
+            nextOffset: end,
+            total: bounded.count,
+            sourceTotal: raw.count,
+            hasMore: end < bounded.count,
+            isTruncated: raw.count > snapshotLimit
+        )
+    }
+
+    func discoverRecycleLocations() async throws -> FileRecycleDiscoveryResult {
+        throw AppError(
+            category: .apiUnavailable,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.7dc6f291445bfb76")
+        )
+    }
+
+    func listShareLinksPage(offset: Int, limit: Int) async throws -> FileShareLinkPage {
+        throw AppError(
+            category: .apiUnavailable,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.7dc6f291445bfb76")
+        )
+    }
+
+    func createShareLinkResult(
+        _ request: FileShareLinkCreateRequest
+    ) async throws -> FileShareLinkCreateOutcome {
+        FileShareLinkCreateOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "shareLinkCreate",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.share-link.unsupported"
+            )
+        )
+    }
 
     func listVirtualFolders(offset: Int, limit: Int) async throws -> FileVirtualFolderPage {
         let page = try await listRemoteMounts(offset: offset, limit: limit)

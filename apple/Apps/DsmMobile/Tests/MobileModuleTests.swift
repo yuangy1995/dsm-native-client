@@ -89,26 +89,94 @@ private actor MobileQuickConnectResolver: QuickConnectResolving {
 }
 
 final class MobileModuleTests: XCTestCase {
-    func test所有Mac主导航模块均有移动端入口() {
+    func test移动端仅暴露五个顶层入口() {
         XCTAssertEqual(
-            Set(MobileModule.allCases.map(\.rawValue)),
-            Set([
+            MobileTopLevelDestination.allCases.map(\.rawValue),
+            [
                 "files",
                 "photos",
                 "chat",
-                "downloads",
-                "containers",
-                "virtualMachines",
-                "nasSettings",
-                "transfers",
-                "settings"
-            ])
+                "activity",
+                "more"
+            ]
         )
+    }
+
+    func test活动与更多承载当前核心和受限入口() {
+        XCTAssertEqual(
+            MobileTopLevelDestination.activity.childModules,
+            [.transfers, .downloads]
+        )
+        XCTAssertEqual(
+            MobileTopLevelDestination.more.childModules,
+            [.nasSettings, .containers, .virtualMachines, .settings]
+        )
+        XCTAssertEqual(
+            Set(MobileTopLevelDestination.allCases.flatMap(\.childModules)),
+            Set(MobileModule.allCases)
+        )
+    }
+
+    func test只有四个服务模块允许按设备隐藏() {
+        XCTAssertEqual(
+            MobileModule.optionalPreferenceModules,
+            [.downloads, .containers, .virtualMachines, .nasSettings]
+        )
+        for module in [.files, .photos, .chat, .transfers, .settings] as [MobileModule] {
+            XCTAssertFalse(module.isOptionalPreference)
+        }
+    }
+
+    func test可选模块使用各自生产读取契约判断可用性() {
+        XCTAssertTrue(MobileModule.downloads.isAvailable(in: Self.capabilities([DsmAPIName.downloadStationTask])))
+        XCTAssertFalse(MobileModule.downloads.isAvailable(in: Self.capabilities([])))
+        XCTAssertTrue(MobileModule.containers.isAvailable(in: Self.capabilities([DsmAPIName.dockerContainer])))
+        XCTAssertFalse(MobileModule.containers.isAvailable(in: Self.capabilities([DsmAPIName.dockerImage])))
+        XCTAssertTrue(MobileModule.virtualMachines.isAvailable(in: Self.capabilities([DsmAPIName.virtualizationAPIGuest])))
+        XCTAssertFalse(MobileModule.virtualMachines.isAvailable(in: Self.capabilities([DsmAPIName.virtualizationGuest])))
+
+        for apiName in [
+            DsmAPIName.coreSystem,
+            DsmAPIName.coreSystemUtilization,
+            DsmAPIName.storageOverview,
+            DsmAPIName.coreUpgradeServer,
+        ] {
+            XCTAssertTrue(MobileModule.nasSettings.isAvailable(in: Self.capabilities([apiName])))
+        }
+        XCTAssertFalse(MobileModule.nasSettings.isAvailable(in: Self.capabilities([])))
+    }
+
+    private static func capabilities(_ names: [String]) -> CapabilitySet {
+        CapabilitySet(Dictionary(uniqueKeysWithValues: names.map { name in
+            (
+                name,
+                ApiCapability(
+                    name: name,
+                    path: "entry.cgi",
+                    minVersion: 1,
+                    maxVersion: 1,
+                    requestFormat: .form,
+                    selectedVersion: 1,
+                    verified: true
+                )
+            )
+        }))
+    }
+
+    func test未完成安全契约的管理写入口保持关闭() {
+        XCTAssertFalse(MobileModule.containers.supportsMutatingManagement)
+        XCTAssertFalse(MobileModule.virtualMachines.supportsMutatingManagement)
+        XCTAssertFalse(MobileModule.downloads.supportsMutatingManagement)
+        XCTAssertFalse(MobileModule.chat.supportsMutatingManagement)
+        XCTAssertFalse(MobileModule.nasSettings.supportsMutatingManagement)
+        XCTAssertTrue(MobileModule.files.supportsMutatingManagement)
     }
 
     func test模块标题均面向普通用户() {
         XCTAssertTrue(MobileModule.allCases.allSatisfy { !$0.title.isEmpty })
         XCTAssertFalse(MobileModule.allCases.contains { $0.title.contains("API") })
+        XCTAssertTrue(MobileTopLevelDestination.allCases.allSatisfy { !$0.title.isEmpty })
+        XCTAssertFalse(MobileTopLevelDestination.allCases.contains { $0.title.contains("API") })
     }
 
     @MainActor

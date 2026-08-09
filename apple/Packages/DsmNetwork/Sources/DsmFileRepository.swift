@@ -292,22 +292,188 @@ private struct FavoritePayload: Decodable, Sendable {
     let path: String
 }
 
-private struct FavoriteListPayload: Decodable, Sendable {
-    let favorites: [FavoritePayload]?
+private struct FavoritePagePayload: Decodable, Sendable {
+    let favorites: [FavoritePayload]
+    let offset: Int?
+    let total: Int?
+
+    private enum CodingKeys: String, CodingKey { case favorites, offset, total }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        favorites = try container.decode([FavoritePayload].self, forKey: .favorites)
+        let hasOffset = container.contains(.offset)
+        let hasTotal = container.contains(.total)
+        guard hasOffset == hasTotal else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .favorites,
+                in: container,
+                debugDescription: "Favorite pagination metadata must be present together."
+            )
+        }
+        if hasOffset {
+            let decodedOffset = try container.decode(Int.self, forKey: .offset)
+            let decodedTotal = try container.decode(Int.self, forKey: .total)
+            guard decodedOffset >= 0, decodedTotal >= 0, decodedOffset <= decodedTotal,
+                  favorites.count <= decodedTotal - decodedOffset else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .favorites,
+                    in: container,
+                    debugDescription: "Favorite page bounds are invalid."
+                )
+            }
+            offset = decodedOffset
+            total = decodedTotal
+        } else {
+            offset = nil
+            total = nil
+        }
+    }
 }
 
-private struct SharePayload: Decodable, Sendable {
+private struct StrictVirtualFolderPagePayload: Decodable, Sendable {
+    let folders: [StrictVirtualFolderPayload]
+    let offset: Int
+    let total: Int
+
+    private enum CodingKeys: String, CodingKey { case folders, offset, total }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        folders = try container.decode([StrictVirtualFolderPayload].self, forKey: .folders)
+        offset = try container.decode(Int.self, forKey: .offset)
+        total = try container.decode(Int.self, forKey: .total)
+        guard offset >= 0, total >= 0, offset <= total,
+              folders.count <= total - offset else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .folders,
+                in: container,
+                debugDescription: "Virtual folder page bounds are invalid."
+            )
+        }
+    }
+}
+
+private struct StrictVirtualFolderPayload: Decodable, Sendable {
+    let name: String
+    let path: String
+    let isDirectory: Bool
+    let additional: StrictVirtualFolderAdditionalPayload?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, path, additional
+        case isDirectory = "isdir"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        path = try container.decode(String.self, forKey: .path)
+        isDirectory = try container.decode(Bool.self, forKey: .isDirectory)
+        additional = try container.decodeIfPresent(
+            StrictVirtualFolderAdditionalPayload.self,
+            forKey: .additional
+        )
+    }
+}
+
+private struct StrictVirtualFolderAdditionalPayload: Decodable, Sendable {
+    let mountPointType: String?
+    let perm: FilePermissionPayload?
+
+    private enum CodingKeys: String, CodingKey {
+        case mountPointType = "mount_point_type"
+        case perm
+    }
+}
+
+private struct StrictRecycleSharePagePayload: Decodable, Sendable {
+    let shares: [StrictRecycleSharePayload]
+    let offset: Int
+    let total: Int
+
+    private enum CodingKeys: String, CodingKey { case shares, offset, total }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        shares = try container.decode([StrictRecycleSharePayload].self, forKey: .shares)
+        offset = try container.decode(Int.self, forKey: .offset)
+        total = try container.decode(Int.self, forKey: .total)
+        guard offset >= 0, total >= 0, offset <= total,
+              shares.count <= total - offset else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .shares,
+                in: container,
+                debugDescription: "Recycle share page bounds are invalid."
+            )
+        }
+    }
+}
+
+private struct StrictRecycleSharePayload: Decodable, Sendable {
+    let name: String
+    let path: String
+    let isDirectory: Bool
+    let additional: StrictRecycleShareAdditionalPayload?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, path, additional
+        case isDirectory = "isdir"
+    }
+}
+
+private struct StrictRecycleShareAdditionalPayload: Decodable, Sendable {
+    let mountPointType: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case mountPointType = "mount_point_type"
+    }
+}
+
+private struct StrictRecycleProbePayload: Decodable, Sendable {
+    let files: [StrictRecycleProbeItemPayload]
+    let offset: Int
+    let total: Int
+
+    private enum CodingKeys: String, CodingKey { case files, offset, total }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        files = try container.decode([StrictRecycleProbeItemPayload].self, forKey: .files)
+        offset = try container.decode(Int.self, forKey: .offset)
+        total = try container.decode(Int.self, forKey: .total)
+        guard offset >= 0, total >= 0, offset <= total,
+              files.count <= total - offset else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .files,
+                in: container,
+                debugDescription: "Recycle probe bounds are invalid."
+            )
+        }
+    }
+}
+
+private struct StrictRecycleProbeItemPayload: Decodable, Sendable {
+    let name: String
+    let path: String
+    let isDirectory: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case name, path
+        case isDirectory = "isdir"
+    }
+}
+
+private struct ShareListItemPayload: Decodable, Sendable {
     let id: String
     let name: String?
-    let path: String?
-    let url: String?
-    let linkURL: String?
-    let hasPassword: Bool?
+    let path: String
+    let url: String
+    let hasPassword: Bool
     let expiresAt: String?
 
     private enum CodingKeys: String, CodingKey {
         case id, name, path, url
-        case linkURL = "link_url"
         case hasPassword = "has_password"
         case expiresAt = "date_expired"
     }
@@ -315,52 +481,186 @@ private struct SharePayload: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let value = try? container.decode(String.self, forKey: .id) {
-            id = value
+            id = value.trimmingCharacters(in: .whitespacesAndNewlines)
         } else if let value = try? container.decode(Int.self, forKey: .id) {
             id = String(value)
         } else {
-            id = UUID().uuidString
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "Share link ID is required."
+            )
+        }
+        guard !id.isEmpty, id.utf8.count <= 512 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "Share link ID is invalid."
+            )
         }
         name = try? container.decodeIfPresent(String.self, forKey: .name)
-        path = try? container.decodeIfPresent(String.self, forKey: .path)
-        url = try? container.decodeIfPresent(String.self, forKey: .url)
-        linkURL = try? container.decodeIfPresent(String.self, forKey: .linkURL)
+        path = try container.decode(String.self, forKey: .path)
+        guard path.hasPrefix("/"), path.utf8.count <= 4_096 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .path,
+                in: container,
+                debugDescription: "Share link path is invalid."
+            )
+        }
+        url = try container.decode(String.self, forKey: .url)
+        guard let components = URLComponents(string: url),
+              components.scheme?.lowercased() == "http" ||
+                components.scheme?.lowercased() == "https",
+              components.host?.isEmpty == false,
+              components.user == nil,
+              components.password == nil else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .url,
+                in: container,
+                debugDescription: "Share link URL is invalid."
+            )
+        }
         if let value = try? container.decode(Bool.self, forKey: .hasPassword) {
             hasPassword = value
         } else if let value = try? container.decode(Int.self, forKey: .hasPassword) {
-            hasPassword = value != 0
+            guard value == 0 || value == 1 else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .hasPassword,
+                    in: container,
+                    debugDescription: "Share password flag is invalid."
+                )
+            }
+            hasPassword = value == 1
         } else {
-            hasPassword = nil
+            throw DecodingError.dataCorruptedError(
+                forKey: .hasPassword,
+                in: container,
+                debugDescription: "Share password flag is required."
+            )
         }
         if let value = try? container.decode(String.self, forKey: .expiresAt) {
-            expiresAt = value == "0" ? nil : value
+            if value == "0" {
+                expiresAt = nil
+            } else {
+                expiresAt = try FileShareLinkCalendarDate(iso8601: value).iso8601
+            }
         } else if let value = try? container.decode(Int.self, forKey: .expiresAt) {
-            expiresAt = value > 0 ? String(value) : nil
-        } else {
+            guard value == 0 else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .expiresAt,
+                    in: container,
+                    debugDescription: "Share expiration date is invalid."
+                )
+            }
             expiresAt = nil
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .expiresAt,
+                in: container,
+                debugDescription: "Share expiration date is required."
+            )
         }
     }
 }
 
-private struct ShareListPayload: Decodable, Sendable {
-    let links: [SharePayload]?
-    let id: String?
-    let url: String?
-
-    private enum CodingKeys: String, CodingKey { case links, id, url }
+private struct SharePagePayload: Decodable, Sendable {
+    let links: [ShareListItemPayload]
+    let offset: Int
+    let total: Int
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        links = try? container.decodeIfPresent([SharePayload].self, forKey: .links)
+        links = try container.decode([ShareListItemPayload].self, forKey: .links)
+        offset = try container.decode(Int.self, forKey: .offset)
+        total = try container.decode(Int.self, forKey: .total)
+        guard offset >= 0, total >= 0, offset <= total,
+              links.count <= total - offset else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .links,
+                in: container,
+                debugDescription: "Share link page bounds are invalid."
+            )
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case links, offset, total }
+}
+
+private struct ShareCreateItemPayload: Decodable, Sendable {
+    let id: String?
+    let path: String
+    let error: Int
+
+    private enum CodingKeys: String, CodingKey { case id, path, url, error }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
         if let value = try? container.decode(String.self, forKey: .id) {
-            id = value
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            id = trimmed.isEmpty || trimmed.utf8.count > 512 ? nil : trimmed
         } else if let value = try? container.decode(Int.self, forKey: .id) {
             id = String(value)
         } else {
             id = nil
         }
-        url = try? container.decodeIfPresent(String.self, forKey: .url)
+        path = try container.decode(String.self, forKey: .path)
+        guard path.hasPrefix("/"), path.utf8.count <= 4_096 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .path,
+                in: container,
+                debugDescription: "Created share path is invalid."
+            )
+        }
+        error = try container.decode(Int.self, forKey: .error)
+        guard error >= 0 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .error,
+                in: container,
+                debugDescription: "Created share item error is invalid."
+            )
+        }
+        let value = try container.decode(String.self, forKey: .url)
+        if let components = URLComponents(string: value),
+           components.scheme?.lowercased() == "http" ||
+            components.scheme?.lowercased() == "https",
+           components.host?.isEmpty == false,
+           components.user == nil,
+           components.password == nil {
+            // 创建响应中的 URL 只用于验证形态；最终 URL 始终来自列表回读。
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .url,
+                in: container,
+                debugDescription: "Created share URL is invalid."
+            )
+        }
     }
+}
+
+private struct ShareCreatePayload: Decodable, Sendable {
+    let links: [ShareCreateItemPayload]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        links = try container.decode([ShareCreateItemPayload].self, forKey: .links)
+        guard links.count == 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .links,
+                in: container,
+                debugDescription: "A single share result is required."
+            )
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case links }
+}
+
+private enum ShareLinkReadbackError: Error, Sendable {
+    case invalidPage
+    case duplicateID
+    case totalDrift
+    case zeroProgress
+    case truncated
 }
 
 private struct FileTimePayload: Decodable, Sendable {
@@ -523,6 +823,7 @@ public actor DsmFileRepository: FileRepository {
     public nonisolated let profileID: UUID
     public nonisolated let allowsVerifiedRestore: Bool
     public nonisolated let allowsRemoteMountManagement: Bool
+    public nonisolated let fileShareLinkAvailability: FileShareLinkAvailability
 
     private let baseURL: URL
     private let expectedHost: String
@@ -534,6 +835,7 @@ public actor DsmFileRepository: FileRepository {
     private let directorySizePollingPolicy: DirectorySizePollingPolicy
     private var activeDeletionPaths: Set<String> = []
     private var activeDirectorySizePaths: Set<String> = []
+    private var activeShareLinkPaths: Set<String> = []
 
     public init(
         profile: NasProfile,
@@ -568,6 +870,13 @@ public actor DsmFileRepository: FileRepository {
         profileID = profile.id
         allowsVerifiedRestore = capabilities[DsmAPIName.fileStationCopyMove]?.verified == true
         allowsRemoteMountManagement = capabilities[DsmAPIName.fileStationMount]?.selectedVersion == 1
+        let sharingCapability = capabilities[DsmAPIName.fileStationSharing]
+        let listCapability = capabilities[DsmAPIName.fileStationList]
+        fileShareLinkAvailability = sharingCapability?.selectedVersion == 3 &&
+            sharingCapability?.requestFormat.rawValue == DsmRequestFormat.form.rawValue &&
+            (listCapability?.selectedVersion ?? 0) >= 2
+            ? FileShareLinkAvailability(status: .available, resolvedVersion: 3)
+            : .unsupported
         self.baseURL = baseURL
         self.expectedHost = profile.host
         self.pinnedCertificateSHA256 = profile.pinnedCertificateSHA256
@@ -582,7 +891,21 @@ public actor DsmFileRepository: FileRepository {
     }
 
     public func listShares(offset: Int = 0, limit: Int = 200) async throws -> FilePage {
+        try await listShares(offset: offset, limit: limit, options: .default)
+    }
+
+    /// 共享根只使用排序选项；类型筛选由调用方在进入普通目录后启用。
+    public func listShares(
+        offset: Int,
+        limit: Int,
+        options: FileListOptions
+    ) async throws -> FilePage {
         let capability = try requireCapability(DsmAPIName.fileStationList)
+        let effectiveOptions = FileListOptions(
+            sortField: .name,
+            sortDirection: options.sortDirection,
+            typeFilter: .all
+        )
         do {
             let payload = try await client.call(
                 path: capability.path,
@@ -590,7 +913,12 @@ public actor DsmFileRepository: FileRepository {
                 version: try selectedVersion(capability),
                 method: "list_share",
                 requestFormat: capability.requestFormat,
-                parameters: listParameters(offset: offset, limit: limit),
+                parameters: listParameters(
+                    offset: offset,
+                    limit: limit,
+                    options: effectiveOptions,
+                    includesTypeFilter: false
+                ),
                 credential: credential,
                 as: FileListPayload.self
             )
@@ -667,9 +995,23 @@ public actor DsmFileRepository: FileRepository {
     }
 
     public func listFolder(path: String, offset: Int = 0, limit: Int = 500) async throws -> FilePage {
+        try await listFolder(path: path, offset: offset, limit: limit, options: .default)
+    }
+
+    public func listFolder(
+        path: String,
+        offset: Int,
+        limit: Int,
+        options: FileListOptions
+    ) async throws -> FilePage {
         let capability = try requireCapability(DsmAPIName.fileStationList)
         do {
-            var parameters = listParameters(offset: offset, limit: limit)
+            var parameters = listParameters(
+                offset: offset,
+                limit: limit,
+                options: options,
+                includesTypeFilter: true
+            )
             parameters["folder_path"] = .string(path)
             let payload = try await client.call(
                 path: capability.path,
@@ -741,17 +1083,25 @@ public actor DsmFileRepository: FileRepository {
     public func listVirtualFolders(offset: Int, limit: Int) async throws -> FileVirtualFolderPage {
         let infoCapability = try requireCapability(DsmAPIName.fileStationInfo)
         let virtualFolderCapability = try requireCapability(DsmAPIName.fileStationVirtualFolder)
-        let infoVersion = try selectedVersion(infoCapability, minimum: 2)
-        let virtualFolderVersion = try selectedVersion(virtualFolderCapability, minimum: 2)
+        guard infoCapability.minVersion <= 2, infoCapability.maxVersion >= 2,
+              virtualFolderCapability.minVersion <= 2, virtualFolderCapability.maxVersion >= 2 else {
+            throw AppError(
+                category: .versionUnsupported,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.03e86493986f245a")
+            )
+        }
+        let infoVersion = 2
+        let virtualFolderVersion = 2
         let requestedOffset = min(max(0, offset), Self.virtualFolderSnapshotLimit)
         let remainingCapacity = Self.virtualFolderSnapshotLimit - requestedOffset
         let requestedLimit = remainingCapacity == 0
             ? 0
             : min(max(1, limit), remainingCapacity)
-        let requestedWindow = requestedOffset + requestedLimit
 
         let info: FileStationInfoPayload
         do {
+            try Task.checkCancellation()
             info = try await client.call(
                 path: infoCapability.path,
                 api: infoCapability.name,
@@ -762,8 +1112,13 @@ public actor DsmFileRepository: FileRepository {
                 credential: credential,
                 as: FileStationInfoPayload.self
             )
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as DsmNetworkError {
-            throw DsmErrorMapper.map(error)
+            let mapped = DsmErrorMapper.map(error)
+            if mapped.category == .cancelled { throw CancellationError() }
+            throw mapped
         }
 
         let advertised = Set(info.supportedVirtualProtocols)
@@ -780,18 +1135,20 @@ public actor DsmFileRepository: FileRepository {
         var folders: [FileVirtualFolder] = []
         var unavailableProtocols: [FileVirtualProtocol] = []
         var firstError: AppError?
-        var successfulTotal = 0
+        var sourceWasTruncated = false
 
         for protocolType in protocols {
             var protocolFolders: [FileVirtualFolder] = []
             var protocolOffset = 0
-            var protocolTotal = 0
+            var expectedTotal: Int?
             do {
-                while protocolOffset < requestedWindow {
-                    let requestLimit = min(
-                        Self.virtualFolderRequestLimit,
-                        requestedWindow - protocolOffset
-                    )
+                while protocolOffset < Self.virtualFolderSnapshotLimit {
+                    try Task.checkCancellation()
+                    let boundedRemaining = expectedTotal.map {
+                        max(0, min($0, Self.virtualFolderSnapshotLimit) - protocolOffset)
+                    } ?? (Self.virtualFolderSnapshotLimit - protocolOffset)
+                    guard boundedRemaining > 0 else { break }
+                    let requestLimit = min(Self.virtualFolderRequestLimit, boundedRemaining)
                     let payload = try await client.call(
                         path: virtualFolderCapability.path,
                         api: virtualFolderCapability.name,
@@ -807,32 +1164,91 @@ public actor DsmFileRepository: FileRepository {
                             "additional": .stringArray(Self.virtualFolderAdditionalFields)
                         ],
                         credential: credential,
-                        as: FileListPayload.self
+                        as: StrictVirtualFolderPagePayload.self
                     )
-                    let payloadFolders = payload.folders ?? payload.files ?? []
-                    let resolvedOffset = max(0, payload.offset ?? protocolOffset)
-                    let nextOffset = resolvedOffset + payloadFolders.count
-                    protocolTotal = max(
-                        protocolTotal,
-                        max(payload.total ?? nextOffset, nextOffset)
-                    )
-                    protocolFolders.append(contentsOf: payloadFolders.map {
-                        FileVirtualFolder(item: makeFileItem($0), protocolType: protocolType)
-                    })
-                    guard !payloadFolders.isEmpty,
-                          nextOffset > protocolOffset,
-                          nextOffset < protocolTotal else {
+                    try Task.checkCancellation()
+                    guard payload.folders.count <= requestLimit else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    guard payload.offset == protocolOffset else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    if let expectedTotal {
+                        guard payload.total == expectedTotal else {
+                            throw Self.invalidFileLocationResponse()
+                        }
+                    } else {
+                        expectedTotal = payload.total
+                    }
+                    let boundedTotal = min(payload.total, Self.virtualFolderSnapshotLimit)
+                    if payload.folders.isEmpty, protocolOffset < boundedTotal {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    for folder in payload.folders {
+                        let canonicalPath = try Self.canonicalFileLocationPath(folder.path)
+                        let normalizedName = folder.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let advertisedType = folder.additional?.mountPointType?
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .lowercased()
+                        guard folder.isDirectory,
+                              !normalizedName.isEmpty,
+                              normalizedName.utf8.count <= 1_024,
+                              advertisedType == nil || advertisedType == protocolType.rawValue else {
+                            throw Self.invalidFileLocationResponse()
+                        }
+                        let rights = folder.additional?.perm?.advRight ?? [:]
+                        let item = FileItem(
+                            profileID: profileID,
+                            name: normalizedName,
+                            path: canonicalPath,
+                            kind: .directory,
+                            permissions: FilePermissions(
+                                canRead: rights["read"] ?? rights["download"] ?? true,
+                                canWrite: rights["write"] ?? rights["upload"] ?? false,
+                                canDelete: rights["delete"] ?? false,
+                                posixMode: folder.additional?.perm?.posix
+                            ),
+                            mountPointType: protocolType.rawValue
+                        )
+                        protocolFolders.append(
+                            FileVirtualFolder(item: item, protocolType: protocolType)
+                        )
+                    }
+                    let nextOffset = protocolOffset + payload.folders.count
+                    guard nextOffset <= boundedTotal else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    guard nextOffset < boundedTotal else {
                         break
+                    }
+                    guard nextOffset > protocolOffset else {
+                        throw Self.invalidFileLocationResponse()
                     }
                     protocolOffset = nextOffset
                 }
-                successfulTotal += max(protocolTotal, protocolFolders.count)
+                if let expectedTotal, expectedTotal > Self.virtualFolderSnapshotLimit {
+                    sourceWasTruncated = true
+                }
                 folders.append(contentsOf: protocolFolders)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch let error as DsmNetworkError {
+                let mapped = DsmErrorMapper.map(error)
+                if mapped.category == .cancelled { throw CancellationError() }
+                if mapped.category == .authenticationRequired || mapped.category == .otpRequired {
+                    throw mapped
+                }
                 unavailableProtocols.append(protocolType)
                 if firstError == nil {
-                    firstError = DsmErrorMapper.map(error)
+                    firstError = mapped
                 }
+            } catch let error as AppError {
+                if error.category == .cancelled { throw CancellationError() }
+                if error.category == .authenticationRequired || error.category == .otpRequired {
+                    throw error
+                }
+                unavailableProtocols.append(protocolType)
+                if firstError == nil { firstError = error }
             }
         }
 
@@ -840,11 +1256,14 @@ public actor DsmFileRepository: FileRepository {
             throw firstError
         }
 
-        var uniqueFoldersByID: [String: FileVirtualFolder] = [:]
-        for folder in folders where uniqueFoldersByID[folder.id] == nil {
-            uniqueFoldersByID[folder.id] = folder
+        var uniqueFoldersByKey: [String: FileVirtualFolder] = [:]
+        for folder in folders {
+            let key = "\(folder.protocolType.rawValue)|\(folder.item.path)"
+            if uniqueFoldersByKey[key] == nil {
+                uniqueFoldersByKey[key] = folder
+            }
         }
-        let sortedFolders = uniqueFoldersByID.values.sorted { left, right in
+        let sortedFolders = uniqueFoldersByKey.values.sorted { left, right in
             let nameComparison = left.item.name.localizedCaseInsensitiveCompare(right.item.name)
             if nameComparison == .orderedSame {
                 if left.item.path == right.item.path {
@@ -854,19 +1273,17 @@ public actor DsmFileRepository: FileRepository {
             }
             return nameComparison == .orderedAscending
         }
-        let start = min(requestedOffset, sortedFolders.count)
-        let end = min(start + requestedLimit, sortedFolders.count)
-        let pageFolders = Array(sortedFolders[start..<end])
-        let total = min(
-            max(successfulTotal, sortedFolders.count),
-            Self.virtualFolderSnapshotLimit
-        )
-        let isTruncated = successfulTotal > Self.virtualFolderSnapshotLimit
+        let boundedFolders = Array(sortedFolders.prefix(Self.virtualFolderSnapshotLimit))
+        let start = min(requestedOffset, boundedFolders.count)
+        let end = min(start + requestedLimit, boundedFolders.count)
+        let pageFolders = Array(boundedFolders[start..<end])
+        let total = boundedFolders.count
+        let isTruncated = sourceWasTruncated || sortedFolders.count > Self.virtualFolderSnapshotLimit
         return FileVirtualFolderPage(
             folders: pageFolders,
             offset: requestedOffset,
             total: total,
-            hasMore: requestedOffset + pageFolders.count < total,
+            hasMore: end < total,
             isTruncated: isTruncated,
             unavailableProtocols: unavailableProtocols
         )
@@ -880,6 +1297,186 @@ public actor DsmFileRepository: FileRepository {
             offset: page.offset,
             total: page.total,
             hasMore: page.hasMore
+        )
+    }
+
+    public func discoverRecycleLocations() async throws -> FileRecycleDiscoveryResult {
+        let capability = try requireCapability(DsmAPIName.fileStationList)
+        guard capability.minVersion <= 2, capability.maxVersion >= 2 else {
+            throw AppError(
+                category: .versionUnsupported,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.03e86493986f245a")
+            )
+        }
+
+        var rawOffset = 0
+        var expectedTotal: Int?
+        var isTruncated = false
+        var seenSharePaths = Set<String>()
+        var localShares: [(name: String, path: String, recyclePath: String)] = []
+
+        do {
+            while rawOffset < Self.recycleShareLimit {
+                try Task.checkCancellation()
+                let boundedRemaining = expectedTotal.map {
+                    max(0, min($0, Self.recycleShareLimit) - rawOffset)
+                } ?? (Self.recycleShareLimit - rawOffset)
+                guard boundedRemaining > 0 else { break }
+                let requestLimit = min(Self.recycleSharePageLimit, boundedRemaining)
+                let payload = try await client.call(
+                    path: capability.path,
+                    api: capability.name,
+                    version: 2,
+                    method: "list_share",
+                    requestFormat: capability.requestFormat,
+                    parameters: [
+                        "offset": .integer(rawOffset),
+                        "limit": .integer(requestLimit),
+                        "sort_by": .string("name"),
+                        "sort_direction": .string("asc"),
+                        "additional": .stringArray(["mount_point_type"])
+                    ],
+                    credential: credential,
+                    as: StrictRecycleSharePagePayload.self
+                )
+                try Task.checkCancellation()
+                guard payload.shares.count <= requestLimit,
+                      payload.offset == rawOffset else {
+                    throw Self.invalidFileLocationResponse()
+                }
+                if let expectedTotal {
+                    guard payload.total == expectedTotal else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                } else {
+                    expectedTotal = payload.total
+                    isTruncated = payload.total > Self.recycleShareLimit
+                }
+                let boundedTotal = min(payload.total, Self.recycleShareLimit)
+                if payload.shares.isEmpty, rawOffset < boundedTotal {
+                    throw Self.invalidFileLocationResponse()
+                }
+
+                for share in payload.shares {
+                    let canonicalPath = try Self.canonicalFileLocationPath(share.path)
+                    let normalizedName = share.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard share.isDirectory,
+                          !normalizedName.isEmpty,
+                          normalizedName.utf8.count <= 1_024 else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    let mountType = share.additional?.mountPointType?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                    let isLocal = mountType == nil || mountType?.isEmpty == true ||
+                        mountType == "normal" || mountType == "shared_folder"
+                    guard isLocal, seenSharePaths.insert(canonicalPath).inserted else {
+                        continue
+                    }
+                    localShares.append((
+                        name: normalizedName,
+                        path: canonicalPath,
+                        recyclePath: try Self.canonicalFileLocationPath(
+                            canonicalPath + "/#recycle"
+                        )
+                    ))
+                }
+
+                let nextOffset = rawOffset + payload.shares.count
+                guard nextOffset <= boundedTotal else {
+                    throw Self.invalidFileLocationResponse()
+                }
+                guard nextOffset < boundedTotal else { break }
+                guard nextOffset > rawOffset else {
+                    throw Self.invalidFileLocationResponse()
+                }
+                rawOffset = nextOffset
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as DsmNetworkError {
+            let mapped = DsmErrorMapper.map(error)
+            if mapped.category == .cancelled { throw CancellationError() }
+            throw mapped
+        }
+
+        var locations: [FileRecycleLocation] = []
+        var scannedShareCount = 0
+        var permissionDeniedShareCount = 0
+        for share in localShares {
+            try Task.checkCancellation()
+            scannedShareCount += 1
+            do {
+                let payload = try await client.call(
+                    path: capability.path,
+                    api: capability.name,
+                    version: 2,
+                    method: "list",
+                    requestFormat: capability.requestFormat,
+                    parameters: [
+                        "folder_path": .string(share.recyclePath),
+                        "offset": .integer(0),
+                        "limit": .integer(1),
+                        "sort_by": .string("name"),
+                        "sort_direction": .string("asc")
+                    ],
+                    credential: credential,
+                    as: StrictRecycleProbePayload.self
+                )
+                try Task.checkCancellation()
+                guard payload.offset == 0,
+                      payload.files.count <= 1,
+                      !(payload.files.isEmpty && payload.total > 0) else {
+                    throw Self.invalidFileLocationResponse()
+                }
+                for item in payload.files {
+                    let itemPath = try Self.canonicalFileLocationPath(item.path)
+                    guard itemPath.hasPrefix(share.recyclePath + "/") else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                }
+                locations.append(FileRecycleLocation(
+                    shareName: share.name,
+                    sharePath: share.path,
+                    recyclePath: share.recyclePath
+                ))
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as DsmNetworkError {
+                let mapped = DsmErrorMapper.map(error)
+                switch mapped.category {
+                case .cancelled:
+                    throw CancellationError()
+                case .notFound:
+                    continue
+                case .permissionDenied:
+                    permissionDeniedShareCount += 1
+                    continue
+                default:
+                    throw mapped
+                }
+            } catch let error as AppError {
+                switch error.category {
+                case .cancelled:
+                    throw CancellationError()
+                case .notFound:
+                    continue
+                case .permissionDenied:
+                    permissionDeniedShareCount += 1
+                    continue
+                default:
+                    throw error
+                }
+            }
+        }
+
+        return FileRecycleDiscoveryResult(
+            profileID: profileID,
+            locations: locations,
+            scannedShareCount: scannedShareCount,
+            permissionDeniedShareCount: permissionDeniedShareCount,
+            isTruncated: isTruncated
         )
     }
 
@@ -1998,14 +2595,45 @@ public actor DsmFileRepository: FileRepository {
         }
     }
 
-    private func listParameters(offset: Int, limit: Int) -> [String: DsmParameterValue] {
-        [
+    private func listParameters(
+        offset: Int,
+        limit: Int,
+        options: FileListOptions = .default,
+        includesTypeFilter: Bool = false
+    ) -> [String: DsmParameterValue] {
+        var parameters: [String: DsmParameterValue] = [
             "offset": .integer(offset),
             "limit": .integer(limit),
-            "sort_by": .string("name"),
-            "sort_direction": .string("asc"),
+            "sort_by": .string(Self.listSortField(options.sortField)),
+            "sort_direction": .string(Self.listSortDirection(options.sortDirection)),
             "additional": .stringArray(Self.additionalFields)
         ]
+        if includesTypeFilter {
+            switch options.typeFilter {
+            case .all:
+                break
+            case .files:
+                parameters["filetype"] = .string("file")
+            case .folders:
+                parameters["filetype"] = .string("dir")
+            }
+        }
+        return parameters
+    }
+
+    private static func listSortField(_ field: FileListSortField) -> String {
+        switch field {
+        case .name: "name"
+        case .size: "size"
+        case .modifiedTime: "mtime"
+        }
+    }
+
+    private static func listSortDirection(_ direction: FileListSortDirection) -> String {
+        switch direction {
+        case .ascending: "asc"
+        case .descending: "desc"
+        }
     }
 
     private func makeFileItem(_ payload: FilePayload) -> FileItem {
@@ -2342,20 +2970,149 @@ public actor DsmFileRepository: FileRepository {
     }
 
     public func listFavorites() async throws -> [FavoriteLocation] {
+        try await listFavoritesPage(offset: 0, limit: Self.favoriteSnapshotLimit).locations
+    }
+
+    public func listFavoritesPage(offset: Int, limit: Int) async throws -> FileFavoritePage {
         let capability = try requireCapability(DsmAPIName.fileStationFavorite)
-        let payload = try await client.call(
-            path: capability.path,
-            api: capability.name,
-            version: try selectedVersion(capability),
-            method: "list",
-            requestFormat: capability.requestFormat,
-            parameters: ["offset": .integer(0), "limit": .integer(500)],
-            credential: credential,
-            as: FavoriteListPayload.self
-        )
-        return (payload.favorites ?? []).map {
-            FavoriteLocation(name: $0.name ?? URL(fileURLWithPath: $0.path).lastPathComponent, path: $0.path)
+        guard capability.minVersion <= 2, capability.maxVersion >= 2 else {
+            throw AppError(
+                category: .versionUnsupported,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.03e86493986f245a")
+            )
         }
+        let requestedOffset = min(max(0, offset), Self.favoriteSnapshotLimit)
+        let remainingCapacity = Self.favoriteSnapshotLimit - requestedOffset
+        let requestedLimit = remainingCapacity == 0 ? 0 : min(max(1, limit), remainingCapacity)
+        var rawOffset = 0
+        var expectedTotal: Int?
+        var metadataMode: Bool?
+        var sourceTotal = 0
+        var isTruncated = false
+        var seenPaths = Set<String>()
+        var orderedLocations: [FavoriteLocation] = []
+
+        do {
+            while rawOffset < Self.favoriteSnapshotLimit {
+                try Task.checkCancellation()
+                let boundedRemaining = expectedTotal.map {
+                    max(0, min($0, Self.favoriteSnapshotLimit) - rawOffset)
+                } ?? (Self.favoriteSnapshotLimit - rawOffset)
+                guard boundedRemaining > 0 else { break }
+                let requestLimit = min(Self.favoriteRequestLimit, boundedRemaining)
+                let payload = try await client.call(
+                    path: capability.path,
+                    api: capability.name,
+                    version: 2,
+                    method: "list",
+                    requestFormat: capability.requestFormat,
+                    parameters: [
+                        "offset": .integer(rawOffset),
+                        "limit": .integer(requestLimit)
+                    ],
+                    credential: credential,
+                    as: FavoritePagePayload.self
+                )
+                try Task.checkCancellation()
+                guard payload.favorites.count <= requestLimit else {
+                    throw Self.invalidFileLocationResponse()
+                }
+
+                let hasMetadata = payload.offset != nil
+                if let metadataMode {
+                    guard metadataMode == hasMetadata else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                } else {
+                    metadataMode = hasMetadata
+                }
+                if let responseOffset = payload.offset, let responseTotal = payload.total {
+                    guard responseOffset == rawOffset else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    if let expectedTotal {
+                        guard responseTotal == expectedTotal else {
+                            throw Self.invalidFileLocationResponse()
+                        }
+                    } else {
+                        expectedTotal = responseTotal
+                    }
+                    let boundedTotal = min(responseTotal, Self.favoriteSnapshotLimit)
+                    if payload.favorites.isEmpty, rawOffset < boundedTotal {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                }
+
+                for favorite in payload.favorites {
+                    let canonicalPath = try Self.canonicalFileLocationPath(favorite.path)
+                    let suppliedName = favorite.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let resolvedName = suppliedName?.isEmpty == false
+                        ? suppliedName!
+                        : String(canonicalPath.split(separator: "/").last ?? "")
+                    guard !resolvedName.isEmpty, resolvedName.utf8.count <= 1_024 else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    if seenPaths.insert(canonicalPath).inserted {
+                        orderedLocations.append(FavoriteLocation(
+                            name: resolvedName,
+                            path: canonicalPath
+                        ))
+                    }
+                }
+
+                let nextOffset = rawOffset + payload.favorites.count
+                guard nextOffset <= Self.favoriteSnapshotLimit else {
+                    throw Self.invalidFileLocationResponse()
+                }
+                sourceTotal = nextOffset
+                if let expectedTotal {
+                    let boundedTotal = min(expectedTotal, Self.favoriteSnapshotLimit)
+                    guard nextOffset <= boundedTotal else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                    if nextOffset >= boundedTotal {
+                        sourceTotal = expectedTotal
+                        isTruncated = expectedTotal > Self.favoriteSnapshotLimit
+                        break
+                    }
+                    guard nextOffset > rawOffset else {
+                        throw Self.invalidFileLocationResponse()
+                    }
+                } else {
+                    if payload.favorites.count < requestLimit {
+                        break
+                    }
+                    if nextOffset == Self.favoriteSnapshotLimit {
+                        isTruncated = true
+                        break
+                    }
+                    guard nextOffset > rawOffset else {
+                        break
+                    }
+                }
+                rawOffset = nextOffset
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as DsmNetworkError {
+            let mapped = DsmErrorMapper.map(error)
+            if mapped.category == .cancelled { throw CancellationError() }
+            throw mapped
+        }
+
+        let boundedLocations = Array(orderedLocations.prefix(Self.favoriteSnapshotLimit))
+        let start = min(requestedOffset, boundedLocations.count)
+        let end = min(start + requestedLimit, boundedLocations.count)
+        return FileFavoritePage(
+            locations: Array(boundedLocations[start..<end]),
+            offset: start,
+            nextOffset: end,
+            total: boundedLocations.count,
+            sourceTotal: sourceTotal,
+            hasMore: end < boundedLocations.count,
+            isTruncated: isTruncated
+        )
     }
 
     public func addFavorite(path: String, name: String) async throws {
@@ -2884,18 +3641,40 @@ public actor DsmFileRepository: FileRepository {
     }
 
     public func listShareLinks() async throws -> [FileShareLink] {
-        let capability = try requireCapability(DsmAPIName.fileStationSharing)
-        let payload = try await client.call(
-            path: capability.path,
-            api: capability.name,
-            version: try selectedVersion(capability),
-            method: "list",
-            requestFormat: capability.requestFormat,
-            parameters: ["offset": .integer(0), "limit": .integer(500)],
-            credential: credential,
-            as: ShareListPayload.self
-        )
-        return (payload.links ?? []).compactMap(makeShareLink)
+        do {
+            return try await loadAllShareLinks()
+        } catch let error as DsmNetworkError {
+            throw DsmErrorMapper.map(error)
+        } catch let error as ShareLinkReadbackError {
+            throw shareLinkContractAppError(error)
+        }
+    }
+
+    public func listShareLinksPage(
+        offset: Int,
+        limit: Int
+    ) async throws -> FileShareLinkPage {
+        guard fileShareLinkAvailability.status == .available else {
+            throw AppError(
+                category: .apiUnavailable,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.7dc6f291445bfb76")
+            )
+        }
+        guard offset >= 0, (1...500).contains(limit) else {
+            throw AppError(
+                category: .invalidResponse,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.88223e41ac45d405")
+            )
+        }
+        do {
+            return try await fetchShareLinkPage(offset: offset, limit: limit)
+        } catch let error as DsmNetworkError {
+            throw DsmErrorMapper.map(error)
+        } catch let error as ShareLinkReadbackError {
+            throw shareLinkContractAppError(error)
+        }
     }
 
     public func createShareLink(
@@ -2903,41 +3682,320 @@ public actor DsmFileRepository: FileRepository {
         password: String?,
         expiresAt: String?
     ) async throws -> FileShareLink {
-        let capability = try requireCapability(DsmAPIName.fileStationSharing)
-        var parameters: [String: DsmParameterValue] = ["path": .stringArray(paths)]
-        if let password, !password.isEmpty { parameters["password"] = .string(password) }
-        if let expiresAt, !expiresAt.isEmpty { parameters["date_expired"] = .string(expiresAt) }
-        let payload = try await client.call(
-            path: capability.path,
-            api: capability.name,
-            version: try selectedVersion(capability),
-            method: "create",
-            requestFormat: capability.requestFormat,
-            parameters: parameters,
-            credential: credential,
-            as: ShareListPayload.self
-        )
-        if let link = payload.links?.first.flatMap(makeShareLink) {
-            return FileShareLink(
-                id: link.id,
-                name: link.name,
-                path: link.path,
-                url: link.url,
-                hasPassword: password?.isEmpty == false || link.hasPassword,
-                expiresAt: link.expiresAt ?? expiresAt
+        guard paths.count == 1,
+              let path = paths.first,
+              let target = try await getInfo(paths: [path]).first(where: { $0.path == path }) else {
+            throw AppError(
+                category: .invalidResponse,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.88223e41ac45d405")
             )
         }
-        guard let id = payload.id, let url = payload.url else {
-            throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("shared.88223e41ac45d405"))
+        let expiration = try expiresAt.flatMap {
+            $0.isEmpty ? nil : try FileShareLinkCalendarDate(iso8601: $0)
         }
-        let path = paths.first ?? ""
-        return FileShareLink(
-            id: id,
-            name: URL(fileURLWithPath: path).lastPathComponent,
-            path: path,
-            url: url,
-            hasPassword: password?.isEmpty == false,
-            expiresAt: expiresAt
+        let outcome = try await createShareLinkResult(FileShareLinkCreateRequest(
+            target: target,
+            password: password,
+            expiresOn: expiration
+        ))
+        guard outcome.result.status == .confirmedSuccess,
+              let link = outcome.confirmedLink else {
+            throw AppError(
+                category: outcome.result.errorCategory == .permission
+                    ? .permissionDenied
+                    : .invalidResponse,
+                isRetryable: outcome.result.requiresRefresh,
+                safeUserMessage: L10n.string("shared.88223e41ac45d405")
+            )
+        }
+        return link
+    }
+
+    public func createShareLinkResult(
+        _ request: FileShareLinkCreateRequest
+    ) async throws -> FileShareLinkCreateOutcome {
+        let operation = "shareLinkCreate"
+        if Task.isCancelled {
+            return try shareLinkOutcome(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                diagnosticTag: "file-station.share-link.cancelled-before-submission"
+            )
+        }
+        guard fileShareLinkAvailability.status == .available,
+              let capability = capabilities[DsmAPIName.fileStationSharing],
+              capability.selectedVersion == 3 else {
+            return try shareLinkOutcome(
+                status: .unsupported,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "file-station.share-link.unsupported"
+            )
+        }
+        guard request.target.profileID == profileID,
+              let targetPath = Self.normalizedShareLinkPath(request.target.path),
+              targetPath == request.target.path else {
+            return try shareLinkOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                failed: 1,
+                errorCategory: .validation,
+                diagnosticTag: "file-station.share-link.invalid-target"
+            )
+        }
+        guard !activeShareLinkPaths.contains(targetPath),
+              !activeDeletionPaths.contains(where: {
+                  Self.deletionPathsOverlap($0, targetPath)
+              }) else {
+            return try shareLinkOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                failed: 1,
+                errorCategory: .conflict,
+                diagnosticTag: "file-station.share-link.duplicate-submission"
+            )
+        }
+
+        activeShareLinkPaths.insert(targetPath)
+        defer { activeShareLinkPaths.remove(targetPath) }
+
+        let observedTarget: FileItem
+        do {
+            guard let observed = try await getInfo(paths: [targetPath])
+                .first(where: { $0.path == targetPath }) else {
+                return try shareLinkOutcome(
+                    status: .confirmedFailure,
+                    operation: operation,
+                    submitted: false,
+                    requiresRefresh: false,
+                    failed: 1,
+                    errorCategory: .conflict,
+                    diagnosticTag: "file-station.share-link.target-missing"
+                )
+            }
+            observedTarget = observed
+        } catch {
+            return try shareLinkPreflightFailure(error, operation: operation)
+        }
+        guard Self.matchesShareLinkBaseline(observedTarget, request.target) else {
+            return try shareLinkOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                failed: 1,
+                errorCategory: .conflict,
+                diagnosticTag: "file-station.share-link.baseline-changed"
+            )
+        }
+        guard observedTarget.permissions?.canRead == true else {
+            return try shareLinkOutcome(
+                status: .permissionDenied,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                failed: 1,
+                errorCategory: .permission,
+                diagnosticTag: "file-station.share-link.target-unreadable"
+            )
+        }
+
+        let existingIDs: Set<String>
+        do {
+            existingIDs = Set(try await loadAllShareLinks().map(\.id))
+        } catch {
+            return try shareLinkPreflightFailure(error, operation: operation)
+        }
+        if Task.isCancelled {
+            return try shareLinkOutcome(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                diagnosticTag: "file-station.share-link.cancelled-after-preflight"
+            )
+        }
+
+        var parameters: [String: DsmParameterValue] = [
+            "path": .stringArray([targetPath])
+        ]
+        if let password = request.password {
+            parameters["password"] = .string(password)
+        }
+        if let availableOn = request.availableOn {
+            parameters["date_available"] = .string(availableOn.iso8601)
+        }
+        if let expiresOn = request.expiresOn {
+            parameters["date_expired"] = .string(expiresOn.iso8601)
+        }
+
+        var candidateID: String?
+        var submissionErrorCategory: MutationErrorCategory?
+        do {
+            let payload = try await client.call(
+                path: capability.path,
+                api: capability.name,
+                version: 3,
+                method: "create",
+                requestFormat: capability.requestFormat,
+                parameters: parameters,
+                credential: credential,
+                as: ShareCreatePayload.self
+            )
+            guard payload.links[0].error == 0 else {
+                let isPermissionDenied = payload.links[0].error == 105
+                return try shareLinkOutcome(
+                    status: isPermissionDenied ? .permissionDenied : .confirmedFailure,
+                    operation: operation,
+                    submitted: true,
+                    requiresRefresh: false,
+                    failed: 1,
+                    errorCategory: isPermissionDenied ? .permission : .server,
+                    diagnosticTag: "file-station.share-link.item-rejected"
+                )
+            }
+            candidateID = Self.shareLinkCandidateID(payload, targetPath: targetPath)
+        } catch let error as DsmNetworkError {
+            switch error {
+            case .invalidRequest:
+                return try shareLinkOutcome(
+                    status: .confirmedFailure,
+                    operation: operation,
+                    submitted: false,
+                    requiresRefresh: false,
+                    failed: 1,
+                    errorCategory: .validation,
+                    diagnosticTag: "file-station.share-link.invalid-request"
+                )
+            case .api:
+                let mapped = DsmErrorMapper.map(error)
+                return try shareLinkOutcome(
+                    status: mapped.category == .permissionDenied ||
+                        mapped.category == .authenticationRequired
+                        ? .permissionDenied
+                        : .confirmedFailure,
+                    operation: operation,
+                    submitted: true,
+                    requiresRefresh: false,
+                    failed: 1,
+                    errorCategory: mutationErrorCategory(for: mapped.category),
+                    diagnosticTag: "file-station.share-link.rejected"
+                )
+            case .cancelled:
+                return try shareLinkOutcome(
+                    status: .cancellationRequestedAfterSubmission,
+                    operation: operation,
+                    submitted: true,
+                    requiresRefresh: true,
+                    unknown: 1,
+                    diagnosticTag: "file-station.share-link.cancelled-after-submission"
+                )
+            case .httpStatus, .responseTooLarge, .invalidResponse, .transport:
+                submissionErrorCategory = mutationErrorCategory(
+                    for: DsmErrorMapper.map(error).category
+                )
+            }
+        } catch is CancellationError {
+            return try shareLinkOutcome(
+                status: .cancellationRequestedAfterSubmission,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                diagnosticTag: "file-station.share-link.cancelled-after-submission"
+            )
+        } catch {
+            submissionErrorCategory = .unknown
+        }
+
+        if Task.isCancelled {
+            return try shareLinkOutcome(
+                status: .cancellationRequestedAfterSubmission,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                diagnosticTag: "file-station.share-link.cancelled-before-readback"
+            )
+        }
+
+        let currentLinks: [FileShareLink]
+        do {
+            currentLinks = try await loadAllShareLinks()
+        } catch {
+            let cancelled = Task.isCancelled ||
+                (error as? DsmNetworkError).map {
+                    if case .cancelled = $0 { return true }
+                    return false
+                } == true
+            return try shareLinkOutcome(
+                status: cancelled
+                    ? .cancellationRequestedAfterSubmission
+                    : .submittedButUnverified,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: cancelled
+                    ? nil
+                    : submissionErrorCategory ?? .unknown,
+                diagnosticTag: cancelled
+                    ? "file-station.share-link.cancelled-during-readback"
+                    : "file-station.share-link.readback-unverified"
+            )
+        }
+
+        let confirmed: FileShareLink?
+        if let candidateID {
+            if existingIDs.contains(candidateID) {
+                confirmed = nil
+            } else {
+                let matches = currentLinks.filter {
+                    $0.id == candidateID &&
+                        $0.path == targetPath &&
+                        $0.hasPassword == (request.password != nil) &&
+                        $0.expiresAt == request.expiresOn?.iso8601
+                }
+                confirmed = matches.count == 1 ? matches[0] : nil
+            }
+        } else {
+            let matches = currentLinks.filter {
+                !existingIDs.contains($0.id) &&
+                    $0.path == targetPath &&
+                    $0.hasPassword == (request.password != nil) &&
+                    $0.expiresAt == request.expiresOn?.iso8601
+            }
+            confirmed = matches.count == 1 ? matches[0] : nil
+        }
+        guard let confirmed else {
+            return try shareLinkOutcome(
+                status: .submittedButUnverified,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: submissionErrorCategory,
+                diagnosticTag: "file-station.share-link.readback-mismatch"
+            )
+        }
+        return try shareLinkOutcome(
+            status: .confirmedSuccess,
+            operation: operation,
+            submitted: true,
+            requiresRefresh: false,
+            succeeded: 1,
+            diagnosticTag: "file-station.share-link.confirmed",
+            confirmedLink: confirmed
         )
     }
 
@@ -3144,16 +4202,215 @@ public actor DsmFileRepository: FileRepository {
         )
     }
 
-    private func makeShareLink(_ payload: SharePayload) -> FileShareLink? {
-        guard let url = payload.url ?? payload.linkURL, !url.isEmpty else { return nil }
-        let path = payload.path ?? ""
+    private func makeShareLink(_ payload: ShareListItemPayload) -> FileShareLink {
         return FileShareLink(
             id: payload.id,
-            name: payload.name ?? URL(fileURLWithPath: path).lastPathComponent,
-            path: path,
-            url: url,
-            hasPassword: payload.hasPassword ?? false,
+            name: payload.name ?? URL(fileURLWithPath: payload.path).lastPathComponent,
+            path: payload.path,
+            url: payload.url,
+            hasPassword: payload.hasPassword,
             expiresAt: payload.expiresAt
+        )
+    }
+
+    private func fetchShareLinkPage(
+        offset: Int,
+        limit: Int
+    ) async throws -> FileShareLinkPage {
+        guard let capability = capabilities[DsmAPIName.fileStationSharing],
+              capability.selectedVersion == 3 else {
+            throw ShareLinkReadbackError.invalidPage
+        }
+        let payload = try await client.call(
+            path: capability.path,
+            api: capability.name,
+            version: 3,
+            method: "list",
+            requestFormat: capability.requestFormat,
+            parameters: ["offset": .integer(offset), "limit": .integer(limit)],
+            credential: credential,
+            as: SharePagePayload.self
+        )
+        guard payload.offset == offset else {
+            throw ShareLinkReadbackError.invalidPage
+        }
+        let links = payload.links.map(makeShareLink)
+        guard Set(links.map(\.id)).count == links.count else {
+            throw ShareLinkReadbackError.duplicateID
+        }
+        return FileShareLinkPage(
+            links: links,
+            offset: payload.offset,
+            total: payload.total,
+            hasMore: payload.offset + links.count < payload.total,
+            isTruncated: payload.total > 5_000
+        )
+    }
+
+    private func loadAllShareLinks() async throws -> [FileShareLink] {
+        var links: [FileShareLink] = []
+        var seenIDs = Set<String>()
+        var expectedTotal: Int?
+        var offset = 0
+        while true {
+            let page = try await fetchShareLinkPage(offset: offset, limit: 500)
+            if page.isTruncated {
+                throw ShareLinkReadbackError.truncated
+            }
+            if let expectedTotal, page.total != expectedTotal {
+                throw ShareLinkReadbackError.totalDrift
+            }
+            expectedTotal = page.total
+            for link in page.links {
+                guard seenIDs.insert(link.id).inserted else {
+                    throw ShareLinkReadbackError.duplicateID
+                }
+                links.append(link)
+            }
+            let nextOffset = page.offset + page.links.count
+            guard nextOffset <= page.total else {
+                throw ShareLinkReadbackError.invalidPage
+            }
+            if nextOffset == page.total {
+                return links
+            }
+            guard nextOffset > offset else {
+                throw ShareLinkReadbackError.zeroProgress
+            }
+            offset = nextOffset
+        }
+    }
+
+    private static func shareLinkCandidateID(
+        _ payload: ShareCreatePayload,
+        targetPath: String
+    ) -> String? {
+        let item = payload.links[0]
+        return item.error == 0 && item.path == targetPath ? item.id : nil
+    }
+
+    private static func normalizedShareLinkPath(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let components = trimmed.split(separator: "/", omittingEmptySubsequences: false)
+        guard trimmed.hasPrefix("/"), trimmed != "/", trimmed.utf8.count <= 4_096,
+              !trimmed.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0)
+              }),
+              components.dropFirst().allSatisfy({
+                  !$0.isEmpty && $0 != "." && $0 != ".."
+              }) else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func matchesShareLinkBaseline(
+        _ observed: FileItem,
+        _ baseline: FileItem
+    ) -> Bool {
+        guard observed.profileID == baseline.profileID,
+              observed.path == baseline.path,
+              observed.name == baseline.name,
+              observed.kind == baseline.kind,
+              observed.owner == baseline.owner,
+              observed.group == baseline.group,
+              observed.permissions == baseline.permissions,
+              observed.mountPointType == baseline.mountPointType else {
+            return false
+        }
+        if observed.kind == .directory {
+            return true
+        }
+        return observed.sizeBytes == baseline.sizeBytes &&
+            observed.times?.modifiedAt == baseline.times?.modifiedAt
+    }
+
+    private func shareLinkPreflightFailure(
+        _ error: Error,
+        operation: String
+    ) throws -> FileShareLinkCreateOutcome {
+        let mapped: AppError
+        if let appError = error as? AppError {
+            mapped = appError
+        } else if let networkError = error as? DsmNetworkError {
+            mapped = DsmErrorMapper.map(networkError)
+        } else if error is CancellationError {
+            return try shareLinkOutcome(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                diagnosticTag: "file-station.share-link.cancelled-during-preflight"
+            )
+        } else {
+            return try shareLinkOutcome(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                failed: 1,
+                errorCategory: .unknown,
+                diagnosticTag: "file-station.share-link.preflight-failed"
+            )
+        }
+        if mapped.category == .cancelled || Task.isCancelled {
+            return try shareLinkOutcome(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                diagnosticTag: "file-station.share-link.cancelled-during-preflight"
+            )
+        }
+        let status: MutationResultStatus = switch mapped.category {
+        case .permissionDenied, .authenticationRequired: .permissionDenied
+        case .apiUnavailable, .versionUnsupported: .unsupported
+        default: .confirmedFailure
+        }
+        return try shareLinkOutcome(
+            status: status,
+            operation: operation,
+            submitted: false,
+            requiresRefresh: false,
+            failed: 1,
+            errorCategory: mutationErrorCategory(for: mapped.category),
+            diagnosticTag: "file-station.share-link.preflight-failed"
+        )
+    }
+
+    private func shareLinkOutcome(
+        status: MutationResultStatus,
+        operation: String,
+        submitted: Bool,
+        requiresRefresh: Bool,
+        succeeded: Int = 0,
+        failed: Int = 0,
+        unknown: Int = 0,
+        errorCategory: MutationErrorCategory? = nil,
+        diagnosticTag: String,
+        confirmedLink: FileShareLink? = nil
+    ) throws -> FileShareLinkCreateOutcome {
+        FileShareLinkCreateOutcome(
+            result: try makeMutationResult(
+                status: status,
+                operation: operation,
+                submitted: submitted,
+                requiresRefresh: requiresRefresh,
+                succeeded: succeeded,
+                failed: failed,
+                unknown: unknown,
+                errorCategory: errorCategory,
+                diagnosticTag: diagnosticTag
+            ),
+            confirmedLink: confirmedLink
+        )
+    }
+
+    private func shareLinkContractAppError(_ error: ShareLinkReadbackError) -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.88223e41ac45d405")
         )
     }
 
@@ -3326,6 +4583,28 @@ public actor DsmFileRepository: FileRepository {
     private static func nonnegativeInt64(_ value: Int64?) -> Int64? {
         guard let value, value >= 0 else { return nil }
         return value
+    }
+
+    /// 文件位置契约只接受已经规范化的绝对路径，避免重复路径在分页后形成幽灵条目。
+    private static func canonicalFileLocationPath(_ value: String) throws -> String {
+        let components = value.split(separator: "/", omittingEmptySubsequences: true)
+        let canonical = "/" + components.joined(separator: "/")
+        guard !components.isEmpty,
+              value == canonical,
+              value.utf8.count <= 4_096,
+              !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              !components.contains(where: { $0 == "." || $0 == ".." }) else {
+            throw invalidFileLocationResponse()
+        }
+        return canonical
+    }
+
+    private static func invalidFileLocationResponse() -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.7aa519aeec359f04")
+        )
     }
 
     private func requireCapability(_ name: String) throws -> ApiCapability {
@@ -3616,6 +4895,10 @@ public actor DsmFileRepository: FileRepository {
     private static let getInfoAdditionalFields = [
         "size", "owner", "time", "perm", "type", "mount_point_type"
     ]
+    private static let favoriteRequestLimit = 500
+    private static let favoriteSnapshotLimit = 5_000
+    private static let recycleSharePageLimit = 200
+    private static let recycleShareLimit = 500
     private static let virtualFolderRequestLimit = 500
     private static let virtualFolderSnapshotLimit = 5_000
     private static let virtualFolderAdditionalFields = ["mount_point_type", "perm"]

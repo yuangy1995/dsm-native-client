@@ -151,7 +151,8 @@ private enum SupplementaryServiceResult: Sendable {
 
 /// Download Station、VMM 与 Container Manager 的套件适配器。
 /// Container Manager 以及无公开接口时的套件分支均属于 DSM 内部接口。
-public actor DsmServiceManagementRepository: ServiceManagementRepository {
+public actor DsmServiceManagementRepository: ServiceManagementRepository,
+    VirtualMachineInventoryReading, ContainerInventoryReading {
     private let capabilities: CapabilitySet
     private let credential: DsmSessionCredential
     private let baseURL: URL
@@ -496,6 +497,40 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository {
                 .enumerated().map {
                     Self.event(offset: $0.offset, element: $0.element)
                 } ?? []
+        )
+    }
+
+    /// 移动端首个 Container Manager 闭环固定使用已记录的内部 Container.list v1。
+    /// 只读取实例清单，不读取映像、网络、项目、事件、资源、进程或日志。
+    public func loadContainerInventory() async throws -> ContainerInventorySnapshot {
+        guard let capability = capabilities[DsmAPIName.dockerContainer],
+              capability.minVersion <= 1,
+              capability.maxVersion >= 1,
+              capability.selectedVersion != nil else {
+            throw unavailableError()
+        }
+        let value: ServiceJSON
+        do {
+            value = try await client.call(
+                path: capability.path,
+                api: capability.name,
+                version: 1,
+                method: "list",
+                requestFormat: capability.requestFormat,
+                parameters: [
+                    "offset": .integer(0),
+                    "limit": .integer(-1),
+                    "type": .string("all")
+                ],
+                credential: credential,
+                as: ServiceJSON.self
+            )
+        } catch let error as DsmNetworkError {
+            throw DsmErrorMapper.map(error)
+        }
+        return ContainerInventorySnapshot(
+            source: .internalAPI,
+            containers: try Self.internalContainerV1Inventory(from: value)
         )
     }
 
@@ -871,6 +906,36 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository {
                     Self.event(offset: $0.offset, element: $0.element)
                 } ?? [],
             unavailableSections: unavailableSections
+        )
+    }
+
+    /// 移动端首个 VMM 闭环固定使用公开 Guest v1，只读取虚拟机清单。
+    /// 不降级到内部接口，也不读取主机、存储、网络、映像、保护或日志。
+    public func loadVirtualMachineInventory() async throws -> VirtualMachineInventorySnapshot {
+        guard let capability = capabilities[DsmAPIName.virtualizationAPIGuest],
+              capability.minVersion <= 1,
+              capability.maxVersion >= 1,
+              capability.selectedVersion != nil else {
+            throw unavailableError()
+        }
+        let value: ServiceJSON
+        do {
+            value = try await client.call(
+                path: capability.path,
+                api: capability.name,
+                version: 1,
+                method: "list",
+                requestFormat: capability.requestFormat,
+                parameters: [:],
+                credential: credential,
+                as: ServiceJSON.self
+            )
+        } catch let error as DsmNetworkError {
+            throw DsmErrorMapper.map(error)
+        }
+        return VirtualMachineInventorySnapshot(
+            source: .official,
+            machines: try Self.publicGuestV1Inventory(from: value)
         )
     }
 
@@ -2285,6 +2350,44 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository {
         )
     }
 
+    /// 移动端只读清单只接受已有合成证据覆盖的 Container.list v1 确定形状。
+    private static func internalContainerV1Inventory(
+        from value: ServiceJSON
+    ) throws -> [ContainerInventoryItem] {
+        guard case .object(let root) = value,
+              case .array(let containers)? = root["containers"] else {
+            throw invalidContainerInventoryError()
+        }
+        var identifiers = Set<String>()
+        return try containers.map { node in
+            guard case .object(let object) = node,
+                  let id = officialNonEmptyString(object["id"]),
+                  let name = officialNonEmptyString(object["name"]),
+                  let status = officialNonEmptyString(object["status"]),
+                  identifiers.insert(id).inserted else {
+                throw invalidContainerInventoryError()
+            }
+            let image: String?
+            if let node = object["image"] {
+                guard let value = officialNonEmptyString(node) else {
+                    throw invalidContainerInventoryError()
+                }
+                image = value
+            } else {
+                image = nil
+            }
+            return ContainerInventoryItem(id: id, name: name, status: status, image: image)
+        }
+    }
+
+    private static func invalidContainerInventoryError() -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: true,
+            safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+        )
+    }
+
     private static func image(_ object: [String: ServiceJSON]) -> ContainerImage? {
         let value = ServiceJSON.object(object)
         guard let id = value.firstString(["id", "image_id", "Id"]) else { return nil }
@@ -2371,6 +2474,117 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository {
             keyboardLayout: value.firstString(["kb_layout", "keyboard_layout"]),
             autoStart: value.firstBoolean(["autorun", "auto_start"]) ?? false,
             cpuWeight: value.firstInteger(["cpu_weight"]).map(Int.init)
+        )
+    }
+
+    /// 移动端只读清单只接受公开 Guest v1 的确定形状，避免把内部兼容别名误报为正常数据。
+    private static func publicGuestV1Inventory(
+        from value: ServiceJSON
+    ) throws -> [VirtualMachineInventoryItem] {
+        guard case .object(let root) = value,
+              case .array(let guests)? = root["guests"] else {
+            throw invalidVirtualMachineInventoryError()
+        }
+        var identifiers = Set<String>()
+        return try guests.map { node in
+            guard case .object(let object) = node,
+                  let id = officialIdentifier(object["guest_id"]),
+                  let name = officialNonEmptyString(object["guest_name"]),
+                  let status = officialNonEmptyString(object["status"]),
+                  let autoStart = officialBoolean(object["autorun"]),
+                  identifiers.insert(id).inserted else {
+                throw invalidVirtualMachineInventoryError()
+            }
+            let cpuCount = try officialOptionalNonNegativeInteger(object["vcpu_num"])
+                .map {
+                    guard let value = Int(exactly: $0) else {
+                        throw invalidVirtualMachineInventoryError()
+                    }
+                    return value
+                }
+            let memoryMiB = try officialOptionalNonNegativeInteger(object["vram_size"])
+            let memoryBytes = try memoryMiB.map {
+                try multipliedWithoutOverflow($0, by: 1_024 * 1_024)
+            }
+            let storageBytes = try officialVirtualDiskBytes(object["vdisks"])
+            return VirtualMachineInventoryItem(
+                id: id,
+                name: name,
+                status: status,
+                cpuCount: cpuCount,
+                memoryBytes: memoryBytes,
+                storageBytes: storageBytes,
+                autoStart: autoStart
+            )
+        }
+    }
+
+    private static func officialVirtualDiskBytes(_ node: ServiceJSON?) throws -> Int64? {
+        guard let node else { return nil }
+        guard case .array(let disks) = node else {
+            throw invalidVirtualMachineInventoryError()
+        }
+        var totalMiB: Int64 = 0
+        for disk in disks {
+            guard case .object(let object) = disk,
+                  let size = try officialOptionalNonNegativeInteger(object["vdisk_size"]) else {
+                throw invalidVirtualMachineInventoryError()
+            }
+            let addition = totalMiB.addingReportingOverflow(size)
+            guard !addition.overflow else { throw invalidVirtualMachineInventoryError() }
+            totalMiB = addition.partialValue
+        }
+        return try multipliedWithoutOverflow(totalMiB, by: 1_024 * 1_024)
+    }
+
+    private static func officialIdentifier(_ node: ServiceJSON?) -> String? {
+        switch node {
+        case .string(let value): return nonEmpty(value)
+        case .number(let value) where value.isFinite && value.rounded() == value:
+            return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
+        default: return nil
+        }
+    }
+
+    private static func officialNonEmptyString(_ node: ServiceJSON?) -> String? {
+        guard case .string(let value) = node else { return nil }
+        return nonEmpty(value)
+    }
+
+    private static func officialBoolean(_ node: ServiceJSON?) -> Bool? {
+        switch node {
+        case .boolean(let value): return value
+        case .number(0): return false
+        case .number(1): return true
+        default: return nil
+        }
+    }
+
+    private static func officialOptionalNonNegativeInteger(
+        _ node: ServiceJSON?
+    ) throws -> Int64? {
+        guard let node else { return nil }
+        guard case .number(let value) = node,
+              value.isFinite,
+              value >= 0,
+              value.rounded() == value,
+              value < Double(Int64.max) else {
+            throw invalidVirtualMachineInventoryError()
+        }
+        return Int64(value)
+    }
+
+    private static func multipliedWithoutOverflow(_ value: Int64, by multiplier: Int64) throws -> Int64 {
+        let result = value.multipliedReportingOverflow(by: multiplier)
+        guard !result.overflow else { throw invalidVirtualMachineInventoryError() }
+        return result.partialValue
+    }
+
+    private static func invalidVirtualMachineInventoryError() -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: true,
+            safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
         )
     }
 

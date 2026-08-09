@@ -239,6 +239,69 @@ public struct PhotoTimelineScanUpdate: Sendable {
     }
 }
 
+/// 用户主动时间线扫描的硬上限。所有计数都按 File Station 返回的原始项目计算，
+/// 避免只按可识别媒体计数而意外扫描完整照片空间。
+public struct PhotoTimelineScanLimits: Equatable, Sendable {
+    public let maximumFolderCount: Int
+    public let maximumSourceItemCount: Int
+    public let maximumMediaItemCount: Int
+    public let pageSize: Int
+
+    public init(
+        maximumFolderCount: Int,
+        maximumSourceItemCount: Int,
+        maximumMediaItemCount: Int,
+        pageSize: Int
+    ) {
+        self.maximumFolderCount = maximumFolderCount
+        self.maximumSourceItemCount = maximumSourceItemCount
+        self.maximumMediaItemCount = maximumMediaItemCount
+        self.pageSize = pageSize
+    }
+
+    public static let mobileDefault = PhotoTimelineScanLimits(
+        maximumFolderCount: 2_000,
+        maximumSourceItemCount: 50_000,
+        maximumMediaItemCount: 10_000,
+        pageSize: 200
+    )
+
+    /// 旧版无返回值扫描的兼容策略；只保留原有 500 项分页，不引入新的截断语义。
+    public static let legacyDefault = PhotoTimelineScanLimits(
+        maximumFolderCount: .max,
+        maximumSourceItemCount: .max,
+        maximumMediaItemCount: .max,
+        pageSize: 500
+    )
+}
+
+public enum PhotoTimelineScanCompletion: String, Codable, Equatable, Sendable {
+    case complete
+    case truncated
+}
+
+public struct PhotoTimelineScanResult: Equatable, Sendable {
+    public let items: [PhotoLibraryItem]
+    public let scannedFolderCount: Int
+    public let skippedFolderPaths: [String]
+    public let sourceItemCount: Int
+    public let completion: PhotoTimelineScanCompletion
+
+    public init(
+        items: [PhotoLibraryItem],
+        scannedFolderCount: Int,
+        skippedFolderPaths: [String],
+        sourceItemCount: Int,
+        completion: PhotoTimelineScanCompletion
+    ) {
+        self.items = items
+        self.scannedFolderCount = scannedFolderCount
+        self.skippedFolderPaths = skippedFolderPaths
+        self.sourceItemCount = sourceItemCount
+        self.completion = completion
+    }
+}
+
 /// 照片基础能力所需的最小官方文件接口，便于与完整文件管理 Repository 解耦测试。
 public protocol PhotoFileServing: Sendable {
     func listShares(offset: Int, limit: Int) async throws -> FilePage
@@ -262,9 +325,30 @@ public protocol PhotoLibraryRepository: Sendable {
         existingFolderItemPaths: [String: [String]],
         onUpdate: @escaping @Sendable (PhotoTimelineScanUpdate) async -> Void
     ) async throws
+    func scanTimeline(
+        in space: PhotoSpace,
+        startingAt folderPaths: [String],
+        existingFolderItemPaths: [String: [String]],
+        limits: PhotoTimelineScanLimits,
+        onUpdate: @escaping @Sendable (PhotoTimelineScanUpdate) async -> Void
+    ) async throws -> PhotoTimelineScanResult
 }
 
 public extension PhotoLibraryRepository {
+    func scanTimeline(
+        in space: PhotoSpace,
+        startingAt folderPaths: [String],
+        existingFolderItemPaths: [String: [String]],
+        limits: PhotoTimelineScanLimits,
+        onUpdate: @escaping @Sendable (PhotoTimelineScanUpdate) async -> Void
+    ) async throws -> PhotoTimelineScanResult {
+        throw AppError(
+            category: .apiUnavailable,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.7dc6f291445bfb76")
+        )
+    }
+
     func scanTimeline(
         in space: PhotoSpace,
         startingAt folderPaths: [String],

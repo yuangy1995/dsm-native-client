@@ -13,6 +13,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\LanStash.Application\LanStash.Application.csproj" />
     <ProjectReference Include="..\..\src\LanStash.Domain\LanStash.Domain.csproj" />
     <ProjectReference Include="..\..\src\LanStash.Infrastructure\LanStash.Infrastructure.csproj" />
   </ItemGroup>
@@ -22,12 +23,6 @@
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\..\contracts\request-fixtures\file-station\delete\synthetic-task\request.json"
           Link="RequestFixtures\FileStationDelete.json"
-          CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\contracts\request-fixtures\container-manager\delete\synthetic-container\request.json"
-          Link="RequestFixtures\ContainerDelete.json"
-          CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\..\contracts\request-fixtures\vmm\delete\synthetic-virtual-machine\request.json"
-          Link="RequestFixtures\VirtualMachineDelete.json"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

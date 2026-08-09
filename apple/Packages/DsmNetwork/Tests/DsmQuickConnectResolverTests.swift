@@ -157,6 +157,17 @@ final class DsmQuickConnectResolverTests: XCTestCase {
         )
     }
 
+    func test直连域名不被当作中继而真实中继仍可信() {
+        XCTAssertFalse(
+            DsmQuickConnectResolver.isTrustedRelayHost("family-nas.direct.quickconnect.to")
+        )
+        XCTAssertFalse(
+            DsmQuickConnectResolver.isTrustedRelayHost("family-nas.direct.quickconnect.cn")
+        )
+        XCTAssertTrue(DsmQuickConnectResolver.isTrustedRelayHost("family-nas.r1.quickconnect.to"))
+        XCTAssertTrue(DsmQuickConnectResolver.isTrustedRelayHost("family-nas.r1.quickconnect.cn"))
+    }
+
     func test中继未开启时返回可恢复错误() {
         let data = Data("[{\"errno\":19}]".utf8)
 

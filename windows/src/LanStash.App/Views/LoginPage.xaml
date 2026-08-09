@@ -29,6 +29,7 @@
             </StackPanel>
             <Button
                 x:Uid="AddNasButton"
+                x:Name="AddNasButton"
                 HorizontalAlignment="Stretch"
                 Click="NewProfile_Click"
                 Style="{StaticResource AccentButtonStyle}" />
@@ -90,45 +91,47 @@
                         Margin="0,6,0,0"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
-                <TextBox
-                    x:Uid="ProfileNameInput"
-                    Text="{Binding DisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBox
-                    x:Uid="NasAddressInput"
-                    Text="{Binding Host, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBox
-                    x:Uid="UsernameInput"
-                    Text="{Binding Username, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                <PasswordBox x:Uid="PasswordInput" x:Name="PasswordInput" PasswordRevealMode="Peek" />
-                <PasswordBox x:Uid="OtpInput" x:Name="OtpInput" PasswordRevealMode="Peek" />
-                <CheckBox
-                    x:Uid="RememberPasswordCheckBox"
-                    IsChecked="{Binding RememberPassword, Mode=TwoWay}" />
-                <TextBlock
-                    x:Uid="PasswordProtectionNote"
-                    Margin="28,-14,0,0"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    TextWrapping="Wrap" />
-                <CheckBox
-                    x:Uid="AutoLoginCheckBox"
-                    IsChecked="{Binding AutoLogin, Mode=TwoWay}" />
-                <TextBlock
-                    x:Uid="AutoLoginNote"
-                    Margin="28,-14,0,0"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    TextWrapping="Wrap" />
-                <Expander x:Uid="AdvancedConnectionExpander">
-                    <StackPanel Padding="0,10,0,0" Spacing="6">
-                        <TextBox
-                            x:Uid="CustomPortInput"
-                            InputScope="Number"
-                            Text="{Binding Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                        <TextBlock
-                            x:Uid="CustomPortNote"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                </Expander>
+                <StackPanel x:Name="ConnectionFields" Spacing="18">
+                    <TextBox
+                        x:Uid="ProfileNameInput"
+                        Text="{Binding DisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox
+                        x:Uid="NasAddressInput"
+                        Text="{Binding Host, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox
+                        x:Uid="UsernameInput"
+                        Text="{Binding Username, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <PasswordBox x:Uid="PasswordInput" x:Name="PasswordInput" PasswordRevealMode="Peek" />
+                    <PasswordBox x:Uid="OtpInput" x:Name="OtpInput" PasswordRevealMode="Peek" />
+                    <CheckBox
+                        x:Uid="RememberPasswordCheckBox"
+                        IsChecked="{Binding RememberPassword, Mode=TwoWay}" />
+                    <TextBlock
+                        x:Uid="PasswordProtectionNote"
+                        Margin="28,-14,0,0"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+                    <CheckBox
+                        x:Uid="AutoLoginCheckBox"
+                        IsChecked="{Binding AutoLogin, Mode=TwoWay}" />
+                    <TextBlock
+                        x:Uid="AutoLoginNote"
+                        Margin="28,-14,0,0"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+                    <Expander x:Uid="AdvancedConnectionExpander">
+                        <StackPanel Padding="0,10,0,0" Spacing="6">
+                            <TextBox
+                                x:Uid="CustomPortInput"
+                                InputScope="Number"
+                                Text="{Binding Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock
+                                x:Uid="CustomPortNote"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
                 <InfoBar
                     x:Name="ErrorBar"
                     IsClosable="False"
@@ -142,19 +145,36 @@
                     Message="{Binding ConnectionStatus}"
                     Severity="Informational" />
                 <Grid>
-                    <Button
-                        x:Uid="ConnectButton"
-                        x:Name="ConnectButton"
-                        MinWidth="120"
-                        HorizontalAlignment="Right"
-                        Click="Connect_Click"
-                        Style="{StaticResource AccentButtonStyle}" />
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
                     <ProgressRing
                         x:Name="BusyIndicator"
                         Width="24"
                         Height="24"
-                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
                         IsActive="False" />
+                    <Button
+                        x:Uid="CancelConnectButton"
+                        x:Name="CancelConnectButton"
+                        Grid.Column="1"
+                        MinWidth="96"
+                        MinHeight="44"
+                        Margin="12,0"
+                        HorizontalAlignment="Right"
+                        Click="CancelConnect_Click"
+                        Visibility="Collapsed" />
+                    <Button
+                        x:Uid="ConnectButton"
+                        x:Name="ConnectButton"
+                        Grid.Column="2"
+                        MinWidth="120"
+                        MinHeight="44"
+                        HorizontalAlignment="Right"
+                        Click="Connect_Click"
+                        Style="{StaticResource AccentButtonStyle}" />
                 </Grid>
             </StackPanel>
         </Border>

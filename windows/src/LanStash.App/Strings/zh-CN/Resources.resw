@@ -61,6 +61,15 @@
   <data name="CustomPortInput.PlaceholderText" xml:space="preserve"><value>自动选择</value></data>
   <data name="CustomPortNote.Text" xml:space="preserve"><value>留空时由岚仓自动选择；填写后优先使用这个端口。</value></data>
   <data name="ConnectButton.Content" xml:space="preserve"><value>连接</value></data>
+  <data name="CancelConnectButton.Content" xml:space="preserve"><value>取消</value></data>
+  <data name="ProfileMenuAutomationName" xml:space="preserve"><value>切换或管理 NAS</value></data>
+  <data name="ActionAddNas" xml:space="preserve"><value>添加 NAS</value></data>
+  <data name="ActionDeleteNas" xml:space="preserve"><value>移除这个 NAS</value></data>
+  <data name="DialogDeleteNasTitle" xml:space="preserve"><value>移除这个 NAS？</value></data>
+  <data name="DialogDeleteNasMessage" xml:space="preserve"><value>将从这台电脑移除“{0}”及其保存的登录信息，不会删除 NAS 上的文件。</value></data>
+  <data name="ProfileActionErrorTitle" xml:space="preserve"><value>无法更新 NAS</value></data>
+  <data name="ProfileActionErrorMessage" xml:space="preserve"><value>未能完成这项更改，请检查连接后重试。</value></data>
+  <data name="ActionClose" xml:space="preserve"><value>关闭</value></data>
   <data name="WorkspaceSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>搜索</value></data>
   <data name="WorkspaceSearchBox.PlaceholderText" xml:space="preserve"><value>搜索</value></data>
   <data name="ActionCreate.Label" xml:space="preserve"><value>新增</value></data>
@@ -266,4 +275,527 @@
   <data name="CloudDriveLaunchAtLogin" xml:space="preserve"><value>登录后启动</value></data>
   <data name="CloudDriveLaunchAtLoginEnabled" xml:space="preserve"><value>登录 Windows 后将自动启动岚仓。</value></data>
   <data name="CloudDriveLaunchAtLoginDisabled" xml:space="preserve"><value>打开岚仓之前，仅在线文件将暂时不可用。</value></data>
+  <data name="FileBrowserTitle.Text" xml:space="preserve"><value>文件</value></data>
+  <data name="FileBrowserBreadcrumbs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件夹路径</value></data>
+  <data name="FileBrowserFilter.PlaceholderText" xml:space="preserve"><value>筛选已加载项目</value></data>
+  <data name="FileBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>筛选已加载项目</value></data>
+  <data name="FileBrowserBack.Label" xml:space="preserve"><value>返回</value></data>
+  <data name="FileBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回上一位置</value></data>
+  <data name="FileBrowserUp.Label" xml:space="preserve"><value>上一级</value></data>
+  <data name="FileBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回上一级文件夹</value></data>
+  <data name="FileBrowserRefresh.Label" xml:space="preserve"><value>刷新</value></data>
+  <data name="FileBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新当前文件夹</value></data>
+  <data name="FileBrowserSort.Label" xml:space="preserve"><value>排序</value></data>
+  <data name="FileBrowserSort.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>排列文件</value></data>
+  <data name="FileBrowserSortName.Text" xml:space="preserve"><value>名称</value></data>
+  <data name="FileBrowserSortName.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按名称排列</value></data>
+  <data name="FileBrowserSortModified.Text" xml:space="preserve"><value>修改日期</value></data>
+  <data name="FileBrowserSortModified.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按修改日期排列</value></data>
+  <data name="FileBrowserSortSize.Text" xml:space="preserve"><value>大小</value></data>
+  <data name="FileBrowserSortSize.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按大小排列</value></data>
+  <data name="FileBrowserSortAscending.Text" xml:space="preserve"><value>升序</value></data>
+  <data name="FileBrowserSortAscending.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按升序排列</value></data>
+  <data name="FileBrowserSortDescending.Text" xml:space="preserve"><value>降序</value></data>
+  <data name="FileBrowserSortDescending.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按降序排列</value></data>
+  <data name="FileBrowserTypeFilter.Label" xml:space="preserve"><value>类型</value></data>
+  <data name="FileBrowserTypeFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按文件类型筛选</value></data>
+  <data name="FileBrowserTypeAll.Text" xml:space="preserve"><value>全部</value></data>
+  <data name="FileBrowserTypeAll.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>显示全部项目</value></data>
+  <data name="FileBrowserTypeFiles.Text" xml:space="preserve"><value>文件</value></data>
+  <data name="FileBrowserTypeFiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>仅显示文件</value></data>
+  <data name="FileBrowserTypeFolders.Text" xml:space="preserve"><value>文件夹</value></data>
+  <data name="FileBrowserTypeFolders.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>仅显示文件夹</value></data>
+  <data name="FileBrowserListLayout.Label" xml:space="preserve"><value>列表</value></data>
+  <data name="FileBrowserListLayout.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>以列表显示</value></data>
+  <data name="FileBrowserGridLayout.Label" xml:space="preserve"><value>网格</value></data>
+  <data name="FileBrowserGridLayout.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>以网格显示</value></data>
+  <data name="FileBrowserList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件列表</value></data>
+  <data name="FileBrowserGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件网格</value></data>
+  <data name="FileBrowserLoadMore.Content" xml:space="preserve"><value>加载更多</value></data>
+  <data name="FileBrowserLoadMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>加载更多项目</value></data>
+  <data name="FileBrowserLoadMoreError.Title" xml:space="preserve"><value>无法加载更多项目</value></data>
+  <data name="FileBrowserLoadMoreError.Message" xml:space="preserve"><value>已加载的项目仍然可用，请重试。</value></data>
+  <data name="FileBrowserLoading.Text" xml:space="preserve"><value>正在加载文件…</value></data>
+  <data name="FileBrowserEmptyTitle.Text" xml:space="preserve"><value>此文件夹为空</value></data>
+  <data name="FileBrowserEmptyMessage.Text" xml:space="preserve"><value>刷新以检查是否有新项目。</value></data>
+  <data name="FileBrowserRefreshEmpty.Content" xml:space="preserve"><value>刷新</value></data>
+  <data name="FileBrowserFilteredEmptyTitle.Text" xml:space="preserve"><value>没有符合筛选条件的项目</value></data>
+  <data name="FileBrowserFilteredEmptyMessage.Text" xml:space="preserve"><value>清除筛选条件以查看其他项目。</value></data>
+  <data name="FileBrowserClearFilter.Content" xml:space="preserve"><value>清除筛选条件</value></data>
+  <data name="FileBrowserErrorTitle.Text" xml:space="preserve"><value>无法加载文件</value></data>
+  <data name="FileBrowserErrorMessage.Text" xml:space="preserve"><value>请检查连接，然后重试。</value></data>
+  <data name="FileBrowserRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="FileBrowserFileDetail" xml:space="preserve"><value>{0:N0} 字节 · {1}</value></data>
+  <data name="FileBrowserDownload.Label" xml:space="preserve"><value>下载</value></data>
+  <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>保存所选文件的副本</value></data>
+  <data name="FileBrowserUpload.Label" xml:space="preserve"><value>上传</value></data>
+  <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>上传一个文件到此文件夹</value></data>
+  <data name="FileBrowserUploadNeedsReview.Title" xml:space="preserve"><value>请检查上传的文件</value></data>
+  <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>上传请求可能已到达 NAS。再次上传前，请刷新此文件夹并检查目标文件。</value></data>
+  <data name="TransferOriginalFileType" xml:space="preserve"><value>原始文件类型</value></data>
+  <data name="TransferActivityTitle.Text" xml:space="preserve"><value>活动</value></data>
+  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>当前窗口打开期间，会在这里显示当前 NAS 的下载和上传。</value></data>
+  <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输活动</value></data>
+  <data name="TransferActivityProgressBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输进度</value></data>
+  <data name="TransferActivityCancel.Content" xml:space="preserve"><value>取消</value></data>
+  <data name="TransferActivityCancelAutomationName" xml:space="preserve"><value>取消 {0} 的传输</value></data>
+  <data name="TransferActivityEmptyTitle.Text" xml:space="preserve"><value>暂无传输活动</value></data>
+  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>从“文件”中开始的下载和上传会显示在这里。</value></data>
+  <data name="TransferActivityProgress" xml:space="preserve"><value>已下载 {0:N0} / {1:N0} 字节</value></data>
+  <data name="TransferActivityUploadProgress" xml:space="preserve"><value>已上传 {0:N0} / {1:N0} 字节</value></data>
+  <data name="TransferActivityDirectionDownload" xml:space="preserve"><value>从 NAS 下载</value></data>
+  <data name="TransferActivityDirectionUpload" xml:space="preserve"><value>上传到 NAS</value></data>
+  <data name="TransferActivityCompleted" xml:space="preserve"><value>已保存</value></data>
+  <data name="TransferActivityUploadCompleted" xml:space="preserve"><value>已上传</value></data>
+  <data name="TransferActivityCancelled" xml:space="preserve"><value>已取消</value></data>
+  <data name="TransferActivityCancelledBeforeSubmission" xml:space="preserve"><value>已在发送前取消</value></data>
+  <data name="TransferActivityUploadNeedsReview" xml:space="preserve"><value>上传请求可能已到达 NAS。再次上传前，请刷新文件夹并检查目标文件。</value></data>
+  <data name="TransferActivityFailed" xml:space="preserve"><value>下载未完成。请检查连接和可用存储空间，然后重试。</value></data>
+  <data name="TransferActivityUploadFailed" xml:space="preserve"><value>上传未完成。请检查文件夹访问权限、连接和 NAS 可用空间。</value></data>
+  <data name="TransferSaveErrorTitle" xml:space="preserve"><value>无法开始下载</value></data>
+  <data name="TransferSaveErrorMessage" xml:space="preserve"><value>请重新选择保存位置。如果问题仍然存在，请检查该位置的访问权限。</value></data>
+  <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>无法开始上传</value></data>
+  <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>请重新选择文件。如果问题仍然存在，请检查此设备是否可以访问该文件。</value></data>
+  <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>文件系统照片库</value></data>
+  <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>浏览这台 NAS 上的图片文件夹，并将副本保存到电脑。</value></data>
+  <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>照片空间</value></data>
+  <data name="PhotoBrowserSpace.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择照片空间</value></data>
+  <data name="PhotoBrowserPersonalSpace" xml:space="preserve"><value>我的照片</value></data>
+  <data name="PhotoBrowserSharedSpace" xml:space="preserve"><value>共享照片</value></data>
+  <data name="PhotoBrowserBreadcrumbs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>照片文件夹</value></data>
+  <data name="PhotoBrowserBack.Label" xml:space="preserve"><value>返回</value></data>
+  <data name="PhotoBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回上一位置</value></data>
+  <data name="PhotoBrowserUp.Label" xml:space="preserve"><value>上一级</value></data>
+  <data name="PhotoBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>前往上一级文件夹</value></data>
+  <data name="PhotoBrowserRefresh.Label" xml:space="preserve"><value>刷新</value></data>
+  <data name="PhotoBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新当前照片文件夹</value></data>
+  <data name="PhotoBrowserSave.Label" xml:space="preserve"><value>保存副本</value></data>
+  <data name="PhotoBrowserSave.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>保存所选图片的副本</value></data>
+  <data name="PhotoBrowserFilter.Label" xml:space="preserve"><value>显示</value></data>
+  <data name="PhotoBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择要显示的内容</value></data>
+  <data name="PhotoBrowserFilterAll.Text" xml:space="preserve"><value>文件夹和图片</value></data>
+  <data name="PhotoBrowserFilterImages.Text" xml:space="preserve"><value>仅图片</value></data>
+  <data name="PhotoBrowserGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>照片文件夹和图片</value></data>
+  <data name="PhotoBrowserFolderAutomationName" xml:space="preserve"><value>文件夹，{0}</value></data>
+  <data name="PhotoBrowserImageAutomationName" xml:space="preserve"><value>图片，{0}</value></data>
+  <data name="PhotoBrowserLoadMoreError.Title" xml:space="preserve"><value>无法加载更多照片</value></data>
+  <data name="PhotoBrowserLoadMoreError.Message" xml:space="preserve"><value>已经显示的照片仍可使用，请重试。</value></data>
+  <data name="PhotoBrowserLoadMore.Content" xml:space="preserve"><value>加载更多</value></data>
+  <data name="PhotoBrowserLoadMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>加载更多照片</value></data>
+  <data name="PhotoBrowserLoadMoreProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在加载更多照片</value></data>
+  <data name="PhotoBrowserLoading.Text" xml:space="preserve"><value>正在加载照片…</value></data>
+  <data name="PhotoBrowserEmptyTitle.Text" xml:space="preserve"><value>这里还没有照片</value></data>
+  <data name="PhotoBrowserEmptyMessage.Text" xml:space="preserve"><value>请选择其他照片空间，或刷新后再检查。</value></data>
+  <data name="PhotoBrowserRefreshEmpty.Content" xml:space="preserve"><value>刷新</value></data>
+  <data name="PhotoBrowserFilteredEmptyTitle.Text" xml:space="preserve"><value>这个文件夹中没有图片</value></data>
+  <data name="PhotoBrowserFilteredEmptyMessage.Text" xml:space="preserve"><value>可以同时显示文件夹，或返回浏览其他位置。</value></data>
+  <data name="PhotoBrowserShowAll.Content" xml:space="preserve"><value>显示文件夹和图片</value></data>
+  <data name="PhotoBrowserErrorTitle.Text" xml:space="preserve"><value>无法加载照片</value></data>
+  <data name="PhotoBrowserErrorMessage.Text" xml:space="preserve"><value>请检查 NAS 连接和这个照片空间的访问权限，然后重试。</value></data>
+  <data name="PhotoBrowserRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="PhotoBrowserUnavailableTitle" xml:space="preserve"><value>照片库暂时不可用</value></data>
+  <data name="PhotoBrowserUnavailableMessage" xml:space="preserve"><value>请重新连接这台 NAS，然后再次打开照片库。</value></data>
+  <data name="ChatBrowserTitle.Text" xml:space="preserve"><value>聊天</value></data>
+  <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>读取 Synology Chat 中的会话和消息。</value></data>
+  <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新会话</value></data>
+  <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
+  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>只读</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>暂不支持发送消息、新建会话或打开附件。</value></data>
+  <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>搜索会话</value></data>
+  <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>搜索会话</value></data>
+  <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>无法刷新会话</value></data>
+  <data name="ChatBrowserConversationRefreshError.Message" xml:space="preserve"><value>已显示的会话仍可使用，请重试。</value></data>
+  <data name="ChatBrowserConversationList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>会话列表</value></data>
+  <data name="ChatBrowserUnnamedConversation" xml:space="preserve"><value>未命名会话</value></data>
+  <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
+  <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}，{1:N0} 条未读</value></data>
+  <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回会话列表</value></data>
+  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>消息为只读</value></data>
+  <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新消息</value></data>
+  <data name="ChatBrowserMessageError.Title" xml:space="preserve"><value>无法加载消息</value></data>
+  <data name="ChatBrowserMessageError.Message" xml:space="preserve"><value>已显示的消息仍可使用。请检查连接后重试。</value></data>
+  <data name="ChatBrowserChooseConversationTitle.Text" xml:space="preserve"><value>选择会话</value></data>
+  <data name="ChatBrowserChooseConversationMessage.Text" xml:space="preserve"><value>选择一个会话来读取消息。</value></data>
+  <data name="ChatBrowserEncryptedTitle.Text" xml:space="preserve"><value>此会话已加密</value></data>
+  <data name="ChatBrowserEncryptedMessage.Text" xml:space="preserve"><value>暂时无法在此读取加密消息。请在浏览器中打开 Synology Chat 继续查看。</value></data>
+  <data name="ChatBrowserMessagesLoading.Text" xml:space="preserve"><value>正在加载消息…</value></data>
+  <data name="ChatBrowserMessagesEmptyTitle.Text" xml:space="preserve"><value>暂无消息</value></data>
+  <data name="ChatBrowserMessagesEmptyMessage.Text" xml:space="preserve"><value>刷新后再次检查消息。</value></data>
+  <data name="ChatBrowserLoadEarlierError.Title" xml:space="preserve"><value>无法加载更早的消息</value></data>
+  <data name="ChatBrowserLoadEarlierError.Message" xml:space="preserve"><value>已显示的消息仍可使用，请重试。</value></data>
+  <data name="ChatBrowserLoadEarlier.Content" xml:space="preserve"><value>加载更早消息</value></data>
+  <data name="ChatBrowserLoadEarlier.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>加载更早消息</value></data>
+  <data name="ChatBrowserLoadEarlierProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在加载更早消息</value></data>
+  <data name="ChatBrowserMessageList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>消息列表</value></data>
+  <data name="ChatBrowserAttachmentUnavailable.Text" xml:space="preserve"><value>可查看附件信息，但暂时无法在此打开附件。</value></data>
+  <data name="ChatBrowserLoading.Text" xml:space="preserve"><value>正在加载会话…</value></data>
+  <data name="ChatBrowserEmptyTitle.Text" xml:space="preserve"><value>暂无会话</value></data>
+  <data name="ChatBrowserEmptyMessage.Text" xml:space="preserve"><value>刷新后再次检查会话。</value></data>
+  <data name="ChatBrowserEmptyRefresh.Content" xml:space="preserve"><value>刷新</value></data>
+  <data name="ChatBrowserFilteredEmptyTitle.Text" xml:space="preserve"><value>没有匹配的会话</value></data>
+  <data name="ChatBrowserFilteredEmptyMessage.Text" xml:space="preserve"><value>清除搜索即可查看全部会话。</value></data>
+  <data name="ChatBrowserClearSearch.Content" xml:space="preserve"><value>清除搜索</value></data>
+  <data name="ChatBrowserErrorTitle.Text" xml:space="preserve"><value>无法加载会话</value></data>
+  <data name="ChatBrowserErrorMessage.Text" xml:space="preserve"><value>请检查 NAS 连接和 Synology Chat 访问权限后重试。</value></data>
+  <data name="ChatBrowserRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="ChatBrowserUnavailableTitle.Text" xml:space="preserve"><value>聊天不可用</value></data>
+  <data name="ChatBrowserUnavailableMessage.Text" xml:space="preserve"><value>请重新连接到已启用 Synology Chat 的 NAS，然后再次打开聊天。</value></data>
+  <data name="ChatBrowserValidationTitle.Text" xml:space="preserve"><value>当前无法安全打开聊天</value></data>
+  <data name="ChatBrowserValidationMessage.Text" xml:space="preserve"><value>请重新连接此 NAS 后再试。</value></data>
+  <data name="ChatBrowserUnknownSender" xml:space="preserve"><value>未知发送者</value></data>
+  <data name="DownloadStationStatusWaiting" xml:space="preserve"><value>等待中</value></data>
+  <data name="DownloadStationStatusDownloading" xml:space="preserve"><value>下载中</value></data>
+  <data name="DownloadStationStatusPaused" xml:space="preserve"><value>已暂停</value></data>
+  <data name="DownloadStationStatusFinished" xml:space="preserve"><value>已完成</value></data>
+  <data name="DownloadStationStatusChecking" xml:space="preserve"><value>正在准备</value></data>
+  <data name="DownloadStationStatusSeeding" xml:space="preserve"><value>正在共享</value></data>
+  <data name="DownloadStationStatusError" xml:space="preserve"><value>需要处理</value></data>
+  <data name="DownloadStationStatusUnknown" xml:space="preserve"><value>状态不可用</value></data>
+  <data name="DownloadStationValueUnavailable" xml:space="preserve"><value>暂不可用</value></data>
+  <data name="DownloadStationNoTaskError" xml:space="preserve"><value>没有报告问题</value></data>
+  <data name="DownloadStationProgressValue" xml:space="preserve"><value>{0}</value></data>
+  <data name="DownloadStationSpeedValue" xml:space="preserve"><value>{0}/秒</value></data>
+  <data name="DownloadStationTaskAutomationName" xml:space="preserve"><value>{0}，{1}，{2}</value></data>
+  <data name="DownloadStationTitle.Text" xml:space="preserve"><value>下载任务</value></data>
+  <data name="DownloadStationDescription.Text" xml:space="preserve"><value>查看这台 NAS 上的下载任务及当前进度。</value></data>
+  <data name="DownloadStationRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
+  <data name="DownloadStationDetailStatus.Text" xml:space="preserve"><value>状态</value></data>
+  <data name="DownloadStationDetailProgress.Text" xml:space="preserve"><value>进度</value></data>
+  <data name="DownloadStationDetailSize.Text" xml:space="preserve"><value>总大小</value></data>
+  <data name="DownloadStationDetailDownloaded.Text" xml:space="preserve"><value>已下载</value></data>
+  <data name="DownloadStationDetailUploaded.Text" xml:space="preserve"><value>已上传</value></data>
+  <data name="DownloadStationDetailDownloadSpeed.Text" xml:space="preserve"><value>下载速度</value></data>
+  <data name="DownloadStationDetailUploadSpeed.Text" xml:space="preserve"><value>上传速度</value></data>
+  <data name="DownloadStationDetailDestination.Text" xml:space="preserve"><value>保存位置</value></data>
+  <data name="DownloadStationDetailError.Text" xml:space="preserve"><value>问题</value></data>
+  <data name="DownloadStationChooseTaskTitle.Text" xml:space="preserve"><value>选择任务</value></data>
+  <data name="DownloadStationChooseTaskMessage.Text" xml:space="preserve"><value>选择任务以查看当前详情。</value></data>
+  <data name="DownloadStationLoading.Text" xml:space="preserve"><value>正在加载下载任务…</value></data>
+  <data name="DownloadStationEmptyTitle.Text" xml:space="preserve"><value>没有下载任务</value></data>
+  <data name="DownloadStationEmptyMessage.Text" xml:space="preserve"><value>在 DSM 中创建的任务会显示在这里。</value></data>
+  <data name="DownloadStationFilteredEmptyTitle.Text" xml:space="preserve"><value>没有符合条件的任务</value></data>
+  <data name="DownloadStationFilteredEmptyMessage.Text" xml:space="preserve"><value>请尝试其他搜索词或状态筛选。</value></data>
+  <data name="DownloadStationErrorTitle.Text" xml:space="preserve"><value>无法加载下载任务</value></data>
+  <data name="DownloadStationErrorMessage.Text" xml:space="preserve"><value>请检查与 NAS 的连接，然后重试。</value></data>
+  <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>下载任务不可用</value></data>
+  <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>这台 NAS 暂不提供受支持的 Download Station 只读查看功能。</value></data>
+  <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>仅供查看</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>任务在 NAS 上运行，此页面不会更改任务。</value></data>
+  <data name="DownloadStationRefreshError.Title" xml:space="preserve"><value>无法刷新任务</value></data>
+  <data name="DownloadStationRefreshError.Message" xml:space="preserve"><value>当前仍显示上次读取的任务。请检查连接后重试。</value></data>
+  <data name="DownloadStationLoadMoreError.Title" xml:space="preserve"><value>无法加载更多任务</value></data>
+  <data name="DownloadStationLoadMoreError.Message" xml:space="preserve"><value>已加载的任务仍可查看，请重新尝试加载更多。</value></data>
+  <data name="DownloadStationFilterAll.Content" xml:space="preserve"><value>全部</value></data>
+  <data name="DownloadStationFilterActive.Content" xml:space="preserve"><value>进行中</value></data>
+  <data name="DownloadStationFilterFinished.Content" xml:space="preserve"><value>已完成</value></data>
+  <data name="DownloadStationFilterPaused.Content" xml:space="preserve"><value>已暂停</value></data>
+  <data name="DownloadStationLoadMore.Content" xml:space="preserve"><value>加载更多</value></data>
+  <data name="DownloadStationRefreshEmpty.Content" xml:space="preserve"><value>刷新</value></data>
+  <data name="DownloadStationShowAll.Content" xml:space="preserve"><value>显示全部任务</value></data>
+  <data name="DownloadStationRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="DownloadStationRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新下载任务</value></data>
+  <data name="DownloadStationSearch.PlaceholderText" xml:space="preserve"><value>筛选任务</value></data>
+  <data name="DownloadStationSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>筛选下载任务</value></data>
+  <data name="DownloadStationFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按任务状态筛选</value></data>
+  <data name="DownloadStationTaskList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载任务</value></data>
+  <data name="DownloadStationBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回下载任务</value></data>
+  <data name="DownloadStationLoadingMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在加载更多下载任务</value></data>
+  <data name="DownloadStationTaskNeedsAttention" xml:space="preserve"><value>此任务需要处理。请在 DSM 的 Download Station 中查看详情。</value></data>
+  <data name="DownloadStationActivityTitle.Text" xml:space="preserve"><value>当前活动</value></data>
+  <data name="DownloadStationActivityDownload.Text" xml:space="preserve"><value>下载速度</value></data>
+  <data name="DownloadStationActivityUpload.Text" xml:space="preserve"><value>上传速度</value></data>
+  <data name="DownloadStationActivityError.Title" xml:space="preserve"><value>暂时无法读取活动速度</value></data>
+  <data name="DownloadStationActivityError.Message" xml:space="preserve"><value>任务列表仍可查看。请刷新后再次获取速度摘要。</value></data>
+  <data name="DownloadStationByteValueB" xml:space="preserve"><value>{0} B</value></data>
+  <data name="DownloadStationByteValueKB" xml:space="preserve"><value>{0} KB</value></data>
+  <data name="DownloadStationByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
+  <data name="DownloadStationByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
+  <data name="DownloadStationByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
+  <data name="VirtualMachineManagerTitle.Text" xml:space="preserve"><value>虚拟机</value></data>
+  <data name="VirtualMachineManagerDescription.Text" xml:space="preserve"><value>查看此 NAS 上的虚拟机和虚拟化资源。</value></data>
+  <data name="VirtualMachineManagerRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新虚拟机</value></data>
+  <data name="VirtualMachineManagerRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
+  <data name="VirtualMachineManagerReadOnly.Title" xml:space="preserve"><value>只读视图</value></data>
+  <data name="VirtualMachineManagerReadOnly.Message" xml:space="preserve"><value>你可以在此查看虚拟机和资源。如需更改，请使用 DSM 中的 Virtual Machine Manager。</value></data>
+  <data name="VirtualMachineManagerRefreshError.Title" xml:space="preserve"><value>部分信息未能刷新</value></data>
+  <data name="VirtualMachineManagerRefreshError.Message" xml:space="preserve"><value>当前仍显示上次可用的信息。请检查连接后重试。</value></data>
+  <data name="VirtualMachineManagerMachinesHeading.Text" xml:space="preserve"><value>虚拟机</value></data>
+  <data name="VirtualMachineManagerMachineList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>虚拟机列表</value></data>
+  <data name="VirtualMachineManagerMachinesLoading.Text" xml:space="preserve"><value>正在加载虚拟机…</value></data>
+  <data name="VirtualMachineManagerMachinesEmptyTitle.Text" xml:space="preserve"><value>没有虚拟机</value></data>
+  <data name="VirtualMachineManagerMachinesEmptyMessage.Text" xml:space="preserve"><value>此账号当前没有可查看的虚拟机。</value></data>
+  <data name="VirtualMachineManagerMachinesErrorTitle.Text" xml:space="preserve"><value>无法加载虚拟机</value></data>
+  <data name="VirtualMachineManagerMachinesErrorMessage.Text" xml:space="preserve"><value>请检查与此 NAS 的连接，然后选择“刷新”。</value></data>
+  <data name="VirtualMachineManagerUnavailableTitle.Text" xml:space="preserve"><value>虚拟机不可用</value></data>
+  <data name="VirtualMachineManagerUnavailableMessage.Text" xml:space="preserve"><value>此 NAS 当前无法向 App 提供虚拟机信息。</value></data>
+  <data name="VirtualMachineManagerViewResources.Content" xml:space="preserve"><value>查看主机、存储、网络和映像</value></data>
+  <data name="VirtualMachineManagerBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回虚拟机列表</value></data>
+  <data name="VirtualMachineManagerDetailsHeading.Text" xml:space="preserve"><value>详情与资源</value></data>
+  <data name="VirtualMachineManagerChooseMachineMessage.Text" xml:space="preserve"><value>选择虚拟机可查看详情。下方还可查看资源信息。</value></data>
+  <data name="VirtualMachineManagerDetailName.Text" xml:space="preserve"><value>名称</value></data>
+  <data name="VirtualMachineManagerDetailStatus.Text" xml:space="preserve"><value>状态</value></data>
+  <data name="VirtualMachineManagerDetailCpu.Text" xml:space="preserve"><value>CPU</value></data>
+  <data name="VirtualMachineManagerDetailMemory.Text" xml:space="preserve"><value>内存</value></data>
+  <data name="VirtualMachineManagerDetailStorage.Text" xml:space="preserve"><value>存储</value></data>
+  <data name="VirtualMachineManagerDetailHost.Text" xml:space="preserve"><value>主机</value></data>
+  <data name="VirtualMachineManagerHostsTab.Header" xml:space="preserve"><value>主机</value></data>
+  <data name="VirtualMachineManagerStoragesTab.Header" xml:space="preserve"><value>存储</value></data>
+  <data name="VirtualMachineManagerNetworksTab.Header" xml:space="preserve"><value>网络</value></data>
+  <data name="VirtualMachineManagerImagesTab.Header" xml:space="preserve"><value>映像</value></data>
+  <data name="VirtualMachineManagerSectionLoading.Text" xml:space="preserve"><value>正在加载信息…</value></data>
+  <data name="VirtualMachineManagerSectionEmpty.Text" xml:space="preserve"><value>此分区当前没有可显示的信息。</value></data>
+  <data name="VirtualMachineManagerSectionError.Text" xml:space="preserve"><value>无法加载此信息。请选择“刷新”重试。</value></data>
+  <data name="VirtualMachineManagerSectionUnavailable.Text" xml:space="preserve"><value>此 NAS 当前不提供此信息。</value></data>
+  <data name="VirtualMachineManagerStatusRunning" xml:space="preserve"><value>正在运行</value></data>
+  <data name="VirtualMachineManagerStatusStopped" xml:space="preserve"><value>已停止</value></data>
+  <data name="VirtualMachineManagerStatusPaused" xml:space="preserve"><value>已暂停</value></data>
+  <data name="VirtualMachineManagerStatusChanging" xml:space="preserve"><value>正在更改</value></data>
+  <data name="VirtualMachineManagerStatusNeedsAttention" xml:space="preserve"><value>需要处理</value></data>
+  <data name="VirtualMachineManagerStatusUnknown" xml:space="preserve"><value>未知</value></data>
+  <data name="VirtualMachineManagerHealthHealthy" xml:space="preserve"><value>正常</value></data>
+  <data name="VirtualMachineManagerHealthWarning" xml:space="preserve"><value>警告</value></data>
+  <data name="VirtualMachineManagerHealthError" xml:space="preserve"><value>需要处理</value></data>
+  <data name="VirtualMachineManagerHealthOffline" xml:space="preserve"><value>离线</value></data>
+  <data name="VirtualMachineManagerHealthUnknown" xml:space="preserve"><value>未知</value></data>
+  <data name="VirtualMachineManagerUnnamedMachine" xml:space="preserve"><value>未命名虚拟机</value></data>
+  <data name="VirtualMachineManagerUnnamedResource" xml:space="preserve"><value>未命名资源</value></data>
+  <data name="VirtualMachineManagerValueUnavailable" xml:space="preserve"><value>暂无信息</value></data>
+  <data name="VirtualMachineManagerCpuValue" xml:space="preserve"><value>{0} 个虚拟处理器</value></data>
+  <data name="VirtualMachineManagerResourceUsageValue" xml:space="preserve"><value>已用 {0}，总计 {1}</value></data>
+  <data name="VirtualMachineManagerByteValueB" xml:space="preserve"><value>{0} 字节</value></data>
+  <data name="VirtualMachineManagerByteValueKB" xml:space="preserve"><value>{0} KB</value></data>
+  <data name="VirtualMachineManagerByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
+  <data name="VirtualMachineManagerByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
+  <data name="VirtualMachineManagerByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
+  <data name="VirtualMachineManagerMachineAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="VirtualMachineManagerResourceAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="ContainerManagerTitle.Text" xml:space="preserve"><value>容器</value></data>
+  <data name="ContainerManagerDescription.Text" xml:space="preserve"><value>查看此 NAS 上的容器实例。</value></data>
+  <data name="ContainerManagerRefresh.AutomationProperties.Name" xml:space="preserve"><value>刷新容器</value></data>
+  <data name="ContainerManagerRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
+  <data name="ContainerManagerReadOnly.Title" xml:space="preserve"><value>只读视图</value></data>
+  <data name="ContainerManagerReadOnly.Message" xml:space="preserve"><value>你可以在此查看容器实例。如需更改，请使用 DSM 中的 Container Manager。</value></data>
+  <data name="ContainerManagerRefreshError.Title" xml:space="preserve"><value>容器信息未能刷新</value></data>
+  <data name="ContainerManagerRefreshError.Message" xml:space="preserve"><value>当前仍显示上次可用的信息。请检查连接后重试。</value></data>
+  <data name="ContainerManagerFilter.Header" xml:space="preserve"><value>状态</value></data>
+  <data name="ContainerManagerFilterAll.Content" xml:space="preserve"><value>全部</value></data>
+  <data name="ContainerManagerFilterRunning.Content" xml:space="preserve"><value>正在运行</value></data>
+  <data name="ContainerManagerFilterStopped.Content" xml:space="preserve"><value>已停止</value></data>
+  <data name="ContainerManagerFilterAttention.Content" xml:space="preserve"><value>需要处理</value></data>
+  <data name="ContainerManagerList.AutomationProperties.Name" xml:space="preserve"><value>容器实例列表</value></data>
+  <data name="ContainerManagerChooseItemTitle.Text" xml:space="preserve"><value>选择容器</value></data>
+  <data name="ContainerManagerChooseItemMessage.Text" xml:space="preserve"><value>选择容器可查看其状态和映像。</value></data>
+  <data name="ContainerManagerBack.AutomationProperties.Name" xml:space="preserve"><value>返回容器列表</value></data>
+  <data name="ContainerManagerDetailName.Text" xml:space="preserve"><value>名称</value></data>
+  <data name="ContainerManagerDetailStatus.Text" xml:space="preserve"><value>状态</value></data>
+  <data name="ContainerManagerDetailImage.Text" xml:space="preserve"><value>映像</value></data>
+  <data name="ContainerManagerLoading.Text" xml:space="preserve"><value>正在加载容器…</value></data>
+  <data name="ContainerManagerEmptyTitle.Text" xml:space="preserve"><value>没有容器</value></data>
+  <data name="ContainerManagerEmptyMessage.Text" xml:space="preserve"><value>此账号当前没有可查看的容器实例。</value></data>
+  <data name="ContainerManagerFilteredEmptyTitle.Text" xml:space="preserve"><value>没有符合条件的容器</value></data>
+  <data name="ContainerManagerFilteredEmptyMessage.Text" xml:space="preserve"><value>请选择其他状态，或显示全部容器。</value></data>
+  <data name="ContainerManagerShowAll.Content" xml:space="preserve"><value>显示全部容器</value></data>
+  <data name="ContainerManagerErrorTitle.Text" xml:space="preserve"><value>无法加载容器</value></data>
+  <data name="ContainerManagerErrorMessage.Text" xml:space="preserve"><value>请检查与此 NAS 的连接，然后选择“刷新”。</value></data>
+  <data name="ContainerManagerUnavailableTitle.Text" xml:space="preserve"><value>容器不可用</value></data>
+  <data name="ContainerManagerUnavailableMessage.Text" xml:space="preserve"><value>请重新连接此 NAS 后重试。你也可以使用 DSM 中的 Container Manager。</value></data>
+  <data name="ContainerManagerStatusRunning" xml:space="preserve"><value>正在运行</value></data>
+  <data name="ContainerManagerStatusStopped" xml:space="preserve"><value>已停止</value></data>
+  <data name="ContainerManagerStatusNeedsAttention" xml:space="preserve"><value>需要处理</value></data>
+  <data name="ContainerManagerStatusUnknown" xml:space="preserve"><value>未知</value></data>
+  <data name="ContainerManagerValueUnavailable" xml:space="preserve"><value>暂无信息</value></data>
+  <data name="ContainerManagerItemAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="FilePreviewOpen.Label" xml:space="preserve"><value>预览</value></data>
+  <data name="FilePreviewOpen.AutomationProperties.Name" xml:space="preserve"><value>预览所选文件</value></data>
+  <data name="FilePreviewBack.AutomationProperties.Name" xml:space="preserve"><value>返回文件列表</value></data>
+  <data name="FilePreviewClose.AutomationProperties.Name" xml:space="preserve"><value>关闭预览</value></data>
+  <data name="FilePreviewTitle.Text" xml:space="preserve"><value>预览</value></data>
+  <data name="FilePreviewReadOnly.Title" xml:space="preserve"><value>仅查看</value></data>
+  <data name="FilePreviewReadOnly.Message" xml:space="preserve"><value>预览不会更改 NAS 上的文件。</value></data>
+  <data name="FilePreviewPreparingTitle.Text" xml:space="preserve"><value>正在准备预览…</value></data>
+  <data name="FilePreviewCancel.Content" xml:space="preserve"><value>取消</value></data>
+  <data name="FilePreviewCancel.AutomationProperties.Name" xml:space="preserve"><value>取消准备此预览</value></data>
+  <data name="FilePreviewSaveCopy.Content" xml:space="preserve"><value>存储副本</value></data>
+  <data name="FilePreviewSaveCopy.AutomationProperties.Name" xml:space="preserve"><value>存储此文件的副本</value></data>
+  <data name="FilePreviewRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="FilePreviewRetry.AutomationProperties.Name" xml:space="preserve"><value>重新尝试预览此文件</value></data>
+  <data name="FilePreviewFailedTitle.Text" xml:space="preserve"><value>无法预览此文件</value></data>
+  <data name="FilePreviewFailedMessage.Text" xml:space="preserve"><value>请检查连接后重试，也可以存储副本。</value></data>
+  <data name="FilePreviewTextTruncated.Title" xml:space="preserve"><value>正在显示文件开头</value></data>
+  <data name="FilePreviewTextTruncated.Message" xml:space="preserve"><value>请存储副本以阅读完整文件。</value></data>
+  <data name="FilePreviewPdfPrevious.Content" xml:space="preserve"><value>上一页</value></data>
+  <data name="FilePreviewPdfPrevious.AutomationProperties.Name" xml:space="preserve"><value>显示 PDF 上一页</value></data>
+  <data name="FilePreviewPdfNext.Content" xml:space="preserve"><value>下一页</value></data>
+  <data name="FilePreviewPdfNext.AutomationProperties.Name" xml:space="preserve"><value>显示 PDF 下一页</value></data>
+  <data name="FilePreviewProgress" xml:space="preserve"><value>已完成 {0:N0} / {1:N0} 字节</value></data>
+  <data name="FilePreviewProgressUnknownTotal" xml:space="preserve"><value>已准备 {0:N0} 字节</value></data>
+  <data name="FilePreviewUnsupportedTitle" xml:space="preserve"><value>无法预览此文件</value></data>
+  <data name="FilePreviewUnsupportedMessage" xml:space="preserve"><value>请存储副本，然后使用其他应用打开。</value></data>
+  <data name="FilePreviewUnknownSizeTitle" xml:space="preserve"><value>无法获取文件大小</value></data>
+  <data name="FilePreviewUnknownSizeMessage" xml:space="preserve"><value>请刷新此文件夹，或存储副本后打开文件。</value></data>
+  <data name="FilePreviewEmptyTitle" xml:space="preserve"><value>此文件为空</value></data>
+  <data name="FilePreviewEmptyMessage" xml:space="preserve"><value>没有可预览的内容。</value></data>
+  <data name="FilePreviewTooLargeTitle" xml:space="preserve"><value>此文件过大，无法在此预览</value></data>
+  <data name="FilePreviewTooLargeMessage" xml:space="preserve"><value>请存储副本后打开完整文件。</value></data>
+  <data name="FilePreviewCancelledTitle" xml:space="preserve"><value>已取消预览</value></data>
+  <data name="FilePreviewCancelledMessage" xml:space="preserve"><value>临时预览已清理，你可以重试。</value></data>
+  <data name="FilePreviewTextAutomationName" xml:space="preserve"><value>{0} 的只读文本预览</value></data>
+  <data name="FilePreviewImageAutomationName" xml:space="preserve"><value>{0} 的图片预览</value></data>
+  <data name="FilePreviewPdfAutomationName" xml:space="preserve"><value>{0} 的 PDF 预览，第 {1:N0} 页，共 {2:N0} 页</value></data>
+  <data name="FilePreviewPdfPage" xml:space="preserve"><value>第 {0:N0} 页，共 {1:N0} 页</value></data>
+  <data name="FilePreviewMediaAutomationName" xml:space="preserve"><value>{0} 的媒体预览</value></data>
+  <data name="Settings.PageTitle.Text" xml:space="preserve"><value>设置</value></data>
+  <data name="Settings.PageDescription.Text" xml:space="preserve"><value>选择应用外观、可选模块显示方式，以及本机可再生数据的管理方式。</value></data>
+  <data name="Settings.LanguageSectionTitle.Text" xml:space="preserve"><value>语言</value></data>
+  <data name="Settings.Language.Header" xml:space="preserve"><value>应用语言</value></data>
+  <data name="Settings.Language.AutomationProperties.Name" xml:space="preserve"><value>应用语言</value></data>
+  <data name="Settings.LanguageDescription.Text" xml:space="preserve"><value>可跟随 Windows，或在此设备上固定使用英语或简体中文。</value></data>
+  <data name="Settings.AppearanceSectionTitle.Text" xml:space="preserve"><value>外观</value></data>
+  <data name="Settings.Theme.Header" xml:space="preserve"><value>主题</value></data>
+  <data name="Settings.Theme.AutomationProperties.Name" xml:space="preserve"><value>主题</value></data>
+  <data name="Settings.ModulesSectionTitle.Text" xml:space="preserve"><value>可选模块</value></data>
+  <data name="Settings.ModulesDescription.Text" xml:space="preserve"><value>隐藏模块不会更改 NAS 上的功能，并且可以随时重新显示。</value></data>
+  <data name="Settings.DownloadsModule.Header" xml:space="preserve"><value>Download Station</value></data>
+  <data name="Settings.DownloadsModule.AutomationProperties.Name" xml:space="preserve"><value>Download Station</value></data>
+  <data name="Settings.DownloadsModule.OnContent" xml:space="preserve"><value>显示</value></data>
+  <data name="Settings.DownloadsModule.OffContent" xml:space="preserve"><value>隐藏</value></data>
+  <data name="Settings.ContainersModule.Header" xml:space="preserve"><value>容器</value></data>
+  <data name="Settings.ContainersModule.AutomationProperties.Name" xml:space="preserve"><value>容器</value></data>
+  <data name="Settings.ContainersModule.OnContent" xml:space="preserve"><value>显示</value></data>
+  <data name="Settings.ContainersModule.OffContent" xml:space="preserve"><value>隐藏</value></data>
+  <data name="Settings.VirtualMachinesModule.Header" xml:space="preserve"><value>虚拟机</value></data>
+  <data name="Settings.VirtualMachinesModule.AutomationProperties.Name" xml:space="preserve"><value>虚拟机</value></data>
+  <data name="Settings.VirtualMachinesModule.OnContent" xml:space="preserve"><value>显示</value></data>
+  <data name="Settings.VirtualMachinesModule.OffContent" xml:space="preserve"><value>隐藏</value></data>
+  <data name="Settings.NasHealthModule.Header" xml:space="preserve"><value>NAS 健康</value></data>
+  <data name="Settings.NasHealthModule.AutomationProperties.Name" xml:space="preserve"><value>NAS 健康</value></data>
+  <data name="Settings.NasHealthModule.OnContent" xml:space="preserve"><value>显示</value></data>
+  <data name="Settings.NasHealthModule.OffContent" xml:space="preserve"><value>隐藏</value></data>
+  <data name="Settings.CacheSectionTitle.Text" xml:space="preserve"><value>本机可再生数据</value></data>
+  <data name="Settings.CacheDescription.Text" xml:space="preserve"><value>清理只会移除已注册的照片缩略图内存，不会删除 NAS 文件、已保存副本、连接资料、凭据、传输、正在使用的预览或 Cloud Drive 数据。</value></data>
+  <data name="Settings.ClearCache.Content" xml:space="preserve"><value>清理可再生数据</value></data>
+  <data name="Settings.ClearCache.AutomationProperties.Name" xml:space="preserve"><value>清理可再生数据</value></data>
+  <data name="Settings.Privacy.Title" xml:space="preserve"><value>隐私</value></data>
+  <data name="Settings.Privacy.Message" xml:space="preserve"><value>设置仅保存在此设备上。此页面不会导出密码、连接地址、文件路径、消息或原始日志。</value></data>
+  <data name="Settings.ThemeSystem" xml:space="preserve"><value>跟随 Windows</value></data>
+  <data name="Settings.ThemeLight" xml:space="preserve"><value>浅色</value></data>
+  <data name="Settings.ThemeDark" xml:space="preserve"><value>深色</value></data>
+  <data name="Settings.CacheSummary" xml:space="preserve"><value>{0} 个缩略图缓存 · {1}</value></data>
+  <data name="Settings.Bytes" xml:space="preserve"><value>{0} B</value></data>
+  <data name="Settings.Kilobytes" xml:space="preserve"><value>{0} KB</value></data>
+  <data name="Settings.Megabytes" xml:space="preserve"><value>{0} MB</value></data>
+  <data name="Settings.CacheClearedTitle" xml:space="preserve"><value>已清理可再生数据</value></data>
+  <data name="Settings.CacheClearedMessage" xml:space="preserve"><value>已清空注册的照片缩略图缓存。</value></data>
+  <data name="Settings.CachePartialTitle" xml:space="preserve"><value>部分可再生数据未能清理</value></data>
+  <data name="Settings.CachePartialMessage" xml:space="preserve"><value>请关闭照片页面后重试。</value></data>
+  <data name="Settings.SaveFailedTitle" xml:space="preserve"><value>设置未保存</value></data>
+  <data name="Settings.SaveFailedMessage" xml:space="preserve"><value>请检查此应用是否可以在此设备上保存数据，然后重试。</value></data>
+  <data name="FileShareLink.Label" xml:space="preserve"><value>创建分享链接</value></data>
+  <data name="FileShareLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>为选中的项目创建分享链接</value></data>
+  <data name="FileShareLinkTitle" xml:space="preserve"><value>创建分享链接</value></data>
+  <data name="FileShareLinkTarget" xml:space="preserve"><value>所选项目：{0}</value></data>
+  <data name="FileShareLinkAccessNote" xml:space="preserve"><value>在链接到期前，任何获得链接的人都能打开这个项目。如需加强保护，可以添加密码。</value></data>
+  <data name="FileShareLinkPasswordLabel" xml:space="preserve"><value>密码（可选）</value></data>
+  <data name="FileShareLinkPasswordHelp" xml:space="preserve"><value>最多使用 16 个字符。复制或通过其他应用分享链接时不会包含密码。</value></data>
+  <data name="FileShareLinkPasswordError" xml:space="preserve"><value>密码超过 16 个字符。请缩短密码后再创建链接。</value></data>
+  <data name="FileShareLinkExpirationLabel" xml:space="preserve"><value>链接有效期</value></data>
+  <data name="FileShareLinkExpirationNever" xml:space="preserve"><value>永不过期</value></data>
+  <data name="FileShareLinkExpiration7Days" xml:space="preserve"><value>7 天后</value></data>
+  <data name="FileShareLinkExpiration30Days" xml:space="preserve"><value>30 天后</value></data>
+  <data name="FileShareLinkExpiration90Days" xml:space="preserve"><value>90 天后</value></data>
+  <data name="FileShareLinkCreateAction" xml:space="preserve"><value>创建链接</value></data>
+  <data name="FileShareLinkCreatingMessage" xml:space="preserve"><value>正在创建链接并确认链接可以使用…</value></data>
+  <data name="FileShareLinkCancellingMessage" xml:space="preserve"><value>如果请求尚未发出，将停止创建；如果已经发出，LanStash 会继续核对结果。</value></data>
+  <data name="FileShareLinkSuccessTitle" xml:space="preserve"><value>分享链接已就绪</value></data>
+  <data name="FileShareLinkSuccessMessage" xml:space="preserve"><value>链接已创建并完成核对。</value></data>
+  <data name="FileShareLinkConfirmedUrlAutomationName" xml:space="preserve"><value>已核对的分享链接</value></data>
+  <data name="FileShareLinkProtectedNote" xml:space="preserve"><value>此链接受密码保护。请通过其他方式单独发送密码。</value></data>
+  <data name="FileShareLinkExpiresOn" xml:space="preserve"><value>到期日期：{0}</value></data>
+  <data name="FileShareLinkCopyAction" xml:space="preserve"><value>复制链接</value></data>
+  <data name="FileShareLinkCopiedMessage" xml:space="preserve"><value>链接已复制</value></data>
+  <data name="FileShareLinkCopyFailedMessage" xml:space="preserve"><value>无法复制链接，请重试。</value></data>
+  <data name="FileShareLinkSystemShareAction" xml:space="preserve"><value>通过其他应用分享</value></data>
+  <data name="FileShareLinkSystemShareUnavailable" xml:space="preserve"><value>当前 Windows 安装无法通过其他应用分享。你仍可复制链接。</value></data>
+  <data name="FileShareLinkReviewTitle" xml:space="preserve"><value>请在 DSM 中核对链接</value></data>
+  <data name="FileShareLinkReviewMessage" xml:space="preserve"><value>请求可能已到达 NAS，但 LanStash 无法确认新链接。再次尝试前，请先在 DSM 的分享设置中核对。</value></data>
+  <data name="FileShareLinkChangedTitle" xml:space="preserve"><value>所选项目已变化</value></data>
+  <data name="FileShareLinkChangedMessage" xml:space="preserve"><value>所选项目与开始时不再一致，LanStash 已在创建链接前停止。请刷新“文件”，重新选择并核对项目。</value></data>
+  <data name="FileShareLinkPermissionTitle" xml:space="preserve"><value>你无法创建此链接</value></data>
+  <data name="FileShareLinkPermissionMessage" xml:space="preserve"><value>你的 NAS 账号没有分享此项目的权限。请联系管理员获取权限，或选择其他项目。</value></data>
+  <data name="FileShareLinkUnsupportedTitle" xml:space="preserve"><value>分享链接不可用</value></data>
+  <data name="FileShareLinkUnsupportedMessage" xml:space="preserve"><value>此 NAS 未提供 LanStash 所需的兼容分享功能。“文件”的其他功能仍可继续使用。</value></data>
+  <data name="FileShareLinkFailureTitle" xml:space="preserve"><value>链接未创建</value></data>
+  <data name="FileShareLinkFailureMessage" xml:space="preserve"><value>没有创建出可确认的链接。请检查连接后重试。</value></data>
+  <data name="FileShareLinkCancelledTitle" xml:space="preserve"><value>已停止创建链接</value></data>
+  <data name="FileShareLinkCancelledMessage" xml:space="preserve"><value>请求已在发出前停止，没有创建链接。</value></data>
+  <data name="FileShareLinkTryAgainAction" xml:space="preserve"><value>重试</value></data>
+  <data name="PhotoModeFolders.Content" xml:space="preserve"><value>文件夹</value></data>
+  <data name="PhotoModeTimeline.Content" xml:space="preserve"><value>时间线</value></data>
+  <data name="PhotoTimelineSearch.PlaceholderText" xml:space="preserve"><value>搜索文件名</value></data>
+  <data name="PhotoTimelineSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>按文件名搜索时间线</value></data>
+  <data name="PhotoTimelineFilter.Header" xml:space="preserve"><value>媒体</value></data>
+  <data name="PhotoTimelineFilterAll.Content" xml:space="preserve"><value>全部</value></data>
+  <data name="PhotoTimelineFilterImages.Content" xml:space="preserve"><value>图片</value></data>
+  <data name="PhotoTimelineFilterVideos.Content" xml:space="preserve"><value>视频</value></data>
+  <data name="PhotoTimelineRefresh.Content" xml:space="preserve"><value>重新扫描</value></data>
+  <data name="PhotoTimelineSave.Content" xml:space="preserve"><value>保存所选项目</value></data>
+  <data name="PhotoTimelineGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>照片时间线</value></data>
+  <data name="PhotoTimelineTruncated.Title" xml:space="preserve"><value>时间线已达到显示上限</value></data>
+  <data name="PhotoTimelineTruncated.Message" xml:space="preserve"><value>扫描已在安全上限处停止。请整理此照片空间后再试。</value></data>
+  <data name="PhotoTimelinePartial.Title" xml:space="preserve"><value>部分文件夹未扫描</value></data>
+  <data name="PhotoTimelinePartialMessage" xml:space="preserve"><value>有 {0} 个文件夹无法读取，已显示的项目仍可使用。</value></data>
+  <data name="PhotoTimelineRefreshFailed.Title" xml:space="preserve"><value>无法更新时间线</value></data>
+  <data name="PhotoTimelineRefreshFailed.Message" xml:space="preserve"><value>仍显示上次扫描结果。请检查连接和权限，然后重试。</value></data>
+  <data name="PhotoTimelineIdleTitle.Text" xml:space="preserve"><value>照片时间线</value></data>
+  <data name="PhotoTimelineIdleMessage.Text" xml:space="preserve"><value>扫描此照片空间并按月份整理照片和视频。不会上传或更改任何内容。</value></data>
+  <data name="PhotoTimelineScan.Content" xml:space="preserve"><value>扫描照片</value></data>
+  <data name="PhotoTimelineLoading.Text" xml:space="preserve"><value>正在扫描照片…</value></data>
+  <data name="PhotoTimelineCancel.Content" xml:space="preserve"><value>取消扫描</value></data>
+  <data name="PhotoTimelineEmptyTitle.Text" xml:space="preserve"><value>未找到照片或视频</value></data>
+  <data name="PhotoTimelineEmptyMessage.Text" xml:space="preserve"><value>在此照片空间添加媒体后，请重新扫描。</value></data>
+  <data name="PhotoTimelineFilteredEmptyTitle.Text" xml:space="preserve"><value>没有匹配的媒体</value></data>
+  <data name="PhotoTimelineFilteredEmptyMessage.Text" xml:space="preserve"><value>请尝试其他文件名，或清除当前筛选。</value></data>
+  <data name="PhotoTimelineClearFilters.Content" xml:space="preserve"><value>清除搜索和筛选</value></data>
+  <data name="PhotoTimelineErrorTitle.Text" xml:space="preserve"><value>无法扫描照片</value></data>
+  <data name="PhotoTimelineErrorMessage.Text" xml:space="preserve"><value>请检查连接和权限，然后重试。</value></data>
+  <data name="PhotoTimelineRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="PhotoTimelineUnknownMonth" xml:space="preserve"><value>日期未知</value></data>
+  <data name="PhotoTimelineImageAutomationName" xml:space="preserve"><value>{0}，图片</value></data>
+  <data name="PhotoTimelineVideoAutomationName" xml:space="preserve"><value>{0}，视频</value></data>
+  <data name="FileLocationsOpen.Content" xml:space="preserve"><value>位置</value></data>
+  <data name="FileLocationsOpen.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>显示文件位置</value></data>
+  <data name="FileLocationsTitle.Text" xml:space="preserve"><value>位置</value></data>
+  <data name="FileLocationsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新位置</value></data>
+  <data name="FileLocationsOpenError.Title" xml:space="preserve"><value>无法打开此位置</value></data>
+  <data name="FileLocationsOpenError.Message" xml:space="preserve"><value>请检查连接和访问权限，然后重试。</value></data>
+  <data name="FileLocationsSharesHeading.Text" xml:space="preserve"><value>浏览</value></data>
+  <data name="FileLocationsShares.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>共享文件夹</value></data>
+  <data name="FileLocationsSharesLabel.Text" xml:space="preserve"><value>共享文件夹</value></data>
+  <data name="FileLocationsFavoritesHeading.Text" xml:space="preserve"><value>收藏</value></data>
+  <data name="FileLocationsFavoritesLoading.Text" xml:space="preserve"><value>正在加载收藏…</value></data>
+  <data name="FileLocationsFavoritesEmpty.Text" xml:space="preserve"><value>暂无收藏位置。</value></data>
+  <data name="FileLocationsFavoritesError.Title" xml:space="preserve"><value>无法更新收藏</value></data>
+  <data name="FileLocationsFavoritesError.Message" xml:space="preserve"><value>如有上次的列表，仍会继续显示。请检查连接后重试。</value></data>
+  <data name="FileLocationsFavoritesTruncated.Title" xml:space="preserve"><value>仅显示部分位置</value></data>
+  <data name="FileLocationsFavoritesTruncated.Message" xml:space="preserve"><value>列表已达到安全上限，部分收藏位置可能未显示。</value></data>
+  <data name="FileLocationsRecentHeading.Text" xml:space="preserve"><value>最近位置</value></data>
+  <data name="FileLocationsRecentEmpty.Text" xml:space="preserve"><value>打开过的文件夹会显示在这里。</value></data>
+  <data name="FileLocationsRecycleHeading.Text" xml:space="preserve"><value>回收站</value></data>
+  <data name="FileLocationsRecycleLoading.Text" xml:space="preserve"><value>正在查找回收站…</value></data>
+  <data name="FileLocationsRecycleEmpty.Text" xml:space="preserve"><value>没有可用的回收站。</value></data>
+  <data name="FileLocationsRecycleError.Title" xml:space="preserve"><value>无法更新回收站</value></data>
+  <data name="FileLocationsRecycleError.Message" xml:space="preserve"><value>如有上次的列表，仍会继续显示。请检查连接和访问权限后重试。</value></data>
+  <data name="FileLocationsRecyclePartial.Title" xml:space="preserve"><value>部分回收站未显示</value></data>
+  <data name="FileLocationsRecyclePartial.Message" xml:space="preserve"><value>部分共享文件夹无访问权限，仍可打开已显示的回收站。</value></data>
+  <data name="FileLocationsRecycleTruncated.Title" xml:space="preserve"><value>仅显示部分位置</value></data>
+  <data name="FileLocationsRecycleTruncated.Message" xml:space="preserve"><value>查找已达到安全上限，部分回收站可能未显示。</value></data>
+  <data name="FileLocationsRemoteHeading.Text" xml:space="preserve"><value>远程位置</value></data>
+  <data name="FileLocationsRemoteLoading.Text" xml:space="preserve"><value>正在加载远程位置…</value></data>
+  <data name="FileLocationsRemoteEmpty.Text" xml:space="preserve"><value>没有可用的远程位置。</value></data>
+  <data name="FileLocationsRemoteError.Title" xml:space="preserve"><value>无法更新远程位置</value></data>
+  <data name="FileLocationsRemoteError.Message" xml:space="preserve"><value>如有上次的列表，仍会继续显示。请检查连接后重试。</value></data>
+  <data name="FileLocationsRemotePartial.Title" xml:space="preserve"><value>部分远程位置不可用</value></data>
+  <data name="FileLocationsRemotePartial.Message" xml:space="preserve"><value>仍可打开已显示的远程文件夹，且不会更改其连接设置。</value></data>
+  <data name="FileLocationsRemoteTruncated.Title" xml:space="preserve"><value>仅显示部分位置</value></data>
+  <data name="FileLocationsRemoteTruncated.Message" xml:space="preserve"><value>列表已达到安全上限，部分远程位置可能未显示。</value></data>
 </root>

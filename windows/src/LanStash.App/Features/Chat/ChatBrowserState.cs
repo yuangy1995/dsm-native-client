@@ -1,0 +1,75 @@
+using System.Globalization;
+using LanStash.Domain;
+using LanStash.App.Localization;
+
+namespace LanStash.App.Features.Chat;
+
+public enum ChatBrowserContentState
+{
+    Loading,
+    Empty,
+    FilteredEmpty,
+    Error,
+    Content,
+    Unavailable,
+    RequiresValidation,
+}
+
+public sealed record ChatConversationItem(ChatConversation Conversation)
+{
+    public string Id => Conversation.Id;
+    public string Title => HasUserFacingTitle
+        ? Conversation.Title
+        : LocalizationService.Current.Get("ChatBrowserUnnamedConversation");
+    public string Summary => Conversation.LastMessageSummary ?? string.Empty;
+    public DateTimeOffset? LastActivityAt => Conversation.LastActivityAt;
+    public int UnreadCount => Conversation.UnreadCount;
+    public string UnreadText => UnreadCount > 0
+        ? UnreadCount.ToString("N0", CultureInfo.CurrentCulture)
+        : string.Empty;
+    public string AutomationName => UnreadCount > 0
+        ? LocalizationService.Current.Format(
+            "ChatBrowserConversationWithUnreadAutomationName",
+            Title,
+            UnreadCount)
+        : LocalizationService.Current.Format("ChatBrowserConversationAutomationName", Title);
+    public bool IsEncrypted => Conversation.IsEncrypted;
+    public string Initial => string.IsNullOrWhiteSpace(Title)
+        ? "?"
+        : StringInfo.GetNextTextElement(Title.Trim()).ToUpper(CultureInfo.CurrentCulture);
+
+    private bool HasUserFacingTitle
+    {
+        get
+        {
+            var title = Conversation.Title.Trim();
+            if (string.IsNullOrEmpty(title) ||
+                string.Equals(title, Conversation.Id, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var parts = title
+                .Split(new[] { '、', ',' }, StringSplitOptions.None)
+                .Select(value => value.Trim())
+                .ToArray();
+            var isOnlyMemberIds = parts.Length > 0 && parts.All(part =>
+                part.Length > 0 &&
+                Conversation.MemberIds.Contains(part, StringComparer.Ordinal));
+            return !isOnlyMemberIds;
+        }
+    }
+}
+
+public sealed record ChatMessageItem(ChatMessage Message)
+{
+    public string Id => Message.Id;
+    public string Sender => string.IsNullOrWhiteSpace(Message.SenderDisplayName)
+        ? LocalizationService.Current.Get("ChatBrowserUnknownSender")
+        : Message.SenderDisplayName;
+    public string Text => Message.Text ?? string.Empty;
+    public DateTimeOffset SentAt => Message.SentAt;
+    public string SentAtText => SentAt.ToString("g", CultureInfo.CurrentCulture);
+    public bool IsFromCurrentUser => Message.IsFromCurrentUser == true;
+    public bool HasAttachments => Message.Attachments.Count > 0;
+}

@@ -59,7 +59,7 @@ Windows 完成标准不是“Shell 中出现入口”，而是对应工作流达
 - 不实现 macOS 尚未完成的完整 Container 创建/Compose/终端、VMM 高级迁移、Chat 加密等候选能力。
 - 不在本计划中改为 MSIX、改变 Identity、签名或最低版本；若发布验收证明 unpackaged 形态无法满足需求，单独提交必要性、迁移和回滚方案取得用户批准。
 - 不新增第三方 UI、MVVM、媒体或测试依赖。确需新增时先走审批，不以“提高效率”为由默认引入。
-- 不新建 `LanStash.Application` 或 `LanStash.CloudFiles` 工程作为既定动作；先在现有三层工程内按目录建立逻辑边界，新工程拆分属于后续工具链决策门。
+- `LanStash.Application` 已在第 0 波因 WinUI 可执行工程无法作为稳定 xUnit 宿主而建立：它是 Windows 目标的非 WinUI 应用逻辑程序集，只引用 Domain 与 Windows App SDK，App 和 Tests 单向引用它；不得反向引用 Infrastructure，也不得成为第二套平台资源或 Repository 实现。`LanStash.CloudFiles` 仍不新建，进一步物理迁移源码需单独整理并保持工程边界测试。
 
 ### 3.3 功能优先与后置 Windows 验证
 
@@ -71,7 +71,7 @@ Windows 完成标准不是“Shell 中出现入口”，而是对应工作流达
 
 ## 4. 目标代码结构
 
-在保持现有 solution 和项目数量的前提下，逐步形成以下目录边界：
+在保持当前 solution 分层的前提下，逐步形成以下目录边界：
 
 ```text
 windows/src/LanStash.Domain/
@@ -83,6 +83,10 @@ windows/src/LanStash.Infrastructure/
   Features/<同名领域>/PublicApi/
   Features/<同名领域>/PrivateApi/
   Storage/
+
+windows/src/LanStash.Application/
+  非 WinUI 的 ViewModel、状态、协调器与可测试应用逻辑
+  仅依赖 Domain；Windows 平台适配通过窄接口注入
 
 windows/src/LanStash.App/
   Shell/
@@ -101,6 +105,7 @@ windows/tests/LanStash.Tests/
 实施约束：
 
 - `IDsmRepository` 在 W1 先以兼容 facade 保留，新增聚焦接口后再逐调用方迁移；不能一次性重写全部调用链。
+- `LanStash.Application` 与 App 的源码归属清单必须由工程边界测试保持一一对应；生产本地化只走 PRI/`ResourceLoader`，无宿主测试使用注入的测试平台，不得嵌入第二份 `.resw` 作为生产 fallback。
 - 大类可以改为 `partial` 并先做无行为变化的机械拆分；机械拆分和功能改造不得混在同一切片。
 - UI 只依赖 typed ViewModel 状态，不直接解析 JSON 或调用 DSM API。
 - Cloud Files 回调不引用 WinUI 控件，只向平台无关协调器报告状态。

@@ -433,6 +433,11 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(share.owner, "tester")
         XCTAssertEqual(share.permissions?.canWrite, true)
         XCTAssertEqual(share.mountPointType, "cifs")
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(requestParameter("sort_by", in: request), "name")
+        XCTAssertEqual(requestParameter("sort_direction", in: request), "asc")
+        XCTAssertNil(requestParameter("filetype", in: request))
     }
 
     func test当前账号共享访问分页去重并排除远程挂载() async throws {
@@ -489,6 +494,118 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(page.total, 2)
     }
 
+    func test目录列表默认请求保持名称升序且不发送类型筛选() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":0,"files":[]}}"#)
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: transport
+        )
+
+        _ = try await repository.listFolder(path: "/fixture", offset: 0, limit: 200)
+
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(requestParameter("sort_by", in: request), "name")
+        XCTAssertEqual(requestParameter("sort_direction", in: request), "asc")
+        XCTAssertNil(requestParameter("filetype", in: request))
+        XCTAssertNil(requestParameter("pattern", in: request))
+        XCTAssertNil(requestParameter("search_type", in: request))
+    }
+
+    func test目录列表把稳定排序与类型筛选映射为公开参数() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":0,"files":[]}}"#),
+            response(#"{"success":true,"data":{"offset":0,"total":0,"files":[]}}"#),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: transport
+        )
+
+        _ = try await repository.listFolder(
+            path: "/fixture",
+            offset: 0,
+            limit: 200,
+            options: FileListOptions(
+                sortField: .size,
+                sortDirection: .descending,
+                typeFilter: .files
+            )
+        )
+        _ = try await repository.listFolder(
+            path: "/fixture",
+            offset: 0,
+            limit: 200,
+            options: FileListOptions(
+                sortField: .modifiedTime,
+                sortDirection: .ascending,
+                typeFilter: .folders
+            )
+        )
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requestParameter("sort_by", in: requests[0]), "size")
+        XCTAssertEqual(requestParameter("sort_direction", in: requests[0]), "desc")
+        XCTAssertEqual(requestParameter("filetype", in: requests[0]), "file")
+        XCTAssertEqual(requestParameter("sort_by", in: requests[1]), "mtime")
+        XCTAssertEqual(requestParameter("sort_direction", in: requests[1]), "asc")
+        XCTAssertEqual(requestParameter("filetype", in: requests[1]), "dir")
+    }
+
+    func test全部类型筛选与共享根规范化为名称排序且不发送Filetype() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":0,"files":[]}}"#),
+            response(#"{"success":true,"data":{"offset":0,"total":0,"shares":[]}}"#),
+            response(#"{"success":true,"data":{"offset":0,"total":0,"shares":[]}}"#),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: transport
+        )
+
+        _ = try await repository.listFolder(
+            path: "/fixture",
+            offset: 0,
+            limit: 200,
+            options: FileListOptions(typeFilter: .all)
+        )
+        _ = try await repository.listShares(
+            offset: 0,
+            limit: 200,
+            options: FileListOptions(
+                sortField: .size,
+                sortDirection: .descending,
+                typeFilter: .files
+            )
+        )
+        _ = try await repository.listShares(
+            offset: 0,
+            limit: 200,
+            options: FileListOptions(
+                sortField: .modifiedTime,
+                sortDirection: .ascending,
+                typeFilter: .folders
+            )
+        )
+
+        let requests = await transport.recordedRequests()
+        XCTAssertNil(requestParameter("filetype", in: requests[0]))
+        XCTAssertEqual(requestParameter("sort_by", in: requests[1]), "name")
+        XCTAssertEqual(requestParameter("sort_direction", in: requests[1]), "desc")
+        XCTAssertNil(requestParameter("filetype", in: requests[1]))
+        XCTAssertEqual(requestParameter("sort_by", in: requests[2]), "name")
+        XCTAssertEqual(requestParameter("sort_direction", in: requests[2]), "asc")
+        XCTAssertNil(requestParameter("filetype", in: requests[2]))
+    }
+
     func test虚拟文件夹先读取协议并按CIFSNFSISO分别请求() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"support_virtual_protocol":" cifs, NFS,iso,unknown "}}"#),
@@ -498,8 +615,8 @@ final class DsmFileRepositoryTests: XCTestCase {
         ])
         let repository = try makeRepository(
             capabilities: CapabilitySet([
-                DsmAPIName.fileStationInfo: capability(DsmAPIName.fileStationInfo, version: 2),
-                DsmAPIName.fileStationVirtualFolder: capability(DsmAPIName.fileStationVirtualFolder, version: 2)
+                DsmAPIName.fileStationInfo: capability(DsmAPIName.fileStationInfo, version: 3),
+                DsmAPIName.fileStationVirtualFolder: capability(DsmAPIName.fileStationVirtualFolder, version: 3)
             ]),
             transport: transport
         )
@@ -534,7 +651,8 @@ final class DsmFileRepositoryTests: XCTestCase {
     func test虚拟文件夹非正分页大小会收敛为一条() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"support_virtual_protocol":"cifs"}}"#),
-            response(#"{"success":true,"data":{"offset":0,"total":2,"folders":[{"name":"位置一","path":"/remote/one","isdir":true}]}}"#),
+            response(#"{"success":true,"data":{"offset":0,"total":2,"folders":[{"name":"A","path":"/remote/one","isdir":true}]}}"#),
+            response(#"{"success":true,"data":{"offset":1,"total":2,"folders":[{"name":"B","path":"/remote/two","isdir":true}]}}"#),
         ])
         let repository = try makeRepository(
             capabilities: CapabilitySet([
@@ -549,8 +667,8 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(page.folders.map(\.item.path), ["/remote/one"])
         XCTAssertTrue(page.hasMore)
         let requests = await transport.recordedRequests()
-        let request = try XCTUnwrap(requests.last)
-        XCTAssertEqual(requestParameter("limit", in: request), "1")
+        XCTAssertEqual(requests.dropFirst().compactMap { requestParameter("offset", in: $0) }, ["0", "1"])
+        XCTAssertEqual(requestParameter("limit", in: requests[1]), "500")
     }
 
     func test虚拟文件夹合并分页超过单次上限后仍能继续() async throws {
@@ -628,6 +746,251 @@ final class DsmFileRepositoryTests: XCTestCase {
 
         let requests = await transport.recordedRequests()
         XCTAssertEqual(requests.dropFirst().compactMap { requestParameter("type", in: $0) }, ["cifs", "nfs"])
+    }
+
+    func test虚拟文件夹严格拒绝非原生分页字段和无效目录() async throws {
+        let invalidPages = [
+            #"{"success":true,"data":{"offset":"0","total":1,"folders":[{"name":"资料","path":"/remote/docs","isdir":true}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":"1","folders":[{"name":"资料","path":"/remote/docs","isdir":true}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"folders":[{"name":"资料","path":"remote/docs","isdir":true}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"folders":[{"name":"资料","path":"/remote//docs","isdir":true}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"folders":[{"name":"资料","path":"/remote/docs","isdir":false}]}}"#,
+        ]
+        for body in invalidPages {
+            let transport = MockHTTPTransport(responses: [
+                response(#"{"success":true,"data":{"support_virtual_protocol":"cifs"}}"#),
+                response(body),
+            ])
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationInfo: capability(DsmAPIName.fileStationInfo, version: 2),
+                    DsmAPIName.fileStationVirtualFolder: capability(DsmAPIName.fileStationVirtualFolder, version: 2)
+                ]),
+                transport: transport
+            )
+            do {
+                _ = try await repository.listVirtualFolders(offset: 0, limit: 100)
+                XCTFail("严格远程位置契约不应接受无效响应")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test虚拟文件夹严格拒绝偏移漂移总数漂移和零进展() async throws {
+        let invalidSequences = [
+            [#"{"success":true,"data":{"offset":1,"total":1,"folders":[]}}"#],
+            [#"{"success":true,"data":{"offset":0,"total":1,"folders":[]}}"#],
+            [
+                #"{"success":true,"data":{"offset":0,"total":2,"folders":[{"name":"一","path":"/remote/one","isdir":true}]}}"#,
+                #"{"success":true,"data":{"offset":1,"total":3,"folders":[{"name":"二","path":"/remote/two","isdir":true}]}}"#,
+            ],
+        ]
+        for sequence in invalidSequences {
+            let transport = MockHTTPTransport(responses: [
+                response(#"{"success":true,"data":{"support_virtual_protocol":"cifs"}}"#)
+            ] + sequence.map(response))
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationInfo: capability(DsmAPIName.fileStationInfo, version: 2),
+                    DsmAPIName.fileStationVirtualFolder: capability(DsmAPIName.fileStationVirtualFolder, version: 2)
+                ]),
+                transport: transport
+            )
+            do {
+                _ = try await repository.listVirtualFolders(offset: 0, limit: 100)
+                XCTFail("偏移、总数和零进展门禁不应被绕过")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test虚拟文件夹取消会抛出CancellationError() async throws {
+        let transport = MockHTTPTransport(steps: [.waitUntilCancelled])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationInfo: capability(DsmAPIName.fileStationInfo, version: 2),
+                DsmAPIName.fileStationVirtualFolder: capability(DsmAPIName.fileStationVirtualFolder, version: 2)
+            ]),
+            transport: transport
+        )
+        let task = Task { try await repository.listVirtualFolders(offset: 0, limit: 100) }
+        while await transport.recordedRequests().isEmpty { await Task.yield() }
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("取消后不应返回远程位置页")
+        } catch is CancellationError {
+            // 预期取消。
+        }
+    }
+
+    func test回收站只探测本地共享并区分不存在与权限不足() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":4,"shares":[{"name":"文档","path":"/docs","isdir":true,"additional":{"mount_point_type":"normal"}},{"name":"远程","path":"/remote","isdir":true,"additional":{"mount_point_type":"cifs"}},{"name":"未启用","path":"/plain","isdir":true},{"name":"受限","path":"/denied","isdir":true,"additional":{"mount_point_type":"shared_folder"}}]}}"#),
+            response(#"{"success":true,"data":{"offset":0,"total":0,"files":[]}}"#),
+            response(#"{"success":false,"error":{"code":408}}"#),
+            response(#"{"success":false,"error":{"code":105}}"#),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 3)
+            ]),
+            transport: transport
+        )
+
+        let result = try await repository.discoverRecycleLocations()
+
+        XCTAssertEqual(result.profileID, repository.profileID)
+        XCTAssertEqual(result.locations, [
+            FileRecycleLocation(
+                shareName: "文档",
+                sharePath: "/docs",
+                recyclePath: "/docs/#recycle"
+            )
+        ])
+        XCTAssertEqual(result.scannedShareCount, 3)
+        XCTAssertEqual(result.permissionDeniedShareCount, 1)
+        XCTAssertFalse(result.isTruncated)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.compactMap { requestParameter("method", in: $0) }, [
+            "list_share", "list", "list", "list"
+        ])
+        XCTAssertEqual(requests.dropFirst().compactMap {
+            requestParameter("folder_path", in: $0)
+        }, ["/docs/#recycle", "/plain/#recycle", "/denied/#recycle"])
+        XCTAssertFalse(requests.contains {
+            requestParameter("folder_path", in: $0) == "/remote/#recycle"
+        })
+        XCTAssertTrue(requests.allSatisfy { requestParameter("version", in: $0) == "2" })
+    }
+
+    func test回收站共享分页严格拒绝字符串偏移总数漂移和零进展() async throws {
+        let invalidSequences = [
+            [#"{"success":true,"data":{"offset":"0","total":0,"shares":[]}}"#],
+            [#"{"success":true,"data":{"offset":0,"total":1,"shares":[]}}"#],
+            [
+                #"{"success":true,"data":{"offset":0,"total":2,"shares":[{"name":"一","path":"/one","isdir":true,"additional":{"mount_point_type":"cifs"}}]}}"#,
+                #"{"success":true,"data":{"offset":1,"total":3,"shares":[{"name":"二","path":"/two","isdir":true,"additional":{"mount_point_type":"cifs"}}]}}"#,
+            ],
+        ]
+        for sequence in invalidSequences {
+            let transport = MockHTTPTransport(responses: sequence.map(response))
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+                ]),
+                transport: transport
+            )
+            do {
+                _ = try await repository.discoverRecycleLocations()
+                XCTFail("回收站共享发现不应接受无效分页")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test回收站探测非法响应和网络错误会终止整体发现() async throws {
+        let sharePage = response(#"{"success":true,"data":{"offset":0,"total":1,"shares":[{"name":"文档","path":"/docs","isdir":true}]}}"#)
+        let invalidTransport = MockHTTPTransport(responses: [
+            sharePage,
+            response(#"{"success":true,"data":{"offset":0,"total":1,"files":[]}}"#),
+        ])
+        let invalidRepository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: invalidTransport
+        )
+        do {
+            _ = try await invalidRepository.discoverRecycleLocations()
+            XCTFail("零进展探测不应被当成已发现")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
+
+        let networkTransport = MockHTTPTransport(steps: [
+            .response(sharePage),
+            .urlError(.notConnectedToInternet),
+        ])
+        let networkRepository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: networkTransport
+        )
+        do {
+            _ = try await networkRepository.discoverRecycleLocations()
+            XCTFail("网络错误不应返回部分回收站入口")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .networkUnavailable)
+        }
+
+        let authenticationTransport = MockHTTPTransport(responses: [
+            sharePage,
+            response(#"{"success":false,"error":{"code":119}}"#),
+        ])
+        let authenticationRepository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: authenticationTransport
+        )
+        do {
+            _ = try await authenticationRepository.discoverRecycleLocations()
+            XCTFail("认证错误不应返回部分回收站入口")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .authenticationRequired)
+        }
+    }
+
+    func test回收站发现达到五百共享上限时截断且远程共享零探测() async throws {
+        let shareJSON: (Int) -> String = { index in
+            #"{"name":"远程 \#(index)","path":"/remote-\#(index)","isdir":true,"additional":{"mount_point_type":"nfs"}}"#
+        }
+        let pages = [0..<200, 200..<400, 400..<500].enumerated().map { page, range in
+            response(
+                #"{"success":true,"data":{"offset":\#(page * 200),"total":501,"shares":[\#(range.map(shareJSON).joined(separator: ","))]}}"#
+            )
+        }
+        let transport = MockHTTPTransport(responses: pages)
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: transport
+        )
+
+        let result = try await repository.discoverRecycleLocations()
+
+        XCTAssertTrue(result.isTruncated)
+        XCTAssertEqual(result.scannedShareCount, 0)
+        XCTAssertTrue(result.locations.isEmpty)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.compactMap { requestParameter("offset", in: $0) }, ["0", "200", "400"])
+        XCTAssertEqual(requests.compactMap { requestParameter("limit", in: $0) }, ["200", "200", "100"])
+        XCTAssertTrue(requests.allSatisfy { requestParameter("method", in: $0) == "list_share" })
+    }
+
+    func test回收站发现取消会抛出CancellationError() async throws {
+        let transport = MockHTTPTransport(steps: [.waitUntilCancelled])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: transport
+        )
+        let task = Task { try await repository.discoverRecycleLocations() }
+        while await transport.recordedRequests().isEmpty { await Task.yield() }
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("取消后不应返回回收站发现结果")
+        } catch is CancellationError {
+            // 预期取消。
+        }
     }
 
     func test批量详情使用V2百条分块去重并按首次输入顺序返回() async throws {
@@ -1309,18 +1672,155 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(requestParameter("offset", in: requests[2]), "1")
     }
 
+    func test收藏严格构建全局去重快照后再分页() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":3,"favorites":[{"name":"乙","path":"/home/b"},{"name":"甲","path":"/home/a"}]}}"#),
+            response(#"{"success":true,"data":{"offset":2,"total":3,"favorites":[{"name":"重复","path":"/home/a"}]}}"#),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 3)
+            ]),
+            transport: transport
+        )
+
+        let page = try await repository.listFavoritesPage(offset: 1, limit: 1)
+
+        XCTAssertEqual(page.locations.map(\.path), ["/home/a"])
+        XCTAssertEqual(page.offset, 1)
+        XCTAssertEqual(page.nextOffset, 2)
+        XCTAssertEqual(page.total, 2)
+        XCTAssertEqual(page.sourceTotal, 3)
+        XCTAssertFalse(page.hasMore)
+        XCTAssertFalse(page.isTruncated)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.compactMap { requestParameter("offset", in: $0) }, ["0", "2"])
+        XCTAssertTrue(requests.allSatisfy { requestParameter("version", in: $0) == "2" })
+    }
+
+    func test收藏兼容完全缺失分页字段并严格拒绝半缺失和字符串数字() async throws {
+        let compatibleTransport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"favorites":[{"path":"/home/docs"}]}}"#)
+        ])
+        let compatibleRepository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+            ]),
+            transport: compatibleTransport
+        )
+        let compatible = try await compatibleRepository.listFavoritesPage(offset: 0, limit: 100)
+        XCTAssertEqual(compatible.locations.map(\.name), ["docs"])
+        XCTAssertEqual(compatible.sourceTotal, 1)
+        XCTAssertFalse(compatible.isTruncated)
+
+        let invalidBodies = [
+            #"{"success":true,"data":{"offset":0,"favorites":[]}}"#,
+            #"{"success":true,"data":{"total":0,"favorites":[]}}"#,
+            #"{"success":true,"data":{"offset":"0","total":0,"favorites":[]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":"0","favorites":[]}}"#,
+        ]
+        for body in invalidBodies {
+            let transport = MockHTTPTransport(responses: [response(body)])
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+                ]),
+                transport: transport
+            )
+            do {
+                _ = try await repository.listFavoritesPage(offset: 0, limit: 100)
+                XCTFail("收藏分页字段不应接受半缺失或字符串数字")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test收藏严格拒绝偏移总数漂移零进展和非规范路径() async throws {
+        let sequences = [
+            [#"{"success":true,"data":{"offset":1,"total":1,"favorites":[]}}"#],
+            [#"{"success":true,"data":{"offset":0,"total":1,"favorites":[]}}"#],
+            [#"{"success":true,"data":{"offset":0,"total":1,"favorites":[{"name":"资料","path":"/home//docs"}]}}"#],
+            [
+                #"{"success":true,"data":{"offset":0,"total":2,"favorites":[{"name":"一","path":"/home/one"}]}}"#,
+                #"{"success":true,"data":{"offset":1,"total":3,"favorites":[{"name":"二","path":"/home/two"}]}}"#,
+            ],
+        ]
+        for sequence in sequences {
+            let transport = MockHTTPTransport(responses: sequence.map(response))
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+                ]),
+                transport: transport
+            )
+            do {
+                _ = try await repository.listFavoritesPage(offset: 0, limit: 100)
+                XCTFail("收藏严格分页门禁不应接受无效响应")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test收藏认证错误原样传播() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":false,"error":{"code":119}}"#)
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+            ]),
+            transport: transport
+        )
+        do {
+            _ = try await repository.listFavoritesPage(offset: 0, limit: 100)
+            XCTFail("认证错误不应被转换为收藏空页")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .authenticationRequired)
+        }
+    }
+
+    func test收藏取消会抛出CancellationError() async throws {
+        let transport = MockHTTPTransport(steps: [.waitUntilCancelled])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2)
+            ]),
+            transport: transport
+        )
+        let task = Task { try await repository.listFavoritesPage(offset: 0, limit: 100) }
+        while await transport.recordedRequests().isEmpty { await Task.yield() }
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("取消后不应返回收藏页")
+        } catch is CancellationError {
+            // 预期取消。
+        }
+    }
+
     func test收藏和分享链接可以创建列出并取消() async throws {
         let transport = MockHTTPTransport(responses: [
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
             DsmHTTPResponse(data: Data(#"{"success":true,"data":{"favorites":[{"name":"文档","path":"/home/docs"}]}}"#.utf8), statusCode: 200),
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
-            DsmHTTPResponse(data: Data(#"{"success":true,"data":{"links":[{"id":"link-1","name":"说明.txt","path":"/home/说明.txt","url":"https://share.example.invalid/x","has_password":true,"date_expired":"2026-08-01"}]}}"#.utf8), statusCode: 200),
-            DsmHTTPResponse(data: Data(#"{"success":true,"data":{"links":[{"id":"link-1","name":"说明.txt","path":"/home/说明.txt","url":"https://share.example.invalid/x","has_password":true,"date_expired":"2026-08-01"}]}}"#.utf8), statusCode: 200),
+            shareTargetInfo(path: "/home/说明.txt"),
+            shareTargetInfo(path: "/home/说明.txt"),
+            sharePage(offset: 0, total: 0, links: []),
+            shareCreate(path: "/home/说明.txt", id: "link-1"),
+            sharePage(offset: 0, total: 1, links: [
+                shareLinkJSON(id: "link-1", path: "/home/说明.txt", hasPassword: true, expiresAt: "2026-08-01")
+            ]),
+            sharePage(offset: 0, total: 1, links: [
+                shareLinkJSON(id: "link-1", path: "/home/说明.txt", hasPassword: true, expiresAt: "2026-08-01")
+            ]),
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200)
         ])
         let repository = try makeRepository(
             capabilities: CapabilitySet([
                 DsmAPIName.fileStationFavorite: capability(DsmAPIName.fileStationFavorite, version: 2),
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2),
                 DsmAPIName.fileStationSharing: capability(DsmAPIName.fileStationSharing, version: 3)
             ]),
             transport: transport
@@ -1332,13 +1832,338 @@ final class DsmFileRepositoryTests: XCTestCase {
         try await repository.removeFavorite(path: "/home/docs")
         let created = try await repository.createShareLink(
             paths: ["/home/说明.txt"],
-            password: "REDACTED_PASSWORD",
+            password: "REDACTED_PASS",
             expiresAt: "2026-08-01"
         )
         XCTAssertEqual(created.id, "link-1")
         let links = try await repository.listShareLinks()
         XCTAssertEqual(links.map(\.id), ["link-1"])
         try await repository.deleteShareLinks(ids: ["link-1"])
+    }
+
+    func test分享创建要求V3与ListV2能力且不满足时零请求() async throws {
+        for repositoryConfig in [(version: 2, includesList: true), (version: 3, includesList: false)] {
+            let transport = MockHTTPTransport(responses: [])
+            let repository = try makeShareRepository(
+                transport: transport,
+                sharingVersion: repositoryConfig.version,
+                includesList: repositoryConfig.includesList
+            )
+            let outcome = try await repository.createShareLinkResult(
+                FileShareLinkCreateRequest(target: shareTarget(repository: repository))
+            )
+
+            XCTAssertEqual(repository.fileShareLinkAvailability.status, .unsupported)
+            XCTAssertEqual(outcome.result.status, .unsupported)
+            let requests = await transport.recordedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test分享创建在Baseline漂移或缺少读取权限时零写拒绝() async throws {
+        let driftTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(size: 13)
+        ])
+        let driftRepository = try makeShareRepository(transport: driftTransport)
+        let drift = try await driftRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(target: shareTarget(repository: driftRepository))
+        )
+        XCTAssertEqual(drift.result.status, .confirmedFailure)
+        XCTAssertEqual(drift.result.errorCategory, .conflict)
+        let driftMethods = await driftTransport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(driftMethods, ["getinfo"])
+
+        let deniedTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(canRead: false)
+        ])
+        let deniedRepository = try makeShareRepository(transport: deniedTransport)
+        let denied = try await deniedRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(
+                target: shareTarget(repository: deniedRepository, canRead: false)
+            )
+        )
+        XCTAssertEqual(denied.result.status, .permissionDenied)
+        XCTAssertEqual(denied.result.errorCategory, .permission)
+        let deniedMethods = await deniedTransport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(deniedMethods, ["getinfo"])
+    }
+
+    func test分享创建同路径锁拒绝第二次提交且提交后取消不重放() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(shareTargetInfo()),
+            .response(sharePage(offset: 0, total: 0, links: [])),
+            .waitUntilCancelled,
+        ])
+        let repository = try makeShareRepository(transport: transport)
+        let request = try FileShareLinkCreateRequest(
+            target: shareTarget(repository: repository)
+        )
+        let first = Task { try await repository.createShareLinkResult(request) }
+        while await transport.recordedRequests().count < 3 {
+            await Task.yield()
+        }
+
+        let duplicate = try await repository.createShareLinkResult(request)
+        XCTAssertEqual(duplicate.result.status, .confirmedFailure)
+        XCTAssertEqual(duplicate.result.errorCategory, .conflict)
+        XCTAssertFalse(duplicate.result.submitted)
+
+        first.cancel()
+        let cancelled = try await first.value
+        XCTAssertEqual(cancelled.result.status, .cancellationRequestedAfterSubmission)
+        let methods = await transport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(methods.filter { $0 == "create" }.count, 1)
+    }
+
+    func test分享创建提交前取消不访问网络() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeShareRepository(transport: transport)
+        let request = try FileShareLinkCreateRequest(
+            target: shareTarget(repository: repository)
+        )
+        let task = Task { try await repository.createShareLinkResult(request) }
+        task.cancel()
+
+        let outcome = try await task.value
+
+        XCTAssertEqual(outcome.result.status, .cancelledBeforeSubmission)
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test分享创建断线后只回读且无ID响应可由唯一新链接确认() async throws {
+        let disconnectedTransport = MockHTTPTransport(steps: [
+            .response(shareTargetInfo()),
+            .response(sharePage(offset: 0, total: 0, links: [])),
+            .urlError(.networkConnectionLost),
+            .response(sharePage(offset: 0, total: 1, links: [shareLinkJSON(id: "link-new")])),
+        ])
+        let disconnectedRepository = try makeShareRepository(transport: disconnectedTransport)
+        let disconnected = try await disconnectedRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(target: shareTarget(repository: disconnectedRepository))
+        )
+        XCTAssertEqual(disconnected.result.status, .confirmedSuccess)
+        XCTAssertEqual(disconnected.confirmedLink?.id, "link-new")
+        let disconnectedMethods = await disconnectedTransport.recordedRequests().compactMap {
+            requestParameter("method", in: $0)
+        }
+        XCTAssertEqual(disconnectedMethods.filter { $0 == "create" }.count, 1)
+
+        let noIDTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 0, links: []),
+            shareCreate(id: nil),
+            sharePage(offset: 0, total: 1, links: [shareLinkJSON(id: "link-readback")]),
+        ])
+        let noIDRepository = try makeShareRepository(transport: noIDTransport)
+        let noID = try await noIDRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(target: shareTarget(repository: noIDRepository))
+        )
+        XCTAssertEqual(noID.result.status, .confirmedSuccess)
+        XCTAssertEqual(noID.confirmedLink?.id, "link-readback")
+
+        let invalidResponseTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 0, links: []),
+            response(#"{"success":true,"data":{"links":"invalid"}}"#),
+            sharePage(offset: 0, total: 0, links: []),
+        ])
+        let invalidResponseRepository = try makeShareRepository(
+            transport: invalidResponseTransport
+        )
+        let invalidResponse = try await invalidResponseRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(
+                target: shareTarget(repository: invalidResponseRepository)
+            )
+        )
+        XCTAssertEqual(invalidResponse.result.status, .submittedButUnverified)
+        let invalidResponseMethods = await invalidResponseTransport
+            .recordedRequests().compactMap {
+                requestParameter("method", in: $0)
+            }
+        XCTAssertEqual(invalidResponseMethods.filter { $0 == "create" }.count, 1)
+    }
+
+    func test分享创建旧ID零匹配多匹配和单项错误均不得冒充成功() async throws {
+        let oldLink = shareLinkJSON(id: "link-old")
+        let oldIDTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 1, links: [oldLink]),
+            shareCreate(id: "link-old"),
+            sharePage(offset: 0, total: 1, links: [oldLink]),
+        ])
+        let oldIDRepository = try makeShareRepository(transport: oldIDTransport)
+        let oldID = try await oldIDRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(target: shareTarget(repository: oldIDRepository))
+        )
+        XCTAssertEqual(oldID.result.status, .submittedButUnverified)
+        XCTAssertNil(oldID.confirmedLink)
+
+        let zeroTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 0, links: []),
+            shareCreate(id: nil),
+            sharePage(offset: 0, total: 0, links: []),
+        ])
+        let zeroRepository = try makeShareRepository(transport: zeroTransport)
+        let zero = try await zeroRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(target: shareTarget(repository: zeroRepository))
+        )
+        XCTAssertEqual(zero.result.status, .submittedButUnverified)
+
+        let multipleTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 0, links: []),
+            shareCreate(id: nil),
+            sharePage(offset: 0, total: 2, links: [
+                shareLinkJSON(id: "link-a"), shareLinkJSON(id: "link-b")
+            ]),
+        ])
+        let multipleRepository = try makeShareRepository(transport: multipleTransport)
+        let multiple = try await multipleRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(target: shareTarget(repository: multipleRepository))
+        )
+        XCTAssertEqual(multiple.result.status, .submittedButUnverified)
+
+        let rejectedTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 0, links: []),
+            shareCreate(id: "link-rejected", error: 105),
+        ])
+        let rejectedRepository = try makeShareRepository(transport: rejectedTransport)
+        let rejected = try await rejectedRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(target: shareTarget(repository: rejectedRepository))
+        )
+        XCTAssertEqual(rejected.result.status, .permissionDenied)
+        XCTAssertEqual(rejected.result.errorCategory, .permission)
+        let rejectedRequests = await rejectedTransport.recordedRequests()
+        XCTAssertEqual(rejectedRequests.count, 3)
+    }
+
+    func test分享创建回读必须匹配密码状态与到期日() async throws {
+        let expiry = try FileShareLinkCalendarDate(iso8601: "2026-08-20")
+        let candidateTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 0, links: []),
+            shareCreate(id: "candidate"),
+            sharePage(offset: 0, total: 1, links: [
+                shareLinkJSON(
+                    id: "candidate",
+                    hasPassword: false,
+                    expiresAt: expiry.iso8601
+                )
+            ]),
+        ])
+        let candidateRepository = try makeShareRepository(transport: candidateTransport)
+        let candidate = try await candidateRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(
+                target: shareTarget(repository: candidateRepository),
+                password: "secret",
+                expiresOn: expiry
+            )
+        )
+        XCTAssertEqual(candidate.result.status, .submittedButUnverified)
+        XCTAssertNil(candidate.confirmedLink)
+
+        let noIDTransport = MockHTTPTransport(responses: [
+            shareTargetInfo(),
+            sharePage(offset: 0, total: 0, links: []),
+            shareCreate(id: nil),
+            sharePage(offset: 0, total: 1, links: [
+                shareLinkJSON(id: "readback", hasPassword: false, expiresAt: "0")
+            ]),
+        ])
+        let noIDRepository = try makeShareRepository(transport: noIDTransport)
+        let noID = try await noIDRepository.createShareLinkResult(
+            FileShareLinkCreateRequest(
+                target: shareTarget(repository: noIDRepository),
+                expiresOn: expiry
+            )
+        )
+        XCTAssertEqual(noID.result.status, .submittedButUnverified)
+        XCTAssertNil(noID.confirmedLink)
+    }
+
+    func test分享创建请求拒绝超长密码无效日期和倒置日期范围() throws {
+        let repository = try makeShareRepository(
+            transport: MockHTTPTransport(responses: [])
+        )
+        let target = shareTarget(repository: repository)
+        XCTAssertThrowsError(
+            try FileShareLinkCreateRequest(
+                target: target,
+                password: String(repeating: "a", count: 17)
+            )
+        )
+        XCTAssertThrowsError(try FileShareLinkCalendarDate(iso8601: "2026-02-30"))
+        XCTAssertThrowsError(
+            try FileShareLinkCreateRequest(
+                target: target,
+                availableOn: try FileShareLinkCalendarDate(iso8601: "2026-08-20"),
+                expiresOn: try FileShareLinkCalendarDate(iso8601: "2026-08-10")
+            )
+        )
+    }
+
+    func test分享列表严格分页并拒绝截断漂移零进展重复ID和敏感URL() async throws {
+        let validTransport = MockHTTPTransport(responses: [
+            sharePage(offset: 0, total: 2, links: [shareLinkJSON(id: "link-a")]),
+            sharePage(offset: 1, total: 2, links: [shareLinkJSON(id: "link-b")]),
+        ])
+        let validRepository = try makeShareRepository(transport: validTransport)
+        let validIDs = try await validRepository.listShareLinks().map(\.id)
+        XCTAssertEqual(validIDs, ["link-a", "link-b"])
+
+        let invalidBodies = [
+            #"{"success":true,"data":{"offset":0,"total":5001,"links":[]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"links":[]}}"#,
+            #"{"success":true,"data":{"offset":1,"total":2,"links":[{"id":"dup","path":"/fixture/item.txt","url":"https://share.example.invalid/dup","has_password":false,"date_expired":"0"}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"sensitive","path":"/fixture/item.txt","url":"https://user:pass@share.example.invalid/x","has_password":false,"date_expired":"0"}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"missing-flag","path":"/fixture/item.txt","url":"https://share.example.invalid/x","date_expired":"0"}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"missing-date","path":"/fixture/item.txt","url":"https://share.example.invalid/x","has_password":false}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"wrong-date-type","path":"/fixture/item.txt","url":"https://share.example.invalid/x","has_password":false,"date_expired":false}]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"bad-date","path":"/fixture/item.txt","url":"https://share.example.invalid/x","has_password":0,"date_expired":"2026-02-30"}]}}"#,
+        ]
+        for body in invalidBodies {
+            let transport = MockHTTPTransport(responses: [response(body)])
+            let repository = try makeShareRepository(transport: transport)
+            do {
+                _ = try await repository.listShareLinks()
+                XCTFail("严格分享分页不应接受无效响应")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+
+        let driftTransport = MockHTTPTransport(responses: [
+            sharePage(offset: 0, total: 2, links: [shareLinkJSON(id: "link-a")]),
+            sharePage(offset: 1, total: 3, links: [shareLinkJSON(id: "link-b")]),
+        ])
+        let driftRepository = try makeShareRepository(transport: driftTransport)
+        do {
+            _ = try await driftRepository.listShareLinks()
+            XCTFail("总数漂移不应拼接为一个列表")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
+
+        let duplicateTransport = MockHTTPTransport(responses: [
+            sharePage(offset: 0, total: 2, links: [shareLinkJSON(id: "same")]),
+            sharePage(offset: 1, total: 2, links: [shareLinkJSON(id: "same")]),
+        ])
+        let duplicateRepository = try makeShareRepository(transport: duplicateTransport)
+        do {
+            _ = try await duplicateRepository.listShareLinks()
+            XCTFail("跨页重复ID不应被接受")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
     }
 
     func test收藏结果在写后回读一致时确认成功() async throws {
@@ -1864,6 +2689,101 @@ final class DsmFileRepositoryTests: XCTestCase {
 
     private func response(_ body: String) -> DsmHTTPResponse {
         DsmHTTPResponse(data: Data(body.utf8), statusCode: 200)
+    }
+
+    private func shareTargetInfo(
+        path: String = "/fixture/item.txt",
+        canRead: Bool = true,
+        size: Int64 = 12,
+        modifiedAt: Int64 = 1_700_000_000
+    ) -> DsmHTTPResponse {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return response(
+            #"{"success":true,"data":{"files":[{"name":"\#(name)","path":"\#(path)","isdir":false,"additional":{"size":\#(size),"owner":{"user":"tester","group":"users"},"time":{"mtime":\#(modifiedAt)},"perm":{"adv_right":{"read":\#(canRead),"write":false,"delete":false}}}}]}}"#
+        )
+    }
+
+    private func shareLinkJSON(
+        id: String,
+        path: String = "/fixture/item.txt",
+        hasPassword: Bool = false,
+        expiresAt: String = "0"
+    ) -> String {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return #"{"id":"\#(id)","name":"\#(name)","path":"\#(path)","url":"https://share.example.invalid/\#(id)","has_password":\#(hasPassword),"date_expired":"\#(expiresAt)"}"#
+    }
+
+    private func sharePage(
+        offset: Int,
+        total: Int,
+        links: [String]
+    ) -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"offset":\#(offset),"total":\#(total),"links":[\#(links.joined(separator: ","))]}}"#
+        )
+    }
+
+    private func shareCreate(
+        path: String = "/fixture/item.txt",
+        id: String?,
+        error: Int = 0
+    ) -> DsmHTTPResponse {
+        let idField = id.map { #", "id":"\#($0)""# } ?? ""
+        return response(
+            #"{"success":true,"data":{"links":[{"path":"\#(path)","url":"https://share.example.invalid/candidate","qrcode":"synthetic","error":\#(error)\#(idField)}]}}"#
+        )
+    }
+
+    private func shareTarget(
+        repository: DsmFileRepository,
+        path: String = "/fixture/item.txt",
+        canRead: Bool = true,
+        size: Int64 = 12,
+        modifiedAt: Int64 = 1_700_000_000
+    ) -> FileItem {
+        FileItem(
+            profileID: repository.profileID,
+            name: URL(fileURLWithPath: path).lastPathComponent,
+            path: path,
+            kind: .file,
+            sizeBytes: size,
+            owner: "tester",
+            group: "users",
+            times: FileTimes(
+                modifiedAt: Date(timeIntervalSince1970: TimeInterval(modifiedAt)),
+                createdAt: nil,
+                accessedAt: nil
+            ),
+            permissions: FilePermissions(
+                canRead: canRead,
+                canWrite: false,
+                canDelete: false,
+                posixMode: nil
+            )
+        )
+    }
+
+    private func makeShareRepository(
+        transport: MockHTTPTransport,
+        sharingVersion: Int = 3,
+        includesList: Bool = true
+    ) throws -> DsmFileRepository {
+        var values: [String: ApiCapability] = [
+            DsmAPIName.fileStationSharing: capability(
+                DsmAPIName.fileStationSharing,
+                version: sharingVersion
+            )
+        ]
+        if includesList {
+            values[DsmAPIName.fileStationList] = capability(
+                DsmAPIName.fileStationList,
+                version: 2
+            )
+        }
+        return try makeRepository(
+            capabilities: CapabilitySet(values),
+            transport: transport
+        )
     }
 
     private func makeRepository(

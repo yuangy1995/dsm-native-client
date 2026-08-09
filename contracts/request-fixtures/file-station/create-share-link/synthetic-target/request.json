@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.create-share-link.synthetic-target",
+  "module": "file-station",
+  "operation": "createShareLink",
+  "api": {
+    "name": "SYNO.FileStation.Sharing",
+    "method": "create",
+    "preferredVersion": 3,
+    "resolvedVersion": 3,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "path",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-path>\"]"
+    },
+    {
+      "name": "password",
+      "valueType": "string",
+      "redacted": true
+    },
+    {
+      "name": "date_available",
+      "valueType": "string",
+      "encodedValue": "2026-08-10"
+    },
+    {
+      "name": "date_expired",
+      "valueType": "string",
+      "encodedValue": "2026-08-20"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

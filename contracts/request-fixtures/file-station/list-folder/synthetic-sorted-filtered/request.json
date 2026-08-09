@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.list-folder.synthetic-sorted-filtered",
+  "module": "file-station",
+  "operation": "listFolder",
+  "api": {
+    "name": "SYNO.FileStation.List",
+    "method": "list",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "additional",
+      "valueType": "stringArray",
+      "encodedValue": "[\"real_path\",\"size\",\"owner\",\"time\",\"perm\",\"mount_point_type\",\"volume_status\",\"type\"]"
+    },
+    {
+      "name": "filetype",
+      "valueType": "string",
+      "encodedValue": "file"
+    },
+    {
+      "name": "folder_path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-folder>"
+    },
+    {
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "sort_by",
+      "valueType": "string",
+      "encodedValue": "mtime"
+    },
+    {
+      "name": "sort_direction",
+      "valueType": "string",
+      "encodedValue": "desc"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

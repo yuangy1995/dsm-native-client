@@ -49,6 +49,7 @@ public actor DsmAuthRepository: AuthRepository {
             password: password,
             otpCode: otpCode
         )
+        try Task.checkCancellation()
 
         do {
             try await sessionStore.save(session, for: profile.id)
@@ -59,6 +60,7 @@ public actor DsmAuthRepository: AuthRepository {
                 safeUserMessage: L10n.string("shared.138cb3321aeec22f")
             )
         }
+        try Task.checkCancellation()
         return session
     }
 

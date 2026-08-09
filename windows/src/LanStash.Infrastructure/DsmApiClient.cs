@@ -1,5 +1,7 @@
+using System.Buffers;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
@@ -167,6 +169,357 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         return PostAsync(profile, path, values, session, cancellationToken);
     }
 
+    public async Task<JsonObject> CallReadJsonObjectAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        int requiredVersion,
+        string method,
+        IReadOnlyDictionary<string, string>? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+        ArgumentException.ThrowIfNullOrWhiteSpace(capability.Name);
+        if (method is not ("get" or "list" or "list_share"))
+        {
+            throw new ArgumentException("The fixed-version read method is not allowed.", nameof(method));
+        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(requiredVersion, 1);
+        if (session.ProfileId != profile.Id)
+        {
+            throw new ArgumentException("The session does not belong to the requested profile.", nameof(session));
+        }
+        if (string.IsNullOrWhiteSpace(session.Sid))
+        {
+            throw new ArgumentException("The session is missing its identifier.", nameof(session));
+        }
+        if (requiredVersion < capability.MinVersion || requiredVersion > capability.MaxVersion)
+        {
+            throw new NotSupportedException("The required fixed API version is unavailable.");
+        }
+        if (!string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException("The fixed-version read contract requires FORM requests.");
+        }
+        if (parameters?.Keys.Any(IsReservedReadParameter) == true)
+        {
+            throw new ArgumentException("Reserved or authentication parameters are not allowed.", nameof(parameters));
+        }
+
+        var requestUri = ResolveSafeApiUri(profile, capability.Path);
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = requiredVersion.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["method"] = method,
+        };
+        if (parameters is not null)
+        {
+            foreach (var (key, value) in parameters)
+            {
+                values[key] = value;
+            }
+        }
+        values["_sid"] = session.Sid;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = new FormUrlEncodedContent(values),
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
+        if (!string.IsNullOrWhiteSpace(session.SynoToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new DsmException(
+                UserText.Key("WinShared5a870c4775a4ef6b"),
+                UserText.Key("WinShared199c5367bae9682d"));
+        }
+        catch (HttpRequestException)
+        {
+            throw new DsmException(
+                UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                UserText.Key("WinShared79c4d60046afa3ff"));
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new DsmException(
+                    UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                    UserText.Key("WinShared79c4d60046afa3ff"),
+                    (int)response.StatusCode,
+                    response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
+            }
+            await using var stream = await response.Content
+                .ReadAsStreamAsync(cancellationToken)
+                .ConfigureAwait(false);
+            JsonObject envelope;
+            try
+            {
+                envelope = await JsonNode.ParseAsync(
+                    stream,
+                    cancellationToken: cancellationToken).ConfigureAwait(false) as JsonObject
+                    ?? throw new JsonException();
+            }
+            catch (JsonException)
+            {
+                throw InvalidReadEnvelope();
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!TryGetNativeBoolean(envelope, "success", out var success))
+            {
+                throw InvalidReadEnvelope();
+            }
+            if (!success)
+            {
+                if (envelope["error"] is not JsonObject error ||
+                    !TryGetNativeInt32(error, "code", out var code) || code < 0)
+                {
+                    throw InvalidReadEnvelope();
+                }
+                throw MapFailure(code);
+            }
+            return envelope["data"] as JsonObject ?? throw InvalidReadEnvelope();
+        }
+    }
+
+    private static bool IsReservedReadParameter(string name) =>
+        name.Equals("api", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("version", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("method", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("cookie", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("did", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("password", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("passwd", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("token", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("_syno_token", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("credential", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("authorization", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("otp", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("otp_code", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("device_id", StringComparison.OrdinalIgnoreCase) ||
+        IsAuthenticationParameter(name);
+
+    private Uri ResolveSafeApiUri(NasProfile profile, string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) ||
+            Uri.TryCreate(path, UriKind.Absolute, out _) ||
+            path.StartsWith("//", StringComparison.Ordinal) ||
+            path.StartsWith('\\') ||
+            path.Contains('\\') ||
+            path.Contains('%') ||
+            path.Contains("//", StringComparison.Ordinal) ||
+            path.Contains('?') ||
+            path.Contains('#'))
+        {
+            throw new ArgumentException("The API capability path is invalid.", nameof(path));
+        }
+        var trimmed = path.TrimStart('/');
+        var segments = trimmed.Split('/');
+        if (segments.Length == 0 || segments.Any(segment => segment is "." or ".."))
+        {
+            throw new ArgumentException("The API capability path is invalid.", nameof(path));
+        }
+        var relative = trimmed.StartsWith("webapi/", StringComparison.OrdinalIgnoreCase)
+            ? $"/{trimmed}"
+            : $"/webapi/{trimmed}";
+        var baseUri = GetBaseUri(profile);
+        var requestUri = new Uri(baseUri, relative);
+        if (!string.Equals(requestUri.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(requestUri.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase) ||
+            requestUri.Port != baseUri.Port ||
+            !string.IsNullOrEmpty(requestUri.UserInfo))
+        {
+            throw new ArgumentException("The API capability path changes the NAS authority.", nameof(path));
+        }
+        return requestUri;
+    }
+
+    private static bool TryGetNativeBoolean(JsonObject value, string name, out bool result)
+    {
+        result = default;
+        return value[name] is JsonValue node && node.TryGetValue(out result);
+    }
+
+    private static bool TryGetNativeInt32(JsonObject value, string name, out int result)
+    {
+        result = default;
+        return value[name] is JsonValue node && node.TryGetValue(out result);
+    }
+
+    private static DsmException InvalidReadEnvelope() => new(
+        UserText.Key("WinShared9cb9ec075b03b6cb"),
+        UserText.Key("WinShared09f262a53ad074ca"));
+
+    public async Task<DsmBinaryResponse> ReadBinaryAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string method,
+        IReadOnlyDictionary<string, string>? parameters,
+        string acceptedMediaTypePrefix,
+        int maximumBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+        ArgumentException.ThrowIfNullOrWhiteSpace(acceptedMediaTypePrefix);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumBytes, 1);
+        if (parameters?.Keys.Any(IsAuthenticationParameter) == true)
+        {
+            throw new ArgumentException(
+                "Authentication material must be supplied through the session, not binary request parameters.",
+                nameof(parameters));
+        }
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = capability.SelectVersion(2).ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            ["method"] = method,
+        };
+        if (parameters is not null)
+        {
+            foreach (var (key, value) in parameters)
+            {
+                values[key] = value;
+            }
+        }
+        var query = string.Join(
+            "&",
+            values.Select(pair =>
+                $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
+        if (string.IsNullOrWhiteSpace(capability.Path) ||
+            capability.Path.StartsWith("//", StringComparison.Ordinal) ||
+            capability.Path.StartsWith('\\') ||
+            capability.Path.Contains('?') ||
+            capability.Path.Contains('#'))
+        {
+            throw new ArgumentException(
+                "The binary API capability path is invalid.",
+                nameof(capability));
+        }
+        var path = capability.Path.StartsWith('/')
+            ? capability.Path
+            : $"/webapi/{capability.Path}";
+        var baseUri = GetBaseUri(profile);
+        var requestUri = new Uri(baseUri, $"{path}?{query}");
+        if (!string.Equals(requestUri.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(requestUri.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase) ||
+            requestUri.Port != baseUri.Port)
+        {
+            throw new ArgumentException(
+                "The binary API capability path changes the NAS authority.",
+                nameof(capability));
+        }
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            requestUri);
+        request.Headers.Accept.ParseAdd($"{acceptedMediaTypePrefix}*");
+        request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
+        if (!string.IsNullOrWhiteSpace(session.SynoToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
+        }
+
+        using var response = await _http.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new DsmException(
+                UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                UserText.Key("WinShared79c4d60046afa3ff"),
+                (int)response.StatusCode,
+                response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
+        }
+
+        var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+        if (!mediaType.StartsWith(acceptedMediaTypePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DsmBinaryResponseException(
+                DsmBinaryResponseFailure.UnexpectedMediaType,
+                "The binary response media type does not match the requested contract.");
+        }
+        if (response.Content.Headers.ContentLength is { } contentLength &&
+            contentLength > maximumBytes)
+        {
+            throw new DsmBinaryResponseException(
+                DsmBinaryResponseFailure.ResponseTooLarge,
+                "The binary response exceeds the configured byte limit.");
+        }
+
+        await using var source = await response.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var destination = new MemoryStream(
+            Math.Min(maximumBytes, 64 * 1024));
+        var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        try
+        {
+            var total = 0;
+            while (true)
+            {
+                var requested = total < maximumBytes
+                    ? Math.Min(buffer.Length, maximumBytes - total)
+                    : 1;
+                var read = await source.ReadAsync(
+                    buffer.AsMemory(0, requested),
+                    cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+                total += read;
+                if (total > maximumBytes)
+                {
+                    throw new DsmBinaryResponseException(
+                        DsmBinaryResponseFailure.ResponseTooLarge,
+                        "The binary response exceeds the configured byte limit.");
+                }
+                await destination.WriteAsync(
+                    buffer.AsMemory(0, read),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        if (destination.Length == 0)
+        {
+            throw new DsmBinaryResponseException(
+                DsmBinaryResponseFailure.EmptyBody,
+                "The binary response is empty.");
+        }
+        return new DsmBinaryResponse(destination.ToArray(), mediaType);
+    }
+
+    private static bool IsAuthenticationParameter(string name) =>
+        name.Equals("_sid", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("sid", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("synotoken", StringComparison.OrdinalIgnoreCase);
+
     public async Task<byte[]> ReadFileRangeAsync(
         NasProfile profile,
         DsmSession session,
@@ -176,10 +529,73 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         long length,
         CancellationToken cancellationToken = default)
     {
-        if (offset < 0 || length <= 0)
+        var result = await ReadFileRangeResultAsync(
+            profile,
+            session,
+            capability,
+            remotePath,
+            offset,
+            length,
+            expectedContentVersion: null,
+            expectedTotalLength: null,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (result.RequestedStart != 0 || result.RequestedLength != result.TotalLength)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnsafeSegmentedRead,
+                "The byte-array compatibility API cannot prove consistency across multiple ranges.",
+                result.StatusCode);
+        }
+        return result.Bytes;
+    }
+
+    public async Task<FileRangeReadResult> ReadFileRangeResultAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string remotePath,
+        long offset,
+        long length,
+        string? expectedContentVersion = null,
+        long? expectedTotalLength = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (offset < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(offset));
         }
+        if (length <= 0 || length > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length));
+        }
+        var requestedEnd = length - 1 > long.MaxValue - offset
+            ? throw new ArgumentOutOfRangeException(
+                nameof(length),
+                "The requested byte range exceeds the supported offset range.")
+            : offset + length - 1;
+        if (expectedTotalLength is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedTotalLength));
+        }
+        if (expectedTotalLength is { } knownTotalLength &&
+            (offset >= knownTotalLength || length > knownTotalLength - offset))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(length),
+                "The requested byte range exceeds the expected total length.");
+        }
+
+        EntityTagHeaderValue? expectedEntityTag = null;
+        if (expectedContentVersion is not null &&
+            (!EntityTagHeaderValue.TryParse(expectedContentVersion, out expectedEntityTag) ||
+             expectedEntityTag is null ||
+             expectedEntityTag.IsWeak))
+        {
+            throw new ArgumentException(
+                "Expected content version must be a strong HTTP entity tag.",
+                nameof(expectedContentVersion));
+        }
+
         var path = capability.Path.StartsWith('/')
             ? capability.Path
             : $"/webapi/{capability.Path}";
@@ -199,8 +615,12 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             new Uri(GetBaseUri(profile), $"{path}?{query}"));
-        request.Headers.Range = new RangeHeaderValue(offset, checked(offset + length - 1));
+        request.Headers.Range = new RangeHeaderValue(offset, requestedEnd);
         request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        if (expectedEntityTag is not null)
+        {
+            request.Headers.IfMatch.Add(expectedEntityTag);
+        }
         if (!string.IsNullOrWhiteSpace(session.SynoToken))
         {
             request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
@@ -209,52 +629,556 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             request,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+
+        if (response.StatusCode != HttpStatusCode.PartialContent)
+        {
+            var failure = expectedEntityTag is not null &&
+                          response.StatusCode == HttpStatusCode.PreconditionFailed
+                ? FileRangeContractFailure.ContentVersionMismatch
+                : FileRangeContractFailure.UnexpectedStatus;
+            throw new FileRangeContractException(
+                failure,
+                $"Expected HTTP 206 for a range response, received {(int)response.StatusCode}.",
+                (int)response.StatusCode);
+        }
+
+        var contentRange = response.Content.Headers.ContentRange;
+        if (contentRange is null ||
+            !string.Equals(contentRange.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
+            !contentRange.HasRange ||
+            !contentRange.HasLength)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.MissingContentRange,
+                "The 206 response does not include a complete byte Content-Range header.",
+                (int)response.StatusCode);
+        }
+
+        var responseStart = contentRange.From!.Value;
+        var responseEnd = contentRange.To!.Value;
+        var totalLength = contentRange.Length!.Value;
+        if (responseStart != offset)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedRangeStart,
+                $"Expected range start {offset}, received {responseStart}.",
+                (int)response.StatusCode);
+        }
+
+        var responseLength = checked(responseEnd - responseStart + 1);
+        if (responseLength != length)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedRangeLength,
+                $"Expected range length {length}, received {responseLength}.",
+                (int)response.StatusCode);
+        }
+        if (totalLength <= responseEnd ||
+            expectedTotalLength is not null && totalLength != expectedTotalLength.Value)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedTotalLength,
+                expectedTotalLength is null
+                    ? $"Content-Range total length {totalLength} does not contain byte {responseEnd}."
+                    : $"Expected total length {expectedTotalLength.Value}, received {totalLength}.",
+                (int)response.StatusCode);
+        }
+        if (response.Content.Headers.ContentLength is { } contentLength &&
+            contentLength != responseLength)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedContentLength,
+                $"Content-Length {contentLength} does not match range length {responseLength}.",
+                (int)response.StatusCode);
+        }
+
+        var responseEntityTag = response.Headers.ETag;
+        if (expectedEntityTag is not null && responseEntityTag?.IsWeak == true)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.ContentVersionMismatch,
+                "The response returned a weak content version where a strong version was required.",
+                (int)response.StatusCode);
+        }
+        if (responseEntityTag?.IsWeak == true)
+        {
+            responseEntityTag = null;
+        }
+        if (expectedEntityTag is not null &&
+            responseEntityTag is not null &&
+            !string.Equals(
+                responseEntityTag.Tag,
+                expectedEntityTag.Tag,
+                StringComparison.Ordinal))
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.ContentVersionMismatch,
+                "The response content version differs from the requested version.",
+                (int)response.StatusCode);
+        }
+
         await using var source = await response.Content.ReadAsStreamAsync(
             cancellationToken).ConfigureAwait(false);
-        if (response.StatusCode != HttpStatusCode.PartialContent && offset > 0)
-        {
-            await SkipAsync(source, offset, cancellationToken).ConfigureAwait(false);
-        }
-        using var destination = new MemoryStream(
-            checked((int)Math.Min(length, int.MaxValue)));
-        var remaining = length;
-        var buffer = new byte[1024 * 1024];
-        while (remaining > 0)
+        var bytes = new byte[checked((int)responseLength)];
+        var actualByteCount = 0;
+        while (actualByteCount < bytes.Length)
         {
             var read = await source.ReadAsync(
-                buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)),
+                bytes.AsMemory(actualByteCount),
                 cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
-                break;
+                throw new FileRangeContractException(
+                    FileRangeContractFailure.UnexpectedBodyLength,
+                    $"Expected {responseLength} response bytes, received {actualByteCount}.",
+                    (int)response.StatusCode);
             }
-            await destination.WriteAsync(
-                buffer.AsMemory(0, read),
-                cancellationToken).ConfigureAwait(false);
-            remaining -= read;
+            actualByteCount += read;
         }
-        return destination.ToArray();
+        var trailingByte = new byte[1];
+        if (await source.ReadAsync(trailingByte, cancellationToken).ConfigureAwait(false) != 0)
+        {
+            throw new FileRangeContractException(
+                FileRangeContractFailure.UnexpectedBodyLength,
+                $"The response body contains more than the expected {responseLength} bytes.",
+                (int)response.StatusCode);
+        }
+
+        var serverContentVersion = responseEntityTag?.Tag ?? expectedEntityTag?.Tag;
+        return new FileRangeReadResult(
+            (int)response.StatusCode,
+            offset,
+            length,
+            responseStart,
+            responseLength,
+            totalLength,
+            actualByteCount,
+            bytes,
+            serverContentVersion,
+            serverContentVersion is not null);
     }
 
-    private static async Task SkipAsync(
-        Stream stream,
-        long byteCount,
-        CancellationToken cancellationToken)
+    public async Task<FileUploadTransportResult> UploadFileAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        FileUploadRequest upload,
+        IProgress<long>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        var buffer = new byte[1024 * 1024];
-        var remaining = byteCount;
-        while (remaining > 0)
+        if (!string.Equals(
+                capability.Name,
+                "SYNO.FileStation.Upload",
+                StringComparison.Ordinal))
         {
-            var read = await stream.ReadAsync(
-                buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)),
-                cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                throw new EndOfStreamException();
-            }
-            remaining -= read;
+            return new FileUploadTransportResult(
+                FileUploadTransportStatus.Unsupported,
+                MutationErrorCategory.Unsupported,
+                "file.upload.unsupported");
         }
+
+        var boundary = $"LanStash-{Guid.NewGuid():N}";
+        var fields = new KeyValuePair<string, string>[]
+        {
+            new("api", capability.Name),
+            new("version", capability.SelectVersion(2).ToString(
+                System.Globalization.CultureInfo.InvariantCulture)),
+            new("method", "upload"),
+            new("_sid", session.Sid),
+            new("path", upload.FolderPath),
+            new("create_parents", "false"),
+            new("overwrite", upload.Overwrite ? "true" : "false"),
+        };
+        using var content = new ExactLengthMultipartUploadContent(
+            boundary,
+            fields,
+            upload.FileName,
+            upload.Content,
+            upload.Length,
+            progress);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri(
+                GetBaseUri(profile),
+                capability.Path.StartsWith('/')
+                    ? capability.Path
+                    : $"/webapi/{capability.Path}"))
+        {
+            Content = content,
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
+        if (!string.IsNullOrWhiteSpace(session.SynoToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new FileUploadTransportResult(
+                FileUploadTransportStatus.CancelledBeforeSubmission);
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            // 调用 SendAsync 是上传的提交边界；跨过此点后任何不确定结果都禁止重放。
+            response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new FileUploadTransportResult(
+                FileUploadTransportStatus.CancellationRequestedAfterSubmission,
+                MutationErrorCategory.Network,
+                "file.upload.cancelled-after-submit");
+        }
+        catch (HttpRequestException)
+        {
+            return new FileUploadTransportResult(
+                FileUploadTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network,
+                "file.upload.network-unverified");
+        }
+        catch (IOException)
+        {
+            return new FileUploadTransportResult(
+                FileUploadTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network,
+                "file.upload.stream-unverified");
+        }
+        catch (InvalidOperationException)
+        {
+            return new FileUploadTransportResult(
+                FileUploadTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network,
+                "file.upload.replay-blocked");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                return new FileUploadTransportResult(
+                    FileUploadTransportStatus.SubmittedButUnverified,
+                    response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                        ? MutationErrorCategory.Authentication
+                        : MutationErrorCategory.Server,
+                    "file.upload.http-unverified");
+            }
+
+            JsonObject? envelope;
+            try
+            {
+                await using var responseStream = await response.Content
+                    .ReadAsStreamAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                envelope = await JsonNode.ParseAsync(
+                    responseStream,
+                    cancellationToken: cancellationToken).ConfigureAwait(false) as JsonObject;
+            }
+            catch (OperationCanceledException)
+            {
+                return new FileUploadTransportResult(
+                    FileUploadTransportStatus.CancellationRequestedAfterSubmission,
+                    MutationErrorCategory.Network,
+                    "file.upload.cancelled-after-submit");
+            }
+            catch (JsonException)
+            {
+                return new FileUploadTransportResult(
+                    FileUploadTransportStatus.SubmittedButUnverified,
+                    MutationErrorCategory.Server,
+                    "file.upload.response-unverified");
+            }
+            catch (HttpRequestException)
+            {
+                return new FileUploadTransportResult(
+                    FileUploadTransportStatus.SubmittedButUnverified,
+                    MutationErrorCategory.Network,
+                    "file.upload.response-unverified");
+            }
+            catch (IOException)
+            {
+                return new FileUploadTransportResult(
+                    FileUploadTransportStatus.SubmittedButUnverified,
+                    MutationErrorCategory.Network,
+                    "file.upload.response-unverified");
+            }
+
+            if (envelope is null)
+            {
+                return new FileUploadTransportResult(
+                    FileUploadTransportStatus.SubmittedButUnverified,
+                    MutationErrorCategory.Server,
+                    "file.upload.response-unverified");
+            }
+            try
+            {
+                if (envelope["success"]?.GetValue<bool>() == true)
+                {
+                    return new FileUploadTransportResult(FileUploadTransportStatus.Accepted);
+                }
+                if (envelope["success"]?.GetValue<bool>() == false)
+                {
+                    var code = envelope["error"]?["code"]?.GetValue<int>();
+                    return ConfirmedUploadFailure(code);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // 响应形状不符合公开 envelope，提交结果保持未知。
+            }
+
+            return new FileUploadTransportResult(
+                FileUploadTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Server,
+                "file.upload.response-unverified");
+        }
+    }
+
+    public async Task<FileShareLinkTransportResult> CreateFileShareLinkAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        IReadOnlyDictionary<string, string> parameters,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(capability.Name, "SYNO.FileStation.Sharing", StringComparison.Ordinal) ||
+            capability.MinVersion != 3 ||
+            capability.MaxVersion != 3 ||
+            !string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+            !IsSafeWebApiPath(capability.Path) ||
+            profile.Id != session.ProfileId ||
+            !ValidFileShareParameters(parameters))
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported,
+                DiagnosticTag: "file.share.create.unsupported");
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.CancelledBeforeSubmission,
+                DiagnosticTag: "file.share.create.cancelled-before-submit");
+        }
+
+        Uri baseUri;
+        try
+        {
+            baseUri = GetBaseUri(profile);
+        }
+        catch (DsmException)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Validation,
+                DiagnosticTag: "file.share.create.invalid-endpoint");
+        }
+
+        var values = new Dictionary<string, string>(parameters, StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "3",
+            ["method"] = "create",
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri(
+                baseUri,
+                capability.Path.StartsWith('/')
+                    ? capability.Path
+                    : $"/webapi/{capability.Path}"))
+        {
+            Content = new FormUrlEncodedContent(values),
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
+        if (!string.IsNullOrWhiteSpace(session.SynoToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            // SendAsync 是唯一提交边界；进入调用后任何不确定结果均禁止重放。
+            response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.CancellationRequestedAfterSubmission,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.share.create.cancelled-after-submit");
+        }
+        catch (Exception error) when (
+            error is HttpRequestException or IOException or InvalidOperationException)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.SubmittedButUnverified,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.share.create.network-unverified");
+        }
+
+        using (response)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.share.create.cancelled-after-submit");
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                        ? MutationErrorCategory.Authentication
+                        : MutationErrorCategory.Server,
+                    DiagnosticTag: "file.share.create.http-unverified");
+            }
+
+            JsonObject? envelope;
+            try
+            {
+                await using var stream = await response.Content
+                    .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                envelope = await JsonNode.ParseAsync(
+                    stream,
+                    cancellationToken: cancellationToken).ConfigureAwait(false) as JsonObject;
+            }
+            catch (OperationCanceledException)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.share.create.cancelled-after-submit");
+            }
+            catch (Exception error) when (
+                error is JsonException or HttpRequestException or IOException)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "file.share.create.response-unverified");
+            }
+
+            var success = StrictNativeBool(envelope, "success");
+            if (success == true)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.ResponseReceived,
+                    envelope?["data"]?.DeepClone());
+            }
+            var code = StrictNativeInt(envelope?["error"] as JsonObject, "code");
+            if (success != false || code is null)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "file.share.create.response-unverified");
+            }
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.ConfirmedFailure,
+                ErrorCategory: code switch
+                {
+                    105 => MutationErrorCategory.Permission,
+                    _ => MutationErrorCategory.Server,
+                },
+                DiagnosticTag: code is >= 100 and <= 9999
+                    ? $"file.share.create.dsm-{code}"
+                    : "file.share.create.dsm-failure");
+        }
+    }
+
+    private static bool? StrictNativeBool(JsonObject? item, string key) =>
+        item?[key] is JsonValue value && value.TryGetValue<bool>(out var result)
+            ? result
+            : null;
+
+    private static int? StrictNativeInt(JsonObject? item, string key) =>
+        item?[key] is JsonValue value && value.TryGetValue<int>(out var result)
+            ? result
+            : null;
+
+    private static bool IsSafeWebApiPath(string path) =>
+        !string.IsNullOrWhiteSpace(path) &&
+        !Uri.TryCreate(path, UriKind.Absolute, out _) &&
+        !path.StartsWith("//", StringComparison.Ordinal) &&
+        !path.StartsWith('\\') &&
+        !path.Contains('\\') &&
+        !path.Contains("..", StringComparison.Ordinal) &&
+        !path.Contains('?') &&
+        !path.Contains('#');
+
+    private static bool ValidFileShareParameters(IReadOnlyDictionary<string, string> parameters)
+    {
+        if (parameters.Keys.Any(key => key is not ("path" or "password" or "date_expired")) ||
+            !parameters.TryGetValue("path", out var encodedPath))
+        {
+            return false;
+        }
+        try
+        {
+            if (JsonNode.Parse(encodedPath) is not JsonArray { Count: 1 } paths ||
+                paths[0] is not JsonValue pathNode ||
+                !pathNode.TryGetValue<string>(out var path) ||
+                string.IsNullOrEmpty(path) ||
+                path.Length <= 1 ||
+                !path.StartsWith('/') ||
+                path.EndsWith('/') ||
+                path.Contains("//", StringComparison.Ordinal) ||
+                path.Contains('\\') ||
+                path.Split('/').Any(component => component is "." or ".."))
+            {
+                return false;
+            }
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        if (parameters.TryGetValue("password", out var password) &&
+            (password.Length == 0 || new System.Globalization.StringInfo(password).LengthInTextElements > 16))
+        {
+            return false;
+        }
+        return !parameters.TryGetValue("date_expired", out var expiry) ||
+            DateOnly.TryParseExact(
+                expiry,
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out _);
+    }
+
+    private static FileUploadTransportResult ConfirmedUploadFailure(int? code)
+    {
+        var category = code switch
+        {
+            105 or 115 => MutationErrorCategory.Permission,
+            106 or 107 or 119 => MutationErrorCategory.Authentication,
+            1805 => MutationErrorCategory.Conflict,
+            _ => MutationErrorCategory.Server,
+        };
+        var diagnostic = code is >= 100 and <= 9999
+            ? $"file.upload.dsm-{code}"
+            : "file.upload.dsm-failure";
+        return new FileUploadTransportResult(
+            FileUploadTransportStatus.ConfirmedFailure,
+            category,
+            diagnostic);
     }
 
     private async Task<JsonObject> PostAsync(
@@ -327,7 +1251,15 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
                     UserText.Key("WinShared09f262a53ad074ca"));
             if (envelope["success"]?.GetValue<bool>() == true)
             {
-                return envelope["data"] as JsonObject ?? [];
+                return envelope["data"] switch
+                {
+                    JsonObject dataObject => dataObject,
+                    JsonArray dataArray => new JsonObject
+                    {
+                        [DsmApiResponseKeys.RootArray] = dataArray.DeepClone(),
+                    },
+                    _ => [],
+                };
             }
             var code = envelope["error"]?["code"]?.GetValue<int>();
             throw MapFailure(code);
@@ -346,4 +1278,116 @@ public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             new(UserText.Key("WinShared78eee40d2f30576e"), UserText.Key("WinShared2f7ffa8e29481728"), code, true),
         _ => new(UserText.Key("WinShared0addf7c060c570ce"), UserText.Key("WinShared5448ceb91a80e260"), code),
     };
+
+    private sealed class ExactLengthMultipartUploadContent : HttpContent
+    {
+        private const int BufferSize = 64 * 1024;
+        private readonly byte[] _prefix;
+        private readonly byte[] _suffix;
+        private readonly Stream _source;
+        private readonly long _sourceLength;
+        private readonly IProgress<long>? _progress;
+        private readonly long _contentLength;
+        private int _serializationStarted;
+
+        public ExactLengthMultipartUploadContent(
+            string boundary,
+            IReadOnlyList<KeyValuePair<string, string>> fields,
+            string fileName,
+            Stream source,
+            long sourceLength,
+            IProgress<long>? progress)
+        {
+            _source = source;
+            _sourceLength = sourceLength;
+            _progress = progress;
+            _prefix = BuildPrefix(boundary, fields, fileName);
+            _suffix = Encoding.UTF8.GetBytes($"\r\n--{boundary}--\r\n");
+            _contentLength = checked((long)_prefix.Length + sourceLength + _suffix.Length);
+            Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
+            Headers.ContentType.Parameters.Add(new NameValueHeaderValue("boundary", boundary));
+            Headers.ContentLength = _contentLength;
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = _contentLength;
+            return true;
+        }
+
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context) =>
+            SerializeToStreamCoreAsync(stream, CancellationToken.None);
+
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context,
+            CancellationToken cancellationToken) =>
+            SerializeToStreamCoreAsync(stream, cancellationToken);
+
+        private async Task SerializeToStreamCoreAsync(
+            Stream destination,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Exchange(ref _serializationStarted, 1) != 0)
+            {
+                throw new InvalidOperationException("upload.automatic_replay_blocked");
+            }
+            await destination.WriteAsync(_prefix, cancellationToken).ConfigureAwait(false);
+            var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+            try
+            {
+                long copied = 0;
+                _progress?.Report(0);
+                while (copied < _sourceLength)
+                {
+                    var requested = (int)Math.Min(BufferSize, _sourceLength - copied);
+                    var read = await _source.ReadAsync(
+                        buffer.AsMemory(0, requested),
+                        cancellationToken).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        throw new EndOfStreamException("upload.source_shorter_than_declared");
+                    }
+                    await destination.WriteAsync(
+                        buffer.AsMemory(0, read),
+                        cancellationToken).ConfigureAwait(false);
+                    copied += read;
+                    _progress?.Report(copied);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+            await destination.WriteAsync(_suffix, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static byte[] BuildPrefix(
+            string boundary,
+            IReadOnlyList<KeyValuePair<string, string>> fields,
+            string fileName)
+        {
+            var builder = new StringBuilder();
+            foreach (var (name, value) in fields)
+            {
+                builder.Append("--").Append(boundary).Append("\r\n")
+                    .Append("Content-Disposition: form-data; name=\"")
+                    .Append(name).Append("\"\r\n\r\n")
+                    .Append(value).Append("\r\n");
+            }
+            var safeFileName = fileName.Replace('"', '\'');
+            builder.Append("--").Append(boundary).Append("\r\n")
+                .Append("Content-Disposition: form-data; name=\"file\"; filename=\"")
+                .Append(safeFileName).Append("\"\r\n")
+                .Append("Content-Type: application/octet-stream\r\n\r\n");
+            return Encoding.UTF8.GetBytes(builder.ToString());
+        }
+    }
+}
+
+internal static class DsmApiResponseKeys
+{
+    public const string RootArray = "$root";
 }

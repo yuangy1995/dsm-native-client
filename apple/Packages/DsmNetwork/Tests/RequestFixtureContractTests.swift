@@ -4,6 +4,185 @@ import XCTest
 @testable import DsmNetwork
 
 final class RequestFixtureContractTests: XCTestCase {
+    func test收藏分页请求与共享Fixture一致() async throws {
+        let fixture = try loadFixture(
+            "file-station/list-favorites/synthetic-page/request.json"
+        )
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":0,"favorites":[]}}"#)
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationFavorite: capability(
+                    DsmAPIName.fileStationFavorite,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+
+        _ = try await repository.listFavoritesPage(offset: 0, limit: 100)
+
+        let requests = await transport.recordedRequests()
+        try assertFormRequest(try XCTUnwrap(requests.first), matches: fixture)
+    }
+
+    func test虚拟文件夹请求与共享Fixture一致() async throws {
+        let fixture = try loadFixture(
+            "file-station/list-virtual-folders/synthetic-cifs-page/request.json"
+        )
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"support_virtual_protocol":"cifs"}}"#),
+            response(#"{"success":true,"data":{"offset":0,"total":0,"folders":[]}}"#),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationInfo: capability(
+                    DsmAPIName.fileStationInfo,
+                    version: 2
+                ),
+                DsmAPIName.fileStationVirtualFolder: capability(
+                    DsmAPIName.fileStationVirtualFolder,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+
+        _ = try await repository.listVirtualFolders(offset: 0, limit: 100)
+
+        let requests = await transport.recordedRequests()
+        try assertFormRequest(try XCTUnwrap(requests.last), matches: fixture)
+    }
+
+    func test分享链接创建请求经结果型调用链后与共享Fixture一致() async throws {
+        let fixture = try loadFixture(
+            "file-station/create-share-link/synthetic-target/request.json"
+        )
+        let targetPath = "/<synthetic-path>"
+        let transport = MockHTTPTransport(responses: [
+            response(
+                #"{"success":true,"data":{"files":[{"name":"<synthetic-path>","path":"/<synthetic-path>","isdir":false,"additional":{"size":12,"owner":{"user":"tester","group":"users"},"time":{"mtime":1700000000},"perm":{"adv_right":{"read":true,"write":false,"delete":false}}}}]}}"#
+            ),
+            response(#"{"success":true,"data":{"offset":0,"total":0,"links":[]}}"#),
+            response(
+                #"{"success":true,"data":{"links":[{"id":"synthetic-link","path":"/<synthetic-path>","url":"https://share.example.invalid/synthetic","qrcode":"synthetic","error":0}]}}"#
+            ),
+            response(
+                #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"synthetic-link","name":"Synthetic","path":"/<synthetic-path>","url":"https://share.example.invalid/synthetic","has_password":true,"date_expired":"2026-08-20"}]}}"#
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(
+                    DsmAPIName.fileStationList,
+                    version: 2
+                ),
+                DsmAPIName.fileStationSharing: capability(
+                    DsmAPIName.fileStationSharing,
+                    version: fixture.api.resolvedVersion
+                ),
+            ]),
+            transport: transport
+        )
+        let target = FileItem(
+            profileID: repository.profileID,
+            name: "<synthetic-path>",
+            path: targetPath,
+            kind: .file,
+            sizeBytes: 12,
+            owner: "tester",
+            group: "users",
+            times: FileTimes(
+                modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                createdAt: nil,
+                accessedAt: nil
+            ),
+            permissions: FilePermissions(
+                canRead: true,
+                canWrite: false,
+                canDelete: false,
+                posixMode: nil
+            )
+        )
+
+        let outcome = try await repository.createShareLinkResult(
+            FileShareLinkCreateRequest(
+                target: target,
+                password: "EPHEMERAL16",
+                availableOn: try FileShareLinkCalendarDate(iso8601: "2026-08-10"),
+                expiresOn: try FileShareLinkCalendarDate(iso8601: "2026-08-20")
+            )
+        )
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        let createRequest = try XCTUnwrap(requests.first {
+            (try? decodeForm($0.httpBody)["method"]) == "create"
+        })
+        try assertFormRequest(createRequest, matches: fixture)
+        XCTAssertFalse(createRequest.url?.absoluteString.contains("EPHEMERAL16") == true)
+    }
+
+    func test分享链接列表请求与共享Fixture一致() async throws {
+        let fixture = try loadFixture(
+            "file-station/list-share-links/synthetic-page/request.json"
+        )
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":0,"links":[]}}"#)
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(
+                    DsmAPIName.fileStationList,
+                    version: 2
+                ),
+                DsmAPIName.fileStationSharing: capability(
+                    DsmAPIName.fileStationSharing,
+                    version: fixture.api.resolvedVersion
+                ),
+            ]),
+            transport: transport
+        )
+
+        _ = try await repository.listShareLinksPage(offset: 0, limit: 500)
+
+        let requests = await transport.recordedRequests()
+        try assertFormRequest(try XCTUnwrap(requests.first), matches: fixture)
+    }
+
+    func test排序筛选目录请求经Repository调用链后与共享Fixture一致() async throws {
+        let fixture = try loadFixture(
+            "file-station/list-folder/synthetic-sorted-filtered/request.json"
+        )
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":0,"files":[]}}"#)
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(
+                    DsmAPIName.fileStationList,
+                    version: fixture.api.resolvedVersion
+                ),
+            ]),
+            transport: transport
+        )
+
+        _ = try await repository.listFolder(
+            path: "<synthetic-folder>",
+            offset: 0,
+            limit: 200,
+            options: FileListOptions(
+                sortField: .modifiedTime,
+                sortDirection: .descending,
+                typeFilter: .files
+            )
+        )
+
+        let requests = await transport.recordedRequests()
+        try assertFormRequest(try XCTUnwrap(requests.first), matches: fixture)
+    }
+
     func test删除请求经Repository调用链后与共享Fixture一致() async throws {
         let fixture = try loadFixture(
             "file-station/delete/synthetic-task/request.json"
@@ -1162,7 +1341,7 @@ final class RequestFixtureContractTests: XCTestCase {
                   let actual = actualParameters[parameter.name] else {
                 continue
             }
-            if ["object", "objectArray"].contains(parameter.valueType) {
+            if ["object", "objectArray", "stringArray"].contains(parameter.valueType) {
                 XCTAssertTrue(
                     try jsonValuesAreEqual(actual, expected),
                     "参数 \(parameter.name) 的 JSON 结构不一致"
@@ -1309,7 +1488,23 @@ final class RequestFixtureContractTests: XCTestCase {
     ) throws -> Bool {
         let left = try JSONSerialization.jsonObject(with: Data(lhs.utf8))
         let right = try JSONSerialization.jsonObject(with: Data(rhs.utf8))
-        return (left as AnyObject).isEqual(right)
+        return (canonicalFixtureJSONValue(left) as AnyObject).isEqual(
+            canonicalFixtureJSONValue(right)
+        )
+    }
+
+    private func canonicalFixtureJSONValue(_ value: Any) -> Any {
+        if let string = value as? String {
+            // Fixture 策略以不带绝对路径前缀的固定占位符代表合成路径。
+            return string == "/<synthetic-path>" ? "<synthetic-path>" : string
+        }
+        if let array = value as? [Any] {
+            return array.map(canonicalFixtureJSONValue)
+        }
+        if let dictionary = value as? [String: Any] {
+            return dictionary.mapValues(canonicalFixtureJSONValue)
+        }
+        return value
     }
 
     private func parseMultipartFields(

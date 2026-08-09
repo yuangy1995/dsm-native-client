@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.list-virtual-folders.synthetic-cifs-page",
+  "module": "file-station",
+  "operation": "listVirtualFolders",
+  "api": {
+    "name": "SYNO.FileStation.VirtualFolder",
+    "method": "list",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "additional",
+      "valueType": "stringArray",
+      "encodedValue": "[\"mount_point_type\",\"perm\"]"
+    },
+    {
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "500"
+    },
+    {
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "sort_by",
+      "valueType": "string",
+      "encodedValue": "name"
+    },
+    {
+      "name": "sort_direction",
+      "valueType": "string",
+      "encodedValue": "asc"
+    },
+    {
+      "name": "type",
+      "valueType": "string",
+      "encodedValue": "cifs"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

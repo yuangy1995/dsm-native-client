@@ -15,9 +15,27 @@
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\LanStash.Application\LanStash.Application.csproj" />
     <ProjectReference Include="..\LanStash.Domain\LanStash.Domain.csproj" />
     <ProjectReference Include="..\LanStash.Infrastructure\LanStash.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
+    <InternalsVisibleTo Include="LanStash.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="CloudDrive\**\*.cs" />
+    <Compile Remove="Features\Chat\**\*.cs" />
+    <Compile Remove="Features\Containers\**\*.cs" />
+    <Compile Remove="Features\Downloads\**\*.cs" />
+    <Compile Remove="Features\Files\**\*.cs" />
+    <Compile Remove="Features\Photos\**\*.cs" />
+    <Compile Remove="Features\Settings\**\*.cs" />
+    <Compile Remove="Features\Transfers\ForegroundTransfer*.cs" />
+    <Compile Remove="Features\Transfers\SafeFileDownloadService.cs" />
+    <Compile Remove="Features\Transfers\WindowsTransactionalDownloadDestination.cs" />
+    <Compile Remove="Features\VirtualMachines\**\*.cs" />
+    <Compile Remove="Localization\*.cs" />
+    <Compile Remove="ViewModels\ConnectionAttemptState.cs" />
+    <Compile Remove="ViewModels\ObservableObject.cs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets\AppIcon.png">

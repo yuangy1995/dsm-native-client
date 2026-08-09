@@ -4,6 +4,17 @@ import XCTest
 @testable import DsmNetwork
 
 final class FileStationPhotoRepositoryTests: XCTestCase {
+    func test移动时间线默认上限固定() {
+        XCTAssertEqual(PhotoTimelineScanLimits.mobileDefault.maximumFolderCount, 2_000)
+        XCTAssertEqual(PhotoTimelineScanLimits.mobileDefault.maximumSourceItemCount, 50_000)
+        XCTAssertEqual(PhotoTimelineScanLimits.mobileDefault.maximumMediaItemCount, 10_000)
+        XCTAssertEqual(PhotoTimelineScanLimits.mobileDefault.pageSize, 200)
+        XCTAssertEqual(PhotoTimelineScanLimits.legacyDefault.maximumFolderCount, .max)
+        XCTAssertEqual(PhotoTimelineScanLimits.legacyDefault.maximumSourceItemCount, .max)
+        XCTAssertEqual(PhotoTimelineScanLimits.legacyDefault.maximumMediaItemCount, .max)
+        XCTAssertEqual(PhotoTimelineScanLimits.legacyDefault.pageSize, 500)
+    }
+
     func test发现个人和共享照片空间() async throws {
         let profileID = UUID()
         let files = PhotoFileServerStub(
@@ -198,6 +209,243 @@ final class FileStationPhotoRepositoryTests: XCTestCase {
         XCTAssertEqual(removed, ["/photo/旧图.jpg"])
     }
 
+    func test有界时间线按广度优先扫描并跳过系统目录() async throws {
+        let profileID = UUID()
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [
+                "/photo": Self.page(path: "/photo", items: [
+                    FileItem(profileID: profileID, name: "B", path: "/photo/B", kind: .directory),
+                    FileItem(profileID: profileID, name: "A", path: "/photo/A", kind: .directory),
+                    FileItem(profileID: profileID, name: "@eaDir", path: "/photo/@eaDir", kind: .directory),
+                    FileItem(profileID: profileID, name: "#recycle", path: "/photo/#recycle", kind: .directory),
+                    FileItem(profileID: profileID, name: "根.jpg", path: "/photo/根.jpg", kind: .file)
+                ]),
+                "/photo/B": Self.page(path: "/photo/B", items: [
+                    FileItem(profileID: profileID, name: "B.jpg", path: "/photo/B/B.jpg", kind: .file)
+                ]),
+                "/photo/A": Self.page(path: "/photo/A", items: [
+                    FileItem(profileID: profileID, name: "A.jpg", path: "/photo/A/A.jpg", kind: .file)
+                ])
+            ]
+        )
+
+        let result = try await FileStationPhotoRepository(files: files).scanTimeline(
+            in: .shared,
+            startingAt: [PhotoSpace.shared.rootPath],
+            limits: Self.limits()
+        ) { _ in }
+
+        XCTAssertEqual(result.items.map(\.path), ["/photo/根.jpg", "/photo/B/B.jpg", "/photo/A/A.jpg"])
+        XCTAssertEqual(result.scannedFolderCount, 3)
+        XCTAssertEqual(result.sourceItemCount, 7)
+        XCTAssertEqual(result.completion, .complete)
+        let requestedPaths = await files.requestedPaths()
+        let requestedLimits = await files.requestedLimits()
+        XCTAssertEqual(requestedPaths, ["/photo", "/photo/B", "/photo/A"])
+        XCTAssertEqual(requestedLimits, [2, 2, 2])
+    }
+
+    func test文件夹上限返回截断且不扫描后续目录() async throws {
+        let profileID = UUID()
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [
+                "/photo": Self.page(path: "/photo", items: [
+                    FileItem(profileID: profileID, name: "子目录", path: "/photo/子目录", kind: .directory)
+                ]),
+                "/photo/子目录": Self.page(path: "/photo/子目录", items: [])
+            ]
+        )
+
+        let result = try await FileStationPhotoRepository(files: files).scanTimeline(
+            in: .shared,
+            startingAt: [PhotoSpace.shared.rootPath],
+            limits: Self.limits(maximumFolderCount: 1)
+        ) { _ in }
+
+        XCTAssertEqual(result.completion, .truncated)
+        XCTAssertEqual(result.scannedFolderCount, 1)
+        let requestedPaths = await files.requestedPaths()
+        XCTAssertEqual(requestedPaths, ["/photo"])
+    }
+
+    func test原始项目上限截断且旧更新收到已扫描媒体() async throws {
+        let profileID = UUID()
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [
+                "/photo": Self.page(path: "/photo", items: [
+                    FileItem(profileID: profileID, name: "一.jpg", path: "/photo/一.jpg", kind: .file),
+                    FileItem(profileID: profileID, name: "二.jpg", path: "/photo/二.jpg", kind: .file),
+                    FileItem(profileID: profileID, name: "三.jpg", path: "/photo/三.jpg", kind: .file)
+                ])
+            ]
+        )
+        let collector = PhotoTimelineCollector()
+
+        let result = try await FileStationPhotoRepository(files: files).scanTimeline(
+            in: .shared,
+            startingAt: [PhotoSpace.shared.rootPath],
+            limits: Self.limits(maximumSourceItemCount: 2)
+        ) { update in
+            await collector.append(update)
+        }
+
+        XCTAssertEqual(result.completion, .truncated)
+        XCTAssertEqual(result.sourceItemCount, 2)
+        XCTAssertEqual(result.items.map(\.name), ["一.jpg", "二.jpg"])
+        let collectedNames = await collector.items().map(\.name)
+        XCTAssertEqual(collectedNames, ["一.jpg", "二.jpg"])
+    }
+
+    func test媒体项目上限严格截断() async throws {
+        let profileID = UUID()
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [
+                "/photo": Self.page(path: "/photo", items: [
+                    FileItem(profileID: profileID, name: "一.jpg", path: "/photo/一.jpg", kind: .file),
+                    FileItem(profileID: profileID, name: "二.jpg", path: "/photo/二.jpg", kind: .file)
+                ])
+            ]
+        )
+
+        let result = try await FileStationPhotoRepository(files: files).scanTimeline(
+            in: .shared,
+            startingAt: [PhotoSpace.shared.rootPath],
+            limits: Self.limits(maximumMediaItemCount: 1)
+        ) { _ in }
+
+        XCTAssertEqual(result.completion, .truncated)
+        XCTAssertEqual(result.items.map(\.name), ["一.jpg"])
+        XCTAssertEqual(result.sourceItemCount, 1)
+    }
+
+    func test取消时间线扫描向调用方抛出() async throws {
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [:],
+            cancellationPaths: [PhotoSpace.shared.rootPath]
+        )
+
+        do {
+            _ = try await FileStationPhotoRepository(files: files).scanTimeline(
+                in: .shared,
+                startingAt: [PhotoSpace.shared.rootPath],
+                limits: Self.limits()
+            ) { _ in }
+            XCTFail("取消必须抛给调用方")
+        } catch is CancellationError {
+            // 预期路径。
+        }
+    }
+
+    func test时间线根目录失败向调用方抛出() async throws {
+        let expected = AppError(
+            category: .networkUnavailable,
+            isRetryable: true,
+            safeUserMessage: "测试网络错误"
+        )
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [:],
+            folderErrors: [PhotoSpace.shared.rootPath: expected]
+        )
+
+        do {
+            _ = try await FileStationPhotoRepository(files: files).scanTimeline(
+                in: .shared,
+                startingAt: [PhotoSpace.shared.rootPath],
+                limits: Self.limits()
+            ) { _ in }
+            XCTFail("根目录失败不得伪装为空结果")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .networkUnavailable)
+        }
+    }
+
+    func test时间线拒绝零进展分页() async throws {
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [
+                "/photo": FilePage(
+                    folderPath: "/photo",
+                    items: [],
+                    offset: 0,
+                    total: 2,
+                    hasMore: true
+                )
+            ]
+        )
+
+        do {
+            _ = try await FileStationPhotoRepository(files: files).scanTimeline(
+                in: .shared,
+                startingAt: [PhotoSpace.shared.rootPath],
+                limits: Self.limits()
+            ) { _ in }
+            XCTFail("零进展分页必须失败")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
+    }
+
+    func test时间线拒绝跨页总数漂移() async throws {
+        let profileID = UUID()
+        let files = PhotoFileServerStub(
+            shares: Self.page(path: "/", items: []),
+            folders: [:],
+            folderPages: [
+                "/photo": [
+                    0: FilePage(
+                        folderPath: "/photo",
+                        items: [
+                            FileItem(profileID: profileID, name: "一.jpg", path: "/photo/一.jpg", kind: .file)
+                        ],
+                        offset: 0,
+                        total: 2,
+                        hasMore: true
+                    ),
+                    1: FilePage(
+                        folderPath: "/photo",
+                        items: [
+                            FileItem(profileID: profileID, name: "二.jpg", path: "/photo/二.jpg", kind: .file)
+                        ],
+                        offset: 1,
+                        total: 3,
+                        hasMore: false
+                    )
+                ]
+            ]
+        )
+
+        do {
+            _ = try await FileStationPhotoRepository(files: files).scanTimeline(
+                in: .shared,
+                startingAt: [PhotoSpace.shared.rootPath],
+                limits: Self.limits(pageSize: 1)
+            ) { _ in }
+            XCTFail("跨页 total 漂移必须失败")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
+    }
+
+    private static func limits(
+        maximumFolderCount: Int = 10,
+        maximumSourceItemCount: Int = 100,
+        maximumMediaItemCount: Int = 100,
+        pageSize: Int = 2
+    ) -> PhotoTimelineScanLimits {
+        PhotoTimelineScanLimits(
+            maximumFolderCount: maximumFolderCount,
+            maximumSourceItemCount: maximumSourceItemCount,
+            maximumMediaItemCount: maximumMediaItemCount,
+            pageSize: pageSize
+        )
+    }
+
     private static func page(path: String, items: [FileItem]) -> FilePage {
         FilePage(
             folderPath: path,
@@ -238,17 +486,24 @@ private actor PhotoFileServerStub: PhotoFileServing {
     let folders: [String: FilePage]
     let searchItems: [FileItem]
     let folderErrors: [String: AppError]
+    let cancellationPaths: Set<String>
+    let folderPages: [String: [Int: FilePage]]
+    private var requests: [(path: String, offset: Int, limit: Int)] = []
 
     init(
         shares: FilePage,
         folders: [String: FilePage],
         searchItems: [FileItem] = [],
-        folderErrors: [String: AppError] = [:]
+        folderErrors: [String: AppError] = [:],
+        cancellationPaths: Set<String> = [],
+        folderPages: [String: [Int: FilePage]] = [:]
     ) {
         self.shares = shares
         self.folders = folders
         self.searchItems = searchItems
         self.folderErrors = folderErrors
+        self.cancellationPaths = cancellationPaths
+        self.folderPages = folderPages
     }
 
     func listShares(offset: Int, limit: Int) async throws -> FilePage {
@@ -256,7 +511,10 @@ private actor PhotoFileServerStub: PhotoFileServing {
     }
 
     func listFolder(path: String, offset: Int, limit: Int) async throws -> FilePage {
+        requests.append((path, offset, limit))
+        if cancellationPaths.contains(path) { throw CancellationError() }
         if let error = folderErrors[path] { throw error }
+        if let page = folderPages[path]?[offset] { return page }
         guard let page = folders[path] else {
             throw AppError(
                 category: .notFound,
@@ -265,6 +523,14 @@ private actor PhotoFileServerStub: PhotoFileServing {
             )
         }
         return page
+    }
+
+    func requestedPaths() -> [String] {
+        requests.map(\.path)
+    }
+
+    func requestedLimits() -> [Int] {
+        requests.map(\.limit)
     }
 
     func getThumbnail(path: String, size: ThumbnailSize) async throws -> Data {

@@ -451,6 +451,7 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
     public static func isTrustedRelayHost(_ host: String) -> Bool {
         let labels = host.lowercased().split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count == 4,
+              labels[1] != "direct",
               labels[2] == "quickconnect",
               labels[3] == "to" || labels[3] == "cn" else {
             return false

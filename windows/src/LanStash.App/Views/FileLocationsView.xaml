@@ -1,0 +1,194 @@
+<UserControl
+    x:Class="LanStash.App.Views.FileLocationsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:domain="using:LanStash.Domain"
+    xmlns:locations="using:LanStash.App.Features.Files.Locations">
+    <Grid
+        Padding="16,12,12,16"
+        Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+                x:Uid="FileLocationsTitle"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                VerticalAlignment="Center"
+                AutomationProperties.HeadingLevel="Level1" />
+            <Button
+                x:Uid="FileLocationsRefresh"
+                x:Name="RefreshButton"
+                Grid.Column="1"
+                Click="Refresh_Click"
+                MinWidth="48"
+                MinHeight="48">
+                <FontIcon Glyph="&#xE72C;" />
+            </Button>
+        </Grid>
+
+        <InfoBar
+            x:Uid="FileLocationsOpenError"
+            x:Name="OpenErrorBar"
+            Grid.Row="1"
+            IsClosable="True"
+            IsOpen="False"
+            Severity="Error"
+            AutomationProperties.LiveSetting="Polite" />
+
+        <ScrollViewer
+            x:Name="LocationsScroller"
+            Grid.Row="2"
+            HorizontalScrollMode="Disabled"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
+                <StackPanel Spacing="4">
+                    <TextBlock
+                        x:Uid="FileLocationsSharesHeading"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        AutomationProperties.HeadingLevel="Level2" />
+                    <Button
+                        x:Uid="FileLocationsShares"
+                        x:Name="SharesButton"
+                        Click="Shares_Click"
+                        HorizontalContentAlignment="Stretch"
+                        MinHeight="48">
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="28" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xEDA2;" />
+                            <TextBlock
+                                x:Uid="FileLocationsSharesLabel"
+                                Grid.Column="1"
+                                VerticalAlignment="Center" />
+                        </Grid>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel x:Name="FavoritesSection" Spacing="6">
+                    <TextBlock
+                        x:Uid="FileLocationsFavoritesHeading"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        AutomationProperties.HeadingLevel="Level2" />
+                    <ProgressRing x:Name="FavoritesProgress" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
+                    <TextBlock x:Uid="FileLocationsFavoritesLoading" x:Name="FavoritesLoading" Visibility="Collapsed" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock x:Uid="FileLocationsFavoritesEmpty" x:Name="FavoritesEmpty" Visibility="Collapsed" TextWrapping="Wrap" />
+                    <InfoBar x:Uid="FileLocationsFavoritesError" x:Name="FavoritesError" IsClosable="False" IsOpen="False" Severity="Warning" />
+                    <InfoBar x:Uid="FileLocationsFavoritesTruncated" x:Name="FavoritesTruncated" IsClosable="False" IsOpen="False" Severity="Informational" />
+                    <ItemsControl x:Name="FavoritesItems" HorizontalContentAlignment="Stretch">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="domain:FileFavoriteLocation">
+                                <Button
+                                    Click="Favorite_Click"
+                                    HorizontalContentAlignment="Stretch"
+                                    MinHeight="48"
+                                    AutomationProperties.Name="{x:Bind Name}"
+                                    AutomationProperties.HelpText="{x:Bind Path}">
+                                    <StackPanel>
+                                        <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Text="{x:Bind Path}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel x:Name="RecentSection" Spacing="6">
+                    <TextBlock
+                        x:Uid="FileLocationsRecentHeading"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        AutomationProperties.HeadingLevel="Level2" />
+                    <TextBlock x:Uid="FileLocationsRecentEmpty" x:Name="RecentEmpty" Visibility="Collapsed" TextWrapping="Wrap" />
+                    <ItemsControl x:Name="RecentItems" HorizontalContentAlignment="Stretch">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="locations:RecentFileLocation">
+                                <Button
+                                    Click="Recent_Click"
+                                    HorizontalContentAlignment="Stretch"
+                                    MinHeight="48"
+                                    AutomationProperties.Name="{x:Bind Name}"
+                                    AutomationProperties.HelpText="{x:Bind Path}">
+                                    <StackPanel>
+                                        <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Text="{x:Bind Path}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel x:Name="RecycleSection" Spacing="6">
+                    <TextBlock
+                        x:Uid="FileLocationsRecycleHeading"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        AutomationProperties.HeadingLevel="Level2" />
+                    <ProgressRing x:Name="RecycleProgress" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
+                    <TextBlock x:Uid="FileLocationsRecycleLoading" x:Name="RecycleLoading" Visibility="Collapsed" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock x:Uid="FileLocationsRecycleEmpty" x:Name="RecycleEmpty" Visibility="Collapsed" TextWrapping="Wrap" />
+                    <InfoBar x:Uid="FileLocationsRecycleError" x:Name="RecycleError" IsClosable="False" IsOpen="False" Severity="Warning" />
+                    <InfoBar x:Uid="FileLocationsRecyclePartial" x:Name="RecyclePartial" IsClosable="False" IsOpen="False" Severity="Informational" />
+                    <InfoBar x:Uid="FileLocationsRecycleTruncated" x:Name="RecycleTruncated" IsClosable="False" IsOpen="False" Severity="Informational" />
+                    <ItemsControl x:Name="RecycleItems" HorizontalContentAlignment="Stretch">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="domain:FileRecycleLocation">
+                                <Button
+                                    Click="Recycle_Click"
+                                    HorizontalContentAlignment="Stretch"
+                                    MinHeight="48"
+                                    AutomationProperties.Name="{x:Bind ShareName}"
+                                    AutomationProperties.HelpText="{x:Bind RecyclePath}">
+                                    <StackPanel>
+                                        <TextBlock Text="{x:Bind ShareName}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Text="{x:Bind RecyclePath}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <StackPanel x:Name="RemoteSection" Spacing="6">
+                    <TextBlock
+                        x:Uid="FileLocationsRemoteHeading"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        AutomationProperties.HeadingLevel="Level2" />
+                    <ProgressRing x:Name="RemoteProgress" Width="24" Height="24" IsActive="False" Visibility="Collapsed" />
+                    <TextBlock x:Uid="FileLocationsRemoteLoading" x:Name="RemoteLoading" Visibility="Collapsed" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock x:Uid="FileLocationsRemoteEmpty" x:Name="RemoteEmpty" Visibility="Collapsed" TextWrapping="Wrap" />
+                    <InfoBar x:Uid="FileLocationsRemoteError" x:Name="RemoteError" IsClosable="False" IsOpen="False" Severity="Warning" />
+                    <InfoBar x:Uid="FileLocationsRemotePartial" x:Name="RemotePartial" IsClosable="False" IsOpen="False" Severity="Informational" />
+                    <InfoBar x:Uid="FileLocationsRemoteTruncated" x:Name="RemoteTruncated" IsClosable="False" IsOpen="False" Severity="Informational" />
+                    <ItemsControl x:Name="RemoteItems" HorizontalContentAlignment="Stretch">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="domain:FileRemoteLocation">
+                                <Button
+                                    Click="Remote_Click"
+                                    HorizontalContentAlignment="Stretch"
+                                    MinHeight="48"
+                                    AutomationProperties.Name="{x:Bind Name}"
+                                    AutomationProperties.HelpText="{x:Bind Path}">
+                                    <StackPanel>
+                                        <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Text="{x:Bind Path}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

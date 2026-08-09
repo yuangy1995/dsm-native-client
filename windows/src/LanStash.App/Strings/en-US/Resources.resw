@@ -61,6 +61,15 @@
   <data name="CustomPortInput.PlaceholderText" xml:space="preserve"><value>Choose automatically</value></data>
   <data name="CustomPortNote.Text" xml:space="preserve"><value>Leave blank to choose automatically. A specified port takes priority.</value></data>
   <data name="ConnectButton.Content" xml:space="preserve"><value>Connect</value></data>
+  <data name="CancelConnectButton.Content" xml:space="preserve"><value>Cancel</value></data>
+  <data name="ProfileMenuAutomationName" xml:space="preserve"><value>Switch or manage NAS</value></data>
+  <data name="ActionAddNas" xml:space="preserve"><value>Add NAS</value></data>
+  <data name="ActionDeleteNas" xml:space="preserve"><value>Remove this NAS</value></data>
+  <data name="DialogDeleteNasTitle" xml:space="preserve"><value>Remove this NAS?</value></data>
+  <data name="DialogDeleteNasMessage" xml:space="preserve"><value>“{0}” and its saved sign-in will be removed from this PC. Files on the NAS are not deleted.</value></data>
+  <data name="ProfileActionErrorTitle" xml:space="preserve"><value>Unable to update the NAS</value></data>
+  <data name="ProfileActionErrorMessage" xml:space="preserve"><value>The change could not be completed. Check the connection and try again.</value></data>
+  <data name="ActionClose" xml:space="preserve"><value>Close</value></data>
   <data name="WorkspaceSearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Search</value></data>
   <data name="WorkspaceSearchBox.PlaceholderText" xml:space="preserve"><value>Search</value></data>
   <data name="ActionCreate.Label" xml:space="preserve"><value>New</value></data>
@@ -266,4 +275,527 @@
   <data name="CloudDriveLaunchAtLogin" xml:space="preserve"><value>Start after sign-in</value></data>
   <data name="CloudDriveLaunchAtLoginEnabled" xml:space="preserve"><value>LanStash will start after you sign in to Windows.</value></data>
   <data name="CloudDriveLaunchAtLoginDisabled" xml:space="preserve"><value>Online-only files remain unavailable until you open LanStash.</value></data>
+  <data name="FileBrowserTitle.Text" xml:space="preserve"><value>Files</value></data>
+  <data name="FileBrowserBreadcrumbs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Folder path</value></data>
+  <data name="FileBrowserFilter.PlaceholderText" xml:space="preserve"><value>Filter loaded items</value></data>
+  <data name="FileBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Filter loaded items</value></data>
+  <data name="FileBrowserBack.Label" xml:space="preserve"><value>Back</value></data>
+  <data name="FileBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Go back</value></data>
+  <data name="FileBrowserUp.Label" xml:space="preserve"><value>Up</value></data>
+  <data name="FileBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Go up one level</value></data>
+  <data name="FileBrowserRefresh.Label" xml:space="preserve"><value>Refresh</value></data>
+  <data name="FileBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh this folder</value></data>
+  <data name="FileBrowserSort.Label" xml:space="preserve"><value>Sort</value></data>
+  <data name="FileBrowserSort.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sort files</value></data>
+  <data name="FileBrowserSortName.Text" xml:space="preserve"><value>Name</value></data>
+  <data name="FileBrowserSortName.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sort by name</value></data>
+  <data name="FileBrowserSortModified.Text" xml:space="preserve"><value>Date modified</value></data>
+  <data name="FileBrowserSortModified.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sort by date modified</value></data>
+  <data name="FileBrowserSortSize.Text" xml:space="preserve"><value>Size</value></data>
+  <data name="FileBrowserSortSize.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sort by size</value></data>
+  <data name="FileBrowserSortAscending.Text" xml:space="preserve"><value>Ascending</value></data>
+  <data name="FileBrowserSortAscending.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sort in ascending order</value></data>
+  <data name="FileBrowserSortDescending.Text" xml:space="preserve"><value>Descending</value></data>
+  <data name="FileBrowserSortDescending.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sort in descending order</value></data>
+  <data name="FileBrowserTypeFilter.Label" xml:space="preserve"><value>Type</value></data>
+  <data name="FileBrowserTypeFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Filter by file type</value></data>
+  <data name="FileBrowserTypeAll.Text" xml:space="preserve"><value>All</value></data>
+  <data name="FileBrowserTypeAll.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show all items</value></data>
+  <data name="FileBrowserTypeFiles.Text" xml:space="preserve"><value>Files</value></data>
+  <data name="FileBrowserTypeFiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show files only</value></data>
+  <data name="FileBrowserTypeFolders.Text" xml:space="preserve"><value>Folders</value></data>
+  <data name="FileBrowserTypeFolders.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show folders only</value></data>
+  <data name="FileBrowserListLayout.Label" xml:space="preserve"><value>List</value></data>
+  <data name="FileBrowserListLayout.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show as list</value></data>
+  <data name="FileBrowserGridLayout.Label" xml:space="preserve"><value>Grid</value></data>
+  <data name="FileBrowserGridLayout.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show as grid</value></data>
+  <data name="FileBrowserList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Files list</value></data>
+  <data name="FileBrowserGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Files grid</value></data>
+  <data name="FileBrowserLoadMore.Content" xml:space="preserve"><value>Load more</value></data>
+  <data name="FileBrowserLoadMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Load more items</value></data>
+  <data name="FileBrowserLoadMoreError.Title" xml:space="preserve"><value>More items couldn’t be loaded</value></data>
+  <data name="FileBrowserLoadMoreError.Message" xml:space="preserve"><value>Existing items are still available. Try again.</value></data>
+  <data name="FileBrowserLoading.Text" xml:space="preserve"><value>Loading files…</value></data>
+  <data name="FileBrowserEmptyTitle.Text" xml:space="preserve"><value>This folder is empty</value></data>
+  <data name="FileBrowserEmptyMessage.Text" xml:space="preserve"><value>Refresh to check for new items.</value></data>
+  <data name="FileBrowserRefreshEmpty.Content" xml:space="preserve"><value>Refresh</value></data>
+  <data name="FileBrowserFilteredEmptyTitle.Text" xml:space="preserve"><value>No items match these filters</value></data>
+  <data name="FileBrowserFilteredEmptyMessage.Text" xml:space="preserve"><value>Clear the filters to see other items.</value></data>
+  <data name="FileBrowserClearFilter.Content" xml:space="preserve"><value>Clear filters</value></data>
+  <data name="FileBrowserErrorTitle.Text" xml:space="preserve"><value>Files couldn’t be loaded</value></data>
+  <data name="FileBrowserErrorMessage.Text" xml:space="preserve"><value>Check the connection, then try again.</value></data>
+  <data name="FileBrowserRetry.Content" xml:space="preserve"><value>Retry</value></data>
+  <data name="FileBrowserFileDetail" xml:space="preserve"><value>{0:N0} bytes · {1}</value></data>
+  <data name="FileBrowserDownload.Label" xml:space="preserve"><value>Download</value></data>
+  <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected file</value></data>
+  <data name="FileBrowserUpload.Label" xml:space="preserve"><value>Upload</value></data>
+  <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Upload one file to this folder</value></data>
+  <data name="FileBrowserUploadNeedsReview.Title" xml:space="preserve"><value>Check the uploaded file</value></data>
+  <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>The upload may have reached the NAS. Refresh this folder and check the file before uploading it again.</value></data>
+  <data name="TransferOriginalFileType" xml:space="preserve"><value>Original file type</value></data>
+  <data name="TransferActivityTitle.Text" xml:space="preserve"><value>Activity</value></data>
+  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>Downloads and uploads from the current NAS stay here while this window is open.</value></data>
+  <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Transfer activity</value></data>
+  <data name="TransferActivityProgressBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Transfer progress</value></data>
+  <data name="TransferActivityCancel.Content" xml:space="preserve"><value>Cancel</value></data>
+  <data name="TransferActivityCancelAutomationName" xml:space="preserve"><value>Cancel transfer for {0}</value></data>
+  <data name="TransferActivityEmptyTitle.Text" xml:space="preserve"><value>No transfer activity</value></data>
+  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>Downloads and uploads started in Files will appear here.</value></data>
+  <data name="TransferActivityProgress" xml:space="preserve"><value>{0:N0} of {1:N0} bytes</value></data>
+  <data name="TransferActivityUploadProgress" xml:space="preserve"><value>{0:N0} of {1:N0} bytes uploaded</value></data>
+  <data name="TransferActivityDirectionDownload" xml:space="preserve"><value>Download from NAS</value></data>
+  <data name="TransferActivityDirectionUpload" xml:space="preserve"><value>Upload to NAS</value></data>
+  <data name="TransferActivityCompleted" xml:space="preserve"><value>Saved</value></data>
+  <data name="TransferActivityUploadCompleted" xml:space="preserve"><value>Uploaded</value></data>
+  <data name="TransferActivityCancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="TransferActivityCancelledBeforeSubmission" xml:space="preserve"><value>Cancelled before it was sent</value></data>
+  <data name="TransferActivityUploadNeedsReview" xml:space="preserve"><value>This upload may have reached the NAS. Refresh the folder and check the file before uploading it again.</value></data>
+  <data name="TransferActivityFailed" xml:space="preserve"><value>Download didn’t finish. Check the connection and available storage, then try again.</value></data>
+  <data name="TransferActivityUploadFailed" xml:space="preserve"><value>Upload didn’t finish. Check access to the folder, the connection, and available NAS space.</value></data>
+  <data name="TransferSaveErrorTitle" xml:space="preserve"><value>Unable to start the download</value></data>
+  <data name="TransferSaveErrorMessage" xml:space="preserve"><value>Choose a save location again. If the problem continues, check access to that location.</value></data>
+  <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>Unable to start the upload</value></data>
+  <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>Choose the file again. If the problem continues, check that it is available on this device.</value></data>
+  <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>File-system photo library</value></data>
+  <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>Browse image folders from this NAS and save a copy to your PC.</value></data>
+  <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>Photo space</value></data>
+  <data name="PhotoBrowserSpace.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose a photo space</value></data>
+  <data name="PhotoBrowserPersonalSpace" xml:space="preserve"><value>My photos</value></data>
+  <data name="PhotoBrowserSharedSpace" xml:space="preserve"><value>Shared photos</value></data>
+  <data name="PhotoBrowserBreadcrumbs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo folder</value></data>
+  <data name="PhotoBrowserBack.Label" xml:space="preserve"><value>Back</value></data>
+  <data name="PhotoBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Go back</value></data>
+  <data name="PhotoBrowserUp.Label" xml:space="preserve"><value>Up</value></data>
+  <data name="PhotoBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Go up one folder</value></data>
+  <data name="PhotoBrowserRefresh.Label" xml:space="preserve"><value>Refresh</value></data>
+  <data name="PhotoBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh this photo folder</value></data>
+  <data name="PhotoBrowserSave.Label" xml:space="preserve"><value>Save a copy</value></data>
+  <data name="PhotoBrowserSave.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected image</value></data>
+  <data name="PhotoBrowserFilter.Label" xml:space="preserve"><value>Show</value></data>
+  <data name="PhotoBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose what to show</value></data>
+  <data name="PhotoBrowserFilterAll.Text" xml:space="preserve"><value>Folders and images</value></data>
+  <data name="PhotoBrowserFilterImages.Text" xml:space="preserve"><value>Images only</value></data>
+  <data name="PhotoBrowserGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo folders and images</value></data>
+  <data name="PhotoBrowserFolderAutomationName" xml:space="preserve"><value>Folder, {0}</value></data>
+  <data name="PhotoBrowserImageAutomationName" xml:space="preserve"><value>Image, {0}</value></data>
+  <data name="PhotoBrowserLoadMoreError.Title" xml:space="preserve"><value>More photos couldn’t be loaded</value></data>
+  <data name="PhotoBrowserLoadMoreError.Message" xml:space="preserve"><value>The photos already shown are still available. Try again.</value></data>
+  <data name="PhotoBrowserLoadMore.Content" xml:space="preserve"><value>Load more</value></data>
+  <data name="PhotoBrowserLoadMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Load more photos</value></data>
+  <data name="PhotoBrowserLoadMoreProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Loading more photos</value></data>
+  <data name="PhotoBrowserLoading.Text" xml:space="preserve"><value>Loading photos…</value></data>
+  <data name="PhotoBrowserEmptyTitle.Text" xml:space="preserve"><value>No photos here</value></data>
+  <data name="PhotoBrowserEmptyMessage.Text" xml:space="preserve"><value>Choose another photo space or refresh to check again.</value></data>
+  <data name="PhotoBrowserRefreshEmpty.Content" xml:space="preserve"><value>Refresh</value></data>
+  <data name="PhotoBrowserFilteredEmptyTitle.Text" xml:space="preserve"><value>No images in this folder</value></data>
+  <data name="PhotoBrowserFilteredEmptyMessage.Text" xml:space="preserve"><value>Show folders too, or go back to browse somewhere else.</value></data>
+  <data name="PhotoBrowserShowAll.Content" xml:space="preserve"><value>Show folders and images</value></data>
+  <data name="PhotoBrowserErrorTitle.Text" xml:space="preserve"><value>Photos couldn’t be loaded</value></data>
+  <data name="PhotoBrowserErrorMessage.Text" xml:space="preserve"><value>Check the NAS connection and your access to this photo space, then try again.</value></data>
+  <data name="PhotoBrowserRetry.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="PhotoBrowserUnavailableTitle" xml:space="preserve"><value>The photo library isn’t available</value></data>
+  <data name="PhotoBrowserUnavailableMessage" xml:space="preserve"><value>Reconnect to this NAS, then open the photo library again.</value></data>
+  <data name="ChatBrowserTitle.Text" xml:space="preserve"><value>Chat</value></data>
+  <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>Read conversations and messages from Synology Chat.</value></data>
+  <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh conversations</value></data>
+  <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
+  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>Read-only</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>Sending messages, creating conversations, and opening attachments are not available yet.</value></data>
+  <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>Search conversations</value></data>
+  <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Search conversations</value></data>
+  <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>Conversations couldn’t be refreshed</value></data>
+  <data name="ChatBrowserConversationRefreshError.Message" xml:space="preserve"><value>The conversations already shown are still available. Try again.</value></data>
+  <data name="ChatBrowserConversationList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Conversations</value></data>
+  <data name="ChatBrowserUnnamedConversation" xml:space="preserve"><value>Unnamed conversation</value></data>
+  <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
+  <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}, {1:N0} unread</value></data>
+  <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to conversations</value></data>
+  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>Messages are read-only</value></data>
+  <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh messages</value></data>
+  <data name="ChatBrowserMessageError.Title" xml:space="preserve"><value>Messages couldn’t be loaded</value></data>
+  <data name="ChatBrowserMessageError.Message" xml:space="preserve"><value>The messages already shown are still available. Check the connection, then try again.</value></data>
+  <data name="ChatBrowserChooseConversationTitle.Text" xml:space="preserve"><value>Choose a conversation</value></data>
+  <data name="ChatBrowserChooseConversationMessage.Text" xml:space="preserve"><value>Select a conversation to read its messages.</value></data>
+  <data name="ChatBrowserEncryptedTitle.Text" xml:space="preserve"><value>This conversation is encrypted</value></data>
+  <data name="ChatBrowserEncryptedMessage.Text" xml:space="preserve"><value>Encrypted messages can’t be read here yet. Open Synology Chat in your browser to continue.</value></data>
+  <data name="ChatBrowserMessagesLoading.Text" xml:space="preserve"><value>Loading messages…</value></data>
+  <data name="ChatBrowserMessagesEmptyTitle.Text" xml:space="preserve"><value>No messages here</value></data>
+  <data name="ChatBrowserMessagesEmptyMessage.Text" xml:space="preserve"><value>Refresh to check for messages again.</value></data>
+  <data name="ChatBrowserLoadEarlierError.Title" xml:space="preserve"><value>Earlier messages couldn’t be loaded</value></data>
+  <data name="ChatBrowserLoadEarlierError.Message" xml:space="preserve"><value>The messages already shown are still available. Try again.</value></data>
+  <data name="ChatBrowserLoadEarlier.Content" xml:space="preserve"><value>Load earlier messages</value></data>
+  <data name="ChatBrowserLoadEarlier.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Load earlier messages</value></data>
+  <data name="ChatBrowserLoadEarlierProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Loading earlier messages</value></data>
+  <data name="ChatBrowserMessageList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Messages</value></data>
+  <data name="ChatBrowserAttachmentUnavailable.Text" xml:space="preserve"><value>Attachment details are available, but the attachment cannot be opened here yet.</value></data>
+  <data name="ChatBrowserLoading.Text" xml:space="preserve"><value>Loading conversations…</value></data>
+  <data name="ChatBrowserEmptyTitle.Text" xml:space="preserve"><value>No conversations</value></data>
+  <data name="ChatBrowserEmptyMessage.Text" xml:space="preserve"><value>Refresh to check for conversations again.</value></data>
+  <data name="ChatBrowserEmptyRefresh.Content" xml:space="preserve"><value>Refresh</value></data>
+  <data name="ChatBrowserFilteredEmptyTitle.Text" xml:space="preserve"><value>No conversations match</value></data>
+  <data name="ChatBrowserFilteredEmptyMessage.Text" xml:space="preserve"><value>Clear the search to see all conversations.</value></data>
+  <data name="ChatBrowserClearSearch.Content" xml:space="preserve"><value>Clear search</value></data>
+  <data name="ChatBrowserErrorTitle.Text" xml:space="preserve"><value>Conversations couldn’t be loaded</value></data>
+  <data name="ChatBrowserErrorMessage.Text" xml:space="preserve"><value>Check the NAS connection and access to Synology Chat, then try again.</value></data>
+  <data name="ChatBrowserRetry.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="ChatBrowserUnavailableTitle.Text" xml:space="preserve"><value>Chat isn’t available</value></data>
+  <data name="ChatBrowserUnavailableMessage.Text" xml:space="preserve"><value>Reconnect to a NAS with Synology Chat available, then open Chat again.</value></data>
+  <data name="ChatBrowserValidationTitle.Text" xml:space="preserve"><value>Chat can’t be opened safely</value></data>
+  <data name="ChatBrowserValidationMessage.Text" xml:space="preserve"><value>Reconnect to this NAS, then try again.</value></data>
+  <data name="ChatBrowserUnknownSender" xml:space="preserve"><value>Unknown sender</value></data>
+  <data name="DownloadStationStatusWaiting" xml:space="preserve"><value>Waiting</value></data>
+  <data name="DownloadStationStatusDownloading" xml:space="preserve"><value>Downloading</value></data>
+  <data name="DownloadStationStatusPaused" xml:space="preserve"><value>Paused</value></data>
+  <data name="DownloadStationStatusFinished" xml:space="preserve"><value>Finished</value></data>
+  <data name="DownloadStationStatusChecking" xml:space="preserve"><value>Preparing</value></data>
+  <data name="DownloadStationStatusSeeding" xml:space="preserve"><value>Sharing</value></data>
+  <data name="DownloadStationStatusError" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="DownloadStationStatusUnknown" xml:space="preserve"><value>Status unavailable</value></data>
+  <data name="DownloadStationValueUnavailable" xml:space="preserve"><value>Not available</value></data>
+  <data name="DownloadStationNoTaskError" xml:space="preserve"><value>No issue reported</value></data>
+  <data name="DownloadStationProgressValue" xml:space="preserve"><value>{0}</value></data>
+  <data name="DownloadStationSpeedValue" xml:space="preserve"><value>{0}/s</value></data>
+  <data name="DownloadStationTaskAutomationName" xml:space="preserve"><value>{0}, {1}, {2}</value></data>
+  <data name="DownloadStationTitle.Text" xml:space="preserve"><value>Download Station</value></data>
+  <data name="DownloadStationDescription.Text" xml:space="preserve"><value>View download tasks and their current progress on this NAS.</value></data>
+  <data name="DownloadStationRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
+  <data name="DownloadStationDetailStatus.Text" xml:space="preserve"><value>Status</value></data>
+  <data name="DownloadStationDetailProgress.Text" xml:space="preserve"><value>Progress</value></data>
+  <data name="DownloadStationDetailSize.Text" xml:space="preserve"><value>Total size</value></data>
+  <data name="DownloadStationDetailDownloaded.Text" xml:space="preserve"><value>Downloaded</value></data>
+  <data name="DownloadStationDetailUploaded.Text" xml:space="preserve"><value>Uploaded</value></data>
+  <data name="DownloadStationDetailDownloadSpeed.Text" xml:space="preserve"><value>Download speed</value></data>
+  <data name="DownloadStationDetailUploadSpeed.Text" xml:space="preserve"><value>Upload speed</value></data>
+  <data name="DownloadStationDetailDestination.Text" xml:space="preserve"><value>Save location</value></data>
+  <data name="DownloadStationDetailError.Text" xml:space="preserve"><value>Issue</value></data>
+  <data name="DownloadStationChooseTaskTitle.Text" xml:space="preserve"><value>Choose a task</value></data>
+  <data name="DownloadStationChooseTaskMessage.Text" xml:space="preserve"><value>Select a task to view its current details.</value></data>
+  <data name="DownloadStationLoading.Text" xml:space="preserve"><value>Loading download tasks…</value></data>
+  <data name="DownloadStationEmptyTitle.Text" xml:space="preserve"><value>No download tasks</value></data>
+  <data name="DownloadStationEmptyMessage.Text" xml:space="preserve"><value>Tasks created in DSM will appear here.</value></data>
+  <data name="DownloadStationFilteredEmptyTitle.Text" xml:space="preserve"><value>No matching tasks</value></data>
+  <data name="DownloadStationFilteredEmptyMessage.Text" xml:space="preserve"><value>Try another search or status filter.</value></data>
+  <data name="DownloadStationErrorTitle.Text" xml:space="preserve"><value>Unable to load download tasks</value></data>
+  <data name="DownloadStationErrorMessage.Text" xml:space="preserve"><value>Check the connection to your NAS, then try again.</value></data>
+  <data name="DownloadStationUnavailableTitle.Text" xml:space="preserve"><value>Download tasks aren’t available</value></data>
+  <data name="DownloadStationUnavailableMessage.Text" xml:space="preserve"><value>This NAS doesn’t offer the supported read-only Download Station view.</value></data>
+  <data name="DownloadStationReadOnly.Title" xml:space="preserve"><value>View only</value></data>
+  <data name="DownloadStationReadOnly.Message" xml:space="preserve"><value>Tasks run on your NAS. This page does not change them.</value></data>
+  <data name="DownloadStationRefreshError.Title" xml:space="preserve"><value>Couldn’t refresh tasks</value></data>
+  <data name="DownloadStationRefreshError.Message" xml:space="preserve"><value>Showing the last available task list. Check the connection, then try again.</value></data>
+  <data name="DownloadStationLoadMoreError.Title" xml:space="preserve"><value>Couldn’t load more tasks</value></data>
+  <data name="DownloadStationLoadMoreError.Message" xml:space="preserve"><value>Existing tasks are still available. Try loading more again.</value></data>
+  <data name="DownloadStationFilterAll.Content" xml:space="preserve"><value>All</value></data>
+  <data name="DownloadStationFilterActive.Content" xml:space="preserve"><value>Active</value></data>
+  <data name="DownloadStationFilterFinished.Content" xml:space="preserve"><value>Finished</value></data>
+  <data name="DownloadStationFilterPaused.Content" xml:space="preserve"><value>Paused</value></data>
+  <data name="DownloadStationLoadMore.Content" xml:space="preserve"><value>Load more</value></data>
+  <data name="DownloadStationRefreshEmpty.Content" xml:space="preserve"><value>Refresh</value></data>
+  <data name="DownloadStationShowAll.Content" xml:space="preserve"><value>Show all tasks</value></data>
+  <data name="DownloadStationRetry.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="DownloadStationRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh download tasks</value></data>
+  <data name="DownloadStationSearch.PlaceholderText" xml:space="preserve"><value>Filter tasks</value></data>
+  <data name="DownloadStationSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Filter download tasks</value></data>
+  <data name="DownloadStationFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Filter by task status</value></data>
+  <data name="DownloadStationTaskList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Download tasks</value></data>
+  <data name="DownloadStationBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to download tasks</value></data>
+  <data name="DownloadStationLoadingMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Loading more download tasks</value></data>
+  <data name="DownloadStationTaskNeedsAttention" xml:space="preserve"><value>This task needs attention. Open Download Station in DSM for more details.</value></data>
+  <data name="DownloadStationActivityTitle.Text" xml:space="preserve"><value>Current activity</value></data>
+  <data name="DownloadStationActivityDownload.Text" xml:space="preserve"><value>Download speed</value></data>
+  <data name="DownloadStationActivityUpload.Text" xml:space="preserve"><value>Upload speed</value></data>
+  <data name="DownloadStationActivityError.Title" xml:space="preserve"><value>Activity speed is unavailable</value></data>
+  <data name="DownloadStationActivityError.Message" xml:space="preserve"><value>The task list is still available. Refresh to try the speed summary again.</value></data>
+  <data name="DownloadStationByteValueB" xml:space="preserve"><value>{0} B</value></data>
+  <data name="DownloadStationByteValueKB" xml:space="preserve"><value>{0} KB</value></data>
+  <data name="DownloadStationByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
+  <data name="DownloadStationByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
+  <data name="DownloadStationByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
+  <data name="VirtualMachineManagerTitle.Text" xml:space="preserve"><value>Virtual Machines</value></data>
+  <data name="VirtualMachineManagerDescription.Text" xml:space="preserve"><value>Review virtual machines and virtualization resources on this NAS.</value></data>
+  <data name="VirtualMachineManagerRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh virtual machines</value></data>
+  <data name="VirtualMachineManagerRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
+  <data name="VirtualMachineManagerReadOnly.Title" xml:space="preserve"><value>Read-only view</value></data>
+  <data name="VirtualMachineManagerReadOnly.Message" xml:space="preserve"><value>You can review virtual machines and resources here. Use Virtual Machine Manager in DSM when you need to make changes.</value></data>
+  <data name="VirtualMachineManagerRefreshError.Title" xml:space="preserve"><value>Some information wasn’t refreshed</value></data>
+  <data name="VirtualMachineManagerRefreshError.Message" xml:space="preserve"><value>The last available information is still shown. Check the connection and try again.</value></data>
+  <data name="VirtualMachineManagerMachinesHeading.Text" xml:space="preserve"><value>Virtual machines</value></data>
+  <data name="VirtualMachineManagerMachineList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Virtual machine list</value></data>
+  <data name="VirtualMachineManagerMachinesLoading.Text" xml:space="preserve"><value>Loading virtual machines…</value></data>
+  <data name="VirtualMachineManagerMachinesEmptyTitle.Text" xml:space="preserve"><value>No virtual machines</value></data>
+  <data name="VirtualMachineManagerMachinesEmptyMessage.Text" xml:space="preserve"><value>No virtual machines are available to this account.</value></data>
+  <data name="VirtualMachineManagerMachinesErrorTitle.Text" xml:space="preserve"><value>Virtual machines couldn’t be loaded</value></data>
+  <data name="VirtualMachineManagerMachinesErrorMessage.Text" xml:space="preserve"><value>Check the connection to this NAS, then select Refresh.</value></data>
+  <data name="VirtualMachineManagerUnavailableTitle.Text" xml:space="preserve"><value>Virtual machines aren’t available</value></data>
+  <data name="VirtualMachineManagerUnavailableMessage.Text" xml:space="preserve"><value>This NAS doesn’t currently provide virtual machine information to the app.</value></data>
+  <data name="VirtualMachineManagerViewResources.Content" xml:space="preserve"><value>View hosts, storage, networks, and images</value></data>
+  <data name="VirtualMachineManagerBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to virtual machines</value></data>
+  <data name="VirtualMachineManagerDetailsHeading.Text" xml:space="preserve"><value>Details and resources</value></data>
+  <data name="VirtualMachineManagerChooseMachineMessage.Text" xml:space="preserve"><value>Select a virtual machine to review its details. Resource information is available below.</value></data>
+  <data name="VirtualMachineManagerDetailName.Text" xml:space="preserve"><value>Name</value></data>
+  <data name="VirtualMachineManagerDetailStatus.Text" xml:space="preserve"><value>Status</value></data>
+  <data name="VirtualMachineManagerDetailCpu.Text" xml:space="preserve"><value>CPU</value></data>
+  <data name="VirtualMachineManagerDetailMemory.Text" xml:space="preserve"><value>Memory</value></data>
+  <data name="VirtualMachineManagerDetailStorage.Text" xml:space="preserve"><value>Storage</value></data>
+  <data name="VirtualMachineManagerDetailHost.Text" xml:space="preserve"><value>Host</value></data>
+  <data name="VirtualMachineManagerHostsTab.Header" xml:space="preserve"><value>Hosts</value></data>
+  <data name="VirtualMachineManagerStoragesTab.Header" xml:space="preserve"><value>Storage</value></data>
+  <data name="VirtualMachineManagerNetworksTab.Header" xml:space="preserve"><value>Networks</value></data>
+  <data name="VirtualMachineManagerImagesTab.Header" xml:space="preserve"><value>Images</value></data>
+  <data name="VirtualMachineManagerSectionLoading.Text" xml:space="preserve"><value>Loading information…</value></data>
+  <data name="VirtualMachineManagerSectionEmpty.Text" xml:space="preserve"><value>No information is available in this section.</value></data>
+  <data name="VirtualMachineManagerSectionError.Text" xml:space="preserve"><value>This information couldn’t be loaded. Select Refresh to try again.</value></data>
+  <data name="VirtualMachineManagerSectionUnavailable.Text" xml:space="preserve"><value>This information isn’t available from this NAS.</value></data>
+  <data name="VirtualMachineManagerStatusRunning" xml:space="preserve"><value>Running</value></data>
+  <data name="VirtualMachineManagerStatusStopped" xml:space="preserve"><value>Stopped</value></data>
+  <data name="VirtualMachineManagerStatusPaused" xml:space="preserve"><value>Paused</value></data>
+  <data name="VirtualMachineManagerStatusChanging" xml:space="preserve"><value>Changing</value></data>
+  <data name="VirtualMachineManagerStatusNeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="VirtualMachineManagerStatusUnknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="VirtualMachineManagerHealthHealthy" xml:space="preserve"><value>Healthy</value></data>
+  <data name="VirtualMachineManagerHealthWarning" xml:space="preserve"><value>Warning</value></data>
+  <data name="VirtualMachineManagerHealthError" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="VirtualMachineManagerHealthOffline" xml:space="preserve"><value>Offline</value></data>
+  <data name="VirtualMachineManagerHealthUnknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="VirtualMachineManagerUnnamedMachine" xml:space="preserve"><value>Unnamed virtual machine</value></data>
+  <data name="VirtualMachineManagerUnnamedResource" xml:space="preserve"><value>Unnamed resource</value></data>
+  <data name="VirtualMachineManagerValueUnavailable" xml:space="preserve"><value>Not available</value></data>
+  <data name="VirtualMachineManagerCpuValue" xml:space="preserve"><value>{0} virtual CPUs</value></data>
+  <data name="VirtualMachineManagerResourceUsageValue" xml:space="preserve"><value>{0} used of {1}</value></data>
+  <data name="VirtualMachineManagerByteValueB" xml:space="preserve"><value>{0} B</value></data>
+  <data name="VirtualMachineManagerByteValueKB" xml:space="preserve"><value>{0} KB</value></data>
+  <data name="VirtualMachineManagerByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
+  <data name="VirtualMachineManagerByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
+  <data name="VirtualMachineManagerByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
+  <data name="VirtualMachineManagerMachineAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="VirtualMachineManagerResourceAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="ContainerManagerTitle.Text" xml:space="preserve"><value>Containers</value></data>
+  <data name="ContainerManagerDescription.Text" xml:space="preserve"><value>Review container instances on this NAS.</value></data>
+  <data name="ContainerManagerRefresh.AutomationProperties.Name" xml:space="preserve"><value>Refresh containers</value></data>
+  <data name="ContainerManagerRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
+  <data name="ContainerManagerReadOnly.Title" xml:space="preserve"><value>Read-only view</value></data>
+  <data name="ContainerManagerReadOnly.Message" xml:space="preserve"><value>You can review container instances here. To make changes, open Container Manager in DSM.</value></data>
+  <data name="ContainerManagerRefreshError.Title" xml:space="preserve"><value>Container information wasn’t refreshed</value></data>
+  <data name="ContainerManagerRefreshError.Message" xml:space="preserve"><value>The last available information is still shown. Check the connection and try again.</value></data>
+  <data name="ContainerManagerFilter.Header" xml:space="preserve"><value>Status</value></data>
+  <data name="ContainerManagerFilterAll.Content" xml:space="preserve"><value>All</value></data>
+  <data name="ContainerManagerFilterRunning.Content" xml:space="preserve"><value>Running</value></data>
+  <data name="ContainerManagerFilterStopped.Content" xml:space="preserve"><value>Stopped</value></data>
+  <data name="ContainerManagerFilterAttention.Content" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="ContainerManagerList.AutomationProperties.Name" xml:space="preserve"><value>Container instance list</value></data>
+  <data name="ContainerManagerChooseItemTitle.Text" xml:space="preserve"><value>Select a container</value></data>
+  <data name="ContainerManagerChooseItemMessage.Text" xml:space="preserve"><value>Select a container to review its status and image.</value></data>
+  <data name="ContainerManagerBack.AutomationProperties.Name" xml:space="preserve"><value>Back to container list</value></data>
+  <data name="ContainerManagerDetailName.Text" xml:space="preserve"><value>Name</value></data>
+  <data name="ContainerManagerDetailStatus.Text" xml:space="preserve"><value>Status</value></data>
+  <data name="ContainerManagerDetailImage.Text" xml:space="preserve"><value>Image</value></data>
+  <data name="ContainerManagerLoading.Text" xml:space="preserve"><value>Loading containers…</value></data>
+  <data name="ContainerManagerEmptyTitle.Text" xml:space="preserve"><value>No containers</value></data>
+  <data name="ContainerManagerEmptyMessage.Text" xml:space="preserve"><value>No container instances are available to this account.</value></data>
+  <data name="ContainerManagerFilteredEmptyTitle.Text" xml:space="preserve"><value>No matching containers</value></data>
+  <data name="ContainerManagerFilteredEmptyMessage.Text" xml:space="preserve"><value>Choose another status or show all containers.</value></data>
+  <data name="ContainerManagerShowAll.Content" xml:space="preserve"><value>Show all containers</value></data>
+  <data name="ContainerManagerErrorTitle.Text" xml:space="preserve"><value>Containers couldn’t be loaded</value></data>
+  <data name="ContainerManagerErrorMessage.Text" xml:space="preserve"><value>Check the connection to this NAS, then select Refresh.</value></data>
+  <data name="ContainerManagerUnavailableTitle.Text" xml:space="preserve"><value>Containers aren’t available</value></data>
+  <data name="ContainerManagerUnavailableMessage.Text" xml:space="preserve"><value>Reconnect to this NAS and try again. You can also use Container Manager in DSM.</value></data>
+  <data name="ContainerManagerStatusRunning" xml:space="preserve"><value>Running</value></data>
+  <data name="ContainerManagerStatusStopped" xml:space="preserve"><value>Stopped</value></data>
+  <data name="ContainerManagerStatusNeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="ContainerManagerStatusUnknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="ContainerManagerValueUnavailable" xml:space="preserve"><value>Not available</value></data>
+  <data name="ContainerManagerItemAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="FilePreviewOpen.Label" xml:space="preserve"><value>Preview</value></data>
+  <data name="FilePreviewOpen.AutomationProperties.Name" xml:space="preserve"><value>Preview the selected file</value></data>
+  <data name="FilePreviewBack.AutomationProperties.Name" xml:space="preserve"><value>Back to files</value></data>
+  <data name="FilePreviewClose.AutomationProperties.Name" xml:space="preserve"><value>Close preview</value></data>
+  <data name="FilePreviewTitle.Text" xml:space="preserve"><value>Preview</value></data>
+  <data name="FilePreviewReadOnly.Title" xml:space="preserve"><value>View only</value></data>
+  <data name="FilePreviewReadOnly.Message" xml:space="preserve"><value>Previewing does not change the file on your NAS.</value></data>
+  <data name="FilePreviewPreparingTitle.Text" xml:space="preserve"><value>Preparing preview…</value></data>
+  <data name="FilePreviewCancel.Content" xml:space="preserve"><value>Cancel</value></data>
+  <data name="FilePreviewCancel.AutomationProperties.Name" xml:space="preserve"><value>Cancel preparing this preview</value></data>
+  <data name="FilePreviewSaveCopy.Content" xml:space="preserve"><value>Save a copy</value></data>
+  <data name="FilePreviewSaveCopy.AutomationProperties.Name" xml:space="preserve"><value>Save a copy of this file</value></data>
+  <data name="FilePreviewRetry.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="FilePreviewRetry.AutomationProperties.Name" xml:space="preserve"><value>Try previewing this file again</value></data>
+  <data name="FilePreviewFailedTitle.Text" xml:space="preserve"><value>This file couldn’t be previewed</value></data>
+  <data name="FilePreviewFailedMessage.Text" xml:space="preserve"><value>Check the connection, then try again. You can also save a copy.</value></data>
+  <data name="FilePreviewTextTruncated.Title" xml:space="preserve"><value>Showing the beginning of this file</value></data>
+  <data name="FilePreviewTextTruncated.Message" xml:space="preserve"><value>Save a copy to read the full file.</value></data>
+  <data name="FilePreviewPdfPrevious.Content" xml:space="preserve"><value>Previous</value></data>
+  <data name="FilePreviewPdfPrevious.AutomationProperties.Name" xml:space="preserve"><value>Show the previous PDF page</value></data>
+  <data name="FilePreviewPdfNext.Content" xml:space="preserve"><value>Next</value></data>
+  <data name="FilePreviewPdfNext.AutomationProperties.Name" xml:space="preserve"><value>Show the next PDF page</value></data>
+  <data name="FilePreviewProgress" xml:space="preserve"><value>{0:N0} of {1:N0} bytes</value></data>
+  <data name="FilePreviewProgressUnknownTotal" xml:space="preserve"><value>{0:N0} bytes ready</value></data>
+  <data name="FilePreviewUnsupportedTitle" xml:space="preserve"><value>Preview isn’t available for this file</value></data>
+  <data name="FilePreviewUnsupportedMessage" xml:space="preserve"><value>Save a copy to open it with another app.</value></data>
+  <data name="FilePreviewUnknownSizeTitle" xml:space="preserve"><value>The file size isn’t available</value></data>
+  <data name="FilePreviewUnknownSizeMessage" xml:space="preserve"><value>Refresh this folder, or save a copy to open the file.</value></data>
+  <data name="FilePreviewEmptyTitle" xml:space="preserve"><value>This file is empty</value></data>
+  <data name="FilePreviewEmptyMessage" xml:space="preserve"><value>There is no content to preview.</value></data>
+  <data name="FilePreviewTooLargeTitle" xml:space="preserve"><value>This file is too large to preview here</value></data>
+  <data name="FilePreviewTooLargeMessage" xml:space="preserve"><value>Save a copy to open the full file.</value></data>
+  <data name="FilePreviewCancelledTitle" xml:space="preserve"><value>Preview cancelled</value></data>
+  <data name="FilePreviewCancelledMessage" xml:space="preserve"><value>The temporary preview was removed. You can try again.</value></data>
+  <data name="FilePreviewTextAutomationName" xml:space="preserve"><value>Read-only text preview for {0}</value></data>
+  <data name="FilePreviewImageAutomationName" xml:space="preserve"><value>Image preview for {0}</value></data>
+  <data name="FilePreviewPdfAutomationName" xml:space="preserve"><value>PDF preview for {0}, page {1:N0} of {2:N0}</value></data>
+  <data name="FilePreviewPdfPage" xml:space="preserve"><value>Page {0:N0} of {1:N0}</value></data>
+  <data name="FilePreviewMediaAutomationName" xml:space="preserve"><value>Media preview for {0}</value></data>
+  <data name="Settings.PageTitle.Text" xml:space="preserve"><value>Settings</value></data>
+  <data name="Settings.PageDescription.Text" xml:space="preserve"><value>Choose how this app looks, which optional modules appear, and how local reusable data is managed.</value></data>
+  <data name="Settings.LanguageSectionTitle.Text" xml:space="preserve"><value>Language</value></data>
+  <data name="Settings.Language.Header" xml:space="preserve"><value>App language</value></data>
+  <data name="Settings.Language.AutomationProperties.Name" xml:space="preserve"><value>App language</value></data>
+  <data name="Settings.LanguageDescription.Text" xml:space="preserve"><value>Follow Windows, or use English or Simplified Chinese on this device.</value></data>
+  <data name="Settings.AppearanceSectionTitle.Text" xml:space="preserve"><value>Appearance</value></data>
+  <data name="Settings.Theme.Header" xml:space="preserve"><value>Theme</value></data>
+  <data name="Settings.Theme.AutomationProperties.Name" xml:space="preserve"><value>Theme</value></data>
+  <data name="Settings.ModulesSectionTitle.Text" xml:space="preserve"><value>Optional modules</value></data>
+  <data name="Settings.ModulesDescription.Text" xml:space="preserve"><value>Hidden modules stay available on the NAS and can be shown again at any time.</value></data>
+  <data name="Settings.DownloadsModule.Header" xml:space="preserve"><value>Download Station</value></data>
+  <data name="Settings.DownloadsModule.AutomationProperties.Name" xml:space="preserve"><value>Download Station</value></data>
+  <data name="Settings.DownloadsModule.OnContent" xml:space="preserve"><value>Shown</value></data>
+  <data name="Settings.DownloadsModule.OffContent" xml:space="preserve"><value>Hidden</value></data>
+  <data name="Settings.ContainersModule.Header" xml:space="preserve"><value>Containers</value></data>
+  <data name="Settings.ContainersModule.AutomationProperties.Name" xml:space="preserve"><value>Containers</value></data>
+  <data name="Settings.ContainersModule.OnContent" xml:space="preserve"><value>Shown</value></data>
+  <data name="Settings.ContainersModule.OffContent" xml:space="preserve"><value>Hidden</value></data>
+  <data name="Settings.VirtualMachinesModule.Header" xml:space="preserve"><value>Virtual machines</value></data>
+  <data name="Settings.VirtualMachinesModule.AutomationProperties.Name" xml:space="preserve"><value>Virtual machines</value></data>
+  <data name="Settings.VirtualMachinesModule.OnContent" xml:space="preserve"><value>Shown</value></data>
+  <data name="Settings.VirtualMachinesModule.OffContent" xml:space="preserve"><value>Hidden</value></data>
+  <data name="Settings.NasHealthModule.Header" xml:space="preserve"><value>NAS health</value></data>
+  <data name="Settings.NasHealthModule.AutomationProperties.Name" xml:space="preserve"><value>NAS health</value></data>
+  <data name="Settings.NasHealthModule.OnContent" xml:space="preserve"><value>Shown</value></data>
+  <data name="Settings.NasHealthModule.OffContent" xml:space="preserve"><value>Hidden</value></data>
+  <data name="Settings.CacheSectionTitle.Text" xml:space="preserve"><value>Reusable local data</value></data>
+  <data name="Settings.CacheDescription.Text" xml:space="preserve"><value>Clearing removes registered photo thumbnail memory only. It does not remove NAS files, saved copies, profiles, credentials, transfers, previews in use, or Cloud Drive data.</value></data>
+  <data name="Settings.ClearCache.Content" xml:space="preserve"><value>Clear reusable data</value></data>
+  <data name="Settings.ClearCache.AutomationProperties.Name" xml:space="preserve"><value>Clear reusable data</value></data>
+  <data name="Settings.Privacy.Title" xml:space="preserve"><value>Privacy</value></data>
+  <data name="Settings.Privacy.Message" xml:space="preserve"><value>Settings stay on this device. This page does not export passwords, connection addresses, file paths, messages, or raw logs.</value></data>
+  <data name="Settings.ThemeSystem" xml:space="preserve"><value>Use Windows setting</value></data>
+  <data name="Settings.ThemeLight" xml:space="preserve"><value>Light</value></data>
+  <data name="Settings.ThemeDark" xml:space="preserve"><value>Dark</value></data>
+  <data name="Settings.CacheSummary" xml:space="preserve"><value>{0} cached thumbnails · {1}</value></data>
+  <data name="Settings.Bytes" xml:space="preserve"><value>{0} B</value></data>
+  <data name="Settings.Kilobytes" xml:space="preserve"><value>{0} KB</value></data>
+  <data name="Settings.Megabytes" xml:space="preserve"><value>{0} MB</value></data>
+  <data name="Settings.CacheClearedTitle" xml:space="preserve"><value>Reusable data cleared</value></data>
+  <data name="Settings.CacheClearedMessage" xml:space="preserve"><value>The registered photo thumbnail cache is now empty.</value></data>
+  <data name="Settings.CachePartialTitle" xml:space="preserve"><value>Some reusable data couldn’t be cleared</value></data>
+  <data name="Settings.CachePartialMessage" xml:space="preserve"><value>Close the Photos page, then try again.</value></data>
+  <data name="Settings.SaveFailedTitle" xml:space="preserve"><value>Settings weren’t saved</value></data>
+  <data name="Settings.SaveFailedMessage" xml:space="preserve"><value>Check that this app can save data on this device, then try again.</value></data>
+  <data name="FileShareLink.Label" xml:space="preserve"><value>Create share link</value></data>
+  <data name="FileShareLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Create a share link for the selected item</value></data>
+  <data name="FileShareLinkTitle" xml:space="preserve"><value>Create share link</value></data>
+  <data name="FileShareLinkTarget" xml:space="preserve"><value>Selected item: {0}</value></data>
+  <data name="FileShareLinkAccessNote" xml:space="preserve"><value>Anyone with this link can open the item until it expires. Add a password if you need extra protection.</value></data>
+  <data name="FileShareLinkPasswordLabel" xml:space="preserve"><value>Password (optional)</value></data>
+  <data name="FileShareLinkPasswordHelp" xml:space="preserve"><value>Use no more than 16 characters. The password is not copied or included when you share the link.</value></data>
+  <data name="FileShareLinkPasswordError" xml:space="preserve"><value>The password is longer than 16 characters. Shorten it before creating the link.</value></data>
+  <data name="FileShareLinkExpirationLabel" xml:space="preserve"><value>Link expiration</value></data>
+  <data name="FileShareLinkExpirationNever" xml:space="preserve"><value>Never</value></data>
+  <data name="FileShareLinkExpiration7Days" xml:space="preserve"><value>In 7 days</value></data>
+  <data name="FileShareLinkExpiration30Days" xml:space="preserve"><value>In 30 days</value></data>
+  <data name="FileShareLinkExpiration90Days" xml:space="preserve"><value>In 90 days</value></data>
+  <data name="FileShareLinkCreateAction" xml:space="preserve"><value>Create link</value></data>
+  <data name="FileShareLinkCreatingMessage" xml:space="preserve"><value>Creating the link and checking that it is ready to use…</value></data>
+  <data name="FileShareLinkCancellingMessage" xml:space="preserve"><value>Stopping if the request has not been sent. If it has, LanStash will finish checking the result.</value></data>
+  <data name="FileShareLinkSuccessTitle" xml:space="preserve"><value>Share link ready</value></data>
+  <data name="FileShareLinkSuccessMessage" xml:space="preserve"><value>The link was created and verified.</value></data>
+  <data name="FileShareLinkConfirmedUrlAutomationName" xml:space="preserve"><value>Verified share link</value></data>
+  <data name="FileShareLinkProtectedNote" xml:space="preserve"><value>This link is password protected. Send the password separately.</value></data>
+  <data name="FileShareLinkExpiresOn" xml:space="preserve"><value>Expires on {0}</value></data>
+  <data name="FileShareLinkCopyAction" xml:space="preserve"><value>Copy link</value></data>
+  <data name="FileShareLinkCopiedMessage" xml:space="preserve"><value>Link copied</value></data>
+  <data name="FileShareLinkCopyFailedMessage" xml:space="preserve"><value>The link could not be copied. Try again.</value></data>
+  <data name="FileShareLinkSystemShareAction" xml:space="preserve"><value>Share with another app</value></data>
+  <data name="FileShareLinkSystemShareUnavailable" xml:space="preserve"><value>Sharing with another app is not available in this Windows installation. You can still copy the link.</value></data>
+  <data name="FileShareLinkReviewTitle" xml:space="preserve"><value>Check the link in DSM</value></data>
+  <data name="FileShareLinkReviewMessage" xml:space="preserve"><value>The request may have reached your NAS, but LanStash could not verify the new link. Check sharing in DSM before trying again.</value></data>
+  <data name="FileShareLinkChangedTitle" xml:space="preserve"><value>The selected item changed</value></data>
+  <data name="FileShareLinkChangedMessage" xml:space="preserve"><value>LanStash stopped before creating a link because the selected item no longer matches. Refresh Files, select it again, and review its details.</value></data>
+  <data name="FileShareLinkPermissionTitle" xml:space="preserve"><value>You cannot create this link</value></data>
+  <data name="FileShareLinkPermissionMessage" xml:space="preserve"><value>Your NAS account does not have permission to share this item. Ask an administrator for access or choose another item.</value></data>
+  <data name="FileShareLinkUnsupportedTitle" xml:space="preserve"><value>Share links are unavailable</value></data>
+  <data name="FileShareLinkUnsupportedMessage" xml:space="preserve"><value>This NAS does not offer the compatible sharing feature needed by LanStash. You can continue using the rest of Files.</value></data>
+  <data name="FileShareLinkFailureTitle" xml:space="preserve"><value>The link was not created</value></data>
+  <data name="FileShareLinkFailureMessage" xml:space="preserve"><value>No verified link was created. Check your connection and try again.</value></data>
+  <data name="FileShareLinkCancelledTitle" xml:space="preserve"><value>Link creation stopped</value></data>
+  <data name="FileShareLinkCancelledMessage" xml:space="preserve"><value>The request was stopped before it was sent. No link was created.</value></data>
+  <data name="FileShareLinkTryAgainAction" xml:space="preserve"><value>Try again</value></data>
+  <data name="PhotoModeFolders.Content" xml:space="preserve"><value>Folders</value></data>
+  <data name="PhotoModeTimeline.Content" xml:space="preserve"><value>Timeline</value></data>
+  <data name="PhotoTimelineSearch.PlaceholderText" xml:space="preserve"><value>Search file names</value></data>
+  <data name="PhotoTimelineSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Search timeline by file name</value></data>
+  <data name="PhotoTimelineFilter.Header" xml:space="preserve"><value>Media</value></data>
+  <data name="PhotoTimelineFilterAll.Content" xml:space="preserve"><value>All</value></data>
+  <data name="PhotoTimelineFilterImages.Content" xml:space="preserve"><value>Images</value></data>
+  <data name="PhotoTimelineFilterVideos.Content" xml:space="preserve"><value>Videos</value></data>
+  <data name="PhotoTimelineRefresh.Content" xml:space="preserve"><value>Scan again</value></data>
+  <data name="PhotoTimelineSave.Content" xml:space="preserve"><value>Save selected</value></data>
+  <data name="PhotoTimelineGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo timeline</value></data>
+  <data name="PhotoTimelineTruncated.Title" xml:space="preserve"><value>Showing a limited timeline</value></data>
+  <data name="PhotoTimelineTruncated.Message" xml:space="preserve"><value>The scan stopped at the safe limit. Refine this photo space or scan again later.</value></data>
+  <data name="PhotoTimelinePartial.Title" xml:space="preserve"><value>Some folders weren’t scanned</value></data>
+  <data name="PhotoTimelinePartialMessage" xml:space="preserve"><value>{0} folders couldn’t be read. The items shown are still available.</value></data>
+  <data name="PhotoTimelineRefreshFailed.Title" xml:space="preserve"><value>Couldn’t update the timeline</value></data>
+  <data name="PhotoTimelineRefreshFailed.Message" xml:space="preserve"><value>The previous scan is still shown. Check your connection and permissions, then try again.</value></data>
+  <data name="PhotoTimelineIdleTitle.Text" xml:space="preserve"><value>Photo timeline</value></data>
+  <data name="PhotoTimelineIdleMessage.Text" xml:space="preserve"><value>Scan this photo space to group photos and videos by month. Nothing is uploaded or changed.</value></data>
+  <data name="PhotoTimelineScan.Content" xml:space="preserve"><value>Scan photos</value></data>
+  <data name="PhotoTimelineLoading.Text" xml:space="preserve"><value>Scanning photos…</value></data>
+  <data name="PhotoTimelineCancel.Content" xml:space="preserve"><value>Cancel scan</value></data>
+  <data name="PhotoTimelineEmptyTitle.Text" xml:space="preserve"><value>No photos or videos found</value></data>
+  <data name="PhotoTimelineEmptyMessage.Text" xml:space="preserve"><value>Try scanning again after adding media to this photo space.</value></data>
+  <data name="PhotoTimelineFilteredEmptyTitle.Text" xml:space="preserve"><value>No matching media</value></data>
+  <data name="PhotoTimelineFilteredEmptyMessage.Text" xml:space="preserve"><value>Try another file name or clear the current filters.</value></data>
+  <data name="PhotoTimelineClearFilters.Content" xml:space="preserve"><value>Clear search and filters</value></data>
+  <data name="PhotoTimelineErrorTitle.Text" xml:space="preserve"><value>Couldn’t scan photos</value></data>
+  <data name="PhotoTimelineErrorMessage.Text" xml:space="preserve"><value>Check your connection and permissions, then try again.</value></data>
+  <data name="PhotoTimelineRetry.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="PhotoTimelineUnknownMonth" xml:space="preserve"><value>Date unknown</value></data>
+  <data name="PhotoTimelineImageAutomationName" xml:space="preserve"><value>{0}, image</value></data>
+  <data name="PhotoTimelineVideoAutomationName" xml:space="preserve"><value>{0}, video</value></data>
+  <data name="FileLocationsOpen.Content" xml:space="preserve"><value>Locations</value></data>
+  <data name="FileLocationsOpen.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show file locations</value></data>
+  <data name="FileLocationsTitle.Text" xml:space="preserve"><value>Locations</value></data>
+  <data name="FileLocationsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh locations</value></data>
+  <data name="FileLocationsOpenError.Title" xml:space="preserve"><value>Couldn’t open this location</value></data>
+  <data name="FileLocationsOpenError.Message" xml:space="preserve"><value>Check your connection and access, then try again.</value></data>
+  <data name="FileLocationsSharesHeading.Text" xml:space="preserve"><value>Browse</value></data>
+  <data name="FileLocationsShares.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Shared folders</value></data>
+  <data name="FileLocationsSharesLabel.Text" xml:space="preserve"><value>Shared folders</value></data>
+  <data name="FileLocationsFavoritesHeading.Text" xml:space="preserve"><value>Favorites</value></data>
+  <data name="FileLocationsFavoritesLoading.Text" xml:space="preserve"><value>Loading favorites…</value></data>
+  <data name="FileLocationsFavoritesEmpty.Text" xml:space="preserve"><value>No favorite locations yet.</value></data>
+  <data name="FileLocationsFavoritesError.Title" xml:space="preserve"><value>Couldn’t update favorites</value></data>
+  <data name="FileLocationsFavoritesError.Message" xml:space="preserve"><value>The previous list is still shown when available. Check your connection and try again.</value></data>
+  <data name="FileLocationsFavoritesTruncated.Title" xml:space="preserve"><value>Showing a limited list</value></data>
+  <data name="FileLocationsFavoritesTruncated.Message" xml:space="preserve"><value>The list reached its safe limit, so some favorite locations may not be shown.</value></data>
+  <data name="FileLocationsRecentHeading.Text" xml:space="preserve"><value>Recent</value></data>
+  <data name="FileLocationsRecentEmpty.Text" xml:space="preserve"><value>Folders you open will appear here.</value></data>
+  <data name="FileLocationsRecycleHeading.Text" xml:space="preserve"><value>Recycle bins</value></data>
+  <data name="FileLocationsRecycleLoading.Text" xml:space="preserve"><value>Finding recycle bins…</value></data>
+  <data name="FileLocationsRecycleEmpty.Text" xml:space="preserve"><value>No recycle bins are available.</value></data>
+  <data name="FileLocationsRecycleError.Title" xml:space="preserve"><value>Couldn’t update recycle bins</value></data>
+  <data name="FileLocationsRecycleError.Message" xml:space="preserve"><value>The previous list is still shown when available. Check your connection and access, then try again.</value></data>
+  <data name="FileLocationsRecyclePartial.Title" xml:space="preserve"><value>Some recycle bins aren’t shown</value></data>
+  <data name="FileLocationsRecyclePartial.Message" xml:space="preserve"><value>You don’t have access to some shared folders. Available recycle bins can still be opened.</value></data>
+  <data name="FileLocationsRecycleTruncated.Title" xml:space="preserve"><value>Showing a limited list</value></data>
+  <data name="FileLocationsRecycleTruncated.Message" xml:space="preserve"><value>The search reached its safe limit, so some recycle bins may not be shown.</value></data>
+  <data name="FileLocationsRemoteHeading.Text" xml:space="preserve"><value>Remote locations</value></data>
+  <data name="FileLocationsRemoteLoading.Text" xml:space="preserve"><value>Loading remote locations…</value></data>
+  <data name="FileLocationsRemoteEmpty.Text" xml:space="preserve"><value>No remote locations are available.</value></data>
+  <data name="FileLocationsRemoteError.Title" xml:space="preserve"><value>Couldn’t update remote locations</value></data>
+  <data name="FileLocationsRemoteError.Message" xml:space="preserve"><value>The previous list is still shown when available. Check your connection and try again.</value></data>
+  <data name="FileLocationsRemotePartial.Title" xml:space="preserve"><value>Some remote locations are unavailable</value></data>
+  <data name="FileLocationsRemotePartial.Message" xml:space="preserve"><value>Available remote folders can still be opened without changing their connection settings.</value></data>
+  <data name="FileLocationsRemoteTruncated.Title" xml:space="preserve"><value>Showing a limited list</value></data>
+  <data name="FileLocationsRemoteTruncated.Message" xml:space="preserve"><value>The list reached its safe limit, so some remote locations may not be shown.</value></data>
 </root>

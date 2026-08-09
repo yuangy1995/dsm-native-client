@@ -1,0 +1,514 @@
+import DsmCore
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class MobileChatModel {
+    static let messagePageSize = 50
+
+    private(set) var activeProfileID: UUID?
+    private(set) var profiles: [UUID: MobileChatProfileState] = [:]
+
+    @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
+    @ObservationIgnored private var conversationTask: Task<Void, Never>?
+    @ObservationIgnored private var messageTask: Task<Void, Never>?
+    @ObservationIgnored private var conversationGeneration = 0
+    @ObservationIgnored private var messageGeneration = 0
+
+    var state: MobileChatProfileState {
+        guard let activeProfileID else { return MobileChatProfileState() }
+        return profiles[activeProfileID] ?? MobileChatProfileState()
+    }
+
+    func activate(profileID: UUID?, repository: (any ChatRepository)?) async {
+        cancelAllWork()
+        guard let profileID else {
+            activeProfileID = nil
+            return
+        }
+        guard let repository else {
+            repositories[profileID] = nil
+            activeProfileID = nil
+            return
+        }
+
+        activeProfileID = profileID
+        repositories[profileID] = MobileReadOnlyChatRepository(base: repository)
+        if profiles[profileID] == nil {
+            profiles[profileID] = MobileChatProfileState()
+            await reloadConversations()
+        }
+    }
+
+    func deactivate() {
+        let profileID = activeProfileID
+        cancelAllWork()
+        if let profileID {
+            repositories[profileID] = nil
+        }
+        activeProfileID = nil
+    }
+
+    /// 用户明确退出或删除配置档时，清除该配置档关联的会话与消息明文缓存。
+    func purge(profileID: UUID) {
+        if activeProfileID == profileID {
+            cancelAllWork()
+            activeProfileID = nil
+        }
+        repositories[profileID] = nil
+        profiles[profileID] = nil
+    }
+
+    func setConversationFilter(_ value: String) {
+        updateActive { profile in
+            profile.conversationFilter = value
+            Self.applyConversationFilter(to: &profile)
+        }
+    }
+
+    func reloadConversations() async {
+        guard let profileID = activeProfileID,
+              let repository = repositories[profileID] else { return }
+        let preservesContent = !state.conversations.isEmpty
+        let requestGeneration = beginConversationRequest { profile in
+            profile.isRefreshingConversations = preservesContent
+            profile.conversationErrorCategory = nil
+            if !preservesContent {
+                profile.conversationPageState = .loading
+            }
+        }
+
+        let task = Task { [weak self] in
+            let availability = await repository.availability()
+            guard !Task.isCancelled,
+                  self?.isCurrentConversation(
+                    profileID: profileID,
+                    generation: requestGeneration
+                  ) == true else {
+                return
+            }
+            self?.updateActive { $0.availability = availability }
+            guard availability.status == .available else {
+                self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
+                return
+            }
+
+            do {
+                let conversations = try await repository.listConversations()
+                try Task.checkCancellation()
+                self?.finishConversations(
+                    conversations,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch is CancellationError {
+                self?.finishConversationCancellation(
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch {
+                self?.finishConversationFailure(
+                    error,
+                    preservesContent: preservesContent,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            }
+        }
+        conversationTask = task
+        await task.value
+    }
+
+    func selectConversation(_ conversation: ChatConversation) async {
+        guard let profileID = activeProfileID,
+              let repository = repositories[profileID],
+              let canonical = state.conversations.first(where: { $0.id == conversation.id }) else {
+            return
+        }
+        cancelMessageWork()
+        updateActive { profile in
+            profile.selectedConversationID = canonical.id
+            profile.messageErrorCategory = nil
+            profile.loadMoreMessagesFailed = false
+            if canonical.isEncrypted {
+                // 加密消息在当前只读切片中不进入内存缓存，避免正文意外泄漏。
+                profile.messagesByConversation[canonical.id] = nil
+                profile.messagePageState = .empty
+            } else if let cached = profile.messagesByConversation[canonical.id] {
+                profile.messagePageState = cached.messages.isEmpty ? .empty : .content
+            } else {
+                profile.messagePageState = .loading
+            }
+        }
+        guard !canonical.isEncrypted,
+              state.messagesByConversation[canonical.id] == nil else { return }
+        await replaceMessages(
+            conversationID: canonical.id,
+            profileID: profileID,
+            repository: repository,
+            preservesContent: false
+        )
+    }
+
+    func refreshMessages() async {
+        guard let profileID = activeProfileID,
+              let repository = repositories[profileID],
+              let conversation = state.selectedConversation,
+              !conversation.isEncrypted else { return }
+        await replaceMessages(
+            conversationID: conversation.id,
+            profileID: profileID,
+            repository: repository,
+            preservesContent: !state.selectedMessages.messages.isEmpty
+        )
+    }
+
+    func loadMoreMessages() async {
+        guard let profileID = activeProfileID,
+              let repository = repositories[profileID],
+              let conversation = state.selectedConversation,
+              !conversation.isEncrypted,
+              state.selectedMessages.hasMoreBefore,
+              !state.isRefreshingMessages,
+              !state.isLoadingMoreMessages else { return }
+
+        let conversationID = conversation.id
+        let cursor = state.selectedMessages.previousCursor
+        let requestGeneration = beginMessageRequest { profile in
+            profile.isLoadingMoreMessages = true
+            profile.loadMoreMessagesFailed = false
+            profile.messageErrorCategory = nil
+        }
+        let task = Task { [weak self] in
+            do {
+                let page = try await repository.listMessages(
+                    conversationID: conversationID,
+                    before: cursor,
+                    limit: Self.messagePageSize
+                )
+                try Task.checkCancellation()
+                self?.finishMessages(
+                    page,
+                    conversationID: conversationID,
+                    appending: true,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch is CancellationError {
+                self?.finishMessageCancellation(
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch {
+                self?.finishLoadMoreFailure(
+                    error,
+                    conversationID: conversationID,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            }
+        }
+        messageTask = task
+        await task.value
+    }
+
+    func cancelAllWork() {
+        conversationTask?.cancel()
+        conversationTask = nil
+        conversationGeneration &+= 1
+        messageTask?.cancel()
+        messageTask = nil
+        messageGeneration &+= 1
+        updateActive {
+            $0.isRefreshingConversations = false
+            $0.isRefreshingMessages = false
+            $0.isLoadingMoreMessages = false
+        }
+    }
+
+    private func replaceMessages(
+        conversationID: String,
+        profileID: UUID,
+        repository: any ChatRepository,
+        preservesContent: Bool
+    ) async {
+        let requestGeneration = beginMessageRequest { profile in
+            profile.isRefreshingMessages = preservesContent
+            profile.isLoadingMoreMessages = false
+            profile.loadMoreMessagesFailed = false
+            profile.messageErrorCategory = nil
+            if !preservesContent {
+                profile.messagePageState = .loading
+            }
+        }
+        let task = Task { [weak self] in
+            do {
+                let page = try await repository.listMessages(
+                    conversationID: conversationID,
+                    before: nil,
+                    limit: Self.messagePageSize
+                )
+                try Task.checkCancellation()
+                self?.finishMessages(
+                    page,
+                    conversationID: conversationID,
+                    appending: false,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch is CancellationError {
+                self?.finishMessageCancellation(
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch {
+                self?.finishMessageFailure(
+                    error,
+                    conversationID: conversationID,
+                    preservesContent: preservesContent,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            }
+        }
+        messageTask = task
+        await task.value
+    }
+
+    private func beginConversationRequest(
+        _ update: (inout MobileChatProfileState) -> Void
+    ) -> Int {
+        conversationTask?.cancel()
+        conversationTask = nil
+        conversationGeneration &+= 1
+        updateActive(update)
+        return conversationGeneration
+    }
+
+    private func beginMessageRequest(
+        _ update: (inout MobileChatProfileState) -> Void
+    ) -> Int {
+        messageTask?.cancel()
+        messageTask = nil
+        messageGeneration &+= 1
+        updateActive(update)
+        return messageGeneration
+    }
+
+    private func cancelMessageWork() {
+        messageTask?.cancel()
+        messageTask = nil
+        messageGeneration &+= 1
+        updateActive {
+            $0.isRefreshingMessages = false
+            $0.isLoadingMoreMessages = false
+        }
+    }
+
+    private func finishConversations(
+        _ conversations: [ChatConversation],
+        profileID: UUID,
+        generation: Int
+    ) {
+        guard isCurrentConversation(profileID: profileID, generation: generation) else { return }
+        var invalidatesMessageLane = false
+        updateActive { profile in
+            profile.conversations = Self.normalizedConversations(conversations)
+            let encryptedIDs = Set(
+                profile.conversations.lazy.filter(\.isEncrypted).map(\.id)
+            )
+            for conversationID in encryptedIDs {
+                profile.messagesByConversation[conversationID] = nil
+            }
+            if let selectedID = profile.selectedConversationID,
+               !profile.conversations.contains(where: { $0.id == selectedID }) {
+                profile.selectedConversationID = nil
+                profile.messagePageState = .empty
+                invalidatesMessageLane = true
+            } else if profile.selectedConversation?.isEncrypted == true {
+                profile.messagePageState = .empty
+                invalidatesMessageLane = true
+            }
+            Self.applyConversationFilter(to: &profile)
+            profile.isRefreshingConversations = false
+            profile.conversationErrorCategory = nil
+        }
+        if invalidatesMessageLane { cancelMessageWork() }
+        conversationTask = nil
+    }
+
+    private func finishUnavailable(profileID: UUID, generation: Int) {
+        guard isCurrentConversation(profileID: profileID, generation: generation) else { return }
+        updateActive { profile in
+            profile.conversations = []
+            profile.visibleConversations = []
+            profile.selectedConversationID = nil
+            profile.messagesByConversation = [:]
+            profile.conversationPageState = .empty
+            profile.messagePageState = .empty
+            profile.isRefreshingConversations = false
+            profile.conversationErrorCategory = nil
+        }
+        cancelMessageWork()
+        conversationTask = nil
+    }
+
+    private func finishMessages(
+        _ page: ChatMessagePage,
+        conversationID: String,
+        appending: Bool,
+        profileID: UUID,
+        generation: Int
+    ) {
+        guard isCurrentMessage(profileID: profileID, generation: generation),
+              state.selectedConversationID == conversationID,
+              state.selectedConversation?.isEncrypted == false else { return }
+        updateActive { profile in
+            let existing = appending
+                ? profile.messagesByConversation[conversationID]?.messages ?? []
+                : []
+            let messages = Self.normalizedMessages(
+                existing + page.messages.filter { $0.conversationID == conversationID }
+            )
+            profile.messagesByConversation[conversationID] = MobileChatMessageCache(
+                messages: messages,
+                previousCursor: page.previousCursor,
+                hasMoreBefore: page.hasMoreBefore
+            )
+            profile.messagePageState = messages.isEmpty ? .empty : .content
+            profile.isRefreshingMessages = false
+            profile.isLoadingMoreMessages = false
+            profile.loadMoreMessagesFailed = false
+            profile.messageErrorCategory = nil
+        }
+        messageTask = nil
+    }
+
+    private func finishConversationFailure(
+        _ error: Error,
+        preservesContent: Bool,
+        profileID: UUID,
+        generation: Int
+    ) {
+        guard isCurrentConversation(profileID: profileID, generation: generation) else { return }
+        updateActive {
+            $0.isRefreshingConversations = false
+            $0.conversationErrorCategory = Self.category(for: error)
+            if !preservesContent { $0.conversationPageState = .error }
+        }
+        conversationTask = nil
+    }
+
+    private func finishMessageFailure(
+        _ error: Error,
+        conversationID: String,
+        preservesContent: Bool,
+        profileID: UUID,
+        generation: Int
+    ) {
+        guard isCurrentMessage(profileID: profileID, generation: generation),
+              state.selectedConversationID == conversationID else { return }
+        updateActive {
+            $0.isRefreshingMessages = false
+            $0.messageErrorCategory = Self.category(for: error)
+            if !preservesContent { $0.messagePageState = .error }
+        }
+        messageTask = nil
+    }
+
+    private func finishLoadMoreFailure(
+        _ error: Error,
+        conversationID: String,
+        profileID: UUID,
+        generation: Int
+    ) {
+        guard isCurrentMessage(profileID: profileID, generation: generation),
+              state.selectedConversationID == conversationID else { return }
+        updateActive {
+            $0.isLoadingMoreMessages = false
+            $0.loadMoreMessagesFailed = true
+            $0.messageErrorCategory = Self.category(for: error)
+        }
+        messageTask = nil
+    }
+
+    private func finishConversationCancellation(profileID: UUID, generation: Int) {
+        guard isCurrentConversation(profileID: profileID, generation: generation) else { return }
+        updateActive {
+            $0.isRefreshingConversations = false
+        }
+        conversationTask = nil
+    }
+
+    private func finishMessageCancellation(profileID: UUID, generation: Int) {
+        guard isCurrentMessage(profileID: profileID, generation: generation) else { return }
+        updateActive {
+            $0.isRefreshingMessages = false
+            $0.isLoadingMoreMessages = false
+        }
+        messageTask = nil
+    }
+
+    private func updateActive(_ update: (inout MobileChatProfileState) -> Void) {
+        guard let activeProfileID else { return }
+        var profile = profiles[activeProfileID] ?? MobileChatProfileState()
+        update(&profile)
+        profiles[activeProfileID] = profile
+    }
+
+    private func isCurrentConversation(profileID: UUID, generation: Int) -> Bool {
+        activeProfileID == profileID && conversationGeneration == generation
+    }
+
+    private func isCurrentMessage(profileID: UUID, generation: Int) -> Bool {
+        activeProfileID == profileID && messageGeneration == generation
+    }
+
+    private static func applyConversationFilter(to profile: inout MobileChatProfileState) {
+        let query = profile.conversationFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
+            profile.visibleConversations = profile.conversations
+        } else {
+            profile.visibleConversations = profile.conversations.filter {
+                $0.title.localizedStandardContains(query)
+            }
+        }
+        if profile.visibleConversations.isEmpty {
+            profile.conversationPageState = query.isEmpty ? .empty : .filteredEmpty
+        } else {
+            profile.conversationPageState = .content
+        }
+    }
+
+    private static func normalizedConversations(
+        _ conversations: [ChatConversation]
+    ) -> [ChatConversation] {
+        var valuesByID: [String: ChatConversation] = [:]
+        for conversation in conversations { valuesByID[conversation.id] = conversation }
+        return valuesByID.values.sorted { lhs, rhs in
+            switch (lhs.lastActivityAt, rhs.lastActivityAt) {
+            case let (left?, right?) where left != right:
+                return left > right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return lhs.id < rhs.id
+            }
+        }
+    }
+
+    private static func normalizedMessages(_ messages: [ChatMessage]) -> [ChatMessage] {
+        var valuesByID: [String: ChatMessage] = [:]
+        for message in messages { valuesByID[message.id] = message }
+        return valuesByID.values.sorted {
+            $0.sentAt == $1.sentAt ? $0.id < $1.id : $0.sentAt < $1.sentAt
+        }
+    }
+
+    private static func category(for error: Error) -> AppErrorCategory {
+        (error as? AppError)?.category ?? .unknown
+    }
+}

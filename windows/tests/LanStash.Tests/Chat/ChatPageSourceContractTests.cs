@@ -1,0 +1,122 @@
+namespace LanStash.Tests;
+
+public sealed class ChatPageSourceContractTests
+{
+    [Fact]
+    public void PageHasDedicatedReadOnlyFiveStateAdaptiveLayout()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+
+        Assert.Contains("x:Name=\"LoadingState\"", xaml);
+        Assert.Contains("x:Name=\"EmptyState\"", xaml);
+        Assert.Contains("x:Name=\"FilteredEmptyState\"", xaml);
+        Assert.Contains("x:Name=\"ErrorState\"", xaml);
+        Assert.Contains("x:Name=\"ContentState\"", xaml);
+        Assert.Contains("x:Name=\"UnavailableState\"", xaml);
+        Assert.Contains("x:Name=\"ValidationState\"", xaml);
+        Assert.Contains("x:Name=\"ConversationPane\"", xaml);
+        Assert.Contains("x:Name=\"MessagePane\"", xaml);
+        Assert.Contains("CompactWidth = 720", source);
+        Assert.Contains("ConversationPane.Visibility", source);
+        Assert.Contains("MessagePane.Visibility", source);
+        Assert.Contains("ChatBrowserReadOnly", xaml);
+        Assert.Contains("AutomationProperties.Name=\"{x:Bind AutomationName}\"", xaml);
+        Assert.Contains("!_viewModel.IsUnavailable && !_viewModel.RequiresValidation", source);
+        Assert.Contains("if (_viewModel.IsUnavailable || _viewModel.RequiresValidation)", source);
+    }
+
+    [Fact]
+    public void PageSupportsKeyboardTouchNarratorAndSystemThemes()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+
+        Assert.True(Count(xaml, "MinHeight=\"44\"") >= 7);
+        Assert.Contains("Key=\"Left\"", xaml);
+        Assert.Contains("Key=\"F\"", xaml);
+        Assert.Contains("Key=\"F5\"", xaml);
+        Assert.Contains("Modifiers=\"Menu\"", xaml);
+        Assert.Contains("Modifiers=\"Control\"", xaml);
+        Assert.True(Count(xaml, "AutomationProperties.LiveSetting=\"Polite\"") >= 4);
+        Assert.Contains("ThemeResource CardBackgroundFillColorDefaultBrush", xaml);
+        Assert.DoesNotContain("Background=\"#", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Foreground=\"#", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("BorderBrush=\"#", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Storyboard", xaml);
+    }
+
+    [Fact]
+    public void PageHasNoWriteRealtimeOrAttachmentActions()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        var combined = xaml + source;
+
+        Assert.DoesNotContain("SendMessage", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Send_Click", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Composer", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CreateConversation", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Upload", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Realtime", combined, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ShellRoutesChatWithoutWorkspaceFallbackAndDisposesPage()
+    {
+        var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+        var branch = Slice(shell, "if (module == AppModule.Chat)", "ContentFrame.Content = _workspace;");
+        var workspace = Read("windows/src/LanStash.App/ViewModels/WorkspaceViewModel.cs");
+
+        Assert.Contains("_app.Repository is not IChatRepository chatRepository", branch);
+        Assert.Contains("_chat = new ChatPage(chatRepository)", branch);
+        Assert.Contains("ContentFrame.Content = _chat;", branch);
+        Assert.True(Count(branch, "return;") >= 2);
+        Assert.DoesNotContain("ShowModuleAsync", branch);
+        Assert.Contains("_chat?.Dispose();", shell);
+        Assert.DoesNotContain("AppModule.Chat =>", workspace);
+        Assert.DoesNotContain("LoadConversationsAsync", workspace);
+    }
+
+    [Theory]
+    [InlineData("ChatBrowserSearch")]
+    [InlineData("ChatBrowserConversationList")]
+    [InlineData("ChatBrowserBack")]
+    [InlineData("ChatBrowserRefreshMessages")]
+    [InlineData("ChatBrowserLoadEarlier")]
+    [InlineData("ChatBrowserMessageList")]
+    public void InteractiveControlsHaveBilingualAutomationNames(string uid)
+    {
+        var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = Read("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+        var name = $"{uid}.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name";
+        Assert.Contains($"name=\"{name}\"", english);
+        Assert.Contains($"name=\"{name}\"", chinese);
+    }
+
+    private static int Count(string source, string value) =>
+        source.Split(value, StringSplitOptions.None).Length - 1;
+
+    private static string Slice(string source, string start, string end)
+    {
+        var startIndex = source.IndexOf(start, StringComparison.Ordinal);
+        var endIndex = source.IndexOf(end, startIndex, StringComparison.Ordinal);
+        Assert.True(startIndex >= 0 && endIndex > startIndex);
+        return source[startIndex..endIndex];
+    }
+
+    private static string Read(string relativePath)
+    {
+        var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, relativePath);
+            if (File.Exists(candidate))
+            {
+                return File.ReadAllText(candidate);
+            }
+            directory = directory.Parent;
+        }
+        throw new DirectoryNotFoundException(relativePath);
+    }
+}

@@ -4,6 +4,234 @@ import XCTest
 @testable import DsmNetwork
 
 final class DsmServiceManagementRepositoryTests: XCTestCase {
+    func test移动容器清单固定内部ContainerV1精确参数且零附属请求() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"containers":[{"id":"container-1","name":"示例容器","status":"running","image":"demo:latest"}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [
+                DsmAPIName.dockerContainer,
+                DsmAPIName.dockerImage,
+                DsmAPIName.dockerNetwork,
+                DsmAPIName.dockerProject,
+                DsmAPIName.dockerLog,
+            ],
+            transport: transport
+        )
+
+        let snapshot = try await repository.loadContainerInventory()
+
+        XCTAssertEqual(snapshot.source, .internalAPI)
+        XCTAssertEqual(snapshot.containers, [
+            ContainerInventoryItem(
+                id: "container-1",
+                name: "示例容器",
+                status: "running",
+                image: "demo:latest"
+            )
+        ])
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(requestValue("api", in: request), DsmAPIName.dockerContainer)
+        XCTAssertEqual(requestValue("version", in: request), "1")
+        XCTAssertEqual(requestValue("method", in: request), "list")
+        XCTAssertEqual(requestValue("offset", in: request), "0")
+        XCTAssertEqual(requestValue("limit", in: request), "-1")
+        XCTAssertEqual(requestValue("type", in: request), "all")
+    }
+
+    func test移动容器清单能力缺失时零请求() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerLog],
+            transport: transport
+        )
+
+        do {
+            _ = try await repository.loadContainerInventory()
+            XCTFail("Container.list v1 能力缺失时应返回不可用")
+        } catch {
+            let requests = await transport.recordedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test移动容器清单只接受ContainerV1确定形状() async throws {
+        let invalidPayloads = [
+            #"{"success":true,"data":{"items":[]}}"#,
+            #"{"success":true,"data":{"containers":{}}}"#,
+            #"{"success":true,"data":{"containers":[{"container_id":"container-1","name":"示例","status":"running"}]}}"#,
+            #"{"success":true,"data":{"containers":[{"id":"container-1","status":"running"}]}}"#,
+            #"{"success":true,"data":{"containers":[{"id":"container-1","name":"示例"}]}}"#,
+            #"{"success":true,"data":{"containers":[{"id":"container-1","name":"示例","status":"running","image":1}]}}"#,
+            #"{"success":true,"data":{"containers":[{"id":"container-1","name":"一","status":"running"},{"id":"container-1","name":"二","status":"stopped"}]}}"#,
+        ]
+
+        for payload in invalidPayloads {
+            let transport = MockHTTPTransport(responses: [response(payload)])
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.dockerContainer],
+                transport: transport
+            )
+            do {
+                _ = try await repository.loadContainerInventory()
+                XCTFail("畸形 Container.list v1 响应不得伪装成正常清单：\(payload)")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test移动容器清单允许确定空数组且只跨层传递白名单字段() async throws {
+        let emptyTransport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"containers":[]}}"#)
+        ])
+        let emptyRepository = try makeRepository(
+            apiNames: [DsmAPIName.dockerContainer],
+            transport: emptyTransport
+        )
+        let emptySnapshot = try await emptyRepository.loadContainerInventory()
+        XCTAssertTrue(emptySnapshot.containers.isEmpty)
+
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"containers":[{"id":"container-1","name":"示例","status":"stopped","image":"demo:latest","project":"private-project","cpu":99,"memory":2048,"ports":["private"],"logs":["private"]}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.dockerContainer],
+            transport: transport
+        )
+
+        let snapshot = try await repository.loadContainerInventory()
+
+        XCTAssertEqual(snapshot.containers, [
+            ContainerInventoryItem(
+                id: "container-1",
+                name: "示例",
+                status: "stopped",
+                image: "demo:latest"
+            )
+        ])
+    }
+
+    func test移动虚拟机清单固定公开GuestV1且不读取附属分区() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试虚拟机","status":"running","vcpu_num":2,"vram_size":2048,"vdisks":[{"vdisk_size":10240}],"autorun":1}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [
+                DsmAPIName.virtualizationAPIGuest,
+                DsmAPIName.virtualizationGuest,
+                DsmAPIName.virtualizationAPIHost,
+                DsmAPIName.virtualizationLog
+            ],
+            transport: transport
+        )
+
+        let snapshot = try await repository.loadVirtualMachineInventory()
+
+        XCTAssertEqual(snapshot.source, .official)
+        XCTAssertEqual(snapshot.machines.first?.name, "测试虚拟机")
+        XCTAssertEqual(snapshot.machines.first?.memoryBytes, 2_147_483_648)
+        XCTAssertEqual(snapshot.machines.first?.storageBytes, 10_737_418_240)
+        XCTAssertEqual(snapshot.machines.first?.autoStart, true)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(requestValue("api", in: request), DsmAPIName.virtualizationAPIGuest)
+        XCTAssertEqual(requestValue("version", in: request), "1")
+        XCTAssertEqual(requestValue("method", in: request), "list")
+    }
+
+    func test移动虚拟机公开清单能力缺失时零请求且不降级内部接口() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.virtualizationGuest],
+            transport: transport
+        )
+
+        do {
+            _ = try await repository.loadVirtualMachineInventory()
+            XCTFail("公开 Guest 能力缺失时应返回不可用")
+        } catch {
+            let requests = await transport.recordedRequests()
+            XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test移动虚拟机公开清单只接受GuestV1确定形状() async throws {
+        let invalidPayloads = [
+            #"{"success":true,"data":{"vms":[]}}"#,
+            #"{"success":true,"data":{"guests":{}}}"#,
+            #"{"success":true,"data":{"guests":[{"vm_id":"vm-1","guest_name":"测试","status":"running","autorun":1}]}}"#,
+            #"{"success":true,"data":{"guests":[{"guest_id":"vm-1","status":"running","autorun":1}]}}"#,
+            #"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试","status":"running"}]}}"#,
+            #"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"一","status":"running","autorun":1},{"guest_id":"vm-1","guest_name":"二","status":"stopped","autorun":0}]}}"#,
+        ]
+
+        for payload in invalidPayloads {
+            let transport = MockHTTPTransport(responses: [response(payload)])
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.virtualizationAPIGuest],
+                transport: transport
+            )
+            do {
+                _ = try await repository.loadVirtualMachineInventory()
+                XCTFail("畸形 Guest v1 响应不得伪装成正常清单：\(payload)")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test移动虚拟机公开清单允许确定空数组且忽略白名单外字段() async throws {
+        let emptyTransport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[]}}"#)
+        ])
+        let emptyRepository = try makeRepository(
+            apiNames: [DsmAPIName.virtualizationAPIGuest],
+            transport: emptyTransport
+        )
+        let emptySnapshot = try await emptyRepository.loadVirtualMachineInventory()
+        XCTAssertTrue(emptySnapshot.machines.isEmpty)
+
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试","status":"running","vcpu_num":2,"vram_size":1024,"vdisks":[{"vdisk_size":2048}],"autorun":true,"host_id":"private-host","ip":"192.0.2.1","description":"must-not-cross","logs":["must-not-cross"]}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.virtualizationAPIGuest],
+            transport: transport
+        )
+        let snapshot = try await repository.loadVirtualMachineInventory()
+        XCTAssertEqual(snapshot.machines, [
+            VirtualMachineInventoryItem(
+                id: "vm-1",
+                name: "测试",
+                status: "running",
+                cpuCount: 2,
+                memoryBytes: 1_073_741_824,
+                storageBytes: 2_147_483_648,
+                autoStart: true
+            )
+        ])
+    }
+
+    func test移动虚拟机公开清单拒绝容量溢出() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试","status":"running","vram_size":9223372036854775807,"autorun":1}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.virtualizationAPIGuest],
+            transport: transport
+        )
+        do {
+            _ = try await repository.loadVirtualMachineInventory()
+            XCTFail("溢出容量不得进入清单")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
+    }
+
     func test优先使用官方下载接口并解析任务进度() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"tasks":[{"id":"task-1","title":"示例任务","status":"downloading","size":1000,"additional":{"detail":{"destination":"video"},"transfer":{"size_downloaded":400,"speed_download":20,"speed_upload":2}}}]}}"#),

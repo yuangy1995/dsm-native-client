@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security;
 using LanStash.Domain;
 using Microsoft.Windows.ApplicationModel.Resources;
 using Windows.Globalization;
@@ -8,54 +9,150 @@ namespace LanStash.App.Localization;
 
 public sealed record LanguageChoice(AppLanguageSelection Value, string DisplayName);
 
+internal interface ILanguagePreferenceStore
+{
+    AppLanguageSelection? Load();
+    bool Save(AppLanguageSelection selection);
+}
+
+internal interface ILocalizationPlatform
+{
+    string? SystemLanguage { get; }
+    void ApplyLanguage(string language);
+    string? GetString(string key);
+}
+
+internal sealed class WinUiLocalizationPlatform : ILocalizationPlatform
+{
+    public string? SystemLanguage => GlobalizationPreferences.Languages.FirstOrDefault();
+
+    public void ApplyLanguage(string language) =>
+        ApplicationLanguages.PrimaryLanguageOverride = language;
+
+    public string? GetString(string key) => new ResourceLoader().GetString(key);
+}
+
+internal sealed class FileLanguagePreferenceStore(string path) : ILanguagePreferenceStore
+{
+    public AppLanguageSelection? Load()
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+            return Enum.TryParse<AppLanguageSelection>(
+                    File.ReadAllText(path),
+                    ignoreCase: true,
+                    out var saved) &&
+                Enum.IsDefined(saved)
+                ? saved
+                : null;
+        }
+        catch (Exception error) when (IsLocalStorageFailure(error))
+        {
+            return null;
+        }
+    }
+
+    public bool Save(AppLanguageSelection selection)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, selection.ToString());
+            return true;
+        }
+        catch (Exception error) when (IsLocalStorageFailure(error))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsLocalStorageFailure(Exception error) =>
+        error is IOException or UnauthorizedAccessException or SecurityException;
+}
+
 public sealed class LocalizationService
 {
-    public static LocalizationService Current { get; } = new();
+    public static LocalizationService Current { get; private set; } = new();
 
-    private readonly string _preferencePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LanStash",
-        "language.txt");
+    private readonly ILanguagePreferenceStore _preferenceStore;
+    private readonly ILocalizationPlatform _platform;
 
     public event EventHandler? LanguageChanged;
     public AppLanguageSelection Selection { get; private set; } = AppLanguageSelection.System;
     public string ResolvedLanguage { get; private set; } = "en-US";
 
-    private LocalizationService()
+    private LocalizationService() : this(
+        new FileLanguagePreferenceStore(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "LanStash",
+            "language.txt")),
+        new WinUiLocalizationPlatform())
     {
+    }
+
+    internal LocalizationService(
+        ILanguagePreferenceStore preferenceStore,
+        ILocalizationPlatform platform)
+    {
+        _preferenceStore = preferenceStore;
+        _platform = platform;
     }
 
     public void Initialize()
     {
-        if (File.Exists(_preferencePath) &&
-            Enum.TryParse<AppLanguageSelection>(
-                File.ReadAllText(_preferencePath),
-                ignoreCase: true,
-                out var saved))
+        try
         {
-            Selection = saved;
+            var saved = _preferenceStore.Load();
+            Selection = saved is { } value && Enum.IsDefined(value)
+                ? value
+                : AppLanguageSelection.System;
+        }
+        catch (Exception error) when (IsLocalStorageFailure(error))
+        {
+            Selection = AppLanguageSelection.System;
         }
         ApplySelection();
     }
 
     public void SetSelection(AppLanguageSelection selection)
     {
+        _ = TrySetSelection(selection);
+    }
+
+    public bool TrySetSelection(AppLanguageSelection selection)
+    {
         if (Selection == selection)
         {
-            return;
+            return true;
+        }
+        try
+        {
+            if (!_preferenceStore.Save(selection))
+            {
+                return false;
+            }
+        }
+        catch (Exception error) when (IsLocalStorageFailure(error))
+        {
+            return false;
         }
         Selection = selection;
-        Directory.CreateDirectory(Path.GetDirectoryName(_preferencePath)!);
-        File.WriteAllText(_preferencePath, selection.ToString());
         ApplySelection();
         LanguageChanged?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     public string Get(string key)
     {
-        var value = new ResourceLoader().GetString(key);
+        var value = _platform.GetString(key);
         return string.IsNullOrEmpty(value) ? key : value;
     }
+
+    internal static void UseForTests(LocalizationService service) => Current = service;
 
     public string Format(string key, params object[] arguments) =>
         string.Format(CultureInfo.CurrentCulture, Get(key), arguments);
@@ -91,13 +188,18 @@ public sealed class LocalizationService
 
     private void ApplySelection()
     {
-        var systemLanguage = GlobalizationPreferences.Languages.FirstOrDefault();
-        ResolvedLanguage = AppLanguageResolver.Resolve(Selection, systemLanguage);
-        ApplicationLanguages.PrimaryLanguageOverride = ResolvedLanguage;
+        ResolvedLanguage = AppLanguageResolver.Resolve(
+            Selection,
+            _platform.SystemLanguage);
+        _platform.ApplyLanguage(ResolvedLanguage);
         var culture = CultureInfo.GetCultureInfo(ResolvedLanguage);
         CultureInfo.CurrentCulture = culture;
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentCulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
     }
+
+    private static bool IsLocalStorageFailure(Exception error) =>
+        error is IOException or UnauthorizedAccessException or SecurityException;
+
 }

@@ -1,0 +1,376 @@
+<Page
+    x:Class="LanStash.App.Views.FilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:files="using:LanStash.App.Features.Files"
+    xmlns:views="using:LanStash.App.Views"
+    SizeChanged="FilesPage_SizeChanged"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid Padding="28,20,28,28" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="320" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+                <TextBlock x:Uid="FileBrowserTitle" Style="{StaticResource TitleTextBlockStyle}" />
+                <BreadcrumbBar
+                    x:Uid="FileBrowserBreadcrumbs"
+                    x:Name="PathBreadcrumbs"
+                    ItemsSource="{Binding Breadcrumbs}"
+                    ItemClicked="PathBreadcrumbs_ItemClicked" />
+            </StackPanel>
+            <AutoSuggestBox
+                x:Uid="FileBrowserFilter"
+                x:Name="FilterBox"
+                Grid.Column="1"
+                QueryIcon="Find"
+                TextChanged="FilterBox_TextChanged" />
+        </Grid>
+
+        <CommandBar
+            Grid.Row="1"
+            Background="Transparent"
+            DefaultLabelPosition="Right">
+            <AppBarButton
+                x:Uid="FileLocationsOpen"
+                x:Name="LocationsButton"
+                Click="Locations_Click"
+                Icon="GlobalNavigationButton"
+                AccessKey="L"
+                MinHeight="48" />
+            <AppBarButton
+                x:Uid="FileBrowserBack"
+                x:Name="BackButton"
+                Click="Back_Click"
+                Icon="Back">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator
+                        Key="Left"
+                        Modifiers="Menu"
+                        Invoked="BackAccelerator_Invoked" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton
+                x:Uid="FileBrowserUp"
+                x:Name="UpButton"
+                Click="Up_Click"
+                Icon="Up" />
+            <AppBarButton
+                x:Uid="FileBrowserRefresh"
+                x:Name="RefreshButton"
+                Click="Refresh_Click"
+                Icon="Refresh" />
+            <AppBarButton
+                x:Uid="FileBrowserUpload"
+                x:Name="UploadButton"
+                Click="Upload_Click"
+                Icon="Upload"
+                MinHeight="44">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator
+                        Key="U"
+                        Modifiers="Control"
+                        Invoked="UploadAccelerator_Invoked" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton
+                x:Uid="FileBrowserDownload"
+                x:Name="DownloadButton"
+                Click="Download_Click"
+                Icon="Download"
+                MinHeight="44">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator
+                        Key="S"
+                        Modifiers="Control"
+                        Invoked="DownloadAccelerator_Invoked" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton
+                x:Uid="FilePreviewOpen"
+                x:Name="PreviewButton"
+                Click="Preview_Click"
+                Icon="View"
+                MinHeight="44" />
+            <AppBarButton
+                x:Uid="FileShareLink"
+                x:Name="ShareLinkButton"
+                Click="ShareLink_Click"
+                Icon="Link"
+                MinHeight="44">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator
+                        Key="L"
+                        Modifiers="Control,Shift"
+                        Invoked="ShareLinkAccelerator_Invoked" />
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <CommandBar.SecondaryCommands>
+                <AppBarButton
+                    x:Uid="FileBrowserSort"
+                    x:Name="SortButton"
+                    Icon="Sort"
+                    MinHeight="44">
+                    <AppBarButton.Flyout>
+                        <MenuFlyout>
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserSortName"
+                                x:Name="SortNameItem"
+                                Click="SortName_Click"
+                                GroupName="FileSortField"
+                                MinHeight="44" />
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserSortModified"
+                                x:Name="SortModifiedItem"
+                                Click="SortModified_Click"
+                                GroupName="FileSortField"
+                                MinHeight="44" />
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserSortSize"
+                                x:Name="SortSizeItem"
+                                Click="SortSize_Click"
+                                GroupName="FileSortField"
+                                MinHeight="44" />
+                            <MenuFlyoutSeparator />
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserSortAscending"
+                                x:Name="SortAscendingItem"
+                                Click="SortAscending_Click"
+                                GroupName="FileSortDirection"
+                                MinHeight="44" />
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserSortDescending"
+                                x:Name="SortDescendingItem"
+                                Click="SortDescending_Click"
+                                GroupName="FileSortDirection"
+                                MinHeight="44" />
+                        </MenuFlyout>
+                    </AppBarButton.Flyout>
+                </AppBarButton>
+                <AppBarButton
+                    x:Uid="FileBrowserTypeFilter"
+                    x:Name="TypeFilterButton"
+                    Icon="Filter"
+                    MinHeight="44">
+                    <AppBarButton.Flyout>
+                        <MenuFlyout>
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserTypeAll"
+                                x:Name="TypeAllItem"
+                                Click="TypeAll_Click"
+                                GroupName="FileTypeFilter"
+                                MinHeight="44" />
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserTypeFiles"
+                                x:Name="TypeFilesItem"
+                                Click="TypeFiles_Click"
+                                GroupName="FileTypeFilter"
+                                MinHeight="44" />
+                            <RadioMenuFlyoutItem
+                                x:Uid="FileBrowserTypeFolders"
+                                x:Name="TypeFoldersItem"
+                                Click="TypeFolders_Click"
+                                GroupName="FileTypeFilter"
+                                MinHeight="44" />
+                        </MenuFlyout>
+                    </AppBarButton.Flyout>
+                </AppBarButton>
+                <AppBarToggleButton
+                    x:Uid="FileBrowserListLayout"
+                    x:Name="ListLayoutButton"
+                    Click="ListLayout_Click"
+                    Icon="List" />
+                <AppBarToggleButton
+                    x:Uid="FileBrowserGridLayout"
+                    x:Name="GridLayoutButton"
+                    Click="GridLayout_Click"
+                    Icon="View" />
+            </CommandBar.SecondaryCommands>
+        </CommandBar>
+
+        <InfoBar
+            x:Uid="FileBrowserUploadNeedsReview"
+            x:Name="UploadNeedsReview"
+            Grid.Row="2"
+            IsClosable="True"
+            IsOpen="False"
+            Severity="Warning" />
+
+        <SplitView
+            x:Name="LocationsSplitView"
+            Grid.Row="3"
+            CompactPaneLength="0"
+            DisplayMode="Inline"
+            IsPaneOpen="True"
+            OpenPaneLength="264"
+            PaneClosed="LocationsSplitView_PaneClosed"
+            PanePlacement="Left">
+            <SplitView.Pane>
+                <views:FileLocationsView x:Name="LocationsPane" />
+            </SplitView.Pane>
+            <SplitView.Content>
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="BrowserColumn" Width="*" />
+                <ColumnDefinition x:Name="PreviewColumn" Width="0" />
+            </Grid.ColumnDefinitions>
+            <Grid x:Name="BrowserSurface">
+            <Grid x:Name="ContentState" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <ListView
+                    x:Uid="FileBrowserList"
+                    x:Name="FileList"
+                    DoubleTapped="Files_DoubleTapped"
+                    ItemsSource="{Binding Items}"
+                    SelectionChanged="Files_SelectionChanged"
+                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                    SelectionMode="Single">
+                    <ListView.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked" />
+                    </ListView.KeyboardAccelerators>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="files:FileBrowserEntry">
+                            <Grid MinHeight="56" Padding="8" ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="32" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon
+                                    VerticalAlignment="Center"
+                                    FontSize="20"
+                                    Glyph="{x:Bind Glyph}" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Text="{x:Bind Detail}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <GridView
+                    x:Uid="FileBrowserGrid"
+                    x:Name="FileGrid"
+                    DoubleTapped="Files_DoubleTapped"
+                    ItemsSource="{Binding Items}"
+                    SelectionChanged="Files_SelectionChanged"
+                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                    SelectionMode="Single"
+                    Visibility="Collapsed">
+                    <GridView.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked" />
+                    </GridView.KeyboardAccelerators>
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="files:FileBrowserEntry">
+                            <StackPanel Width="156" MinHeight="132" Padding="16" Spacing="10">
+                                <FontIcon
+                                    HorizontalAlignment="Center"
+                                    FontSize="36"
+                                    Glyph="{x:Bind Glyph}" />
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    FontWeight="SemiBold"
+                                    MaxLines="2"
+                                    Text="{x:Bind Name}"
+                                    TextAlignment="Center"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+
+                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="8">
+                    <InfoBar
+                        x:Uid="FileBrowserLoadMoreError"
+                        x:Name="LoadMoreError"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Warning" />
+                    <Button
+                        x:Uid="FileBrowserLoadMore"
+                        x:Name="LoadMoreButton"
+                        Click="LoadMore_Click"
+                        MinHeight="44" />
+                    <ProgressRing
+                        x:Name="LoadMoreProgress"
+                        Width="24"
+                        Height="24"
+                        IsActive="False"
+                        Visibility="Collapsed" />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel
+                x:Name="LoadingState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="12">
+                <ProgressRing Width="36" Height="36" IsActive="True" />
+                <TextBlock x:Uid="FileBrowserLoading" TextAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="EmptyState"
+                MaxWidth="420"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="10"
+                Visibility="Collapsed">
+                <FontIcon FontSize="38" Glyph="&#xE8B7;" />
+                <TextBlock x:Uid="FileBrowserEmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+                <TextBlock x:Uid="FileBrowserEmptyMessage" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="FileBrowserRefreshEmpty" Click="Refresh_Click" HorizontalAlignment="Center" MinHeight="44" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="FilteredEmptyState"
+                MaxWidth="420"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="10"
+                Visibility="Collapsed">
+                <FontIcon FontSize="38" Glyph="&#xE721;" />
+                <TextBlock x:Uid="FileBrowserFilteredEmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+                <TextBlock x:Uid="FileBrowserFilteredEmptyMessage" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="FileBrowserClearFilter" Click="ClearFilter_Click" HorizontalAlignment="Center" MinHeight="44" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="ErrorState"
+                MaxWidth="420"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="10"
+                Visibility="Collapsed">
+                <FontIcon FontSize="38" Glyph="&#xEA39;" />
+                <TextBlock x:Uid="FileBrowserErrorTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+                <TextBlock x:Uid="FileBrowserErrorMessage" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="FileBrowserRetry" Click="Refresh_Click" HorizontalAlignment="Center" MinHeight="44" />
+            </StackPanel>
+            </Grid>
+
+            <views:FilePreviewPane
+                x:Name="PreviewPane"
+                Grid.Column="1"
+                Visibility="Collapsed" />
+        </Grid>
+            </SplitView.Content>
+        </SplitView>
+    </Grid>
+</Page>

@@ -27,60 +27,6 @@ public sealed class DeleteRequestContractTests
         Assert.Equal("true", request.Parameters["accurate_progress"]);
     }
 
-    [Fact]
-    public async Task ContainerDeleteOnlySendsContractIdentifier()
-    {
-        var fixture = RequestFixture.Load("ContainerDelete.json");
-        var api = new RecordingApiClient();
-        var repository = CreateRepository(api, fixture.Capability);
-
-        await repository.DeleteContainerAsync("<synthetic-container>");
-
-        var request = api.Single(fixture.ApiName, fixture.Method);
-        fixture.AssertRequest(request);
-        Assert.Equal("<synthetic-container>", request.Parameters["id"]);
-    }
-
-    [Fact]
-    public async Task OfficialVirtualMachineDeleteOnlySendsGuestIdentifier()
-    {
-        var fixture = RequestFixture.Load("VirtualMachineDelete.json");
-        var api = new RecordingApiClient();
-        var repository = CreateRepository(api, fixture.Capability);
-
-        await repository.DeleteVirtualMachineAsync("<synthetic-virtual-machine>");
-
-        var request = api.Single(fixture.ApiName, fixture.Method);
-        fixture.AssertRequest(request);
-        Assert.Equal("<synthetic-virtual-machine>", request.Parameters["guest_id"]);
-        Assert.DoesNotContain("id", request.Parameters.Keys);
-        Assert.DoesNotContain("network_id", request.Parameters.Keys);
-        Assert.DoesNotContain("image_id", request.Parameters.Keys);
-    }
-
-    [Fact]
-    public async Task LegacyVirtualMachineDeleteKeepsItsCompatibilityIdentifiers()
-    {
-        var capability = new ApiCapability(
-            "SYNO.Virtualization.Guest",
-            "entry.cgi",
-            1,
-            2,
-            "FORM");
-        var api = new RecordingApiClient();
-        var repository = CreateRepository(api, capability);
-
-        await repository.DeleteVirtualMachineAsync("legacy-guest");
-
-        var request = api.Single(capability.Name, "delete");
-        Assert.Equal(
-            new[] { "guest_id", "id" },
-            request.Parameters.Keys.Order(StringComparer.Ordinal));
-        Assert.All(request.Parameters.Values, value => Assert.Equal("legacy-guest", value));
-        Assert.DoesNotContain("network_id", request.Parameters.Keys);
-        Assert.DoesNotContain("image_id", request.Parameters.Keys);
-    }
-
     private static DsmRepository CreateRepository(
         RecordingApiClient api,
         params ApiCapability[] capabilities)

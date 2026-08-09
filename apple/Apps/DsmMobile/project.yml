@@ -43,6 +43,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.qwertyuiop1995.dsmnativeclient.mobile.tests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   DsmMobile:
     build:
