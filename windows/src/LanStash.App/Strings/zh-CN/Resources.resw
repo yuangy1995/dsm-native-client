@@ -897,4 +897,35 @@
   <data name="FileCopyMove_Status_Cancelled" xml:space="preserve"><value>操作已在发送前取消。</value></data>
   <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>文件操作状态</value></data>
   <data name="FileCopyMove_A11y_DestinationTree" xml:space="preserve"><value>目标文件夹</value></data>
+  <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>移到回收站</value></data>
+  <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将所选文件移到回收站</value></data>
+  <data name="FileRecycleRestore.Label" xml:space="preserve"><value>恢复</value></data>
+  <data name="FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>从回收站恢复所选文件</value></data>
+  <data name="FileRecycleMoveTitle" xml:space="preserve"><value>将文件移到回收站</value></data>
+  <data name="FileRecycleRestoreTitle" xml:space="preserve"><value>恢复文件</value></data>
+  <data name="FileRecycleSourceLabel" xml:space="preserve"><value>源文件</value></data>
+  <data name="FileRecycleDestinationLabel" xml:space="preserve"><value>目标位置</value></data>
+  <data name="FileRecycleMoveMessage" xml:space="preserve"><value>这会将文件移到 NAS 回收站，不会永久删除文件。</value></data>
+  <data name="FileRecycleRestoreMessage" xml:space="preserve"><value>这会将文件恢复到 NAS 上的原始文件夹。</value></data>
+  <data name="FileRecycleMoveAction" xml:space="preserve"><value>移到回收站</value></data>
+  <data name="FileRecycleRestoreAction" xml:space="preserve"><value>恢复</value></data>
+  <data name="FileRecycleReturnToConfirmAction" xml:space="preserve"><value>返回确认</value></data>
+  <data name="FileRecycleCancelAction" xml:space="preserve"><value>取消</value></data>
+  <data name="FileRecycleCloseAction" xml:space="preserve"><value>关闭</value></data>
+  <data name="FileRecycleWorkingMove" xml:space="preserve"><value>正在移到回收站…</value></data>
+  <data name="FileRecycleWorkingRestore" xml:space="preserve"><value>正在恢复…</value></data>
+  <data name="FileRecycleMoveSuccessMessage" xml:space="preserve"><value>文件已移到回收站，并已刷新此文件夹。</value></data>
+  <data name="FileRecycleRestoreSuccessMessage" xml:space="preserve"><value>文件已恢复，并已刷新此回收站。</value></data>
+  <data name="FileRecycleReviewTitle" xml:space="preserve"><value>继续前请核对</value></data>
+  <data name="FileRecycleReviewMessage" xml:space="preserve"><value>无法确认操作结果。再次尝试前，请先在 NAS 上核对源位置和目标位置。</value></data>
+  <data name="FileRecycleCancelledMessage" xml:space="preserve"><value>操作已在发送前取消。你可以安全地返回确认。</value></data>
+  <data name="FileRecyclePermissionTitle" xml:space="preserve"><value>你没有所需权限</value></data>
+  <data name="FileRecyclePermissionMessage" xml:space="preserve"><value>你的账户无法更改此文件。请联系管理员获取权限，然后刷新文件夹。</value></data>
+  <data name="FileRecycleConflictTitle" xml:space="preserve"><value>文件或目标位置已发生变化</value></data>
+  <data name="FileRecycleConflictMessage" xml:space="preserve"><value>文件已发生变化，或目标位置已有同名项目。请刷新后重试。</value></data>
+  <data name="FileRecycleUnsupportedTitle" xml:space="preserve"><value>当前无法进行此操作</value></data>
+  <data name="FileRecycleUnsupportedMessage" xml:space="preserve"><value>此文件或位置无法使用回收站操作。你仍可继续浏览和保存副本。</value></data>
+  <data name="FileRecycleFailureTitle" xml:space="preserve"><value>无法完成操作</value></data>
+  <data name="FileRecycleFailureMessage" xml:space="preserve"><value>操作未完成。请刷新文件夹，然后从当前文件重新操作。</value></data>
+  <data name="FileRecycleStatusAutomationName" xml:space="preserve"><value>回收站操作状态</value></data>
 </root>

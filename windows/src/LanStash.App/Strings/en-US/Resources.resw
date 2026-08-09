@@ -897,4 +897,35 @@
   <data name="FileCopyMove_Status_Cancelled" xml:space="preserve"><value>The action was cancelled before it was sent.</value></data>
   <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>File action status</value></data>
   <data name="FileCopyMove_A11y_DestinationTree" xml:space="preserve"><value>Destination folders</value></data>
+  <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>Move to Recycle Bin</value></data>
+  <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected file to the recycle bin</value></data>
+  <data name="FileRecycleRestore.Label" xml:space="preserve"><value>Restore</value></data>
+  <data name="FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Restore the selected file from the recycle bin</value></data>
+  <data name="FileRecycleMoveTitle" xml:space="preserve"><value>Move file to Recycle Bin</value></data>
+  <data name="FileRecycleRestoreTitle" xml:space="preserve"><value>Restore file</value></data>
+  <data name="FileRecycleSourceLabel" xml:space="preserve"><value>Source file</value></data>
+  <data name="FileRecycleDestinationLabel" xml:space="preserve"><value>Destination</value></data>
+  <data name="FileRecycleMoveMessage" xml:space="preserve"><value>This moves the file to the NAS recycle bin. It does not permanently delete the file.</value></data>
+  <data name="FileRecycleRestoreMessage" xml:space="preserve"><value>This restores the file to its original folder on your NAS.</value></data>
+  <data name="FileRecycleMoveAction" xml:space="preserve"><value>Move to Recycle Bin</value></data>
+  <data name="FileRecycleRestoreAction" xml:space="preserve"><value>Restore</value></data>
+  <data name="FileRecycleReturnToConfirmAction" xml:space="preserve"><value>Return to confirmation</value></data>
+  <data name="FileRecycleCancelAction" xml:space="preserve"><value>Cancel</value></data>
+  <data name="FileRecycleCloseAction" xml:space="preserve"><value>Close</value></data>
+  <data name="FileRecycleWorkingMove" xml:space="preserve"><value>Moving to Recycle Bin…</value></data>
+  <data name="FileRecycleWorkingRestore" xml:space="preserve"><value>Restoring…</value></data>
+  <data name="FileRecycleMoveSuccessMessage" xml:space="preserve"><value>The file was moved to the recycle bin. This folder has been refreshed.</value></data>
+  <data name="FileRecycleRestoreSuccessMessage" xml:space="preserve"><value>The file was restored. This recycle bin has been refreshed.</value></data>
+  <data name="FileRecycleReviewTitle" xml:space="preserve"><value>Check before continuing</value></data>
+  <data name="FileRecycleReviewMessage" xml:space="preserve"><value>The result couldn’t be confirmed. Check the source and destination on your NAS before trying again.</value></data>
+  <data name="FileRecycleCancelledMessage" xml:space="preserve"><value>The action was cancelled before it was sent. You can return to the confirmation safely.</value></data>
+  <data name="FileRecyclePermissionTitle" xml:space="preserve"><value>You don’t have permission</value></data>
+  <data name="FileRecyclePermissionMessage" xml:space="preserve"><value>Your account can’t change this file. Ask an administrator for access, then refresh the folder.</value></data>
+  <data name="FileRecycleConflictTitle" xml:space="preserve"><value>The file or destination changed</value></data>
+  <data name="FileRecycleConflictMessage" xml:space="preserve"><value>The file changed or the destination already has an item with this name. Refresh before trying again.</value></data>
+  <data name="FileRecycleUnsupportedTitle" xml:space="preserve"><value>This action isn’t available</value></data>
+  <data name="FileRecycleUnsupportedMessage" xml:space="preserve"><value>This file or location can’t use the recycle bin action. You can continue browsing and saving copies.</value></data>
+  <data name="FileRecycleFailureTitle" xml:space="preserve"><value>Couldn’t complete the action</value></data>
+  <data name="FileRecycleFailureMessage" xml:space="preserve"><value>The action wasn’t completed. Refresh the folder and try again from the current file.</value></data>
+  <data name="FileRecycleStatusAutomationName" xml:space="preserve"><value>Recycle bin action status</value></data>
 </root>

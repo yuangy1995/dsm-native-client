@@ -1,6 +1,6 @@
 # Windows / Apple 移动端功能对齐账本：第 3 波
 
-> 状态：A0/W0 共享契约源码已落盘；Apple 共享层聚焦与共享全量验证通过，Windows W0 已由 GitHub Windows Build 验证通过；Files/Photos 上层入口待后续切片接入
+> 状态：A0/W0 共享契约与 A1/W1 Files 受限入口已落盘；Apple 本机聚焦/完整测试与 GitHub Apple Build 通过，Windows GitHub Windows Build 通过；Photos 受限入口待后续切片接入
 > 基线提交：`1c7ee4851feb00903327b0599a0d29ea421be8c9`（`完善跨端文件复制移动与照片导入`）
 > 当前范围：Windows/iPhone/iPad `FILE-09 移入回收站与从回收站恢复`
 > 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；永久删除、清空回收站、目录或批量恢复、跨 NAS 恢复、覆盖恢复、猜测原路径、内部 Core RecycleBin 清理接口、Chat/Download/NAS 写操作
@@ -99,12 +99,12 @@
 ## 8. 当前验证证据
 
 - 当前基线提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 已通过第 2 波四组云端门禁，但该证据只覆盖 FILE-05 与 PHOTO-03A。
-- Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，并通过 `DsmFileRepositoryTests` 107/107；`RecycleLocation`、`discoverRecycleLocations()` 和 FILE-05 `copyMoveResult` 继续作为契约事实来源。
-- Windows 已新增 `IFileRecycleRepository`、`FileRecycle*` 领域模型、Delete v2 start/status transport、`DsmRepository.FileRecycle` 与 `Files/Recycle` 聚焦测试源码；本机无 `dotnet`，但 GitHub Windows Build 已完成编译与完整测试验证。
+- Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，并通过 `DsmFileRepositoryTests` 107/107；`RecycleLocation`、`discoverRecycleLocations()` 和 FILE-05 `copyMoveResult` 继续作为契约事实来源。Apple Files UI 已接入单个普通本地文件移入回收站与回收站位置恢复，本机 iPhone 17 Pro iOS 26.5 模拟器聚焦 42/42 与完整 DsmMobile 375/375 通过；提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Apple Build` run `31318490495` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建和 macOS 打包。真实 iPad 交互、真机和真实 NAS 回收站行为仍待验收。
+- Windows 已新增 `IFileRecycleRepository`、`FileRecycle*` 领域模型、Delete v2 start/status transport、`DsmRepository.FileRecycle` 与 `Files/Recycle` 聚焦测试源码；Windows Files UI 已接入 WinUI ContentDialog 受限入口、普通/回收站来源门和 session blocker，并通过本机 XAML/resw XML、本地化和源码形态静态门。提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Windows Build` run `31318490511` 已通过 830/830 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；同提交 `Repository Check` run `31318490509` 通过。真实 Windows 设备、Narrator、键盘、系统生命周期和真实 NAS 副作用仍待验收。
 - 请求契约已有 `contracts/request-fixtures/file-station/delete/synthetic-task/request.json`；恢复首片复用现有 CopyMove v3 合成形态，Windows W0 已新增 Delete start/status typed transport 与契约测试。
 
 ## 9. 本波完成后继续对照的剩余项
 
-- Windows：文件夹/受限批量传输、Chat 核心与附件、Download 创建与低风险单任务控制、NAS 管理、统一 ModuleAvailability 和 W5/W6 系统集成。
-- iPhone/iPad：PHOTO-03 其余 NAS 内管理、Chat 文字/附件、Download 创建与单任务控制，以及 M8/M9 其余生产力与自动化。
+- Windows：FILE-09 Photos 受限恢复入口、文件夹/受限批量传输、Chat 核心与附件、Download 创建与低风险单任务控制、NAS 管理、统一 ModuleAvailability 和 W5/W6 系统集成。
+- iPhone/iPad：FILE-09 Photos 受限恢复入口、PHOTO-03 其余 NAS 内管理、Chat 文字/附件、Download 创建与单任务控制，以及 M8/M9 其余生产力与自动化。
 - 两端：目录复制移动和跨 NAS 操作必须另建有界契约；永久删除、清空回收站和覆盖恢复必须另建危险写契约；没有版本化证据的内部写继续关闭。

@@ -108,6 +108,18 @@
                 AccessKey="M"
                 MinHeight="48" />
             <AppBarButton
+                x:Uid="FileRecycleMoveToRecycle"
+                x:Name="MoveToRecycleButton"
+                Click="MoveToRecycle_Click"
+                Icon="Delete"
+                MinHeight="48" />
+            <AppBarButton
+                x:Uid="FileRecycleRestore"
+                x:Name="RestoreFromRecycleButton"
+                Click="RestoreFromRecycle_Click"
+                Icon="Undo"
+                MinHeight="48" />
+            <AppBarButton
                 x:Uid="FileBrowserUpload"
                 x:Name="UploadButton"
                 Click="Upload_Click"

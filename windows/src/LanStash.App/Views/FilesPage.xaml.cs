@@ -3,6 +3,7 @@ using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Locations;
 using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Files.Preview;
+using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Files.Sharing;
 using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
@@ -49,7 +50,9 @@ public sealed partial class FilesPage : Page, IDisposable
         FileMutationReviewBlocker? mutationReviewBlocker = null,
         IFileCopyMoveRepository? copyMoveRepository = null,
         FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
-        IFileCopyMoveFolderSource? copyMoveFolderSource = null)
+        IFileCopyMoveFolderSource? copyMoveFolderSource = null,
+        IFileRecycleRepository? recycleRepository = null,
+        FileRecycleReviewBlocker? recycleReviewBlocker = null)
         : this(
             new FileBrowserViewModel(new RepositoryFileBrowserDataSource(repository)),
             previewRepository,
@@ -63,7 +66,9 @@ public sealed partial class FilesPage : Page, IDisposable
             copyMoveRepository ?? repository as IFileCopyMoveRepository,
             copyMoveReviewBlocker,
             copyMoveFolderSource ?? CreateCopyMoveFolderSource(
-                profileId, repository, locationsRepository ?? repository as IFileLocationsRepository))
+                profileId, repository, locationsRepository ?? repository as IFileLocationsRepository),
+            recycleRepository ?? repository as IFileRecycleRepository,
+            recycleReviewBlocker)
     {
     }
 
@@ -79,7 +84,9 @@ public sealed partial class FilesPage : Page, IDisposable
         FileMutationReviewBlocker? mutationReviewBlocker = null,
         IFileCopyMoveRepository? copyMoveRepository = null,
         FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
-        IFileCopyMoveFolderSource? copyMoveFolderSource = null)
+        IFileCopyMoveFolderSource? copyMoveFolderSource = null,
+        IFileRecycleRepository? recycleRepository = null,
+        FileRecycleReviewBlocker? recycleReviewBlocker = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -101,6 +108,10 @@ public sealed partial class FilesPage : Page, IDisposable
             ? copyMoveFolderSource
             : null;
         _copyMoveReviewBlocker = copyMoveReviewBlocker ?? FileCopyMoveReviewBlocker.Current;
+        _recycleRepository = recycleRepository?.ProfileId == _profileId
+            ? recycleRepository
+            : null;
+        _recycleReviewBlocker = recycleReviewBlocker ?? FileRecycleReviewBlocker.Current;
         _transfers = transfers;
         _systemShare = new WindowsSystemShare(
             () => (Application.Current as App)?.MainWindow);
@@ -218,6 +229,7 @@ public sealed partial class FilesPage : Page, IDisposable
             CloseShareLinkDialog();
             CloseMutationDialog();
             CloseCopyMoveDialog();
+            CloseRecycleDialog();
             await ClosePreviewAsync();
             if (_disposed || !_locationsViewModel.IsActive)
             {
@@ -1087,6 +1099,7 @@ public sealed partial class FilesPage : Page, IDisposable
             !_viewModel.IsLoading && _viewModel.SelectedItem?.IsDirectory == false;
         UpdateMutationControls();
         UpdateCopyMoveControls();
+        UpdateRecycleControls();
         ShareLinkButton.IsEnabled =
             !_viewModel.IsLoading &&
             !_isClosingShareLink &&
@@ -1257,6 +1270,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseShareLinkDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
+        CloseRecycleDialog();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
         {
@@ -1275,6 +1289,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseShareLinkDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
+        CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;

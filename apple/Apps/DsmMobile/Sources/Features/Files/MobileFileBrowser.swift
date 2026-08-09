@@ -25,6 +25,7 @@ struct MobileFileBrowser: View {
     private var locations: MobileFileLocationsModel { browser.locations }
     private var mutation: MobileFileItemMutationModel { browser.mutations }
     private var copyMove: MobileFileCopyMoveModel { browser.copyMove }
+    private var recycleAction: MobileFileRecycleActionModel { browser.recycleAction }
     private var state: MobileFileBrowserProfileState { browser.state }
     private var preview: MobileFilePreviewModel { model.filePreviewModel }
     private var activationIdentity: MobileFileBrowserActivationIdentity {
@@ -106,6 +107,15 @@ struct MobileFileBrowser: View {
                 )
             }
         }
+        .sheet(isPresented: recycleActionPresentationBinding) {
+            if let repository = model.fileRepository {
+                MobileFileRecycleActionView(
+                    recycleAction: recycleAction,
+                    repository: repository,
+                    didConfirm: recycleActionDidConfirm
+                )
+            }
+        }
         .alert(L10n.string("mobile.documents.error-title"), isPresented: documentFailureBinding) {
             Button(L10n.string("mobile.documents.dismiss")) {
                 model.documentTransferController.clearFailure()
@@ -128,6 +138,7 @@ struct MobileFileBrowser: View {
             await browser.activate(profileID: profileID, repository: repository)
             mutation.activate(profileID: profileID, repository: repository)
             copyMove.activate(profileID: profileID, repository: repository)
+            recycleAction.activate(profileID: profileID, repository: repository)
             locations.activate(profileID: profileID, repository: repository)
             guard let profileID, let repository else { return }
             model.fileShareLinkModel.activate(profileID: profileID, repository: repository)
@@ -155,6 +166,7 @@ struct MobileFileBrowser: View {
             locations.cancelRequest()
             mutation.deactivate()
             copyMove.deactivate()
+            recycleAction.deactivate()
             model.fileShareLinkModel.deactivate()
         }
     }
@@ -319,6 +331,26 @@ struct MobileFileBrowser: View {
                     Label(
                         L10n.string("mobile.files.copy-move.move.action"),
                         systemImage: "folder"
+                    )
+                }
+            }
+            if canMoveToRecycle(item) {
+                Button(role: .destructive) {
+                    beginMoveToRecycle(item)
+                } label: {
+                    Label(
+                        L10n.string("mobile.files.recycle.move.action"),
+                        systemImage: "trash"
+                    )
+                }
+            }
+            if canRestoreFromRecycle(item) {
+                Button {
+                    beginRestoreFromRecycle(item)
+                } label: {
+                    Label(
+                        L10n.string("mobile.files.recycle.restore.action"),
+                        systemImage: "arrow.uturn.backward"
                     )
                 }
             }
@@ -799,6 +831,59 @@ struct MobileFileBrowser: View {
         await browser.refreshAfterConfirmedCopyMove(success, repository: repository)
     }
 
+    private func canMoveToRecycle(_ item: FileItem) -> Bool {
+        guard let profileID = model.activeProfile?.id else { return false }
+        return MobileFileRecycleActionModel.canMoveToRecycle(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            recycleLocations: locations.state.recycle.locations,
+            profileID: profileID
+        )
+    }
+
+    private func canRestoreFromRecycle(_ item: FileItem) -> Bool {
+        guard let profileID = model.activeProfile?.id else { return false }
+        return MobileFileRecycleActionModel.canRestoreFromRecycle(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            profileID: profileID
+        )
+    }
+
+    private func beginMoveToRecycle(_ item: FileItem) {
+        guard canMoveToRecycle(item), let repository = model.fileRepository else { return }
+        prepareForMutation()
+        recycleAction.beginMoveToRecycle(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            recycleLocations: locations.state.recycle.locations,
+            repository: repository
+        )
+    }
+
+    private func beginRestoreFromRecycle(_ item: FileItem) {
+        guard canRestoreFromRecycle(item), let repository = model.fileRepository else { return }
+        prepareForMutation()
+        recycleAction.beginRestoreFromRecycle(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            repository: repository
+        )
+    }
+
+    private func recycleActionDidConfirm(_ success: MobileFileRecycleActionSuccess) async {
+        guard let repository = model.fileRepository else { return }
+        await browser.refreshAfterConfirmedRecycleAction(success, repository: repository)
+    }
+
     private func beginShareLink(for item: FileItem) {
         guard !state.location.source.isReadOnlyLocation else { return }
         model.fileShareLinkModel.begin(for: item)
@@ -852,6 +937,13 @@ struct MobileFileBrowser: View {
         Binding(
             get: { copyMove.isPresented },
             set: { if !$0 { copyMove.dismiss() } }
+        )
+    }
+
+    private var recycleActionPresentationBinding: Binding<Bool> {
+        Binding(
+            get: { recycleAction.isPresented },
+            set: { if !$0 { recycleAction.dismiss() } }
         )
     }
 

@@ -7,10 +7,12 @@ import DsmLocalization
 extension MobileAppModel {
     func deactivateFileLocations() {
         fileBrowserModel.locations.deactivate()
+        fileBrowserModel.recycleAction.deactivate()
     }
 
     func purgeFileLocations(profileID: UUID) {
         fileBrowserModel.locations.purge(profileID: profileID)
+        MobileFileRecycleActionReviewBlocker.shared.purge(profileID: profileID)
     }
 
     func openDirectory(_ item: FileItem) {

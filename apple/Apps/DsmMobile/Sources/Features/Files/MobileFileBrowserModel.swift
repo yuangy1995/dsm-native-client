@@ -26,6 +26,7 @@ final class MobileFileBrowserModel {
     let locations: MobileFileLocationsModel
     let mutations: MobileFileItemMutationModel
     let copyMove: MobileFileCopyMoveModel
+    let recycleAction: MobileFileRecycleActionModel
     private(set) var activeProfileID: UUID?
     private(set) var profiles: [UUID: MobileFileBrowserProfileState] = [:]
     @ObservationIgnored private var repositoryIdentity: ObjectIdentifier?
@@ -37,11 +38,13 @@ final class MobileFileBrowserModel {
     init(
         locations: MobileFileLocationsModel = MobileFileLocationsModel(),
         mutations: MobileFileItemMutationModel = MobileFileItemMutationModel(),
-        copyMove: MobileFileCopyMoveModel = MobileFileCopyMoveModel()
+        copyMove: MobileFileCopyMoveModel = MobileFileCopyMoveModel(),
+        recycleAction: MobileFileRecycleActionModel = MobileFileRecycleActionModel()
     ) {
         self.locations = locations
         self.mutations = mutations
         self.copyMove = copyMove
+        self.recycleAction = recycleAction
     }
 
     var state: MobileFileBrowserProfileState {
@@ -141,6 +144,30 @@ final class MobileFileBrowserModel {
             profile.caches = profile.caches.filter {
                 $0.key.path != success.sourceParentPath &&
                     $0.key.path != success.destinationFolderPath
+            }
+            profile.visibleKey = nil
+            profile.options = Self.effectiveOptions(
+                profile.directoryOptions,
+                path: success.sourceParentPath
+            )
+        }
+        await replaceContent(repository: repository, forceNetwork: true)
+    }
+
+    /// 回收站写操作只刷新仍在显示且匹配的源父目录；不会自动跳转到恢复后的原位置。
+    func refreshAfterConfirmedRecycleAction(
+        _ success: MobileFileRecycleActionSuccess,
+        repository: any MobileFileBrowsing
+    ) async {
+        guard isActive(repository),
+              success.profileID == repository.profileID,
+              state.currentPath == success.sourceParentPath else { return }
+        cancelRequest()
+        updateActive { profile in
+            profile.query = ""
+            profile.caches = profile.caches.filter {
+                $0.key.path != success.sourceParentPath &&
+                    $0.key.path != success.destinationParentPath
             }
             profile.visibleKey = nil
             profile.options = Self.effectiveOptions(
