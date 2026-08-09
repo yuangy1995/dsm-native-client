@@ -350,5 +350,10 @@ public sealed class ChatBrowserViewModelTests
                 ? Task.FromException<ChatMessagePage>(error)
                 : Task.FromResult((ChatMessagePage)result);
         }
+
+        public Task<ChatTextSendOutcome> SendTextAsync(
+            ChatTextSendRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

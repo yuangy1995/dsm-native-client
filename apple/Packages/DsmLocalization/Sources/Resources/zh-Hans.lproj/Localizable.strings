@@ -2953,6 +2953,13 @@
 "mobile.chat.load-earlier.failed" = "无法加载更早消息，请重试";
 "mobile.chat.sender.unknown" = "未知发送者";
 "mobile.chat.attachment.read-only" = "只读模式暂不支持附件预览";
+"mobile.chat.composer.label" = "消息";
+"mobile.chat.send.placeholder" = "输入消息";
+"mobile.chat.send.hint" = "将此消息发送到当前选中的会话。";
+"mobile.chat.action.send" = "发送";
+"mobile.chat.sending" = "正在发送…";
+"mobile.chat.send.failed" = "无法确认消息是否已发送。再次发送前，请先核对此会话。";
+"mobile.chat.send.review" = "请刷新并核对此会话，然后再发送相同消息。";
 "mobile.downloads.read-only.notice" = "下载任务在 NAS 上运行。你可以添加链接，并一次暂停或继续一个任务。";
 "mobile.downloads.create.action" = "添加链接";
 "mobile.downloads.create.action.hint" = "通过网址或磁力链接创建 Download Station 任务";

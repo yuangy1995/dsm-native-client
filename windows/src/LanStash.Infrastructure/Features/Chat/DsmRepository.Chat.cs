@@ -9,6 +9,11 @@ namespace LanStash.Infrastructure;
 /// </summary>
 public sealed partial class DsmRepository
 {
+    private const int ChatTextSendVersion = 5;
+    private const int ChatTextReadbackLimit = 50;
+
+    private readonly Dictionary<Guid, PendingChatTextSendReview> _pendingChatTextSends = [];
+
     private static readonly IReadOnlyDictionary<string, (int Minimum, int Maximum)> ChatReadVersions =
         new Dictionary<string, (int Minimum, int Maximum)>(StringComparer.Ordinal)
         {
@@ -32,9 +37,21 @@ public sealed partial class DsmRepository
         HasVerifiedChatVersion("SYNO.Chat.Channel") &&
         HasVerifiedChatVersion("SYNO.Chat.Post");
 
+    private bool HasTextMessageSendContract =>
+        HasReadableChatContract &&
+        HasExactChatVersion("SYNO.Chat.Post", ChatTextSendVersion);
+
     public ChatAvailability Availability => HasReadableChatContract
-        ? new(ChatAvailabilityStatus.Available, ChatReadFeatures)
-        : new(ChatAvailabilityStatus.Unavailable, new HashSet<ChatReadFeature>());
+        ? new(
+            ChatAvailabilityStatus.Available,
+            ChatReadFeatures,
+            HasTextMessageSendContract
+                ? new HashSet<ChatWriteFeature> { ChatWriteFeature.TextMessage }
+                : new HashSet<ChatWriteFeature>())
+        : new(
+            ChatAvailabilityStatus.Unavailable,
+            new HashSet<ChatReadFeature>(),
+            new HashSet<ChatWriteFeature>());
 
     public async Task<IReadOnlyList<ChatUser>> ListUsersAsync(
         CancellationToken cancellationToken = default)
@@ -148,6 +165,177 @@ public sealed partial class DsmRepository
             total is null ? null : Math.Max(0, total.Value));
     }
 
+    public async Task<ChatTextSendOutcome> SendTextAsync(
+        ChatTextSendRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var conversationId = request.ConversationId.Trim();
+        var text = request.Text.Trim();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return ChatTextSendOutcome(
+                request,
+                MutationResultStatus.CancelledBeforeSubmission,
+                submitted: false,
+                requiresRefresh: false,
+                confirmedMessage: null,
+                errorCategory: null,
+                diagnosticTag: "chat.text-send.cancelled-before");
+        }
+        if (request.ClientRequestId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(conversationId) ||
+            string.IsNullOrWhiteSpace(text) ||
+            _profile.Id != _session.ProfileId)
+        {
+            return ChatTextSendOutcome(
+                request with { ConversationId = conversationId, Text = text },
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                requiresRefresh: false,
+                confirmedMessage: null,
+                errorCategory: MutationErrorCategory.Validation,
+                diagnosticTag: "chat.text-send.invalid-input");
+        }
+        if (!HasTextMessageSendContract)
+        {
+            return ChatTextSendOutcome(
+                request with { ConversationId = conversationId, Text = text },
+                MutationResultStatus.Unsupported,
+                submitted: false,
+                requiresRefresh: false,
+                confirmedMessage: null,
+                errorCategory: MutationErrorCategory.Unsupported,
+                diagnosticTag: "chat.text-send.unsupported");
+        }
+
+        if (_pendingChatTextSends.TryGetValue(request.ClientRequestId, out var pendingReview))
+        {
+            return await FinishPendingChatTextSendAsync(
+                pendingReview,
+                MutationResultStatus.SubmittedButUnverified).ConfigureAwait(false);
+        }
+
+        var normalizedRequest = request with { ConversationId = conversationId, Text = text };
+        IReadOnlyList<ChatConversation> conversations;
+        try
+        {
+            conversations = await ListConversationsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return ChatTextSendOutcome(
+                normalizedRequest,
+                MutationResultStatus.CancelledBeforeSubmission,
+                submitted: false,
+                requiresRefresh: false,
+                confirmedMessage: null,
+                errorCategory: null,
+                diagnosticTag: "chat.text-send.cancelled-before");
+        }
+        catch (DsmException error)
+        {
+            return ChatTextSendOutcome(
+                normalizedRequest,
+                error.Code == 105
+                    ? MutationResultStatus.PermissionDenied
+                    : MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                requiresRefresh: false,
+                confirmedMessage: null,
+                errorCategory: ChatTextSendErrorCategory(error),
+                diagnosticTag: "chat.text-send.preflight-failed");
+        }
+
+        var conversation = conversations.FirstOrDefault(value =>
+            string.Equals(value.Id, conversationId, StringComparison.Ordinal));
+        if (conversation is null || conversation.IsEncrypted)
+        {
+            return ChatTextSendOutcome(
+                normalizedRequest,
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                requiresRefresh: false,
+                confirmedMessage: null,
+                errorCategory: MutationErrorCategory.Validation,
+                diagnosticTag: conversation is null
+                    ? "chat.text-send.conversation-missing"
+                    : "chat.text-send.encrypted-conversation");
+        }
+
+        var review = new PendingChatTextSendReview(
+            _profile.Id,
+            conversationId,
+            text,
+            request.ClientRequestId,
+            CandidateMessageId: null);
+        try
+        {
+            var data = await CallChatExactVersionAsync(
+                "SYNO.Chat.Post",
+                "create",
+                ChatTextSendVersion,
+                new Dictionary<string, string>
+                {
+                    ["channel_id"] = conversationId,
+                    ["message"] = text,
+                },
+                cancellationToken).ConfigureAwait(false);
+            review = review with { CandidateMessageId = ChatTextCreateMessageId(data) };
+            _pendingChatTextSends[request.ClientRequestId] = review;
+            return await FinishPendingChatTextSendAsync(
+                review,
+                MutationResultStatus.SubmittedButUnverified).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _pendingChatTextSends[request.ClientRequestId] = review;
+            return ChatTextSendOutcome(
+                normalizedRequest,
+                MutationResultStatus.CancellationRequestedAfterSubmission,
+                submitted: true,
+                requiresRefresh: true,
+                confirmedMessage: null,
+                errorCategory: MutationErrorCategory.Network,
+                diagnosticTag: "chat.text-send.cancelled-after");
+        }
+        catch (DsmException error)
+        {
+            if (error.Code == 105)
+            {
+                return ChatTextSendOutcome(
+                    normalizedRequest,
+                    MutationResultStatus.PermissionDenied,
+                    submitted: true,
+                    requiresRefresh: false,
+                    confirmedMessage: null,
+                    errorCategory: MutationErrorCategory.Permission,
+                    diagnosticTag: "chat.text-send.permission-denied");
+            }
+            _pendingChatTextSends[request.ClientRequestId] = review;
+            return ChatTextSendOutcome(
+                normalizedRequest,
+                MutationResultStatus.SubmittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                confirmedMessage: null,
+                errorCategory: ChatTextSendErrorCategory(error),
+                diagnosticTag: "chat.text-send.submitted-unverified");
+        }
+        catch
+        {
+            _pendingChatTextSends[request.ClientRequestId] = review;
+            return ChatTextSendOutcome(
+                normalizedRequest,
+                MutationResultStatus.SubmittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                confirmedMessage: null,
+                errorCategory: MutationErrorCategory.Unknown,
+                diagnosticTag: "chat.text-send.submitted-unverified");
+        }
+    }
+
     private void EnsureReadableChatContract()
     {
         if (_profile.Id != _session.ProfileId)
@@ -170,6 +358,11 @@ public sealed partial class DsmRepository
                capability.MaxVersion >= verified.Minimum &&
                capability.MinVersion <= verified.Maximum;
     }
+
+    private bool HasExactChatVersion(string apiName, int version) =>
+        _capabilities.TryGetValue(apiName, out var capability) &&
+        capability.MinVersion <= version &&
+        capability.MaxVersion >= version;
 
     private Task<JsonObject> CallChatAsync(
         string apiName,
@@ -203,6 +396,31 @@ public sealed partial class DsmRepository
                 MinVersion = selectedVersion,
                 MaxVersion = selectedVersion,
             },
+            method,
+            parameters,
+            cancellationToken);
+    }
+
+    private Task<JsonObject> CallChatExactVersionAsync(
+        string apiName,
+        string method,
+        int version,
+        IReadOnlyDictionary<string, string>? parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!_capabilities.TryGetValue(apiName, out var capability) ||
+            capability.MinVersion > version ||
+            capability.MaxVersion < version)
+        {
+            throw new DsmException(
+                UserText.Key("WinShared11a208e43c34b77c"),
+                UserText.Key("WinShared371d84f48836296f"),
+                102);
+        }
+        return _api.CallAsync(
+            _profile,
+            _session,
+            capability with { MinVersion = version, MaxVersion = version },
             method,
             parameters,
             cancellationToken);
@@ -394,6 +612,104 @@ public sealed partial class DsmRepository
     private static string? FirstStableId(JsonObject? item, params string[] keys) =>
         item is null ? null : keys.Select(key => StableId(item[key])).FirstOrDefault(value => value is not null);
 
+    private async Task<ChatTextSendOutcome> FinishPendingChatTextSendAsync(
+        PendingChatTextSendReview review,
+        MutationResultStatus submittedStatus)
+    {
+        try
+        {
+            var page = await ListMessagesAsync(
+                review.ConversationId,
+                null,
+                ChatTextReadbackLimit,
+                CancellationToken.None).ConfigureAwait(false);
+            var confirmed = page.Messages.FirstOrDefault(message =>
+                string.Equals(message.Id, review.CandidateMessageId, StringComparison.Ordinal) &&
+                string.Equals(message.ConversationId, review.ConversationId, StringComparison.Ordinal) &&
+                message.IsFromCurrentUser == true &&
+                string.Equals(message.Text, review.Text, StringComparison.Ordinal));
+            if (confirmed is not null)
+            {
+                _pendingChatTextSends.Remove(review.ClientRequestId);
+                return ChatTextSendOutcome(
+                    review.Request,
+                    MutationResultStatus.ConfirmedSuccess,
+                    submitted: true,
+                    requiresRefresh: false,
+                    confirmedMessage: confirmed,
+                    errorCategory: null,
+                    diagnosticTag: "chat.text-send.confirmed");
+            }
+        }
+        catch
+        {
+            // 结果未知时保持同一请求的核对记录，避免自动重发。
+        }
+
+        return ChatTextSendOutcome(
+            review.Request,
+            submittedStatus,
+            submitted: true,
+            requiresRefresh: true,
+            confirmedMessage: null,
+            errorCategory: MutationErrorCategory.Unknown,
+            diagnosticTag: submittedStatus == MutationResultStatus.CancellationRequestedAfterSubmission
+                ? "chat.text-send.cancelled-after"
+                : "chat.text-send.submitted-unverified");
+    }
+
+    private static string? ChatTextCreateMessageId(JsonObject data) =>
+        FirstStableId(data, "post_id", "id", "message_id") ??
+        FirstStableId(data["post"] as JsonObject, "post_id", "id", "message_id") ??
+        FirstStableId(data["message"] as JsonObject, "post_id", "id", "message_id") ??
+        ContainerObjects(data, "post", "posts", "items", "results")
+            .Select(item => FirstStableId(item, "post_id", "id", "message_id"))
+            .FirstOrDefault(value => value is not null);
+
+    private static MutationErrorCategory ChatTextSendErrorCategory(DsmException error)
+    {
+        if (error.AuthenticationFailure || error.Code is 106 or 107 or 119 or 401)
+        {
+            return MutationErrorCategory.Authentication;
+        }
+        return error.Code switch
+        {
+            105 => MutationErrorCategory.Permission,
+            102 or 103 => MutationErrorCategory.Unsupported,
+            _ => MutationErrorCategory.Server,
+        };
+    }
+
+    private static ChatTextSendOutcome ChatTextSendOutcome(
+        ChatTextSendRequest request,
+        MutationResultStatus status,
+        bool submitted,
+        bool requiresRefresh,
+        ChatMessage? confirmedMessage,
+        MutationErrorCategory? errorCategory,
+        string diagnosticTag)
+    {
+        var succeeded = status == MutationResultStatus.ConfirmedSuccess ? 1 : 0;
+        var failed = status is MutationResultStatus.ConfirmedFailure or
+            MutationResultStatus.PermissionDenied or MutationResultStatus.Unsupported ? 1 : 0;
+        var unknown = status is MutationResultStatus.SubmittedButUnverified or
+            MutationResultStatus.CancellationRequestedAfterSubmission ? 1 : 0;
+        return new(
+            new MutationResult(
+                1,
+                status,
+                "chatTextSend",
+                submitted,
+                requiresRefresh,
+                new MutationResultCounts(succeeded, failed, unknown),
+                errorCategory,
+                localizationKey: $"chat.text-send.{status.ToString().ToLowerInvariant()}",
+                diagnosticTag),
+            request.ConversationId,
+            request.ClientRequestId,
+            confirmedMessage);
+    }
+
     private static string? StableId(JsonNode? node)
     {
         if (node is not JsonValue value)
@@ -473,4 +789,14 @@ public sealed partial class DsmRepository
     private static DsmException InvalidChatResponse() => new(
         UserText.Key("WinSharedda35e58bcad31766"),
         UserText.Key("WinSharedefc81ced18eb3bb0"));
+
+    private sealed record PendingChatTextSendReview(
+        Guid ProfileId,
+        string ConversationId,
+        string Text,
+        Guid ClientRequestId,
+        string? CandidateMessageId)
+    {
+        public ChatTextSendRequest Request => new(ConversationId, Text, ClientRequestId);
+    }
 }

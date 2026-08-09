@@ -282,7 +282,8 @@ private struct MobileChatMessagesView: View {
             }
         }
         .safeAreaInset(edge: .top) {
-            if horizontalSizeClass != .regular {
+            if horizontalSizeClass != .regular,
+               !chat.state.availability.supportedFeatures.contains(.textMessage) {
                 Label(
                     L10n.string("mobile.chat.read-only.notice"),
                     systemImage: "eye"
@@ -306,6 +307,12 @@ private struct MobileChatMessagesView: View {
                 }
                 .disabled(conversation.isEncrypted || chat.state.isRefreshingMessages)
                 .accessibilityLabel(L10n.string("mobile.chat.action.refresh-messages"))
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if chat.state.availability.supportedFeatures.contains(.textMessage),
+               !conversation.isEncrypted {
+                messageComposer
             }
         }
     }
@@ -336,6 +343,71 @@ private struct MobileChatMessagesView: View {
                     .accessibilityLabel(L10n.string("mobile.chat.loading.messages"))
             }
         }
+    }
+
+    private var messageComposer: some View {
+        let state = chat.state
+        return VStack(alignment: .leading, spacing: 8) {
+            if state.selectedDraftRequiresReview {
+                Label(L10n.string("mobile.chat.send.review"), systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+            } else if state.sendErrorCategory != nil {
+                Label(L10n.string("mobile.chat.send.failed"), systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.string("mobile.chat.composer.label"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(
+                        L10n.string("mobile.chat.send.placeholder"),
+                        text: draftBinding,
+                        axis: .vertical
+                    )
+                    .lineLimit(1...4)
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.send)
+                    .onSubmit { Task { await chat.sendSelectedMessage() } }
+                    .disabled(state.isSendingMessage)
+                    .accessibilityLabel(L10n.string("mobile.chat.composer.label"))
+                    .accessibilityHint(L10n.string("mobile.chat.send.hint"))
+                }
+                Button {
+                    Task { await chat.sendSelectedMessage() }
+                } label: {
+                    if state.isSendingMessage {
+                        ProgressView()
+                            .frame(width: 24, height: 24)
+                    } else {
+                        Label(L10n.string("mobile.chat.action.send"), systemImage: "paperplane.fill")
+                    }
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .disabled(!state.canSendSelectedDraft)
+                .accessibilityLabel(
+                    state.isSendingMessage
+                        ? L10n.string("mobile.chat.sending")
+                        : L10n.string("mobile.chat.action.send")
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(.regularMaterial)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var draftBinding: Binding<String> {
+        Binding(
+            get: { chat.state.selectedDraft },
+            set: { chat.setDraft($0) }
+        )
     }
 
     @ViewBuilder

@@ -31,20 +31,36 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("case .requiresValidation"))
     }
 
-    func test加密会话和附件只有说明没有桌面或写入动作() throws {
+    func test加密会话和附件仍关闭且不开放桌面动作() throws {
         let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
 
         XCTAssertTrue(source.contains("conversation.isEncrypted"))
         XCTAssertTrue(source.contains("mobile.chat.encrypted.message"))
         XCTAssertTrue(source.contains("mobile.chat.attachment.read-only"))
-        XCTAssertTrue(source.contains("mobile.chat.read-only.notice"))
         XCTAssertTrue(source.contains("mobile.chat.conversation.accessibility.encrypted"))
         for forbidden in [
-            "TextEditor(", "sendMessage(", "openDirectConversation(", "createGroup(",
+            "TextEditor(", "openDirectConversation(", "createGroup(",
             "downloadAttachment(", "startRealtime(", "contextMenu", "onHover", "doubleClick"
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
+    }
+
+    func test文字发送Composer使用原生输入反馈和无障碍标签() throws {
+        let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
+        let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
+
+        XCTAssertTrue(source.contains("messageComposer"))
+        XCTAssertTrue(source.contains("TextField("))
+        XCTAssertTrue(source.contains("mobile.chat.composer.label"))
+        XCTAssertTrue(source.contains("mobile.chat.action.send"))
+        XCTAssertTrue(source.contains("mobile.chat.send.failed"))
+        XCTAssertTrue(source.contains("mobile.chat.send.review"))
+        XCTAssertTrue(source.contains(".submitLabel(.send)"))
+        XCTAssertTrue(source.contains(".frame(minWidth: 44, minHeight: 44)"))
+        XCTAssertTrue(source.contains(".accessibilityHint(L10n.string(\"mobile.chat.send.hint\"))"))
+        XCTAssertTrue(model.contains("sendSelectedMessage()"))
+        XCTAssertTrue(model.contains("sendReviewBlockedTextsByConversation"))
     }
 
     func test触控动态文字VoiceOver和降低动态效果沿用系统组件() throws {

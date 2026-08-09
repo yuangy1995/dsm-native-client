@@ -16,4 +16,8 @@ public interface IChatRepository
         string? beforeCursor,
         int limit,
         CancellationToken cancellationToken = default);
+
+    Task<ChatTextSendOutcome> SendTextAsync(
+        ChatTextSendRequest request,
+        CancellationToken cancellationToken = default);
 }

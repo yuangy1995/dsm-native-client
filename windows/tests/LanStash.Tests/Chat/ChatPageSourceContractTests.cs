@@ -46,15 +46,24 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void PageHasNoWriteRealtimeOrAttachmentActions()
+    public void PageHasTextComposerButNoAttachmentRealtimeOrConversationActions()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
-        var combined = xaml + source;
+        var send = Read("windows/src/LanStash.App/Views/ChatPage.Send.cs");
+        var composer = Read("windows/src/LanStash.App/Features/Chat/ChatTextComposerViewModel.cs");
+        var combined = xaml + source + send + composer;
 
-        Assert.DoesNotContain("SendMessage", combined, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Send_Click", combined, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Composer", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("x:Name=\"ComposerPanel\"", xaml);
+        Assert.Contains("x:Name=\"ComposerInput\"", xaml);
+        Assert.Contains("AcceptsReturn=\"True\"", xaml);
+        Assert.Contains("x:Name=\"SendMessageButton\"", xaml);
+        Assert.Contains("ChatTextComposerViewModel", source);
+        Assert.Contains("_composer.SendAsync", send);
+        Assert.Contains("SendTextAsync", composer);
+        Assert.Contains("RefreshMessagesAsync", send);
+        Assert.DoesNotContain("FileOpenPicker", combined);
+        Assert.DoesNotContain("StorageFile", combined);
         Assert.DoesNotContain("CreateConversation", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Upload", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
@@ -85,6 +94,10 @@ public sealed class ChatPageSourceContractTests
     [InlineData("ChatBrowserRefreshMessages")]
     [InlineData("ChatBrowserLoadEarlier")]
     [InlineData("ChatBrowserMessageList")]
+    [InlineData("ChatBrowserComposer")]
+    [InlineData("ChatBrowserSend")]
+    [InlineData("ChatBrowserSendProgress")]
+    [InlineData("ChatBrowserSendStatus")]
     public void InteractiveControlsHaveBilingualAutomationNames(string uid)
     {
         var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");

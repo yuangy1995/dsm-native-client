@@ -395,6 +395,25 @@ public struct ChatMessageDraft: Equatable, Sendable {
     }
 }
 
+public struct ChatMessageSendOutcome: Equatable, Sendable {
+    public let result: MutationResult
+    public let conversationID: String
+    public let clientRequestID: UUID
+    public let confirmedMessage: ChatMessage?
+
+    public init(
+        result: MutationResult,
+        conversationID: String,
+        clientRequestID: UUID,
+        confirmedMessage: ChatMessage?
+    ) {
+        self.result = result
+        self.conversationID = conversationID
+        self.clientRequestID = clientRequestID
+        self.confirmedMessage = confirmedMessage
+    }
+}
+
 public struct ChatPollDraft: Equatable, Sendable {
     public let clientRequestID: UUID
     public let conversationID: String
@@ -461,6 +480,10 @@ public protocol ChatRepository: Sendable {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessage
+    func sendMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome
     func deleteMessage(
         conversationID: String,
         messageID: String,
@@ -524,6 +547,30 @@ public protocol ChatRepository: Sendable {
 public extension ChatRepository {
     func sendMessage(_ draft: ChatMessageDraft) async throws -> ChatMessage {
         try await sendMessage(draft, progress: { _, _ in })
+    }
+
+    func sendMessageResult(_ draft: ChatMessageDraft) async throws -> ChatMessageSendOutcome {
+        try await sendMessageResult(draft, progress: { _, _ in })
+    }
+
+    func sendMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome {
+        ChatMessageSendOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "chatTextSend",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.text-send.unsupported"
+            ),
+            conversationID: draft.conversationID,
+            clientRequestID: draft.clientRequestID,
+            confirmedMessage: nil
+        )
     }
 
     func realtimeEvents() async -> AsyncStream<ChatRealtimeEvent> {

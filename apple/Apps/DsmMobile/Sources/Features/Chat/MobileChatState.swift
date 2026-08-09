@@ -14,14 +14,18 @@ struct MobileChatProfileState: Equatable, Sendable {
     var conversationFilter = ""
     var selectedConversationID: String?
     var messagesByConversation: [String: MobileChatMessageCache] = [:]
+    var draftsByConversation: [String: String] = [:]
+    var sendReviewBlockedTextsByConversation: [String: Set<String>] = [:]
     var conversationPageState: MobilePageState = .loading
     var messagePageState: MobilePageState = .empty
     var isRefreshingConversations = false
     var isRefreshingMessages = false
     var isLoadingMoreMessages = false
+    var isSendingMessage = false
     var loadMoreMessagesFailed = false
     var conversationErrorCategory: AppErrorCategory?
     var messageErrorCategory: AppErrorCategory?
+    var sendErrorCategory: AppErrorCategory?
 
     var selectedConversation: ChatConversation? {
         guard let selectedConversationID else { return nil }
@@ -35,5 +39,27 @@ struct MobileChatProfileState: Equatable, Sendable {
     var selectedMessages: MobileChatMessageCache {
         guard let selectedConversationID else { return MobileChatMessageCache() }
         return messagesByConversation[selectedConversationID] ?? MobileChatMessageCache()
+    }
+
+    var selectedDraft: String {
+        guard let selectedConversationID else { return "" }
+        return draftsByConversation[selectedConversationID] ?? ""
+    }
+
+    var selectedDraftRequiresReview: Bool {
+        guard let selectedConversationID else { return false }
+        let normalized = selectedDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        return sendReviewBlockedTextsByConversation[selectedConversationID]?.contains(normalized) == true
+    }
+
+    var canSendSelectedDraft: Bool {
+        guard selectedConversation?.isEncrypted == false,
+              availability.supportedFeatures.contains(.textMessage),
+              !isSendingMessage,
+              !selectedDraftRequiresReview else {
+            return false
+        }
+        return !selectedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

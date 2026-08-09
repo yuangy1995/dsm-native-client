@@ -14,6 +14,7 @@ public actor DsmChatRepository: ChatRepository {
     private let transport: any DsmHTTPTransport
     private let realtimeClient: DsmChatRealtimeClient
     private var completedMessages: [UUID: ChatMessage] = [:]
+    private var pendingMessageSends: [UUID: PendingChatMessageSendReview] = [:]
     private var completedDirectConversations: [UUID: ChatConversation] = [:]
     private var completedGroups: [UUID: ChatConversation] = [:]
     private var completedReminders: [UUID: ChatReminder] = [:]
@@ -84,8 +85,6 @@ public actor DsmChatRepository: ChatRepository {
         }
         var features: Set<ChatFeature> = [
             .directConversation,
-            .textMessage,
-            .emoji,
             .deleteOwnMessage,
             .closeConversation
         ]
@@ -103,7 +102,7 @@ public actor DsmChatRepository: ChatRepository {
             features.insert(.scheduledMessage)
         }
         if supportsVersion(DsmAPIName.chatPost, version: 5) {
-            features.formUnion([.messageForward, .pinnedMessages])
+            features.formUnion([.textMessage, .emoji, .messageForward, .pinnedMessages])
         }
         if hasCapability(DsmAPIName.chatChannelMember) {
             features.insert(.groupMembers)
@@ -438,32 +437,239 @@ public actor DsmChatRepository: ChatRepository {
             completedMessages[draft.clientRequestID] = uploaded
             return uploaded
         }
-        guard let text = draft.text else { throw ChatContractError.emptyMessage }
-        let payload = try await call(
-            DsmAPIName.chatPost,
-            method: "create",
-            parameters: [
-                "channel_id": .string(draft.conversationID),
-                "message": .string(text)
-            ]
-        )
-        let message: ChatMessage
-        if let parsed = makeMessage(from: payload, fallbackConversationID: draft.conversationID) {
-            message = parsed
-        } else {
-            guard let id = payload.objectValue?.firstString(for: ["post_id", "id"]) else {
-                throw invalidChatResponse()
-            }
-            message = ChatMessage(
-                id: id,
-                clientRequestID: draft.clientRequestID,
-                conversationID: draft.conversationID,
-                senderID: "current",
-                sentAt: Date(),
-                text: text
+        let outcome = try await sendMessageResult(draft, progress: progress)
+        guard outcome.result.status == .confirmedSuccess,
+              let message = outcome.confirmedMessage else {
+            throw AppError(
+                category: outcome.result.status == .unsupported ? .apiUnavailable : .partialFailure,
+                isRetryable: outcome.result.status != .submittedButUnverified,
+                safeUserMessage: L10n.string("shared.f975fe7c14e442cf")
             )
         }
-        let result = ChatMessage(
+        return message
+    }
+
+    public func sendMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome {
+        if let completed = completedMessages[draft.clientRequestID] {
+            return try chatTextOutcome(
+                status: .confirmedSuccess,
+                submitted: true,
+                succeeded: 1,
+                diagnosticTag: "chat.text-send.confirmed",
+                draft: draft,
+                message: completed
+            )
+        }
+        guard draft.localAttachmentURLs.isEmpty else {
+            return try chatTextOutcome(
+                status: .unsupported,
+                submitted: false,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.text-send.attachments-unsupported",
+                draft: draft
+            )
+        }
+        guard draft.text != nil else {
+            return try chatTextOutcome(
+                status: .confirmedFailure,
+                submitted: false,
+                failed: 1,
+                errorCategory: .validation,
+                diagnosticTag: "chat.text-send.empty",
+                draft: draft
+            )
+        }
+        guard supportsVersion(DsmAPIName.chatPost, version: 5) else {
+            return try chatTextOutcome(
+                status: .unsupported,
+                submitted: false,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.text-send.version-unsupported",
+                draft: draft
+            )
+        }
+        if let pending = pendingMessageSends[draft.clientRequestID] {
+            return try await finishPendingChatTextSend(pending)
+        }
+        if Task.isCancelled {
+            return try chatTextOutcome(
+                status: .cancelledBeforeSubmission,
+                submitted: false,
+                diagnosticTag: "chat.text-send.cancelled-before-submit",
+                draft: draft
+            )
+        }
+
+        do {
+            let payload = try await call(
+                DsmAPIName.chatPost,
+                method: "create",
+                parameters: [
+                    "channel_id": .string(draft.conversationID),
+                    "message": .string(draft.text ?? "")
+                ],
+                version: 5
+            )
+            guard let pending = makePendingChatTextSend(from: payload, draft: draft) else {
+                let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
+                pendingMessageSends[draft.clientRequestID] = review
+                return try chatTextOutcome(
+                    status: .submittedButUnverified,
+                    submitted: true,
+                    requiresRefresh: true,
+                    unknown: 1,
+                    errorCategory: .server,
+                    diagnosticTag: "chat.text-send.missing-id",
+                    draft: draft
+                )
+            }
+            pendingMessageSends[draft.clientRequestID] = pending
+            return try await finishPendingChatTextSend(pending)
+        } catch let error as AppError where error.category == .permissionDenied {
+            return try chatTextOutcome(
+                status: .permissionDenied,
+                submitted: true,
+                failed: 1,
+                errorCategory: .permission,
+                diagnosticTag: "chat.text-send.permission",
+                draft: draft
+            )
+        } catch let error as AppError where error.category == .cancelled {
+            let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
+            pendingMessageSends[draft.clientRequestID] = review
+            return try chatTextOutcome(
+                status: .cancellationRequestedAfterSubmission,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .network,
+                diagnosticTag: "chat.text-send.cancelled-after-submit",
+                draft: draft
+            )
+        } catch is CancellationError {
+            let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
+            pendingMessageSends[draft.clientRequestID] = review
+            return try chatTextOutcome(
+                status: .cancellationRequestedAfterSubmission,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .network,
+                diagnosticTag: "chat.text-send.cancelled-after-submit",
+                draft: draft
+            )
+        } catch {
+            let review = PendingChatMessageSendReview(draft: draft, candidateMessageID: nil)
+            pendingMessageSends[draft.clientRequestID] = review
+            return try chatTextOutcome(
+                status: .submittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .unknown,
+                diagnosticTag: "chat.text-send.unverified",
+                draft: draft
+            )
+        }
+    }
+
+    private func makePendingChatTextSend(
+        from payload: ChatJSON,
+        draft: ChatMessageDraft
+    ) -> PendingChatMessageSendReview? {
+        let candidate = makeMessage(from: payload, fallbackConversationID: draft.conversationID)
+        let candidateID = candidate?.id ?? payload.objectValue?.firstString(for: ["post_id", "id"])
+        guard let candidateID, !candidateID.isEmpty else { return nil }
+        return PendingChatMessageSendReview(draft: draft, candidateMessageID: candidateID)
+    }
+
+    private func finishPendingChatTextSend(
+        _ pending: PendingChatMessageSendReview
+    ) async throws -> ChatMessageSendOutcome {
+        guard let candidateID = pending.candidateMessageID else {
+            return try chatTextOutcome(
+                status: .submittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .unknown,
+                diagnosticTag: "chat.text-send.review-pending",
+                draft: pending.draft
+            )
+        }
+        do {
+            let page = try await listMessages(
+                conversationID: pending.draft.conversationID,
+                before: nil,
+                limit: 50
+            )
+            guard let confirmed = page.messages.first(where: {
+                isConfirmedChatTextMessage($0, pending: pending, candidateID: candidateID)
+            }) else {
+                return try chatTextOutcome(
+                    status: .submittedButUnverified,
+                    submitted: true,
+                    requiresRefresh: true,
+                    unknown: 1,
+                    errorCategory: .unknown,
+                    diagnosticTag: "chat.text-send.readback-mismatch",
+                    draft: pending.draft
+                )
+            }
+            let result = confirmedSentMessage(confirmed, draft: pending.draft)
+            pendingMessageSends[pending.draft.clientRequestID] = nil
+            completedMessages[pending.draft.clientRequestID] = result
+            return try chatTextOutcome(
+                status: .confirmedSuccess,
+                submitted: true,
+                succeeded: 1,
+                diagnosticTag: "chat.text-send.confirmed",
+                draft: pending.draft,
+                message: result
+            )
+        } catch let error as AppError where error.category == .permissionDenied {
+            return try chatTextOutcome(
+                status: .permissionDenied,
+                submitted: true,
+                failed: 1,
+                errorCategory: .permission,
+                diagnosticTag: "chat.text-send.readback-permission",
+                draft: pending.draft
+            )
+        } catch {
+            return try chatTextOutcome(
+                status: .submittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .unknown,
+                diagnosticTag: "chat.text-send.readback-failed",
+                draft: pending.draft
+            )
+        }
+    }
+
+    private func isConfirmedChatTextMessage(
+        _ message: ChatMessage,
+        pending: PendingChatMessageSendReview,
+        candidateID: String
+    ) -> Bool {
+        message.id == candidateID &&
+            message.conversationID == pending.draft.conversationID &&
+            message.isFromCurrentUser == true &&
+            message.text == pending.draft.text
+    }
+
+    private func confirmedSentMessage(
+        _ message: ChatMessage,
+        draft: ChatMessageDraft
+    ) -> ChatMessage {
+        ChatMessage(
             id: message.id,
             clientRequestID: draft.clientRequestID,
             conversationID: message.conversationID,
@@ -471,15 +677,45 @@ public actor DsmChatRepository: ChatRepository {
             senderDisplayName: message.senderDisplayName,
             isFromCurrentUser: true,
             sentAt: message.sentAt,
-            text: message.text ?? text,
+            text: message.text ?? draft.text,
             attachments: message.attachments,
             poll: message.poll,
             deliveryState: .sent,
             encryptionState: message.encryptionState,
             pinnedAt: message.pinnedAt
         )
-        completedMessages[draft.clientRequestID] = result
-        return result
+    }
+
+    private func chatTextOutcome(
+        status: MutationResultStatus,
+        submitted: Bool,
+        requiresRefresh: Bool = false,
+        succeeded: Int = 0,
+        failed: Int = 0,
+        unknown: Int = 0,
+        errorCategory: MutationErrorCategory? = nil,
+        diagnosticTag: String,
+        draft: ChatMessageDraft,
+        message: ChatMessage? = nil
+    ) throws -> ChatMessageSendOutcome {
+        ChatMessageSendOutcome(
+            result: try MutationResult(
+                status: status,
+                operation: "chatTextSend",
+                submitted: submitted,
+                requiresRefresh: requiresRefresh,
+                counts: MutationResultCounts(
+                    succeeded: succeeded,
+                    failed: failed,
+                    unknown: unknown
+                ),
+                errorCategory: errorCategory,
+                diagnosticTag: diagnosticTag
+            ),
+            conversationID: draft.conversationID,
+            clientRequestID: draft.clientRequestID,
+            confirmedMessage: message
+        )
     }
 
     /// 使用 Chat Server 2.4.1-22111 官方网页客户端当前采用的内部上传契约。
@@ -1749,6 +1985,11 @@ public actor DsmChatRepository: ChatRepository {
             safeUserMessage: L10n.string("shared.cee51e4469010a94")
         )
     }
+}
+
+private struct PendingChatMessageSendReview: Sendable {
+    let draft: ChatMessageDraft
+    let candidateMessageID: String?
 }
 
 /// 用于兼容 Chat Server 不同版本返回字段的最小动态 JSON 类型。

@@ -16,9 +16,23 @@ public enum ChatReadFeature
     EncryptedContentMetadata,
 }
 
+public enum ChatWriteFeature
+{
+    TextMessage,
+}
+
 public sealed record ChatAvailability(
     ChatAvailabilityStatus Status,
-    IReadOnlySet<ChatReadFeature> SupportedFeatures);
+    IReadOnlySet<ChatReadFeature> SupportedFeatures,
+    IReadOnlySet<ChatWriteFeature> SupportedWriteFeatures)
+{
+    public ChatAvailability(
+        ChatAvailabilityStatus status,
+        IReadOnlySet<ChatReadFeature> supportedFeatures)
+        : this(status, supportedFeatures, new HashSet<ChatWriteFeature>())
+    {
+    }
+}
 
 public sealed record ChatUser(
     string Id,
@@ -90,3 +104,14 @@ public sealed record ChatMessagePage(
     int SourceOffset,
     int SourceRecordCount,
     int? SourceTotal);
+
+public sealed record ChatTextSendRequest(
+    string ConversationId,
+    string Text,
+    Guid ClientRequestId);
+
+public sealed record ChatTextSendOutcome(
+    MutationResult Result,
+    string ConversationId,
+    Guid ClientRequestId,
+    ChatMessage? ConfirmedMessage);

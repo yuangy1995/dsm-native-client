@@ -175,7 +175,8 @@ final class DsmChatRepositoryTests: XCTestCase {
 
     func test相同请求标识只发送一次文字消息() async throws {
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"post_id":"9002","channel_id":"27","creator_id":"1","create_at":"1774166400000","message":"你好"}}"#)
+            response(#"{"success":true,"data":{"post_id":"9002","channel_id":"27","creator_id":"1","create_at":"1774166400000","message":"你好"}}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"9002","channel_id":"27","creator":{"user_id":"1","nickname":"测试账号","is_current_user":true},"create_at":"1774166400000","message":"你好"}]}}"#)
         ])
         let repository = try makeRepository(transport: transport)
         let requestID = UUID()
@@ -190,8 +191,80 @@ final class DsmChatRepositoryTests: XCTestCase {
 
         XCTAssertEqual(first, second)
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.count, 2)
+        let createFields = try decodeForm(requests[0].httpBody)
+        XCTAssertEqual(createFields["version"], "5")
+        XCTAssertEqual(createFields["method"], "create")
+        let readbackFields = try decodeForm(requests[1].httpBody)
+        XCTAssertEqual(readbackFields["method"], "list")
         XCTAssertEqual(first.clientRequestID, requestID)
+    }
+
+    func test文字发送结果成功前必须回读确认() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"post_id":"9002","channel_id":"27","creator_id":"1","create_at":"1774166400000","message":"你好"}}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"9002","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":"1774166400000","message":"你好"}]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(conversationID: "27", text: "你好")
+
+        let outcome = try await repository.sendMessageResult(draft)
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.confirmedMessage?.id, "9002")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(try decodeForm(requests[0].httpBody)["version"], "5")
+        XCTAssertEqual(try decodeForm(requests[1].httpBody)["method"], "list")
+    }
+
+    func test文字发送缺少稳定标识会进入核对且同请求不会重发() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"channel_id":"27"}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(conversationID: "27", text: "你好")
+
+        let first = try await repository.sendMessageResult(draft)
+        let second = try await repository.sendMessageResult(draft)
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(try decodeForm(requests[0].httpBody)["method"], "create")
+    }
+
+    func test文字发送回读不匹配会进入核对且后续只回读() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"post_id":"9002","channel_id":"27","creator_id":"1","create_at":"1774166400000","message":"你好"}}"#),
+            response(#"{"success":true,"data":{"posts":[]}}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"9002","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":"1774166400000","message":"你好"}]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(conversationID: "27", text: "你好")
+
+        let first = try await repository.sendMessageResult(draft)
+        let second = try await repository.sendMessageResult(draft)
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(try decodeForm(requests[0].httpBody)["method"], "create")
+        XCTAssertEqual(try decodeForm(requests[1].httpBody)["method"], "list")
+        XCTAssertEqual(try decodeForm(requests[2].httpBody)["method"], "list")
+    }
+
+    func test文字发送能力需要PostV5() async throws {
+        let repository = try makeRepository(
+            transport: MockHTTPTransport(responses: []),
+            chatPostVersion: 4
+        )
+
+        let availability = await repository.availability()
+
+        XCTAssertFalse(availability.supportedFeatures.contains(.textMessage))
+        XCTAssertFalse(availability.supportedFeatures.contains(.emoji))
     }
 
     func test首次单聊使用匿名会话接口并在创建后复查() async throws {
@@ -602,7 +675,8 @@ final class DsmChatRepositoryTests: XCTestCase {
 
     private func makeRepository(
         transport: MockHTTPTransport,
-        includesAvatarCapability: Bool = false
+        includesAvatarCapability: Bool = false,
+        chatPostVersion: Int = 8
     ) throws -> DsmChatRepository {
         var names = [
             DsmAPIName.chatChannel: 5,
@@ -610,7 +684,7 @@ final class DsmChatRepositoryTests: XCTestCase {
             DsmAPIName.chatChannelAnonymous: 2,
             DsmAPIName.chatChannelMember: 1,
             DsmAPIName.chatUser: 3,
-            DsmAPIName.chatPost: 8,
+            DsmAPIName.chatPost: chatPostVersion,
             DsmAPIName.chatPostFile: 2,
             DsmAPIName.chatPostReminder: 1,
             DsmAPIName.chatPostVote: 1,

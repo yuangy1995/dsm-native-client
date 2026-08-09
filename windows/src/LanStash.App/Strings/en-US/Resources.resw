@@ -396,11 +396,11 @@
   <data name="PhotoBrowserUnavailableTitle" xml:space="preserve"><value>The photo library isn’t available</value></data>
   <data name="PhotoBrowserUnavailableMessage" xml:space="preserve"><value>Reconnect to this NAS, then open the photo library again.</value></data>
   <data name="ChatBrowserTitle.Text" xml:space="preserve"><value>Chat</value></data>
-  <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>Read conversations and messages from Synology Chat.</value></data>
+  <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>Read conversations and send text messages from Synology Chat.</value></data>
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh conversations</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
-  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>Read-only</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>Sending messages, creating conversations, and opening attachments are not available yet.</value></data>
+  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>Text messages only</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>You can send text in available conversations. Attachments and new conversations are not available here yet.</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>Conversations couldn’t be refreshed</value></data>
@@ -410,8 +410,21 @@
   <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
   <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}, {1:N0} unread</value></data>
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to conversations</value></data>
-  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>Messages are read-only</value></data>
+  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>Text messages only</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh messages</value></data>
+  <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>Message</value></data>
+  <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>Type a message</value></data>
+  <data name="ChatBrowserComposer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Message text</value></data>
+  <data name="ChatBrowserSend.Content" xml:space="preserve"><value>Send</value></data>
+  <data name="ChatBrowserSend.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Send message</value></data>
+  <data name="ChatBrowserSendProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sending message</value></data>
+  <data name="ChatBrowserSendStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Message send status</value></data>
+  <data name="ChatBrowserComposerSending" xml:space="preserve"><value>Sending message…</value></data>
+  <data name="ChatBrowserComposerSent" xml:space="preserve"><value>Message sent.</value></data>
+  <data name="ChatBrowserComposerReview" xml:space="preserve"><value>The message may have been sent. Refresh messages before sending it again.</value></data>
+  <data name="ChatBrowserComposerCancelled" xml:space="preserve"><value>The message was cancelled before it was sent.</value></data>
+  <data name="ChatBrowserComposerPermission" xml:space="preserve"><value>You don’t have permission to send messages in this conversation.</value></data>
+  <data name="ChatBrowserComposerFailed" xml:space="preserve"><value>The message couldn’t be sent. Check the connection and try again.</value></data>
   <data name="ChatBrowserMessageError.Title" xml:space="preserve"><value>Messages couldn’t be loaded</value></data>
   <data name="ChatBrowserMessageError.Message" xml:space="preserve"><value>The messages already shown are still available. Check the connection, then try again.</value></data>
   <data name="ChatBrowserChooseConversationTitle.Text" xml:space="preserve"><value>Choose a conversation</value></data>

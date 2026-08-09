@@ -2953,6 +2953,13 @@
 "mobile.chat.load-earlier.failed" = "Couldn’t load earlier messages. Try Again";
 "mobile.chat.sender.unknown" = "Unknown sender";
 "mobile.chat.attachment.read-only" = "Attachment preview isn’t available in read-only mode";
+"mobile.chat.composer.label" = "Message";
+"mobile.chat.send.placeholder" = "Write a message";
+"mobile.chat.send.hint" = "Sends this message to the selected conversation.";
+"mobile.chat.action.send" = "Send";
+"mobile.chat.sending" = "Sending…";
+"mobile.chat.send.failed" = "The message couldn’t be confirmed. Check the conversation before sending it again.";
+"mobile.chat.send.review" = "Refresh and check this conversation before sending the same message again.";
 "mobile.downloads.read-only.notice" = "Download tasks run on your NAS. You can add a link and pause or resume one task at a time.";
 "mobile.downloads.create.action" = "Add Link";
 "mobile.downloads.create.action.hint" = "Create a Download Station task from a URL or magnet link";

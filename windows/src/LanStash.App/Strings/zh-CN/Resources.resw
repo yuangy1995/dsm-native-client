@@ -396,11 +396,11 @@
   <data name="PhotoBrowserUnavailableTitle" xml:space="preserve"><value>照片库暂时不可用</value></data>
   <data name="PhotoBrowserUnavailableMessage" xml:space="preserve"><value>请重新连接这台 NAS，然后再次打开照片库。</value></data>
   <data name="ChatBrowserTitle.Text" xml:space="preserve"><value>聊天</value></data>
-  <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>读取 Synology Chat 中的会话和消息。</value></data>
+  <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>读取 Synology Chat 中的会话并发送文字消息。</value></data>
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新会话</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
-  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>只读</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>暂不支持发送消息、新建会话或打开附件。</value></data>
+  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>仅支持文字消息</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>可在支持的会话中发送文字。暂不支持附件和新建会话。</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>无法刷新会话</value></data>
@@ -410,8 +410,21 @@
   <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
   <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}，{1:N0} 条未读</value></data>
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回会话列表</value></data>
-  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>消息为只读</value></data>
+  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>仅支持文字消息</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新消息</value></data>
+  <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>消息</value></data>
+  <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>输入消息</value></data>
+  <data name="ChatBrowserComposer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>消息正文</value></data>
+  <data name="ChatBrowserSend.Content" xml:space="preserve"><value>发送</value></data>
+  <data name="ChatBrowserSend.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>发送消息</value></data>
+  <data name="ChatBrowserSendProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在发送消息</value></data>
+  <data name="ChatBrowserSendStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>消息发送状态</value></data>
+  <data name="ChatBrowserComposerSending" xml:space="preserve"><value>正在发送消息…</value></data>
+  <data name="ChatBrowserComposerSent" xml:space="preserve"><value>消息已发送。</value></data>
+  <data name="ChatBrowserComposerReview" xml:space="preserve"><value>消息可能已经发送。再次发送前，请先刷新消息核对。</value></data>
+  <data name="ChatBrowserComposerCancelled" xml:space="preserve"><value>消息已在发送前取消。</value></data>
+  <data name="ChatBrowserComposerPermission" xml:space="preserve"><value>你没有权限在此会话中发送消息。</value></data>
+  <data name="ChatBrowserComposerFailed" xml:space="preserve"><value>无法发送消息。请检查连接后重试。</value></data>
   <data name="ChatBrowserMessageError.Title" xml:space="preserve"><value>无法加载消息</value></data>
   <data name="ChatBrowserMessageError.Message" xml:space="preserve"><value>已显示的消息仍可使用。请检查连接后重试。</value></data>
   <data name="ChatBrowserChooseConversationTitle.Text" xml:space="preserve"><value>选择会话</value></data>

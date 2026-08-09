@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class MobileChatModelTests: XCTestCase {
-    func test只读适配层拒绝写入附件和高级能力且不调用底层() async throws {
+    func test移动适配层仅开放纯文字发送并继续拒绝附件和高级能力() async throws {
         let base = ChatRepositoryStub(
             availability: ChatAvailability(
                 status: .available,
@@ -32,7 +32,18 @@ final class MobileChatModelTests: XCTestCase {
             try await repository.openDirectConversation(userID: "user", clientRequestID: UUID())
         }
         await assertReadOnlyFailure { try await repository.createGroup(groupDraft) }
-        await assertReadOnlyFailure { try await repository.sendMessage(draft) }
+        let sent = try await repository.sendMessage(draft)
+        XCTAssertEqual(sent.text, "不会发送")
+        XCTAssertEqual(sent.conversationID, "conversation")
+        await assertReadOnlyFailure {
+            try await repository.sendMessage(
+                try ChatMessageDraft(
+                    conversationID: "conversation",
+                    text: "附件仍不可用",
+                    localAttachmentURLs: [URL(fileURLWithPath: "/tmp/file.txt")]
+                )
+            )
+        }
         await assertReadOnlyFailure {
             try await repository.deleteMessage(
                 conversationID: "conversation",
@@ -116,7 +127,7 @@ final class MobileChatModelTests: XCTestCase {
 
         let availability = await repository.availability()
         XCTAssertEqual(availability.status, .available)
-        XCTAssertTrue(availability.supportedFeatures.isEmpty)
+        XCTAssertEqual(availability.supportedFeatures, [.textMessage])
         let events = await repository.realtimeEvents()
         var receivedEvents: [ChatRealtimeEvent] = []
         for await event in events { receivedEvents.append(event) }
@@ -307,6 +318,68 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(model.state.selectedMessages.messages, [existing])
         XCTAssertEqual(model.state.messagePageState, .content)
         XCTAssertEqual(model.state.messageErrorCategory, .networkUnavailable)
+    }
+
+    func test发送纯文字成功会清除草稿并追加到当前会话() async {
+        let conversation = Self.conversation(id: "c1", title: "家庭")
+        let existing = Self.message(id: "m1", conversationID: conversation.id, seconds: 10)
+        let request = ChatMessageRequest(conversationID: conversation.id, cursor: nil)
+        let sent = ChatMessage(
+            id: "sent",
+            clientRequestID: UUID(),
+            conversationID: conversation.id,
+            senderID: "me",
+            isFromCurrentUser: true,
+            sentAt: Date(timeIntervalSince1970: 20),
+            text: "你好 👋",
+            deliveryState: .sent
+        )
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(status: .available, supportedFeatures: [.textMessage]),
+            conversations: [conversation],
+            pages: [request: .init(messages: [existing], previousCursor: nil, hasMoreBefore: false)],
+            sendResults: [sent]
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: UUID(), repository: repository)
+        await model.selectConversation(conversation)
+
+        model.setDraft("  你好 👋  ")
+        await model.sendSelectedMessage()
+
+        XCTAssertEqual(model.state.selectedDraft, "")
+        XCTAssertFalse(model.state.isSendingMessage)
+        XCTAssertNil(model.state.sendErrorCategory)
+        XCTAssertEqual(model.state.selectedMessages.messages.map(\.id), ["m1", "sent"])
+        let sentDrafts = await repository.sentDrafts()
+        XCTAssertEqual(sentDrafts.map(\.text), ["你好 👋"])
+    }
+
+    func test发送失败保留草稿并在刷新前阻止同文再次提交() async {
+        let conversation = Self.conversation(id: "c1", title: "家庭")
+        let request = ChatMessageRequest(conversationID: conversation.id, cursor: nil)
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(status: .available, supportedFeatures: [.textMessage]),
+            conversations: [conversation],
+            pages: [request: .init(messages: [], previousCursor: nil, hasMoreBefore: false)],
+            sendFailures: [Self.networkError]
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: UUID(), repository: repository)
+        await model.selectConversation(conversation)
+
+        model.setDraft("需要核对")
+        await model.sendSelectedMessage()
+        await model.sendSelectedMessage()
+
+        XCTAssertEqual(model.state.selectedDraft, "需要核对")
+        XCTAssertEqual(model.state.sendErrorCategory, .partialFailure)
+        XCTAssertTrue(model.state.selectedDraftRequiresReview)
+        let sentDrafts = await repository.sentDrafts()
+        XCTAssertEqual(sentDrafts.count, 1)
+
+        await model.refreshMessages()
+        XCTAssertFalse(model.state.selectedDraftRequiresReview)
     }
 
     func test加密会话可见但不会请求或缓存正文() async {
@@ -810,6 +883,9 @@ private actor ChatRepositoryStub: ChatRepository {
     private var conversationValues: [ChatConversation]
     private var pages: [ChatMessageRequest: ChatMessagePage]
     private var failures: [ChatMessageRequest: AppError]
+    private var sendResultValues: [ChatMessage]
+    private var sendFailureValues: [AppError]
+    private var sentDraftValues: [ChatMessageDraft] = []
     private var conversationRequests = 0
     private var messageRequestValues: [ChatMessageRequest] = []
     private var rejectedBaseCalls = 0
@@ -827,6 +903,8 @@ private actor ChatRepositoryStub: ChatRepository {
         conversations: [ChatConversation],
         pages: [ChatMessageRequest: ChatMessagePage] = [:],
         failures: [ChatMessageRequest: AppError] = [:],
+        sendResults: [ChatMessage] = [],
+        sendFailures: [AppError] = [],
         blockedConversationList: Bool = false,
         blockedMessageRequests: Set<ChatMessageRequest> = []
     ) {
@@ -834,6 +912,8 @@ private actor ChatRepositoryStub: ChatRepository {
         conversationValues = conversations
         self.pages = pages
         self.failures = failures
+        sendResultValues = sendResults
+        sendFailureValues = sendFailures
         blocksConversationList = blockedConversationList
         self.blockedMessageRequests = blockedMessageRequests
     }
@@ -889,6 +969,7 @@ private actor ChatRepositoryStub: ChatRepository {
 
     func conversationRequestCount() -> Int { conversationRequests }
     func messageRequests() -> [ChatMessageRequest] { messageRequestValues }
+    func sentDrafts() -> [ChatMessageDraft] { sentDraftValues }
     func nonReadCallCount() -> Int { rejectedBaseCalls }
     func realtimeCallCount() -> Int { realtimeBaseCalls }
 
@@ -930,8 +1011,65 @@ private actor ChatRepositoryStub: ChatRepository {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessage {
-        rejectedBaseCalls += 1
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let outcome = try await sendMessageResult(draft, progress: progress)
+        guard let message = outcome.confirmedMessage else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return message
+    }
+
+    func sendMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome {
+        sentDraftValues.append(draft)
+        if !draft.localAttachmentURLs.isEmpty ||
+            !availabilityValue.supportedFeatures.contains(.textMessage) {
+            rejectedBaseCalls += 1
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        if !sendFailureValues.isEmpty {
+            throw sendFailureValues.removeFirst()
+        }
+        if !sendResultValues.isEmpty {
+            let message = sendResultValues.removeFirst()
+            return try ChatMessageSendOutcome(
+                result: MutationResult(
+                    status: .confirmedSuccess,
+                    operation: "chatTextSend",
+                    submitted: true,
+                    requiresRefresh: false,
+                    counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0),
+                    diagnosticTag: "chat.text-send.confirmed"
+                ),
+                conversationID: draft.conversationID,
+                clientRequestID: draft.clientRequestID,
+                confirmedMessage: message
+            )
+        }
+        let message = ChatMessage(
+            id: "sent-\(sentDraftValues.count)",
+            clientRequestID: draft.clientRequestID,
+            conversationID: draft.conversationID,
+            senderID: "me",
+            isFromCurrentUser: true,
+            sentAt: Date(timeIntervalSince1970: Double(sentDraftValues.count)),
+            text: draft.text,
+            deliveryState: .sent
+        )
+        return try ChatMessageSendOutcome(
+            result: MutationResult(
+                status: .confirmedSuccess,
+                operation: "chatTextSend",
+                submitted: true,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0),
+                diagnosticTag: "chat.text-send.confirmed"
+            ),
+            conversationID: draft.conversationID,
+            clientRequestID: draft.clientRequestID,
+            confirmedMessage: message
+        )
     }
 
     func deleteMessage(

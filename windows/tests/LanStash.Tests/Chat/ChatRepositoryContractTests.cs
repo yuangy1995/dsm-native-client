@@ -19,9 +19,11 @@ public sealed class ChatRepositoryContractTests
 
         Assert.Equal(ChatAvailabilityStatus.Available, complete.Availability.Status);
         Assert.Equal(5, complete.Availability.SupportedFeatures.Count);
+        Assert.Contains(ChatWriteFeature.TextMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(AppModule.Chat, complete.AvailableModules);
         Assert.Equal(ChatAvailabilityStatus.Unavailable, incomplete.Availability.Status);
         Assert.Empty(incomplete.Availability.SupportedFeatures);
+        Assert.Empty(incomplete.Availability.SupportedWriteFeatures);
         Assert.DoesNotContain(AppModule.Chat, incomplete.AvailableModules);
     }
 
@@ -480,6 +482,120 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
+    public async Task TextSendRequiresPostV5ButLeavesReadAvailable()
+    {
+        var capabilities = Capabilities();
+        capabilities["SYNO.Chat.Post"] =
+            capabilities["SYNO.Chat.Post"] with { MinVersion = 1, MaxVersion = 4 };
+        var api = new RecordingApiClient(_ => throw new InvalidOperationException());
+        var repository = CreateRepository(api, capabilities);
+
+        var result = await repository.SendTextAsync(
+            new ChatTextSendRequest("channel-1", "hello", Guid.NewGuid()));
+
+        Assert.Equal(ChatAvailabilityStatus.Available, repository.Availability.Status);
+        Assert.DoesNotContain(ChatWriteFeature.TextMessage, repository.Availability.SupportedWriteFeatures);
+        Assert.Equal(MutationResultStatus.Unsupported, result.Result.Status);
+        Assert.False(result.Result.Submitted);
+        Assert.Empty(api.Requests);
+    }
+
+    [Fact]
+    public async Task TextSendUsesFixedPostV5AndConfirmsByReadback()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => Channels(),
+            "SYNO.Chat.Post" when request.Method == "create" => new JsonObject
+            {
+                ["post_id"] = "sent-1",
+            },
+            "SYNO.Chat.Post" => Posts(0, 1, MyMessage("sent-1", "hello")),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(api);
+        var requestId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+        var result = await repository.SendTextAsync(
+            new ChatTextSendRequest("channel-1", " hello ", requestId));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.True(result.Result.Submitted);
+        Assert.False(result.Result.RequiresRefresh);
+        Assert.Equal("sent-1", result.ConfirmedMessage?.Id);
+        Assert.Collection(
+            api.Requests,
+            request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0),
+            request => AssertWire(request, "SYNO.Chat.Channel", "list", 5, 0),
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Post", "create", 5, 2);
+                Assert.Equal("channel-1", request.Parameters["channel_id"]);
+                Assert.Equal("hello", request.Parameters["message"]);
+            },
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Post", "list", 8, 3);
+                Assert.Equal("channel-1", request.Parameters["channel_id"]);
+            });
+    }
+
+    [Fact]
+    public async Task TextSendMissingStableIdRequiresReviewAndSameRequestDoesNotCreateAgain()
+    {
+        var postListCalls = 0;
+        var api = new RecordingApiClient(request =>
+        {
+            if (request.ApiName == "SYNO.Chat.User")
+            {
+                return Users();
+            }
+            if (request.ApiName == "SYNO.Chat.Channel")
+            {
+                return Channels();
+            }
+            if (request.Method == "create")
+            {
+                return new JsonObject();
+            }
+            postListCalls++;
+            return Posts(0, 0);
+        });
+        var repository = CreateRepository(api);
+        var request = new ChatTextSendRequest(
+            "channel-1",
+            "check me",
+            Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
+
+        var first = await repository.SendTextAsync(request);
+        var second = await repository.SendTextAsync(request);
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
+        Assert.True(first.Result.RequiresRefresh);
+        Assert.Equal(2, postListCalls);
+        Assert.Equal(1, api.Requests.Count(value =>
+            value.ApiName == "SYNO.Chat.Post" && value.Method == "create"));
+    }
+
+    [Fact]
+    public async Task TextSendCancelledBeforeSubmissionSendsNothing()
+    {
+        var api = new RecordingApiClient(_ => throw new InvalidOperationException());
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var result = await CreateRepository(api).SendTextAsync(
+            new ChatTextSendRequest("channel-1", "hello", Guid.NewGuid()),
+            cancellation.Token);
+
+        Assert.Equal(MutationResultStatus.CancelledBeforeSubmission, result.Result.Status);
+        Assert.False(result.Result.Submitted);
+        Assert.Empty(api.Requests);
+    }
+
+    [Fact]
     public async Task ForeignProfileSessionFailsBeforeTransport()
     {
         var api = new RecordingApiClient(_ => throw new InvalidOperationException());
@@ -567,6 +683,18 @@ public sealed class ChatRepositoryContractTests
         ["create_at"] = sentAt,
         ["message"] = text,
     };
+
+    private static JsonObject MyMessage(
+        string id,
+        string? text,
+        long sentAt = 1,
+        string channelId = "channel-1")
+    {
+        var message = Message(id, text, sentAt, channelId);
+        message["creator_id"] = "u-1";
+        message["is_my_post"] = true;
+        return message;
+    }
 
     private static JsonObject Auxiliary(string id) => new()
     {

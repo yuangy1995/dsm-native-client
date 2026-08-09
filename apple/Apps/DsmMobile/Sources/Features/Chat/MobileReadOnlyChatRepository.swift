@@ -1,13 +1,17 @@
 import DsmCore
 import Foundation
 
-/// 移动端首个 Chat 切片的能力边界：仅开放可用性、会话与消息基础读取。
+/// 移动端 Chat 能力边界：开放会话、消息基础读取和纯文字发送；附件与高级动作继续关闭。
 struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     let base: any ChatRepository
 
     func availability() async -> ChatAvailability {
         let value = await base.availability()
-        return ChatAvailability(status: value.status, supportedFeatures: [])
+        let mobileFeatures: Set<ChatFeature> = value.status == .available &&
+            value.supportedFeatures.contains(.textMessage)
+            ? [.textMessage]
+            : []
+        return ChatAvailability(status: value.status, supportedFeatures: mobileFeatures)
     }
 
     func listUsers() async throws -> [ChatUser] {
@@ -49,7 +53,26 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessage {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let outcome = try await sendMessageResult(draft, progress: progress)
+        guard outcome.result.status == .confirmedSuccess,
+              let message = outcome.confirmedMessage else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return message
+    }
+
+    func sendMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome {
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.textMessage),
+              draft.localAttachmentURLs.isEmpty,
+              draft.text?.isEmpty == false else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return try await base.sendMessageResult(draft, progress: progress)
     }
 
     func deleteMessage(

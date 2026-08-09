@@ -560,6 +560,24 @@ public sealed partial class ShellPage : Page
             int limit,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<ChatTextSendOutcome> SendTextAsync(
+            ChatTextSendRequest request,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ChatTextSendOutcome(
+                new MutationResult(
+                    1,
+                    MutationResultStatus.Unsupported,
+                    "chatTextSend",
+                    submitted: false,
+                    requiresRefresh: false,
+                    new MutationResultCounts(0, 1, 0),
+                    MutationErrorCategory.Unsupported,
+                    localizationKey: "chat.text-send.unsupported",
+                    diagnosticTag: "chat.text-send.unavailable"),
+                request.ConversationId,
+                request.ClientRequestId,
+                null));
     }
 
     private sealed class UnavailableDownloadStationRepository(Guid profileId)

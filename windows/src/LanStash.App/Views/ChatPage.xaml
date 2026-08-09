@@ -76,6 +76,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <AutoSuggestBox
                             x:Uid="ChatBrowserSearch"
@@ -342,6 +343,68 @@
                                 </ListView>
                             </Grid>
                         </Grid>
+                        <Border
+                            x:Name="ComposerPanel"
+                            Grid.Row="3"
+                            Padding="12"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="Collapsed">
+                            <Grid RowSpacing="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock
+                                    x:Uid="ChatBrowserComposerLabel"
+                                    FontWeight="SemiBold" />
+                                <Grid Grid.Row="1" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Uid="ChatBrowserComposer"
+                                        x:Name="ComposerInput"
+                                        AcceptsReturn="True"
+                                        MaxHeight="120"
+                                        MinHeight="48"
+                                        TextChanged="ComposerInput_TextChanged"
+                                        TextWrapping="Wrap" />
+                                    <Button
+                                        x:Uid="ChatBrowserSend"
+                                        x:Name="SendMessageButton"
+                                        Grid.Column="1"
+                                        MinWidth="72"
+                                        MinHeight="48"
+                                        Click="SendMessage_Click" />
+                                </Grid>
+                                <Grid Grid.Row="2" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ProgressRing
+                                        x:Uid="ChatBrowserSendProgress"
+                                        x:Name="SendMessageProgress"
+                                        Width="20"
+                                        Height="20"
+                                        IsActive="False"
+                                        Visibility="Collapsed" />
+                                    <TextBlock
+                                        x:Uid="ChatBrowserSendStatus"
+                                        x:Name="ComposerStatus"
+                                        Grid.Column="1"
+                                        AutomationProperties.LiveSetting="Polite"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="Wrap"
+                                        Visibility="Collapsed" />
+                                </Grid>
+                            </Grid>
+                        </Border>
                     </Grid>
                 </Border>
             </Grid>
