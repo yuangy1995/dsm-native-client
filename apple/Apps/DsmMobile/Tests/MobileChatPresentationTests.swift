@@ -4,7 +4,7 @@ import XCTest
 
 final class MobileChatPresentationTests: XCTestCase {
     func test聊天页按SizeClass提供iPhone层级和iPad双栏() throws {
-        let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
+        let source = try chatViewSources()
 
         XCTAssertTrue(source.contains("@Environment(\\.horizontalSizeClass)"))
         XCTAssertTrue(source.contains("if horizontalSizeClass == .regular"))
@@ -17,7 +17,7 @@ final class MobileChatPresentationTests: XCTestCase {
     }
 
     func test会话和消息均覆盖五态筛选刷新和更早分页() throws {
-        let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
+        let source = try chatViewSources()
 
         XCTAssertTrue(source.contains("MobilePageStateView("))
         XCTAssertTrue(source.contains("state.conversationPageState"))
@@ -32,7 +32,7 @@ final class MobileChatPresentationTests: XCTestCase {
     }
 
     func test加密会话和附件仍关闭且不开放桌面动作() throws {
-        let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
+        let source = try chatViewSources()
 
         XCTAssertTrue(source.contains("conversation.isEncrypted"))
         XCTAssertTrue(source.contains("mobile.chat.encrypted.message"))
@@ -47,10 +47,10 @@ final class MobileChatPresentationTests: XCTestCase {
     }
 
     func test文字发送Composer使用原生输入反馈和无障碍标签() throws {
-        let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
+        let source = try chatViewSources()
         let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
 
-        XCTAssertTrue(source.contains("messageComposer"))
+        XCTAssertTrue(source.contains("MobileChatAttachmentComposer"))
         XCTAssertTrue(source.contains("TextField("))
         XCTAssertTrue(source.contains("mobile.chat.composer.label"))
         XCTAssertTrue(source.contains("mobile.chat.action.send"))
@@ -64,7 +64,7 @@ final class MobileChatPresentationTests: XCTestCase {
     }
 
     func test触控动态文字VoiceOver和降低动态效果沿用系统组件() throws {
-        let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
+        let source = try chatViewSources()
 
         XCTAssertTrue(source.contains("frame(width: 44, height: 44)"))
         XCTAssertTrue(source.contains("minHeight: 44"))
@@ -104,7 +104,7 @@ final class MobileChatPresentationTests: XCTestCase {
     }
 
     func test可见文案全部来自英简中资源() throws {
-        let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
+        let source = try chatViewSources()
         let english = try sourceFile("../../Packages/DsmLocalization/Sources/Resources/en.lproj/Localizable.strings")
         let chinese = try sourceFile("../../Packages/DsmLocalization/Sources/Resources/zh-Hans.lproj/Localizable.strings")
         let expression = try NSRegularExpression(pattern: #"L10n\.string\(\"([^\"]+)\""#)
@@ -125,5 +125,12 @@ final class MobileChatPresentationTests: XCTestCase {
         let testFile = URL(fileURLWithPath: #filePath)
         let appRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: appRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private func chatViewSources() throws -> String {
+        try [
+            sourceFile("Sources/Features/Chat/MobileChatView.swift"),
+            sourceFile("Sources/Features/Chat/MobileChatAttachmentView.swift")
+        ].joined(separator: "\n")
     }
 }

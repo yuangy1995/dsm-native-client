@@ -402,8 +402,8 @@
   <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>Read conversations and send text messages from Synology Chat.</value></data>
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh conversations</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
-  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>Text messages only</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>You can send text in available conversations. Attachments and new conversations are not available here yet.</value></data>
+  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>Limited chat features</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>You can send text and one attachment in available conversations. New conversations and encrypted attachments aren’t available here.</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>Conversations couldn’t be refreshed</value></data>
@@ -413,7 +413,7 @@
   <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
   <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}, {1:N0} unread</value></data>
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to conversations</value></data>
-  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>Text messages only</value></data>
+  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>Foreground messages and single attachments</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh messages</value></data>
   <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>Message</value></data>
   <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>Type a message</value></data>
@@ -459,6 +459,29 @@
   <data name="ChatBrowserValidationTitle.Text" xml:space="preserve"><value>Chat can’t be opened safely</value></data>
   <data name="ChatBrowserValidationMessage.Text" xml:space="preserve"><value>Reconnect to this NAS, then try again.</value></data>
   <data name="ChatBrowserUnknownSender" xml:space="preserve"><value>Unknown sender</value></data>
+  <data name="ChatAttachmentChoose.Content" xml:space="preserve"><value>Add attachment</value></data>
+  <data name="ChatAttachmentChoose.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose one attachment</value></data>
+  <data name="ChatAttachmentRemove.Content" xml:space="preserve"><value>Remove</value></data>
+  <data name="ChatAttachmentRemove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Remove selected attachment</value></data>
+  <data name="ChatAttachmentCancel.Content" xml:space="preserve"><value>Cancel</value></data>
+  <data name="ChatAttachmentCancel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Cancel attachment upload</value></data>
+  <data name="ChatAttachmentProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sending attachment</value></data>
+  <data name="ChatAttachmentPreview.Content" xml:space="preserve"><value>Preview</value></data>
+  <data name="ChatAttachmentPreview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Preview image attachment</value></data>
+  <data name="ChatAttachmentSave.Content" xml:space="preserve"><value>Save</value></data>
+  <data name="ChatAttachmentSave.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save attachment</value></data>
+  <data name="ChatAttachmentSending" xml:space="preserve"><value>Sending attachment…</value></data>
+  <data name="ChatAttachmentSent" xml:space="preserve"><value>Attachment sent.</value></data>
+  <data name="ChatAttachmentReview" xml:space="preserve"><value>The attachment may have been sent. Refresh messages and check the conversation before sending it again.</value></data>
+  <data name="ChatAttachmentCancelled" xml:space="preserve"><value>The attachment was cancelled before it was sent.</value></data>
+  <data name="ChatAttachmentPermission" xml:space="preserve"><value>You don’t have permission to send an attachment in this conversation.</value></data>
+  <data name="ChatAttachmentFailed" xml:space="preserve"><value>The attachment couldn’t be sent. Check the connection and try again.</value></data>
+  <data name="ChatAttachmentPreviewTitle" xml:space="preserve"><value>Attachment preview</value></data>
+  <data name="ChatAttachmentPreviewFailed" xml:space="preserve"><value>The image preview couldn’t be loaded. Check the connection and try again.</value></data>
+  <data name="ChatAttachmentClose" xml:space="preserve"><value>Close</value></data>
+  <data name="ChatAttachmentFileType" xml:space="preserve"><value>Original file</value></data>
+  <data name="ChatAttachmentSaveCompleted" xml:space="preserve"><value>Attachment saved.</value></data>
+  <data name="ChatAttachmentSaveFailed" xml:space="preserve"><value>The attachment couldn’t be saved. Choose a location and try again.</value></data>
   <data name="DownloadStationStatusWaiting" xml:space="preserve"><value>Waiting</value></data>
   <data name="DownloadStationStatusDownloading" xml:space="preserve"><value>Downloading</value></data>
   <data name="DownloadStationStatusPaused" xml:space="preserve"><value>Paused</value></data>

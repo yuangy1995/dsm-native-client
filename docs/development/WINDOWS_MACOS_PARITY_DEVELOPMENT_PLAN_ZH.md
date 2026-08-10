@@ -259,8 +259,8 @@ W0 基线、账本与 ZIP/安装器决策门
 
 ### W3-B2：Chat 附件
 
-- 等 W2 传输、W3-B1 Chat 核心和附件所需预览 Adapter 接口冻结后，再接入单附件上传/保存、缩略图和预览；不等待 W3-A 全部照片与格式验收。
-- 取消和重试复用统一任务语义，不重复发送；临时文件、通知和诊断不得泄露消息、路径或附件正文。
+- 已在第 5 波按冻结的 `Post.create` v5 / `Post.File` v2 契约接入单附件上传/保存、按需图片缩略图和原生预览；不等待 W3-A 全部照片与格式验收。
+- 取消和核对复用统一结果语义，不重复发送；临时文件、通知和诊断不得泄露消息、路径或附件正文。GitHub Windows Build `31384177338` 已通过 921/921 项 .NET xUnit 与 WinUI x64/ARM64 构建；真实 Chat Server、系统选择器和辅助功能仍待验收。
 
 自动化出口：用 fake/合成 fixture 覆盖超时、取消、失败重试、会话切换、App 状态重建、去重和禁止重放，不遗留无界临时文件。真实弱网、服务端附件副作用和重启生命周期列入第 9 节 `PENDING_USER_VALIDATION`。
 
@@ -272,7 +272,7 @@ Download Station：
 - URL/magnet/torrent/nzb/txt 创建、NAS 目标目录选择。
 - 已完成单任务暂停/继续、URL/磁力与任务文件创建和只移除任务；均使用稳定任务基线、一次提交、独立回读与未确认结果不重放。删除已下载数据、批量控制、RSS/文件优先级/BT 协议高级和设置写继续独立后置。
 
-在既有常用单任务流程之上，官方 `SYNO.DownloadStation.BTSearch` v1 的 Domain、Infrastructure、ViewModel 与 WinUI 闭环也已完成：能力门、原生 ContentDialog、`Ctrl+B`、提供方/类别/排序/方向、会话内隐私、取消/关闭、零提供方、空/筛选空/错误/结果态、迟到结果隔离和单结果创建均已接入；61 项英中资源与 8 项 Repository、15 项 ViewModel、3 项 source-contract 专项测试已落盘，共 26 项。候选提交 `53360d2` 的 Windows Build run `31354549859` 已通过 886/886 项 .NET 10 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误。真实 NAS、Narrator、键盘、高对比和窗口缩放继续列入 `PENDING_USER_VALIDATION`。RSS、文件优先级、BT 协议高级和设置写不随该切片开放。
+在既有常用单任务流程之上，官方 `SYNO.DownloadStation.BTSearch` v1 的 Domain、Infrastructure、ViewModel 与 WinUI 闭环也已完成：能力门、原生 ContentDialog、`Ctrl+B`、提供方/类别/排序/方向、会话内隐私、取消/关闭、零提供方、空/筛选空/错误/结果态、迟到结果隔离和单结果创建均已接入；61 项英中资源与 8 项 Repository、15 项 ViewModel、3 项 source-contract 专项测试已落盘，共 26 项。正式提交 `5850f4c` 的 Windows Build run `31356270192` 已通过 886/886 项 .NET 10 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误。真实 NAS、Narrator、键盘、高对比和窗口缩放继续列入 `PENDING_USER_VALIDATION`。RSS、文件优先级、BT 协议高级和设置写不随该切片开放。
 
 Container Manager：
 
@@ -304,8 +304,8 @@ Container Manager：
 
 ### BTSearch 后的近期实现顺序
 
-1. **ACT-01 统一活动中心首片已落盘并通过云端门禁**：当前分支已把 Download Station 已加载任务快照投影到同一 Activity 入口，保留 App 传输与 NAS 下载任务的来源差异和控制边界；GitHub Windows Build run `31358741100` 已通过 889/889 项 xUnit，并完成 WinUI x64 与 ARM64 构建。Narrator、真实设备和真实 NAS 待用户验证；Activity 主动轮询、系统通知、托盘联动和后台常驻继续后置。
-2. **CHAT-03 契约先行**：Windows 先补单附件上传、缩略图和下载 typed 结果契约，再接选择、进度、预览与保存；前台实时继续后置。
+1. **ACT-01 统一活动中心首片已合入并通过云端门禁**：正式提交 `2491212` 已把 Download Station 已加载任务快照投影到同一 Activity 入口，保留 App 传输与 NAS 下载任务的来源差异和控制边界；GitHub Windows Build run `31360092210` 已通过 889/889 项 xUnit，并完成 WinUI x64 与 ARM64 构建。Narrator、真实设备和真实 NAS 待用户验证；Activity 主动轮询、系统通知、托盘联动和后台常驻继续后置。
+2. **CHAT-03 单附件**：Windows 已完成上传、缩略图和下载 typed 结果契约，以及选择、进度、预览与保存的 WinUI 闭环；GitHub .NET/WinUI 门禁已通过，下一步仅保留真实 Chat Server、系统选择器和辅助功能验收。前台实时继续后置。
 3. **NAS-02/NAS-04 有界只读详情并行**：先把当前扁平 NAS 摘要拆为分区独立失败、分页和 partial/truncated 语义；不接断开连接、套件生命周期、任务执行或设置写。
 4. Download RSS、文件优先级、BT 协议高级设置以及 Container/VMM 高风险写不进入这一波；没有公开或已记录契约的能力继续关闭。
 

@@ -264,7 +264,10 @@ struct MobileWorkspaceView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         if module == .nasSettings {
-                            Task { await model.nasHealthModel.refresh() }
+                            Task {
+                                await model.nasHealthModel.refresh()
+                                await model.nasDetailsModel.refreshLoadedSections()
+                            }
                         } else if module == .containers {
                             Task { await model.containerInventoryModel.refresh() }
                         } else if module == .virtualMachines {
@@ -273,7 +276,12 @@ struct MobileWorkspaceView: View {
                             model.selectModule(module)
                         }
                     } label: {
-                        if module == .containers,
+                        if module == .nasSettings,
+                           (model.nasHealthModel.state.isRefreshing ||
+                            model.nasDetailsModel.state.isRefreshing) {
+                            ProgressView()
+                                .accessibilityHidden(true)
+                        } else if module == .containers,
                            (model.containerInventoryModel.state.pageState == .loading ||
                             model.containerInventoryModel.state.isRefreshing) {
                             ProgressView()
@@ -287,6 +295,9 @@ struct MobileWorkspaceView: View {
                         }
                     }
                     .disabled(
+                        (module == .nasSettings &&
+                            (model.nasHealthModel.state.isRefreshing ||
+                             model.nasDetailsModel.state.isRefreshing)) ||
                         (module == .containers &&
                             (model.containerInventoryModel.state.pageState == .loading ||
                              model.containerInventoryModel.state.isRefreshing)) ||
@@ -295,7 +306,11 @@ struct MobileWorkspaceView: View {
                     )
                     .accessibilityLabel(L10n.string("ui.aee88743413144a2"))
                     .accessibilityValue(
-                        module == .containers &&
+                        module == .nasSettings &&
+                            (model.nasHealthModel.state.isRefreshing ||
+                             model.nasDetailsModel.state.isRefreshing)
+                            ? L10n.string("ui.86b6d0d63062ba81")
+                            : module == .containers &&
                             (model.containerInventoryModel.state.pageState == .loading ||
                              model.containerInventoryModel.state.isRefreshing)
                             ? L10n.string("mobile.containers.loading")

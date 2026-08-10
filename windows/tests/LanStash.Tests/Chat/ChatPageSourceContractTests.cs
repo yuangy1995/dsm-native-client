@@ -46,26 +46,39 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void PageHasTextComposerButNoAttachmentRealtimeOrConversationActions()
+    public void PageHasTextAndSingleAttachmentComposersWithoutRealtimeOrConversationActions()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
         var send = Read("windows/src/LanStash.App/Views/ChatPage.Send.cs");
+        var attachments = Read("windows/src/LanStash.App/Views/ChatPage.Attachments.cs");
         var composer = Read("windows/src/LanStash.App/Features/Chat/ChatTextComposerViewModel.cs");
-        var combined = xaml + source + send + composer;
+        var attachmentComposer = Read(
+            "windows/src/LanStash.App/Features/Chat/ChatAttachmentComposerViewModel.cs");
+        var combined = xaml + source + send + attachments + composer + attachmentComposer;
 
         Assert.Contains("x:Name=\"ComposerPanel\"", xaml);
         Assert.Contains("x:Name=\"ComposerInput\"", xaml);
         Assert.Contains("AcceptsReturn=\"True\"", xaml);
         Assert.Contains("x:Name=\"SendMessageButton\"", xaml);
         Assert.Contains("ChatTextComposerViewModel", source);
+        Assert.Contains("ChatAttachmentComposerViewModel", source);
         Assert.Contains("_composer.SendAsync", send);
+        Assert.Contains("_attachmentComposer.SendAsync", send);
         Assert.Contains("SendTextAsync", composer);
+        Assert.Contains("SendAttachmentAsync", attachmentComposer);
         Assert.Contains("RefreshMessagesAsync", send);
-        Assert.DoesNotContain("FileOpenPicker", combined);
-        Assert.DoesNotContain("StorageFile", combined);
+        Assert.Contains("x:Name=\"ChooseAttachmentButton\"", xaml);
+        Assert.Contains("x:Name=\"AttachmentCard\"", xaml);
+        Assert.Contains("x:Name=\"AttachmentFeedback\"", xaml);
+        Assert.Contains("FileOpenPicker", attachments);
+        Assert.Contains("FileSavePicker", attachments);
+        Assert.Contains("ReadAttachmentThumbnailAsync", attachments);
+        Assert.Contains("SaveAttachmentAsync", attachments);
+        Assert.Contains("FileMode.CreateNew", attachments);
+        Assert.Contains("ChatAttachmentSendReviewBlocker", attachmentComposer);
+        Assert.Contains("MinHeight=\"48\"", xaml);
         Assert.DoesNotContain("CreateConversation", combined, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Upload", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Realtime", combined, StringComparison.OrdinalIgnoreCase);
     }
@@ -98,6 +111,12 @@ public sealed class ChatPageSourceContractTests
     [InlineData("ChatBrowserSend")]
     [InlineData("ChatBrowserSendProgress")]
     [InlineData("ChatBrowserSendStatus")]
+    [InlineData("ChatAttachmentChoose")]
+    [InlineData("ChatAttachmentRemove")]
+    [InlineData("ChatAttachmentCancel")]
+    [InlineData("ChatAttachmentProgress")]
+    [InlineData("ChatAttachmentPreview")]
+    [InlineData("ChatAttachmentSave")]
     public void InteractiveControlsHaveBilingualAutomationNames(string uid)
     {
         var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");

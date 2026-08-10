@@ -15,6 +15,7 @@ public actor DsmChatRepository: ChatRepository {
     private let realtimeClient: DsmChatRealtimeClient
     private var completedMessages: [UUID: ChatMessage] = [:]
     private var pendingMessageSends: [UUID: PendingChatMessageSendReview] = [:]
+    private var pendingAttachmentSends: [UUID: PendingChatAttachmentSendReview] = [:]
     private var completedDirectConversations: [UUID: ChatConversation] = [:]
     private var completedGroups: [UUID: ChatConversation] = [:]
     private var completedReminders: [UUID: ChatReminder] = [:]
@@ -429,6 +430,18 @@ public actor DsmChatRepository: ChatRepository {
             throw unsupported(L10n.string("shared.fa24cc9d55caa0ef"))
         }
         if let localURL = draft.localAttachmentURLs.first {
+            if let pending = pendingAttachmentSends[draft.clientRequestID] {
+                let outcome = try await finishPendingChatAttachmentSend(pending)
+                guard outcome.result.status == .confirmedSuccess,
+                      let message = outcome.confirmedMessage else {
+                    throw AppError(
+                        category: outcome.result.status == .unsupported ? .apiUnavailable : .partialFailure,
+                        isRetryable: outcome.result.status != .submittedButUnverified,
+                        safeUserMessage: L10n.string("shared.f975fe7c14e442cf")
+                    )
+                }
+                return message
+            }
             let uploaded = try await uploadAttachment(
                 localURL: localURL,
                 draft: draft,
@@ -578,6 +591,172 @@ public actor DsmChatRepository: ChatRepository {
         }
     }
 
+    public func sendAttachmentMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome {
+        if let completed = completedMessages[draft.clientRequestID] {
+            return try chatAttachmentOutcome(
+                status: .confirmedSuccess,
+                submitted: true,
+                succeeded: 1,
+                diagnosticTag: "chat.attachment-send.confirmed",
+                draft: draft,
+                message: completed
+            )
+        }
+        guard draft.localAttachmentURLs.count == 1 else {
+            return try chatAttachmentOutcome(
+                status: .unsupported,
+                submitted: false,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.attachment-send.single-file-required",
+                draft: draft
+            )
+        }
+        if let pending = pendingAttachmentSends[draft.clientRequestID] {
+            return try await finishPendingChatAttachmentSend(pending)
+        }
+        guard supportsAttachmentUpload else {
+            return try chatAttachmentOutcome(
+                status: .unsupported,
+                submitted: false,
+                failed: 1,
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.attachment-send.version-unsupported",
+                draft: draft
+            )
+        }
+        if Task.isCancelled {
+            return try chatAttachmentOutcome(
+                status: .cancelledBeforeSubmission,
+                submitted: false,
+                diagnosticTag: "chat.attachment-send.cancelled-before-submit",
+                draft: draft
+            )
+        }
+
+        // 先保留请求标识，避免并发调用在 multipart 构建或上传期间重复提交。
+        pendingAttachmentSends[draft.clientRequestID] = PendingChatAttachmentSendReview(
+            draft: draft,
+            candidateMessageID: nil,
+            expectedFileName: draft.localAttachmentURLs[0].lastPathComponent,
+            expectedFileSize: nil
+        )
+        let submissionState = ChatAttachmentSubmissionState()
+        do {
+            let receipt = try await uploadAttachmentReceipt(
+                localURL: draft.localAttachmentURLs[0],
+                draft: draft,
+                progress: progress,
+                submissionState: submissionState
+            )
+            let pending = PendingChatAttachmentSendReview(
+                draft: draft,
+                candidateMessageID: receipt.candidateMessageID,
+                expectedFileName: receipt.localFileName,
+                expectedFileSize: receipt.localFileSize
+            )
+            pendingAttachmentSends[draft.clientRequestID] = pending
+            guard pending.candidateMessageID != nil else {
+                return try chatAttachmentOutcome(
+                    status: .submittedButUnverified,
+                    submitted: true,
+                    requiresRefresh: true,
+                    unknown: 1,
+                    errorCategory: .server,
+                    diagnosticTag: "chat.attachment-send.missing-id",
+                    draft: draft
+                )
+            }
+            return try await finishPendingChatAttachmentSend(pending)
+        } catch {
+            let appError = error as? AppError
+            let isCancellation = error is CancellationError || appError?.category == .cancelled
+
+            guard submissionState.hasStarted else {
+                pendingAttachmentSends[draft.clientRequestID] = nil
+                if isCancellation || Task.isCancelled {
+                    return try chatAttachmentOutcome(
+                        status: .cancelledBeforeSubmission,
+                        submitted: false,
+                        diagnosticTag: "chat.attachment-send.cancelled-before-submit",
+                        draft: draft
+                    )
+                }
+                if appError?.category == .apiUnavailable {
+                    return try chatAttachmentOutcome(
+                        status: .unsupported,
+                        submitted: false,
+                        failed: 1,
+                        errorCategory: .unsupported,
+                        diagnosticTag: "chat.attachment-send.unsupported",
+                        draft: draft
+                    )
+                }
+                if appError?.category == .permissionDenied {
+                    return try chatAttachmentOutcome(
+                        status: .permissionDenied,
+                        submitted: false,
+                        failed: 1,
+                        errorCategory: .permission,
+                        diagnosticTag: "chat.attachment-send.local-permission",
+                        draft: draft
+                    )
+                }
+                return try chatAttachmentOutcome(
+                    status: .confirmedFailure,
+                    submitted: false,
+                    failed: 1,
+                    errorCategory: .unknown,
+                    diagnosticTag: "chat.attachment-send.prepare-failed",
+                    draft: draft
+                )
+            }
+
+            if appError?.category == .permissionDenied {
+                pendingAttachmentSends[draft.clientRequestID] = nil
+                return try chatAttachmentOutcome(
+                    status: .permissionDenied,
+                    submitted: true,
+                    failed: 1,
+                    errorCategory: .permission,
+                    diagnosticTag: "chat.attachment-send.permission",
+                    draft: draft
+                )
+            }
+
+            let pending = PendingChatAttachmentSendReview(
+                draft: draft,
+                candidateMessageID: nil,
+                expectedFileName: draft.localAttachmentURLs[0].lastPathComponent,
+                expectedFileSize: nil
+            )
+            pendingAttachmentSends[draft.clientRequestID] = pending
+            if isCancellation {
+                return try chatAttachmentOutcome(
+                    status: .cancellationRequestedAfterSubmission,
+                    submitted: true,
+                    requiresRefresh: true,
+                    unknown: 1,
+                    errorCategory: .network,
+                    diagnosticTag: "chat.attachment-send.cancelled-after-submit",
+                    draft: draft
+                )
+            }
+            return try chatAttachmentOutcome(
+                status: .submittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .unknown,
+                diagnosticTag: "chat.attachment-send.unverified",
+                draft: draft
+            )
+        }
+    }
+
     private func makePendingChatTextSend(
         from payload: ChatJSON,
         draft: ChatMessageDraft
@@ -718,6 +897,143 @@ public actor DsmChatRepository: ChatRepository {
         )
     }
 
+    /// 附件提交的确认必须来自稳定 post 标识的回读，不能以正文或时间推测成功。
+    private func finishPendingChatAttachmentSend(
+        _ pending: PendingChatAttachmentSendReview
+    ) async throws -> ChatMessageSendOutcome {
+        guard let candidateID = pending.candidateMessageID else {
+            return try chatAttachmentOutcome(
+                status: .submittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .unknown,
+                diagnosticTag: "chat.attachment-send.review-pending",
+                draft: pending.draft
+            )
+        }
+        do {
+            let page = try await listMessages(
+                conversationID: pending.draft.conversationID,
+                before: nil,
+                limit: 50
+            )
+            guard let confirmed = page.messages.first(where: {
+                isConfirmedChatAttachmentMessage($0, pending: pending, candidateID: candidateID)
+            }) else {
+                return try chatAttachmentOutcome(
+                    status: .submittedButUnverified,
+                    submitted: true,
+                    requiresRefresh: true,
+                    unknown: 1,
+                    errorCategory: .unknown,
+                    diagnosticTag: "chat.attachment-send.readback-mismatch",
+                    draft: pending.draft
+                )
+            }
+            let result = confirmedSentMessage(confirmed, draft: pending.draft)
+            pendingAttachmentSends[pending.draft.clientRequestID] = nil
+            completedMessages[pending.draft.clientRequestID] = result
+            return try chatAttachmentOutcome(
+                status: .confirmedSuccess,
+                submitted: true,
+                succeeded: 1,
+                diagnosticTag: "chat.attachment-send.confirmed",
+                draft: pending.draft,
+                message: result
+            )
+        } catch let error as AppError where error.category == .permissionDenied {
+            return try chatAttachmentOutcome(
+                status: .permissionDenied,
+                submitted: true,
+                failed: 1,
+                errorCategory: .permission,
+                diagnosticTag: "chat.attachment-send.readback-permission",
+                draft: pending.draft
+            )
+        } catch let error as AppError where error.category == .cancelled {
+            return try chatAttachmentOutcome(
+                status: .cancellationRequestedAfterSubmission,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .network,
+                diagnosticTag: "chat.attachment-send.cancelled-during-readback",
+                draft: pending.draft
+            )
+        } catch is CancellationError {
+            return try chatAttachmentOutcome(
+                status: .cancellationRequestedAfterSubmission,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .network,
+                diagnosticTag: "chat.attachment-send.cancelled-during-readback",
+                draft: pending.draft
+            )
+        } catch {
+            return try chatAttachmentOutcome(
+                status: .submittedButUnverified,
+                submitted: true,
+                requiresRefresh: true,
+                unknown: 1,
+                errorCategory: .unknown,
+                diagnosticTag: "chat.attachment-send.readback-failed",
+                draft: pending.draft
+            )
+        }
+    }
+
+    private func isConfirmedChatAttachmentMessage(
+        _ message: ChatMessage,
+        pending: PendingChatAttachmentSendReview,
+        candidateID: String
+    ) -> Bool {
+        guard message.attachments.count == 1,
+              let attachment = message.attachments.first,
+              attachment.fileName == pending.expectedFileName else { return false }
+        if let expectedFileSize = pending.expectedFileSize,
+           attachment.sizeBytes != expectedFileSize {
+            return false
+        }
+        return message.id == candidateID &&
+            message.conversationID == pending.draft.conversationID &&
+            message.isFromCurrentUser == true &&
+            message.text == pending.draft.text
+    }
+
+    private func chatAttachmentOutcome(
+        status: MutationResultStatus,
+        submitted: Bool,
+        requiresRefresh: Bool = false,
+        succeeded: Int = 0,
+        failed: Int = 0,
+        unknown: Int = 0,
+        errorCategory: MutationErrorCategory? = nil,
+        diagnosticTag: String,
+        draft: ChatMessageDraft,
+        message: ChatMessage? = nil
+    ) throws -> ChatMessageSendOutcome {
+        ChatMessageSendOutcome(
+            result: try MutationResult(
+                status: status,
+                operation: "chatAttachmentSend",
+                submitted: submitted,
+                requiresRefresh: requiresRefresh,
+                counts: MutationResultCounts(
+                    succeeded: succeeded,
+                    failed: failed,
+                    unknown: unknown
+                ),
+                errorCategory: errorCategory,
+                diagnosticTag: diagnosticTag
+            ),
+            conversationID: draft.conversationID,
+            clientRequestID: draft.clientRequestID,
+            confirmedMessage: message
+        )
+    }
+
     /// 使用 Chat Server 2.4.1-22111 官方网页客户端当前采用的内部上传契约。
     /// `SYNO.Chat.Post/create` v5 与 multipart 的 `file` 字段均不是群晖公开 API，
     /// 因此仅在运行时能力范围明确包含 v5 时启用，并保持关闭型兼容策略。
@@ -726,6 +1042,40 @@ public actor DsmChatRepository: ChatRepository {
         draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessage {
+        let receipt = try await uploadAttachmentReceipt(
+            localURL: localURL,
+            draft: draft,
+            progress: progress,
+            submissionState: nil
+        )
+        if let message = receipt.message { return message }
+
+        // 旧发送入口在上传响应缺少完整消息时，也只允许按稳定 post 标识回读。
+        let pending = PendingChatAttachmentSendReview(
+            draft: draft,
+            candidateMessageID: receipt.candidateMessageID,
+            expectedFileName: receipt.localFileName,
+            expectedFileSize: receipt.localFileSize
+        )
+        pendingAttachmentSends[draft.clientRequestID] = pending
+        let outcome = try await finishPendingChatAttachmentSend(pending)
+        guard outcome.result.status == .confirmedSuccess,
+              let message = outcome.confirmedMessage else {
+            throw AppError(
+                category: .partialFailure,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.05430b68cf645911")
+            )
+        }
+        return message
+    }
+
+    private func uploadAttachmentReceipt(
+        localURL: URL,
+        draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress,
+        submissionState: ChatAttachmentSubmissionState?
+    ) async throws -> ChatAttachmentUploadReceipt {
         guard supportsAttachmentUpload else {
             throw unsupported(L10n.string("shared.45cf7cd4f9a97d94"))
         }
@@ -819,6 +1169,8 @@ public actor DsmChatRepository: ChatRepository {
 
         let response: DsmHTTPResponse
         do {
+            try Task.checkCancellation()
+            submissionState?.markStarted()
             response = try await binaryTransport.upload(request, from: bodyURL, progress: progress)
         } catch is CancellationError {
             throw CancellationError()
@@ -843,46 +1195,38 @@ public actor DsmChatRepository: ChatRepository {
         }
         guard envelope.success else { throw invalidChatResponse() }
 
-        let fallbackAttachment = makeLocalAttachment(
-            localURL: localURL,
-            fileSize: values.fileSize.map(Int64.init)
-        )
-        var parsed = envelope.data.flatMap {
+        let parsed = envelope.data.flatMap {
             makeMessage(from: $0, fallbackConversationID: draft.conversationID)
         }
-        if parsed == nil,
-           let page = try? await listMessages(
-               conversationID: draft.conversationID,
-               before: nil,
-               limit: 50
-           ) {
-            parsed = page.messages.first {
-                $0.text == draft.text
-                    && $0.attachments.contains(where: { $0.fileName == localURL.lastPathComponent })
-                    && isOwnedByCurrentUser($0)
-                    && abs($0.sentAt.timeIntervalSinceNow) <= 180
-            }
-        }
-        guard let parsed else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.05430b68cf645911")
+        let rawCandidateMessageID = parsed?.id
+            ?? envelope.data?.objectValue?.firstString(for: ["post_id", "id"])
+        let candidateMessageID = rawCandidateMessageID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let stableCandidateMessageID = candidateMessageID?.isEmpty == false ? candidateMessageID : nil
+        let localFileSize = values.fileSize.map(Int64.init)
+        let message = parsed.map { parsed in
+            ChatMessage(
+                id: parsed.id,
+                clientRequestID: draft.clientRequestID,
+                conversationID: parsed.conversationID,
+                senderID: parsed.senderID,
+                senderDisplayName: parsed.senderDisplayName,
+                isFromCurrentUser: true,
+                sentAt: parsed.sentAt,
+                text: parsed.text ?? draft.text,
+                attachments: parsed.attachments.isEmpty
+                    ? [makeLocalAttachment(localURL: localURL, fileSize: localFileSize)]
+                    : parsed.attachments,
+                deliveryState: .sent,
+                encryptionState: parsed.encryptionState,
+                pinnedAt: parsed.pinnedAt
             )
         }
-        return ChatMessage(
-            id: parsed.id,
-            clientRequestID: draft.clientRequestID,
-            conversationID: parsed.conversationID,
-            senderID: parsed.senderID,
-            senderDisplayName: parsed.senderDisplayName,
-            isFromCurrentUser: true,
-            sentAt: parsed.sentAt,
-            text: parsed.text ?? draft.text,
-            attachments: parsed.attachments.isEmpty ? [fallbackAttachment] : parsed.attachments,
-            deliveryState: .sent,
-            encryptionState: parsed.encryptionState,
-            pinnedAt: parsed.pinnedAt
+        return ChatAttachmentUploadReceipt(
+            message: message,
+            candidateMessageID: stableCandidateMessageID,
+            localFileName: localURL.lastPathComponent,
+            localFileSize: localFileSize
         )
     }
 
@@ -1990,6 +2334,38 @@ public actor DsmChatRepository: ChatRepository {
 private struct PendingChatMessageSendReview: Sendable {
     let draft: ChatMessageDraft
     let candidateMessageID: String?
+}
+
+private struct PendingChatAttachmentSendReview: Sendable {
+    let draft: ChatMessageDraft
+    let candidateMessageID: String?
+    let expectedFileName: String
+    let expectedFileSize: Int64?
+}
+
+private struct ChatAttachmentUploadReceipt: Sendable {
+    let message: ChatMessage?
+    let candidateMessageID: String?
+    let localFileName: String
+    let localFileSize: Int64?
+}
+
+/// 记录 multipart 是否已经交给传输层，取消结果据此区分提交前与提交后。
+private final class ChatAttachmentSubmissionState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started = false
+
+    func markStarted() {
+        lock.lock()
+        started = true
+        lock.unlock()
+    }
+
+    var hasStarted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return started
+    }
 }
 
 /// 用于兼容 Chat Server 不同版本返回字段的最小动态 JSON 类型。

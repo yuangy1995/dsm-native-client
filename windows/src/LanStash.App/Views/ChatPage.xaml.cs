@@ -13,6 +13,7 @@ public sealed partial class ChatPage : Page, IDisposable
     private readonly IChatRepository _repository;
     private readonly ChatBrowserViewModel _viewModel;
     private readonly ChatTextComposerViewModel _composer;
+    private readonly ChatAttachmentComposerViewModel _attachmentComposer;
     private bool _initialized;
     private bool _compactShowsConversationList;
     private bool _disposed;
@@ -30,9 +31,11 @@ public sealed partial class ChatPage : Page, IDisposable
         _repository = repository;
         _viewModel = viewModel;
         _composer = new(ChatTextSendReviewBlocker.Current);
+        _attachmentComposer = new(ChatAttachmentSendReviewBlocker.Current);
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _composer.PropertyChanged += ViewModel_PropertyChanged;
+        _attachmentComposer.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += ChatPage_Loaded;
         UpdateState();
     }
@@ -235,6 +238,9 @@ public sealed partial class ChatPage : Page, IDisposable
         _disposed = true;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _composer.PropertyChanged -= ViewModel_PropertyChanged;
+        _attachmentComposer.PropertyChanged -= ViewModel_PropertyChanged;
+        CancelAttachmentRead();
+        _attachmentComposer.Dispose();
         _composer.Dispose();
         _viewModel.Dispose();
     }

@@ -1,15 +1,22 @@
 import DsmCore
 import Foundation
+import UniformTypeIdentifiers
 
-/// 移动端 Chat 能力边界：开放会话、消息基础读取和纯文字发送；附件与高级动作继续关闭。
+/// 移动端 Chat 能力边界：只透传当前受限范围内的会话读取、文字和单附件消息能力。
 struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     let base: any ChatRepository
 
     func availability() async -> ChatAvailability {
         let value = await base.availability()
-        let mobileFeatures: Set<ChatFeature> = value.status == .available &&
-            value.supportedFeatures.contains(.textMessage)
-            ? [.textMessage]
+        let mobileScope: Set<ChatFeature> = [
+            .textMessage,
+            .imageAttachment,
+            .videoAttachment,
+            .fileAttachment,
+            .attachmentDownload
+        ]
+        let mobileFeatures = value.status == .available
+            ? value.supportedFeatures.intersection(mobileScope)
             : []
         return ChatAvailability(status: value.status, supportedFeatures: mobileFeatures)
     }
@@ -73,6 +80,26 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             throw MobileReadOnlyChatRepositoryError.operationUnavailable
         }
         return try await base.sendMessageResult(draft, progress: progress)
+    }
+
+    func sendAttachmentMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome {
+        let value = await base.availability()
+        guard value.status == .available,
+              draft.localAttachmentURLs.count == 1,
+              let localURL = draft.localAttachmentURLs.first else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        let kind = MobileChatAttachmentSelection.kind(
+            contentType: UTType(filenameExtension: localURL.pathExtension),
+            fileName: localURL.lastPathComponent
+        )
+        guard value.supportedFeatures.contains(MobileChatAttachmentSelection.requiredFeature(for: kind)) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return try await base.sendAttachmentMessageResult(draft, progress: progress)
     }
 
     func deleteMessage(
@@ -139,7 +166,12 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         messageID: String,
         size: ChatAttachmentThumbnailSize
     ) async throws -> Data {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.attachmentDownload) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return try await base.loadAttachmentThumbnail(messageID: messageID, size: size)
     }
 
     func downloadAttachment(
@@ -147,7 +179,16 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         to destinationURL: URL,
         progress: @escaping FileTransferProgress
     ) async throws {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.attachmentDownload) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        try await base.downloadAttachment(
+            messageID: messageID,
+            to: destinationURL,
+            progress: progress
+        )
     }
 
     func listScheduledMessages(conversationID: String) async throws -> [ChatScheduledMessage] {

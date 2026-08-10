@@ -8,7 +8,7 @@ using LanStash.Domain;
 
 namespace LanStash.Infrastructure;
 
-public sealed class DsmApiClient(HttpClient httpClient) : IDsmApiClient
+public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
 {
     private readonly HttpClient _http = httpClient;
 

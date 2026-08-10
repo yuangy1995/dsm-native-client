@@ -30,6 +30,7 @@ final class MobileAppModel {
     let photoLibraryModel = MobilePhotoLibraryModel()
     let chatModel = MobileChatModel()
     let nasHealthModel = MobileNasHealthModel()
+    let nasDetailsModel = MobileNasDetailsModel()
     let containerInventoryModel = MobileContainerInventoryModel()
     let virtualMachineInventoryModel = MobileVirtualMachineInventoryModel()
 
@@ -80,6 +81,7 @@ final class MobileAppModel {
                 photoLibraryModel.deactivate()
                 chatModel.deactivate()
                 nasHealthModel.deactivate()
+                nasDetailsModel.deactivate()
                 containerInventoryModel.deactivate()
                 virtualMachineInventoryModel.deactivate()
             }

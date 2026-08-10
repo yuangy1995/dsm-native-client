@@ -9,6 +9,7 @@
         <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="BackAccelerator_Invoked" />
         <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="SearchAccelerator_Invoked" />
         <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="A" Modifiers="Control,Shift" Invoked="ChooseAttachmentAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid Padding="24,20,24,16" RowSpacing="12">
@@ -76,6 +77,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <AutoSuggestBox
@@ -164,6 +166,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
@@ -332,10 +335,47 @@
                                                             Text="{x:Bind SentAtText}" />
                                                     </Grid>
                                                     <TextBlock Text="{x:Bind Text}" TextWrapping="WrapWholeWords" />
-                                                    <TextBlock
-                                                        x:Uid="ChatBrowserAttachmentUnavailable"
-                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                        Visibility="{x:Bind HasAttachments}" />
+                                                    <ItemsControl ItemsSource="{x:Bind Attachments}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="chat:ChatMessageAttachmentItem">
+                                                                <Border
+                                                                    Margin="0,4,0,0"
+                                                                    Padding="8"
+                                                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="6">
+                                                                    <Grid ColumnSpacing="8">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock
+                                                                            VerticalAlignment="Center"
+                                                                            Text="{x:Bind FileName}"
+                                                                            TextTrimming="CharacterEllipsis" />
+                                                                        <Button
+                                                                            x:Uid="ChatAttachmentPreview"
+                                                                            Grid.Column="1"
+                                                                            MinWidth="48"
+                                                                            MinHeight="48"
+                                                                            Click="AttachmentPreview_Click"
+                                                                            Tag="{x:Bind}"
+                                                                            Visibility="{x:Bind PreviewVisibility}" />
+                                                                        <Button
+                                                                            x:Uid="ChatAttachmentSave"
+                                                                            Grid.Column="2"
+                                                                            MinWidth="48"
+                                                                            MinHeight="48"
+                                                                            Click="AttachmentSave_Click"
+                                                                            IsEnabled="{x:Bind CanSave}"
+                                                                            Tag="{x:Bind}" />
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
@@ -357,11 +397,69 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <TextBlock
-                                    x:Uid="ChatBrowserComposerLabel"
-                                    FontWeight="SemiBold" />
-                                <Grid Grid.Row="1" ColumnSpacing="8">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock
+                                        x:Uid="ChatBrowserComposerLabel"
+                                        VerticalAlignment="Center"
+                                        FontWeight="SemiBold" />
+                                    <Button
+                                        x:Uid="ChatAttachmentChoose"
+                                        x:Name="ChooseAttachmentButton"
+                                        Grid.Column="1"
+                                        MinWidth="48"
+                                        MinHeight="48"
+                                        Click="ChooseAttachment_Click" />
+                                </Grid>
+                                <Border
+                                    x:Name="AttachmentCard"
+                                    Grid.Row="1"
+                                    Padding="8"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Visibility="Collapsed">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock
+                                                x:Name="AttachmentName"
+                                                FontWeight="SemiBold"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                x:Name="AttachmentSize"
+                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                        <Button
+                                            x:Uid="ChatAttachmentRemove"
+                                            x:Name="RemoveAttachmentButton"
+                                            Grid.Column="1"
+                                            MinWidth="48"
+                                            MinHeight="48"
+                                            Click="RemoveAttachment_Click"
+                                            Visibility="Collapsed" />
+                                        <Button
+                                            x:Uid="ChatAttachmentCancel"
+                                            x:Name="CancelAttachmentButton"
+                                            Grid.Column="2"
+                                            MinWidth="48"
+                                            MinHeight="48"
+                                            Click="CancelAttachment_Click"
+                                            Visibility="Collapsed" />
+                                    </Grid>
+                                </Border>
+                                <Grid Grid.Row="2" ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
@@ -382,7 +480,7 @@
                                         MinHeight="48"
                                         Click="SendMessage_Click" />
                                 </Grid>
-                                <Grid Grid.Row="2" ColumnSpacing="8">
+                                <Grid Grid.Row="3" ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
@@ -390,6 +488,13 @@
                                     <ProgressRing
                                         x:Uid="ChatBrowserSendProgress"
                                         x:Name="SendMessageProgress"
+                                        Width="20"
+                                        Height="20"
+                                        IsActive="False"
+                                        Visibility="Collapsed" />
+                                    <ProgressRing
+                                        x:Uid="ChatAttachmentProgress"
+                                        x:Name="AttachmentProgress"
                                         Width="20"
                                         Height="20"
                                         IsActive="False"
@@ -403,6 +508,13 @@
                                         TextWrapping="Wrap"
                                         Visibility="Collapsed" />
                                 </Grid>
+                                <InfoBar
+                                    x:Name="AttachmentFeedback"
+                                    Grid.Row="4"
+                                    AutomationProperties.LiveSetting="Polite"
+                                    IsClosable="True"
+                                    IsOpen="False"
+                                    Severity="Informational" />
                             </Grid>
                         </Border>
                     </Grid>

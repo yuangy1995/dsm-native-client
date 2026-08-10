@@ -183,10 +183,10 @@ contracts/request-fixtures/
 ### RC2：Android 与 Windows 对齐
 
 状态：Android 首批为 `UNIT_TESTED`；Windows 首批已由后续云端门禁覆盖。BTSearch
-候选提交 `53360d2` 已完成 Apple shared/mobile 与 Windows
-Domain/Infrastructure/ViewModel/WinUI 闭环，并新增 `start`/`clean` 合成请求；同一
-候选的 Windows Build run `31354549859` 完成 886/886 项 .NET 10 xUnit，并通过
-WinUI x64 与 ARM64 Release 构建，Repository Check run `31354549826` 同步通过。
+正式提交 `5850f4c` 已完成 Apple shared/mobile 与 Windows
+Domain/Infrastructure/ViewModel/WinUI 闭环，并新增 `start`/`clean` 合成请求；该提交的
+Windows Build run `31356270192` 完成 886/886 项 .NET 10 xUnit，并通过
+WinUI x64 与 ARM64 Release 构建，Repository Check run `31356270189` 同步通过。
 
 - 使用同一 Fixture 验证 API、方法、版本、路径、参数集合和策略。
 - 平台特有 HTTP 实现可以不同，但可观察请求语义必须一致。
@@ -202,9 +202,9 @@ WinUI x64 与 ARM64 Release 构建，Repository Check run `31354549826` 同步�
 - 后续继续把套件、容器/VMM 子资源、网络、防火墙、Download Station 新切片及其他代表性
   请求扩展到 Android/Windows；平台没有生产写入口的能力只建立契约消费测试，不为对齐而
   新增未经验证入口。当前 BTSearch v1 的实现口径为两端完整闭环：本机已通过 Apple shared
-  聚焦/全量、iPhone 聚焦、94 份请求 Fixture、本地化和静态门；候选提交 `53360d2` 又通过
-  Apple Build run `31354549813`、Windows Build run `31354549859`、Android Build run
-  `31354549827` 与 Repository Check run `31354549826`。真实设备与真实 NAS 仍单独验收。
+  聚焦/全量、iPhone 聚焦、94 份请求 Fixture、本地化和静态门；正式提交 `5850f4c` 又通过
+  Apple Build run `31356270194`、Windows Build run `31356270192`、Android Build run
+  `31356270244` 与 Repository Check run `31356270189`。真实设备与真实 NAS 仍单独验收。
 - Android 收藏新增和 File Station 上传已对照公共合成 Fixture 验证 API、方法、版本、
   路径、表单或 multipart 参数、SID、SynoToken 位置和回读策略；其余代表性操作与
   Windows 继续迁移。
@@ -212,7 +212,7 @@ WinUI x64 与 ARM64 Release 构建，Repository Check run `31354549826` 同步�
 ### MR0：结果类型与序列化
 
 状态：Apple、Android 为 `UNIT_TESTED`；Windows 领域类型已由后续 GitHub Windows
-Build 覆盖，BTSearch 候选提交 `53360d2` 完成 886/886 项 xUnit 与 WinUI x64/ARM64
+Build 覆盖，BTSearch 正式提交 `5850f4c` 完成 886/886 项 xUnit 与 WinUI x64/ARM64
 Release 构建。后续若新增 `MutationResult` 消费者或请求契约，仍需在对应分支重新跑
 Windows CI。
 

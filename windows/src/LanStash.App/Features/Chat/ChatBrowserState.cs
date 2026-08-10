@@ -1,6 +1,7 @@
 using System.Globalization;
 using LanStash.Domain;
 using LanStash.App.Localization;
+using Microsoft.UI.Xaml;
 
 namespace LanStash.App.Features.Chat;
 
@@ -72,4 +73,19 @@ public sealed record ChatMessageItem(ChatMessage Message)
     public string SentAtText => SentAt.ToString("g", CultureInfo.CurrentCulture);
     public bool IsFromCurrentUser => Message.IsFromCurrentUser == true;
     public bool HasAttachments => Message.Attachments.Count > 0;
+    public IReadOnlyList<ChatMessageAttachmentItem> Attachments =>
+        Message.Attachments
+            .Select(attachment => new ChatMessageAttachmentItem(Message.ConversationId, Id, attachment))
+            .ToArray();
+}
+
+public sealed record ChatMessageAttachmentItem(
+    string ConversationId,
+    string MessageId,
+    ChatAttachment Attachment)
+{
+    public string FileName => Attachment.FileName;
+    public bool IsImage => Attachment.Kind == ChatAttachmentKind.Image;
+    public bool CanSave => Attachment.SizeBytes is not null;
+    public Visibility PreviewVisibility => IsImage ? Visibility.Visible : Visibility.Collapsed;
 }

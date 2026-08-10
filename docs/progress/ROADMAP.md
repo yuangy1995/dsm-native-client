@@ -72,16 +72,14 @@
 - 完成首次单聊、私人群聊、附件、提醒、定时消息、投票创建和实时刷新的真实套件验收。
 - 补齐语音、投票参与及其他未完成消息能力。
 - 加密会话必须先完成密钥生命周期、安全评审和跨设备验证，不允许明文降级。
-- Android 已形成完整 Chat 主流程，Apple 移动端与 Windows 已进入会话/历史和受限纯文字
-  发送；下一步先冻结单附件 typed 契约再接两端原生 UI。macOS 仍是业务语义与安全基准，
-  但不再把“等待 macOS 全部稳定”作为其他平台无依赖切片的串行前置条件。
+- Android 已形成完整 Chat 主流程；Apple 移动端与 Windows 已完成会话/历史、受限纯文字及单附件的前台发送、缩略预览和用户主动另存。Chat Server 的真实行为、系统选择器与辅助功能仍待验收；实时、语音、加密和多附件保持后置。macOS 仍是业务语义与安全基准，但不再把“等待 macOS 全部稳定”作为其他平台无依赖切片的串行前置条件。
 
 详细范围见[Synology Chat 开发计划](../development/NATIVE_DSM_CHAT_DEVELOPMENT_PLAN_ZH.md)。
 
 ### NAS 设置、套件与统一存储
 
 - 使用专用测试目标验证可能断网、改时、停服或影响存储状态的写操作。
-- 在已完成 Download Station 常用单任务流程和当前活动摘要基础上，BTSearch v1 的 Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 闭环也已通过候选提交 `53360d2` 的 Apple、Android、Windows 与 Repository 四组云端门禁；当前只剩真实 NAS、iPad、Windows、Narrator 和键盘验收。ACT-01 统一活动中心首片已在当前分支落盘并通过云端门禁：Download Station 已加载任务快照会以 NAS 来源投影到 Activity，控制能力仍与 App 前台传输分开；真机和真实 NAS 待验收。下一功能切片优先推进 CHAT-03 单附件 typed 契约，NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、设置写入、Activity 主动后台刷新以及 Container/VMM 高危能力继续后置。
+- 在已完成 Download Station 常用单任务流程和当前活动摘要基础上，BTSearch v1 的 Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 闭环已随正式提交 `5850f4c` 通过 Apple、Android、Windows 与 Repository 四组云端门禁；当前只剩真实 NAS、iPad、Windows、Narrator 和键盘验收。ACT-01 统一活动中心首片已随正式提交 `2491212` 合入并通过云端门禁：Download Station 已加载任务快照会以 NAS 来源投影到 Activity，控制能力仍与 App 前台传输分开；真机和真实 NAS 待验收。CHAT-03 单附件已在两端完成契约、原生 UI 和云端门禁，下一功能切片优先推进 NAS-02/NAS-04 有界只读详情。RSS、文件优先级、BT 协议高级设置、设置写入、Activity 主动后台刷新以及 Container/VMM 高危能力继续后置。
 - 验证统一存储管理的大目录、取消、权限、QuickConnect 和 MD5 任务；取得版本化契约后再评估套件历史报告与计划任务。
 
 详细范围见[套件管理计划](../development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)和[统一存储管理计划](../development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)。

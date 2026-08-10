@@ -16,17 +16,25 @@ public sealed partial class ChatPage
             return;
         }
         _composer.Configure(_repository, _viewModel.SelectedConversation);
-        ComposerPanel.Visibility = Visible(_composer.IsAvailable);
+        _attachmentComposer.Configure(_repository, _viewModel.SelectedConversation);
+        UpdateAttachmentState();
+        ComposerPanel.Visibility = Visible(_composer.IsAvailable || _attachmentComposer.IsAvailable);
         if (!string.Equals(ComposerInput.Text, _composer.DraftText, StringComparison.Ordinal))
         {
             ComposerInput.Text = _composer.DraftText;
         }
-        ComposerInput.IsEnabled = _composer.CanEdit;
-        SendMessageButton.IsEnabled = _composer.CanSend;
+        ComposerInput.IsEnabled = _composer.CanEdit || _attachmentComposer.CanSelect;
+        SendMessageButton.IsEnabled = _attachmentComposer.Draft is not null
+            ? _attachmentComposer.CanSend
+            : _composer.CanSend;
         SendMessageProgress.IsActive = _composer.IsSending;
         SendMessageProgress.Visibility = Visible(_composer.IsSending);
+        AttachmentProgress.IsActive = _attachmentComposer.IsSending;
+        AttachmentProgress.Visibility = Visible(_attachmentComposer.IsSending);
 
-        var status = ComposerStatusText();
+        var status = _attachmentComposer.Draft is not null || _attachmentComposer.HasStatus
+            ? AttachmentStatusText()
+            : ComposerStatusText();
         ComposerStatus.Text = status;
         ComposerStatus.Visibility = Visible(!string.IsNullOrEmpty(status));
         AutomationProperties.SetName(ComposerStatus, status);
@@ -45,13 +53,16 @@ public sealed partial class ChatPage
     {
         await RunAsync(async () =>
         {
-            var confirmed = await _composer.SendAsync();
+            var confirmed = _attachmentComposer.Draft is not null
+                ? await _attachmentComposer.SendAsync(ComposerInput.Text)
+                : await _composer.SendAsync();
             if (confirmed)
             {
+                _composer.DraftText = string.Empty;
                 await _viewModel.RefreshMessagesAsync();
             }
         });
-        if (_composer.CanEdit)
+        if (_composer.CanEdit || _attachmentComposer.CanSelect)
         {
             ComposerInput.Focus(FocusState.Keyboard);
         }

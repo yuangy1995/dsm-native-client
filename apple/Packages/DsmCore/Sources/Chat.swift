@@ -484,6 +484,10 @@ public protocol ChatRepository: Sendable {
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
     ) async throws -> ChatMessageSendOutcome
+    func sendAttachmentMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome
     func deleteMessage(
         conversationID: String,
         messageID: String,
@@ -553,6 +557,10 @@ public extension ChatRepository {
         try await sendMessageResult(draft, progress: { _, _ in })
     }
 
+    func sendAttachmentMessageResult(_ draft: ChatMessageDraft) async throws -> ChatMessageSendOutcome {
+        try await sendAttachmentMessageResult(draft, progress: { _, _ in })
+    }
+
     func sendMessageResult(
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
@@ -566,6 +574,26 @@ public extension ChatRepository {
                 counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
                 errorCategory: .unsupported,
                 diagnosticTag: "chat.text-send.unsupported"
+            ),
+            conversationID: draft.conversationID,
+            clientRequestID: draft.clientRequestID,
+            confirmedMessage: nil
+        )
+    }
+
+    func sendAttachmentMessageResult(
+        _ draft: ChatMessageDraft,
+        progress: @escaping FileTransferProgress
+    ) async throws -> ChatMessageSendOutcome {
+        ChatMessageSendOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "chatAttachmentSend",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.attachment-send.unsupported"
             ),
             conversationID: draft.conversationID,
             clientRequestID: draft.clientRequestID,

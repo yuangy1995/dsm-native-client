@@ -44,10 +44,8 @@ public sealed partial class DsmRepository
     public ChatAvailability Availability => HasReadableChatContract
         ? new(
             ChatAvailabilityStatus.Available,
-            ChatReadFeatures,
-            HasTextMessageSendContract
-                ? new HashSet<ChatWriteFeature> { ChatWriteFeature.TextMessage }
-                : new HashSet<ChatWriteFeature>())
+            SupportedChatReadFeatures(),
+            SupportedChatWriteFeatures())
         : new(
             ChatAvailabilityStatus.Unavailable,
             new HashSet<ChatReadFeature>(),

@@ -402,8 +402,8 @@
   <data name="ChatBrowserDescription.Text" xml:space="preserve"><value>读取 Synology Chat 中的会话并发送文字消息。</value></data>
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新会话</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
-  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>仅支持文字消息</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>可在支持的会话中发送文字。暂不支持附件和新建会话。</value></data>
+  <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>聊天功能受限</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>可在支持的会话中发送文字和一个附件。暂不支持新建会话或加密会话附件。</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>无法刷新会话</value></data>
@@ -413,7 +413,7 @@
   <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
   <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}，{1:N0} 条未读</value></data>
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回会话列表</value></data>
-  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>仅支持文字消息</value></data>
+  <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>支持前台消息和单附件</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新消息</value></data>
   <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>消息</value></data>
   <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>输入消息</value></data>
@@ -459,6 +459,29 @@
   <data name="ChatBrowserValidationTitle.Text" xml:space="preserve"><value>当前无法安全打开聊天</value></data>
   <data name="ChatBrowserValidationMessage.Text" xml:space="preserve"><value>请重新连接此 NAS 后再试。</value></data>
   <data name="ChatBrowserUnknownSender" xml:space="preserve"><value>未知发送者</value></data>
+  <data name="ChatAttachmentChoose.Content" xml:space="preserve"><value>添加附件</value></data>
+  <data name="ChatAttachmentChoose.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择一个附件</value></data>
+  <data name="ChatAttachmentRemove.Content" xml:space="preserve"><value>移除</value></data>
+  <data name="ChatAttachmentRemove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>移除已选附件</value></data>
+  <data name="ChatAttachmentCancel.Content" xml:space="preserve"><value>取消</value></data>
+  <data name="ChatAttachmentCancel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>取消附件上传</value></data>
+  <data name="ChatAttachmentProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在发送附件</value></data>
+  <data name="ChatAttachmentPreview.Content" xml:space="preserve"><value>预览</value></data>
+  <data name="ChatAttachmentPreview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>预览图片附件</value></data>
+  <data name="ChatAttachmentSave.Content" xml:space="preserve"><value>另存</value></data>
+  <data name="ChatAttachmentSave.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>另存附件</value></data>
+  <data name="ChatAttachmentSending" xml:space="preserve"><value>正在发送附件…</value></data>
+  <data name="ChatAttachmentSent" xml:space="preserve"><value>附件已发送。</value></data>
+  <data name="ChatAttachmentReview" xml:space="preserve"><value>附件可能已经发送。再次发送前，请刷新消息并核对此会话。</value></data>
+  <data name="ChatAttachmentCancelled" xml:space="preserve"><value>附件已在发送前取消。</value></data>
+  <data name="ChatAttachmentPermission" xml:space="preserve"><value>你没有权限在此会话中发送附件。</value></data>
+  <data name="ChatAttachmentFailed" xml:space="preserve"><value>无法发送附件。请检查连接后重试。</value></data>
+  <data name="ChatAttachmentPreviewTitle" xml:space="preserve"><value>附件预览</value></data>
+  <data name="ChatAttachmentPreviewFailed" xml:space="preserve"><value>无法载入图片预览。请检查连接后重试。</value></data>
+  <data name="ChatAttachmentClose" xml:space="preserve"><value>关闭</value></data>
+  <data name="ChatAttachmentFileType" xml:space="preserve"><value>原始文件</value></data>
+  <data name="ChatAttachmentSaveCompleted" xml:space="preserve"><value>附件已保存。</value></data>
+  <data name="ChatAttachmentSaveFailed" xml:space="preserve"><value>无法保存附件。请选择位置后重试。</value></data>
   <data name="DownloadStationStatusWaiting" xml:space="preserve"><value>等待中</value></data>
   <data name="DownloadStationStatusDownloading" xml:space="preserve"><value>下载中</value></data>
   <data name="DownloadStationStatusPaused" xml:space="preserve"><value>已暂停</value></data>

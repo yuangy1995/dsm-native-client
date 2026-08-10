@@ -281,9 +281,12 @@ private struct MobileChatMessagesView: View {
                 await chat.selectConversation(conversation)
             }
         }
+        .onDisappear {
+            chat.leaveConversation(conversation.id)
+        }
         .safeAreaInset(edge: .top) {
             if horizontalSizeClass != .regular,
-               !chat.state.availability.supportedFeatures.contains(.textMessage) {
+               !chat.canComposeMessage {
                 Label(
                     L10n.string("mobile.chat.read-only.notice"),
                     systemImage: "eye"
@@ -310,11 +313,11 @@ private struct MobileChatMessagesView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if chat.state.availability.supportedFeatures.contains(.textMessage),
-               !conversation.isEncrypted {
-                messageComposer
+            if chat.canComposeMessage, !conversation.isEncrypted {
+                MobileChatAttachmentComposer(chat: chat)
             }
         }
+        .mobileChatRemoteAttachmentPresentation(chat: chat)
     }
 
     private var messageContent: some View {
@@ -328,7 +331,7 @@ private struct MobileChatMessagesView: View {
             List {
                 loadEarlierSection(state)
                 ForEach(state.selectedMessages.messages) { message in
-                    MobileChatMessageRow(message: message)
+                    MobileChatMessageRow(chat: chat, message: message)
                 }
             }
             .listStyle(.plain)
@@ -343,71 +346,6 @@ private struct MobileChatMessagesView: View {
                     .accessibilityLabel(L10n.string("mobile.chat.loading.messages"))
             }
         }
-    }
-
-    private var messageComposer: some View {
-        let state = chat.state
-        return VStack(alignment: .leading, spacing: 8) {
-            if state.selectedDraftRequiresReview {
-                Label(L10n.string("mobile.chat.send.review"), systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
-            } else if state.sendErrorCategory != nil {
-                Label(L10n.string("mobile.chat.send.failed"), systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
-            }
-            HStack(alignment: .bottom, spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L10n.string("mobile.chat.composer.label"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField(
-                        L10n.string("mobile.chat.send.placeholder"),
-                        text: draftBinding,
-                        axis: .vertical
-                    )
-                    .lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder)
-                    .submitLabel(.send)
-                    .onSubmit { Task { await chat.sendSelectedMessage() } }
-                    .disabled(state.isSendingMessage)
-                    .accessibilityLabel(L10n.string("mobile.chat.composer.label"))
-                    .accessibilityHint(L10n.string("mobile.chat.send.hint"))
-                }
-                Button {
-                    Task { await chat.sendSelectedMessage() }
-                } label: {
-                    if state.isSendingMessage {
-                        ProgressView()
-                            .frame(width: 24, height: 24)
-                    } else {
-                        Label(L10n.string("mobile.chat.action.send"), systemImage: "paperplane.fill")
-                    }
-                }
-                .frame(minWidth: 44, minHeight: 44)
-                .disabled(!state.canSendSelectedDraft)
-                .accessibilityLabel(
-                    state.isSendingMessage
-                        ? L10n.string("mobile.chat.sending")
-                        : L10n.string("mobile.chat.action.send")
-                )
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-        .background(.regularMaterial)
-        .accessibilityElement(children: .contain)
-    }
-
-    private var draftBinding: Binding<String> {
-        Binding(
-            get: { chat.state.selectedDraft },
-            set: { chat.setDraft($0) }
-        )
     }
 
     @ViewBuilder
@@ -447,6 +385,7 @@ private struct MobileChatMessagesView: View {
 }
 
 private struct MobileChatMessageRow: View {
+    @Bindable var chat: MobileChatModel
     let message: ChatMessage
 
     var body: some View {
@@ -465,18 +404,11 @@ private struct MobileChatMessageRow: View {
                     .textSelection(.enabled)
             }
             ForEach(message.attachments) { attachment in
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(attachment.fileName)
-                            .font(.subheadline)
-                        Text(L10n.string("mobile.chat.attachment.read-only"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: attachmentSystemImage(attachment.kind))
-                }
-                .accessibilityElement(children: .combine)
+                MobileChatRemoteAttachmentRow(
+                    chat: chat,
+                    message: message,
+                    attachment: attachment
+                )
             }
         }
         .padding(.vertical, 6)
@@ -484,12 +416,4 @@ private struct MobileChatMessageRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func attachmentSystemImage(_ kind: ChatAttachmentKind) -> String {
-        switch kind {
-        case .image: "photo"
-        case .video: "video"
-        case .file: "doc"
-        case .voice: "waveform"
-        }
-    }
 }

@@ -1,7 +1,8 @@
 # Windows / Apple 移动端功能对齐账本：第 4 波
 
-> 状态：ACT-01 首片源码已在当前分支落盘，并通过本地轻量门禁与 GitHub Apple/Windows/Repository 云端门禁；真机和真实 NAS 仍待用户验收
-> 基线提交：`5850f4c0a7d35923e990f2cb5c48191cc160fd4e`（`接入跨端下载站 BT 搜索并更新进度文档`）
+> 状态：ACT-01 首片已合入 `main`，并通过本地轻量门禁与 GitHub Apple/Windows/Repository 云端门禁；真机和真实 NAS 仍待用户验收
+> 基线提交：`5850f4c15901173ae24204e501b415fa627e879f`（`接入跨端下载站 BT 搜索并更新进度文档`）
+> 最终提交：`2491212da6f81c5b932d97a6af035cfef0719e8f`（`接入跨端活动中心下载任务投影`）
 > 当前范围：Windows/iPhone/iPad `ACT-01 统一活动中心首片`，把 App 前台传输与已加载的 Download Station 任务快照按来源投影到 Activity
 > 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；系统通知、后台常驻、跨重启恢复、Activity 主动轮询 NAS、NAS 文件后台任务、任务暂停/继续/删除、RSS、文件优先级、BT 高级设置和 Download 设置写
 
@@ -58,10 +59,10 @@
 
 ## 6. 当前验证证据
 
-- Apple：`MobileActivityPresentationTests` 已新增 Download Station 快照同步和移除测试；本机 iPhone 17 Pro 模拟器聚焦 `MobileActivityPresentationTests` 通过。GitHub `Apple Build` run `31358741106` 通过共享包 675 项 XCTest（2 跳过）+ 10 项 Swift Testing、工程生成、iPhone/iPad 通用应用构建、macOS 打包与产物上传。
-- Windows：`ForegroundTransferCoordinatorTests` 已新增 Download Station NAS 投影、去重、移除和 profile 切换测试；`TransferActivitySourceContractTests` 已新增来源标签、暂停状态、取消按钮和 Shell 注入源码护栏。GitHub `Windows Build` run `31358741100` 通过 889/889 项 .NET xUnit，并完成 WinUI x64 与 ARM64 构建。
+- Apple：`MobileActivityPresentationTests` 已新增 Download Station 快照同步和移除测试；本机 iPhone 17 Pro 模拟器聚焦 `MobileActivityPresentationTests` 通过。最终提交对应 GitHub `Apple Build` run `31360092209` 通过共享包 675 项 XCTest（2 跳过）+ 10 项 Swift Testing、工程生成、iPhone/iPad 通用应用构建、macOS 打包与产物上传。
+- Windows：`ForegroundTransferCoordinatorTests` 已新增 Download Station NAS 投影、去重、移除和 profile 切换测试；`TransferActivitySourceContractTests` 已新增来源标签、暂停状态、取消按钮和 Shell 注入源码护栏。最终提交对应 GitHub `Windows Build` run `31360092210` 通过 889/889 项 .NET xUnit，并完成 WinUI x64 与 ARM64 构建。
 - 共同轻量门：本地化检查已通过，当前双语资源统计为 Apple 3,462、Android 1,985、Windows 1,074；`TransferActivityPage.xaml` 与 Windows 双语 resw XML 可解析；`git diff --check` 通过。
-- 仓库门禁：GitHub `Repository Check` run `31358741044` 通过。上述云端证据不等同真机、系统无障碍或真实 NAS 字段验收。
+- 仓库门禁：最终提交对应 GitHub `Repository Check` run `31360092211` 通过。上述云端证据不等同真机、系统无障碍或真实 NAS 字段验收。
 
 ## 7. PENDING_USER_VALIDATION
 

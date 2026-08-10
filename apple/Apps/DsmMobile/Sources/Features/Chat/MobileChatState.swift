@@ -22,10 +22,21 @@ struct MobileChatProfileState: Equatable, Sendable {
     var isRefreshingMessages = false
     var isLoadingMoreMessages = false
     var isSendingMessage = false
+    var isPreparingAttachment = false
+    var isSendingAttachment = false
+    var attachmentProgressFraction: Double?
+    var attachmentReviewRequired = false
+    var attachmentThumbnailsByMessageID: [String: Data] = [:]
+    var loadingAttachmentThumbnailIDs: Set<String> = []
+    var remoteAttachmentMessageID: String?
+    var remoteAttachmentProgressFraction: Double?
+    var remoteAttachmentErrorMessageID: String?
     var loadMoreMessagesFailed = false
     var conversationErrorCategory: AppErrorCategory?
     var messageErrorCategory: AppErrorCategory?
     var sendErrorCategory: AppErrorCategory?
+    var attachmentErrorCategory: AppErrorCategory?
+    var remoteAttachmentErrorCategory: AppErrorCategory?
 
     var selectedConversation: ChatConversation? {
         guard let selectedConversationID else { return nil }
@@ -57,6 +68,8 @@ struct MobileChatProfileState: Equatable, Sendable {
         guard selectedConversation?.isEncrypted == false,
               availability.supportedFeatures.contains(.textMessage),
               !isSendingMessage,
+              !isPreparingAttachment,
+              !isSendingAttachment,
               !selectedDraftRequiresReview else {
             return false
         }

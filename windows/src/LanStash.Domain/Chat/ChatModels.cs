@@ -13,12 +13,15 @@ public enum ChatReadFeature
     Conversations,
     Messages,
     AttachmentMetadata,
+    AttachmentThumbnail,
+    AttachmentContent,
     EncryptedContentMetadata,
 }
 
 public enum ChatWriteFeature
 {
     TextMessage,
+    AttachmentMessage,
 }
 
 public sealed record ChatAvailability(
@@ -115,3 +118,54 @@ public sealed record ChatTextSendOutcome(
     string ConversationId,
     Guid ClientRequestId,
     ChatMessage? ConfirmedMessage);
+
+/// <summary>
+/// 单附件发送的可重开本地内容源。仓储在每次提交尝试后关闭返回的流；
+/// 调用方应在重试时返回新的、位于开头的可读流。
+/// </summary>
+public sealed record ChatAttachmentSource(
+    string FileName,
+    string? MediaType,
+    long Length,
+    Func<CancellationToken, Task<Stream>> OpenReadAsync);
+
+public sealed record ChatAttachmentSendRequest(
+    string ConversationId,
+    string? Text,
+    ChatAttachmentSource Attachment,
+    Guid ClientRequestId);
+
+public sealed record ChatAttachmentSendOutcome(
+    MutationResult Result,
+    string ConversationId,
+    Guid ClientRequestId,
+    ChatMessage? ConfirmedMessage);
+
+/// <summary>
+/// 受限图片缩略图。只用于前台预览，不包含服务器文件路径或本机保存位置。
+/// </summary>
+public sealed record ChatAttachmentThumbnail(
+    byte[] Bytes,
+    string MediaType)
+{
+    public const int MaximumBytes = 10 * 1_024 * 1_024;
+}
+
+public enum ChatAttachmentContentReadStatus
+{
+    Completed,
+    CancelledBeforeRead,
+    CancelledDuringRead,
+    Failed,
+    Unsupported,
+}
+
+/// <summary>
+/// Chat 附件另存为的前台读取结果。DestinationWasCleared 表示失败路径已把目标流重置为空。
+/// </summary>
+public sealed record ChatAttachmentContentReadResult(
+    ChatAttachmentContentReadStatus Status,
+    long BytesWritten,
+    bool DestinationWasCleared,
+    MutationErrorCategory? ErrorCategory = null,
+    string? DiagnosticTag = null);

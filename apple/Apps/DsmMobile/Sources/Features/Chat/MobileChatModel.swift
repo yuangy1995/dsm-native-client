@@ -17,10 +17,51 @@ final class MobileChatModel {
     @ObservationIgnored private var conversationGeneration = 0
     @ObservationIgnored private var messageGeneration = 0
     @ObservationIgnored private var sendGeneration = 0
+    private let attachmentFileManager: FileManager
+    private let attachmentCopier: any MobileDocumentImportCopying
+    private let attachmentRootURL: URL
+    @ObservationIgnored private lazy var attachmentModel = MobileChatAttachmentModel(
+        owner: self,
+        fileManager: attachmentFileManager,
+        copier: attachmentCopier,
+        rootURL: attachmentRootURL
+    )
+
+    init(
+        attachmentFileManager: FileManager = .default,
+        attachmentCopier: any MobileDocumentImportCopying = MobileSecurityScopedDocumentCopier(),
+        attachmentRootURL: URL? = nil
+    ) {
+        self.attachmentFileManager = attachmentFileManager
+        self.attachmentCopier = attachmentCopier
+        self.attachmentRootURL = attachmentRootURL ?? attachmentFileManager.temporaryDirectory
+            .appendingPathComponent("LanStashChatAttachments", isDirectory: true)
+    }
+
+    /// 附件临时文件只由附件状态机持有，不写入配置档状态。
+    var selectedAttachment: MobileChatAttachmentSelection? {
+        attachmentModel.selectedAttachment
+    }
+
+    var remoteAttachmentPresentation: MobileChatRemoteAttachmentPresentation? {
+        attachmentModel.remoteAttachmentPresentation
+    }
 
     var state: MobileChatProfileState {
         guard let activeProfileID else { return MobileChatProfileState() }
         return profiles[activeProfileID] ?? MobileChatProfileState()
+    }
+
+    var canSelectAttachment: Bool {
+        attachmentModel.canSelectAttachment
+    }
+
+    var canComposeMessage: Bool {
+        attachmentModel.canComposeMessage
+    }
+
+    var canSendSelectedDraft: Bool {
+        attachmentModel.canSendSelectedDraft
     }
 
     func activate(profileID: UUID?, repository: (any ChatRepository)?) async {
@@ -138,6 +179,7 @@ final class MobileChatModel {
               let canonical = state.conversations.first(where: { $0.id == conversation.id }) else {
             return
         }
+        attachmentModel.cancelAllWork()
         cancelMessageWork()
         updateActive { profile in
             profile.selectedConversationID = canonical.id
@@ -227,11 +269,18 @@ final class MobileChatModel {
     }
 
     func sendSelectedMessage() async {
+        if selectedAttachment != nil {
+            await attachmentModel.sendSelectedAttachment()
+            return
+        }
         guard let profileID = activeProfileID,
               let repository = repositories[profileID],
               let conversation = state.selectedConversation,
               !conversation.isEncrypted,
               state.availability.supportedFeatures.contains(.textMessage),
+              !state.isPreparingAttachment,
+              !state.isSendingAttachment,
+              !state.attachmentReviewRequired,
               !state.isSendingMessage else {
             return
         }
@@ -280,6 +329,60 @@ final class MobileChatModel {
         await task.value
     }
 
+    // MARK: - 附件状态机接线
+
+    func preparePhotoAttachment(_ item: any MobilePhotosPickerItemServing) {
+        attachmentModel.preparePhotoAttachment(item)
+    }
+
+    func prepareFileAttachment(_ sourceURL: URL) {
+        attachmentModel.prepareFileAttachment(sourceURL)
+    }
+
+    func rejectAttachmentSelection() {
+        attachmentModel.rejectAttachmentSelection()
+    }
+
+    func removeSelectedAttachment() {
+        attachmentModel.removeSelectedAttachment()
+    }
+
+    func cancelSelectedAttachmentSend() {
+        attachmentModel.cancelSelectedAttachmentSend()
+    }
+
+    func leaveConversation(_ conversationID: String) {
+        attachmentModel.leaveConversation(conversationID)
+    }
+
+    func loadAttachmentThumbnail(for message: ChatMessage) {
+        attachmentModel.loadAttachmentThumbnail(for: message)
+    }
+
+    func previewRemoteAttachment(_ attachment: ChatAttachment, in message: ChatMessage) {
+        attachmentModel.previewRemoteAttachment(attachment, in: message)
+    }
+
+    func saveRemoteAttachment(_ attachment: ChatAttachment, in message: ChatMessage) {
+        attachmentModel.saveRemoteAttachment(attachment, in: message)
+    }
+
+    func dismissRemoteAttachmentPresentation() {
+        attachmentModel.dismissRemoteAttachmentPresentation()
+    }
+
+    func cancelRemoteAttachmentDownload() {
+        attachmentModel.cancelRemoteAttachmentDownload()
+    }
+
+    func canOpenRemoteAttachment(_ attachment: ChatAttachment, in message: ChatMessage) -> Bool {
+        attachmentModel.canOpenRemoteAttachment(attachment, in: message)
+    }
+
+    func canUseRemoteAttachment(_ attachment: ChatAttachment, in message: ChatMessage) -> Bool {
+        attachmentModel.canUseRemoteAttachment(attachment, in: message)
+    }
+
     func cancelAllWork() {
         conversationTask?.cancel()
         conversationTask = nil
@@ -290,6 +393,7 @@ final class MobileChatModel {
         sendTask?.cancel()
         sendTask = nil
         sendGeneration &+= 1
+        attachmentModel.cancelAllWork()
         updateActive {
             $0.isRefreshingConversations = false
             $0.isRefreshingMessages = false
@@ -415,7 +519,10 @@ final class MobileChatModel {
             profile.isRefreshingConversations = false
             profile.conversationErrorCategory = nil
         }
-        if invalidatesMessageLane { cancelMessageWork() }
+        if invalidatesMessageLane {
+            cancelMessageWork()
+            attachmentModel.cancelAllWork()
+        }
         conversationTask = nil
     }
 
@@ -432,6 +539,7 @@ final class MobileChatModel {
             profile.conversationErrorCategory = nil
         }
         cancelMessageWork()
+        attachmentModel.cancelAllWork()
         conversationTask = nil
     }
 
@@ -468,6 +576,9 @@ final class MobileChatModel {
             }
         }
         messageTask = nil
+        if !appending {
+            attachmentModel.clearReviewAfterMessageRefresh()
+        }
     }
 
     private func finishSendSuccess(
@@ -652,11 +763,15 @@ final class MobileChatModel {
         sendTask = nil
     }
 
-    private func updateActive(_ update: (inout MobileChatProfileState) -> Void) {
+    func updateActive(_ update: (inout MobileChatProfileState) -> Void) {
         guard let activeProfileID else { return }
         var profile = profiles[activeProfileID] ?? MobileChatProfileState()
         update(&profile)
         profiles[activeProfileID] = profile
+    }
+
+    func attachmentRepository(for profileID: UUID) -> (any ChatRepository)? {
+        repositories[profileID]
     }
 
     private func isCurrentConversation(profileID: UUID, generation: Int) -> Bool {
@@ -706,7 +821,7 @@ final class MobileChatModel {
         }
     }
 
-    private static func normalizedMessages(_ messages: [ChatMessage]) -> [ChatMessage] {
+    static func normalizedMessages(_ messages: [ChatMessage]) -> [ChatMessage] {
         var valuesByID: [String: ChatMessage] = [:]
         for message in messages { valuesByID[message.id] = message }
         return valuesByID.values.sorted {

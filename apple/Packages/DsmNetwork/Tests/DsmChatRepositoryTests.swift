@@ -592,6 +592,283 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertTrue(bodyText.contains("PNGDATA"))
     }
 
+    func test附件发送结果成功前必须稳定回读确认() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-sample.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let transport = MockHTTPTransport(responses: [
+            response("""
+            {"success":true,"data":{"post_id":"9010","channel_id":"27","creator_id":"1","create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"\(fileURL.lastPathComponent)","size":7,"type":"png"}}}
+            """),
+            response("""
+            {"success":true,"data":{"posts":[{"post_id":"9010","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"\(fileURL.lastPathComponent)","size":7,"type":"png"}}]}}
+            """)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: "测试附件",
+            localAttachmentURLs: [fileURL]
+        )
+
+        let first = try await repository.sendAttachmentMessageResult(draft)
+        let second = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(first.result.status, .confirmedSuccess)
+        XCTAssertEqual(first.result.operation, "chatAttachmentSend")
+        XCTAssertEqual(first.confirmedMessage?.id, "9010")
+        XCTAssertEqual(second.result.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(try decodeForm(requests[1].httpBody)["method"], "list")
+    }
+
+    func test旧附件发送入口在响应缺少完整消息时使用稳定标识回读() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-legacy-readback.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"post_id":"9010"}}"#),
+            response("""
+            {"success":true,"data":{"posts":[{"post_id":"9010","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"\(fileURL.lastPathComponent)","size":7,"type":"png"}}]}}
+            """)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: "测试附件",
+            localAttachmentURLs: [fileURL]
+        )
+
+        let message = try await repository.sendMessage(draft)
+
+        XCTAssertEqual(message.id, "9010")
+        XCTAssertEqual(message.attachments.count, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(try decodeForm(requests[1].httpBody)["method"], "list")
+    }
+
+    func test附件发送提交前取消不会发起上传() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(transport: transport)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-cancel-before.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: nil,
+            localAttachmentURLs: [fileURL]
+        )
+        let task = Task { () throws -> ChatMessageSendOutcome in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await repository.sendAttachmentMessageResult(draft)
+        }
+
+        let outcome = try await task.value
+
+        XCTAssertEqual(outcome.result.status, .cancelledBeforeSubmission)
+        XCTAssertFalse(outcome.result.submitted)
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test附件发送提交后取消只进入核对且同请求不重传() async throws {
+        let transport = MockHTTPTransport(steps: [.waitUntilCancelled])
+        let repository = try makeRepository(transport: transport)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-cancel-after.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: nil,
+            localAttachmentURLs: [fileURL]
+        )
+        let task = Task { try await repository.sendAttachmentMessageResult(draft) }
+        var uploadStarted = false
+        for _ in 0..<50 {
+            if await transport.recordedRequests().count == 1 {
+                uploadStarted = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        guard uploadStarted else {
+            task.cancel()
+            _ = try? await task.value
+            XCTFail("附件上传未进入传输层")
+            return
+        }
+
+        task.cancel()
+        let first = try await task.value
+        let second = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(first.result.status, .cancellationRequestedAfterSubmission)
+        XCTAssertTrue(first.result.submitted)
+        XCTAssertTrue(first.result.requiresRefresh)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+    }
+
+    func test附件发送传输失败后同请求不重传() async throws {
+        let transport = MockHTTPTransport(steps: [.urlError(.networkConnectionLost)])
+        let repository = try makeRepository(transport: transport)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-transport-failure.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: nil,
+            localAttachmentURLs: [fileURL]
+        )
+
+        let first = try await repository.sendAttachmentMessageResult(draft)
+        let second = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertTrue(first.result.submitted)
+        XCTAssertTrue(first.result.requiresRefresh)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+    }
+
+    func test附件发送回读不匹配只继续回读不重传() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"post_id":"9010","channel_id":"27","creator_id":"1","create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"sample.png","size":7,"type":"png"}}}"#),
+            response(#"{"success":true,"data":{"posts":[]}}"#),
+            response(#"{"success":true,"data":{"posts":[{"post_id":"9010","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":1774166400000,"message":"测试附件"}]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-readback-mismatch.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: "测试附件",
+            localAttachmentURLs: [fileURL]
+        )
+
+        let first = try await repository.sendAttachmentMessageResult(draft)
+        let second = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(try decodeForm(requests[1].httpBody)["method"], "list")
+        XCTAssertEqual(try decodeForm(requests[2].httpBody)["method"], "list")
+    }
+
+    func test附件发送回读说明不匹配不会确认() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-caption-mismatch.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"post_id":"9010"}}"#),
+            response("""
+            {"success":true,"data":{"posts":[{"post_id":"9010","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":1774166400000,"message":"不同说明","type":"file","file_props":{"file_id":"f-1","name":"\(fileURL.lastPathComponent)","size":7,"type":"png"}}]}}
+            """)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: "原说明",
+            localAttachmentURLs: [fileURL]
+        )
+
+        let outcome = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(outcome.result.status, .submittedButUnverified)
+        XCTAssertNil(outcome.confirmedMessage)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func test附件发送回读含额外附件不会确认() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-extra-attachment.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"post_id":"9010"}}"#),
+            response("""
+            {"success":true,"data":{"posts":[{"post_id":"9010","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":1774166400000,"message":"测试附件","type":"file","files":[{"file_id":"f-1","name":"\(fileURL.lastPathComponent)","size":7,"type":"png"},{"file_id":"f-2","name":"extra.txt","size":1,"type":"txt"}] }]}}
+            """)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: "测试附件",
+            localAttachmentURLs: [fileURL]
+        )
+
+        let outcome = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(outcome.result.status, .submittedButUnverified)
+        XCTAssertNil(outcome.confirmedMessage)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func test附件发送回读缺少已知文件大小不会确认() async throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-missing-size.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"post_id":"9010"}}"#),
+            response("""
+            {"success":true,"data":{"posts":[{"post_id":"9010","channel_id":"27","creator":{"user_id":"1","is_current_user":true},"create_at":1774166400000,"message":"测试附件","type":"file","file_props":{"file_id":"f-1","name":"\(fileURL.lastPathComponent)","type":"png"}}]}}
+            """)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: "测试附件",
+            localAttachmentURLs: [fileURL]
+        )
+
+        let outcome = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(outcome.result.status, .submittedButUnverified)
+        XCTAssertNil(outcome.confirmedMessage)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func test附件发送拒绝多个本地文件且不发起上传() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(transport: transport)
+        let firstURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-first.png")
+        let secondURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-second.png")
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: nil,
+            localAttachmentURLs: [firstURL, secondURL]
+        )
+
+        let outcome = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(outcome.result.status, .unsupported)
+        XCTAssertEqual(outcome.result.operation, "chatAttachmentSend")
+        XCTAssertFalse(outcome.result.submitted)
+        XCTAssertEqual(outcome.result.counts.failed, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     func test删除自己的消息并复查结果且重复请求只执行一次() async throws {
         let ownPost = #"{"success":true,"data":{"posts":[{"post_id":"9001","channel_id":"27","creator_id":"1","creator_name":"testaccount","create_at":1774166400000,"message":"待删除"}]}}"#
         let transport = MockHTTPTransport(responses: [

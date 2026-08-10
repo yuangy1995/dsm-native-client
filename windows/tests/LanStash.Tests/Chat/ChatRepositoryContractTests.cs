@@ -20,6 +20,7 @@ public sealed class ChatRepositoryContractTests
         Assert.Equal(ChatAvailabilityStatus.Available, complete.Availability.Status);
         Assert.Equal(5, complete.Availability.SupportedFeatures.Count);
         Assert.Contains(ChatWriteFeature.TextMessage, complete.Availability.SupportedWriteFeatures);
+        Assert.Contains(ChatWriteFeature.AttachmentMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(AppModule.Chat, complete.AvailableModules);
         Assert.Equal(ChatAvailabilityStatus.Unavailable, incomplete.Availability.Status);
         Assert.Empty(incomplete.Availability.SupportedFeatures);
@@ -596,6 +597,277 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
+    public async Task AttachmentSendRequiresPostV5ButLeavesReadAvailable()
+    {
+        var capabilities = Capabilities();
+        capabilities["SYNO.Chat.Post"] =
+            capabilities["SYNO.Chat.Post"] with { MinVersion = 1, MaxVersion = 4 };
+        capabilities["SYNO.Chat.Post.File"] = new(
+            "SYNO.Chat.Post.File",
+            "entry.cgi",
+            1,
+            2,
+            "FORM");
+        var api = new RecordingApiClient(_ => throw new InvalidOperationException());
+        var opens = 0;
+        var repository = CreateRepository(api, capabilities);
+
+        var result = await repository.SendAttachmentAsync(
+            new ChatAttachmentSendRequest(
+                "channel-1",
+                null,
+                new ChatAttachmentSource(
+                    "photo.jpg",
+                    "image/jpeg",
+                    4,
+                    _ =>
+                    {
+                        opens++;
+                        return Task.FromResult<Stream>(new MemoryStream([0x01, 0x02, 0x03, 0x04]));
+                    }),
+                Guid.NewGuid()));
+
+        Assert.Equal(ChatAvailabilityStatus.Available, repository.Availability.Status);
+        Assert.DoesNotContain(
+            ChatWriteFeature.AttachmentMessage,
+            repository.Availability.SupportedWriteFeatures);
+        Assert.Contains(
+            ChatReadFeature.AttachmentThumbnail,
+            repository.Availability.SupportedFeatures);
+        Assert.Contains(
+            ChatReadFeature.AttachmentContent,
+            repository.Availability.SupportedFeatures);
+        Assert.Equal(MutationResultStatus.Unsupported, result.Result.Status);
+        Assert.False(result.Result.Submitted);
+        Assert.Equal(0, opens);
+        Assert.Empty(api.Requests);
+        Assert.Empty(api.AttachmentRequests);
+    }
+
+    [Fact]
+    public async Task AttachmentSendUsesDedicatedV5TransportAndConfirmsExactReadback()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => Channels(),
+            "SYNO.Chat.Post" => Posts(
+                0,
+                1,
+                MyAttachmentMessage("file-post-1", null, "photo.jpg", 4)),
+            _ => throw new InvalidOperationException(request.ApiName),
+        })
+        {
+            AttachmentResponse = _ => new ChatAttachmentUploadTransportResult(
+                ChatAttachmentUploadTransportStatus.Accepted,
+                CandidateMessageId: "file-post-1"),
+        };
+        var repository = CreateRepository(api);
+        var reports = new List<long>();
+
+        var result = await repository.SendAttachmentAsync(
+            new ChatAttachmentSendRequest(
+                "channel-1",
+                null,
+                new ChatAttachmentSource(
+                    "photo.jpg",
+                    "image/jpeg",
+                    4,
+                    _ => Task.FromResult<Stream>(new MemoryStream([0x00, 0x01, 0xFE, 0xFF]))),
+                Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")),
+            new InlineProgress(reports.Add));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.True(result.Result.Submitted);
+        Assert.False(result.Result.RequiresRefresh);
+        Assert.Equal("file-post-1", result.ConfirmedMessage?.Id);
+        Assert.Equal(new[] { 0L, 4L }, reports);
+        var sent = Assert.Single(api.AttachmentRequests);
+        Assert.Equal("SYNO.Chat.Post", sent.ApiName);
+        Assert.Equal(5, sent.MinimumVersion);
+        Assert.Equal(5, sent.MaximumVersion);
+        Assert.Equal("channel-1", sent.ConversationId);
+        Assert.Equal(string.Empty, sent.Message);
+        Assert.Equal("photo.jpg", sent.FileName);
+        Assert.Equal(4L, sent.Length);
+        Assert.Equal(new byte[] { 0x00, 0x01, 0xFE, 0xFF }, sent.Content);
+        Assert.Collection(
+            api.Requests,
+            request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0),
+            request => AssertWire(request, "SYNO.Chat.Channel", "list", 5, 0),
+            request => AssertWire(request, "SYNO.Chat.Post", "list", 8, 3));
+        Assert.DoesNotContain(api.Requests, request => request.Method == "create");
+    }
+
+    [Fact]
+    public async Task AttachmentSendMismatchedReadbackRemainsReviewOnlyAndNeverResends()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => Channels(),
+            "SYNO.Chat.Post" => ReadMismatchedAttachment(),
+            _ => throw new InvalidOperationException(request.ApiName),
+        })
+        {
+            AttachmentResponse = _ => new ChatAttachmentUploadTransportResult(
+                ChatAttachmentUploadTransportStatus.Accepted,
+                CandidateMessageId: "file-post-2"),
+        };
+        var repository = CreateRepository(api);
+        var opens = 0;
+        var request = new ChatAttachmentSendRequest(
+            "channel-1",
+            "caption",
+            new ChatAttachmentSource(
+                "photo.jpg",
+                "image/jpeg",
+                4,
+                _ =>
+                {
+                    opens++;
+                    return Task.FromResult<Stream>(new MemoryStream([0x01, 0x02, 0x03, 0x04]));
+                }),
+            Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"));
+
+        JsonObject ReadMismatchedAttachment() =>
+            Posts(0, 1, MyAttachmentMessage("file-post-2", "caption", "other.jpg", 4));
+
+        var first = await repository.SendAttachmentAsync(request);
+        var second = await repository.SendAttachmentAsync(request);
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
+        Assert.True(first.Result.RequiresRefresh);
+        Assert.Equal(1, opens);
+        Assert.Single(api.AttachmentRequests);
+        Assert.Equal(2, api.Requests.Count(request => request.ApiName == "SYNO.Chat.Post"));
+    }
+
+    [Fact]
+    public async Task AttachmentSendCancelledBeforeSubmissionCanBeRetriedExplicitly()
+    {
+        var results = new Queue<ChatAttachmentUploadTransportResult>([
+            new(ChatAttachmentUploadTransportStatus.CancelledBeforeSubmission),
+            new(ChatAttachmentUploadTransportStatus.Accepted, CandidateMessageId: "file-post-3"),
+        ]);
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => Channels(),
+            "SYNO.Chat.Post" => Posts(
+                0,
+                1,
+                MyAttachmentMessage("file-post-3", string.Empty, "note.txt", 3)),
+            _ => throw new InvalidOperationException(request.ApiName),
+        })
+        {
+            AttachmentResponse = _ => results.Dequeue(),
+        };
+        var repository = CreateRepository(api);
+        var opens = 0;
+        var request = new ChatAttachmentSendRequest(
+            "channel-1",
+            null,
+            new ChatAttachmentSource(
+                "note.txt",
+                "text/plain",
+                3,
+                _ =>
+                {
+                    opens++;
+                    return Task.FromResult<Stream>(new MemoryStream([0x01, 0x02, 0x03]));
+                }),
+            Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
+
+        var first = await repository.SendAttachmentAsync(request);
+        var second = await repository.SendAttachmentAsync(request);
+
+        Assert.Equal(MutationResultStatus.CancelledBeforeSubmission, first.Result.Status);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        Assert.Equal(2, opens);
+        Assert.Equal(2, api.AttachmentRequests.Count);
+    }
+
+    [Fact]
+    public async Task AttachmentSendCancellationAfterSubmissionUsesOnlyReadbackOnRetry()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => Channels(),
+            "SYNO.Chat.Post" => Posts(
+                0,
+                1,
+                MyAttachmentMessage("file-post-4", "caption", "note.txt", 3)),
+            _ => throw new InvalidOperationException(request.ApiName),
+        })
+        {
+            AttachmentResponse = _ => new ChatAttachmentUploadTransportResult(
+                ChatAttachmentUploadTransportStatus.CancellationRequestedAfterSubmission,
+                CandidateMessageId: "file-post-4",
+                ErrorCategory: MutationErrorCategory.Network),
+        };
+        var repository = CreateRepository(api);
+        var opens = 0;
+        var request = new ChatAttachmentSendRequest(
+            "channel-1",
+            "caption",
+            new ChatAttachmentSource(
+                "note.txt",
+                "text/plain",
+                3,
+                _ =>
+                {
+                    opens++;
+                    return Task.FromResult<Stream>(new MemoryStream([0x01, 0x02, 0x03]));
+                }),
+            Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"));
+
+        var first = await repository.SendAttachmentAsync(request);
+        var second = await repository.SendAttachmentAsync(request);
+
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, first.Result.Status);
+        Assert.True(first.Result.Submitted);
+        Assert.True(first.Result.RequiresRefresh);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        Assert.Equal(1, opens);
+        Assert.Single(api.AttachmentRequests);
+        Assert.Single(api.Requests, request => request.ApiName == "SYNO.Chat.Post");
+    }
+
+    [Fact]
+    public async Task AttachmentSendCancellationBeforeOpeningSourceSendsNothing()
+    {
+        var api = new RecordingApiClient(_ => throw new InvalidOperationException());
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var opens = 0;
+
+        var result = await CreateRepository(api).SendAttachmentAsync(
+            new ChatAttachmentSendRequest(
+                "channel-1",
+                null,
+                new ChatAttachmentSource(
+                    "note.txt",
+                    "text/plain",
+                    1,
+                    _ =>
+                    {
+                        opens++;
+                        return Task.FromResult<Stream>(new MemoryStream([0x01]));
+                    }),
+                Guid.NewGuid()),
+            cancellationToken: cancellation.Token);
+
+        Assert.Equal(MutationResultStatus.CancelledBeforeSubmission, result.Result.Status);
+        Assert.False(result.Result.Submitted);
+        Assert.Equal(0, opens);
+        Assert.Empty(api.Requests);
+        Assert.Empty(api.AttachmentRequests);
+    }
+
+    [Fact]
     public async Task ForeignProfileSessionFailsBeforeTransport()
     {
         var api = new RecordingApiClient(_ => throw new InvalidOperationException());
@@ -696,6 +968,23 @@ public sealed class ChatRepositoryContractTests
         return message;
     }
 
+    private static JsonObject MyAttachmentMessage(
+        string id,
+        string? text,
+        string fileName,
+        long size)
+    {
+        var message = MyMessage(id, text);
+        message["files"] = new JsonArray(new JsonObject
+        {
+            ["file_id"] = $"{id}-file",
+            ["name"] = fileName,
+            ["content_type"] = "application/octet-stream",
+            ["size"] = size,
+        });
+        return message;
+    }
+
     private static JsonObject Auxiliary(string id) => new()
     {
         ["post_id"] = id,
@@ -776,9 +1065,21 @@ public sealed class ChatRepositoryContractTests
         int Version,
         IReadOnlyDictionary<string, string> Parameters);
 
+    private sealed record AttachmentRequest(
+        string ApiName,
+        int MinimumVersion,
+        int MaximumVersion,
+        string ConversationId,
+        string Message,
+        string FileName,
+        long Length,
+        byte[] Content);
+
     private sealed class RecordingApiClient(Func<ApiRequest, JsonObject> response) : IDsmApiClient
     {
         public List<ApiRequest> Requests { get; } = [];
+        public List<AttachmentRequest> AttachmentRequests { get; } = [];
+        public Func<AttachmentRequest, ChatAttachmentUploadTransportResult>? AttachmentResponse { get; init; }
 
         public Task<JsonObject> CallAsync(
             NasProfile profile,
@@ -798,6 +1099,35 @@ public sealed class ChatRepositoryContractTests
                     StringComparer.Ordinal));
             Requests.Add(request);
             return Task.FromResult(response(request));
+        }
+
+        public async Task<ChatAttachmentUploadTransportResult> SendChatAttachmentAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            ChatAttachmentUploadRequest request,
+            IProgress<long>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(0);
+            await using var copy = new MemoryStream();
+            await request.Content.CopyToAsync(copy, cancellationToken).ConfigureAwait(false);
+            progress?.Report(request.Length);
+            var captured = new AttachmentRequest(
+                capability.Name,
+                capability.MinVersion,
+                capability.MaxVersion,
+                request.ConversationId,
+                request.Message,
+                request.FileName,
+                request.Length,
+                copy.ToArray());
+            AttachmentRequests.Add(captured);
+            return AttachmentResponse?.Invoke(captured) ?? new ChatAttachmentUploadTransportResult(
+                ChatAttachmentUploadTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported,
+                DiagnosticTag: "chat.attachment-send.unsupported");
         }
 
         public Uri GetBaseUri(NasProfile profile) => new("https://nas.invalid");
@@ -821,6 +1151,11 @@ public sealed class ChatRepositoryContractTests
             long offset,
             long length,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class InlineProgress(Action<long> report) : IProgress<long>
+    {
+        public void Report(long value) => report(value);
     }
 
     private sealed class StubHttpMessageHandler(

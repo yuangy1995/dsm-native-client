@@ -4,7 +4,7 @@ import SwiftUI
 struct MobileNasSettingsView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var selectedSection: MobileNasHealthDestination = .system
+    @State private var selectedSection: MobileNasAdministrationDestination = .system
 
     var body: some View {
         Group {
@@ -15,6 +15,11 @@ struct MobileNasSettingsView: View {
             }
         }
         .fillsAvailableContentArea(alignment: .topLeading)
+        .onDisappear {
+            if model.selectedModule != .nasSettings {
+                model.nasDetailsModel.deactivate()
+            }
+        }
     }
 
     private var compactLayout: some View {
@@ -24,16 +29,32 @@ struct MobileNasSettingsView: View {
             performanceSection
             storageSection
             updateSection
+            detailsNavigationSection
         }
         .listStyle(.insetGrouped)
         .refreshable { await model.nasHealthModel.refresh() }
+        .navigationDestination(for: MobileNasAdministrationDestination.self) { destination in
+            if destination.isDetails {
+                MobileNasDetailsScreen(
+                    model: model.nasDetailsModel,
+                    destination: destination
+                )
+            }
+        }
     }
 
     private var regularLayout: some View {
         HStack(spacing: 0) {
             List {
-                ForEach(MobileNasHealthDestination.allCases) { destination in
-                    navigationButton(destination)
+                Section {
+                    ForEach(MobileNasAdministrationDestination.health) { destination in
+                        navigationButton(destination)
+                    }
+                }
+                Section(L10n.string("mobile.nas-details.group.title")) {
+                    ForEach(MobileNasAdministrationDestination.details) { destination in
+                        navigationButton(destination)
+                    }
                 }
             }
             .listStyle(.sidebar)
@@ -46,7 +67,21 @@ struct MobileNasSettingsView: View {
                 selectedDetail
             }
             .listStyle(.insetGrouped)
-            .refreshable { await model.nasHealthModel.refresh() }
+            .refreshable {
+                await model.nasHealthModel.refresh()
+                await model.nasDetailsModel.refreshLoadedSections()
+            }
+        }
+    }
+
+    private var detailsNavigationSection: some View {
+        Section(L10n.string("mobile.nas-details.group.title")) {
+            ForEach(MobileNasAdministrationDestination.details) { destination in
+                NavigationLink(value: destination) {
+                    Label(destination.title, systemImage: destination.systemImage)
+                        .frame(minHeight: 44, alignment: .leading)
+                }
+            }
         }
     }
 
@@ -62,7 +97,7 @@ struct MobileNasSettingsView: View {
         }
     }
 
-    private func navigationButton(_ destination: MobileNasHealthDestination) -> some View {
+    private func navigationButton(_ destination: MobileNasAdministrationDestination) -> some View {
         let isSelected = selectedSection == destination
         return Button {
             selectedSection = destination
@@ -87,6 +122,11 @@ struct MobileNasSettingsView: View {
         case .performance: performanceSection
         case .storage: storageSection
         case .update: updateSection
+        case .packages, .scheduledTasks, .logs, .connections:
+            MobileNasDetailsSectionView(
+                model: model.nasDetailsModel,
+                destination: selectedSection
+            )
         }
     }
 
@@ -391,7 +431,7 @@ struct MobileNasSettingsView: View {
     }
 
     private func sectionHeader(
-        _ destination: MobileNasHealthDestination,
+        _ destination: MobileNasAdministrationDestination,
         isRefreshing: Bool
     ) -> some View {
         HStack(spacing: 8) {
@@ -410,42 +450,6 @@ struct MobileNasSettingsView: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(level.color)
             .accessibilityElement(children: .combine)
-    }
-}
-
-private enum MobileNasHealthDestination: String, CaseIterable, Identifiable {
-    case system
-    case performance
-    case storage
-    case update
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .system: L10n.string("mobile.nas-health.section.system")
-        case .performance: L10n.string("mobile.nas-health.section.performance")
-        case .storage: L10n.string("mobile.nas-health.section.storage")
-        case .update: L10n.string("mobile.nas-health.section.update")
-        }
-    }
-
-    var loadingLabel: String {
-        switch self {
-        case .system: L10n.string("mobile.nas-health.loading.system")
-        case .performance: L10n.string("mobile.nas-health.loading.performance")
-        case .storage: L10n.string("mobile.nas-health.loading.storage")
-        case .update: L10n.string("mobile.nas-health.loading.update")
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .system: "server.rack"
-        case .performance: "gauge.with.dots.needle.67percent"
-        case .storage: "externaldrive.fill"
-        case .update: "arrow.triangle.2.circlepath.circle"
-        }
     }
 }
 

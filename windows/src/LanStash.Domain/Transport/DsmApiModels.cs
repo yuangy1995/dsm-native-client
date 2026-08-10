@@ -117,6 +117,38 @@ public interface IDsmApiClient
         Task.FromException<System.Text.Json.Nodes.JsonObject>(
             new DsmReadContractUnsupportedException());
 
+    /// <summary>
+    /// Chat 专用单附件 multipart 提交；不得以 File Station 上传能力替代。
+    /// </summary>
+    Task<ChatAttachmentUploadTransportResult> SendChatAttachmentAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        ChatAttachmentUploadRequest request,
+        IProgress<long>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ChatAttachmentUploadTransportResult(
+            ChatAttachmentUploadTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "chat.attachment-send.unsupported"));
+
+    /// <summary>
+    /// Chat 专用附件另存为读取；仅把服务端二进制写入调用方提供的目标流。
+    /// </summary>
+    Task<ChatAttachmentContentReadResult> ReadChatAttachmentContentAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        ChatAttachmentContentReadRequest request,
+        IProgress<long>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ChatAttachmentContentReadResult(
+            ChatAttachmentContentReadStatus.Unsupported,
+            BytesWritten: 0,
+            DestinationWasCleared: false,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "chat.attachment-save.unsupported"));
+
     Task<FileShareLinkTransportResult> CreateFileShareLinkAsync(
         NasProfile profile,
         DsmSession session,
@@ -258,3 +290,43 @@ public interface IDsmApiClient
             ErrorCategory: MutationErrorCategory.Unsupported,
             DiagnosticTag: "download-station.create.file.unsupported"));
 }
+
+/// <summary>
+/// 固定用于 <c>SYNO.Chat.Post.create</c> v5 的单附件上传输入。
+/// 调用方拥有并负责关闭 Content；传输层只读取该流一次。
+/// </summary>
+public sealed record ChatAttachmentUploadRequest(
+    string ConversationId,
+    string Message,
+    string FileName,
+    Stream Content,
+    long Length);
+
+public enum ChatAttachmentUploadTransportStatus
+{
+    Accepted,
+    ConfirmedFailure,
+    CancelledBeforeSubmission,
+    CancellationRequestedAfterSubmission,
+    SubmittedButUnverified,
+    Unsupported,
+}
+
+/// <summary>
+/// 单次 Chat 附件提交的传输事实。Accepted 仍须由仓储回读精确消息确认。
+/// </summary>
+public sealed record ChatAttachmentUploadTransportResult(
+    ChatAttachmentUploadTransportStatus Status,
+    string? CandidateMessageId = null,
+    MutationErrorCategory? ErrorCategory = null,
+    string? DiagnosticTag = null);
+
+/// <summary>
+/// 固定用于 <c>SYNO.Chat.Post.File.get</c> v2 的流式读取输入。
+/// ExpectedLength 必须来自消息附件元数据；Destination 必须由调用方创建为初始为空的可写、
+/// 可定位流，且调用方负责关闭。
+/// </summary>
+public sealed record ChatAttachmentContentReadRequest(
+    string MessageId,
+    Stream Destination,
+    long ExpectedLength);
