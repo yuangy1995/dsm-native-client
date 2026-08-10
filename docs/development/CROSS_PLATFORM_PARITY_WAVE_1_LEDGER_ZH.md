@@ -1,6 +1,6 @@
 # Windows / Apple 移动端功能对齐账本：第 1 波
 
-> 状态：候选提交的四组 GitHub 门禁已通过，等待整理为单一简体中文提交并对最终 SHA 复验
+> 状态：整理后的单一简体中文功能提交 `641852b408ae24f8819e4a49cd70df4c8d9e5011` 已合并到 `main`；云端门禁已通过，真机与真实 NAS 验收后置
 > 基线提交：`bd809f8b6854258ac3c0d9370468b82536b7c34d`（`完善 Windows、iPhone 与 iPad 跨平台功能闭环`）
 > 当前范围：Windows `FND-03/W1 证书安全与连接来源说明`、Windows/Apple `FILE-03 新建文件夹与重命名`、Apple 移动端 `PHOTO-02 只读查看增强`、iPad 当前范围自动化
 > 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；空文件、递归目录统计、MD5、批量重命名、私有 Foto API、照片编辑、后台整库扫描、自动备份和所有未列入本波的危险写
@@ -90,11 +90,11 @@
 - Windows `FilesPage` 的本波新建/重命名页面逻辑已拆到独立 `FilesPage.Mutations.cs` partial 文件，主页面只保留组合根与生命周期调用点；该拆分不改变状态机、资源或写操作门禁。
 - 当前机器没有 `dotnet`/Windows SDK；候选提交已由 GitHub Windows Runner 完成 756/756 xUnit 与 WinUI x64/ARM64 构建，因此候选状态为 `UNIT_TESTED / BUILD_VERIFIED_WINDOWS_CI_X64_ARM64`，但仍不等同真实 Windows 设备运行。
 - 候选云端证据：`Apple Build` run `31306484946` 在 `e5ac397` 通过共享 Package 645 项 XCTest（2 项按环境跳过）、iPhone/iPad 通用应用构建和 macOS 回归；`Android Build` run `31306484965` 在同一提交完成单元测试、Debug、Release/R8、仪器测试 APK 编译与 Debug lint；`Windows Build` run `31306947634` 在 `f25508b` 通过 756/756 xUnit，x64/ARM64 均为 0 警告、0 错误；`Repository Check` run `31306947631` 在 `f25508b` 通过 90 个请求 Fixture、1 个写结果示例、本地化与隐私门禁。
-- 上述候选修正提交将在专用分支整理为一条简体中文功能提交；整理后的最终精确 SHA 必须重新通过同四组工作流，最终 run 以 GitHub Actions 和交付报告为准，不用较早候选结果替代。
+- 上述候选修正历史已整理为单一简体中文功能提交 `641852b408ae24f8819e4a49cd70df4c8d9e5011`（`完善跨端证书安全、文件操作与照片查看`）并合并到 `main`；真实设备和真实 NAS 验收仍按 `PENDING_USER_VALIDATION` 后置。
 
 ## 8. 本波完成后继续对照的剩余项
 
-- Windows：统一 ModuleAvailability、Files 复制/移动/回收站恢复、文件夹/批量传输、Chat 核心与附件、Download 低风险控制、NAS 管理和 W5/W6 系统集成。
-- iPhone/iPad：FILE-05 有界同 NAS 复制/移动、FILE-09 回收站写、PHOTO-03 PhotosPicker 主动导入与受限管理、Chat 文字/附件、Download 创建与单任务控制，以及 M8/M9 其余生产力与自动化。
+- Windows：后续已完成 FILE-05 单文件复制/移动、FILE-09 回收站入口、Chat 纯文字发送、Download 单任务控制、链接/任务文件创建和单任务删除；仍需统一 ModuleAvailability 剩余原因、文件夹/批量传输、Chat 附件/实时、Download 高级能力、NAS 管理和 W5/W6 系统集成。
+- iPhone/iPad：后续已完成 FILE-05 有界同 NAS复制/移动、FILE-09 回收站写、PHOTO-03A PhotosPicker 单项导入、Chat 纯文字发送、Download 创建与单任务控制；仍需 Chat 附件/实时、Download 高级能力，以及 M8/M9 其余生产力与自动化。
 - Apple 共享层：`DsmFileRepository.swift` 是既有大型聚合实现；后续继续扩展 File Station 写能力前，单独做保持行为不变的功能拆分与共享 Package/macOS 回归，不在本波危险写验收中顺带扩大内部可见性。
 - 两端：没有稳定公开或已记录私有契约的能力继续关闭；真实设备与真实 NAS 验收按用户安排后置，不用推测性防御代码替代验证。

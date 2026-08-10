@@ -1,6 +1,6 @@
 # 产品路线图
 
-> 最后更新：2026-08-04
+> 最后更新：2026-08-10
 > 当前实现、测试和阻塞情况以[当前开发进度](STATUS.md)为准。
 
 本文只记录未来优先级和里程碑出口，不重复维护已经实现的功能清单。
@@ -42,7 +42,7 @@
   原始错误或响应直接转换成社区报告。
 - 完成维护者只读候选生成与证据审计：候选工具不得写仓库或访问 GitHub；重复身份和
   无效取代关系阻断，合法匹配、冲突与状态建议只提示人工复核。
-- 在 Android 已完成、Windows 已建立待 CI 验证的首批删除契约基础上，继续用同一
+- 在 Android 已完成、Windows 已经通过多轮 GitHub CI 的写契约基础上，继续用同一
   Fixture 对齐套件、容器/VMM 子资源、网络和防火墙的可观察请求语义；没有稳定生产
   入口的平台不得为了矩阵齐全而复制未经验证写操作。
 
@@ -76,7 +76,7 @@
 ### NAS 设置、套件与统一存储
 
 - 使用专用测试目标验证可能断网、改时、停服或影响存储状态的写操作。
-- 补齐 Download Station、Container Manager、Virtual Machine Manager 的高级功能和异步任务闭环。
+- 在已合并 Download Station 单任务暂停/继续、URL/磁力创建、任务文件创建和单任务删除的基础上，继续补齐 RSS/BT 高级、文件优先级、设置写入、Container Manager 与 Virtual Machine Manager 的高级功能和异步任务闭环。
 - 验证统一存储管理的大目录、取消、权限、QuickConnect 和 MD5 任务；取得版本化契约后再评估套件历史报告与计划任务。
 
 详细范围见[套件管理计划](../development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)和[统一存储管理计划](../development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)。
@@ -93,7 +93,7 @@
 
 - Apple 移动端自动照片备份、后台常驻传输、iPad 多窗口与 File Provider；只有独立产品、权限、契约和验收决策通过后才进入活动里程碑。
 - File Station 后台任务、异步目录大小、MD5、VFS 扩展和更完整的恢复入口。
-- Download Station、Container Manager 和 Virtual Machine Manager 的剩余高级能力。
+- Download Station 的 RSS/BT 高级、文件优先级、设置写入，以及 Container Manager 和 Virtual Machine Manager 的剩余高级能力。
 - Audio Station、Video Station、Note Station、Synology Drive、Calendar、Contacts、Surveillance Station、Hyper Backup、Active Backup 和 Synology Office。
 - 社区兼容性计划后续阶段，包括静态筛选页、匿名统计口径、报告过期策略和定期复核；
   维护者只读候选生成、冲突检测和 macOS 本地草稿导出已经进入当前实现。

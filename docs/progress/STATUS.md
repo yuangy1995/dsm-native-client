@@ -18,7 +18,7 @@
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 单仓库与文档 | 已完成 | 契约、架构、安全、兼容和平台目录已经建立 |
-| 请求契约与统一写操作结果 | RC0/MR0 已实现，RC1 第二十二批、RC2 首批和 MR2 Chat 会话创建批次已测试 | 请求 Fixture Schema、敏感参数仅记录存在、隐私/危险重试门禁和 CI 已接入；Apple 已对照 File Station、账号/群组、套件、容器/VMM、Download Station、QuickConnect、物理网卡、S.M.A.R.T. 检测、安全、硬件、远程访问、文件服务、远程终端、互联网代理、区域与时间、DDNS 设置及 NAS 电源动作四十八份请求快照，主要危险操作已贯通统一结果语义；官方 File Station 后台任务列表 v3 的 Apple 共享实现与 macOS 传输中心界面已完成并通过 13 项聚焦测试，真实 DSM 只读响应尚未验收，`clear_finished` 保持关闭。当前契约校验器通过 92 份请求 Fixture 与 1 份写结果示例；Android 统一断言此前覆盖 79 份公共请求 Fixture；第 78 批新增 Download Station `Task.edit` v1，第 79 批新增公开 VMM `Guest.Image.create` v1，第 80 批新增公开 VMM `Task.Info.clear`、Download Station BTSearch 目录/列表与 Statistic 当前活动请求。请求方法校验器最小支持官方 lowerCamelCase，仍拒绝首字母大写和非法字符。Android 已从 Repository 实际调用链验证 File Station、容器和公开 VMM 删除，公开 VMM 仅发送 `guest_id`，旧内部接口保留兼容参数；Android Chat 文字、单附件、首次单聊、私人群聊、消息提醒、纯文字定时消息与无附件投票创建已接入稳定结果、防重复及断线/取消后只回读不重放；Windows 当前契约测试已纳入 691 项 .NET 10 xUnit 云端门禁并全部通过，未验证的危险写入口继续保持关闭。打印机 Bonjour 共享和安全扫描状态因证据不足保持关闭 |
+| 请求契约与统一写操作结果 | RC0/MR0 已实现，RC1 第二十二批、RC2 首批和 MR2 Chat 会话创建批次已测试 | 请求 Fixture Schema、敏感参数仅记录存在、隐私/危险重试门禁和 CI 已接入；Apple 已对照 File Station、账号/群组、套件、容器/VMM、Download Station、QuickConnect、物理网卡、S.M.A.R.T. 检测、安全、硬件、远程访问、文件服务、远程终端、互联网代理、区域与时间、DDNS 设置及 NAS 电源动作四十八份请求快照，主要危险操作已贯通统一结果语义；官方 File Station 后台任务列表 v3 的 Apple 共享实现与 macOS 传输中心界面已完成并通过 13 项聚焦测试，真实 DSM 只读响应尚未验收，`clear_finished` 保持关闭。当前契约校验器通过 92 份请求 Fixture 与 1 份写结果示例；Android 统一断言此前覆盖 79 份公共请求 Fixture；第 78 批新增 Download Station `Task.edit` v1，第 79 批新增公开 VMM `Guest.Image.create` v1，第 80 批新增公开 VMM `Task.Info.clear`、Download Station BTSearch 目录/列表与 Statistic 当前活动请求。请求方法校验器最小支持官方 lowerCamelCase，仍拒绝首字母大写和非法字符。Android 已从 Repository 实际调用链验证 File Station、容器和公开 VMM 删除，公开 VMM 仅发送 `guest_id`，旧内部接口保留兼容参数；Android Chat 文字、单附件、首次单聊、私人群聊、消息提醒、纯文字定时消息与无附件投票创建已接入稳定结果、防重复及断线/取消后只回读不重放；Windows 最新云端门禁已在提交 `f2bab7f` 覆盖 860/860 项 .NET 10 xUnit、WinUI x64 与 ARM64 构建并全部通过，未验证的危险写入口继续保持关闭。打印机 Bonjour 共享和安全扫描状态因证据不足保持关闭 |
 | 五端双语本地化 | 已实现 | 英语与简体中文资源、跟随系统、英语回退、用户指定语言、本机持久化和跨端资源校验已接入 |
 | API 参考 | 进行中 | 官方与内部 API 已分类；随实机差异继续补充 |
 | 社区兼容性计划 | 第一阶段契约与维护者辅助流程已实现，macOS 草稿导出已实现 | `schemaVersion` 2 必须记录受限源码提交，并以固定 `stage`、错误类别、API 名称/版本、HTTP 状态、是否重试和 `rawResponseIncluded=false` 描述失败，禁止错误正文和原始响应；`testSuiteVersion` 1/2 分别固定 14/19 项能力，报告必须完整列出对应版本全部结果；非 macOS 的桌面云盘结果强制为 `not-supported`。独立 submission 草稿契约不含报告编号、来源和审核状态，macOS 设置页通过字段白名单、预览和隐私确认后原子导出；只读候选工具只向标准输出生成报告和双语矩阵差异，正式报告可用 `supersedes` 建立人工审核的取代链；重复身份和无效关系阻断，相同环境匹配、冲突与状态不一致形成警告。Issue 表单、双 Schema、自定义校验器和固定 `jsonschema 4.25.1` 的 Draft 2020-12 CI 已同步，当前尚无已审核社区报告 |
@@ -42,35 +42,32 @@
 - 仓库：同一提交的 `Repository Check` run `31313485899` 通过；本地请求契约为 92 份 Fixture 与 1 份写结果示例，引用 Fixture 为 3 组/19 项，双语资源为 Apple 3297、Android 1985、Windows 893。
 - 临时修正历史已整理为一条简体中文功能提交；本地与远端临时分支已清理。真机、系统选择器和真实 NAS 副作用仍按 `PENDING_USER_VALIDATION` 后置。
 
-### 第 3 波 FILE-09 当前进展
+### 第 3 波 FILE-09 已合并
 
 - 基线：`1c7ee4851feb00903327b0599a0d29ea421be8c9`；功能对齐账本见[第 3 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_3_LEDGER_ZH.md)。
-- 当前目标：Windows/iPhone/iPad `FILE-09` 单个普通文件移入回收站与从回收站恢复。永久删除、清空回收站、目录或批量恢复、跨 NAS 恢复、覆盖恢复和内部回收站清理接口继续关闭。
-- 当前进展：Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，固定 Delete v2 / CopyMove v3，并通过 `DsmFileRepositoryTests` 107/107 与共享 Package 全量；Windows 已新增 `IFileRecycleRepository`、Delete v2 transport、Repository 结果链和 `Files/Recycle` 测试。Apple/Windows Files UI 已接入单个普通本地文件移入回收站和回收站位置恢复；提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Apple Build` run `31318490495`、`Windows Build` run `31318490511` 和 `Repository Check` run `31318490509` 均已通过，其中 Windows 为 830/830 xUnit 且 WinUI x64/ARM64 0 警告、0 错误。Photos 受限恢复入口已在 iPhone/iPad 网格、时间线、查看器和 Windows Photos 文件夹/时间线中复用同一恢复流程；本机已通过 Apple 聚焦 `MobileFileRecycleActionPresentationTests` / `MobilePhotoViewerPresentationTests`、Windows XAML/XML、本地化、C# 形态和差异静态门。已整理为单条简体中文功能提交，并通过 GitHub `Apple Build`、`Windows Build` 和 `Repository Check`。真实 NAS 回收站策略和真机交互仍需后置验证。
+- 范围：Windows/iPhone/iPad `FILE-09` 单个普通文件移入回收站与从回收站恢复。永久删除、清空回收站、目录或批量恢复、跨 NAS 恢复、覆盖恢复和内部回收站清理接口继续关闭。
+- 已完成：Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，固定 Delete v2 / CopyMove v3，并通过 `DsmFileRepositoryTests` 107/107 与共享 Package 全量；Windows 已新增 `IFileRecycleRepository`、Delete v2 transport、Repository 结果链和 `Files/Recycle` 测试。Apple/Windows Files UI 已接入单个普通本地文件移入回收站和回收站位置恢复；提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Apple Build` run `31318490495`、`Windows Build` run `31318490511` 和 `Repository Check` run `31318490509` 均已通过，其中 Windows 为 830/830 xUnit 且 WinUI x64/ARM64 0 警告、0 错误。Photos 受限恢复入口已在 iPhone/iPad 网格、时间线、查看器和 Windows Photos 文件夹/时间线中复用同一恢复流程；本机已通过 Apple 聚焦 `MobileFileRecycleActionPresentationTests` / `MobilePhotoViewerPresentationTests`、Windows XAML/XML、本地化、C# 形态和差异静态门。已整理为单条简体中文功能提交，并通过 GitHub `Apple Build`、`Windows Build` 和 `Repository Check`。真实 NAS 回收站策略和真机交互仍需后置验证。
 
-### 当前 Chat 文字发送切片
+### Chat 文字发送切片已合并
 
 - Apple 共享层与 iPhone/iPad Chat 已接入受限纯文字发送：固定 Chat Post v5，使用 `ChatMessageSendOutcome` 表达确认、权限失败、提交未知和取消边界；发送成功必须通过消息回读确认，提交未知会保留核对状态并阻止自动重放。附件、实时、建群、删除、提醒、定时、投票、语音和加密不进入本切片。
 - Windows Chat 已接入同义受限纯文字发送：Domain typed outcome、DsmRepository 固定 v5 发送与回读核对、WinUI 底部 composer、进程会话 review blocker、权限/提交未知/取消反馈和无障碍文案已完成。本地已通过 Chat XAML/resw XML、本地化、差异格式、C# 形态和源码护栏；GitHub Windows Build run `31334855728` 已通过 851/851 xUnit 与 WinUI x64/ARM64 构建。
 - 已运行验证：`swift test --package-path apple --filter DsmChatRepositoryTests` 31/31 通过；DsmMobile `MobileChatModelTests` 与 `MobileChatPresentationTests` 聚焦通过；双语资源校验通过，当前统计 Apple 3380、Android 1985、Windows 985；GitHub `Apple Build` run `31334855745`、`Windows Build` run `31334855728` 和 `Repository Check` run `31334855742` 均通过。真实 Chat Server、iPad/真机、Windows Narrator/键盘和系统生命周期仍为 `PENDING_USER_VALIDATION`。
 
-## 当前跨端对齐波次验证快照
+### Download Station 第 4 波已合并
 
-- 基线：`21172ac`；当前异步验证分支：`codex/cross-platform-parity-wave-0`。
-- Windows：提交 `b0f0334` 的 GitHub Actions `Windows Build` run `31301134782` 通过 691/691 xUnit、WinUI win-x64 与 win-arm64 Release 构建，0 警告、0 错误。该证据是 `UNIT_TESTED / BUILD_VERIFIED_WINDOWS_CI_X64_ARM64`，不等同真实 x64/ARM64 设备运行。
-- Apple：同一提交的 `Apple Build` run `31301134776` 通过共享 Package 636 XCTest（2 项按环境跳过）、Swift Testing、iPhone/iPad 通用应用构建与 macOS 回归打包。iPhone 17 Pro iOS 26.5 模拟器仍是最新聚焦设备；最新完整 iPad 模拟器、真机与真实 NAS 仍未验证。
-- Android：同一提交的 `Android Build` run `31301134788` 完成单元测试、Debug、Release、R8、仪器测试 APK 编译与 Debug lint；本波未修改 Android 业务源码，该运行用于证明共享契约与资源没有破坏既有目标。
-- 仓库：`Repository Check` run `31301134780` 通过必要文件、JSON、请求契约、隐私、双语资源与硬编码扫描。
-- 共同轻量门禁：双语资源校验当前统计 Apple 3209、Android 1985、Windows 794；请求契约校验 88 个 Fixture 与 1 个写结果示例；差异格式和项目 XML 检查通过。
-- 第 0 波并非长期计划完成；原定的 Windows 证书、Apple/Windows FILE-03 和 PHOTO-02 已进入下述第 1 波候选。待本波云端全绿并合并后，继续按账本推进 Files 有界复制/移动、回收站写、PHOTO-03 主动导入及 Chat/Download 受限控制；其他危险写继续使用独立契约切片。
+- 已完成跨端单任务暂停/继续、URL/磁力创建、`.torrent`/`.nzb`/`.txt` 任务文件创建和单任务删除；均固定官方 `SYNO.DownloadStation.Task` v1，使用稳定任务基线、单次提交、独立回读、提交未知核对和防自动重放。删除入口始终只删除任务，不删除已下载文件；批量、RSS/BT 高级、文件优先级、设置写和删除已下载文件/数据继续关闭。
+- 最新任务文件创建提交 `f2bab7f` 已合并到 `main`：本机通过 `DsmServiceManagementRepositoryTests` 60/60、`MobileDownloadsSafetyTests` 8/8、请求契约 92 份 Fixture 与 1 份写结果示例、双语资源 Apple 3408 / Android 1985 / Windows 1008、XAML/resw XML、源码安全扫描和差异格式检查；GitHub `Apple Build` run `31342949337`、`Windows Build` run `31342949331` 与 `Repository Check` run `31342949352` 均已通过，其中 Windows 云端完成 860/860 xUnit 与 WinUI x64/ARM64 构建。
+- 仍待验收：真实 NAS 上任务状态、任务文件兼容、权限、取消时机和副作用；iPhone/iPad 真机交互；Windows 系统文件选择器、Narrator、键盘、系统生命周期和真实设备运行。
 
-### 第 1 波当前候选（候选云端门禁已通过，待单提交最终复验）
+## 近期跨端对齐验证快照
 
-- 基线：`bd809f8b6854258ac3c0d9370468b82536b7c34d`；功能对齐账本见 [第 1 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_1_LEDGER_ZH.md)。
-- Apple：FILE-03/PHOTO-02 移动聚焦 60/60；共享 Package 645 项、2 项按环境跳过、0 失败。当前主机无 iPad Simulator，不把 iPhone 模拟器结果冒充 iPad 或真机结论。
-- Windows：证书 C0–C3 与 FILE-03 F0–F4 源码完成；两轮未参与实现者对抗终审均无开放 P0/P1。`Windows Build` run `31306947634` 在候选 `f25508b` 通过 756/756 xUnit，WinUI x64/ARM64 均为 0 警告、0 错误。
-- 共同轻量门：请求契约 90 个 Fixture 与 1 个写结果示例通过；双语资源 Apple 3255、Android 1985、Windows 849；Apple strings、Windows resw/XAML XML、本地化、硬编码和 `git diff --check` 通过。
-- 候选 GitHub 结果：`Apple Build` run `31306484946` 与 `Android Build` run `31306484965` 在 `e5ac397` 通过；`Windows Build` run `31306947634` 与 `Repository Check` run `31306947631` 在修正后的 `f25508b` 通过。CI 修正记录将整理为一条简体中文功能提交；最终精确 SHA 仍须重新通过四组工作流，全绿前不更新为已合并。
+- 第 1 波 `641852b408ae24f8819e4a49cd70df4c8d9e5011` 已合并：Windows 证书安全与连接来源说明、Windows/Apple FILE-03 新建文件夹与重命名、Apple PHOTO-02 只读查看增强进入当前源码；候选云端门禁已通过，真实设备与真实 NAS 仍按 `PENDING_USER_VALIDATION` 后置。
+- 第 2 波 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 已合并：Apple/Windows FILE-05 单个普通本地文件同 NAS 复制/移动，以及 PHOTO-03A 单项照片或视频主动导入已通过 GitHub `Apple Build` run `31313485832`、`Windows Build` run `31313485833`、`Android Build` run `31313485840` 和 `Repository Check` run `31313485899`；Windows 云端为 815/815 xUnit，WinUI x64 与 ARM64 构建通过。
+- 第 3 波 FILE-09 已合并：Files 单个普通文件移入回收站与从回收站恢复、Photos 受限恢复入口已通过 GitHub `Apple Build` run `31318490495`、`Windows Build` run `31318490511` 和 `Repository Check` run `31318490509`；Windows 云端为 830/830 xUnit，WinUI x64 与 ARM64 构建通过。
+- Chat 文字发送切片 `9067ab3` 已合并：iPhone/iPad 与 Windows 受限纯文字发送已通过 GitHub `Apple Build` run `31334855745`、`Windows Build` run `31334855728` 和 `Repository Check` run `31334855742`；Windows 云端为 851/851 xUnit，WinUI x64 与 ARM64 构建通过。
+- Download Station 第 4 波最新提交 `f2bab7f0b854b25a12d84406fb7cf309cbd5b41d` 已合并：单任务暂停/继续、URL/磁力创建、任务文件创建和单任务删除已通过 GitHub `Apple Build` run `31342949337`、`Windows Build` run `31342949331` 和 `Repository Check` run `31342949352`；Windows 云端为 860/860 xUnit，WinUI x64 与 ARM64 构建通过。
+- 当前共同轻量门禁：双语资源校验为 Apple 3,408、Android 1,985、Windows 1,008；请求契约校验为 92 份请求 Fixture 与 1 份写结果示例。上述证据不等同 iPhone/iPad 真机、Windows 真实设备、系统文件选择器、Narrator 或真实 NAS 副作用验收。
 
 ## macOS 功能状态
 
@@ -131,9 +128,9 @@
 - Apple 共享包完整测试和 `DsmMac` Debug、无代码签名构建持续验证。
 - macOS 0.2.6 (7) 崩溃报告已核实为旧包问题：DDNS 服务商列表包含重复 ID 时由 `Dictionary(uniqueKeysWithValues:)` 触发断言；当前源码已改为稳定顺序去重、忽略无效项并保留更友好的显示名称。重复 ID 精确回归 1/1、Apple 全量 536 项 XCTest（2 项跳过）与 4 项 Swift Testing、`DsmMac` Debug 无签名构建均通过；按用户指示归档，不再重复投入 Android 目标时间复验。
 - `DsmMobile` iPhone/iPad 通用目标已通过 5 项测试（含冷启动资料恢复与自动登录）、无签名 Release 模拟器构建、iPhone 测试启动和 iPad Release 安装启动。
-- Windows Domain、Infrastructure 和桌面云盘领域既有 38 项测试已使用 .NET 10 验证，Cloud Files 核心源码独立编译通过；该批新增的 4 项共享删除请求契约测试已由后续 Windows CI 执行。当前完整门禁为 691/691 xUnit，WinUI x64 与 ARM64 Release 均构建通过；真实设备、Explorer 与系统交互仍待后续验收。
-- 本地化检查覆盖 Apple、Android、Windows 的双语键、格式参数、资源引用、英语资源残留中文和生产界面硬编码；当前统计为 Apple 2,782 个、Android 1,781 个、Windows 262 个双语资源项。
-- Apple 共享包 585 项 XCTest 通过（2 项按条件跳过），10 项 Swift Testing 通过，`DsmMac` Debug 无签名构建通过；其中桌面云盘配置、事务、主 App 与 Extension 系统边界覆盖最后成功快照、状态机、会话待清理、恢复最终提交与连续写失败、逐项释放、多时点容量、并发软上限准入与在途额度预留、完整 staging 准入、下载 Task 取消、partial 清理、确定性超时、外接卷和本地提交补偿，File Station 删除/移动已通过 Repository 真实调用链对照共享请求 Fixture。社区兼容性工具 67 项测试、正式报告与本地草稿双 Schema、macOS 白名单草稿导出、只读候选差异、重复/冲突警告、显式取代链、schemaVersion 2、testSuiteVersion 1/2、Issue 表单字段/能力一致性、Draft 2020-12 Schema 与矩阵生成检查通过；既有临时签名 Release 打包启动结果保持有效。
+- Windows Domain、Infrastructure、Application 和 WinUI 当前完整云端门禁已在提交 `f2bab7f` 通过 860/860 xUnit，WinUI x64 与 ARM64 Release 均构建通过；真实设备、Explorer、Narrator 与系统交互仍待后续验收。
+- 本地化检查覆盖 Apple、Android、Windows 的双语键、格式参数、资源引用、英语资源残留中文和生产界面硬编码；当前统计为 Apple 3,408 个、Android 1,985 个、Windows 1,008 个双语资源项。
+- Apple 共享包测试、iPhone/iPad 通用应用构建和 macOS 打包已在提交 `f2bab7f` 的 GitHub `Apple Build` run `31342949337` 通过；本地最新聚焦通过 `DsmServiceManagementRepositoryTests` 60/60 与 `MobileDownloadsSafetyTests` 8/8。桌面云盘配置、事务、主 App 与 Extension 系统边界仍由既有共享包与 macOS 构建持续覆盖；既有临时签名 Release 打包启动结果保持有效。
 - Android 2026-08-04 第 56 批状态：Download Station 暂停、继续、仅移除任务及移除任务并删除文件已迁移到持久结构化反馈。Repository 只接受完整稳定任务基线，严格分页拒绝畸形、重复、总数漂移和截断；同目标跨动作原子防重复，提交取消、断线和歧义失败只回读不重放。危险删除必须显式确认，旧字符串旁路已移除；删除文件按任务移除和文件删除两个效果计数，任务消失不冒充文件已删除。严格刷新证据绑定 Repository、NAS、稳定目标与代次，危险或未知结果核对前不能清除、切换 NAS 或退出登录。专项 49 项 JVM 与 24 项 Compose 测试通过；Android 共 857 项 JVM 测试，完整 Debug/Release/R8、仪器测试 APK、Debug lint 和 1616 个双语资源项均通过。71 份请求 Fixture、1 份结果示例、3 组响应 Fixture、103 份 contracts JSON 及社区检查 19 项通过、0 项失败。标准 API 35 XML 共 263 项，其中 257 项通过、6 项按既有条件跳过、0 项失败。Android A0–A8 叶子开发目标经代码审计为 175/202（86.6%），剩余 27 项；A9 真实环境与发布验收单列。真实媒体删除、外部深链、真实进程死亡、平板/折叠屏/OEM 分屏、真机 TalkBack、API 34+ 真机预测手势及真实 NAS/SAF/Doze/弱网仍待验收；本批未操作浏览器或真实 NAS，未执行真实暂停、继续、任务移除或文件删除，不把源码或自动化结果冒充实机结论。
 - Android 2026-08-04 第 58 批状态：Download Station 设置严格读取基础与计划字段，拒绝缺失、畸形、越界及 HTTP/FTP 分歧；正式保存入口必须携带用户所见基线，锁内二次读取发现漂移时零写入，只提交实际变化的基础或计划组件，组件间取消与逐组件回读可表达部分成功、提交未确认和未知结果，绝不自动补写。ViewModel 持有内存草稿、基线和八态反馈，设置与任务创建、任务控制、模块导航、切换 NAS、退出登录共用原子协调边界；普通重载不能清除证据，未知或异常结果严格刷新后仍需明确关闭。界面将 HTTP/FTP 合并为单一限速字段并覆盖 48dp、live region、深色、2× 字体和小屏滚动。Repository/契约/状态策略 27 项 JVM 与 API 35 Compose 4/4 通过；完整 120 组 JVM XML 共 892 项、0 失败/0 跳过，Debug/Release/R8、仪器测试 APK、Debug lint、1659 项双语资源、本地化、计划统计与差异门禁通过，三路复核最终无 P0/P1。A0–A8 保持 175/202（86.6%）、剩余 27 项，因为本批完善既有能力且 A1 仍有 VMM 等链路，不重复计分；未操作浏览器或真实 NAS，真实字段、权限、断线及两端点非原子副作用仍待专用测试环境验收。
 - Android 2026-08-04 第 59 批状态：VMM 创建、常规设置和公开生命周期已迁移为持久结构化反馈。创建只接受严格终态 task 返回的 `guest_id`，名称回读不取得归属；缺 ID、取消、模糊、task 异常或配置未严格核对时不重放、不 `set`、不清理任务证据。设置使用用户所见完整基线，锁内复读拒绝漂移，no-op 零写并只发送变化字段；启动与关机携带确认时状态基线。内部 Guest/Action/Image/Network 写 fallback 和网络写 UI 已关闭。Workspace 保存创建步骤/草稿、设置基线/草稿、生命周期确认、八态结果、计数、异常、专项刷新和四态核对，未提交结果可继续编辑，编辑/确认/危险结果进入导航、切 NAS 与退出门禁。Repository 39 项、状态策略 19 项、API 35 Compose 21 项通过；完整 121 组 JVM XML 共 938 项、0 失败/0 跳过，Debug/Release/R8、仪器测试 APK、Debug lint、1705 项双语资源、请求契约、Fixture、104 份 contracts JSON 与计划统计通过，多轮复核最终无 P0/P1。A0–A8 保持 175/202（86.6%）、剩余 27 项；未操作浏览器或真实 NAS，未执行真实 VMM 写操作，真实权限、任务字段、断线、取消、版本差异和副作用仍待专用测试环境验收。
