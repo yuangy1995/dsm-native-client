@@ -259,8 +259,11 @@ public sealed partial class PhotosPage
         PhotoViewerSizeValue.Text = FormatPhotoViewerBytes(item.SizeBytes);
         PhotoViewerCreatedValue.Text = FormatPhotoViewerDate(item.CreatedAt);
         PhotoViewerModifiedValue.Text = FormatPhotoViewerDate(item.ModifiedAt);
-        PhotoViewerDimensionsValue.Text = FormatPhotoViewerDimensions(
-            CurrentPhotoPreviewMetadata(item));
+        var metadata = CurrentPhotoPreviewMetadata(item);
+        PhotoViewerDimensionsValue.Text = FormatPhotoViewerDimensions(metadata);
+        PhotoViewerTakenValue.Text = FormatPhotoViewerCapturedAt(metadata);
+        PhotoViewerDurationValue.Text = FormatPhotoViewerDuration(metadata);
+        PhotoViewerCameraValue.Text = FormatPhotoViewerCamera(metadata);
         PhotoViewerPathValue.Text = item.Path;
         AutomationProperties.SetName(
             PhotoViewerMetadata,
@@ -275,6 +278,9 @@ public sealed partial class PhotosPage
         PhotoViewerCreatedValue.Text = string.Empty;
         PhotoViewerModifiedValue.Text = string.Empty;
         PhotoViewerDimensionsValue.Text = string.Empty;
+        PhotoViewerTakenValue.Text = string.Empty;
+        PhotoViewerDurationValue.Text = string.Empty;
+        PhotoViewerCameraValue.Text = string.Empty;
         PhotoViewerPathValue.Text = string.Empty;
     }
 
@@ -375,6 +381,52 @@ public sealed partial class PhotosPage
             "PhotoViewerDimensionsValue",
             metadata.PixelWidth.Value,
             metadata.PixelHeight.Value);
+    }
+
+    private static string FormatPhotoViewerCapturedAt(FilePreviewMediaMetadata? metadata)
+    {
+        if (metadata?.CapturedAt is null)
+        {
+            return LocalizationService.Current.Get("PhotoViewerValueUnavailable");
+        }
+        var culture = CultureInfo.GetCultureInfo(LocalizationService.Current.ResolvedLanguage);
+        return metadata.CapturedAt.Value.LocalDateTime.ToString("g", culture);
+    }
+
+    private static string FormatPhotoViewerDuration(FilePreviewMediaMetadata? metadata)
+    {
+        if (metadata?.Duration is not { } duration || duration <= TimeSpan.Zero)
+        {
+            return LocalizationService.Current.Get("PhotoViewerValueUnavailable");
+        }
+
+        var totalHours = (long)duration.TotalHours;
+        return totalHours > 0
+            ? LocalizationService.Current.Format(
+                "PhotoViewerDurationValueHours",
+                totalHours,
+                duration.Minutes,
+                duration.Seconds)
+            : LocalizationService.Current.Format(
+                "PhotoViewerDurationValueMinutes",
+                duration.Minutes,
+                duration.Seconds);
+    }
+
+    private static string FormatPhotoViewerCamera(FilePreviewMediaMetadata? metadata)
+    {
+        var parts = new[]
+            {
+                metadata?.CameraManufacturer,
+                metadata?.CameraModel,
+            }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return parts.Length == 0
+            ? LocalizationService.Current.Get("PhotoViewerValueUnavailable")
+            : string.Join(" ", parts);
     }
 
     private void DisposePhotoViewer()

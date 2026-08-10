@@ -30,10 +30,16 @@ public sealed class FilePreviewPageSourceContractTests
         Assert.Contains("IFilePreviewMetadataReader", model);
         Assert.Contains("FilePreviewMediaMetadata", model);
         Assert.Contains("BitmapDecoder.CreateAsync", model);
+        Assert.Contains("RetrievePropertiesAsync", model);
+        Assert.Contains("System.Photo.DateTaken", model);
+        Assert.Contains("System.Photo.CameraManufacturer", model);
+        Assert.Contains("System.Photo.CameraModel", model);
         Assert.Contains("MediaMetadata: metadata", model);
+        Assert.Contains("MediaMetadata: media.Metadata", model);
         Assert.Contains("IRandomAccessStream", media);
         Assert.Contains("IInputStream", media);
         Assert.Contains("MaximumRangeLength = 4 * 1024 * 1024", media);
+        Assert.Contains("IsoBmffVideoMetadataReader.TryRead", media);
         Assert.Contains("expectedContentVersion: _contentVersion", media);
         Assert.Contains("expectedTotalLength: _totalLength", media);
         Assert.Contains("CloneStream()", media);
@@ -41,6 +47,14 @@ public sealed class FilePreviewPageSourceContractTests
         Assert.Contains("generation != _generation", media);
         Assert.Contains("await _serial.WaitAsync", media);
         Assert.DoesNotContain("_initialization.Dispose()", media);
+        foreach (var forbiddenMetadata in new[]
+        {
+            "Latitude", "Longitude", "MakerNote", "CameraSerialNumber", "LensSerialNumber",
+        })
+        {
+            Assert.DoesNotContain(forbiddenMetadata, model);
+            Assert.DoesNotContain(forbiddenMetadata, media);
+        }
         Assert.Contains("_cleanupAttempts >= 3", artifacts);
         Assert.Contains("_disposed = true", artifacts);
         Assert.DoesNotContain("_disposed = true;\n        try", artifacts);

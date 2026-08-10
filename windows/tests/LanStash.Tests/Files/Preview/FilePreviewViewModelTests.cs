@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using LanStash.App.Features.Files.Preview;
@@ -182,7 +183,14 @@ public sealed class FilePreviewViewModelTests
         var profile = Guid.NewGuid();
         var repository = new PreviewRepository(profile);
         var store = new ArtifactStoreStub();
-        var metadataReader = new MetadataReaderStub(new FilePreviewMediaMetadata(4032, 3024));
+        var capturedAt = new DateTimeOffset(2026, 8, 10, 9, 30, 0, TimeSpan.Zero);
+        var metadataReader = new MetadataReaderStub(
+            new FilePreviewMediaMetadata(
+                4032,
+                3024,
+                capturedAt,
+                "Contoso",
+                "Photon One"));
         using var model = new FilePreviewViewModel(store, metadataReader);
 
         await model.OpenAsync(repository, profile, Item("photo.jpg", 10));
@@ -190,6 +198,9 @@ public sealed class FilePreviewViewModelTests
         Assert.Equal(FilePreviewPhase.Ready, model.Snapshot.Phase);
         Assert.Equal(4032, model.Snapshot.MediaMetadata?.PixelWidth);
         Assert.Equal(3024, model.Snapshot.MediaMetadata?.PixelHeight);
+        Assert.Equal(capturedAt, model.Snapshot.MediaMetadata?.CapturedAt);
+        Assert.Equal("Contoso", model.Snapshot.MediaMetadata?.CameraManufacturer);
+        Assert.Equal("Photon One", model.Snapshot.MediaMetadata?.CameraModel);
         Assert.Equal(FilePreviewKind.Image, Assert.Single(metadataReader.RequestedKinds));
     }
 
@@ -255,6 +266,31 @@ public sealed class FilePreviewViewModelTests
 
         Assert.Equal(FilePreviewPhase.Failed, model.Snapshot.Phase);
         Assert.Null(model.Snapshot.Media);
+        Assert.Single(repository.Requests);
+    }
+
+    [Fact]
+    public async Task VideoRangePreviewCarriesWhitelistedIsoBmffMetadataWithoutExtraReads()
+    {
+        var profile = Guid.NewGuid();
+        var bytes = BuildIsoBmffVideo(
+            width: 1920,
+            height: 1080,
+            timescale: 1000,
+            duration: 123_456);
+        var repository = new PreviewRepository(
+            profile,
+            request => Result(request, bytes.Length, bytes));
+        using var model = new FilePreviewViewModel(new ArtifactStoreStub());
+
+        await model.OpenAsync(repository, profile, Item("clip.mp4", bytes.Length));
+
+        Assert.Equal(FilePreviewPhase.Ready, model.Snapshot.Phase);
+        Assert.NotNull(model.Snapshot.Media);
+        Assert.Equal(1920, model.Snapshot.MediaMetadata?.PixelWidth);
+        Assert.Equal(1080, model.Snapshot.MediaMetadata?.PixelHeight);
+        Assert.Equal(TimeSpan.FromMilliseconds(123_456), model.Snapshot.MediaMetadata?.Duration);
+        Assert.Null(model.Snapshot.MediaMetadata?.CameraManufacturer);
         Assert.Single(repository.Requests);
     }
 
@@ -484,6 +520,53 @@ public sealed class FilePreviewViewModelTests
     {
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         throw new InvalidOperationException();
+    }
+
+    private static byte[] BuildIsoBmffVideo(
+        int width,
+        int height,
+        uint timescale,
+        uint duration)
+    {
+        var mvhdPayload = new byte[20];
+        BinaryPrimitives.WriteUInt32BigEndian(mvhdPayload.AsSpan(12), timescale);
+        BinaryPrimitives.WriteUInt32BigEndian(mvhdPayload.AsSpan(16), duration);
+
+        var tkhdPayload = new byte[84];
+        BinaryPrimitives.WriteUInt32BigEndian(
+            tkhdPayload.AsSpan(76),
+            checked((uint)width * 65_536u));
+        BinaryPrimitives.WriteUInt32BigEndian(
+            tkhdPayload.AsSpan(80),
+            checked((uint)height * 65_536u));
+
+        var hdlrPayload = new byte[12];
+        Encoding.ASCII.GetBytes("vide", hdlrPayload.AsSpan(8));
+
+        return Box(
+            "ftyp",
+            Encoding.ASCII.GetBytes("isom0000"))
+            .Concat(Box(
+                "moov",
+                Box("mvhd", mvhdPayload)
+                    .Concat(Box(
+                        "trak",
+                        Box("tkhd", tkhdPayload)
+                            .Concat(Box("mdia", Box("hdlr", hdlrPayload)))
+                            .ToArray()))
+                    .ToArray()))
+            .ToArray();
+    }
+
+    private static byte[] Box(string type, byte[] payload)
+    {
+        var bytes = new byte[payload.Length + 8];
+        BinaryPrimitives.WriteUInt32BigEndian(
+            bytes,
+            checked((uint)bytes.Length));
+        Encoding.ASCII.GetBytes(type, bytes.AsSpan(4));
+        payload.CopyTo(bytes.AsSpan(8));
+        return bytes;
     }
 
     private sealed record RangeRequest(

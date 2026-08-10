@@ -14,15 +14,20 @@ public sealed class StrictRangeMediaSource : IDisposable
     private readonly StrictRangeReadSession _session;
     private bool _disposed;
 
-    private StrictRangeMediaSource(StrictRangeReadSession session, string contentType)
+    private StrictRangeMediaSource(
+        StrictRangeReadSession session,
+        string contentType,
+        FilePreviewMediaMetadata? metadata)
     {
         _session = session;
         Stream = new StrictRangeRandomAccessStream(session);
         ContentType = contentType;
+        Metadata = metadata;
     }
 
     public IRandomAccessStream Stream { get; }
     public string ContentType { get; }
+    public FilePreviewMediaMetadata? Metadata { get; }
 
     public static async Task<StrictRangeMediaSource> CreateAsync(
         IFileRangeReader repository,
@@ -39,9 +44,13 @@ public sealed class StrictRangeMediaSource : IDisposable
         try
         {
             await session.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            var metadata = kind == FilePreviewKind.Video
+                ? IsoBmffVideoMetadataReader.TryRead(session.InitialBytesForMetadata.Span)
+                : null;
             return new StrictRangeMediaSource(
                 session,
-                FilePreviewClassifier.MediaContentType(item, kind));
+                FilePreviewClassifier.MediaContentType(item, kind),
+                metadata);
         }
         catch
         {
@@ -88,6 +97,8 @@ internal sealed class StrictRangeReadSession : IDisposable
     }
 
     public ulong Size => checked((ulong)_totalLength);
+    internal ReadOnlyMemory<byte> InitialBytesForMetadata =>
+        _smallFileBytes ?? _initialBytes ?? ReadOnlyMemory<byte>.Empty;
 
     public Task InitializeAsync(CancellationToken cancellationToken) =>
         ReadInitialAsync(cancellationToken);

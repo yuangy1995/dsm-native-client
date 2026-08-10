@@ -23,7 +23,11 @@ public enum FilePreviewUnavailableReason
 
 public sealed record FilePreviewMediaMetadata(
     long? PixelWidth = null,
-    long? PixelHeight = null);
+    long? PixelHeight = null,
+    DateTimeOffset? CapturedAt = null,
+    string? CameraManufacturer = null,
+    string? CameraModel = null,
+    TimeSpan? Duration = null);
 
 public sealed record FilePreviewSnapshot(
     Guid? ProfileId = null,

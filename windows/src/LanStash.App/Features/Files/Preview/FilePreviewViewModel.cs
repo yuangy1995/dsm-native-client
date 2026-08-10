@@ -324,6 +324,7 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
             kind,
             FilePreviewPhase.Ready,
             Media: media,
+            MediaMetadata: media.Metadata,
             TotalBytes: item.Size);
     }
 
@@ -465,6 +466,10 @@ internal interface IFilePreviewMetadataReader
 
 internal sealed class FilePreviewMetadataReader : IFilePreviewMetadataReader
 {
+    private const string DateTakenProperty = "System.Photo.DateTaken";
+    private const string CameraManufacturerProperty = "System.Photo.CameraManufacturer";
+    private const string CameraModelProperty = "System.Photo.CameraModel";
+
     public async Task<FilePreviewMediaMetadata?> ReadAsync(
         IFilePreviewArtifact artifact,
         FilePreviewKind kind,
@@ -475,15 +480,94 @@ internal sealed class FilePreviewMetadataReader : IFilePreviewMetadataReader
             return null;
         }
 
+        long? width = null;
+        long? height = null;
         using var stream = await file.OpenReadAsync().AsTask(cancellationToken)
             .ConfigureAwait(true);
         var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(cancellationToken)
             .ConfigureAwait(true);
-        if (decoder.PixelWidth == 0 || decoder.PixelHeight == 0)
+        if (decoder.PixelWidth > 0 && decoder.PixelHeight > 0)
+        {
+            width = decoder.PixelWidth;
+            height = decoder.PixelHeight;
+        }
+
+        // 只请求白名单字段，避免读取位置、设备唯一标识或厂商私有元数据。
+        var image = await TryReadWhitelistedImagePropertiesAsync(file, cancellationToken)
+            .ConfigureAwait(true);
+        var capturedAt = NormalizeCapturedAt(image.CapturedAt);
+        var manufacturer = CleanMetadataText(image.CameraManufacturer);
+        var model = CleanMetadataText(image.CameraModel);
+        if (width is null &&
+            capturedAt is null &&
+            manufacturer is null &&
+            model is null)
         {
             return null;
         }
 
-        return new FilePreviewMediaMetadata(decoder.PixelWidth, decoder.PixelHeight);
+        return new FilePreviewMediaMetadata(
+            width,
+            height,
+            capturedAt,
+            manufacturer,
+            model);
     }
+
+    private static async Task<(
+        DateTimeOffset? CapturedAt,
+        string? CameraManufacturer,
+        string? CameraModel)> TryReadWhitelistedImagePropertiesAsync(
+        Windows.Storage.StorageFile file,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var properties = await file.Properties.RetrievePropertiesAsync(new[]
+                {
+                    DateTakenProperty,
+                    CameraManufacturerProperty,
+                    CameraModelProperty,
+                })
+                .AsTask(cancellationToken)
+                .ConfigureAwait(true);
+            properties.TryGetValue(DateTakenProperty, out var capturedAt);
+            properties.TryGetValue(CameraManufacturerProperty, out var manufacturer);
+            properties.TryGetValue(CameraModelProperty, out var model);
+            return (
+                CoerceDateTimeOffset(capturedAt),
+                manufacturer as string,
+                model as string);
+        }
+        catch (Exception error) when (
+            error is IOException or
+                UnauthorizedAccessException or
+                ArgumentException or
+                COMException)
+        {
+            return default;
+        }
+    }
+
+    private static DateTimeOffset? CoerceDateTimeOffset(object? value) =>
+        value switch
+        {
+            DateTimeOffset offset => offset,
+            DateTime dateTime => new DateTimeOffset(dateTime),
+            _ => null,
+        };
+
+    private static DateTimeOffset? NormalizeCapturedAt(DateTimeOffset? value)
+    {
+        if (value is null ||
+            value.Value == default ||
+            value.Value.Year <= 1601)
+        {
+            return null;
+        }
+        return value;
+    }
+
+    private static string? CleanMetadataText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

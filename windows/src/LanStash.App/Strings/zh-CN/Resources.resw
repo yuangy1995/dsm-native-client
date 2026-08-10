@@ -928,6 +928,11 @@
   <data name="PhotoViewerModifiedLabel.Text" xml:space="preserve"><value>修改时间</value></data>
   <data name="PhotoViewerDimensionsLabel.Text" xml:space="preserve"><value>尺寸</value></data>
   <data name="PhotoViewerDimensionsValue" xml:space="preserve"><value>{0:N0} × {1:N0} 像素</value></data>
+  <data name="PhotoViewerTakenLabel.Text" xml:space="preserve"><value>拍摄时间</value></data>
+  <data name="PhotoViewerDurationLabel.Text" xml:space="preserve"><value>时长</value></data>
+  <data name="PhotoViewerDurationValueHours" xml:space="preserve"><value>{0:N0}:{1:D2}:{2:D2}</value></data>
+  <data name="PhotoViewerDurationValueMinutes" xml:space="preserve"><value>{0:N0}:{1:D2}</value></data>
+  <data name="PhotoViewerCameraLabel.Text" xml:space="preserve"><value>相机</value></data>
   <data name="PhotoViewerPathLabel.Text" xml:space="preserve"><value>路径</value></data>
   <data name="PhotoViewerKindImage" xml:space="preserve"><value>图片</value></data>
   <data name="PhotoViewerKindVideo" xml:space="preserve"><value>视频</value></data>

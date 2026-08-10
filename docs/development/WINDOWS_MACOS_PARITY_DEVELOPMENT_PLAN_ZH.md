@@ -238,7 +238,7 @@ W0 基线、账本与 ZIP/安装器决策门
 - 建立有界缩略图/预览缓存、可见窗口优先加载和离页取消。
 - 图片、PDF、UTF 文本、Range 音视频预览；文本编辑、格式整理和未保存保护。
 - 通过公开 File Station 扫描 `/home/Photos` 与 `/photo`，实现个人/共享空间、文件夹、时间线、文件夹式相册、分页、搜索和年/月定位。
-- 已接入 Photos 文件夹/时间线媒体打开、右侧预览、前后切换、基础文件元数据、图片尺寸展示和保存副本；基础查看器提交 `4e1272e` 已通过 Windows xUnit、WinUI x64/ARM64 和 Repository Check。真实设备/NAS 验收仍后置。
+- 已接入 Photos 文件夹/时间线媒体打开、右侧预览、前后切换、基础文件元数据、图片/基础视频尺寸、拍摄时间、相机品牌/型号、基础视频时长和保存副本；基础查看器提交 `4e1272e` 已通过 Windows xUnit、WinUI x64/ARM64 和 Repository Check。本地媒体元数据白名单切片不新增 NAS 请求，不读取位置、厂商私有、设备序列或镜头序列类隐私元数据；GitHub Windows Build run `31410536634` 已通过 943/943 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31410536680` 已通过。真实设备、格式矩阵、Narrator、高对比、窗口缩放和真实 NAS 仍待验收。
 - HEIC/MOV/Live Photo 能力探测与可解释降级，EXIF 只展示白名单字段。
 - 上传、导出、分享、移动、删除和恢复复用 W2 传输/写操作。
 

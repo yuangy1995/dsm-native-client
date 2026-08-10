@@ -928,6 +928,11 @@
   <data name="PhotoViewerModifiedLabel.Text" xml:space="preserve"><value>Modified</value></data>
   <data name="PhotoViewerDimensionsLabel.Text" xml:space="preserve"><value>Dimensions</value></data>
   <data name="PhotoViewerDimensionsValue" xml:space="preserve"><value>{0:N0} × {1:N0} pixels</value></data>
+  <data name="PhotoViewerTakenLabel.Text" xml:space="preserve"><value>Taken</value></data>
+  <data name="PhotoViewerDurationLabel.Text" xml:space="preserve"><value>Duration</value></data>
+  <data name="PhotoViewerDurationValueHours" xml:space="preserve"><value>{0:N0}:{1:D2}:{2:D2}</value></data>
+  <data name="PhotoViewerDurationValueMinutes" xml:space="preserve"><value>{0:N0}:{1:D2}</value></data>
+  <data name="PhotoViewerCameraLabel.Text" xml:space="preserve"><value>Camera</value></data>
   <data name="PhotoViewerPathLabel.Text" xml:space="preserve"><value>Path</value></data>
   <data name="PhotoViewerKindImage" xml:space="preserve"><value>Image</value></data>
   <data name="PhotoViewerKindVideo" xml:space="preserve"><value>Video</value></data>
