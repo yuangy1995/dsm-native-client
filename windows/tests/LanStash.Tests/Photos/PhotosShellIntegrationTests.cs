@@ -13,8 +13,11 @@ public sealed class PhotosShellIntegrationTests
 
         Assert.Contains("_app.Repository is not IPhotoRepository photoRepository", photosBranch);
         Assert.Contains("_photosProfileId != photoProfile.Id", photosBranch);
+        Assert.Contains("!ReferenceEquals(_photosRepository, photoRepository)", photosBranch);
+        Assert.Contains("photoPreviewRepository = _app.Repository as IFilePreviewRepository", photosBranch);
         Assert.Contains("_photos = new PhotosPage(", photosBranch);
         Assert.Contains("_photosProfileId = photoProfile.Id;", photosBranch);
+        Assert.Contains("_photosRepository = photoRepository;", photosBranch);
         Assert.Contains("ContentFrame.Content = _photos;", photosBranch);
         Assert.Contains("return;", photosBranch);
         Assert.DoesNotContain("ShowModuleAsync", photosBranch);
@@ -34,6 +37,7 @@ public sealed class PhotosShellIntegrationTests
         Assert.Contains("_app.Repository is not IPhotoRepository", photosBranch);
         Assert.Contains("photoRepository.ProfileId != photoProfile.Id", photosBranch);
         Assert.Contains("PhotosPage.CreateUnavailableState()", photosBranch);
+        Assert.Contains("_photosRepository = null;", photosBranch);
         Assert.True(photosBranch.Split("return;", StringSplitOptions.None).Length - 1 >= 2);
         Assert.DoesNotContain("ShowModuleAsync", photosBranch);
     }
@@ -42,7 +46,7 @@ public sealed class PhotosShellIntegrationTests
     public void SaveCopyReusesExistingForegroundTransferInsteadOfAddingAPhotoTransfer()
     {
         var source = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
-        var method = Slice(source, "private async Task SaveSelectedAsync()", "private bool CanSaveSelectedImage()");
+        var method = Slice(source, "private async Task SaveSelectedAsync()", "private bool CanSaveSelectedMedia()");
 
         Assert.Contains("new FileBrowserEntry(new FileItem(", method);
         Assert.Contains("_transfers.PickAndStartDownloadAsync(_profileId, fileEntry)", method);

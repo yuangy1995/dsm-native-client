@@ -34,7 +34,8 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("Import_Click", xaml);
         Assert.DoesNotContain("Delete", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CloudDrive", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Video", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("x:Name=\"PhotoViewerHost\"", xaml);
+        Assert.Contains("x:Name=\"PhotoPreviewPane\"", xaml);
     }
 
     [Fact]
@@ -53,10 +54,11 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("DoubleTapped=\"Photos_DoubleTapped\"", xaml);
         Assert.DoesNotContain("IsItemClickEnabled=\"True\"", xaml);
         Assert.Contains("grid.ItemFromContainer(container)", source);
-        Assert.Contains("{ IsFolder: true } entry", source);
+        Assert.Contains("grid.ItemFromContainer(container) is not PhotoBrowserEntry entry", source);
         Assert.Contains("args.Handled = true;", source);
-        Assert.Contains("CanSaveSelectedImage()", source);
-        Assert.Contains("{ IsImage: true, Item.SizeBytes: >= 0 }", source);
+        Assert.Contains("OpenFolderViewerAsync(entry)", source);
+        Assert.Contains("CanSaveSelectedMedia()", source);
+        Assert.Contains("{ IsMedia: true, Item.SizeBytes: >= 0 }", source);
     }
 
     [Fact]
@@ -79,6 +81,7 @@ public sealed class PhotosPageSourceContractTests
         Assert.DoesNotContain("AutomationProperties.Name=\"{x:Bind Path}\"", xaml);
         Assert.Contains("PhotoBrowserFolderAutomationName", source);
         Assert.Contains("PhotoBrowserImageAutomationName", source);
+        Assert.Contains("PhotoBrowserVideoAutomationName", source);
         Assert.DoesNotContain("entry.Path));", source);
         Assert.Contains("DecodePixelWidth = ThumbnailDecodePixels", source);
         Assert.Contains("DecodePixelHeight = ThumbnailDecodePixels", source);
@@ -95,6 +98,40 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("_isSaving = false;", source);
         Assert.Contains("EnsureMatchingProfile(dataSource.ProfileId, profileId);", source);
         Assert.Contains("sourceProfileId != parsedProfileId", source);
+    }
+
+    [Fact]
+    public void ViewerUsesExistingFilePreviewAndKeepsPhotoMetadataAccessible()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var page = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
+        var viewer = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.Viewer.cs");
+        var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
+        var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
+        var shell = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+
+        Assert.Contains("x:Uid=\"PhotoBrowserOpen\"", xaml);
+        Assert.Contains("x:Uid=\"PhotoTimelineOpen\"", timelineXaml);
+        Assert.Contains("KeyboardAccelerator Key=\"Enter\" Invoked=\"OpenAccelerator_Invoked\"", timelineXaml);
+        Assert.Contains("DoubleTapped=\"TimelineGrid_DoubleTapped\"", timelineXaml);
+        Assert.Contains("Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? _open", timeline);
+        Assert.Contains("await _open(entry.Item, VisibleMediaItems())", timeline);
+
+        Assert.Contains("IFilePreviewRepository? previewRepository", page);
+        Assert.Contains("InitializePhotoViewer(previewRepository);", page);
+        Assert.Contains("PhotoPreviewPane.Attach(_previewViewModel);", viewer);
+        Assert.Contains("await _previewViewModel.OpenAsync(", viewer);
+        Assert.Contains("ToFileItem(item)", viewer);
+        Assert.Contains("PhotoViewerPreviousButton", xaml);
+        Assert.Contains("PhotoViewerNextButton", xaml);
+        Assert.Contains("PhotoViewerMetadata", xaml);
+        Assert.Contains("AutomationProperties.SetName(", viewer);
+        Assert.Contains("PhotoViewerMetadataAutomationName", viewer);
+        Assert.Contains("PhotoViewerColumn.Width = isOpen ? new GridLength(420) : new GridLength(0);", viewer);
+
+        Assert.Contains("var photoPreviewRepository = _app.Repository as IFilePreviewRepository;", shell);
+        Assert.Contains("previewRepository: photoPreviewRepository", shell);
+        Assert.Contains("!ReferenceEquals(_photosRepository, photoRepository)", shell);
     }
 
     [Fact]
@@ -143,6 +180,7 @@ public sealed class PhotosPageSourceContractTests
     [InlineData("PhotoBrowserBack")]
     [InlineData("PhotoBrowserUp")]
     [InlineData("PhotoBrowserRefresh")]
+    [InlineData("PhotoBrowserOpen")]
     [InlineData("PhotoBrowserSave")]
     [InlineData("PhotoBrowserFilter")]
     [InlineData("PhotoBrowserGrid")]

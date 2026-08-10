@@ -540,7 +540,10 @@ public sealed class PhotoBrowserViewModel : ObservableObject, IDisposable
             ? Array.Empty<PhotoBrowserEntry>()
             : context.SourceItems.Where(item => Filter switch
             {
-                PhotoBrowserFilter.All => item.Kind is PhotoItemKind.Folder or PhotoItemKind.Image,
+                PhotoBrowserFilter.All => item.Kind is
+                    PhotoItemKind.Folder or
+                    PhotoItemKind.Image or
+                    PhotoItemKind.Video,
                 PhotoBrowserFilter.Images => item.Kind == PhotoItemKind.Image,
                 _ => false,
             }).Select(item => new PhotoBrowserEntry(item)).ToArray();

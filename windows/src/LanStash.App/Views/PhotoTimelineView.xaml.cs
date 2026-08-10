@@ -21,6 +21,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private IPhotoTimelineDataSource? _source;
     private PhotoThumbnailScheduler? _thumbnails;
     private Func<PhotoItem, Task>? _save;
+    private Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? _open;
     private Func<PhotoItem, bool>? _canRestore;
     private Func<PhotoItem, Task>? _restore;
     private CancellationTokenSource _thumbnailCancellation = new();
@@ -40,12 +41,14 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         IPhotoTimelineDataSource source,
         PhotoThumbnailScheduler thumbnails,
         Func<PhotoItem, Task> save,
+        Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? open = null,
         Func<PhotoItem, bool>? canRestore = null,
         Func<PhotoItem, Task>? restore = null)
     {
         _source = source;
         _thumbnails = thumbnails;
         _save = save;
+        _open = open;
         _canRestore = canRestore;
         _restore = restore;
     }
@@ -81,6 +84,9 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     internal bool CanSaveSelected =>
         TimelineGrid.SelectedItem is PhotoTimelineEntry entry && _viewModel.CanSave(entry.Item);
 
+    internal bool CanOpenSelected =>
+        TimelineGrid.SelectedItem is PhotoTimelineEntry entry && CanOpen(entry.Item);
+
     internal bool CanRestoreSelected =>
         TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
         _canRestore?.Invoke(entry.Item) == true;
@@ -94,6 +100,13 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
             _viewModel.CanSave(entry.Item) && _save is not null)
             await _save(entry.Item);
+    }
+
+    internal async Task OpenSelectedAsync()
+    {
+        if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+            CanOpen(entry.Item) && _open is not null)
+            await _open(entry.Item, VisibleMediaItems());
     }
 
     internal async Task RestoreSelectedAsync()
@@ -116,12 +129,16 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     }
     private void ClearFilters_Click(object sender, RoutedEventArgs e) { SearchBox.Text = string.Empty; FilterPicker.SelectedIndex = 0; }
     private void TimelineGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateState();
+    private async void Open_Click(object sender, RoutedEventArgs e)
+    { await OpenSelectedAsync(); }
     private async void Save_Click(object sender, RoutedEventArgs e)
     { await SaveSelectedAsync(); }
     private async void Restore_Click(object sender, RoutedEventArgs e)
     { await RestoreSelectedAsync(); }
-    private async void SaveAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-    { if (CanSaveSelected) { args.Handled = true; await SaveSelectedAsync(); } }
+    private async void OpenAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    { if (CanOpenSelected) { args.Handled = true; await OpenSelectedAsync(); } }
+    private async void TimelineGrid_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    { if (CanOpenSelected) { e.Handled = true; await OpenSelectedAsync(); } }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e) => DispatcherQueue.TryEnqueue(() => { LocalizeGroupTitles(); UpdateState(); });
 
@@ -168,6 +185,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         RefreshButton.IsEnabled = _viewModel.Phase != PhotoTimelinePhase.Scanning;
         SearchBox.IsEnabled = _viewModel.HasCompletedSnapshot;
         FilterPicker.IsEnabled = _viewModel.HasCompletedSnapshot;
+        OpenButton.IsEnabled = CanOpenSelected;
         SaveButton.IsEnabled = CanSaveSelected;
         RestoreButton.Content = LocalizationService.Current.Get("FileRecycleRestoreAction");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
@@ -222,6 +240,17 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     }
 
     private void Thumbnail_Unloaded(object sender, RoutedEventArgs e) { if (sender is Image image) CancelThumbnailRequest(image); }
+    private IReadOnlyList<PhotoItem> VisibleMediaItems() =>
+        _viewModel.Groups
+            .SelectMany(group => group.Items)
+            .Select(entry => entry.Item)
+            .Where(CanOpen)
+            .ToArray();
+
+    private static bool CanOpen(PhotoItem item) =>
+        item.Kind is PhotoItemKind.Image or PhotoItemKind.Video &&
+        item.SizeBytes is >= 0;
+
     private static bool HasSameRevision(PhotoItem left, PhotoItem right) =>
         left.ProfileId == right.ProfileId &&
         string.Equals(left.Path, right.Path, StringComparison.Ordinal) &&

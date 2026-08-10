@@ -24,7 +24,11 @@
             Invoked="ImportAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
-    <Grid Padding="24,20,24,16" RowSpacing="12">
+    <Grid Padding="24,20,24,16" RowSpacing="12" ColumnSpacing="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="PhotoViewerColumn" Width="0" />
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -133,6 +137,12 @@
                 x:Name="RefreshButton"
                 Click="Refresh_Click"
                 Icon="Refresh"
+                MinHeight="44" />
+            <AppBarButton
+                x:Uid="PhotoBrowserOpen"
+                x:Name="OpenButton"
+                Click="Open_Click"
+                Icon="View"
                 MinHeight="44" />
             <AppBarButton
                 x:Uid="PhotoBrowserSave"
@@ -357,5 +367,96 @@
             </StackPanel>
         </Grid>
         <local:PhotoTimelineView x:Name="TimelineView" Grid.Row="5" Visibility="Collapsed" />
+        <Grid
+            x:Name="PhotoViewerHost"
+            Grid.Column="1"
+            Grid.RowSpan="6"
+            RowSpacing="8"
+            Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    x:Uid="PhotoViewerPrevious"
+                    x:Name="PhotoViewerPreviousButton"
+                    Click="PhotoViewerPrevious_Click"
+                    MinWidth="44"
+                    MinHeight="44" />
+                <Button
+                    x:Uid="PhotoViewerNext"
+                    x:Name="PhotoViewerNextButton"
+                    Grid.Column="1"
+                    Click="PhotoViewerNext_Click"
+                    MinWidth="44"
+                    MinHeight="44" />
+                <TextBlock
+                    x:Name="PhotoViewerPositionText"
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    TextTrimming="CharacterEllipsis" />
+                <Button
+                    x:Uid="PhotoViewerSave"
+                    x:Name="PhotoViewerSaveButton"
+                    Grid.Column="3"
+                    Click="PhotoViewerSave_Click"
+                    MinHeight="44" />
+            </Grid>
+            <local:FilePreviewPane x:Name="PhotoPreviewPane" Grid.Row="1" />
+            <Border
+                x:Name="PhotoViewerMetadata"
+                Grid.Row="2"
+                Padding="16,12"
+                Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                CornerRadius="8">
+                <StackPanel Spacing="8">
+                    <TextBlock
+                        x:Uid="PhotoViewerMetadataTitle"
+                        Style="{ThemeResource SubtitleTextBlockStyle}"
+                        AutomationProperties.HeadingLevel="Level2" />
+                    <Grid ColumnSpacing="12" RowSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock x:Uid="PhotoViewerNameLabel" />
+                        <TextBlock
+                            x:Name="PhotoViewerNameValue"
+                            Grid.Column="1"
+                            TextWrapping="Wrap" />
+                        <TextBlock x:Uid="PhotoViewerKindLabel" Grid.Row="1" />
+                        <TextBlock x:Name="PhotoViewerKindValue" Grid.Row="1" Grid.Column="1" />
+                        <TextBlock x:Uid="PhotoViewerSizeLabel" Grid.Row="2" />
+                        <TextBlock x:Name="PhotoViewerSizeValue" Grid.Row="2" Grid.Column="1" />
+                        <TextBlock x:Uid="PhotoViewerCreatedLabel" Grid.Row="3" />
+                        <TextBlock x:Name="PhotoViewerCreatedValue" Grid.Row="3" Grid.Column="1" />
+                        <TextBlock x:Uid="PhotoViewerModifiedLabel" Grid.Row="4" />
+                        <TextBlock x:Name="PhotoViewerModifiedValue" Grid.Row="4" Grid.Column="1" />
+                        <TextBlock x:Uid="PhotoViewerPathLabel" Grid.Row="5" />
+                        <TextBlock
+                            x:Name="PhotoViewerPathValue"
+                            Grid.Row="5"
+                            Grid.Column="1"
+                            TextWrapping="WrapWholeWords" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </Page>

@@ -45,14 +45,14 @@ public sealed class PhotoBrowserViewModelTests
         using var model = new PhotoBrowserViewModel(pageSize: 2);
 
         await model.ActivateAsync(source);
-        Assert.Empty(model.Items);
+        Assert.Equal("clip.mov", Assert.Single(model.Items).Name);
         Assert.True(model.CanLoadMore);
         await model.LoadMoreAsync();
-        Assert.Empty(model.Items);
+        Assert.Equal("clip.mov", Assert.Single(model.Items).Name);
         Assert.True(model.CanLoadMore);
         await model.LoadMoreAsync();
 
-        Assert.Equal("final.jpg", Assert.Single(model.Items).Name);
+        Assert.Equal(["clip.mov", "final.jpg"], model.Items.Select(item => item.Name));
         Assert.Equal([0, 2, 4], source.PageRequests.Select(request => request.Offset));
     }
 
@@ -197,7 +197,7 @@ public sealed class PhotoBrowserViewModelTests
     }
 
     [Fact]
-    public async Task FilterHasSeparateCacheAndVideoNeverBecomesActionable()
+    public async Task FilterHasSeparateCacheAndVideoRemainsInAllMediaView()
     {
         var profile = Guid.NewGuid();
         var source = new FakePhotoSource(profile, [PhotoSpace.Shared]);
@@ -208,12 +208,12 @@ public sealed class PhotoBrowserViewModelTests
         using var model = new PhotoBrowserViewModel();
         await model.ActivateAsync(source);
 
-        Assert.Equal(["folder", "image.jpg"], model.Items.Select(item => item.Name));
+        Assert.Equal(["folder", "image.jpg", "video.mov"], model.Items.Select(item => item.Name));
         model.SetFilter(PhotoBrowserFilter.Images);
         Assert.Equal("image.jpg", Assert.Single(model.Items).Name);
         model.SetFilter(PhotoBrowserFilter.All);
 
-        Assert.Equal(["folder", "image.jpg"], model.Items.Select(item => item.Name));
+        Assert.Equal(["folder", "image.jpg", "video.mov"], model.Items.Select(item => item.Name));
         Assert.Single(source.PageRequests);
     }
 

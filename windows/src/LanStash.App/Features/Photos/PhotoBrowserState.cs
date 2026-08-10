@@ -41,4 +41,6 @@ public sealed record PhotoBrowserEntry(PhotoItem Item)
     public string Path => Item.Path;
     public bool IsFolder => Item.Kind == PhotoItemKind.Folder;
     public bool IsImage => Item.Kind == PhotoItemKind.Image;
+    public bool IsVideo => Item.Kind == PhotoItemKind.Video;
+    public bool IsMedia => IsImage || IsVideo;
 }

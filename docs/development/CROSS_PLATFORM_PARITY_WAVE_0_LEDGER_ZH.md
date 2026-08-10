@@ -265,7 +265,7 @@ Download Station BTSearch v1 跨端追加验收：
 
 1. **W1 认证与统一状态**：自签名证书首次核对、按 profile 固定、变化阻断和连接来源说明已进入 Windows；统一 `ModuleAvailability` 原因与恢复动作、真实连接验收和部分旧写结果迁移仍按后续切片推进。
 2. **W2 Files 完整桌面工作流**：新建/重命名、单文件同 NAS 复制/移动、移入回收站与恢复已进入 Windows；文件夹/批量传输、跨 NAS、覆盖、永久删除、冲突高级处理和 Activity 深度联动仍保持独立后续范围。
-3. **W3 Photos 与 Chat**：PHOTO-01 时间线、PHOTO-03A 单项导入和 Chat 受限纯文字发送已完成当前低风险闭环；PHOTO-02 完整前后查看器/元数据、Chat 附件、前台实时、更多消息动作和照片更完整管理仍按套件版本与真实环境验证推进。
+3. **W3 Photos 与 Chat**：PHOTO-01 时间线、PHOTO-03A 单项导入和 Chat 受限纯文字发送已完成当前低风险闭环；Windows PHOTO-02 查看器/基础元数据已在当前功能分支接入文件夹与时间线媒体打开、右侧预览、前后切换和保存副本，等待 Windows CI 与真实设备/NAS 验收；更完整 EXIF/沉浸式细节、Chat 附件后的实时、更多消息动作和照片更完整管理仍按套件版本与真实环境验证推进。
 4. **W4 服务与 NAS 管理**：Download Station 单任务暂停/继续、URL/磁力创建、任务文件创建、单任务删除、BTSearch v1 和 ACT-01 活动中心首片已进入 Windows/iPhone/iPad；Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 均完成当前闭环。Apple 本机共享聚焦 65/65、共享全量 675 项 XCTest（2 跳过）+10 项 Swift Testing、iPhone 模拟器 11/11 已通过；Windows BTSearch 专项自动化为 8 项 Repository、15 项 ViewModel 与 3 项 source-contract，共 26 项。正式 ACT-01 提交 `2491212` 已通过 Repository Check run `31360092211`、Apple Build run `31360092209` 和 Windows Build run `31360092210`，其中 Windows 为 889/889 项 xUnit 并完成 WinUI x64/ARM64 构建。真实 NAS、iPad 与 Windows 交互后置；RSS、文件优先级、BT 协议高级设置、设置写、Container/VMM 计划内剩余分区和 NAS 管理继续按公开或已记录契约分区推进。Container/VMM 高风险写与 VMM 控制台在契约和实机开放门前不启用。
 5. **W5/W6 系统集成与发布**：Cloud Files 继续保持默认关闭，等待 Explorer/Office/Win32 写入安全矩阵；补托盘/通知/安装卸载生命周期、真实 x64/ARM64 设备、Narrator、高 DPI、多显示器和真实 NAS 验收。
 

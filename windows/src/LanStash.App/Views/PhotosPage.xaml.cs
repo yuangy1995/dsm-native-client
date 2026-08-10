@@ -1,4 +1,5 @@
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.Preview;
 using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Photos;
 using LanStash.App.Features.Photos.Import;
@@ -21,6 +22,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private const int ThumbnailDecodePixels = 264;
     private const string FolderGlyph = "\uE8B7";
     private const string PhotoGlyph = "\uEB9F";
+    private const string VideoGlyph = "\uE714";
 
     private readonly PhotoBrowserViewModel _viewModel;
     private readonly IPhotoBrowserDataSource _dataSource;
@@ -41,7 +43,8 @@ public sealed partial class PhotosPage : Page, IDisposable
         string profileId,
         WindowsTransferPickerService transfers,
         IFileRecycleRepository? recycleRepository = null,
-        FileRecycleReviewBlocker? recycleReviewBlocker = null)
+        FileRecycleReviewBlocker? recycleReviewBlocker = null,
+        IFilePreviewRepository? previewRepository = null)
         : this(
             new RepositoryPhotoBrowserDataSource(repository),
             new PhotoBrowserViewModel(),
@@ -50,7 +53,8 @@ public sealed partial class PhotosPage : Page, IDisposable
             transfers,
             new RepositoryPhotoTimelineDataSource(repository),
             recycleRepository,
-            recycleReviewBlocker)
+            recycleReviewBlocker,
+            previewRepository)
     {
     }
 
@@ -62,7 +66,8 @@ public sealed partial class PhotosPage : Page, IDisposable
         WindowsTransferPickerService transfers,
         IPhotoTimelineDataSource? timelineDataSource = null,
         IFileRecycleRepository? recycleRepository = null,
-        FileRecycleReviewBlocker? recycleReviewBlocker = null)
+        FileRecycleReviewBlocker? recycleReviewBlocker = null,
+        IFilePreviewRepository? previewRepository = null)
     {
         EnsureMatchingProfile(dataSource.ProfileId, profileId);
         InitializeComponent();
@@ -75,6 +80,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         _transfers = transfers;
         InitializePhotoRecycle(recycleRepository, recycleReviewBlocker);
         InitializePhotoImport();
+        InitializePhotoViewer(previewRepository);
         if (_timelineDataSource is not null)
         {
             EnsureMatchingProfile(_timelineDataSource.ProfileId, profileId);
@@ -82,6 +88,7 @@ public sealed partial class PhotosPage : Page, IDisposable
                 _timelineDataSource,
                 thumbnails,
                 SaveTimelineItemAsync,
+                OpenTimelineViewerAsync,
                 CanRestorePhotoItem,
                 RestorePhotoItemAsync);
         }
@@ -146,6 +153,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private void PhotosPage_Unloaded(object sender, RoutedEventArgs e)
     {
         CancelThumbnailRequests();
+        _ = ClosePhotoViewerAsync();
         TimelineView.HideTimeline();
         DeactivatePhotoImport();
         ClosePhotoRecycleDialog();
@@ -165,6 +173,7 @@ public sealed partial class PhotosPage : Page, IDisposable
 
         if (TimelineMode.IsChecked == true)
         {
+            await ClosePhotoViewerAsync();
             TimelineView.ClearSelection();
         }
         await RunLocationChangeAsync(() => _viewModel.SelectSpaceAsync(spaceId));
@@ -174,8 +183,9 @@ public sealed partial class PhotosPage : Page, IDisposable
         }
     }
 
-    private void FoldersMode_Click(object sender, RoutedEventArgs e)
+    private async void FoldersMode_Click(object sender, RoutedEventArgs e)
     {
+        await ClosePhotoViewerAsync();
         TimelineView.HideTimeline();
         TimelineView.ClearSelection();
         TimelineView.Visibility = Visibility.Collapsed;
@@ -187,6 +197,7 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async void TimelineMode_Click(object sender, RoutedEventArgs e)
     {
+        await ClosePhotoViewerAsync();
         _viewModel.SelectedItem = null;
         PhotoGrid.SelectedItem = null;
         CancelThumbnailRequests();
@@ -203,9 +214,11 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async void PathBreadcrumbs_ItemClicked(
         BreadcrumbBar sender,
-        BreadcrumbBarItemClickedEventArgs args) =>
+        BreadcrumbBarItemClickedEventArgs args)
+    {
         await RunLocationChangeAsync(() =>
             _viewModel.NavigateToBreadcrumbAsync(args.Item as PhotoBrowserBreadcrumb));
+    }
 
     private async void Back_Click(object sender, RoutedEventArgs e) =>
         await RunLocationChangeAsync(_viewModel.GoBackAsync);
@@ -249,14 +262,15 @@ public sealed partial class PhotosPage : Page, IDisposable
         if (placeholder is not null)
         {
             placeholder.Tag = entry;
-            placeholder.Glyph = entry.IsFolder ? FolderGlyph : PhotoGlyph;
+            placeholder.Glyph = entry.IsFolder ? FolderGlyph :
+                entry.IsVideo ? VideoGlyph : PhotoGlyph;
         }
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
             args.ItemContainer,
             LocalizationService.Current.Format(
-                entry.IsFolder
-                    ? "PhotoBrowserFolderAutomationName"
-                    : "PhotoBrowserImageAutomationName",
+                entry.IsFolder ? "PhotoBrowserFolderAutomationName" :
+                    entry.IsVideo ? "PhotoBrowserVideoAutomationName" :
+                    "PhotoBrowserImageAutomationName",
                 entry.Name));
         if (entry.IsImage && image.IsLoaded)
         {
@@ -273,14 +287,19 @@ public sealed partial class PhotosPage : Page, IDisposable
 
         var container = FindPhotoItemContainer(grid, source);
         if (container is not GridViewItem ||
-            grid.ItemFromContainer(container) is not PhotoBrowserEntry { IsFolder: true } entry)
+            grid.ItemFromContainer(container) is not PhotoBrowserEntry entry)
         {
             return;
         }
 
         e.Handled = true;
         _viewModel.SelectedItem = entry;
-        await RunLocationChangeAsync(() => _viewModel.OpenFolderAsync(entry));
+        if (entry.IsFolder)
+        {
+            await RunLocationChangeAsync(() => _viewModel.OpenFolderAsync(entry));
+            return;
+        }
+        await OpenFolderViewerAsync(entry);
     }
 
     private static GridViewItem? FindPhotoItemContainer(
@@ -302,13 +321,18 @@ public sealed partial class PhotosPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (_viewModel.SelectedItem is not { IsFolder: true } entry)
+        if (_viewModel.SelectedItem is not { } entry)
         {
             return;
         }
 
         args.Handled = true;
-        await RunLocationChangeAsync(() => _viewModel.OpenFolderAsync(entry));
+        if (entry.IsFolder)
+        {
+            await RunLocationChangeAsync(() => _viewModel.OpenFolderAsync(entry));
+            return;
+        }
+        await OpenFolderViewerAsync(entry);
     }
 
     private async void BackAccelerator_Invoked(
@@ -350,7 +374,7 @@ public sealed partial class PhotosPage : Page, IDisposable
             }
             return;
         }
-        if (!CanSaveSelectedImage())
+        if (!CanSaveSelectedMedia())
         {
             return;
         }
@@ -359,25 +383,31 @@ public sealed partial class PhotosPage : Page, IDisposable
         await SaveSelectedAsync();
     }
 
+    private async void Open_Click(object sender, RoutedEventArgs e) =>
+        await OpenSelectedPhotoAsync();
+
     private async void Save_Click(object sender, RoutedEventArgs e) =>
         await SaveSelectedAsync();
 
-    private void FilterAll_Click(object sender, RoutedEventArgs e)
+    private async void FilterAll_Click(object sender, RoutedEventArgs e)
     {
+        await ClosePhotoViewerAsync();
         CancelThumbnailRequests();
         _viewModel.SetFilter(PhotoBrowserFilter.All);
         UpdateState();
     }
 
-    private void FilterImages_Click(object sender, RoutedEventArgs e)
+    private async void FilterImages_Click(object sender, RoutedEventArgs e)
     {
+        await ClosePhotoViewerAsync();
         CancelThumbnailRequests();
         _viewModel.SetFilter(PhotoBrowserFilter.Images);
         UpdateState();
     }
 
-    private void ShowAll_Click(object sender, RoutedEventArgs e)
+    private async void ShowAll_Click(object sender, RoutedEventArgs e)
     {
+        await ClosePhotoViewerAsync();
         CancelThumbnailRequests();
         _viewModel.SetFilter(PhotoBrowserFilter.All);
         UpdateState();
@@ -385,8 +415,8 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async Task SaveSelectedAsync()
     {
-        if (!CanSaveSelectedImage() ||
-            _viewModel.SelectedItem is not { IsImage: true } entry)
+        if (!CanSaveSelectedMedia() ||
+            _viewModel.SelectedItem is not { IsMedia: true } entry)
         {
             return;
         }
@@ -442,16 +472,17 @@ public sealed partial class PhotosPage : Page, IDisposable
         }
     }
 
-    private bool CanSaveSelectedImage() =>
+    private bool CanSaveSelectedMedia() =>
         !_viewModel.IsLoading &&
         !_isSaving &&
-        _viewModel.SelectedItem is { IsImage: true, Item.SizeBytes: >= 0 };
+        _viewModel.SelectedItem is { IsMedia: true, Item.SizeBytes: >= 0 };
 
     private void PhotoPlaceholder_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is FontIcon { Tag: PhotoBrowserEntry entry } icon)
         {
-            icon.Glyph = entry.IsFolder ? FolderGlyph : PhotoGlyph;
+            icon.Glyph = entry.IsFolder ? FolderGlyph :
+                entry.IsVideo ? VideoGlyph : PhotoGlyph;
             icon.Visibility = Visibility.Visible;
         }
     }
@@ -556,6 +587,7 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async Task RunLocationChangeAsync(Func<Task> action)
     {
+        await ClosePhotoViewerAsync();
         CancelThumbnailRequests();
         await RunAsync(action);
         UpdateState();
@@ -595,7 +627,9 @@ public sealed partial class PhotosPage : Page, IDisposable
         BackButton.IsEnabled = _viewModel.CanGoBack && !_viewModel.IsLoading;
         UpButton.IsEnabled = _viewModel.CanGoUp && !_viewModel.IsLoading;
         RefreshButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsLoadingMore;
-        SaveButton.IsEnabled = CanSaveSelectedImage();
+        OpenButton.IsEnabled = CanOpenSelectedMedia();
+        SaveButton.IsEnabled = CanSaveSelectedMedia();
+        UpdatePhotoViewerState();
         UpdatePhotoRecycleControls();
         SpacePicker.IsEnabled = !_viewModel.IsLoading && _viewModel.Spaces.Count > 1;
         FilterButton.IsEnabled = !_viewModel.IsLoading;
@@ -708,6 +742,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         Unloaded -= PhotosPage_Unloaded;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         DisposePhotoImport();
+        DisposePhotoViewer();
         ClosePhotoRecycleDialog();
         CancelThumbnailRequests();
         _locationCancellation.Dispose();

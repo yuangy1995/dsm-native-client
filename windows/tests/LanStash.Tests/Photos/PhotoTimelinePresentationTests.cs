@@ -18,6 +18,8 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("PhotoTimelineFilterAll\" Tag=\"All\" MinHeight=\"44\"", xaml);
         Assert.Contains("PhotoTimelineFilterImages\" Tag=\"Images\" MinHeight=\"44\"", xaml);
         Assert.Contains("PhotoTimelineFilterVideos\" Tag=\"Videos\" MinHeight=\"44\"", xaml);
+        Assert.Contains("x:Uid=\"PhotoTimelineOpen\"", xaml);
+        Assert.Contains("OpenAccelerator_Invoked", xaml);
         Assert.Contains("PhotoTimelineTruncated", xaml);
         Assert.Contains("PhotoTimelinePartial", xaml);
         Assert.Contains("PhotoTimelineLimits.Default", source);
@@ -49,11 +51,15 @@ public sealed class PhotoTimelinePresentationTests
 
         Assert.Contains("if (TimelineMode.IsChecked == true)", page);
         Assert.Contains("TimelineView.SaveSelectedAsync()", page);
+        Assert.Contains("OpenTimelineViewerAsync", page);
         Assert.Contains("_viewModel.SelectedItem = null", page);
         Assert.Contains("TimelineView.ClearSelection()", page);
         Assert.Contains("PhotoTimelineViewModel.ContainsCanonicalPath(space.RootPath, item.Path)", page);
         Assert.Contains("_viewModel.CanSave(entry.Item)", timeline);
+        Assert.Contains("CanOpenSelected", timeline);
+        Assert.Contains("VisibleMediaItems()", timeline);
         Assert.Contains("SaveButton.IsEnabled = CanSaveSelected", timeline);
+        Assert.Contains("OpenButton.IsEnabled = CanOpenSelected", timeline);
         Assert.Contains("SyncControlsFromModel()", timeline);
         Assert.Contains("SearchBox.Text = _viewModel.Query", timeline);
         Assert.Contains("FilterPicker.SelectedIndex = (int)_viewModel.Filter", timeline);

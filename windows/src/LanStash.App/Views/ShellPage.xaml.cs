@@ -25,6 +25,7 @@ public sealed partial class ShellPage : Page
     private Guid? _filesProfileId;
     private PhotosPage? _photos;
     private Guid? _photosProfileId;
+    private IPhotoRepository? _photosRepository;
     private ChatPage? _chat;
     private Guid? _chatProfileId;
     private DownloadStationPage? _downloads;
@@ -94,6 +95,7 @@ public sealed partial class ShellPage : Page
             _photos?.Dispose();
             _photos = null;
             _photosProfileId = null;
+            _photosRepository = null;
             _chat?.Dispose();
             _chat = null;
             _chatProfileId = null;
@@ -322,10 +324,15 @@ public sealed partial class ShellPage : Page
                     _transferPicker is not { } photoTransferPicker ||
                     photoRepository.ProfileId != photoProfile.Id)
                 {
+                    _photos?.Dispose();
+                    _photos = null;
+                    _photosProfileId = null;
+                    _photosRepository = null;
                     ContentFrame.Content = PhotosPage.CreateUnavailableState();
                     return;
                 }
-                if (_photos is null || _photosProfileId != photoProfile.Id)
+                if (_photos is null || _photosProfileId != photoProfile.Id ||
+                    !ReferenceEquals(_photosRepository, photoRepository))
                 {
                     _photos?.Dispose();
                     var photoRecycleRepository = _app.Repository as IFileRecycleRepository;
@@ -333,13 +340,20 @@ public sealed partial class ShellPage : Page
                     {
                         photoRecycleRepository = null;
                     }
+                    var photoPreviewRepository = _app.Repository as IFilePreviewRepository;
+                    if (photoPreviewRepository?.ProfileId != photoProfile.Id)
+                    {
+                        photoPreviewRepository = null;
+                    }
                     _photos = new PhotosPage(
                         photoRepository,
                         photoProfile.Id.ToString(),
                         photoTransferPicker,
                         recycleRepository: photoRecycleRepository,
-                        recycleReviewBlocker: FileRecycleReviewBlocker.Current);
+                        recycleReviewBlocker: FileRecycleReviewBlocker.Current,
+                        previewRepository: photoPreviewRepository);
                     _photosProfileId = photoProfile.Id;
+                    _photosRepository = photoRepository;
                 }
                 ContentFrame.Content = _photos;
                 return;

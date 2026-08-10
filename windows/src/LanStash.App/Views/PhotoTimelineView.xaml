@@ -19,6 +19,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="PhotoTimelineSearch" x:Name="SearchBox" MinHeight="44"
                      TextChanged="SearchBox_TextChanged" />
@@ -30,9 +31,11 @@
             </ComboBox>
             <Button x:Uid="PhotoTimelineRefresh" x:Name="RefreshButton" Grid.Column="2"
                     MinHeight="44" Click="Refresh_Click" />
-            <Button x:Uid="PhotoTimelineSave" x:Name="SaveButton" Grid.Column="3"
+            <Button x:Uid="PhotoTimelineOpen" x:Name="OpenButton" Grid.Column="3"
+                    MinHeight="44" Click="Open_Click" />
+            <Button x:Uid="PhotoTimelineSave" x:Name="SaveButton" Grid.Column="4"
                     MinHeight="44" Click="Save_Click" />
-            <Button x:Name="RestoreButton" Grid.Column="4"
+            <Button x:Name="RestoreButton" Grid.Column="5"
                     MinHeight="44" Click="Restore_Click" Visibility="Collapsed" />
         </Grid>
 
@@ -55,9 +58,10 @@
             <GridView x:Uid="PhotoTimelineGrid" x:Name="TimelineGrid" Visibility="Collapsed"
                       ItemsSource="{Binding Source={StaticResource TimelineCollection}}"
                       ContainerContentChanging="TimelineGrid_ContainerContentChanging"
+                      DoubleTapped="TimelineGrid_DoubleTapped"
                       SelectionChanged="TimelineGrid_SelectionChanged" SelectionMode="Single">
                 <GridView.KeyboardAccelerators>
-                    <KeyboardAccelerator Key="Enter" Invoked="SaveAccelerator_Invoked" />
+                    <KeyboardAccelerator Key="Enter" Invoked="OpenAccelerator_Invoked" />
                 </GridView.KeyboardAccelerators>
                 <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></GridView.ItemsPanel>
                 <GridView.GroupStyle>

@@ -394,7 +394,7 @@
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>Unable to start the upload</value></data>
   <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>Choose the file again. If the problem continues, check that it is available on this device.</value></data>
   <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>File-system photo library</value></data>
-  <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>Browse image folders from this NAS and save a copy to your PC.</value></data>
+  <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>Browse photo and video folders from this NAS, preview items, and save a copy to your PC.</value></data>
   <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>Photo space</value></data>
   <data name="PhotoBrowserSpace.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose a photo space</value></data>
   <data name="PhotoBrowserPersonalSpace" xml:space="preserve"><value>My photos</value></data>
@@ -406,15 +406,18 @@
   <data name="PhotoBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Go up one folder</value></data>
   <data name="PhotoBrowserRefresh.Label" xml:space="preserve"><value>Refresh</value></data>
   <data name="PhotoBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh this photo folder</value></data>
+  <data name="PhotoBrowserOpen.Label" xml:space="preserve"><value>Open</value></data>
+  <data name="PhotoBrowserOpen.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Open the selected photo or video</value></data>
   <data name="PhotoBrowserSave.Label" xml:space="preserve"><value>Save a copy</value></data>
-  <data name="PhotoBrowserSave.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected image</value></data>
+  <data name="PhotoBrowserSave.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected photo or video</value></data>
   <data name="PhotoBrowserFilter.Label" xml:space="preserve"><value>Show</value></data>
   <data name="PhotoBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose what to show</value></data>
-  <data name="PhotoBrowserFilterAll.Text" xml:space="preserve"><value>Folders and images</value></data>
+  <data name="PhotoBrowserFilterAll.Text" xml:space="preserve"><value>Folders, photos, and videos</value></data>
   <data name="PhotoBrowserFilterImages.Text" xml:space="preserve"><value>Images only</value></data>
-  <data name="PhotoBrowserGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo folders and images</value></data>
+  <data name="PhotoBrowserGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo folders, photos, and videos</value></data>
   <data name="PhotoBrowserFolderAutomationName" xml:space="preserve"><value>Folder, {0}</value></data>
   <data name="PhotoBrowserImageAutomationName" xml:space="preserve"><value>Image, {0}</value></data>
+  <data name="PhotoBrowserVideoAutomationName" xml:space="preserve"><value>Video, {0}</value></data>
   <data name="PhotoBrowserLoadMoreError.Title" xml:space="preserve"><value>More photos couldn’t be loaded</value></data>
   <data name="PhotoBrowserLoadMoreError.Message" xml:space="preserve"><value>The photos already shown are still available. Try again.</value></data>
   <data name="PhotoBrowserLoadMore.Content" xml:space="preserve"><value>Load more</value></data>
@@ -884,6 +887,8 @@
   <data name="PhotoTimelineFilterImages.Content" xml:space="preserve"><value>Images</value></data>
   <data name="PhotoTimelineFilterVideos.Content" xml:space="preserve"><value>Videos</value></data>
   <data name="PhotoTimelineRefresh.Content" xml:space="preserve"><value>Scan again</value></data>
+  <data name="PhotoTimelineOpen.Content" xml:space="preserve"><value>Open</value></data>
+  <data name="PhotoTimelineOpen.AutomationProperties.Name" xml:space="preserve"><value>Open the selected photo or video</value></data>
   <data name="PhotoTimelineSave.Content" xml:space="preserve"><value>Save selected</value></data>
   <data name="PhotoTimelineGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo timeline</value></data>
   <data name="PhotoTimelineTruncated.Title" xml:space="preserve"><value>Showing a limited timeline</value></data>
@@ -908,6 +913,29 @@
   <data name="PhotoTimelineUnknownMonth" xml:space="preserve"><value>Date unknown</value></data>
   <data name="PhotoTimelineImageAutomationName" xml:space="preserve"><value>{0}, image</value></data>
   <data name="PhotoTimelineVideoAutomationName" xml:space="preserve"><value>{0}, video</value></data>
+  <data name="PhotoViewerPrevious.Content" xml:space="preserve"><value>Previous</value></data>
+  <data name="PhotoViewerPrevious.AutomationProperties.Name" xml:space="preserve"><value>Show the previous item</value></data>
+  <data name="PhotoViewerNext.Content" xml:space="preserve"><value>Next</value></data>
+  <data name="PhotoViewerNext.AutomationProperties.Name" xml:space="preserve"><value>Show the next item</value></data>
+  <data name="PhotoViewerSave.Content" xml:space="preserve"><value>Save a copy</value></data>
+  <data name="PhotoViewerSave.AutomationProperties.Name" xml:space="preserve"><value>Save a copy of this photo or video</value></data>
+  <data name="PhotoViewerPosition" xml:space="preserve"><value>{0:N0} of {1:N0}</value></data>
+  <data name="PhotoViewerMetadataTitle.Text" xml:space="preserve"><value>Details</value></data>
+  <data name="PhotoViewerNameLabel.Text" xml:space="preserve"><value>Name</value></data>
+  <data name="PhotoViewerKindLabel.Text" xml:space="preserve"><value>Type</value></data>
+  <data name="PhotoViewerSizeLabel.Text" xml:space="preserve"><value>Size</value></data>
+  <data name="PhotoViewerCreatedLabel.Text" xml:space="preserve"><value>Created</value></data>
+  <data name="PhotoViewerModifiedLabel.Text" xml:space="preserve"><value>Modified</value></data>
+  <data name="PhotoViewerPathLabel.Text" xml:space="preserve"><value>Path</value></data>
+  <data name="PhotoViewerKindImage" xml:space="preserve"><value>Image</value></data>
+  <data name="PhotoViewerKindVideo" xml:space="preserve"><value>Video</value></data>
+  <data name="PhotoViewerValueUnavailable" xml:space="preserve"><value>Not available</value></data>
+  <data name="PhotoViewerByteValueB" xml:space="preserve"><value>{0} B</value></data>
+  <data name="PhotoViewerByteValueKB" xml:space="preserve"><value>{0} KB</value></data>
+  <data name="PhotoViewerByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
+  <data name="PhotoViewerByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
+  <data name="PhotoViewerByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
+  <data name="PhotoViewerMetadataAutomationName" xml:space="preserve"><value>Details for {0}</value></data>
   <data name="FileLocationsOpen.Content" xml:space="preserve"><value>Locations</value></data>
   <data name="FileLocationsOpen.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show file locations</value></data>
   <data name="FileLocationsTitle.Text" xml:space="preserve"><value>Locations</value></data>
