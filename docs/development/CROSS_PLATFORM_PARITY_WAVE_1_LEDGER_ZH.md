@@ -94,7 +94,7 @@
 
 ## 8. 本波完成后继续对照的剩余项
 
-- Windows：后续已完成 FILE-05 单文件复制/移动、FILE-09 回收站入口、Chat 纯文字发送、Download 单任务控制、链接/任务文件创建和单任务删除；仍需统一 ModuleAvailability 剩余原因、文件夹/批量传输、Chat 附件/实时、Download 高级能力、NAS 管理和 W5/W6 系统集成。
-- iPhone/iPad：后续已完成 FILE-05 有界同 NAS复制/移动、FILE-09 回收站写、PHOTO-03A PhotosPicker 单项导入、Chat 纯文字发送、Download 创建与单任务控制；仍需 Chat 附件/实时、Download 高级能力，以及 M8/M9 其余生产力与自动化。
+- Windows：后续已完成 FILE-05 单文件复制/移动、FILE-09 回收站入口、Chat 纯文字发送、Download 单任务控制、链接/任务文件创建、单任务删除和只读当前活动摘要；仍需统一 ModuleAvailability 剩余原因、文件夹/批量传输、Chat 附件/实时、Download 高级能力、NAS 管理和 W5/W6 系统集成。
+- iPhone/iPad：后续已完成 FILE-05 有界同 NAS 复制/移动、FILE-09 回收站写、PHOTO-03A PhotosPicker 单项导入、Chat 纯文字发送、Download 创建/单任务控制、单任务删除和只读当前活动摘要；仍需 Chat 附件/实时、Download 高级能力，以及 M8/M9 其余生产力与自动化。
 - Apple 共享层：`DsmFileRepository.swift` 是既有大型聚合实现；后续继续扩展 File Station 写能力前，单独做保持行为不变的功能拆分与共享 Package/macOS 回归，不在本波危险写验收中顺带扩大内部可见性。
 - 两端：没有稳定公开或已记录私有契约的能力继续关闭；真实设备与真实 NAS 验收按用户安排后置，不用推测性防御代码替代验证。
