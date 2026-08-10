@@ -60,6 +60,11 @@
 - 最新任务文件创建提交 `f2bab7f` 已合并到 `main`：本机通过 `DsmServiceManagementRepositoryTests` 60/60、`MobileDownloadsSafetyTests` 8/8、请求契约 92 份 Fixture 与 1 份写结果示例、双语资源 Apple 3408 / Android 1985 / Windows 1008、XAML/resw XML、源码安全扫描和差异格式检查；GitHub `Apple Build` run `31342949337`、`Windows Build` run `31342949331` 与 `Repository Check` run `31342949352` 均已通过，其中 Windows 云端完成 860/860 xUnit 与 WinUI x64/ARM64 构建。
 - 仍待验收：真实 NAS 上任务状态、任务文件兼容、权限、取消时机和副作用；iPhone/iPad 真机交互；Windows 系统文件选择器、Narrator、键盘、系统生命周期和真实设备运行。
 
+### Download Station 当前活动摘要切片已通过云端门禁
+
+- 当前活动摘要切片新增 iPhone/iPad 与 Windows 的只读当前活动速率摘要。Apple 共享 `DownloadStationSnapshot` 现在表达标准上传/下载与 eMule 上传/下载四项速率，移动端下载列表在 Statistic 读取成功时显示本地化摘要；Windows WinUI 活动卡片同样显示四项速率。该切片仅使用既有官方 `SYNO.DownloadStation.Statistic.getinfo` 读取结果，不新增写入口，不改变任务创建、暂停/继续、删除或设置行为。
+- 本机已通过 `swift test --package-path apple --filter DsmServiceManagementRepositoryTests` 60/60、iPhone 17 Pro iOS 26.5 模拟器 `MobileDownloadsSafetyTests` 8/8、请求契约 92 份 Fixture 与 1 份写结果示例、双语资源 Apple 3413 / Android 1985 / Windows 1010、Download Station XAML/resw XML 和 `git diff --check`。功能分支已通过 GitHub `Apple Build` run `31344670917`、`Windows Build` run `31344670928` 与 `Repository Check` run `31344670916`；其中 Windows 云端完成 xUnit 与 WinUI x64/ARM64 构建，Apple 云端完成共享包测试、工程生成、iPhone/iPad 通用应用构建和 macOS 打包。真实 NAS Statistic 字段、eMule 速率、iPad/Windows 真实交互仍待用户验收。
+
 ## 近期跨端对齐验证快照
 
 - 第 1 波 `641852b408ae24f8819e4a49cd70df4c8d9e5011` 已合并：Windows 证书安全与连接来源说明、Windows/Apple FILE-03 新建文件夹与重命名、Apple PHOTO-02 只读查看增强进入当前源码；候选云端门禁已通过，真实设备与真实 NAS 仍按 `PENDING_USER_VALIDATION` 后置。

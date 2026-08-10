@@ -101,6 +101,8 @@ Apple 移动端照片的当前范围是：个人/共享空间、文件夹/主动
 
 Apple 移动端在本节只交付 Download Station 单任务常用流程，以及 Container/VMM/NAS 的隐私白名单只读摘要。File Station 扩展只复用当前 Files 范围需要的读取契约；统一存储分析、Container/VMM 写、VMM 控制台和 NAS 配置/账号/电源写当前不做。既有移动端浅层写入口不构成发布承诺，应按专项计划收口。
 
+Download Station 当前增量：iPhone/iPad 与 Windows 源码已接入只读“当前活动”速率摘要。三端均显示标准上传/下载速率，且在有 eMule 活动字段时显示 eMule 上传/下载速率；该能力只读取官方 Statistic 当前活动结果，不新增任务写入、设置写入、RSS/BT 高级或文件优先级入口。本地 Apple 共享聚焦、iPhone 模拟器聚焦、资源与契约轻量门已通过；功能分支 GitHub `Apple Build` run `31344670917`、`Windows Build` run `31344670928` 与 `Repository Check` run `31344670916` 均已通过，真实 NAS 字段和系统交互仍待用户验证。
+
 | 能力 | macOS | iPhone | iPad | Android | Windows |
 | --- | --- | --- | --- | --- | --- |
 | **Apple 移动端服务范围覆盖** | — | **Download 单任务常用流程为受限；Container/VMM/NAS 仅保留只读摘要，既有服务写入口按 M0/M7 收口为零写请求** | **同 iPhone，并增加当前只读范围的分栏、键盘与指针体验；不加入 VMM 控制台** | — | — |

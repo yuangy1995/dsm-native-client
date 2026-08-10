@@ -134,9 +134,7 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         }
 
         model.createDownloadTask(fileURL: fileURL)
-        for _ in 0..<50 where model.downloadCreateFeedback?.kind != .success {
-            await Task.yield()
-        }
+        try await waitForDownloadCreateFeedback(on: model, kind: .success)
 
         XCTAssertEqual(model.downloadCreateFeedback?.kind, .success)
         XCTAssertEqual(model.downloadSnapshot?.tasks.first?.id, "file-created-1")
@@ -266,6 +264,12 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(view.contains("MobilePageStateView("))
         XCTAssertTrue(view.contains("state: model.downloadPageState"))
         XCTAssertTrue(view.contains("List {"))
+        XCTAssertTrue(view.contains("MobileDownloadActivitySummaryView"))
+        XCTAssertTrue(view.contains("mobile.downloads.activity.title"))
+        XCTAssertTrue(view.contains("mobile.downloads.activity.emule-download"))
+        XCTAssertTrue(view.contains("ui.3b14d1af77ab3e3e"))
+        XCTAssertTrue(model.contains("hasActivitySummary: snapshot.hasActivitySummary"))
+        XCTAssertTrue(model.contains("emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond"))
         XCTAssertTrue(view.contains(".sheet(item: $selectedTask)"))
         XCTAssertTrue(view.contains("MobileDownloadTaskDetailView"))
         XCTAssertTrue(view.contains("mobile.downloads.control.section"))
@@ -307,5 +311,21 @@ final class MobileDownloadsSafetyTests: XCTestCase {
             contentsOf: appRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
+    }
+
+    @MainActor
+    private func waitForDownloadCreateFeedback(
+        on model: MobileAppModel,
+        kind: MobileDownloadCreateFeedbackKind,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        for _ in 0..<100 {
+            if model.downloadCreateFeedback?.kind == kind {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Timed out waiting for download create feedback \(kind)", file: file, line: line)
     }
 }

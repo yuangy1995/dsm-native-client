@@ -91,6 +91,10 @@ struct MobileDownloadsView: View {
                 .accessibilityElement(children: .combine)
             }
 
+            if let snapshot = model.downloadSnapshot, snapshot.hasActivitySummary {
+                MobileDownloadActivitySummaryView(snapshot: snapshot)
+            }
+
             if let feedback = model.downloadCreateFeedback {
                 Section {
                     DownloadCreateFeedbackView(model: model, feedback: feedback)
@@ -134,6 +138,45 @@ private let mobileDownloadTaskFileTypes: [UTType] = {
     }
     return types
 }()
+
+private struct MobileDownloadActivitySummaryView: View {
+    let snapshot: DownloadStationSnapshot
+
+    private var showsEMuleSpeeds: Bool {
+        snapshot.emuleDownloadBytesPerSecond > 0 || snapshot.emuleUploadBytesPerSecond > 0
+    }
+
+    var body: some View {
+        Section(L10n.string("mobile.downloads.activity.title")) {
+            LabeledContent(
+                L10n.string("mobile.downloads.activity.download"),
+                value: formattedSpeed(snapshot.downloadBytesPerSecond)
+            )
+            LabeledContent(
+                L10n.string("mobile.downloads.activity.upload"),
+                value: formattedSpeed(snapshot.uploadBytesPerSecond)
+            )
+            if showsEMuleSpeeds {
+                LabeledContent(
+                    L10n.string("mobile.downloads.activity.emule-download"),
+                    value: formattedSpeed(snapshot.emuleDownloadBytesPerSecond)
+                )
+                LabeledContent(
+                    L10n.string("mobile.downloads.activity.emule-upload"),
+                    value: formattedSpeed(snapshot.emuleUploadBytesPerSecond)
+                )
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func formattedSpeed(_ bytesPerSecond: Int64) -> String {
+        let formatted = bytesPerSecond.formatted(
+            .byteCount(style: .file).locale(L10n.locale)
+        )
+        return L10n.string("ui.3b14d1af77ab3e3e", formatted)
+    }
+}
 
 private struct MobileDownloadCreateTaskView: View {
     @Bindable var model: MobileAppModel

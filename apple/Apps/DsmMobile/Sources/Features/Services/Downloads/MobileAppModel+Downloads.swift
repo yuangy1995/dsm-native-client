@@ -663,8 +663,11 @@ extension MobileAppModel {
         downloadSnapshot = DownloadStationSnapshot(
             source: snapshot.source,
             tasks: tasks,
+            hasActivitySummary: snapshot.hasActivitySummary,
             downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
+            emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
+            emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
             defaultDestination: snapshot.defaultDestination
         )
     }
@@ -680,8 +683,11 @@ extension MobileAppModel {
         downloadSnapshot = DownloadStationSnapshot(
             source: snapshot.source,
             tasks: tasks,
+            hasActivitySummary: snapshot.hasActivitySummary,
             downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
+            emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
+            emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
             defaultDestination: snapshot.defaultDestination
         )
     }
@@ -692,8 +698,11 @@ extension MobileAppModel {
         downloadSnapshot = DownloadStationSnapshot(
             source: snapshot.source,
             tasks: tasks,
+            hasActivitySummary: snapshot.hasActivitySummary,
             downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
+            emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
+            emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
             defaultDestination: snapshot.defaultDestination
         )
     }

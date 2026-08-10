@@ -235,7 +235,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     func test优先使用官方下载接口并解析任务进度() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"tasks":[{"id":"task-1","title":"示例任务","status":"downloading","size":1000,"additional":{"detail":{"destination":"video"},"transfer":{"size_downloaded":400,"speed_download":20,"speed_upload":2}}}]}}"#),
-            response(#"{"success":true,"data":{"speed_download":20,"speed_upload":2}}"#)
+            response(#"{"success":true,"data":{"speed_download":20,"speed_upload":2,"emule_speed_download":7,"emule_speed_upload":3}}"#)
         ])
         let repository = try makeRepository(
             apiNames: [
@@ -250,7 +250,11 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.source, .official)
         XCTAssertEqual(snapshot.tasks.first?.title, "示例任务")
         XCTAssertEqual(snapshot.tasks.first?.progress, 0.4)
+        XCTAssertTrue(snapshot.hasActivitySummary)
         XCTAssertEqual(snapshot.downloadBytesPerSecond, 20)
+        XCTAssertEqual(snapshot.uploadBytesPerSecond, 2)
+        XCTAssertEqual(snapshot.emuleDownloadBytesPerSecond, 7)
+        XCTAssertEqual(snapshot.emuleUploadBytesPerSecond, 3)
         let requests = await transport.recordedRequests()
         XCTAssertEqual(requestValue("api", in: requests[0]), DsmAPIName.downloadStationTask)
         XCTAssertFalse(

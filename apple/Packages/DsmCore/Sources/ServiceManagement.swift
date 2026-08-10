@@ -50,21 +50,30 @@ public struct DownloadStationTask: Identifiable, Equatable, Sendable {
 public struct DownloadStationSnapshot: Equatable, Sendable {
     public let source: ServiceContractSource
     public let tasks: [DownloadStationTask]
+    public let hasActivitySummary: Bool
     public let downloadBytesPerSecond: Int64
     public let uploadBytesPerSecond: Int64
+    public let emuleDownloadBytesPerSecond: Int64
+    public let emuleUploadBytesPerSecond: Int64
     public let defaultDestination: String?
 
     public init(
         source: ServiceContractSource,
         tasks: [DownloadStationTask],
+        hasActivitySummary: Bool = false,
         downloadBytesPerSecond: Int64 = 0,
         uploadBytesPerSecond: Int64 = 0,
+        emuleDownloadBytesPerSecond: Int64 = 0,
+        emuleUploadBytesPerSecond: Int64 = 0,
         defaultDestination: String? = nil
     ) {
         self.source = source
         self.tasks = tasks
+        self.hasActivitySummary = hasActivitySummary
         self.downloadBytesPerSecond = downloadBytesPerSecond
         self.uploadBytesPerSecond = uploadBytesPerSecond
+        self.emuleDownloadBytesPerSecond = emuleDownloadBytesPerSecond
+        self.emuleUploadBytesPerSecond = emuleUploadBytesPerSecond
         self.defaultDestination = defaultDestination
     }
 }

@@ -249,11 +249,18 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return DownloadStationSnapshot(
             source: usesOfficial ? .official : .internalAPI,
             tasks: tasks,
+            hasActivitySummary: statistic != nil,
             downloadBytesPerSecond: statistic?.firstInteger([
                 "download_rate", "download_speed", "speed_download"
             ]) ?? 0,
             uploadBytesPerSecond: statistic?.firstInteger([
                 "upload_rate", "upload_speed", "speed_upload"
+            ]) ?? 0,
+            emuleDownloadBytesPerSecond: statistic?.firstInteger([
+                "emule_download_rate", "emule_download_speed", "emule_speed_download"
+            ]) ?? 0,
+            emuleUploadBytesPerSecond: statistic?.firstInteger([
+                "emule_upload_rate", "emule_upload_speed", "emule_speed_upload"
             ]) ?? 0,
             defaultDestination: location?.firstString(["destination", "path", "default_destination"])
         )

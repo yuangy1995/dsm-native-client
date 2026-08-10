@@ -21,6 +21,10 @@ public sealed class DownloadStationPageSourceContractTests
         Assert.Contains("DownloadStationReadOnly", xaml);
         Assert.Contains("x:Name=\"ActivitySummary\"", xaml);
         Assert.Contains("x:Name=\"ActivityErrorNotice\"", xaml);
+        Assert.Contains("DownloadStationActivityEmuleDownload", xaml);
+        Assert.Contains("DownloadStationActivityEmuleUpload", xaml);
+        Assert.Contains("ActivityEmuleDownloadSpeedText", xaml);
+        Assert.Contains("ActivityEmuleUploadSpeedText", xaml);
         Assert.Contains("CompactWidth = 760", source);
         Assert.Contains("_viewModel.IsUnavailable", source);
     }

@@ -76,7 +76,7 @@
 ### NAS 设置、套件与统一存储
 
 - 使用专用测试目标验证可能断网、改时、停服或影响存储状态的写操作。
-- 在已合并 Download Station 单任务暂停/继续、URL/磁力创建、任务文件创建和单任务删除的基础上，继续补齐 RSS/BT 高级、文件优先级、设置写入、Container Manager 与 Virtual Machine Manager 的高级功能和异步任务闭环。
+- 在已合并 Download Station 单任务暂停/继续、URL/磁力创建、任务文件创建和单任务删除，并已开始接入跨端当前活动速率摘要的基础上，继续补齐 RSS/BT 高级、文件优先级、设置写入、Container Manager 与 Virtual Machine Manager 的高级功能和异步任务闭环。
 - 验证统一存储管理的大目录、取消、权限、QuickConnect 和 MD5 任务；取得版本化契约后再评估套件历史报告与计划任务。
 
 详细范围见[套件管理计划](../development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)和[统一存储管理计划](../development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)。
@@ -93,7 +93,7 @@
 
 - Apple 移动端自动照片备份、后台常驻传输、iPad 多窗口与 File Provider；只有独立产品、权限、契约和验收决策通过后才进入活动里程碑。
 - File Station 后台任务、异步目录大小、MD5、VFS 扩展和更完整的恢复入口。
-- Download Station 的 RSS/BT 高级、文件优先级、设置写入，以及 Container Manager 和 Virtual Machine Manager 的剩余高级能力。
+- Download Station 的 RSS/BT 高级、文件优先级、设置写入，以及 Container Manager 和 Virtual Machine Manager 的剩余高级能力；当前活动速率摘要仅保留真实 NAS 字段验收。
 - Audio Station、Video Station、Note Station、Synology Drive、Calendar、Contacts、Surveillance Station、Hyper Backup、Active Backup 和 Synology Office。
 - 社区兼容性计划后续阶段，包括静态筛选页、匿名统计口径、报告过期策略和定期复核；
   维护者只读候选生成、冲突检测和 macOS 本地草稿导出已经进入当前实现。

@@ -2961,6 +2961,11 @@
 "mobile.chat.send.failed" = "The message couldn’t be confirmed. Check the conversation before sending it again.";
 "mobile.chat.send.review" = "Refresh and check this conversation before sending the same message again.";
 "mobile.downloads.read-only.notice" = "Download tasks run on your NAS. You can add a link, pause or resume one task, and delete one task without removing downloaded files.";
+"mobile.downloads.activity.title" = "Current activity";
+"mobile.downloads.activity.download" = "Download";
+"mobile.downloads.activity.upload" = "Upload";
+"mobile.downloads.activity.emule-download" = "eMule download";
+"mobile.downloads.activity.emule-upload" = "eMule upload";
 "mobile.downloads.create.action" = "Add Link";
 "mobile.downloads.create.action.hint" = "Create a Download Station task from a URL or magnet link";
 "mobile.downloads.create.menu" = "Add Task";

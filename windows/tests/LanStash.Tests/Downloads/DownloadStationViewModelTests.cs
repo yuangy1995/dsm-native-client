@@ -210,7 +210,7 @@ public sealed class DownloadStationViewModelTests
             Page(0, 0, 0, null),
             new(
                 DownloadStationSectionStatus.Available,
-                new DownloadActivitySummary(1_024, 512, 0, 0)),
+                new DownloadActivitySummary(1_024, 512, 256, 128)),
             new(DownloadStationSectionStatus.Unavailable, null)));
         repository.SnapshotResults.Enqueue(new IOException("synthetic refresh"));
         var other = Available(Guid.NewGuid());
@@ -223,6 +223,8 @@ public sealed class DownloadStationViewModelTests
         Assert.False(model.HasActivityError);
         Assert.DoesNotContain("Not available", model.ActivityDownloadSpeedText);
         Assert.DoesNotContain("Not available", model.ActivityUploadSpeedText);
+        Assert.DoesNotContain("Not available", model.ActivityEmuleDownloadSpeedText);
+        Assert.DoesNotContain("Not available", model.ActivityEmuleUploadSpeedText);
         await model.ActivateAsync(other);
         Assert.False(model.HasActivity);
         await model.ActivateAsync(repository);

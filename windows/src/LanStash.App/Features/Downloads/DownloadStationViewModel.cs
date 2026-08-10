@@ -184,6 +184,10 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         DownloadTaskItem.FormatSpeed(_activity.Value?.DownloadSpeed);
     public string ActivityUploadSpeedText =>
         DownloadTaskItem.FormatSpeed(_activity.Value?.UploadSpeed);
+    public string ActivityEmuleDownloadSpeedText =>
+        DownloadTaskItem.FormatSpeed(_activity.Value?.EmuleDownloadSpeed);
+    public string ActivityEmuleUploadSpeedText =>
+        DownloadTaskItem.FormatSpeed(_activity.Value?.EmuleUploadSpeed);
     public bool CanLoadMore => !IsLoading && !IsLoadingMore &&
         CurrentProfile is { HasMore: true, NextOffset: not null };
 
@@ -731,6 +735,8 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         RaisePropertyChanged(nameof(HasActivityError));
         RaisePropertyChanged(nameof(ActivityDownloadSpeedText));
         RaisePropertyChanged(nameof(ActivityUploadSpeedText));
+        RaisePropertyChanged(nameof(ActivityEmuleDownloadSpeedText));
+        RaisePropertyChanged(nameof(ActivityEmuleUploadSpeedText));
     }
 
     private void RaiseStateProperties()
