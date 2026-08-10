@@ -917,9 +917,14 @@
   <data name="PhotoViewerPrevious.AutomationProperties.Name" xml:space="preserve"><value>Show the previous item</value></data>
   <data name="PhotoViewerNext.Content" xml:space="preserve"><value>Next</value></data>
   <data name="PhotoViewerNext.AutomationProperties.Name" xml:space="preserve"><value>Show the next item</value></data>
+  <data name="PhotoViewerEnterImmersive.Content" xml:space="preserve"><value>Full screen</value></data>
+  <data name="PhotoViewerEnterImmersive.AutomationProperties.Name" xml:space="preserve"><value>View this photo or video full screen</value></data>
+  <data name="PhotoViewerExitImmersive.Content" xml:space="preserve"><value>Exit full screen</value></data>
+  <data name="PhotoViewerExitImmersive.AutomationProperties.Name" xml:space="preserve"><value>Exit full screen preview</value></data>
   <data name="PhotoViewerSave.Content" xml:space="preserve"><value>Save a copy</value></data>
   <data name="PhotoViewerSave.AutomationProperties.Name" xml:space="preserve"><value>Save a copy of this photo or video</value></data>
   <data name="PhotoViewerPosition" xml:space="preserve"><value>{0:N0} of {1:N0}</value></data>
+  <data name="PhotoViewerPositionAutomationName" xml:space="preserve"><value>Item {0:N0} of {1:N0}</value></data>
   <data name="PhotoViewerMetadataTitle.Text" xml:space="preserve"><value>Details</value></data>
   <data name="PhotoViewerNameLabel.Text" xml:space="preserve"><value>Name</value></data>
   <data name="PhotoViewerKindLabel.Text" xml:space="preserve"><value>Type</value></data>
@@ -942,6 +947,7 @@
   <data name="PhotoViewerByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
   <data name="PhotoViewerByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
   <data name="PhotoViewerByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
+  <data name="PhotoViewerHostAutomationName" xml:space="preserve"><value>Previewing {0}</value></data>
   <data name="PhotoViewerMetadataAutomationName" xml:space="preserve"><value>Details for {0}</value></data>
   <data name="FileLocationsOpen.Content" xml:space="preserve"><value>Locations</value></data>
   <data name="FileLocationsOpen.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show file locations</value></data>

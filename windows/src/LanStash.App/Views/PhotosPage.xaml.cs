@@ -365,6 +365,13 @@ public sealed partial class PhotosPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (CurrentPhotoViewerItem() is { } viewerItem)
+        {
+            args.Handled = true;
+            await SaveTimelineItemAsync(viewerItem);
+            return;
+        }
+
         if (TimelineMode.IsChecked == true)
         {
             args.Handled = true;

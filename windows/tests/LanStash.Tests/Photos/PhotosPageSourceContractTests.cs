@@ -59,6 +59,8 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("OpenFolderViewerAsync(entry)", source);
         Assert.Contains("CanSaveSelectedMedia()", source);
         Assert.Contains("{ IsMedia: true, Item.SizeBytes: >= 0 }", source);
+        Assert.Contains("CurrentPhotoViewerItem() is { } viewerItem", source);
+        Assert.Contains("await SaveTimelineItemAsync(viewerItem)", source);
     }
 
     [Fact]
@@ -124,6 +126,18 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("ToFileItem(item)", viewer);
         Assert.Contains("PhotoViewerPreviousButton", xaml);
         Assert.Contains("PhotoViewerNextButton", xaml);
+        Assert.Contains("PhotoViewerImmersiveButton", xaml);
+        Assert.Contains("Key=\"F11\"", xaml);
+        var viewerHost = Slice(
+            xaml,
+            "x:Name=\"PhotoViewerHost\"",
+            "<local:FilePreviewPane");
+        Assert.Contains("Background=\"{ThemeResource ApplicationPageBackgroundThemeBrush}\"", viewerHost);
+        Assert.Contains("Key=\"Left\"", viewerHost);
+        Assert.Contains("PhotoViewerPreviousAccelerator_Invoked", viewerHost);
+        Assert.Contains("Key=\"Right\"", viewerHost);
+        Assert.Contains("PhotoViewerNextAccelerator_Invoked", viewerHost);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", viewerHost);
         Assert.Contains("PhotoViewerMetadata", xaml);
         Assert.Contains("PhotoViewerDimensionsLabel", xaml);
         Assert.Contains("PhotoViewerDimensionsValue", xaml);
@@ -142,11 +156,45 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("FormatPhotoViewerCamera", viewer);
         Assert.Contains("AutomationProperties.SetName(", viewer);
         Assert.Contains("PhotoViewerMetadataAutomationName", viewer);
-        Assert.Contains("PhotoViewerColumn.Width = isOpen ? new GridLength(420) : new GridLength(0);", viewer);
+        Assert.Contains("_isPhotoViewerImmersive", viewer);
+        Assert.Contains("PhotoPreviewPane.KeyboardCloseRequested += PhotoPreviewPane_KeyboardCloseRequested;", viewer);
+        Assert.Contains("ExitPhotoViewerImmersive()", viewer);
+        Assert.Contains("ClosePhotoViewerAsync(restoreBrowserFocus: true)", viewer);
+        Assert.Contains("FocusPhotoBrowserAfterViewerClose", viewer);
+        Assert.Contains("TimelineView.Focus(FocusState.Programmatic)", viewer);
+        Assert.Contains("PhotoGrid.Focus(FocusState.Programmatic)", viewer);
+        Assert.Contains("Grid.SetColumnSpan(PhotoViewerHost, isImmersive ? 2 : 1);", viewer);
+        Assert.Contains("PhotoViewerColumn.Width = isOpen && !isImmersive", viewer);
+        Assert.Contains("ApplyPhotoBrowserSurfaceVisibility(isImmersive);", viewer);
+        Assert.Contains("PhotoBrowserHeader.Visibility = browserVisibility;", viewer);
+        Assert.Contains("PhotoViewerEnterImmersive.Content", viewer);
+        Assert.Contains("PhotoViewerExitImmersive.Content", viewer);
+        Assert.Contains("PhotoViewerPositionAutomationName", viewer);
+        Assert.Contains("PhotoViewerHostAutomationName", viewer);
+        Assert.DoesNotContain("AppWindow", viewer);
+        Assert.DoesNotContain("OverlappedPresenter", viewer);
 
         Assert.Contains("var photoPreviewRepository = _app.Repository as IFilePreviewRepository;", shell);
         Assert.Contains("previewRepository: photoPreviewRepository", shell);
         Assert.Contains("!ReferenceEquals(_photosRepository, photoRepository)", shell);
+    }
+
+    [Theory]
+    [InlineData("PhotoViewerEnterImmersive.Content")]
+    [InlineData("PhotoViewerEnterImmersive.AutomationProperties.Name")]
+    [InlineData("PhotoViewerExitImmersive.Content")]
+    [InlineData("PhotoViewerExitImmersive.AutomationProperties.Name")]
+    [InlineData("PhotoViewerPositionAutomationName")]
+    [InlineData("PhotoViewerHostAutomationName")]
+    public void PhotoViewerImmersiveResourcesAreLocalized(string resourceName)
+    {
+        var english = ReadRepositoryFile(
+            "windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = ReadRepositoryFile(
+            "windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+
+        Assert.Contains($"name=\"{resourceName}\"", english);
+        Assert.Contains($"name=\"{resourceName}\"", chinese);
     }
 
     [Fact]

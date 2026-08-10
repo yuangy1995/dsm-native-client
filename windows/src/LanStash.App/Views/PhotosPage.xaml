@@ -22,6 +22,9 @@
             Key="I"
             Modifiers="Control"
             Invoked="ImportAccelerator_Invoked" />
+        <KeyboardAccelerator
+            Key="F11"
+            Invoked="PhotoViewerImmersiveAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid Padding="24,20,24,16" RowSpacing="12" ColumnSpacing="16">
@@ -38,7 +41,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid ColumnSpacing="16">
+        <Grid x:Name="PhotoBrowserHeader" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -63,7 +66,7 @@
                 SelectionChanged="SpacePicker_SelectionChanged" />
         </Grid>
 
-        <Grid Grid.Row="1" ColumnSpacing="12">
+        <Grid x:Name="PhotoBrowserModeBar" Grid.Row="1" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -371,8 +374,17 @@
             x:Name="PhotoViewerHost"
             Grid.Column="1"
             Grid.RowSpan="6"
+            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
             RowSpacing="8"
             Visibility="Collapsed">
+            <Grid.KeyboardAccelerators>
+                <KeyboardAccelerator
+                    Key="Left"
+                    Invoked="PhotoViewerPreviousAccelerator_Invoked" />
+                <KeyboardAccelerator
+                    Key="Right"
+                    Invoked="PhotoViewerNextAccelerator_Invoked" />
+            </Grid.KeyboardAccelerators>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -383,6 +395,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button
@@ -402,11 +415,18 @@
                     x:Name="PhotoViewerPositionText"
                     Grid.Column="2"
                     VerticalAlignment="Center"
+                    AutomationProperties.LiveSetting="Polite"
                     TextTrimming="CharacterEllipsis" />
+                <Button
+                    x:Name="PhotoViewerImmersiveButton"
+                    Grid.Column="3"
+                    Click="PhotoViewerImmersive_Click"
+                    MinWidth="44"
+                    MinHeight="44" />
                 <Button
                     x:Uid="PhotoViewerSave"
                     x:Name="PhotoViewerSaveButton"
-                    Grid.Column="3"
+                    Grid.Column="4"
                     Click="PhotoViewerSave_Click"
                     MinHeight="44" />
             </Grid>

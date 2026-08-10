@@ -917,9 +917,14 @@
   <data name="PhotoViewerPrevious.AutomationProperties.Name" xml:space="preserve"><value>显示上一项</value></data>
   <data name="PhotoViewerNext.Content" xml:space="preserve"><value>下一项</value></data>
   <data name="PhotoViewerNext.AutomationProperties.Name" xml:space="preserve"><value>显示下一项</value></data>
+  <data name="PhotoViewerEnterImmersive.Content" xml:space="preserve"><value>全屏查看</value></data>
+  <data name="PhotoViewerEnterImmersive.AutomationProperties.Name" xml:space="preserve"><value>全屏查看此照片或视频</value></data>
+  <data name="PhotoViewerExitImmersive.Content" xml:space="preserve"><value>退出全屏</value></data>
+  <data name="PhotoViewerExitImmersive.AutomationProperties.Name" xml:space="preserve"><value>退出全屏预览</value></data>
   <data name="PhotoViewerSave.Content" xml:space="preserve"><value>保存副本</value></data>
   <data name="PhotoViewerSave.AutomationProperties.Name" xml:space="preserve"><value>保存此照片或视频的副本</value></data>
   <data name="PhotoViewerPosition" xml:space="preserve"><value>第 {0:N0} 项，共 {1:N0} 项</value></data>
+  <data name="PhotoViewerPositionAutomationName" xml:space="preserve"><value>第 {0:N0} 项，共 {1:N0} 项</value></data>
   <data name="PhotoViewerMetadataTitle.Text" xml:space="preserve"><value>详细信息</value></data>
   <data name="PhotoViewerNameLabel.Text" xml:space="preserve"><value>名称</value></data>
   <data name="PhotoViewerKindLabel.Text" xml:space="preserve"><value>类型</value></data>
@@ -942,6 +947,7 @@
   <data name="PhotoViewerByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
   <data name="PhotoViewerByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
   <data name="PhotoViewerByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
+  <data name="PhotoViewerHostAutomationName" xml:space="preserve"><value>正在预览 {0}</value></data>
   <data name="PhotoViewerMetadataAutomationName" xml:space="preserve"><value>{0} 的详细信息</value></data>
   <data name="FileLocationsOpen.Content" xml:space="preserve"><value>位置</value></data>
   <data name="FileLocationsOpen.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>显示文件位置</value></data>

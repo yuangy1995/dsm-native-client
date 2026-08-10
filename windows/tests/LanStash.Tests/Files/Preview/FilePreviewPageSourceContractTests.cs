@@ -106,15 +106,18 @@ public sealed class FilePreviewPageSourceContractTests
     public void PaneKeepsKeyboardNarratorThemeAndTouchContracts()
     {
         var xaml = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml");
+        var pane = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml.cs");
 
         Assert.Contains("Key=\"Escape\"", xaml);
         Assert.Contains("Key=\"Left\" Modifiers=\"Menu\"", xaml);
+        Assert.Contains("KeyboardCloseRequested", pane);
+        Assert.Contains("FilePreviewKeyboardCloseRequestedEventArgs", pane);
+        Assert.Contains("if (request.Handled)", pane);
         Assert.Contains("AutomationProperties.HeadingLevel=\"Level2\"", xaml);
         Assert.True(Count(xaml, "AutomationProperties.LiveSetting=\"Polite\"") >= 3);
         Assert.True(Count(xaml, "MinHeight=\"44\"") >= 8);
         Assert.Contains("ThemeResource", xaml);
-        Assert.Contains("BackButton.Focus(FocusState.Programmatic)",
-            Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml.cs"));
+        Assert.Contains("BackButton.Focus(FocusState.Programmatic)", pane);
         Assert.DoesNotContain("Background=\"#", xaml);
         Assert.DoesNotContain("Foreground=\"#", xaml);
     }

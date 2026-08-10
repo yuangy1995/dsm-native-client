@@ -29,6 +29,7 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
     public FilePreviewPane() => InitializeComponent();
 
     public event EventHandler? CloseRequested;
+    public event EventHandler<FilePreviewKeyboardCloseRequestedEventArgs>? KeyboardCloseRequested;
     public event EventHandler? RetryRequested;
     public event EventHandler<FilePreviewSaveCopyRequestedEventArgs>? SaveCopyRequested;
 
@@ -329,7 +330,13 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
+        var request = new FilePreviewKeyboardCloseRequestedEventArgs();
+        KeyboardCloseRequested?.Invoke(this, request);
         args.Handled = true;
+        if (request.Handled)
+        {
+            return;
+        }
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -462,6 +469,11 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         Interlocked.Increment(ref _renderGeneration);
         _presenterCancellation?.Cancel();
     }
+}
+
+public sealed class FilePreviewKeyboardCloseRequestedEventArgs : EventArgs
+{
+    public bool Handled { get; set; }
 }
 
 public sealed class FilePreviewSaveCopyRequestedEventArgs : EventArgs

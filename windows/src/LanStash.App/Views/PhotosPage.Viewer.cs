@@ -8,6 +8,8 @@ using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 
 namespace LanStash.App.Views;
 
@@ -18,6 +20,7 @@ public sealed partial class PhotosPage
     private IReadOnlyList<PhotoItem> _photoViewerItems = [];
     private int _photoViewerIndex = -1;
     private long _photoViewerGeneration;
+    private bool _isPhotoViewerImmersive;
 
     private void InitializePhotoViewer(IFilePreviewRepository? previewRepository)
     {
@@ -30,6 +33,7 @@ public sealed partial class PhotosPage
         _previewViewModel.PropertyChanged += PhotoPreviewViewModel_PropertyChanged;
         PhotoPreviewPane.Attach(_previewViewModel);
         PhotoPreviewPane.CloseRequested += PhotoPreviewPane_CloseRequested;
+        PhotoPreviewPane.KeyboardCloseRequested += PhotoPreviewPane_KeyboardCloseRequested;
         PhotoPreviewPane.RetryRequested += PhotoPreviewPane_RetryRequested;
         PhotoPreviewPane.SaveCopyRequested += PhotoPreviewPane_SaveCopyRequested;
         UpdatePhotoViewerState();
@@ -151,14 +155,19 @@ public sealed partial class PhotosPage
         }
     }
 
-    private async Task ClosePhotoViewerAsync()
+    private async Task ClosePhotoViewerAsync(bool restoreBrowserFocus = false)
     {
         Interlocked.Increment(ref _photoViewerGeneration);
         _photoViewerItems = [];
         _photoViewerIndex = -1;
+        _isPhotoViewerImmersive = false;
         if (_previewViewModel is null)
         {
             UpdatePhotoViewerState();
+            if (restoreBrowserFocus)
+            {
+                FocusPhotoBrowserAfterViewerClose();
+            }
             return;
         }
         try
@@ -170,10 +179,24 @@ public sealed partial class PhotosPage
         {
         }
         UpdatePhotoViewerState();
+        if (restoreBrowserFocus)
+        {
+            FocusPhotoBrowserAfterViewerClose();
+        }
     }
 
     private async void PhotoPreviewPane_CloseRequested(object? sender, EventArgs e) =>
-        await ClosePhotoViewerAsync();
+        await ClosePhotoViewerAsync(restoreBrowserFocus: true);
+
+    private void PhotoPreviewPane_KeyboardCloseRequested(
+        object? sender,
+        FilePreviewKeyboardCloseRequestedEventArgs e)
+    {
+        if (ExitPhotoViewerImmersive())
+        {
+            e.Handled = true;
+        }
+    }
 
     private async void PhotoPreviewPane_RetryRequested(object? sender, EventArgs e)
     {
@@ -195,18 +218,12 @@ public sealed partial class PhotosPage
 
     private async void PhotoViewerPrevious_Click(object sender, RoutedEventArgs e)
     {
-        if (_photoViewerIndex > 0)
-        {
-            await OpenPhotoViewerIndexAsync(_photoViewerIndex - 1);
-        }
+        await OpenPhotoViewerOffsetAsync(-1);
     }
 
     private async void PhotoViewerNext_Click(object sender, RoutedEventArgs e)
     {
-        if (_photoViewerIndex + 1 < _photoViewerItems.Count)
-        {
-            await OpenPhotoViewerIndexAsync(_photoViewerIndex + 1);
-        }
+        await OpenPhotoViewerOffsetAsync(1);
     }
 
     private async void PhotoViewerSave_Click(object sender, RoutedEventArgs e)
@@ -215,6 +232,85 @@ public sealed partial class PhotosPage
         {
             await SaveTimelineItemAsync(item);
         }
+    }
+
+    private async void PhotoViewerPreviousAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (_photoViewerIndex <= 0)
+        {
+            return;
+        }
+
+        args.Handled = true;
+        await OpenPhotoViewerOffsetAsync(-1);
+    }
+
+    private async void PhotoViewerNextAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (_photoViewerIndex + 1 >= _photoViewerItems.Count)
+        {
+            return;
+        }
+
+        args.Handled = true;
+        await OpenPhotoViewerOffsetAsync(1);
+    }
+
+    private void PhotoViewerImmersive_Click(object sender, RoutedEventArgs e) =>
+        TogglePhotoViewerImmersive();
+
+    private void PhotoViewerImmersiveAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (CurrentPhotoViewerItem() is null)
+        {
+            return;
+        }
+
+        args.Handled = true;
+        TogglePhotoViewerImmersive();
+    }
+
+    private async Task<bool> OpenPhotoViewerOffsetAsync(int offset)
+    {
+        var nextIndex = _photoViewerIndex + offset;
+        if (nextIndex < 0 || nextIndex >= _photoViewerItems.Count)
+        {
+            return false;
+        }
+
+        await OpenPhotoViewerIndexAsync(nextIndex);
+        return true;
+    }
+
+    private void TogglePhotoViewerImmersive()
+    {
+        if (CurrentPhotoViewerItem() is null)
+        {
+            return;
+        }
+
+        _isPhotoViewerImmersive = !_isPhotoViewerImmersive;
+        UpdatePhotoViewerState();
+        PhotoPreviewPane.FocusHeading();
+    }
+
+    private bool ExitPhotoViewerImmersive()
+    {
+        if (!_isPhotoViewerImmersive)
+        {
+            return false;
+        }
+
+        _isPhotoViewerImmersive = false;
+        UpdatePhotoViewerState();
+        PhotoPreviewPane.FocusHeading();
+        return true;
     }
 
     private PhotoItem? CurrentPhotoViewerItem() =>
@@ -231,8 +327,12 @@ public sealed partial class PhotosPage
 
         var item = CurrentPhotoViewerItem();
         var isOpen = item is not null;
+        if (!isOpen)
+        {
+            _isPhotoViewerImmersive = false;
+        }
         PhotoViewerHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        PhotoViewerColumn.Width = isOpen ? new GridLength(420) : new GridLength(0);
+        ApplyPhotoViewerLayout(isOpen);
         PhotoViewerPreviousButton.IsEnabled = _photoViewerIndex > 0;
         PhotoViewerNextButton.IsEnabled = _photoViewerIndex >= 0 &&
             _photoViewerIndex + 1 < _photoViewerItems.Count;
@@ -240,6 +340,7 @@ public sealed partial class PhotosPage
         PhotoPreviewPane.SetSaveCopyEnabled(PhotoViewerSaveButton.IsEnabled);
 
         var localization = LocalizationService.Current;
+        UpdatePhotoViewerImmersiveButton(localization, isOpen);
         PhotoViewerPositionText.Text = isOpen
             ? localization.Format(
                 "PhotoViewerPosition",
@@ -266,8 +367,83 @@ public sealed partial class PhotosPage
         PhotoViewerCameraValue.Text = FormatPhotoViewerCamera(metadata);
         PhotoViewerPathValue.Text = item.Path;
         AutomationProperties.SetName(
+            PhotoViewerHost,
+            localization.Format("PhotoViewerHostAutomationName", item.Name));
+        AutomationProperties.SetName(
+            PhotoViewerPositionText,
+            localization.Format(
+                "PhotoViewerPositionAutomationName",
+                _photoViewerIndex + 1,
+                _photoViewerItems.Count));
+        AutomationProperties.SetName(
             PhotoViewerMetadata,
             localization.Format("PhotoViewerMetadataAutomationName", item.Name));
+    }
+
+    private void ApplyPhotoViewerLayout(bool isOpen)
+    {
+        var isImmersive = isOpen && _isPhotoViewerImmersive;
+        Grid.SetColumn(PhotoViewerHost, isImmersive ? 0 : 1);
+        Grid.SetColumnSpan(PhotoViewerHost, isImmersive ? 2 : 1);
+        PhotoViewerColumn.Width = isOpen && !isImmersive
+            ? new GridLength(420)
+            : new GridLength(0);
+        ApplyPhotoBrowserSurfaceVisibility(isImmersive);
+    }
+
+    private void ApplyPhotoBrowserSurfaceVisibility(bool isViewerImmersive)
+    {
+        var browserVisibility = isViewerImmersive
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        PhotoBrowserHeader.Visibility = browserVisibility;
+        PhotoBrowserModeBar.Visibility = browserVisibility;
+        ImportStatus.Visibility = browserVisibility;
+
+        if (isViewerImmersive)
+        {
+            PathBreadcrumbs.Visibility = Visibility.Collapsed;
+            BrowserCommandBar.Visibility = Visibility.Collapsed;
+            BrowserContentHost.Visibility = Visibility.Collapsed;
+            TimelineView.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var isTimelineMode = TimelineMode.IsChecked == true;
+        PathBreadcrumbs.Visibility = isTimelineMode ? Visibility.Collapsed : Visibility.Visible;
+        BrowserCommandBar.Visibility = isTimelineMode ? Visibility.Collapsed : Visibility.Visible;
+        BrowserContentHost.Visibility = isTimelineMode ? Visibility.Collapsed : Visibility.Visible;
+        TimelineView.Visibility = isTimelineMode ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdatePhotoViewerImmersiveButton(LocalizationService localization, bool isOpen)
+    {
+        var isImmersive = isOpen && _isPhotoViewerImmersive;
+        PhotoViewerImmersiveButton.IsEnabled = isOpen;
+        PhotoViewerImmersiveButton.Content = localization.Get(isImmersive
+            ? "PhotoViewerExitImmersive.Content"
+            : "PhotoViewerEnterImmersive.Content");
+        var automationName = localization.Get(isImmersive
+            ? "PhotoViewerExitImmersive.AutomationProperties.Name"
+            : "PhotoViewerEnterImmersive.AutomationProperties.Name");
+        AutomationProperties.SetName(PhotoViewerImmersiveButton, automationName);
+        ToolTipService.SetToolTip(PhotoViewerImmersiveButton, automationName);
+    }
+
+    private void FocusPhotoBrowserAfterViewerClose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (TimelineMode.IsChecked == true)
+        {
+            TimelineView.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        PhotoGrid.Focus(FocusState.Programmatic);
     }
 
     private void ClearPhotoViewerMetadata()
@@ -435,6 +611,7 @@ public sealed partial class PhotosPage
         {
             _previewViewModel.PropertyChanged -= PhotoPreviewViewModel_PropertyChanged;
             PhotoPreviewPane.CloseRequested -= PhotoPreviewPane_CloseRequested;
+            PhotoPreviewPane.KeyboardCloseRequested -= PhotoPreviewPane_KeyboardCloseRequested;
             PhotoPreviewPane.RetryRequested -= PhotoPreviewPane_RetryRequested;
             PhotoPreviewPane.SaveCopyRequested -= PhotoPreviewPane_SaveCopyRequested;
             _previewViewModel.Dispose();

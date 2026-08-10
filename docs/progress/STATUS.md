@@ -36,6 +36,8 @@
 
 Windows PHOTO-02 本地媒体元数据白名单已通过云端门禁：照片查看器已在既有本地预览产物上解析白名单字段，并在元数据面板显示图片/基础视频尺寸、拍摄时间、相机品牌/型号和基础视频时长。该能力不新增 NAS 请求，不读取位置、厂商私有、设备序列、镜头序列或 Synology Photos 私有字段；MP4/MOV/M4V 仅从已读取首段 ISO BMFF 结构解析，缺少 `moov` 或非 ISO BMFF 视频时显示不可用。GitHub `Windows Build` run `31410536634` 已通过 943/943 项 xUnit 与 WinUI x64/ARM64 构建，`Repository Check` run `31410536680` 已通过。真实 Windows 解码器、格式矩阵、Narrator、高对比和窗口缩放继续后置。
 
+Windows PHOTO-02 沉浸式查看器体验已通过当前分支云端门禁：照片文件夹与时间线媒体继续复用 `FilePreviewPane`，新增页面内全窗口查看切换、F11 切换、左右方向键前后项、Esc 在沉浸式下优先返回普通查看、关闭后焦点回到照片网格或时间线、Ctrl+S 保存当前查看项，以及查看区域/位置/按钮的双语无障碍名称。该切片不新增 NAS 请求、不引入系统级 `AppWindow` 全屏 presenter，也不开放编辑、收藏、删除、相册、人物、地点或标签能力；GitHub `Windows Build` run `31414591711` 通过 949/949 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，`Repository Check` run `31414591262` 通过。真实设备/Narrator/高对比/缩放/真实 NAS 仍待验证。
+
 ### 第 2 波已合并（单一简体中文功能提交已全绿）
 
 - 基线：`641852b408ae24f8819e4a49cd70df4c8d9e5011`；功能对齐账本见[第 2 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)。
@@ -204,7 +206,7 @@ Windows PHOTO-02 本地媒体元数据白名单已通过云端门禁：照片查
 | PH5 macOS 发布验收 | 未开始 | 自动化、实机、安全、缓存、键盘、VoiceOver 和深色模式出口通过 |
 | PH6 iPhone/iPad 精选体验与自动备份 | PH6-A 精选体验已实现；PH6-B 自动备份后续 | 已完成个人/共享空间、文件夹、主动有界时间线、缩略图、PHOTO-02 查看/基础元数据、PHOTO-03A 单项导入、导出/分享和受限回收站恢复；继续完成 iPad/真机/真实 NAS 验收。整库自动备份、后台恢复和释放设备空间不在当前 DAG，须独立范围升级 |
 | PH7 Android 对齐 | 进行中 | Compose 照片浏览、查看、管理和用户选定项目的安全移动备份调用链已建立；“释放设备空间”仅建立五项全真的 fail-closed 门禁，仍无 UI、媒体删除权限和本机删除执行器；待设备格式、大图库、真实 NAS 写操作及未来独立释放空间流程验收 |
-| PH8 Windows 对齐 | 基础精选体验与 PHOTO-02 查看器、本地媒体元数据白名单均已实现并通过 Windows CI | 已完成个人/共享空间、文件夹浏览、公开 List v2 有界时间线、本地搜索/筛选、缩略图、保存副本、PHOTO-03A 单项导入、受限回收站恢复，以及图片/视频右侧预览、前后切换、基础文件元数据、图片/基础视频尺寸、拍摄时间、相机品牌/型号、基础视频时长、键盘/双击打开和保存副本。基础查看器提交 `4e1272e` 已通过 Windows xUnit、WinUI x64/ARM64 和 Repository Check；本地媒体元数据白名单不新增 NAS 请求且不读取位置、厂商私有或设备序列类隐私元数据，GitHub Windows Build run `31410536634` 和 Repository Check run `31410536680` 已通过；沉浸式显示、高级照片管理及真实 Windows/NAS 验收继续后置 |
+| PH8 Windows 对齐 | 基础精选体验、PHOTO-02 查看器、本地媒体元数据白名单和沉浸式查看器体验已通过 Windows 分支门禁 | 已完成个人/共享空间、文件夹浏览、公开 List v2 有界时间线、本地搜索/筛选、缩略图、保存副本、PHOTO-03A 单项导入、受限回收站恢复，以及图片/视频右侧预览、前后切换、基础文件元数据、图片/基础视频尺寸、拍摄时间、相机品牌/型号、基础视频时长、键盘/双击打开和保存副本。基础查看器提交 `4e1272e` 已通过 Windows xUnit、WinUI x64/ARM64 和 Repository Check；本地媒体元数据白名单不新增 NAS 请求且不读取位置、厂商私有或设备序列类隐私元数据，GitHub Windows Build run `31410536634` 和 Repository Check run `31410536680` 已通过；页面内沉浸式查看器新增 F11 切换、左右键前后项、Esc 沉浸优先退出、关闭后焦点恢复和当前项保存，GitHub Windows Build run `31414591711` 通过 949/949 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31414591262` 通过；高级照片管理及真实 Windows/NAS 验收继续后置 |
 
 照片模块按[照片管理开发计划](../development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)推进。基础照片主流程已建立；下一步集中验证大图库、权限、弱网和写操作，并继续补齐相册与智能能力。
 
