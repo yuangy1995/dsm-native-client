@@ -33,6 +33,9 @@
                             <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{Binding SourceText}" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 Text="{Binding DirectionText}" />
                             <ProgressBar
                                 x:Uid="TransferActivityProgressBar"

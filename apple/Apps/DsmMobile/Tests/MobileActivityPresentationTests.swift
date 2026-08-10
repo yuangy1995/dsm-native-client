@@ -1,4 +1,5 @@
 @testable import DsmMobile
+import DsmCore
 import XCTest
 
 final class MobileActivityPresentationTests: XCTestCase {
@@ -43,9 +44,77 @@ final class MobileActivityPresentationTests: XCTestCase {
         XCTAssertTrue(makeTask(status: .queued).canCancel)
         XCTAssertTrue(makeTask(status: .preparing).canCancel)
         XCTAssertTrue(makeTask(status: .running).canCancel)
+        XCTAssertFalse(makeTask(status: .paused).canCancel)
         XCTAssertFalse(makeTask(status: .cancelling).canCancel)
         XCTAssertFalse(makeTask(status: .succeeded).canCancel)
         XCTAssertFalse(makeTask(status: .resultNeedsReview).canCancel)
+    }
+
+    func testDownloadStation快照同步到NAS活动且不会重复() async {
+        let profileID = UUID()
+        let coordinator = MobileTransferCoordinator()
+        let initial = DownloadStationSnapshot(
+            source: .official,
+            tasks: [
+                DownloadStationTask(
+                    id: "dbid_1",
+                    title: "Ubuntu.iso",
+                    status: "downloading",
+                    sizeBytes: 100,
+                    downloadedBytes: 40
+                ),
+                DownloadStationTask(
+                    id: "dbid_2",
+                    title: "Paused.torrent",
+                    status: "paused",
+                    sizeBytes: 200,
+                    downloadedBytes: 20
+                ),
+            ]
+        )
+
+        await coordinator.syncDownloadStationTasks(profileID: profileID, snapshot: initial)
+        let first = await coordinator.tasks(profileID: profileID)
+        await coordinator.syncDownloadStationTasks(profileID: profileID, snapshot: initial)
+        let second = await coordinator.tasks(profileID: profileID)
+
+        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(second.count, 2)
+        XCTAssertTrue(second.allSatisfy { $0.source == .nas })
+        XCTAssertTrue(second.allSatisfy { !$0.canCancel && !$0.canRetryFromBeginning })
+        let byName = Dictionary(uniqueKeysWithValues: second.map { ($0.stableTarget, $0) })
+        XCTAssertEqual(byName["Ubuntu.iso"]?.progress.completedBytes, 40)
+        XCTAssertEqual(byName["Paused.torrent"]?.status, .paused)
+    }
+
+    func testDownloadStation同步会移除已经不在快照中的NASTask() async {
+        let profileID = UUID()
+        let coordinator = MobileTransferCoordinator()
+        await coordinator.syncDownloadStationTasks(
+            profileID: profileID,
+            snapshot: DownloadStationSnapshot(
+                source: .official,
+                tasks: [
+                    DownloadStationTask(id: "one", title: "one.iso", status: "waiting"),
+                    DownloadStationTask(id: "two", title: "two.iso", status: "finished"),
+                ]
+            )
+        )
+
+        await coordinator.syncDownloadStationTasks(
+            profileID: profileID,
+            snapshot: DownloadStationSnapshot(
+                source: .official,
+                tasks: [
+                    DownloadStationTask(id: "two", title: "two.iso", status: "finished"),
+                ]
+            )
+        )
+
+        let tasks = await coordinator.tasks(profileID: profileID)
+        XCTAssertEqual(tasks.count, 1)
+        XCTAssertEqual(tasks.first?.stableTarget, "two.iso")
+        XCTAssertEqual(tasks.first?.status, .succeeded)
     }
 
     private func resolve(
@@ -74,6 +143,7 @@ final class MobileActivityPresentationTests: XCTestCase {
             createdAt: Date(),
             profileID: UUID(),
             source: .app,
+            sourceIdentifier: nil,
             direction: direction,
             stableTarget: "/home/file.txt",
             progress: .zero,

@@ -8,9 +8,16 @@ internal enum ForegroundTransferDirection
     Upload,
 }
 
+internal enum ForegroundTransferSource
+{
+    App,
+    Nas,
+}
+
 internal enum ForegroundTransferState
 {
     Running,
+    Paused,
     Completed,
     Cancelled,
     CancelledBeforeSubmission,
@@ -25,6 +32,8 @@ internal sealed record ForegroundTransferProgress(
 internal sealed record ForegroundTransferActivity(
     Guid Id,
     string ProfileId,
+    ForegroundTransferSource Source,
+    string? SourceIdentifier,
     string RemotePath,
     string DisplayName,
     ForegroundTransferDirection Direction,

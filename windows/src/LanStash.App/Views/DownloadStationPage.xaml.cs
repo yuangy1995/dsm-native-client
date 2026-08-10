@@ -1,4 +1,5 @@
 using LanStash.App.Features.Downloads;
+using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
@@ -20,8 +21,11 @@ public sealed partial class DownloadStationPage : Page, IDisposable
     private bool _updatingFilter;
     private bool _disposed;
 
-    internal DownloadStationPage(IDownloadStationRepository repository)
-        : this(repository, new DownloadStationViewModel())
+    internal DownloadStationPage(
+        IDownloadStationRepository repository,
+        ForegroundTransferCoordinator? activityCoordinator = null)
+        : this(repository, new DownloadStationViewModel(
+            activityCoordinator: activityCoordinator))
     {
     }
 

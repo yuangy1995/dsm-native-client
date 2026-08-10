@@ -327,6 +327,7 @@ private extension MobileTransferStatus {
         case .queued: L10n.string("mobile.activity.status-queued")
         case .preparing: L10n.string("mobile.activity.status-preparing")
         case .running: L10n.string("mobile.activity.status-running")
+        case .paused: L10n.string("mobile.activity.status-paused")
         case .cancelling: L10n.string("mobile.activity.status-cancelling")
         case .succeeded: L10n.string("mobile.activity.status-succeeded")
         case .failed: L10n.string("mobile.activity.status-failed")
@@ -342,6 +343,7 @@ private extension MobileTransferStatus {
         case .queued: "clock"
         case .preparing: "ellipsis.circle"
         case .running: "arrow.triangle.2.circlepath"
+        case .paused: "pause.circle"
         case .cancelling: "xmark.circle"
         case .succeeded: "checkmark.circle.fill"
         case .failed: "exclamationmark.circle.fill"
@@ -355,14 +357,15 @@ private extension MobileTransferStatus {
         case .succeeded: .green
         case .failed: .red
         case .resultNeedsReview: .orange
-        case .queued, .preparing, .running, .cancelling, .cancelledBeforeSubmission, .cancelled:
+        case .queued, .preparing, .running, .paused, .cancelling, .cancelledBeforeSubmission,
+             .cancelled:
             .secondary
         }
     }
 
     var showsProgress: Bool {
         switch self {
-        case .preparing, .running, .cancelling:
+        case .preparing, .running, .paused, .cancelling:
             true
         case .queued, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
              .resultNeedsReview:

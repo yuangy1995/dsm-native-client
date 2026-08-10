@@ -2797,6 +2797,7 @@
 "mobile.activity.status-queued" = "Waiting";
 "mobile.activity.status-preparing" = "Preparing";
 "mobile.activity.status-running" = "Transferring";
+"mobile.activity.status-paused" = "Paused";
 "mobile.activity.status-cancelling" = "Cancelling";
 "mobile.activity.status-succeeded" = "Completed";
 "mobile.activity.status-failed" = "Failed";

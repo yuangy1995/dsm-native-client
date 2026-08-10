@@ -426,6 +426,82 @@ public sealed class ForegroundTransferCoordinatorTests
         Assert.Empty(coordinator.GetActivities("profile-b"));
     }
 
+    [Fact]
+    public void DownloadStationTasksSyncAsNasActivitiesWithoutDuplicates()
+    {
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profileId = Guid.NewGuid();
+        coordinator.ActivateProfile(profileId.ToString());
+        var tasks = new[]
+        {
+            DownloadTask(
+                "task-1",
+                "Ubuntu.iso",
+                DownloadTaskState.Downloading,
+                size: 100,
+                downloaded: 40),
+            DownloadTask(
+                "task-2",
+                "Paused.torrent",
+                DownloadTaskState.Paused,
+                size: 200,
+                downloaded: 20),
+        };
+
+        coordinator.SyncDownloadStationTasks(profileId, tasks);
+        coordinator.SyncDownloadStationTasks(profileId, tasks);
+
+        var activities = coordinator.GetActivities(profileId.ToString());
+        Assert.Equal(2, activities.Count);
+        Assert.All(activities, activity => Assert.Equal(ForegroundTransferSource.Nas, activity.Source));
+        Assert.Contains(activities, activity =>
+            activity.DisplayName == "Ubuntu.iso" &&
+            activity.State == ForegroundTransferState.Running &&
+            activity.BytesTransferred == 40);
+        Assert.Contains(activities, activity =>
+            activity.DisplayName == "Paused.torrent" &&
+            activity.State == ForegroundTransferState.Paused);
+    }
+
+    [Fact]
+    public void DownloadStationSyncRemovesTasksMissingFromLatestSnapshot()
+    {
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profileId = Guid.NewGuid();
+        coordinator.ActivateProfile(profileId.ToString());
+        coordinator.SyncDownloadStationTasks(
+            profileId,
+            [
+                DownloadTask("one", "one.iso", DownloadTaskState.Downloading),
+                DownloadTask("two", "two.iso", DownloadTaskState.Finished),
+            ]);
+
+        coordinator.SyncDownloadStationTasks(
+            profileId,
+            [DownloadTask("two", "two.iso", DownloadTaskState.Finished)]);
+
+        var activity = Assert.Single(coordinator.GetActivities(profileId.ToString()));
+        Assert.Equal("two.iso", activity.DisplayName);
+        Assert.Equal(ForegroundTransferState.Completed, activity.State);
+    }
+
+    [Fact]
+    public void SwitchingProfileDoesNotCancelNasDownloadStationActivities()
+    {
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profileId = Guid.NewGuid();
+        coordinator.ActivateProfile(profileId.ToString());
+        coordinator.SyncDownloadStationTasks(
+            profileId,
+            [DownloadTask("task", "still-running.iso", DownloadTaskState.Downloading)]);
+
+        coordinator.ActivateProfile(Guid.NewGuid().ToString());
+
+        var activity = Assert.Single(coordinator.GetActivities(profileId.ToString()));
+        Assert.Equal(ForegroundTransferSource.Nas, activity.Source);
+        Assert.Equal(ForegroundTransferState.Running, activity.State);
+    }
+
     private static MutationResult UploadResult(MutationResultStatus status)
     {
         var (submitted, refresh, succeeded, failed, unknown) = status switch
@@ -446,4 +522,23 @@ public sealed class ForegroundTransferCoordinatorTests
 
     private static ForegroundDownloadRequest Request(string profileId, long totalBytes) =>
         new(profileId, "/file.bin", "file.bin", totalBytes);
+
+    private static DownloadTask DownloadTask(
+        string id,
+        string title,
+        DownloadTaskState state,
+        long? size = null,
+        long? downloaded = null) =>
+        new(
+            id,
+            title,
+            state.ToString().ToLowerInvariant(),
+            state,
+            size,
+            downloaded,
+            null,
+            null,
+            null,
+            "/downloads",
+            null);
 }

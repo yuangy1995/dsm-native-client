@@ -79,6 +79,8 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
             var activity = new ForegroundTransferActivity(
                 activityId,
                 request.ProfileId,
+                ForegroundTransferSource.App,
+                null,
                 request.RemotePath,
                 request.DisplayName,
                 ForegroundTransferDirection.Download,
@@ -156,6 +158,8 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
             var activity = new ForegroundTransferActivity(
                 request.OperationId,
                 request.ProfileId,
+                ForegroundTransferSource.App,
+                null,
                 request.FolderPath,
                 request.DisplayName,
                 ForegroundTransferDirection.Upload,
@@ -250,6 +254,54 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
         }
     }
 
+    public void SyncDownloadStationTasks(Guid profileId, IReadOnlyList<DownloadTask> tasks)
+    {
+        ArgumentNullException.ThrowIfNull(tasks);
+        var profileKey = profileId.ToString();
+        const string sourcePrefix = "download:";
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var activities = GetOrCreateActivities(profileKey);
+            var incomingKeys = tasks
+                .Select(task => sourcePrefix + task.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var existingByKey = activities
+                .Where(activity => activity.Source == ForegroundTransferSource.Nas &&
+                    activity.SourceIdentifier is not null &&
+                    activity.SourceIdentifier.StartsWith(sourcePrefix, StringComparison.Ordinal))
+                .ToDictionary(
+                    activity => activity.SourceIdentifier!,
+                    activity => activity,
+                    StringComparer.Ordinal);
+            activities.RemoveAll(activity => activity.Source == ForegroundTransferSource.Nas &&
+                activity.SourceIdentifier is not null &&
+                activity.SourceIdentifier.StartsWith(sourcePrefix, StringComparison.Ordinal) &&
+                !incomingKeys.Contains(activity.SourceIdentifier));
+
+            foreach (var task in tasks)
+            {
+                var sourceIdentifier = sourcePrefix + task.Id;
+                var existing = existingByKey.GetValueOrDefault(sourceIdentifier);
+                var updated = CreateDownloadStationActivity(
+                    profileKey,
+                    task,
+                    existing?.Id ?? Guid.NewGuid(),
+                    sourceIdentifier);
+                if (existing is null)
+                {
+                    activities.Add(updated);
+                    continue;
+                }
+                var index = activities.FindIndex(activity => activity.Id == existing.Id);
+                if (index >= 0)
+                {
+                    activities[index] = updated;
+                }
+            }
+        }
+    }
+
     private List<ForegroundTransferActivity> GetOrCreateActivities(string profileId)
     {
         if (!_activities.TryGetValue(profileId, out var activities))
@@ -339,7 +391,8 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
 
         for (var index = 0; index < activities.Count; index++)
         {
-            if (activities[index].State == ForegroundTransferState.Running)
+            if (activities[index].Source == ForegroundTransferSource.App &&
+                activities[index].State == ForegroundTransferState.Running)
             {
                 activities[index] = activities[index] with
                 {
@@ -350,6 +403,41 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
             }
         }
     }
+
+    private static ForegroundTransferActivity CreateDownloadStationActivity(
+        string profileId,
+        DownloadTask task,
+        Guid id,
+        string sourceIdentifier)
+    {
+        var completedBytes = Math.Max(0, task.Downloaded ?? task.Uploaded ?? 0);
+        var totalBytes = Math.Max(0, task.Size ?? 0);
+        if (totalBytes > 0)
+        {
+            completedBytes = Math.Min(completedBytes, totalBytes);
+        }
+        return new ForegroundTransferActivity(
+            id,
+            profileId,
+            ForegroundTransferSource.Nas,
+            sourceIdentifier,
+            task.Id,
+            task.Title,
+            ForegroundTransferDirection.Download,
+            completedBytes,
+            totalBytes,
+            StateForDownloadTask(task.State),
+            task.Error);
+    }
+
+    private static ForegroundTransferState StateForDownloadTask(DownloadTaskState state) =>
+        state switch
+        {
+            DownloadTaskState.Finished => ForegroundTransferState.Completed,
+            DownloadTaskState.Paused => ForegroundTransferState.Paused,
+            DownloadTaskState.Error => ForegroundTransferState.Failed,
+            _ => ForegroundTransferState.Running,
+        };
 
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
     {

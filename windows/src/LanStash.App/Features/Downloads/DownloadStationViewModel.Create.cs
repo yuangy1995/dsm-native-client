@@ -274,6 +274,7 @@ public sealed partial class DownloadStationViewModel
         profile.AllTasks = new[] { new DownloadTaskItem(task) }
             .Concat(existing)
             .ToArray();
+        SyncActivity(profile);
         ApplyFilter(profile);
     }
 

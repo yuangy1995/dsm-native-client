@@ -86,6 +86,7 @@ public sealed partial class TransferActivityPage : Page, IDisposable
     {
         public required ForegroundTransferActivity Activity { get; init; }
         public required string DisplayName { get; init; }
+        public required string SourceText { get; init; }
         public required string DirectionText { get; init; }
         public required double Maximum { get; init; }
         public required double Value { get; init; }
@@ -105,6 +106,7 @@ public sealed partial class TransferActivityPage : Page, IDisposable
                         : "TransferActivityProgress",
                     activity.BytesTransferred,
                     activity.TotalBytes),
+                ForegroundTransferState.Paused => localization.Get("TransferActivityPaused"),
                 ForegroundTransferState.Completed => localization.Get(
                     activity.Direction == ForegroundTransferDirection.Upload
                         ? "TransferActivityUploadCompleted"
@@ -124,6 +126,10 @@ public sealed partial class TransferActivityPage : Page, IDisposable
             {
                 Activity = activity,
                 DisplayName = activity.DisplayName,
+                SourceText = localization.Get(
+                    activity.Source == ForegroundTransferSource.App
+                        ? "TransferActivitySourceApp"
+                        : "TransferActivitySourceNas"),
                 DirectionText = localization.Get(
                     activity.Direction == ForegroundTransferDirection.Upload
                         ? "TransferActivityDirectionUpload"
@@ -136,7 +142,8 @@ public sealed partial class TransferActivityPage : Page, IDisposable
                 CancelAutomationName = localization.Format(
                     "TransferActivityCancelAutomationName",
                     activity.DisplayName),
-                CancelVisibility = activity.State == ForegroundTransferState.Running
+                CancelVisibility = activity.Source == ForegroundTransferSource.App &&
+                    activity.State == ForegroundTransferState.Running
                     ? Visibility.Visible
                     : Visibility.Collapsed,
             };

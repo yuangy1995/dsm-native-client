@@ -334,17 +334,20 @@
   <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>上传请求可能已到达 NAS。再次上传前，请刷新此文件夹并检查目标文件。</value></data>
   <data name="TransferOriginalFileType" xml:space="preserve"><value>原始文件类型</value></data>
   <data name="TransferActivityTitle.Text" xml:space="preserve"><value>活动</value></data>
-  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>当前窗口打开期间，会在这里显示当前 NAS 的下载和上传。</value></data>
+  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>当前窗口打开期间，会在这里显示当前 NAS 的 App 传输和 NAS 下载任务。</value></data>
   <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输活动</value></data>
   <data name="TransferActivityProgressBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输进度</value></data>
   <data name="TransferActivityCancel.Content" xml:space="preserve"><value>取消</value></data>
   <data name="TransferActivityCancelAutomationName" xml:space="preserve"><value>取消 {0} 的传输</value></data>
   <data name="TransferActivityEmptyTitle.Text" xml:space="preserve"><value>暂无传输活动</value></data>
-  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>从“文件”中开始的下载和上传会显示在这里。</value></data>
+  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>下载、上传和 Download Station 任务会显示在这里。</value></data>
   <data name="TransferActivityProgress" xml:space="preserve"><value>已下载 {0:N0} / {1:N0} 字节</value></data>
   <data name="TransferActivityUploadProgress" xml:space="preserve"><value>已上传 {0:N0} / {1:N0} 字节</value></data>
+  <data name="TransferActivitySourceApp" xml:space="preserve"><value>App 传输</value></data>
+  <data name="TransferActivitySourceNas" xml:space="preserve"><value>NAS 下载任务</value></data>
   <data name="TransferActivityDirectionDownload" xml:space="preserve"><value>从 NAS 下载</value></data>
   <data name="TransferActivityDirectionUpload" xml:space="preserve"><value>上传到 NAS</value></data>
+  <data name="TransferActivityPaused" xml:space="preserve"><value>已暂停</value></data>
   <data name="TransferActivityCompleted" xml:space="preserve"><value>已保存</value></data>
   <data name="TransferActivityUploadCompleted" xml:space="preserve"><value>已上传</value></data>
   <data name="TransferActivityCancelled" xml:space="preserve"><value>已取消</value></data>

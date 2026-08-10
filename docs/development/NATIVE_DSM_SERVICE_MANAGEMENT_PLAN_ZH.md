@@ -67,7 +67,7 @@
 - Android 已完成官方任务文件、Tracker、Peer 详情、RSS 站点/条目浏览、RSS 单站点手动刷新和 BT 实际搜索。BT Search v1 通过 `getModule/getCategory` 读取提供方和类别，支持全部、已启用或明确选定提供方、类别、标题过滤、排序字段和方向，并在搜索完成、失败、超时或取消后尝试清理本次临时服务端搜索任务；清理失败不冒充记录已经移除。这不代表 BT 协议高级设置已完成。RSS 条目和搜索结果可经可写目录选择后直接创建任务。RSS 刷新具备目标预检、同站点防重复、写后回读和未确认结果；官方指南未公开 RSS 完整编辑或文件优先级写参数，相关能力与其他高级设置保持关闭并等待版本化契约和真实 NAS 验收。
 - Android、Windows 与 Apple 公开 Download Station 路径均使用官方 `SYNO.DownloadStation.Statistic.getinfo` v1 显示当前标准/eMule 上下行聚合字节速率；Apple 既有 `DownloadStation2` 降级路径仍 best-effort 调用内部 `SYNO.DownloadStation2.Task.Statistic.get`。Android/Windows 对缺失、负数或错误类型进入摘要独立错误，Apple 当前兼容字段别名并在读取失败时隐藏摘要；三端都不得让摘要失败遮蔽任务列表，也不得把结果冒充历史流量、单任务速度或传输结果。
 - Android 已按官方 `SYNO.DownloadStation.Task.edit` v1 接入单任务保存位置修改：选择可写目录、明确提示可能移动已有文件，写前复核任务与目录完整基线，提交后严格回读，断线和取消不自动重放；该能力不复用 `DownloadStation2`。
-- BTSearch 门禁完成后的下一波顺序冻结为：ACT-01 统一活动中心优先；CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、Container/VMM 高危写不并入该波。
+- BTSearch 门禁完成后的 ACT-01 首片已在当前分支落盘并通过云端门禁：Apple 与 Windows 均把 Download Station 已加载任务快照投影到 Activity 的 NAS 来源，保留只读展示和不同控制能力；真机与真实 NAS 验收尚未完成。下一步顺序调整为 CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、Container/VMM 高危写和 Activity 主动后台轮询不并入该波。
 
 ### M3：Container Manager 完整功能
 

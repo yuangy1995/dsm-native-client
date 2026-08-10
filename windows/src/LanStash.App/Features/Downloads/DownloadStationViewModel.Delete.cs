@@ -171,6 +171,7 @@ public sealed partial class DownloadStationViewModel
         {
             profile.SelectedTaskId = null;
         }
+        SyncActivity(profile);
         ApplyFilter(profile);
     }
 

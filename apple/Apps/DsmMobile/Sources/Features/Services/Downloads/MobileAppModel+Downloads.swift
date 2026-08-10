@@ -677,6 +677,7 @@ extension MobileAppModel {
             emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
             defaultDestination: snapshot.defaultDestination
         )
+        syncDownloadSnapshotToActivity()
     }
 
     private func upsertDownloadTask(_ task: DownloadStationTask) {
@@ -698,6 +699,7 @@ extension MobileAppModel {
             emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
             defaultDestination: snapshot.defaultDestination
         )
+        syncDownloadSnapshotToActivity()
     }
 
     private func removeDownloadTask(id: String) {
@@ -714,6 +716,7 @@ extension MobileAppModel {
             emuleUploadBytesPerSecond: snapshot.emuleUploadBytesPerSecond,
             defaultDestination: snapshot.defaultDestination
         )
+        syncDownloadSnapshotToActivity()
     }
 
     private static func feedbackKind(

@@ -37,6 +37,7 @@ actor MobileTransferCoordinator {
             createdAt: Date(),
             profileID: profileID,
             source: .nas,
+            sourceIdentifier: nil,
             direction: direction,
             stableTarget: stableTarget,
             progress: progress,
@@ -45,6 +46,52 @@ actor MobileTransferCoordinator {
             mutationResult: nil
         )
         return id
+    }
+
+    func syncDownloadStationTasks(
+        profileID: UUID,
+        snapshot: DownloadStationSnapshot
+    ) {
+        let sourcePrefix = "download:"
+        let incomingKeys = Set(snapshot.tasks.map { sourcePrefix + $0.id })
+        let existingByKey = Dictionary(
+            tasksByID.compactMap { id, task -> (String, UUID)? in
+                guard task.profileID == profileID,
+                      task.source == .nas,
+                      let sourceIdentifier = task.sourceIdentifier,
+                      sourceIdentifier.hasPrefix(sourcePrefix) else {
+                    return nil
+                }
+                return (sourceIdentifier, id)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let outdatedIDs = tasksByID.compactMap { id, task -> UUID? in
+            guard task.profileID == profileID &&
+            task.source == .nas &&
+            task.sourceIdentifier?.hasPrefix(sourcePrefix) == true &&
+            !incomingKeys.contains(task.sourceIdentifier ?? "") else {
+                return nil
+            }
+            return id
+        }
+        for id in outdatedIDs {
+            tasksByID.removeValue(forKey: id)
+        }
+
+        for downloadTask in snapshot.tasks {
+            let sourceIdentifier = sourcePrefix + downloadTask.id
+            let id = existingByKey[sourceIdentifier] ?? UUID()
+            let createdAt = tasksByID[id]?.createdAt ?? Date()
+            tasksByID[id] = Self.activityTask(
+                id: id,
+                createdAt: createdAt,
+                profileID: profileID,
+                sourceIdentifier: sourceIdentifier,
+                task: downloadTask
+            )
+        }
     }
 
     func start(_ id: UUID, using service: any MobileTransferServing) {
@@ -75,7 +122,7 @@ actor MobileTransferCoordinator {
             task.status = .cancelling
             tasksByID[id] = task
             executionsByID[id]?.cancel()
-        case .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
+        case .paused, .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
              .resultNeedsReview:
             break
         }
@@ -142,6 +189,7 @@ actor MobileTransferCoordinator {
             createdAt: Date(),
             profileID: request.profileID,
             source: .app,
+            sourceIdentifier: nil,
             direction: request.direction,
             stableTarget: request.stableTarget,
             progress: .zero,
@@ -357,5 +405,49 @@ actor MobileTransferCoordinator {
         guard isCurrentExecution(id, generation: generation) else { return }
         executionsByID[id] = nil
         executionGenerationsByID[id] = nil
+    }
+
+    private static func activityTask(
+        id: UUID,
+        createdAt: Date,
+        profileID: UUID,
+        sourceIdentifier: String,
+        task: DownloadStationTask
+    ) -> MobileActivityTask {
+        let completedBytes = task.downloadedBytes ?? task.uploadedBytes ?? 0
+        return MobileActivityTask(
+            id: id,
+            createdAt: createdAt,
+            profileID: profileID,
+            source: .nas,
+            sourceIdentifier: sourceIdentifier,
+            direction: .download,
+            stableTarget: task.title,
+            progress: MobileTransferProgress(
+                completedBytes: max(0, completedBytes),
+                totalBytes: task.sizeBytes.map { max(0, $0) }
+            ),
+            status: status(for: task),
+            retryPolicy: .none,
+            mutationResult: nil,
+            failureCategory: task.errorDescription == nil ? nil : .unknown
+        )
+    }
+
+    private static func status(for task: DownloadStationTask) -> MobileTransferStatus {
+        switch task.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "finished":
+            return .succeeded
+        case "paused":
+            return .paused
+        case "error":
+            return .failed
+        case "waiting":
+            return .queued
+        case "downloading", "hash_checking", "filehosting_waiting", "extracting", "seeding":
+            return .running
+        default:
+            return .running
+        }
     }
 }

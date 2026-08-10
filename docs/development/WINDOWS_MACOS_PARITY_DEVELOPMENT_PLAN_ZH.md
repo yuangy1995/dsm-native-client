@@ -304,7 +304,7 @@ Container Manager：
 
 ### BTSearch 后的近期实现顺序
 
-1. **ACT-01 统一活动中心优先**：把现有 App 前台传输与 NAS/Download 任务按来源投影到同一入口，保留不同控制能力，只读整合现有状态，不借机新增后台常驻或危险写。
+1. **ACT-01 统一活动中心首片已落盘并通过云端门禁**：当前分支已把 Download Station 已加载任务快照投影到同一 Activity 入口，保留 App 传输与 NAS 下载任务的来源差异和控制边界；GitHub Windows Build run `31358741100` 已通过 889/889 项 xUnit，并完成 WinUI x64 与 ARM64 构建。Narrator、真实设备和真实 NAS 待用户验证；Activity 主动轮询、系统通知、托盘联动和后台常驻继续后置。
 2. **CHAT-03 契约先行**：Windows 先补单附件上传、缩略图和下载 typed 结果契约，再接选择、进度、预览与保存；前台实时继续后置。
 3. **NAS-02/NAS-04 有界只读详情并行**：先把当前扁平 NAS 摘要拆为分区独立失败、分页和 partial/truncated 语义；不接断开连接、套件生命周期、任务执行或设置写。
 4. Download RSS、文件优先级、BT 协议高级设置以及 Container/VMM 高风险写不进入这一波；没有公开或已记录契约的能力继续关闭。

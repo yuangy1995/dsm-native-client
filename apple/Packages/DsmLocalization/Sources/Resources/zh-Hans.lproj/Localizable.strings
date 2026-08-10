@@ -2797,6 +2797,7 @@
 "mobile.activity.status-queued" = "等待中";
 "mobile.activity.status-preparing" = "正在准备";
 "mobile.activity.status-running" = "正在传输";
+"mobile.activity.status-paused" = "已暂停";
 "mobile.activity.status-cancelling" = "正在取消";
 "mobile.activity.status-succeeded" = "已完成";
 "mobile.activity.status-failed" = "传输失败";

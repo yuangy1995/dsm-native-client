@@ -142,6 +142,7 @@ extension MobileAppModel {
                     profileID: loadProfileID
                 ) else { return }
                 downloadSnapshot = snapshot
+                syncDownloadSnapshotToActivity()
             case .containers:
                 guard let profileID = activeProfile?.id,
                       let serviceRepository else { break }
@@ -205,6 +206,18 @@ extension MobileAppModel {
             && activeProfile?.id == profileID
             && selectedModule == module
             && isModuleVisible(module)
+    }
+
+    func syncDownloadSnapshotToActivity() {
+        guard let profileID = activeProfile?.id,
+              let downloadSnapshot else { return }
+        let snapshot = downloadSnapshot
+        Task { [transferCoordinator] in
+            await transferCoordinator.syncDownloadStationTasks(
+                profileID: profileID,
+                snapshot: snapshot
+            )
+        }
     }
 
 

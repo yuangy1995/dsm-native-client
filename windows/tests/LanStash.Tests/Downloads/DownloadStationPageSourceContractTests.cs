@@ -137,7 +137,9 @@ public sealed class DownloadStationPageSourceContractTests
         _ = XDocument.Parse(xaml);
         Assert.Contains("if (module == AppModule.Downloads)", shell, StringComparison.Ordinal);
         Assert.Contains("downloadRepository.ProfileId != downloadProfile.Id", shell, StringComparison.Ordinal);
-        Assert.Contains("new DownloadStationPage(downloadRepository)", shell, StringComparison.Ordinal);
+        Assert.Contains("new DownloadStationPage(downloadRepository, _transfers)", shell, StringComparison.Ordinal);
+        Assert.Contains("new UnavailableDownloadStationRepository(Guid.Empty),", shell, StringComparison.Ordinal);
+        Assert.True(Count(shell, "_transfers)") >= 2);
         Assert.Contains("new UnavailableDownloadStationRepository", shell, StringComparison.Ordinal);
         var routeStart = shell.IndexOf("if (module == AppModule.Downloads)", StringComparison.Ordinal);
         var fallback = shell.IndexOf("ContentFrame.Content = _workspace;", routeStart, StringComparison.Ordinal);

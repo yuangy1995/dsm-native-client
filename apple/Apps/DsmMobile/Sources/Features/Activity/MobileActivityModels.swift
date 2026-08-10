@@ -15,6 +15,7 @@ enum MobileTransferStatus: String, CaseIterable, Sendable {
     case queued
     case preparing
     case running
+    case paused
     case cancelling
     case succeeded
     case failed
@@ -26,7 +27,7 @@ enum MobileTransferStatus: String, CaseIterable, Sendable {
         switch self {
         case .succeeded, .failed, .cancelledBeforeSubmission, .cancelled, .resultNeedsReview:
             true
-        case .queued, .preparing, .running, .cancelling:
+        case .queued, .preparing, .running, .paused, .cancelling:
             false
         }
     }
@@ -93,6 +94,7 @@ struct MobileActivityTask: Identifiable, Equatable, Sendable {
     let createdAt: Date
     let profileID: UUID
     let source: MobileActivitySource
+    let sourceIdentifier: String?
     let direction: MobileTransferDirection
     let stableTarget: String
     var progress: MobileTransferProgress
@@ -102,16 +104,18 @@ struct MobileActivityTask: Identifiable, Equatable, Sendable {
     var failureCategory: AppErrorCategory? = nil
 
     var canCancel: Bool {
-        switch status {
+        guard source == .app else { return false }
+        return switch status {
         case .queued, .preparing, .running:
             true
-        case .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
+        case .paused, .cancelling, .succeeded, .failed, .cancelledBeforeSubmission, .cancelled,
              .resultNeedsReview:
             false
         }
     }
 
     var canRetryFromBeginning: Bool {
+        guard source == .app else { return false }
         guard retryPolicy == .restartFromBeginning else { return false }
         switch direction {
         case .upload:

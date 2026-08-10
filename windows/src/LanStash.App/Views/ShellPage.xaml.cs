@@ -363,7 +363,8 @@ public sealed partial class ShellPage : Page
                 {
                     _downloads?.Dispose();
                     _downloads = new DownloadStationPage(
-                        new UnavailableDownloadStationRepository(Guid.Empty));
+                        new UnavailableDownloadStationRepository(Guid.Empty),
+                        _transfers);
                     _downloadsProfileId = null;
                     ContentFrame.Content = _downloads;
                     return;
@@ -371,7 +372,7 @@ public sealed partial class ShellPage : Page
                 if (_downloads is null || _downloadsProfileId != downloadProfile.Id)
                 {
                     _downloads?.Dispose();
-                    _downloads = new DownloadStationPage(downloadRepository);
+                    _downloads = new DownloadStationPage(downloadRepository, _transfers);
                     _downloadsProfileId = downloadProfile.Id;
                 }
                 ContentFrame.Content = _downloads;

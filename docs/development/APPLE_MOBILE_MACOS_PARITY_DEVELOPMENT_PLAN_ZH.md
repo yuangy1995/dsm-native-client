@@ -52,7 +52,7 @@
 | NAS | 只有少量只读摘要，远少于 macOS 21 类管理页 | 只补健康与必要只读诊断；配置、电源、账号和长时分析不是当前缺口 |
 | iPad | 只按 horizontal size class 分支，缺实际宽度、键盘、指针和拖放设计 | 补齐当前范围的自适应生产力；多窗口后续 |
 
-立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息与受限纯文字发送、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，候选提交 `53360d2` 的 Apple Build run `31354549813` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。iPad/真机与真实 NAS 仍待验收。下一波优先 ACT-01；CHAT-03 先做 typed 单附件结果契约，NAS-02/NAS-04 有界只读详情可并行；Chat 实时、Download RSS/文件优先级/BT 高级/设置写，以及后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
+立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息与受限纯文字发送、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，候选提交 `53360d2` 的 Apple Build run `31354549813` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。当前 ACT-01 首片已在分支中把 Download Station 已加载任务快照投影到 Activity 的独立 NAS 来源，新增暂停态与 NAS 项只读控制边界；本地 Activity 聚焦测试已通过，GitHub Apple Build run `31358741106` 通过共享包 675 项 XCTest（2 跳过）+10 Swift Testing、iPhone/iPad 通用应用构建和 macOS 打包，真机与真实 NAS 待验收。下一步优先 CHAT-03 typed 单附件结果契约和 NAS-02/NAS-04 有界只读详情；Chat 实时、Download RSS/文件优先级/BT 高级/设置写、Activity 主动后台轮询、后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
 
 ## 3. 移动范围与 macOS 语义基线
 
@@ -382,7 +382,7 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 - 已提供单任务列表/筛选/详情、URL/magnet 与任务文件创建、目标目录选择、暂停、继续和只移除任务；删除已下载数据仍关闭。
 - 官方 BTSearch v1 的提供方/类别、七类排序、有界结果、取消/清理、零提供方状态与单结果创建已完成源码闭环；真实 NAS、iPad/Windows 交互按专项 PUV 验收。
-- ACT-01 仍需把 NAS/Download 任务接入 Activity 的独立来源；当前只有协调器类型，生产组合根尚无 `registerNasTask` 调用，不能把服务端进度冒充本机后台传输。
+- ACT-01 首片已把 Download Station 当前已加载任务快照接入 Activity 的独立 NAS 来源：页面加载或任务变更后同步投影，NAS 项显示进行中、暂停、成功和失败状态，但不显示取消或从头重试；Activity 主动刷新 NAS、系统通知、后台常驻和跨重启恢复继续后置。
 - 当前不做批量命令、删除已下载数据、RSS、文件优先级、BT 协议高级设置和设置写；交给 Mac App 或 DSM Web。
 
 出口：每项写操作按能力和版本 gate；创建、暂停、继续和只移除任务分别具备稳定目标、防重复与回读测试，提交未知不重放。BTSearch 的临时搜索任务只做一次独立 best-effort 清理，清理失败不覆盖原始结果。

@@ -13,6 +13,7 @@ public sealed class TransferActivitySourceContractTests
         Assert.Contains("x:Name=\"ActivityList\"", xaml);
         Assert.Contains("x:Name=\"EmptyState\"", xaml);
         Assert.Contains("<ProgressBar", xaml);
+        Assert.Contains("Text=\"{Binding SourceText}\"", xaml);
         Assert.Contains("MinHeight=\"44\"", xaml);
         Assert.Contains(
             "AutomationProperties.Name=\"{Binding CancelAutomationName}\"",
@@ -20,12 +21,15 @@ public sealed class TransferActivitySourceContractTests
         Assert.Contains("TransferActivityCancelAutomationName", source);
         Assert.Contains("activity.DisplayName", source);
         Assert.Contains("ForegroundTransferState.Running", source);
+        Assert.Contains("ForegroundTransferState.Paused", source);
         Assert.Contains("ForegroundTransferState.Completed", source);
         Assert.Contains("ForegroundTransferState.Cancelled", source);
         Assert.Contains("ForegroundTransferState.CancelledBeforeSubmission", source);
         Assert.Contains("ForegroundTransferState.ResultNeedsReview", source);
         Assert.Contains("ForegroundTransferState.Failed", source);
         Assert.Contains("ForegroundTransferDirection.Upload", source);
+        Assert.Contains("TransferActivitySourceNas", source);
+        Assert.Contains("activity.Source == ForegroundTransferSource.App", source);
         Assert.Contains("_coordinator.GetActivities(_profileId)", source);
         Assert.Contains("_timer.Start();", source);
         Assert.Contains("_timer.Stop();", source);
@@ -56,6 +60,7 @@ public sealed class TransferActivitySourceContractTests
             shell);
         Assert.Contains("_files ??= new FilesPage(", shell);
         Assert.Contains("_activity ??= new TransferActivityPage(", shell);
+        Assert.Contains("new DownloadStationPage(downloadRepository, _transfers)", shell);
         Assert.Contains("_transferPicker?.Dispose();", shell);
         Assert.Contains("_transfers.Dispose();", shell);
     }

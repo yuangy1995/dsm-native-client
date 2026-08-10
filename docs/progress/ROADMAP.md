@@ -81,7 +81,7 @@
 ### NAS 设置、套件与统一存储
 
 - 使用专用测试目标验证可能断网、改时、停服或影响存储状态的写操作。
-- 在已完成 Download Station 常用单任务流程和当前活动摘要基础上，BTSearch v1 的 Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 闭环也已通过候选提交 `53360d2` 的 Apple、Android、Windows 与 Repository 四组云端门禁；当前只剩真实 NAS、iPad、Windows、Narrator 和键盘验收。下一功能切片优先推进 ACT-01 统一活动中心；CHAT-03 必须先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、设置写入以及 Container/VMM 高危能力继续后置。
+- 在已完成 Download Station 常用单任务流程和当前活动摘要基础上，BTSearch v1 的 Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 闭环也已通过候选提交 `53360d2` 的 Apple、Android、Windows 与 Repository 四组云端门禁；当前只剩真实 NAS、iPad、Windows、Narrator 和键盘验收。ACT-01 统一活动中心首片已在当前分支落盘并通过云端门禁：Download Station 已加载任务快照会以 NAS 来源投影到 Activity，控制能力仍与 App 前台传输分开；真机和真实 NAS 待验收。下一功能切片优先推进 CHAT-03 单附件 typed 契约，NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、设置写入、Activity 主动后台刷新以及 Container/VMM 高危能力继续后置。
 - 验证统一存储管理的大目录、取消、权限、QuickConnect 和 MD5 任务；取得版本化契约后再评估套件历史报告与计划任务。
 
 详细范围见[套件管理计划](../development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)和[统一存储管理计划](../development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)。

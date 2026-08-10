@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using LanStash.App.Localization;
+using LanStash.App.Features.Transfers;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
 
@@ -10,6 +11,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
     public const int DefaultPageSize = 100;
 
     private readonly int _pageSize;
+    private readonly ForegroundTransferCoordinator? _activityCoordinator;
     private readonly Dictionary<Guid, ProfileState> _profiles = [];
     private IDownloadStationRepository? _repository;
     private CancellationTokenSource? _requestCancellation;
@@ -34,10 +36,13 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         null);
     private bool _disposed;
 
-    public DownloadStationViewModel(int pageSize = DefaultPageSize)
+    internal DownloadStationViewModel(
+        int pageSize = DefaultPageSize,
+        ForegroundTransferCoordinator? activityCoordinator = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         _pageSize = pageSize;
+        _activityCoordinator = activityCoordinator;
     }
 
     public ObservableCollection<DownloadTaskItem> Tasks { get; } = [];
@@ -291,6 +296,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
             }
             ValidatePage(page, requestedOffset);
             MergePage(profile, page);
+            SyncActivity(profile);
             ApplyFilter(profile);
         }
         catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
@@ -449,6 +455,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
             profile.Activity = snapshot.Activity;
             profile.DefaultDestination = snapshot.DefaultDestination;
             SetActivity(snapshot.Activity);
+            SyncActivity(profile);
             RaisePropertyChanged(nameof(CreateDestinationText));
             profile.Loaded = true;
             ApplyFilter(profile);
@@ -552,6 +559,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         ResetErrors();
         SetActivity(profile.Activity);
         RestoreFilter(profile);
+        SyncActivity(profile);
         ApplyFilter(profile);
     }
 
@@ -664,6 +672,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
                 ? new DownloadTaskItem(task)
                 : item)
             .ToArray();
+        SyncActivity(profile);
         ApplyFilter(profile);
     }
 
@@ -741,6 +750,17 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         RaisePropertyChanged(nameof(ActivityUploadSpeedText));
         RaisePropertyChanged(nameof(ActivityEmuleDownloadSpeedText));
         RaisePropertyChanged(nameof(ActivityEmuleUploadSpeedText));
+    }
+
+    private void SyncActivity(ProfileState profile)
+    {
+        if (ActiveProfileId is not Guid profileId)
+        {
+            return;
+        }
+        _activityCoordinator?.SyncDownloadStationTasks(
+            profileId,
+            profile.AllTasks.Select(item => item.Task).ToArray());
     }
 
     private void RaiseStateProperties()
