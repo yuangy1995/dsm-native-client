@@ -1,12 +1,16 @@
+using System.IO;
+using System.Runtime.InteropServices;
 using LanStash.App.Features.Transfers;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
+using Windows.Graphics.Imaging;
 
 namespace LanStash.App.Features.Files.Preview;
 
 public sealed class FilePreviewViewModel : ObservableObject, IDisposable
 {
     private readonly IFilePreviewArtifactStore _artifacts;
+    private readonly IFilePreviewMetadataReader _metadataReader;
     private CancellationTokenSource? _operationCancellation;
     private IFilePreviewRepository? _activeRepository;
     private long _generation;
@@ -18,8 +22,18 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
     {
     }
 
-    internal FilePreviewViewModel(IFilePreviewArtifactStore artifacts) =>
+    internal FilePreviewViewModel(IFilePreviewArtifactStore artifacts)
+        : this(artifacts, new FilePreviewMetadataReader())
+    {
+    }
+
+    internal FilePreviewViewModel(
+        IFilePreviewArtifactStore artifacts,
+        IFilePreviewMetadataReader metadataReader)
+    {
         _artifacts = artifacts;
+        _metadataReader = metadataReader;
+    }
 
     public FilePreviewSnapshot Snapshot
     {
@@ -145,6 +159,7 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
                     CompletedBytes = 0,
                     Artifact = null,
                     Media = null,
+                    MediaMetadata = null,
                 };
             }
         }
@@ -164,6 +179,7 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
             Phase = FilePreviewPhase.Cancelled,
             Artifact = null,
             Media = null,
+            MediaMetadata = null,
             CompletedBytes = 0,
         };
     }
@@ -190,6 +206,7 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
             Phase = FilePreviewPhase.Failed,
             Artifact = null,
             Media = null,
+            MediaMetadata = null,
             CompletedBytes = 0,
         };
     }
@@ -250,24 +267,38 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
                 };
             }
         });
-        var artifact = await _artifacts.PrepareAsync(
-            repository,
-            item,
-            progress,
-            request.Token).ConfigureAwait(true);
-        if (!IsCurrent(request.Generation, request.Token, request.Repository))
+        IFilePreviewArtifact? artifact = null;
+        try
         {
-            await artifact.DisposeAsync().ConfigureAwait(true);
-            return;
+            artifact = await _artifacts.PrepareAsync(
+                repository,
+                item,
+                progress,
+                request.Token).ConfigureAwait(true);
+            var metadata = await TryReadMetadataAsync(artifact, kind, request.Token)
+                .ConfigureAwait(true);
+            if (!IsCurrent(request.Generation, request.Token, request.Repository))
+            {
+                return;
+            }
+            Snapshot = new FilePreviewSnapshot(
+                profileId,
+                item,
+                kind,
+                FilePreviewPhase.Ready,
+                Artifact: artifact,
+                MediaMetadata: metadata,
+                CompletedBytes: item.Size,
+                TotalBytes: item.Size);
+            artifact = null;
         }
-        Snapshot = new FilePreviewSnapshot(
-            profileId,
-            item,
-            kind,
-            FilePreviewPhase.Ready,
-            Artifact: artifact,
-            CompletedBytes: item.Size,
-            TotalBytes: item.Size);
+        finally
+        {
+            if (artifact is not null)
+            {
+                await artifact.DisposeAsync().ConfigureAwait(true);
+            }
+        }
     }
 
     private async Task LoadMediaAsync(
@@ -294,6 +325,30 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
             FilePreviewPhase.Ready,
             Media: media,
             TotalBytes: item.Size);
+    }
+
+    private async Task<FilePreviewMediaMetadata?> TryReadMetadataAsync(
+        IFilePreviewArtifact artifact,
+        FilePreviewKind kind,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _metadataReader.ReadAsync(artifact, kind, cancellationToken)
+                .ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (
+            error is IOException or
+                UnauthorizedAccessException or
+                ArgumentException or
+                COMException)
+        {
+            return null;
+        }
     }
 
     private static void ValidateRange(
@@ -348,7 +403,7 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
 
         var artifact = Snapshot.Artifact;
         var media = Snapshot.Media;
-        Snapshot = Snapshot with { Artifact = null, Media = null };
+        Snapshot = Snapshot with { Artifact = null, Media = null, MediaMetadata = null };
         media?.Dispose();
         if (artifact is not null)
         {
@@ -398,4 +453,37 @@ internal static class FilePreviewSnapshotExtensions
             FilePreviewPhase.DetailsOnly or
             FilePreviewPhase.Failed or
             FilePreviewPhase.Cancelled;
+}
+
+internal interface IFilePreviewMetadataReader
+{
+    Task<FilePreviewMediaMetadata?> ReadAsync(
+        IFilePreviewArtifact artifact,
+        FilePreviewKind kind,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class FilePreviewMetadataReader : IFilePreviewMetadataReader
+{
+    public async Task<FilePreviewMediaMetadata?> ReadAsync(
+        IFilePreviewArtifact artifact,
+        FilePreviewKind kind,
+        CancellationToken cancellationToken)
+    {
+        if (kind != FilePreviewKind.Image || artifact.File is not { } file)
+        {
+            return null;
+        }
+
+        using var stream = await file.OpenReadAsync().AsTask(cancellationToken)
+            .ConfigureAwait(true);
+        var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(cancellationToken)
+            .ConfigureAwait(true);
+        if (decoder.PixelWidth == 0 || decoder.PixelHeight == 0)
+        {
+            return null;
+        }
+
+        return new FilePreviewMediaMetadata(decoder.PixelWidth, decoder.PixelHeight);
+    }
 }

@@ -125,6 +125,12 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("PhotoViewerPreviousButton", xaml);
         Assert.Contains("PhotoViewerNextButton", xaml);
         Assert.Contains("PhotoViewerMetadata", xaml);
+        Assert.Contains("PhotoViewerDimensionsLabel", xaml);
+        Assert.Contains("PhotoViewerDimensionsValue", xaml);
+        Assert.Contains("_previewViewModel.PropertyChanged += PhotoPreviewViewModel_PropertyChanged;", viewer);
+        Assert.Contains("PhotoPreviewViewModel_PropertyChanged", viewer);
+        Assert.Contains("CurrentPhotoPreviewMetadata(item)", viewer);
+        Assert.Contains("FormatPhotoViewerDimensions", viewer);
         Assert.Contains("AutomationProperties.SetName(", viewer);
         Assert.Contains("PhotoViewerMetadataAutomationName", viewer);
         Assert.Contains("PhotoViewerColumn.Width = isOpen ? new GridLength(420) : new GridLength(0);", viewer);

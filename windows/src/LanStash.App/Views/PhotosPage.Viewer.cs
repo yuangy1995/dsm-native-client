@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Globalization;
 using LanStash.App.Features.Files;
 using LanStash.App.Features.Files.Preview;
@@ -26,11 +27,29 @@ public sealed partial class PhotosPage
         }
         _previewRepository = previewRepository;
         _previewViewModel = new FilePreviewViewModel();
+        _previewViewModel.PropertyChanged += PhotoPreviewViewModel_PropertyChanged;
         PhotoPreviewPane.Attach(_previewViewModel);
         PhotoPreviewPane.CloseRequested += PhotoPreviewPane_CloseRequested;
         PhotoPreviewPane.RetryRequested += PhotoPreviewPane_RetryRequested;
         PhotoPreviewPane.SaveCopyRequested += PhotoPreviewPane_SaveCopyRequested;
         UpdatePhotoViewerState();
+    }
+
+    private void PhotoPreviewViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(FilePreviewViewModel.Snapshot))
+        {
+            return;
+        }
+
+        if (DispatcherQueue.HasThreadAccess)
+        {
+            UpdatePhotoViewerState();
+        }
+        else
+        {
+            DispatcherQueue.TryEnqueue(UpdatePhotoViewerState);
+        }
     }
 
     private bool CanOpenSelectedMedia() =>
@@ -240,6 +259,8 @@ public sealed partial class PhotosPage
         PhotoViewerSizeValue.Text = FormatPhotoViewerBytes(item.SizeBytes);
         PhotoViewerCreatedValue.Text = FormatPhotoViewerDate(item.CreatedAt);
         PhotoViewerModifiedValue.Text = FormatPhotoViewerDate(item.ModifiedAt);
+        PhotoViewerDimensionsValue.Text = FormatPhotoViewerDimensions(
+            CurrentPhotoPreviewMetadata(item));
         PhotoViewerPathValue.Text = item.Path;
         AutomationProperties.SetName(
             PhotoViewerMetadata,
@@ -253,7 +274,27 @@ public sealed partial class PhotosPage
         PhotoViewerSizeValue.Text = string.Empty;
         PhotoViewerCreatedValue.Text = string.Empty;
         PhotoViewerModifiedValue.Text = string.Empty;
+        PhotoViewerDimensionsValue.Text = string.Empty;
         PhotoViewerPathValue.Text = string.Empty;
+    }
+
+    private FilePreviewMediaMetadata? CurrentPhotoPreviewMetadata(PhotoItem item)
+    {
+        var snapshot = _previewViewModel?.Snapshot;
+        if (snapshot is
+            {
+                ProfileId: { } profileId,
+                Item: { } previewItem,
+                MediaMetadata: { } metadata,
+            } &&
+            profileId == item.ProfileId &&
+            string.Equals(previewItem.Path, item.Path, StringComparison.Ordinal) &&
+            previewItem.Size == item.SizeBytes &&
+            previewItem.ModifiedAt == item.ModifiedAt)
+        {
+            return metadata;
+        }
+        return null;
     }
 
     private static FileItem ToFileItem(PhotoItem item) => new(
@@ -323,10 +364,24 @@ public sealed partial class PhotosPage
             scaled.ToString(format, culture));
     }
 
+    private static string FormatPhotoViewerDimensions(FilePreviewMediaMetadata? metadata)
+    {
+        if (metadata is not { PixelWidth: > 0, PixelHeight: > 0 })
+        {
+            return LocalizationService.Current.Get("PhotoViewerValueUnavailable");
+        }
+
+        return LocalizationService.Current.Format(
+            "PhotoViewerDimensionsValue",
+            metadata.PixelWidth.Value,
+            metadata.PixelHeight.Value);
+    }
+
     private void DisposePhotoViewer()
     {
         if (_previewViewModel is not null)
         {
+            _previewViewModel.PropertyChanged -= PhotoPreviewViewModel_PropertyChanged;
             PhotoPreviewPane.CloseRequested -= PhotoPreviewPane_CloseRequested;
             PhotoPreviewPane.RetryRequested -= PhotoPreviewPane_RetryRequested;
             PhotoPreviewPane.SaveCopyRequested -= PhotoPreviewPane_SaveCopyRequested;

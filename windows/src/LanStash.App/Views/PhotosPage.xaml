@@ -434,6 +434,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock x:Uid="PhotoViewerNameLabel" />
                         <TextBlock
@@ -448,10 +449,12 @@
                         <TextBlock x:Name="PhotoViewerCreatedValue" Grid.Row="3" Grid.Column="1" />
                         <TextBlock x:Uid="PhotoViewerModifiedLabel" Grid.Row="4" />
                         <TextBlock x:Name="PhotoViewerModifiedValue" Grid.Row="4" Grid.Column="1" />
-                        <TextBlock x:Uid="PhotoViewerPathLabel" Grid.Row="5" />
+                        <TextBlock x:Uid="PhotoViewerDimensionsLabel" Grid.Row="5" />
+                        <TextBlock x:Name="PhotoViewerDimensionsValue" Grid.Row="5" Grid.Column="1" />
+                        <TextBlock x:Uid="PhotoViewerPathLabel" Grid.Row="6" />
                         <TextBlock
                             x:Name="PhotoViewerPathValue"
-                            Grid.Row="5"
+                            Grid.Row="6"
                             Grid.Column="1"
                             TextWrapping="WrapWholeWords" />
                     </Grid>

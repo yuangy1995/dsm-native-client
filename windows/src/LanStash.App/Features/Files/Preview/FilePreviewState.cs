@@ -21,6 +21,10 @@ public enum FilePreviewUnavailableReason
     TooLarge,
 }
 
+public sealed record FilePreviewMediaMetadata(
+    long? PixelWidth = null,
+    long? PixelHeight = null);
+
 public sealed record FilePreviewSnapshot(
     Guid? ProfileId = null,
     FileItem? Item = null,
@@ -31,6 +35,7 @@ public sealed record FilePreviewSnapshot(
     bool IsTextTruncated = false,
     IFilePreviewArtifact? Artifact = null,
     StrictRangeMediaSource? Media = null,
+    FilePreviewMediaMetadata? MediaMetadata = null,
     long CompletedBytes = 0,
     long? TotalBytes = null);
 

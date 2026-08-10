@@ -926,6 +926,8 @@
   <data name="PhotoViewerSizeLabel.Text" xml:space="preserve"><value>大小</value></data>
   <data name="PhotoViewerCreatedLabel.Text" xml:space="preserve"><value>创建时间</value></data>
   <data name="PhotoViewerModifiedLabel.Text" xml:space="preserve"><value>修改时间</value></data>
+  <data name="PhotoViewerDimensionsLabel.Text" xml:space="preserve"><value>尺寸</value></data>
+  <data name="PhotoViewerDimensionsValue" xml:space="preserve"><value>{0:N0} × {1:N0} 像素</value></data>
   <data name="PhotoViewerPathLabel.Text" xml:space="preserve"><value>路径</value></data>
   <data name="PhotoViewerKindImage" xml:space="preserve"><value>图片</value></data>
   <data name="PhotoViewerKindVideo" xml:space="preserve"><value>视频</value></data>

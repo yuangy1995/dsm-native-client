@@ -926,6 +926,8 @@
   <data name="PhotoViewerSizeLabel.Text" xml:space="preserve"><value>Size</value></data>
   <data name="PhotoViewerCreatedLabel.Text" xml:space="preserve"><value>Created</value></data>
   <data name="PhotoViewerModifiedLabel.Text" xml:space="preserve"><value>Modified</value></data>
+  <data name="PhotoViewerDimensionsLabel.Text" xml:space="preserve"><value>Dimensions</value></data>
+  <data name="PhotoViewerDimensionsValue" xml:space="preserve"><value>{0:N0} × {1:N0} pixels</value></data>
   <data name="PhotoViewerPathLabel.Text" xml:space="preserve"><value>Path</value></data>
   <data name="PhotoViewerKindImage" xml:space="preserve"><value>Image</value></data>
   <data name="PhotoViewerKindVideo" xml:space="preserve"><value>Video</value></data>

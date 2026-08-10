@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using LanStash.App.Features.Files.Preview;
 using LanStash.App.Features.Transfers;
@@ -173,6 +174,41 @@ public sealed class FilePreviewViewModelTests
         await model.OpenAsync(repository, profile, Item("unsupported.bin", 10));
 
         Assert.True(first.IsDisposed);
+    }
+
+    [Fact]
+    public async Task ImageArtifactCarriesMetadataFromReader()
+    {
+        var profile = Guid.NewGuid();
+        var repository = new PreviewRepository(profile);
+        var store = new ArtifactStoreStub();
+        var metadataReader = new MetadataReaderStub(new FilePreviewMediaMetadata(4032, 3024));
+        using var model = new FilePreviewViewModel(store, metadataReader);
+
+        await model.OpenAsync(repository, profile, Item("photo.jpg", 10));
+
+        Assert.Equal(FilePreviewPhase.Ready, model.Snapshot.Phase);
+        Assert.Equal(4032, model.Snapshot.MediaMetadata?.PixelWidth);
+        Assert.Equal(3024, model.Snapshot.MediaMetadata?.PixelHeight);
+        Assert.Equal(FilePreviewKind.Image, Assert.Single(metadataReader.RequestedKinds));
+    }
+
+    [Fact]
+    public async Task ImageMetadataFailureKeepsPreviewReadyWithoutMetadata()
+    {
+        var profile = Guid.NewGuid();
+        var repository = new PreviewRepository(profile);
+        var store = new ArtifactStoreStub();
+        var metadataReader = new MetadataReaderStub(
+            metadata: null,
+            error: new IOException("metadata unavailable"));
+        using var model = new FilePreviewViewModel(store, metadataReader);
+
+        await model.OpenAsync(repository, profile, Item("photo.jpg", 10));
+
+        Assert.Equal(FilePreviewPhase.Ready, model.Snapshot.Phase);
+        Assert.NotNull(model.Snapshot.Artifact);
+        Assert.Null(model.Snapshot.MediaMetadata);
     }
 
     [Fact]
@@ -540,6 +576,35 @@ public sealed class FilePreviewViewModelTests
         {
             IsDisposed = true;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class MetadataReaderStub : IFilePreviewMetadataReader
+    {
+        private readonly FilePreviewMediaMetadata? _metadata;
+        private readonly Exception? _error;
+
+        public MetadataReaderStub(
+            FilePreviewMediaMetadata? metadata,
+            Exception? error = null)
+        {
+            _metadata = metadata;
+            _error = error;
+        }
+
+        public List<FilePreviewKind> RequestedKinds { get; } = [];
+
+        public Task<FilePreviewMediaMetadata?> ReadAsync(
+            IFilePreviewArtifact artifact,
+            FilePreviewKind kind,
+            CancellationToken cancellationToken)
+        {
+            RequestedKinds.Add(kind);
+            if (_error is not null)
+            {
+                return Task.FromException<FilePreviewMediaMetadata?>(_error);
+            }
+            return Task.FromResult(_metadata);
         }
     }
 }

@@ -27,6 +27,10 @@ public sealed class FilePreviewPageSourceContractTests
         Assert.Contains("DestinationWidth", pane);
         Assert.Contains("DestinationHeight", pane);
         Assert.Contains("MediaSource.CreateFromStream", pane);
+        Assert.Contains("IFilePreviewMetadataReader", model);
+        Assert.Contains("FilePreviewMediaMetadata", model);
+        Assert.Contains("BitmapDecoder.CreateAsync", model);
+        Assert.Contains("MediaMetadata: metadata", model);
         Assert.Contains("IRandomAccessStream", media);
         Assert.Contains("IInputStream", media);
         Assert.Contains("MaximumRangeLength = 4 * 1024 * 1024", media);
