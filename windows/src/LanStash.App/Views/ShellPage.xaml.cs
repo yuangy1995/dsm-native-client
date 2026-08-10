@@ -4,6 +4,7 @@ using LanStash.App.Features.Files.Sharing;
 using LanStash.App.Features.Files.Locations;
 using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Files.Recycle;
+using LanStash.App.Features.NasAdmin;
 using LanStash.App.Features.Transfers;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
@@ -33,6 +34,9 @@ public sealed partial class ShellPage : Page
     private IContainerManagerRepository? _containerRepository;
     private VirtualMachineManagerPage? _virtualMachines;
     private Guid? _virtualMachinesProfileId;
+    private NasDetailsPage? _nasDetails;
+    private Guid? _nasDetailsProfileId;
+    private INasDetailsRepository? _nasDetailsRepository;
     private TransferActivityPage? _activity;
 
     public ShellPage(AppViewModel app)
@@ -103,6 +107,10 @@ public sealed partial class ShellPage : Page
             _virtualMachines?.Dispose();
             _virtualMachines = null;
             _virtualMachinesProfileId = null;
+            _nasDetails?.Dispose();
+            _nasDetails = null;
+            _nasDetailsProfileId = null;
+            _nasDetailsRepository = null;
             _activity?.Dispose();
             _activity = null;
             _transferPicker?.Dispose();
@@ -157,6 +165,7 @@ public sealed partial class ShellPage : Page
             try
             {
                 await CloseFilesPageAsync();
+                CloseNasDetailsPage();
                 await _app.SwitchProfileAsync(profile);
             }
             catch
@@ -192,6 +201,7 @@ public sealed partial class ShellPage : Page
             try
             {
                 await CloseFilesPageAsync();
+                CloseNasDetailsPage();
                 await _app.RemoveProfileAsync(profile);
             }
             catch
@@ -240,6 +250,7 @@ public sealed partial class ShellPage : Page
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
                 await CloseFilesPageAsync();
+                CloseNasDetailsPage();
                 await _app.LogoutAsync();
             }
             return;
@@ -429,6 +440,32 @@ public sealed partial class ShellPage : Page
                 ContentFrame.Content = _virtualMachines;
                 return;
             }
+            if (module == AppModule.NasSettings)
+            {
+                if (_app.ActiveProfile is not { } nasProfile ||
+                    _app.Repository is not INasDetailsRepository nasRepository ||
+                    nasRepository.ProfileId != nasProfile.Id)
+                {
+                    _nasDetails?.Dispose();
+                    _nasDetails = new NasDetailsPage(
+                        new UnavailableNasDetailsRepository(_app.ActiveProfile?.Id ?? Guid.Empty));
+                    _nasDetailsProfileId = null;
+                    _nasDetailsRepository = null;
+                    ContentFrame.Content = _nasDetails;
+                    return;
+                }
+                if (_nasDetails is null ||
+                    _nasDetailsProfileId != nasProfile.Id ||
+                    !ReferenceEquals(_nasDetailsRepository, nasRepository))
+                {
+                    _nasDetails?.Dispose();
+                    _nasDetails = new NasDetailsPage(nasRepository);
+                    _nasDetailsProfileId = nasProfile.Id;
+                    _nasDetailsRepository = nasRepository;
+                }
+                ContentFrame.Content = _nasDetails;
+                return;
+            }
             ContentFrame.Content = _workspace;
             await _workspace.ShowModuleAsync(module);
         }
@@ -455,6 +492,24 @@ public sealed partial class ShellPage : Page
         {
             files.Dispose();
         }
+    }
+
+    private void CloseNasDetailsPage()
+    {
+        var page = _nasDetails;
+        _nasDetails = null;
+        _nasDetailsProfileId = null;
+        _nasDetailsRepository = null;
+        if (page is null)
+        {
+            return;
+        }
+        if (ReferenceEquals(ContentFrame.Content, page))
+        {
+            ContentFrame.Content = _workspace;
+        }
+        page.Deactivate();
+        page.Dispose();
     }
 
     private void Settings_Changed(object? sender, AppSettingsChangedEventArgs e)
@@ -535,9 +590,22 @@ public sealed partial class ShellPage : Page
                 _virtualMachinesProfileId = null;
                 break;
             case AppModule.NasSettings:
-                _workspace.CancelNasSettingsLoad();
+                CloseNasDetailsPage();
                 break;
         }
+    }
+
+    private sealed class UnavailableNasDetailsRepository(Guid profileId)
+        : INasDetailsRepository
+    {
+        public Guid ProfileId { get; } = profileId;
+        public NasDetailsAvailability Availability { get; } = new(
+            NasDetailsAvailabilityStatus.Unavailable,
+            new HashSet<NasDetailsReadFeature>());
+
+        public Task<NasDetailsSnapshot> LoadDetailsAsync(
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class UnavailableChatRepository(Guid profileId) : IChatRepository

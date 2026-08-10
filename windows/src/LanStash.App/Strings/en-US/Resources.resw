@@ -40,6 +40,40 @@
   <data name="CategoryProjects" xml:space="preserve"><value>Projects</value></data>
   <data name="CategoryProtection" xml:space="preserve"><value>Protection</value></data>
   <data name="CategorySecurity" xml:space="preserve"><value>Security</value></data>
+  <data name="NasDetailsTitle.Text" xml:space="preserve"><value>NAS details</value></data>
+  <data name="NasDetailsDescription.Text" xml:space="preserve"><value>Review packages, scheduled tasks, system logs, and current connections. This page does not change NAS settings.</value></data>
+  <data name="NasDetailsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh NAS details</value></data>
+  <data name="NasDetailsRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
+  <data name="NasDetailsReadOnly.Title" xml:space="preserve"><value>Read-only view</value></data>
+  <data name="NasDetailsReadOnly.Message" xml:space="preserve"><value>Use DSM when you need to make changes to these items.</value></data>
+  <data name="NasDetailsRefreshError.Title" xml:space="preserve"><value>Couldn’t update everything</value></data>
+  <data name="NasDetailsRefreshError.Message" xml:space="preserve"><value>The previous details are still shown. Check the connection and try again.</value></data>
+  <data name="NasDetailsSectionList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>NAS detail sections</value></data>
+  <data name="NasDetailsItemList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>NAS detail items</value></data>
+  <data name="NasDetailsLoading.Text" xml:space="preserve"><value>Loading NAS details…</value></data>
+  <data name="NasDetailsEmptyTitle.Text" xml:space="preserve"><value>No items in this section</value></data>
+  <data name="NasDetailsEmptyMessage.Text" xml:space="preserve"><value>DSM did not report any items for the selected section.</value></data>
+  <data name="NasDetailsErrorTitle.Text" xml:space="preserve"><value>Couldn’t load this section</value></data>
+  <data name="NasDetailsErrorMessage.Text" xml:space="preserve"><value>Check your connection and permissions, then try again.</value></data>
+  <data name="NasDetailsTryAgain.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="NasDetailsUnavailableTitle.Text" xml:space="preserve"><value>This section isn’t available</value></data>
+  <data name="NasDetailsUnavailableMessage.Text" xml:space="preserve"><value>This connection does not provide the selected details.</value></data>
+  <data name="NasDetailsTruncatedTitle" xml:space="preserve"><value>Showing a limited list</value></data>
+  <data name="NasDetailsTruncatedMessage" xml:space="preserve"><value>Only the first 50 items are shown to keep this page responsive.</value></data>
+  <data name="NasDetailsSectionPackages" xml:space="preserve"><value>Packages</value></data>
+  <data name="NasDetailsSectionTasks" xml:space="preserve"><value>Scheduled tasks</value></data>
+  <data name="NasDetailsSectionLogs" xml:space="preserve"><value>Logs</value></data>
+  <data name="NasDetailsSectionConnections" xml:space="preserve"><value>Connections</value></data>
+  <data name="NasDetailsSectionCount" xml:space="preserve"><value>{0} items</value></data>
+  <data name="NasDetailsSectionUnavailable" xml:space="preserve"><value>Unavailable</value></data>
+  <data name="NasDetailsSectionFailed" xml:space="preserve"><value>Needs retry</value></data>
+  <data name="NasDetailsSectionAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="NasDetailsTaskEnabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="NasDetailsTaskDisabled" xml:space="preserve"><value>Disabled</value></data>
+  <data name="NasDetailsTaskNoNextRun" xml:space="preserve"><value>No next run time reported</value></data>
+  <data name="NasDetailsConnectionCurrent" xml:space="preserve"><value>Current session</value></data>
+  <data name="NasDetailsConnectionActive" xml:space="preserve"><value>Active</value></data>
+  <data name="NasDetailsRowAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
   <data name="BrandTitle.Text" xml:space="preserve"><value>LanStash</value></data>
   <data name="BrandSubtitle.Text" xml:space="preserve"><value>Manage your NAS</value></data>
   <data name="AddNasButton.Content" xml:space="preserve"><value>Add NAS</value></data>

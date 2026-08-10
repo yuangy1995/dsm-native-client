@@ -18,6 +18,7 @@
     <Compile Include="..\LanStash.App\Features\Containers\**\*.cs" Link="Features\Containers\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Downloads\**\*.cs" Link="Features\Downloads\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Files\**\*.cs" Link="Features\Files\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\LanStash.App\Features\NasAdmin\**\*.cs" Link="Features\NasAdmin\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Photos\**\*.cs" Link="Features\Photos\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Settings\**\*.cs" Link="Features\Settings\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Transfers\ForegroundTransfer*.cs" Link="Features\Transfers\%(Filename)%(Extension)" />

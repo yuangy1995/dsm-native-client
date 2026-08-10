@@ -69,6 +69,7 @@ public sealed class AppSettingsPageSourceContractTests
     public void HidingNasHealthCancelsAndInvalidatesItsWorkspaceLoad()
     {
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+        var nasPage = Read("windows/src/LanStash.App/Views/NasDetailsPage.xaml.cs");
         var page = Read("windows/src/LanStash.App/Views/WorkspacePage.xaml.cs");
         var viewModel = Read("windows/src/LanStash.App/ViewModels/WorkspaceViewModel.cs");
         var cancel = Slice(
@@ -81,7 +82,8 @@ public sealed class AppSettingsPageSourceContractTests
             "public void CancelNasSettingsLoad");
 
         Assert.Contains("case AppModule.NasSettings:", shell);
-        Assert.Contains("_workspace.CancelNasSettingsLoad();", shell);
+        Assert.Contains("CloseNasDetailsPage();", shell);
+        Assert.Contains("_viewModel.Deactivate();", nasPage);
         Assert.Contains("public void CancelNasSettingsLoad()", page);
         Assert.Contains("_nasSettingsLoadGeneration++", cancel);
         Assert.Contains("cancellation?.Cancel();", cancel);

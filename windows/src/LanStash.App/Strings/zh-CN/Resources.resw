@@ -40,6 +40,40 @@
   <data name="CategoryProjects" xml:space="preserve"><value>项目</value></data>
   <data name="CategoryProtection" xml:space="preserve"><value>保护</value></data>
   <data name="CategorySecurity" xml:space="preserve"><value>安全</value></data>
+  <data name="NasDetailsTitle.Text" xml:space="preserve"><value>NAS 详情</value></data>
+  <data name="NasDetailsDescription.Text" xml:space="preserve"><value>查看套件、计划任务、系统日志和当前连接。此页面不会更改 NAS 设置。</value></data>
+  <data name="NasDetailsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新 NAS 详情</value></data>
+  <data name="NasDetailsRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
+  <data name="NasDetailsReadOnly.Title" xml:space="preserve"><value>只读视图</value></data>
+  <data name="NasDetailsReadOnly.Message" xml:space="preserve"><value>如需更改这些项目，请使用 DSM。</value></data>
+  <data name="NasDetailsRefreshError.Title" xml:space="preserve"><value>部分内容无法更新</value></data>
+  <data name="NasDetailsRefreshError.Message" xml:space="preserve"><value>仍显示上次的详情。请检查连接后重试。</value></data>
+  <data name="NasDetailsSectionList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>NAS 详情分区</value></data>
+  <data name="NasDetailsItemList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>NAS 详情项目</value></data>
+  <data name="NasDetailsLoading.Text" xml:space="preserve"><value>正在加载 NAS 详情…</value></data>
+  <data name="NasDetailsEmptyTitle.Text" xml:space="preserve"><value>此分区没有项目</value></data>
+  <data name="NasDetailsEmptyMessage.Text" xml:space="preserve"><value>DSM 没有返回所选分区的项目。</value></data>
+  <data name="NasDetailsErrorTitle.Text" xml:space="preserve"><value>无法加载此分区</value></data>
+  <data name="NasDetailsErrorMessage.Text" xml:space="preserve"><value>请检查连接和权限，然后重试。</value></data>
+  <data name="NasDetailsTryAgain.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="NasDetailsUnavailableTitle.Text" xml:space="preserve"><value>此分区不可用</value></data>
+  <data name="NasDetailsUnavailableMessage.Text" xml:space="preserve"><value>当前连接未提供所选详情。</value></data>
+  <data name="NasDetailsTruncatedTitle" xml:space="preserve"><value>列表已达到显示上限</value></data>
+  <data name="NasDetailsTruncatedMessage" xml:space="preserve"><value>为保持页面流畅，仅显示前 50 个项目。</value></data>
+  <data name="NasDetailsSectionPackages" xml:space="preserve"><value>套件</value></data>
+  <data name="NasDetailsSectionTasks" xml:space="preserve"><value>计划任务</value></data>
+  <data name="NasDetailsSectionLogs" xml:space="preserve"><value>日志</value></data>
+  <data name="NasDetailsSectionConnections" xml:space="preserve"><value>连接</value></data>
+  <data name="NasDetailsSectionCount" xml:space="preserve"><value>{0} 个项目</value></data>
+  <data name="NasDetailsSectionUnavailable" xml:space="preserve"><value>不可用</value></data>
+  <data name="NasDetailsSectionFailed" xml:space="preserve"><value>需要重试</value></data>
+  <data name="NasDetailsSectionAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="NasDetailsTaskEnabled" xml:space="preserve"><value>已启用</value></data>
+  <data name="NasDetailsTaskDisabled" xml:space="preserve"><value>已停用</value></data>
+  <data name="NasDetailsTaskNoNextRun" xml:space="preserve"><value>未提供下次运行时间</value></data>
+  <data name="NasDetailsConnectionCurrent" xml:space="preserve"><value>当前会话</value></data>
+  <data name="NasDetailsConnectionActive" xml:space="preserve"><value>活动中</value></data>
+  <data name="NasDetailsRowAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
   <data name="BrandTitle.Text" xml:space="preserve"><value>岚仓</value></data>
   <data name="BrandSubtitle.Text" xml:space="preserve"><value>管理你的 NAS</value></data>
   <data name="AddNasButton.Content" xml:space="preserve"><value>添加 NAS</value></data>

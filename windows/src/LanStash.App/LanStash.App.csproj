@@ -27,6 +27,7 @@
     <Compile Remove="Features\Containers\**\*.cs" />
     <Compile Remove="Features\Downloads\**\*.cs" />
     <Compile Remove="Features\Files\**\*.cs" />
+    <Compile Remove="Features\NasAdmin\**\*.cs" />
     <Compile Remove="Features\Photos\**\*.cs" />
     <Compile Remove="Features\Settings\**\*.cs" />
     <Compile Remove="Features\Transfers\ForegroundTransfer*.cs" />
