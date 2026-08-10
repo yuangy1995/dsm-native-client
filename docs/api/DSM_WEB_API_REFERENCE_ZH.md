@@ -575,25 +575,34 @@ additional=["detail","transfer","file","tracker","peer"]
 
 #### 当前活动摘要
 
-Android 仅在 `SYNO.API.Info` 声明 `SYNO.DownloadStation.Statistic` v1 可用时调用
-`getinfo`，并严格接受非负的 `speed_download`、`speed_upload`、
-`emule_speed_download` 和 `emule_speed_upload`。界面只把这四项表达为当前标准
-下载、标准上传、eMule 下载和 eMule 上传的聚合字节速率；不把它们表述为
-历史流量、单任务速度或传输结果。活动摘要与任务列表独立加载；缺少字段、
-负数或请求失败只进入摘要的可重试错误状态，不得遮蔽或清空任务列表。
+Android 与 Windows 只在 `SYNO.API.Info` 声明官方
+`SYNO.DownloadStation.Statistic` v1 可用时调用 `getinfo`；Apple 在公开 Download
+Station 路径使用同一 v1/getinfo，既有 `DownloadStation2` 降级路径仍会 best-effort
+调用 `SYNO.DownloadStation2.Task.Statistic.get`。三端界面都只把结果表达为当前标准
+下载、标准上传、eMule 下载和 eMule 上传的聚合字节速率，不得表述为历史流量、
+单任务速度或传输结果。Android 与 Windows 严格要求原生、非负的 `speed_download`、`speed_upload`、
+`emule_speed_download` 和 `emule_speed_upload`，缺字段、负数、错误类型或请求失败
+进入独立可重试错误，不遮蔽任务列表。Apple 当前共享适配仍兼容既有字段别名，
+读取失败时以 `hasActivitySummary=false` 隐藏摘要，缺失字段按 0 处理；因此不能把
+Android/Windows 的严格四字段失败语义外推为 Apple 已实现。后续若收紧 Apple，必须
+先补向后兼容契约与移动端独立错误态测试。
 
 #### BT 搜索
 
-Android 在搜索前使用 `SYNO.DownloadStation.BTSearch` v1 的无参数 `getModule` 和
-`getCategory` 读取提供方与类别，并拒绝重复或畸形标识。`start` 的 `module`
-只使用 `all`、`enabled` 或经当前目录校验后按标识排序、逗号连接的明确提供方；
+Android、Apple 共享仓库与 Windows 已按同一公开 v1 语义实现 BT 搜索；调用前使用
+无参数 `getModule` 和 `getCategory` 读取提供方与类别，目录解析拒绝重复或畸形标识。
+Apple 移动状态机与 Windows ViewModel 在提交前进一步拒绝陈旧或不属于当前目录的
+提供方/类别；Repository 仍独立执行格式、范围和稳定标识校验。`start` 的 `module`
+只使用 `all`、`enabled` 或经当前目录成员校验后按标识排序、逗号连接的明确提供方；
 `list` 固定使用 `offset=0`、`limit=200`，同时传递用户选择的 `sort_by`、
 `sort_direction`、`filter_category` 和 `filter_title`。搜索完成、读取失败、
-超时或取消后均以返回的 `taskid` 尝试调用 `clean`；清理请求只针对该临时搜索任务，
-若清理请求本身失败，不冒充服务端记录已经移除。
-搜索词、标题过滤、提供方标识和搜索结果只驻留当前 Workspace 内存，不进入
-SavedState、磁盘或日志。这是公开 BT 搜索的高级查询选项，不等于套件的
-BT 协议高级设置。
+超时或取消后均以返回的 `taskid` 在非取消清理路径中最多尝试一次 `clean`；清理请求
+只针对该临时搜索任务，清理失败不得覆盖成功结果、取消或原始错误，也不冒充服务端
+记录已经移除。Apple 与 Windows 的新入口在规范化前拒绝搜索词与标题过滤中的控制
+字符；Android 保持既有的规范化后校验，三端规范化后的输入均最多 200 个字符。
+搜索词、标题过滤、提供方标识和搜索结果只驻留当前页面或 Workspace 内存，不进入
+SavedState、偏好、磁盘或日志；界面须说明搜索词会发送到 NAS 及本次使用的搜索来源，
+关闭后清除本地内容。这是公开 BT 搜索的高级查询选项，不等于套件的 BT 协议高级设置。
 
 #### 创建任务
 
@@ -900,7 +909,7 @@ macOS 模型两层防重复；界面提交前说明影响并确认，执行中�
 | `SYNO.Core.PersonalSettings` | 配额相关调用 | 中 |
 | `SYNO.Core.OTP`, `SYNO.Core.OTP.Admin` | OTP 与管理员设置 | 高 |
 | `SYNO.Core.Share` | `list`, `get`, `add`, `set`, `delete`, `get_all_move_task`, `move_status` | 高 |
-| `SYNO.Core.RecycleBin` | `start` | 清理回收站 | 高 |
+| `SYNO.Core.RecycleBin` | `start`（清理回收站） | 高 |
 
 当前 macOS 使用 `User.list` 与 `Group.list` 展示当前账号有权查看的账号、群组、说明、邮件地址、停用状态和数字标识，并分别保留账号与群组结果。账号与群组的新建、修改和删除已接入专用接口，密码只用于当次请求，所有删除均确认、防重复并回读。共享访问页面只使用公开 `SYNO.FileStation.List.list_share` 展示登录账号可见共享文件夹的有效读写权限；不可见条目不推断为拒绝访问，内部 `Share.Permission.list_by_user` 因缺少版本化参数与响应证据保持关闭。共享文件夹的加密、权限、WORM、配额、移动和删除存在相互依赖；在完成 `validate_set`、权限复合提交与移动任务轮询前不提供不完整写入口。
 

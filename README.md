@@ -13,10 +13,10 @@
 | 客户端 | 技术栈 | 当前状态 |
 | --- | --- | --- |
 | macOS | Swift 6、SwiftUI、Swift Package Manager | 完成度最高；文件、照片、消息、下载、容器、虚拟机和 NAS 管理主流程已建立 |
-| iPhone | Swift 6、SwiftUI | 通用移动工程可构建，已接入登录、模块导航、语言选择和第一批管理页面 |
-| iPad | Swift 6、SwiftUI | 与 iPhone 共用通用工程，并针对大屏布局和多栏体验适配 |
+| iPhone | Swift 6、SwiftUI | 已形成登录、Files、Photos、受限 Chat 文字、Download Station 常用单任务与只读管理页等移动闭环；当前范围和实机缺口见[开发状态](docs/progress/STATUS.md) |
+| iPad | Swift 6、SwiftUI | 与 iPhone 共用通用工程，并已接入分栏、键盘和大屏自适应路径；真实 iPad 与 NAS 交互仍按[开发状态](docs/progress/STATUS.md)验收 |
 | Android | Kotlin、Jetpack Compose | 主要模块源码和自动化闭环已建立；当前完成率、剩余目标与验收缺口见[开发状态](docs/progress/STATUS.md) |
-| Windows | C#、WinUI 3 | 原生工程可构建，已接入登录、模块导航、管理骨架和双语资源 |
+| Windows | C#、WinUI 3 | 已形成认证、Files、Photos、受限 Chat 文字、Download Station、本地设置与桌面集成等原生闭环；云端构建证据和真实设备缺口见[开发状态](docs/progress/STATUS.md) |
 
 “已建立”表示源码路径和自动化测试存在，不等于所有 DSM 型号、系统版本和套件版本都已完成实机兼容验证。高影响写操作仍需能力发现、权限检查、用户确认、重复提交保护和结果校验。
 

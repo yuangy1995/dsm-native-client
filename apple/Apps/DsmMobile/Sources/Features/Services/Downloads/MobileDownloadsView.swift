@@ -7,6 +7,7 @@ struct MobileDownloadsView: View {
     @Bindable var model: MobileAppModel
     @State private var selectedTask: DownloadStationTask?
     @State private var isShowingCreateTask = false
+    @State private var isShowingBTSearch = false
     @State private var isImportingTaskFile = false
 
     var body: some View {
@@ -32,6 +33,9 @@ struct MobileDownloadsView: View {
         }
         .sheet(isPresented: $isShowingCreateTask) {
             MobileDownloadCreateTaskView(model: model)
+        }
+        .sheet(isPresented: $isShowingBTSearch) {
+            MobileDownloadBTSearchView(model: model)
         }
         .fileImporter(
             isPresented: $isImportingTaskFile,
@@ -63,13 +67,26 @@ struct MobileDownloadsView: View {
                     }
                     .disabled(!model.canCreateDownloadTask)
                     .accessibilityHint(L10n.string("mobile.downloads.create.file.action.hint"))
+
+                    if model.downloadSnapshot?.hasBTSearch == true {
+                        Button {
+                            isShowingBTSearch = true
+                        } label: {
+                            Label(
+                                L10n.string("mobile.downloads.bt-search.action"),
+                                systemImage: "magnifyingglass"
+                            )
+                        }
+                        .disabled(!model.canSearchDownloadBT)
+                        .accessibilityHint(L10n.string("mobile.downloads.bt-search.action.hint"))
+                    }
                 } label: {
                     Label(
                         L10n.string("mobile.downloads.create.menu"),
                         systemImage: "plus"
                     )
                 }
-                .disabled(!model.canCreateDownloadTask)
+                .disabled(!model.canCreateDownloadTask && !model.canSearchDownloadBT)
                 .frame(
                     minWidth: MobileMetrics.minimumTouchTarget,
                     minHeight: MobileMetrics.minimumTouchTarget

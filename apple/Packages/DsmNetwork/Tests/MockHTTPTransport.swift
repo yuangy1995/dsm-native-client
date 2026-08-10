@@ -11,6 +11,7 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
 
     private var steps: [Step]
     private var requests: [URLRequest] = []
+    private var requestCancellationStates: [Bool] = []
     private var uploadBodies: [Data] = []
 
     init(responses: [DsmHTTPResponse]) {
@@ -23,6 +24,7 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
 
     func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
         requests.append(request)
+        requestCancellationStates.append(Task.isCancelled)
         guard !steps.isEmpty else {
             throw URLError(.badServerResponse)
         }
@@ -39,6 +41,10 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
 
     func recordedRequests() -> [URLRequest] {
         requests
+    }
+
+    func recordedRequestCancellationStates() -> [Bool] {
+        requestCancellationStates
     }
 
     func recordedUploadBodies() -> [Data] {

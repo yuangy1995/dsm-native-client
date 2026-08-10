@@ -13,10 +13,10 @@ The current milestone is native-client alignment and device validation across al
 | Client | Technology | Current status |
 | --- | --- | --- |
 | macOS | Swift 6, SwiftUI, Swift Package Manager | Most mature; primary Files, Photos, Messages, Downloads, Containers, Virtual Machines, and NAS management flows are implemented |
-| iPhone | Swift 6, SwiftUI | Universal mobile project builds and includes sign-in, module navigation, language selection, and the first management screens |
-| iPad | Swift 6, SwiftUI | Shares the universal iPhone project with adaptive large-screen and multi-column layouts |
-| Android | Kotlin, Jetpack Compose | Native project builds with sign-in, module navigation, management scaffolding, and bilingual resources |
-| Windows | C#, WinUI 3 | Native project builds with sign-in, module navigation, management scaffolding, and bilingual resources |
+| iPhone | Swift 6, SwiftUI | Mobile flows now cover sign-in, Files, Photos, limited text Chat, common single-task Download Station actions, and read-only management pages; see the [development status](docs/progress/STATUS.md) for exact scope and device-validation gaps |
+| iPad | Swift 6, SwiftUI | Shares the universal iPhone project and includes split layouts, keyboard paths, and large-screen adaptation; real iPad and NAS interaction remains tracked in the [development status](docs/progress/STATUS.md) |
+| Android | Kotlin, Jetpack Compose | Major native modules and automated safety flows are established; current completion, remaining scope, and device-validation gaps are tracked in the [development status](docs/progress/STATUS.md) |
+| Windows | C#, WinUI 3 | Native flows now cover authentication, Files, Photos, limited text Chat, Download Station, local settings, and desktop integration; cloud-build evidence and real-device gaps are tracked in the [development status](docs/progress/STATUS.md) |
 
 “Implemented” means that the source path and automated tests exist. It does not mean that every DSM model, DSM release, or package version has completed device compatibility testing. High-impact writes still require capability discovery, permission checks, user confirmation, duplicate-submission protection, and result verification.
 

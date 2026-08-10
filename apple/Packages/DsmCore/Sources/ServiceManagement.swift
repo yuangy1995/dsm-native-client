@@ -1,3 +1,4 @@
+import DsmLocalization
 import Foundation
 
 public enum ServiceContractSource: String, Equatable, Sendable {
@@ -51,6 +52,7 @@ public struct DownloadStationSnapshot: Equatable, Sendable {
     public let source: ServiceContractSource
     public let tasks: [DownloadStationTask]
     public let hasActivitySummary: Bool
+    public let hasBTSearch: Bool
     public let downloadBytesPerSecond: Int64
     public let uploadBytesPerSecond: Int64
     public let emuleDownloadBytesPerSecond: Int64
@@ -61,6 +63,7 @@ public struct DownloadStationSnapshot: Equatable, Sendable {
         source: ServiceContractSource,
         tasks: [DownloadStationTask],
         hasActivitySummary: Bool = false,
+        hasBTSearch: Bool = false,
         downloadBytesPerSecond: Int64 = 0,
         uploadBytesPerSecond: Int64 = 0,
         emuleDownloadBytesPerSecond: Int64 = 0,
@@ -70,6 +73,7 @@ public struct DownloadStationSnapshot: Equatable, Sendable {
         self.source = source
         self.tasks = tasks
         self.hasActivitySummary = hasActivitySummary
+        self.hasBTSearch = hasBTSearch
         self.downloadBytesPerSecond = downloadBytesPerSecond
         self.uploadBytesPerSecond = uploadBytesPerSecond
         self.emuleDownloadBytesPerSecond = emuleDownloadBytesPerSecond
@@ -182,6 +186,123 @@ public struct DownloadTaskCreateOutcome: Equatable, Sendable {
         self.result = result
         self.taskID = taskID
         self.task = task
+    }
+}
+
+public struct DownloadBTSearchModule: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let isEnabled: Bool
+
+    public init(id: String, title: String, isEnabled: Bool) {
+        self.id = id
+        self.title = title
+        self.isEnabled = isEnabled
+    }
+}
+
+public struct DownloadBTSearchCategory: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+
+    public init(id: String, title: String) {
+        self.id = id
+        self.title = title
+    }
+}
+
+public struct DownloadBTSearchCatalog: Equatable, Sendable {
+    public let modules: [DownloadBTSearchModule]
+    public let categories: [DownloadBTSearchCategory]
+
+    public init(
+        modules: [DownloadBTSearchModule],
+        categories: [DownloadBTSearchCategory]
+    ) {
+        self.modules = modules
+        self.categories = categories
+    }
+}
+
+public enum DownloadBTSearchModuleScope: Equatable, Sendable {
+    case all
+    case enabled
+    case selected([String])
+}
+
+public enum DownloadBTSearchSort: String, CaseIterable, Equatable, Sendable {
+    case title
+    case size
+    case date
+    case peers
+    case provider
+    case seeds
+    case leeches = "leechs"
+}
+
+public enum DownloadBTSearchDirection: String, CaseIterable, Equatable, Sendable {
+    case ascending = "asc"
+    case descending = "desc"
+}
+
+/// Download Station BT 搜索输入只应驻留在界面/进程内存中，不进入持久化状态。
+public struct DownloadBTSearchRequest: Equatable, Sendable {
+    public let keyword: String
+    public let moduleScope: DownloadBTSearchModuleScope
+    public let categoryID: String?
+    public let sort: DownloadBTSearchSort
+    public let direction: DownloadBTSearchDirection
+    public let titleFilter: String
+
+    public init(
+        keyword: String,
+        moduleScope: DownloadBTSearchModuleScope = .enabled,
+        categoryID: String? = nil,
+        sort: DownloadBTSearchSort = .seeds,
+        direction: DownloadBTSearchDirection = .descending,
+        titleFilter: String = ""
+    ) {
+        self.keyword = keyword
+        self.moduleScope = moduleScope
+        self.categoryID = categoryID
+        self.sort = sort
+        self.direction = direction
+        self.titleFilter = titleFilter
+    }
+}
+
+public struct DownloadBTSearchResult: Identifiable, Equatable, Sendable {
+    public var id: String { downloadURI }
+    public let title: String
+    public let sizeBytes: Int64?
+    public let listedAt: String?
+    public let downloadURI: String
+    public let externalLink: String?
+    public let peers: Int?
+    public let seeds: Int?
+    public let leeches: Int?
+    public let provider: String?
+
+    public init(
+        title: String,
+        sizeBytes: Int64? = nil,
+        listedAt: String? = nil,
+        downloadURI: String,
+        externalLink: String? = nil,
+        peers: Int? = nil,
+        seeds: Int? = nil,
+        leeches: Int? = nil,
+        provider: String? = nil
+    ) {
+        self.title = title
+        self.sizeBytes = sizeBytes
+        self.listedAt = listedAt
+        self.downloadURI = downloadURI
+        self.externalLink = externalLink
+        self.peers = peers
+        self.seeds = seeds
+        self.leeches = leeches
+        self.provider = provider
     }
 }
 
@@ -590,6 +711,10 @@ public protocol ServiceManagementRepository: Sendable {
     func createDownloadTaskFileResult(
         _ request: DownloadTaskFileCreateRequest
     ) async throws -> DownloadTaskCreateOutcome
+    func loadDownloadBTSearchCatalog() async throws -> DownloadBTSearchCatalog
+    func searchDownloadBT(
+        _ request: DownloadBTSearchRequest
+    ) async throws -> [DownloadBTSearchResult]
     func createDownloadTask(
         fileURL: URL,
         destination: String?,
@@ -670,6 +795,24 @@ public extension ServiceManagementRepository {
             ),
             taskID: nil,
             task: nil
+        )
+    }
+
+    func loadDownloadBTSearchCatalog() async throws -> DownloadBTSearchCatalog {
+        throw AppError(
+            category: .apiUnavailable,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.2096260091060844")
+        )
+    }
+
+    func searchDownloadBT(
+        _ request: DownloadBTSearchRequest
+    ) async throws -> [DownloadBTSearchResult] {
+        throw AppError(
+            category: .apiUnavailable,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.2096260091060844")
         )
     }
 

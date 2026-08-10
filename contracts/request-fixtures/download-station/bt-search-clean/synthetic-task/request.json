@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "download-station.bt-search-clean.synthetic-task",
+  "module": "download-station",
+  "operation": "cleanBtSearch",
+  "api": {
+    "name": "SYNO.DownloadStation.BTSearch",
+    "method": "clean",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "DownloadStation/btsearch.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {"name": "taskid", "valueType": "string", "encodedValue": "<synthetic-search-task>"}
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "standardWrite",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

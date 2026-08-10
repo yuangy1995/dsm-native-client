@@ -1,6 +1,6 @@
 # Windows 对齐 macOS 功能开发计划
 
-- 状态：规划基线，尚未开始实施
+- 状态：实施中；认证、Files、Photos、Chat、Download Station 与本地设置已形成多批可用闭环，当前事实与验证等级以 `STATUS.md` 为准
 - 上位计划：[macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)
 - 目标技术栈：C#、WinUI 3、HttpClient、Windows Cloud Files API
 
@@ -10,7 +10,11 @@
 
 Windows 完成标准不是“Shell 中出现入口”，而是对应工作流达到总控计划定义的业务、安全、平台、状态、质量和验证六项等价。
 
-## 2. 当前 Windows 基线
+## 2. 第 0 波立项时的 Windows 基线（历史快照）
+
+本节保留计划启动时的源码库存，不代表当前工作树。当前 Windows 已完成的功能、最新 CI
+与真实设备缺口见 `STATUS.md`、本计划后续里程碑和跨端账本；不得用本节的“浅层/未对齐”
+覆盖后续已经验证的实现。
 
 ### 2.1 已有基础
 
@@ -183,7 +187,7 @@ W0 基线、账本与 ZIP/安装器决策门
 - 成功、部分成功、权限拒绝、提交未确认和取消后复查可由 ViewModel 稳定呈现。
 - 有可用 Windows 环境或 CI 时完成 x64/arm64 目标编译；当前无法执行时记录“尚未取得 `BUILD_VERIFIED`（待 Windows CI/环境）”，不阻塞仅依赖已冻结接口与聚焦测试的 W1-R/W2；没有改变发布身份或包形态。只有需要用户设备操作的项目才标记 `PENDING_USER_VALIDATION`。
 
-第 1 波候选已完成 W1 证书主链：每个连接尝试独立 handler/client，合格自签名首次核对、按 profile 指纹、变化阻断、relay 仅系统信任、稳定连接来源、全部 NAS 请求的 profile/source 上下文，以及原生可访问核对对话框。未参与实现者的源码对抗终审无开放 P0/P1；GitHub `Windows Build` run `31306947634` 已通过 756/756 xUnit，WinUI x64/arm64 均为 0 警告、0 错误。当前候选修正记录仍须整理为单一简体中文提交并对最终 SHA 复验，真实 Windows 设备与 NAS 仍为 `PENDING_USER_VALIDATION`。
+第 1 波已完成并合并 W1 证书主链：每个连接尝试独立 handler/client，合格自签名首次核对、按 profile 指纹、变化阻断、relay 仅系统信任、稳定连接来源、全部 NAS 请求的 profile/source 上下文，以及原生可访问核对对话框。未参与实现者的源码对抗终审无开放 P0/P1；最终第 1 波提交已通过 GitHub Windows Build，xUnit 与 WinUI x64/arm64 构建均通过。真实 Windows 设备、证书环境与真实 NAS 仍为 `PENDING_USER_VALIDATION`。
 
 ### W1-R：Range 与内容版本契约冻结
 
@@ -223,7 +227,7 @@ W0 基线、账本与 ZIP/安装器决策门
 
 出口：核心文件工作流达到总控账本范围；用 fake/合成 fixture 自动覆盖 profile 隔离、超时、权限结果、部分成功、提交未知和禁止重放，UI 五态完整。真实多 NAS、弱网、服务端权限和副作用列入第 9 节用户验证，不用 mock 冒充环境结论。
 
-第 1 波候选已完成 W2 中 FILE-03 的单项新建文件夹/重命名：固定公开 CreateFolder/Rename v2 与 CheckPermission v3，完整严格列表预检、源/目标互斥、一次提交、独立回读、session review blocker、remote/recycle/`#recycle` 三层零写门和 WinUI 原生表单。该结果不包含复制移动、删除、恢复或批量写；真实 NAS 行为和 Windows 构建仍为后置验证。
+第 1 波已完成 W2 中 FILE-03 的单项新建文件夹/重命名：固定公开 CreateFolder/Rename v2 与 CheckPermission v3，完整严格列表预检、源/目标互斥、一次提交、独立回读、session review blocker、remote/recycle/`#recycle` 三层零写门和 WinUI 原生表单。该结果不包含复制移动、删除、恢复或批量写；云端 Windows 构建已随第 1 波通过，真实 NAS 行为和 Windows 设备交互仍为后置验证。
 
 第 2 波已完成 W2 中 FILE-05 的单文件同 NAS 复制/移动：固定 CopyMove v3、普通本地共享根写前门、完整源/目标预检、无覆盖、一次提交、任务轮询、独立回读和跨页面 review blocker；WinUI 使用独立 partial 与 ViewModel 选择目标目录。最终提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 的 Windows Build 已通过 815/815 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；目录、批量、跨 NAS、覆盖、删除和恢复仍关闭，真实 NAS 与 Windows 设备交互继续后置验收。
 
@@ -266,7 +270,9 @@ Download Station：
 
 - 列表/筛选/详情/进度/速度/目标和任务文件；任务文件导入必须复用已验收的 W2 Picker/Transfer 边界。
 - URL/magnet/torrent/nzb/txt 创建、NAS 目标目录选择。
-- 当前首切接入单任务暂停/继续，并具备稳定任务基线、一次提交、独立回读和未确认结果不重放；删除数据分支、官方基础设置写和批量控制后续单独切片。
+- 已完成单任务暂停/继续、URL/磁力与任务文件创建和只移除任务；均使用稳定任务基线、一次提交、独立回读与未确认结果不重放。删除已下载数据、批量控制、RSS/文件优先级/BT 协议高级和设置写继续独立后置。
+
+在既有常用单任务流程之上，官方 `SYNO.DownloadStation.BTSearch` v1 的 Domain、Infrastructure、ViewModel 与 WinUI 闭环也已完成：能力门、原生 ContentDialog、`Ctrl+B`、提供方/类别/排序/方向、会话内隐私、取消/关闭、零提供方、空/筛选空/错误/结果态、迟到结果隔离和单结果创建均已接入；61 项英中资源与 8 项 Repository、15 项 ViewModel、3 项 source-contract 专项测试已落盘，共 26 项。候选提交 `53360d2` 的 Windows Build run `31354549859` 已通过 886/886 项 .NET 10 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误。真实 NAS、Narrator、键盘、高对比和窗口缩放继续列入 `PENDING_USER_VALIDATION`。RSS、文件优先级、BT 协议高级和设置写不随该切片开放。
 
 Container Manager：
 
@@ -295,6 +301,13 @@ Container Manager：
 边界：外接存储、ZRAM、电源计划、进程和当前账号共享访问保持只读；系统升级安装、套件安装/升级和管理员 ACL 矩阵继续关闭，除非后续获得稳定契约与独立授权。
 
 出口：只读页面和禁用态先完成聚焦自动化；危险操作均有影响说明、权限/状态预检、防重复和回读。可能断网、改时、重启/关机的入口在用户明确授权的专用 `lab-*` 环境验证前保持关闭，并列入 `PENDING_USER_VALIDATION`，不阻塞只读 NAS 模块。
+
+### BTSearch 后的近期实现顺序
+
+1. **ACT-01 统一活动中心优先**：把现有 App 前台传输与 NAS/Download 任务按来源投影到同一入口，保留不同控制能力，只读整合现有状态，不借机新增后台常驻或危险写。
+2. **CHAT-03 契约先行**：Windows 先补单附件上传、缩略图和下载 typed 结果契约，再接选择、进度、预览与保存；前台实时继续后置。
+3. **NAS-02/NAS-04 有界只读详情并行**：先把当前扁平 NAS 摘要拆为分区独立失败、分页和 partial/truncated 语义；不接断开连接、套件生命周期、任务执行或设置写。
+4. Download RSS、文件优先级、BT 协议高级设置以及 Container/VMM 高风险写不进入这一波；没有公开或已记录契约的能力继续关闭。
 
 ### W5-A：页面级 Windows 体验收口
 

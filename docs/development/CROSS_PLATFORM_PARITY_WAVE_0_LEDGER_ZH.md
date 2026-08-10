@@ -77,25 +77,25 @@
 | FND-01～04、NAV-01 | 核心 | 核心 | 触控资料管理、五 Tab；iPad 自适应 Sidebar；按 profile 隔离单窗口状态 | 主干完成：登录/OTP/恢复/取消/切换隔离/证书核对及五入口已完成；重命名/排序和能力说明继续 M1 |
 | FILE-01 浏览 | 核心 | 核心 | 列表/网格、分页、搜索、排序筛选；iPad 可用更宽列表与详情 | M3-A 已完成大目录分页、显式加载更多、目录历史/向上/刷新、递归搜索取消、列表/网格与按 profile 进程内缓存；M3-B 已基于公开 List 参数完成目录服务端 name/size/mtime、升降序、全部/文件/文件夹筛选，条件进入分页缓存与 generation，完整搜索快照才本地排序筛选；共享根只使用名称与方向 |
 | FILE-02 收藏/最近/回收站/远程位置 | 受限 | 受限 | 已完成只读位置导航：官方 Favorite v2 收藏、profile 会话内最近目录、当前可见共享的有界回收站根发现、官方 VirtualFolder v2 远程位置；iPhone/iPad 使用原生位置 sheet，Windows 在 Files 内使用自适应位置栏；挂载管理交给 Mac/DSM Web | Apple 共享契约、移动状态/UI 与 Windows fixed-v2 typed 契约、事务导航、WinUI 已收口；Remote/Recycle 及后代保持只读，收藏写、内部挂载写、恢复与永久删除保持关闭 |
-| FILE-03 新建/重命名/详情 | 受限 | 受限 | 触控详情页；不做空文件、递归统计、MD5 | M3-C1 已完成基本信息、日期、所有者和只读权限详情；旧新建/重命名入口仍关闭：当前 Void 契约没有提交未知、权限和最终回读，后续结果型 M3-E 才恢复 |
+| FILE-03 新建/重命名/详情 | 受限 | 受限 | 触控详情页；不做空文件、递归统计、MD5 | 已完成基本详情和结果型单项新建/重命名：固定公开 v2、权限/冲突预检、一次提交、独立回读、提交未知 review blocker 与当前文件夹刷新；旧 Void 入口不作为移动生产路径 |
 | FILE-04 单文件传输 | 核心 | 核心 | Document Picker、Exporter、Share Sheet；仅用户主动前台单文件 | M2-C 完成：单文件导入先协调复制到受控临时目录再上传；下载成功后才存储副本/分享；按 profile 隔离，系统面板 FIFO 呈现并在完成/取消后清理；不承诺常驻后台 |
-| FILE-05 同 NAS 复制/移动 | 受限 | 受限 | 明确数量/大小上限；iPad 可增加拖放快捷方式 | 未完成；跨 NAS 和大批量转交 Mac/DSM Web |
+| FILE-05 同 NAS 复制/移动 | 受限 | 受限 | 单个普通本地文件、无覆盖；iPad 可增加拖放快捷方式 | 已完成 CopyMove v3 结果型契约、目标选择、源/目标互斥、一次提交、任务轮询、独立回读和跨页面 blocker；目录、批量、跨 NAS 与覆盖转交 Mac/DSM Web |
 | FILE-06 压缩解压 | 当前不做 | 当前不做 | 转交 Mac App 或 DSM Web | 无移动入口；不得预建空页 |
 | FILE-07 分享链接 | 核心/受限 | 核心/受限 | 创建、复制、系统分享为核心；管理/撤销后置 | 已完成首个安全闭环：官方 Sharing v3、单文件/文件夹、可选密码、无到期或 7/30/90 天、一次提交和完整回读；仅 NAS 明确确认后允许复制/系统分享，未知结果禁止重放；管理、撤销、批量、二维码与提前生效日期未进入当前切片 |
 | FILE-08 预览 | 核心 | 核心 | 图片/PDF/文本只读/音视频；iPhone 全屏，iPad 详情区或全屏 | 已完成：图片/PDF 仅在精确刷新大小已知且≤128 MiB时，以4 MiB严格 Range、强 ETag/`If-Match`生成随机临时 artifact；文本仅在大小已知且≤1 MiB时读取并严格解码 UTF-8/BOM UTF-16；白名单音视频使用 AVKit 随机 Range，不完整落盘；iPad Inspector 与全屏互斥；不新增独立窗口、不编辑、不后台播放 |
-| FILE-09 回收站 | 受限 | 受限 | 移入回收站与恢复；必要确认和最终回读 | 未完成；永久删除当前不做 |
-| ACT-01 活动中心 | 核心 | 核心 | App 前台字节任务与 NAS 任务分源显示、取消和结果说明 | M2-A0/B/C 完成当前闭环：按 profile 隔离、前台单文件、进度/取消/待复核与零自动重放；Activity 按来源分组并提供状态筛选、取消与白名单从头重试；Files Picker/Exporter/Share 已接线 |
-| PHOTO-01～02 浏览/时间线 | 核心 | 核心 | 文件系统空间/文件夹相册继续保留；PHOTO-01 已加入用户主动、有硬上限、可取消的前台时间线，并仅对本次有界快照做本地文件名搜索 | M4-A1 浏览与 PHOTO-01 有界时间线已完成；时间线可显示图片/视频并复用现有只读动作，但视频播放增强、基础 EXIF、人物/地点/标签、真正相册与全库服务端搜索仍未进入当前切片 |
-| PHOTO-03 主动导入/导出 | 受限 | 受限 | PhotosPicker 明确选择，NAS 内移动/回收站有上限；不删除系统照片 | 未完成；M4 实现 |
-| CHAT-01～02 文字核心 | 核心 | 核心 | 先完成会话与非加密历史消息只读主流程；发送、草稿、新建会话、成员与前台实时必须分别通过内部写/实时版本门后再开放 | M5-A1a 已完成会话、本地筛选、非加密消息首屏/刷新/向前分页与按 profile 缓存；iPhone 层级、iPad 双栏已接线。文字/Emoji 发送、草稿、新建单聊/群聊、成员和前台实时尚未进入当前切片，不以待真机项目伪装 |
+| FILE-09 回收站 | 受限 | 受限 | 单个普通文件移入回收站与恢复；必要确认和最终回读 | 已完成 Files 受限入口，并在 Photos 的 `#recycle` 普通文件上复用恢复；永久删除、清空和目录批量仍关闭 |
+| ACT-01 活动中心 | 核心 | 核心 | App 前台字节任务与 NAS/Download 任务分源显示、取消和结果说明 | App 前台单文件传输、按 profile 隔离、进度/取消/待复核、状态筛选和白名单从头重试已完成；协调器保留 NAS 任务类型，但当前生产组合根没有 `registerNasTask` 调用，NAS/Download 只读投影仍是下一波缺口，不能把前台 Activity 写成 ACT-01 全部完成 |
+| PHOTO-01～02 浏览/时间线 | 核心 | 核心 | 文件系统空间/文件夹相册、用户主动有界时间线、当前快照本地搜索和基础查看器 | 文件夹浏览、缩略图、PHOTO-01 有界时间线和 PHOTO-02 冻结可见快照查看/元数据已完成；人物/地点/标签、真正相册、全库服务端搜索和敏感 EXIF 仍关闭 |
+| PHOTO-03 主动导入/导出 | 受限 | 受限 | PhotosPicker 单项明确选择，NAS 内回收站恢复有界；不删除系统照片 | PHOTO-03A 单项图片/视频导入已完成并复用既有上传与 Activity；导出/分享与 `#recycle` 恢复复用现有链路，更完整 NAS 内整理和自动备份后置 |
+| CHAT-01～02 文字核心 | 核心 | 核心 | 会话、非加密历史、草稿与受限纯文字发送；实时和会话管理逐项按版本门开放 | 已完成会话筛选、消息首屏/刷新/向前分页、profile 缓存和受限纯文字发送；附件、首次会话/成员管理、已读回写和前台实时仍未完成，不以待真机项目伪装 |
 | CHAT-03～04 附件/常用动作 | 受限 | 受限 | 单附件收发/保存与少量常用动作 | 未完成；提醒、定时、投票、服务端置顶、语音、加密当前不做 |
-| DS-01～02 Download Station | 受限只读 | 受限只读 | 查看任务状态、进度和详情；创建、控制、删除与设置交给 Mac App/DSM Web | M6-S0 已完成只读安全收口：创建、暂停、继续与删除均无移动入口；只读页面正式聚焦验证及当时移动全量已通过；最新累计证据见本节追加集成结果 |
+| DS-01～02 Download Station | 受限 | 受限 | 单任务查看、URL/磁力/任务文件创建、暂停/继续、只移除任务和官方 BT 搜索；删除数据、批量与高级设置交给 Mac App/DSM Web | 常用单任务闭环、当前活动摘要与 BTSearch v1 目录、七类排序及方向、有界搜索/清理、零提供方恢复态和单结果安全创建均已通过源码与云端门禁。删除已下载数据、RSS、文件优先级、BT 协议高级与设置写仍关闭 |
 | CM-01 Container 实例清单 | 受限只读 | 受限只读 | 查看容器名称、规范化状态与可选映像名称；其他分区转交 Mac App 或 DSM Web | M7-B2 / W4-A 已完成内部 observed/degraded v1 `Container.list` 窄契约、profile/generation/cache、筛选、刷新保留、五态与自适应列表详情；不读取映像库、网络、项目、事件、日志、资源或进程 |
 | CM-02 Container 写管理 | 当前不做 | 当前不做 | 转交 Mac App 或 DSM Web | 控制、删除、网络和映像写入口/模型调用已移除 |
 | VM-01 VMM 摘要 | 受限只读 | 受限只读 | 查看公开 Guest v1 的虚拟机名称、状态、CPU、内存、磁盘与自动启动；附属资源和日志转交 Mac/DSM | M7-B1a 已完成严格公开 Guest v1 窄契约、profile/generation/cache、五态与 iPhone/iPad 自适应页面；无内部 fallback |
 | VM-02 VMM 写/控制台 | 当前不做 | 当前不做 | 转交 Mac App 或 DSM Web | 电源、删除、网络/映像写入口/模型调用已移除；不嵌入控制台 |
 | NAS-01 健康概览 | 核心 | 核心 | 系统、当前性能、存储/硬盘健康与更新检查；安装更新转交 DSM Web | M7-A 已完成四分区独立状态、刷新保留、profile 隔离与 iPhone/iPad 自适应只读页；正式聚焦验证及当时移动全量已通过；最新累计证据见本节追加集成结果 |
-| NAS-02/04 服务信息 | 当前不做 | 当前不做 | 账号、日志、连接、套件、网络/安全与服务管理转交 Mac App/DSM Web | M7-A 不再从移动端加载或展示这些桌面管理信息；不得写成 `PENDING_USER_VALIDATION` |
+| NAS-02/04 服务信息 | 受限 | 受限 | 仅套件、计划任务、日志和当前连接等隐私白名单有界只读详情；配置写、断开、生命周期与任务执行转交 Mac App/DSM Web | 2026-08-10 范围升级：只允许建立 typed、分区独立失败、分页和 partial/truncated 契约后逐项进入；当前生产 UI 尚未完成，因此不是 `PENDING_USER_VALIDATION`，更不能借范围升级恢复旧浅层聚合或任何写入口 |
 | NAS-03/05 管理写与完整存储分析 | 当前不做 | 当前不做 | 转交 Mac App 或 DSM Web | 当前移动入口必须关闭；不以真机待办保留 |
 | SET-01 本地设置 | 核心 | 核心 | 语言、设备级主题、可选服务入口、本地可再生缓存与隐私边界；不写回 NAS | 已完成：保留既有系统/英语/简中语言；新增 system/light/dark 根级主题；仅 Download Station、Container、VMM、NAS 健康可隐藏，且可见性取本机偏好与当前 NAS capability 交集；Files、Photos、Chat、Transfers、Settings 永远可达；照片缩略图按 generation 安全清理，普通 profile 切换释放旧 session repository 但保留有界缓存，显式退出/删除只清目标 profile |
 | SYS-01 File Provider | 后续 | 后续 | 当前使用 App 内 Document Picker/Exporter | DAG 外，不预建 Target/入口 |
@@ -131,7 +131,14 @@ FILE-02 开始前范围账本：用户目标是从 Files 内快速打开收藏�
 
 这些结果不能证明 iPad 实际宽度、真机 Keychain、证书交互、系统选择器或真实 NAS 副作用。后续需要用户设备验证的当前范围项目将逐项写为 `PENDING_USER_VALIDATION`。
 
-### 4.2 当前 `PENDING_USER_VALIDATION`
+### 4.2 分切片 `PENDING_USER_VALIDATION`（含历史验收快照）
+
+本节按每个切片完成当时的边界保留验收步骤，便于回归和追溯；其中“当前不要求”或“没有
+写入口”等句子只描述该历史切片，不能覆盖第 4.1 节和第 5 节后来已经合并的能力。例如
+M3-A/M3-B、M4-A1、M5-A1a、M6-S0 的旧清单早于 FILE-03/05/09、PHOTO-02/03A、
+Chat 纯文字发送和 Download 创建/控制/删除。执行当前版本验收时必须同时使用最新追加
+集成结果与对应功能 PUV，不得要求已经存在的入口消失，也不得把历史局部通过当成当前
+完整范围通过。
 
 FILE-02 只读位置导航追加验收：
 
@@ -235,10 +242,18 @@ M7-B1a / W4-B0 VMM 官方只读追加验收：
 - 失败回传：仅提供设备/系统、脱敏 profile 别名、VMM 套件脱敏版本、公开 API 名、分区/状态类别、可见文案与复现步骤；不得回传 VM 名称、ID、主机名、网络/存储信息、地址、账号、原始响应或凭据。
 - 影响范围：Apple M7-B1a 官方 Guest v1 虚拟机清单与 Windows W4-B0 官方五分区只读资源；不包含 Container、任何 VMM 写、控制台、保护或日志。
 
+Download Station BTSearch v1 跨端追加验收：
+
+- 条件：一台 iPhone、一台 iPad、一台 Windows 10/11 x64 或 ARM64 设备，以及安装 Download Station、`SYNO.DownloadStation.BTSearch` v1 可用的脱敏专用测试 NAS；准备至少一个启用提供方、两个可区分类别和一个“无提供方/能力关闭”场景。创建下载任务的步骤只在允许写入的一次性测试目录执行。
+- 操作：打开搜索页核对隐私说明；依次使用全部、仅启用和明确选择提供方，切换类别、标题、七类排序与方向；搜索中取消一次、直接关闭一次、改变条件后再改回原值一次；覆盖无提供方重载、空结果、筛选空、错误和正常结果；最后选择一个合成/公开无敏感内容的结果创建任务，并在提交边界断网或取消一次以验证核对提示。
+- 预期：仅调用官方 BTSearch v1 的 `getModule/getCategory/start/list/clean`，不回退 `DownloadStation2`；单次列表最多 200 项、轮询最多 60 次且每次间隔约 500 ms；拿到 task ID 后成功、失败、超时或取消都最多独立尝试一次 best-effort `clean`，清理失败不覆盖原结果。搜索中条件冻结但关闭/取消可用；关闭清除本地输入，旧目录、旧 profile、旧 repository 与 A→B→A 迟到结果不回写。只有用户明确选择且既有创建结果链确认后才报告任务创建；提交未知不自动重放。
+- 回传：仅提供平台/系统/App、DSM 与 Download Station 脱敏版本、连接方式类别、提供方/类别数量级、操作阶段、请求方法名、调用次数、页面状态和脱敏错误分类；不得回传搜索词、结果标题、下载 URI、task ID、保存路径、NAS 地址、账号、SID、Token、Cookie、原始响应或截图中的用户数据。
+- 影响范围：只覆盖 BTSearch 提供方/类别目录、有界搜索、临时任务清理和单结果复用既有创建链；不包含 BT 协议高级设置、Tracker/Peer、RSS、文件优先级、监听目录、NZB 服务器、批量创建、删除已下载数据或 Download Station 设置写。
+
 ## 5. 第 0 波出口
 
-- Windows：完成 Domain / Repository 拆分、会话与严格 Range 基础、只读 Files 浏览、服务端排序与类型筛选、普通单文件下载/上传与 Activity、W3-A 文件系统照片库、PHOTO-01 用户主动有界时间线、W3-B Chat、W4 Download Station 与 W4-B0 VMM 官方五分区只读闭环；后续第 1–4 波又完成证书安全、FILE-03 新建/重命名、FILE-05 单文件复制/移动、PHOTO-03A 单项导入、FILE-09 回收站入口、Chat 纯文字发送以及 Download Station 单任务控制、链接/任务文件创建、单任务删除和只读当前活动摘要。最新 GitHub Windows CI 已在 `38f9fc323ff576bf4a3e37e08e3e77a04a21f464` 通过 860/860 xUnit 与 WinUI x64/ARM64 构建；真实 Windows 交互和真实 NAS 继续后置用户验证。
-- Apple：DsmMobile Sources 拆分、五入口导航、统一五态/token、M1 会话与证书、M2 前台单文件传输与 Activity、M3 大目录浏览/排序筛选/基础详情、FILE-02 只读位置、FILE-07 单对象分享链接、FILE-08 图片/PDF/文本/音视频只读预览、M4-A1 文件系统照片空间、PHOTO-01 有界时间线、M5-A1a Chat 只读历史、M6-S0 Download 只读详情、M7-A NAS 健康、M7-B1a VMM Guest、M7-B2 Container 实例及 SET-01 已完成第 0 波源码与聚焦自动化。后续第 1–4 波又完成 PHOTO-02 查看增强、PHOTO-03A 单项导入、FILE-03/05/09 受限写、Chat 纯文字发送以及 Download Station 单任务控制、链接/任务文件创建、单任务删除和只读当前活动摘要，并在 `38f9fc323ff576bf4a3e37e08e3e77a04a21f464` 的 GitHub Apple Build 覆盖 iPhone/iPad 通用应用构建。最新完整 iPad 真机交互、真机系统集成与真实 NAS 保持 `PENDING_USER_VALIDATION`；Chat 附件/实时、Download 高级能力和其他长期范围继续列入后续独立契约切片。
+- Windows：完成 Domain / Repository 拆分、会话与严格 Range 基础、只读 Files 浏览、服务端排序与类型筛选、普通单文件下载/上传与 Activity、W3-A 文件系统照片库、PHOTO-01 用户主动有界时间线、W3-B Chat、W4 Download Station 与 W4-B0 VMM 官方五分区只读闭环；后续第 1–4 波又完成证书安全、FILE-03 新建/重命名、FILE-05 单文件复制/移动、PHOTO-03A 单项导入、FILE-09 回收站入口、Chat 纯文字发送以及 Download Station 单任务控制、链接/任务文件创建、单任务删除、只读当前活动摘要和 BTSearch v1。最新 GitHub Windows CI 已在候选提交 `53360d2` 通过 886/886 项 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；真实 Windows 交互和真实 NAS 继续后置用户验证。
+- Apple：DsmMobile Sources 拆分、五入口导航、统一五态/token、M1 会话与证书、M2 前台单文件传输与 Activity、M3 大目录浏览/排序筛选/基础详情、FILE-02 只读位置、FILE-07 单对象分享链接、FILE-08 图片/PDF/文本/音视频只读预览、M4-A1 文件系统照片空间、PHOTO-01 有界时间线、M5-A1a Chat 只读历史、M6-S0 Download 只读详情、M7-A NAS 健康、M7-B1a VMM Guest、M7-B2 Container 实例及 SET-01 已完成第 0 波源码与聚焦自动化。后续第 1–4 波又完成 PHOTO-02 查看增强、PHOTO-03A 单项导入、FILE-03/05/09 受限写、Chat 纯文字发送以及 Download Station 单任务控制、链接/任务文件创建、单任务删除、只读当前活动摘要和 BTSearch v1；候选提交 `53360d2` 的 GitHub Apple Build run `31354549813` 已覆盖共享包、iPhone/iPad 通用应用构建和 macOS 打包。最新完整 iPad 真机交互、真机系统集成与真实 NAS 保持 `PENDING_USER_VALIDATION`；Chat 附件/实时、Download 高级能力和其他长期范围继续列入后续独立契约切片。
 - 两端：本波仅新增已记录的公开 File Station 列表/上传契约，不修改 Android、不修改 macOS App、不增加依赖、不改变签名与持久化结构。
 - 后续只在对应依赖出口通过后启动非重叠切片；M1 会话/AppShell 可与 M0 CommonUI/范围测试串行集成，不能把局部通过写成 M0 全部完成。
 
@@ -250,8 +265,8 @@ M7-B1a / W4-B0 VMM 官方只读追加验收：
 
 1. **W1 认证与统一状态**：自签名证书首次核对、按 profile 固定、变化阻断和连接来源说明已进入 Windows；统一 `ModuleAvailability` 原因与恢复动作、真实连接验收和部分旧写结果迁移仍按后续切片推进。
 2. **W2 Files 完整桌面工作流**：新建/重命名、单文件同 NAS 复制/移动、移入回收站与恢复已进入 Windows；文件夹/批量传输、跨 NAS、覆盖、永久删除、冲突高级处理和 Activity 深度联动仍保持独立后续范围。
-3. **W3 Photos 与 Chat**：PHOTO-01 时间线、PHOTO-02 查看增强、PHOTO-03A 单项导入和 Chat 受限纯文字发送已完成当前低风险闭环；Chat 附件、前台实时、更多消息动作和照片更完整管理仍按套件版本与真实环境验证推进。
-4. **W4 服务与 NAS 管理**：Download Station 单任务暂停/继续、URL/磁力创建、任务文件创建和单任务删除已进入 Windows/iPhone/iPad；RSS/BT 高级、文件优先级、设置写、Container/VMM 计划内剩余分区和 NAS 管理继续按公开/已记录契约分区推进。Container/VMM 高风险写与 VMM 控制台在契约和实机开放门前不启用。
+3. **W3 Photos 与 Chat**：PHOTO-01 时间线、PHOTO-03A 单项导入和 Chat 受限纯文字发送已完成当前低风险闭环；PHOTO-02 完整前后查看器/元数据、Chat 附件、前台实时、更多消息动作和照片更完整管理仍按套件版本与真实环境验证推进。
+4. **W4 服务与 NAS 管理**：Download Station 单任务暂停/继续、URL/磁力创建、任务文件创建、单任务删除和 BTSearch v1 已进入 Windows/iPhone/iPad；Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 均完成当前闭环。Apple 本机共享聚焦 65/65、共享全量 675 项 XCTest（2 跳过）+10 项 Swift Testing、iPhone 模拟器 11/11 已通过；Windows 专项自动化为 8 项 Repository、15 项 ViewModel 与 3 项 source-contract，共 26 项。候选提交 `53360d2` 已通过 Apple、Android、Windows 与 Repository 四组云端门禁，Windows 为 886/886 项 xUnit 且 WinUI x64/ARM64 均 0 警告、0 错误。真实 NAS、iPad 与 Windows 交互后置；RSS、文件优先级、BT 协议高级设置、设置写、Container/VMM 计划内剩余分区和 NAS 管理继续按公开或已记录契约分区推进。Container/VMM 高风险写与 VMM 控制台在契约和实机开放门前不启用。
 5. **W5/W6 系统集成与发布**：Cloud Files 继续保持默认关闭，等待 Explorer/Office/Win32 写入安全矩阵；补托盘/通知/安装卸载生命周期、真实 x64/ARM64 设备、Narrator、高 DPI、多显示器和真实 NAS 验收。
 
 ### 6.2 iPhone / iPad 后续波次
@@ -259,9 +274,9 @@ M7-B1a / W4-B0 VMM 官方只读追加验收：
 1. **M3 Files 受限写**：新建文件夹、重命名、有界同 NAS 复制/移动、移入回收站与恢复已完成当前单项闭环；复杂归档、跨 NAS、大批量、覆盖和永久删除继续排除。
 2. **M4 Photos 主动导入与受限管理**：`PhotosPicker` 单项主动导入、基础元数据查看和 `#recycle` 普通文件恢复已进入当前范围；更完整的 NAS 内移动/整理、自动备份和整库权限仍是后续独立决策，不申请整库权限，不加入后台扫描。
 3. **M5 Chat 核心与附件**：受限纯文字发送已接入；附件选择、上传、保存、预览、前台实时/轮询降级和更多消息动作仍需版本化契约与真实 Chat Server 验收，没有版本化内部写契约时入口继续关闭。
-4. **M6/M7 受限服务能力**：Download Station 已完成 URL/磁力创建、任务文件创建、单任务暂停/继续和单任务删除；RSS/BT 高级、文件优先级、设置写，以及 NAS 连接/配置、套件/任务/日志/当前连接摘要和 Container/VMM 计划内其他只读分区仍待完成。
+4. **M6/M7 受限服务能力**：Download Station 已完成 URL/磁力创建、任务文件创建、单任务暂停/继续、单任务删除和 BTSearch v1；搜索共享契约、移动 Sheet、结果创建链、48 项英中资源和 iPhone 模拟器聚焦已经收口，本地共享聚焦、共享全量与移动聚焦均通过，Apple Build run `31354549813` 又通过共享包测试、iPhone/iPad 通用构建和 macOS 打包。iPad/真机与真实 NAS 仍待完成。RSS、文件优先级、BT 协议高级设置和设置写继续关闭；NAS 侧下一步只推进有界只读详情，不把连接断开、套件生命周期、任务执行或设置写带入移动端。
 5. **M8/M9 iPad 与自动化收口**：补 iPad 紧凑/常规宽度切换、焦点、键盘、指针、拖放可见替代动作和全范围自动化；真实分屏、旋转、外接输入、VoiceOver、系统选择器、正式签名与真实 NAS 统一保留为 `PENDING_USER_VALIDATION`。
 
 ### 6.3 下一实现顺序
 
-后续优先处理无需猜测新私有协议、且能形成完整用户结果的叶子：Chat 附件/实时、Download Station RSS/BT 与文件优先级、NAS/Container/VMM 计划内只读或低风险操作，以及 Windows/移动端剩余系统集成验收。每个写切片继续遵守稳定目标、一次提交、结果回读与提交后不自动重放；没有证据的端点只记录差距，不为赶进度构造 fallback。
+BTSearch 已通过 Apple、Android、Windows 与 Repository 四组云端门禁，只剩真实 NAS、iPad、Windows 交互验收，不再占用下一功能波次。后续顺序冻结为：第一，ACT-01 统一活动中心，把 App 前台传输与 NAS/Download 任务按来源做只读投影；第二，CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传、缩略图、下载 typed 契约，再接附件 UI；第三，NAS-02/NAS-04 有界只读详情与 Chat 契约并行。Chat 实时、Download RSS/文件优先级/BT 协议高级设置、Container/VMM 高风险写和无证据端点继续后置。每个写切片仍须满足稳定目标、一次提交、结果回读和提交后不自动重放。

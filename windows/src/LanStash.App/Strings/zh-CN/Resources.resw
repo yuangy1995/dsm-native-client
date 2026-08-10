@@ -1014,4 +1014,65 @@
   <data name="FileRecycleFailureTitle" xml:space="preserve"><value>无法完成操作</value></data>
   <data name="FileRecycleFailureMessage" xml:space="preserve"><value>操作未完成。请刷新文件夹，然后从当前文件重新操作。</value></data>
   <data name="FileRecycleStatusAutomationName" xml:space="preserve"><value>回收站操作状态</value></data>
+  <data name="DownloadStationBtSearchButtonLabel.Text" xml:space="preserve"><value>查找下载资源</value></data>
+  <data name="DownloadStationBtSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>查找可下载资源</value></data>
+  <data name="DownloadStationBtSearchDialogTitle" xml:space="preserve"><value>查找可下载资源</value></data>
+  <data name="DownloadStationBtSearchSearchAction" xml:space="preserve"><value>搜索</value></data>
+  <data name="DownloadStationBtSearchCreateAction" xml:space="preserve"><value>创建所选任务</value></data>
+  <data name="DownloadStationBtSearchKeyword.Header" xml:space="preserve"><value>你想查找什么？</value></data>
+  <data name="DownloadStationBtSearchKeyword.PlaceholderText" xml:space="preserve"><value>输入标题或关键词</value></data>
+  <data name="DownloadStationBtSearchKeyword.Description" xml:space="preserve"><value>最多输入 200 个字符，请勿使用换行或其他不可见控制字符。</value></data>
+  <data name="DownloadStationBtSearchKeyword.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载资源搜索关键词</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.Header" xml:space="preserve"><value>筛选结果名称</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.PlaceholderText" xml:space="preserve"><value>可选</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.Description" xml:space="preserve"><value>可选；最多输入 200 个字符，请勿使用不可见控制字符。</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>可选的结果名称筛选</value></data>
+  <data name="DownloadStationBtSearchPrivacy.Title" xml:space="preserve"><value>搜索前请注意</value></data>
+  <data name="DownloadStationBtSearchPrivacy.Message" xml:space="preserve"><value>搜索词会发送到你的 NAS 及本次搜索使用的资源来源。App 不会保存这些内容；关闭此窗口会清除本地输入。</value></data>
+  <data name="DownloadStationBtSearchModuleScope.Header" xml:space="preserve"><value>资源来源</value></data>
+  <data name="DownloadStationBtSearchModuleScope.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>要搜索的资源来源</value></data>
+  <data name="DownloadStationBtSearchModuleEnabled" xml:space="preserve"><value>已启用的来源</value></data>
+  <data name="DownloadStationBtSearchModuleAll" xml:space="preserve"><value>全部来源</value></data>
+  <data name="DownloadStationBtSearchModuleSelected" xml:space="preserve"><value>选择来源</value></data>
+  <data name="DownloadStationBtSearchSelectedModulesLabel.Text" xml:space="preserve"><value>选择一个或多个来源</value></data>
+  <data name="DownloadStationBtSearchModuleList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>可用的下载资源来源</value></data>
+  <data name="DownloadStationBtSearchModuleSelectionRequired.Text" xml:space="preserve"><value>请至少选择一个来源后再搜索。</value></data>
+  <data name="DownloadStationBtSearchCategory.Header" xml:space="preserve"><value>分类</value></data>
+  <data name="DownloadStationBtSearchCategory.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载资源分类</value></data>
+  <data name="DownloadStationBtSearchCategoryAll" xml:space="preserve"><value>全部分类</value></data>
+  <data name="DownloadStationBtSearchSort.Header" xml:space="preserve"><value>排序依据</value></data>
+  <data name="DownloadStationBtSearchSort.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载资源结果排序依据</value></data>
+  <data name="DownloadStationBtSearchSortSeeds" xml:space="preserve"><value>做种数</value></data>
+  <data name="DownloadStationBtSearchSortSize" xml:space="preserve"><value>大小</value></data>
+  <data name="DownloadStationBtSearchSortDate" xml:space="preserve"><value>日期</value></data>
+  <data name="DownloadStationBtSearchSortTitle" xml:space="preserve"><value>标题</value></data>
+  <data name="DownloadStationBtSearchSortPeers" xml:space="preserve"><value>节点数</value></data>
+  <data name="DownloadStationBtSearchSortProvider" xml:space="preserve"><value>资源来源</value></data>
+  <data name="DownloadStationBtSearchSortLeeches" xml:space="preserve"><value>下载中节点</value></data>
+  <data name="DownloadStationBtSearchDirection.Header" xml:space="preserve"><value>顺序</value></data>
+  <data name="DownloadStationBtSearchDirection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载资源结果顺序</value></data>
+  <data name="DownloadStationBtSearchDirectionDescending" xml:space="preserve"><value>降序</value></data>
+  <data name="DownloadStationBtSearchDirectionAscending" xml:space="preserve"><value>升序</value></data>
+  <data name="DownloadStationBtSearchLoadingProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在准备下载资源搜索</value></data>
+  <data name="DownloadStationBtSearchLoading.Text" xml:space="preserve"><value>正在准备可下载资源…</value></data>
+  <data name="DownloadStationBtSearchCancel.Content" xml:space="preserve"><value>取消搜索</value></data>
+  <data name="DownloadStationBtSearchCancel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>取消当前下载资源搜索</value></data>
+  <data name="DownloadStationBtSearchReadyTitle.Text" xml:space="preserve"><value>可以开始搜索</value></data>
+  <data name="DownloadStationBtSearchReadyMessage.Text" xml:space="preserve"><value>输入关键词，可按需调整筛选条件，然后选择“搜索”。</value></data>
+  <data name="DownloadStationBtSearchNoProvidersTitle.Text" xml:space="preserve"><value>没有可用的资源来源</value></data>
+  <data name="DownloadStationBtSearchNoProvidersMessage.Text" xml:space="preserve"><value>请先在 Download Station 中启用下载资源来源，然后重新加载来源。</value></data>
+  <data name="DownloadStationBtSearchReloadProviders.Content" xml:space="preserve"><value>重新加载来源</value></data>
+  <data name="DownloadStationBtSearchReloadProviders.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>重新加载下载资源来源</value></data>
+  <data name="DownloadStationBtSearchEmptyTitle.Text" xml:space="preserve"><value>没有找到下载资源</value></data>
+  <data name="DownloadStationBtSearchEmptyMessage.Text" xml:space="preserve"><value>请尝试其他标题或范围更宽的关键词。</value></data>
+  <data name="DownloadStationBtSearchFilteredEmptyTitle.Text" xml:space="preserve"><value>没有符合筛选条件的下载资源</value></data>
+  <data name="DownloadStationBtSearchFilteredEmptyMessage.Text" xml:space="preserve"><value>请选择更多来源、清除名称筛选，或尝试其他分类。</value></data>
+  <data name="DownloadStationBtSearchErrorTitle.Text" xml:space="preserve"><value>无法完成搜索</value></data>
+  <data name="DownloadStationBtSearchErrorMessage.Text" xml:space="preserve"><value>请检查与 NAS 的连接，然后重试。</value></data>
+  <data name="DownloadStationBtSearchRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="DownloadStationBtSearchRetry.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>重新搜索下载资源</value></data>
+  <data name="DownloadStationBtSearchResultsTitle.Text" xml:space="preserve"><value>搜索结果</value></data>
+  <data name="DownloadStationBtSearchResultList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载资源搜索结果</value></data>
+  <data name="DownloadStationBtSearchResultMetadata" xml:space="preserve"><value>来源：{0} · 大小：{1} · 做种：{2} · 节点：{3} · 下载中：{4} · 日期：{5}</value></data>
+  <data name="DownloadStationBtSearchResultAutomationName" xml:space="preserve"><value>{0}。{1}</value></data>
 </root>

@@ -48,6 +48,10 @@ public sealed partial class DsmRepository
             {
                 features.Add(DownloadStationReadFeature.ActivitySummary);
             }
+            if (HasPublicDownloadVersion(PublicDownloadBtSearchApi))
+            {
+                features.Add(DownloadStationReadFeature.BtSearch);
+            }
             return new(DownloadStationAvailabilityStatus.Available, features);
         }
     }

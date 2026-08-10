@@ -201,8 +201,10 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         SaveCurrentProfileState();
         CancelRequest();
         CancelControl();
+        CancelBtSearch(resetSession: true);
         _repository = repository;
         ActiveProfileId = repository.ProfileId;
+        RaiseBtSearchAvailabilityProperties();
 
         if (repository.Availability.Status != DownloadStationAvailabilityStatus.Available ||
             !repository.Availability.SupportedFeatures.Contains(DownloadStationReadFeature.Tasks))
@@ -236,10 +238,12 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         SaveCurrentProfileState();
         CancelRequest();
         CancelControl();
+        CancelBtSearch(resetSession: true);
         CancelCreate();
         CancelDelete();
         _repository = null;
         ActiveProfileId = null;
+        RaiseBtSearchAvailabilityProperties();
         Tasks.Clear();
         SelectedTask = null;
         SetActivity(new(DownloadStationSectionStatus.Unavailable, null));
@@ -759,6 +763,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         _disposed = true;
         _generation++;
         _controlGeneration++;
+        CancelBtSearch(resetSession: true);
         _requestCancellation?.Cancel();
         _requestCancellation?.Dispose();
         _requestCancellation = null;

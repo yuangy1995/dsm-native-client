@@ -1014,4 +1014,65 @@
   <data name="FileRecycleFailureTitle" xml:space="preserve"><value>Couldn’t complete the action</value></data>
   <data name="FileRecycleFailureMessage" xml:space="preserve"><value>The action wasn’t completed. Refresh the folder and try again from the current file.</value></data>
   <data name="FileRecycleStatusAutomationName" xml:space="preserve"><value>Recycle bin action status</value></data>
+  <data name="DownloadStationBtSearchButtonLabel.Text" xml:space="preserve"><value>Find downloads</value></data>
+  <data name="DownloadStationBtSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Find downloadable resources</value></data>
+  <data name="DownloadStationBtSearchDialogTitle" xml:space="preserve"><value>Find downloadable resources</value></data>
+  <data name="DownloadStationBtSearchSearchAction" xml:space="preserve"><value>Search</value></data>
+  <data name="DownloadStationBtSearchCreateAction" xml:space="preserve"><value>Create selected task</value></data>
+  <data name="DownloadStationBtSearchKeyword.Header" xml:space="preserve"><value>What do you want to find?</value></data>
+  <data name="DownloadStationBtSearchKeyword.PlaceholderText" xml:space="preserve"><value>Enter a title or keyword</value></data>
+  <data name="DownloadStationBtSearchKeyword.Description" xml:space="preserve"><value>Use 200 characters or fewer. Avoid line breaks or other invisible controls.</value></data>
+  <data name="DownloadStationBtSearchKeyword.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Download search keyword</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.Header" xml:space="preserve"><value>Filter result names</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.PlaceholderText" xml:space="preserve"><value>Optional</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.Description" xml:space="preserve"><value>Optional. Use 200 characters or fewer and avoid invisible controls.</value></data>
+  <data name="DownloadStationBtSearchTitleFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Optional result name filter</value></data>
+  <data name="DownloadStationBtSearchPrivacy.Title" xml:space="preserve"><value>Before you search</value></data>
+  <data name="DownloadStationBtSearchPrivacy.Message" xml:space="preserve"><value>Your search terms are sent to your NAS and the providers used for this search. The app does not save them, and closing this window clears the local input.</value></data>
+  <data name="DownloadStationBtSearchModuleScope.Header" xml:space="preserve"><value>Providers</value></data>
+  <data name="DownloadStationBtSearchModuleScope.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Providers to search</value></data>
+  <data name="DownloadStationBtSearchModuleEnabled" xml:space="preserve"><value>Enabled providers</value></data>
+  <data name="DownloadStationBtSearchModuleAll" xml:space="preserve"><value>All providers</value></data>
+  <data name="DownloadStationBtSearchModuleSelected" xml:space="preserve"><value>Choose providers</value></data>
+  <data name="DownloadStationBtSearchSelectedModulesLabel.Text" xml:space="preserve"><value>Choose one or more providers</value></data>
+  <data name="DownloadStationBtSearchModuleList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Available download search providers</value></data>
+  <data name="DownloadStationBtSearchModuleSelectionRequired.Text" xml:space="preserve"><value>Choose at least one provider before searching.</value></data>
+  <data name="DownloadStationBtSearchCategory.Header" xml:space="preserve"><value>Category</value></data>
+  <data name="DownloadStationBtSearchCategory.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Download category</value></data>
+  <data name="DownloadStationBtSearchCategoryAll" xml:space="preserve"><value>All categories</value></data>
+  <data name="DownloadStationBtSearchSort.Header" xml:space="preserve"><value>Sort by</value></data>
+  <data name="DownloadStationBtSearchSort.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sort download search results</value></data>
+  <data name="DownloadStationBtSearchSortSeeds" xml:space="preserve"><value>Seeds</value></data>
+  <data name="DownloadStationBtSearchSortSize" xml:space="preserve"><value>Size</value></data>
+  <data name="DownloadStationBtSearchSortDate" xml:space="preserve"><value>Date</value></data>
+  <data name="DownloadStationBtSearchSortTitle" xml:space="preserve"><value>Title</value></data>
+  <data name="DownloadStationBtSearchSortPeers" xml:space="preserve"><value>Peers</value></data>
+  <data name="DownloadStationBtSearchSortProvider" xml:space="preserve"><value>Provider</value></data>
+  <data name="DownloadStationBtSearchSortLeeches" xml:space="preserve"><value>Leeches</value></data>
+  <data name="DownloadStationBtSearchDirection.Header" xml:space="preserve"><value>Order</value></data>
+  <data name="DownloadStationBtSearchDirection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Download search result order</value></data>
+  <data name="DownloadStationBtSearchDirectionDescending" xml:space="preserve"><value>Descending</value></data>
+  <data name="DownloadStationBtSearchDirectionAscending" xml:space="preserve"><value>Ascending</value></data>
+  <data name="DownloadStationBtSearchLoadingProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Preparing download search</value></data>
+  <data name="DownloadStationBtSearchLoading.Text" xml:space="preserve"><value>Preparing downloadable resources…</value></data>
+  <data name="DownloadStationBtSearchCancel.Content" xml:space="preserve"><value>Cancel search</value></data>
+  <data name="DownloadStationBtSearchCancel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Cancel the current download search</value></data>
+  <data name="DownloadStationBtSearchReadyTitle.Text" xml:space="preserve"><value>Ready to search</value></data>
+  <data name="DownloadStationBtSearchReadyMessage.Text" xml:space="preserve"><value>Enter a keyword, adjust any optional filters, then choose Search.</value></data>
+  <data name="DownloadStationBtSearchNoProvidersTitle.Text" xml:space="preserve"><value>No search providers are available</value></data>
+  <data name="DownloadStationBtSearchNoProvidersMessage.Text" xml:space="preserve"><value>Enable a download search provider in Download Station, then reload the providers.</value></data>
+  <data name="DownloadStationBtSearchReloadProviders.Content" xml:space="preserve"><value>Reload providers</value></data>
+  <data name="DownloadStationBtSearchReloadProviders.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Reload download search providers</value></data>
+  <data name="DownloadStationBtSearchEmptyTitle.Text" xml:space="preserve"><value>No downloads found</value></data>
+  <data name="DownloadStationBtSearchEmptyMessage.Text" xml:space="preserve"><value>Try a different title or a broader keyword.</value></data>
+  <data name="DownloadStationBtSearchFilteredEmptyTitle.Text" xml:space="preserve"><value>No downloads match these filters</value></data>
+  <data name="DownloadStationBtSearchFilteredEmptyMessage.Text" xml:space="preserve"><value>Choose more providers, remove the name filter, or try another category.</value></data>
+  <data name="DownloadStationBtSearchErrorTitle.Text" xml:space="preserve"><value>Couldn’t complete the search</value></data>
+  <data name="DownloadStationBtSearchErrorMessage.Text" xml:space="preserve"><value>Check the connection to your NAS, then try again.</value></data>
+  <data name="DownloadStationBtSearchRetry.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="DownloadStationBtSearchRetry.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Try the download search again</value></data>
+  <data name="DownloadStationBtSearchResultsTitle.Text" xml:space="preserve"><value>Search results</value></data>
+  <data name="DownloadStationBtSearchResultList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Download search results</value></data>
+  <data name="DownloadStationBtSearchResultMetadata" xml:space="preserve"><value>Provider: {0} · Size: {1} · Seeds: {2} · Peers: {3} · Leeches: {4} · Date: {5}</value></data>
+  <data name="DownloadStationBtSearchResultAutomationName" xml:space="preserve"><value>{0}. {1}</value></data>
 </root>

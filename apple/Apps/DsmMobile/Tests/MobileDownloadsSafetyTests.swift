@@ -253,6 +253,138 @@ final class MobileDownloadsSafetyTests: XCTestCase {
         XCTAssertTrue(model.contains("removeData: false"))
     }
 
+    @MainActor
+    func testBT搜索入口受能力门约束且复用单链接创建链路() throws {
+        let suiteName = "MobileDownloadsSafetyTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = MobileAppModel(defaults: defaults)
+        let profile = try NasProfile(
+            displayName: "测试设备",
+            host: "nas.example.invalid",
+            port: 5_001
+        )
+        model.activeProfile = profile
+
+        model.downloadSnapshot = DownloadStationSnapshot(
+            source: .official,
+            tasks: [],
+            hasBTSearch: false
+        )
+        XCTAssertFalse(model.canSearchDownloadBT)
+
+        model.downloadSnapshot = DownloadStationSnapshot(
+            source: .official,
+            tasks: [],
+            hasBTSearch: true
+        )
+        XCTAssertFalse(model.canSearchDownloadBT, "没有服务仓储时不得显示可用搜索入口")
+
+        let view = try sourceFile(
+            "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
+        )
+        let searchView = try sourceFile(
+            "Sources/Features/Services/Downloads/MobileDownloadBTSearchView.swift"
+        )
+
+        XCTAssertTrue(view.contains("MobileDownloadBTSearchView"))
+        XCTAssertTrue(view.contains("model.downloadSnapshot?.hasBTSearch == true"))
+        XCTAssertTrue(view.contains(".disabled(!model.canSearchDownloadBT)"))
+        XCTAssertTrue(searchView.contains("loadDownloadBTSearchCatalog()"))
+        XCTAssertTrue(searchView.contains("searchDownloadBT(request)"))
+        XCTAssertTrue(searchView.contains("titleFilter"))
+        XCTAssertTrue(searchView.contains("selectedModuleIDs.isSubset(of: catalogModuleIDs)"))
+        XCTAssertTrue(searchView.contains("model.createDownloadTask(uri: result.downloadURI)"))
+        XCTAssertTrue(searchView.contains(".task(id: searchRepositoryIdentity)"))
+        XCTAssertFalse(searchView.contains("UserDefaults"))
+        XCTAssertFalse(searchView.contains("@AppStorage"))
+        XCTAssertFalse(searchView.contains("@SceneStorage"))
+    }
+
+    func testBT搜索双语资源键完整且数量一致() throws {
+        let en = try sourceFile(
+            "../../Packages/DsmLocalization/Sources/Resources/en.lproj/Localizable.strings"
+        )
+        let zh = try sourceFile(
+            "../../Packages/DsmLocalization/Sources/Resources/zh-Hans.lproj/Localizable.strings"
+        )
+        let enKeys = Set(Self.btSearchKeys(in: en))
+        let zhKeys = Set(Self.btSearchKeys(in: zh))
+
+        XCTAssertFalse(enKeys.isEmpty)
+        XCTAssertEqual(enKeys, zhKeys)
+        XCTAssertEqual(enKeys.count, 48)
+    }
+
+    @MainActor
+    func testBT搜索只允许当前目录中的有效筛选并始终可关闭() throws {
+        let searchModel = MobileDownloadBTSearchModel()
+        searchModel.catalog = DownloadBTSearchCatalog(
+            modules: [
+                DownloadBTSearchModule(id: "enabled", title: "Enabled", isEnabled: true),
+                DownloadBTSearchModule(id: "disabled", title: "Disabled", isEnabled: false)
+            ],
+            categories: [DownloadBTSearchCategory(id: "books", title: "Books")]
+        )
+        searchModel.keyword = "linux"
+        XCTAssertTrue(searchModel.canSearch)
+
+        searchModel.keyword = String(repeating: "a", count: 201)
+        XCTAssertFalse(searchModel.canSearch)
+        XCTAssertTrue(searchModel.hasInvalidKeyword)
+        searchModel.keyword = "\nlinux"
+        XCTAssertFalse(searchModel.canSearch)
+        XCTAssertTrue(searchModel.hasInvalidKeyword)
+        searchModel.keyword = "linux"
+        searchModel.titleFilter = "line\nbreak"
+        XCTAssertTrue(searchModel.hasInvalidTitleFilter)
+        XCTAssertFalse(searchModel.canSearch)
+        searchModel.titleFilter = "guide\t"
+        XCTAssertTrue(searchModel.hasInvalidTitleFilter)
+        XCTAssertFalse(searchModel.canSearch)
+        searchModel.titleFilter = ""
+        searchModel.moduleMode = .selected
+        searchModel.selectedModuleIDs = ["stale"]
+        XCTAssertFalse(searchModel.canSearch)
+        searchModel.selectedModuleIDs = ["enabled"]
+        XCTAssertTrue(searchModel.canSearch)
+        searchModel.selectedCategoryID = "stale"
+        XCTAssertFalse(searchModel.canSearch)
+        searchModel.selectedCategoryID = "books"
+        XCTAssertTrue(searchModel.canSearch)
+
+        searchModel.hasSearched = true
+        searchModel.results = [
+            DownloadBTSearchResult(
+                title: "Linux",
+                sizeBytes: 1,
+                downloadURI: "magnet:?xt=urn:btih:synthetic",
+                peers: 1,
+                seeds: 1,
+                leeches: 0,
+                provider: "Synthetic"
+            )
+        ]
+        searchModel.keyword = "bsd"
+        XCTAssertFalse(searchModel.hasSearched)
+        XCTAssertTrue(searchModel.results.isEmpty, "条件变化后不得保留旧请求结果")
+
+        searchModel.isSearching = true
+        searchModel.close()
+        XCTAssertFalse(searchModel.isSearching, "搜索期间关闭仍须立即取消并清理本地输入")
+
+        let source = try sourceFile(
+            "Sources/Features/Services/Downloads/MobileDownloadBTSearchView.swift"
+        )
+        XCTAssertFalse(source.contains(".interactiveDismissDisabled(searchModel.isSearching)"))
+        XCTAssertTrue(source.contains(".disabled(searchModel.isSearching)"))
+        XCTAssertTrue(source.contains("mobile.downloads.bt-search.catalog.empty.title"))
+        XCTAssertTrue(source.contains("mobile.downloads.bt-search.catalog.empty.message"))
+        XCTAssertTrue(source.contains("mobile.downloads.bt-search.input.invalid"))
+        XCTAssertTrue(source.contains("safeUserMessage"))
+        XCTAssertTrue(source.contains("catalog.categories.filter { $0.id != \"_allcat_\" }"))
+    }
+
     func test下载页面保留四态受限控制列表和详情选择() throws {
         let view = try sourceFile(
             "Sources/Features/Services/Downloads/MobileDownloadsView.swift"
@@ -311,6 +443,15 @@ final class MobileDownloadsSafetyTests: XCTestCase {
             contentsOf: appRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
+    }
+
+    private static func btSearchKeys(in source: String) -> [String] {
+        source
+            .split(separator: "\n")
+            .compactMap { line -> String? in
+                guard line.contains("\"mobile.downloads.bt-search.") else { return nil }
+                return line.split(separator: "\"", maxSplits: 2).first.map(String.init)
+            }
     }
 
     @MainActor

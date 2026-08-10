@@ -82,7 +82,7 @@ public sealed record DownloadTaskItem(DownloadTask Task)
             "DownloadStationSpeedValue",
             FormatBytes(bytesPerSecond));
 
-    private static string FormatBytes(long? bytes)
+    internal static string FormatBytes(long? bytes)
     {
         if (bytes is null)
         {

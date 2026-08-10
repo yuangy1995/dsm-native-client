@@ -9,13 +9,14 @@
 2. 写请求超时、任务异步执行或批量部分成功时，五端使用一致语义，避免把“结果未知”
    显示为“失败”并诱导用户立即重复提交。
 
-仓库已经有脱敏响应 Fixture、API 能力发现、请求构建单元测试、危险操作确认、防重复
-提交和多处写后回读，但尚未形成跨模块的请求快照和统一结果类型。现有平台代码继续
-作为事实来源；本计划不会根据名称推测 DSM 请求。
+仓库已经建立请求 Fixture Schema、跨模块请求快照、统一写操作结果类型、隐私扫描和
+多端校验流程；当前状态、数量和云端门禁以[当前开发进度](../progress/STATUS.md)
+记录的同一源码版本为准。本计划继续维护设计原则、迁移边界和后续扩展，不根据名称
+推测 DSM 请求。
 
 ## 2. 请求契约设计
 
-计划新增：
+当前请求 Fixture 目录按模块滚动扩展，典型布局为：
 
 ```text
 contracts/request-fixtures/
@@ -58,7 +59,7 @@ contracts/request-fixtures/
 头或原始请求体。参数值只使用固定合成值；敏感参数只记录“存在、位置和编码类型”，
 不记录占位凭据正文。
 
-第一批优先覆盖：
+早期优先覆盖项为：
 
 - 文件删除、移动和覆盖上传；
 - 用户创建/删除、群组和共享权限；
@@ -175,13 +176,17 @@ contracts/request-fixtures/
 - 已覆盖 DDNS 服务商测试、记录新建、立即更新和删除四类独立请求；用户名与密码仅验证
   参数存在和传输位置，Fixture 不保存凭据值。
 - 已覆盖 NAS 正常关机与重启两类无业务参数请求；两者固定禁止重试且不伪造写后回读。
-- 当前共 71 份请求 Fixture；另有 1 份结果示例、3 组响应 Fixture 和 103 份 contracts
-  JSON 通过校验。系统更新、共享权限与更多写操作仍待后续批次覆盖。
+- 历史 RC1 批次已从 71 份请求 Fixture 起步；当前仓库的请求 Fixture、写结果示例和
+  响应 Fixture 数量以[当前开发进度](../progress/STATUS.md)和对应 Repository Check
+  输出为准。系统更新、共享权限与更多写操作仍待后续批次覆盖。
 
 ### RC2：Android 与 Windows 对齐
 
-状态：Android 首批为 `UNIT_TESTED`；Windows 首批源码与静态工程检查完成，等待具备
-`.NET 10 SDK` 的 Windows CI 编译和测试。
+状态：Android 首批为 `UNIT_TESTED`；Windows 首批已由后续云端门禁覆盖。BTSearch
+候选提交 `53360d2` 已完成 Apple shared/mobile 与 Windows
+Domain/Infrastructure/ViewModel/WinUI 闭环，并新增 `start`/`clean` 合成请求；同一
+候选的 Windows Build run `31354549859` 完成 886/886 项 .NET 10 xUnit，并通过
+WinUI x64 与 ARM64 Release 构建，Repository Check run `31354549826` 同步通过。
 
 - 使用同一 Fixture 验证 API、方法、版本、路径、参数集合和策略。
 - 平台特有 HTTP 实现可以不同，但可观察请求语义必须一致。
@@ -189,20 +194,27 @@ contracts/request-fixtures/
   VMM 虚拟机删除三份共享 Fixture；File Station 删除补齐
   `accurate_progress=true`，公开 VMM 请求只发送 `guest_id`，未验证的旧内部 API
   继续保留原兼容参数。
-- Windows 已为相同三份 Fixture 增加 Repository 请求测试源码，并把通用删除层改为
-  由实际 API 调用点提供资源标识参数；公开 VMM 只发送 `guest_id`，旧内部 Guest
-  保留 `guest_id + id`，网络和映像不再混入无关资源标识。当前 macOS 没有 .NET 10
-  编译器，不能把静态检查写成 Windows 测试通过。
-- 下一批继续把套件卸载、容器/VMM 映像与网络、网络和防火墙请求扩展到 Android/
-  Windows；平台没有生产写入口的能力只建立契约消费测试，不为对齐而新增未经验证入口。
+- Windows 已为相同三份 Fixture 增加 Repository 请求测试，并把通用删除层改为由
+  实际 API 调用点提供资源标识参数；公开 VMM 只发送 `guest_id`，旧内部 Guest 保留
+  `guest_id + id`，网络和映像不再混入无关资源标识。早期 macOS 本机缺少 .NET 10
+  编译器的限制已由后续 GitHub Windows Build 覆盖；后续新增契约仍必须在对应分支
+  重新取得 Windows CI 证据。
+- 后续继续把套件、容器/VMM 子资源、网络、防火墙、Download Station 新切片及其他代表性
+  请求扩展到 Android/Windows；平台没有生产写入口的能力只建立契约消费测试，不为对齐而
+  新增未经验证入口。当前 BTSearch v1 的实现口径为两端完整闭环：本机已通过 Apple shared
+  聚焦/全量、iPhone 聚焦、94 份请求 Fixture、本地化和静态门；候选提交 `53360d2` 又通过
+  Apple Build run `31354549813`、Windows Build run `31354549859`、Android Build run
+  `31354549827` 与 Repository Check run `31354549826`。真实设备与真实 NAS 仍单独验收。
 - Android 收藏新增和 File Station 上传已对照公共合成 Fixture 验证 API、方法、版本、
   路径、表单或 multipart 参数、SID、SynoToken 位置和回读策略；其余代表性操作与
   Windows 继续迁移。
 
 ### MR0：结果类型与序列化
 
-状态：Apple、Android 为 `UNIT_TESTED`；Windows 源码已实现，当前 macOS 环境缺少
-`.NET 10 SDK`，等待 Windows CI 编译与测试。
+状态：Apple、Android 为 `UNIT_TESTED`；Windows 领域类型已由后续 GitHub Windows
+Build 覆盖，BTSearch 候选提交 `53360d2` 完成 886/886 项 xUnit 与 WinUI x64/ARM64
+Release 构建。后续若新增 `MutationResult` 消费者或请求契约，仍需在对应分支重新跑
+Windows CI。
 
 - 已增加公共 Schema 和 Apple、Android、Windows 等价领域类型。
 - 已覆盖 8 个稳定枚举线值、数量约束、状态不变量和安全诊断字段。

@@ -61,12 +61,13 @@
 ### M2：Download Station 完整功能
 
 - Tracker、Peer、BT 文件选择与优先级。
-- BT 搜索模块、类别、搜索结果和直接下载。
+- BT 搜索模块、类别、搜索结果和直接下载。Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 已建立官方 `SYNO.DownloadStation.BTSearch` v1 完整闭环，覆盖 `getModule`、`getCategory`、`start`、`list` 与 `clean`；两端均有能力门、会话内隐私、搜索/取消/空态、条件迟到隔离和复用既有单链接创建链。Apple 本机共享聚焦 65/65、全量 675 XCTest（2 跳过）+10 Swift Testing、iPhone 模拟器 11/11；Windows 专项自动化为 26 项。候选提交 `53360d2` 已通过 Apple Build run `31354549813`、Windows Build run `31354549859`、Android Build run `31354549827` 与 Repository Check run `31354549826`，其中 Windows 为 886/886 项 xUnit 且 WinUI x64/ARM64 均 0 警告、0 错误。iPad/真机、Windows/Narrator/键盘和真实 NAS 验收继续后置。
 - RSS 站点、条目、下载过滤器。
 - 已完成官方基础设置：默认位置、eMule、自动解压、BT/HTTP/FTP/NZB/eMule 限速与计划；继续补齐套件内部的 BT 协议高级设置、监听目录、NZB 服务器、RSS 与通知设置。
 - Android 已完成官方任务文件、Tracker、Peer 详情、RSS 站点/条目浏览、RSS 单站点手动刷新和 BT 实际搜索。BT Search v1 通过 `getModule/getCategory` 读取提供方和类别，支持全部、已启用或明确选定提供方、类别、标题过滤、排序字段和方向，并在搜索完成、失败、超时或取消后尝试清理本次临时服务端搜索任务；清理失败不冒充记录已经移除。这不代表 BT 协议高级设置已完成。RSS 条目和搜索结果可经可写目录选择后直接创建任务。RSS 刷新具备目标预检、同站点防重复、写后回读和未确认结果；官方指南未公开 RSS 完整编辑或文件优先级写参数，相关能力与其他高级设置保持关闭并等待版本化契约和真实 NAS 验收。
-- Android 已使用官方 `SYNO.DownloadStation.Statistic.getinfo` v1 显示当前标准/eMule 上下行聚合字节速率；该摘要独立失败时不遮蔽任务列表，不冒充历史流量、单任务速度或传输结果。
+- Android、Windows 与 Apple 公开 Download Station 路径均使用官方 `SYNO.DownloadStation.Statistic.getinfo` v1 显示当前标准/eMule 上下行聚合字节速率；Apple 既有 `DownloadStation2` 降级路径仍 best-effort 调用内部 `SYNO.DownloadStation2.Task.Statistic.get`。Android/Windows 对缺失、负数或错误类型进入摘要独立错误，Apple 当前兼容字段别名并在读取失败时隐藏摘要；三端都不得让摘要失败遮蔽任务列表，也不得把结果冒充历史流量、单任务速度或传输结果。
 - Android 已按官方 `SYNO.DownloadStation.Task.edit` v1 接入单任务保存位置修改：选择可写目录、明确提示可能移动已有文件，写前复核任务与目录完整基线，提交后严格回读，断线和取消不自动重放；该能力不复用 `DownloadStation2`。
+- BTSearch 门禁完成后的下一波顺序冻结为：ACT-01 统一活动中心优先；CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、Container/VMM 高危写不并入该波。
 
 ### M3：Container Manager 完整功能
 
@@ -81,7 +82,7 @@
 - Android 已使用官方公开 v1 契约完成分步创建与常规设置修改，并覆盖提交前检查、防重复、任务轮询/清理和最终回读；独立 noVNC 控制台仍因 Android 侧稳定契约未验证而关闭。
 - 扩展编辑向导：虚拟盘扩容/增删和多网络接口管理。
 - 克隆、迁移、导入导出。
-- Android 已使用官方 `Guest.Image.create` v1 完成“从 NAS 已有文件创建映像”：有界浏览 NAS 文件、源文件/存储/名称基线、单次提交、任务跟踪、稳定 `image_id` + 名称 + 类型严格回读和终态清理；任务 ID 保存在 Workspace，可跨 Activity 配置重建继续核对，断线和取消不重放。真实 NAS 的格式、权限与写入结果尚未验证；应用进程死亡或重启后的恢复未实现，需另行授权持久结构。
+- Android 已使用官方 `Guest.Image.create` v1 完成“从 NAS 已有文件创建映像”：有界浏览 NAS 文件、源文件/存储/名称基线、单次提交、任务跟踪、稳定 `image_id` + 名称 + 类型严格回读和终态清理；该 NAS 既有文件流程的任务 ID 只保存在 Workspace，可跨 Activity 配置重建继续核对，断线和取消不重放，但应用进程死亡或重启后的恢复未实现。系统选择的本机文件不使用这条内存边界，而是按第 2 节第 11 项进入既有加密传输存储并支持只读恢复。两条流程的真实格式、权限与 NAS 写入结果均仍待验收。
 - 本机文件映像导入已实现；映像编辑、导出与其他未登记来源创建仍未完成。公开映像删除已具备受保护入口，但仍需真实 NAS 验收。
 - 快照、保护计划、恢复与保留策略。
 - Android 已使用官方 Guest v1 `additional=true` 只读展示磁盘与网卡配置，并使用 Task.Info v1 提供最多 100 项、不含真实任务 ID/内部状态的任务中心。用户可明确确认清理已结束任务：提交前重新读取任务目录，只对用户确认基线中身份仍一致且仍为已结束的目标逐一调用 `Task.Info.clear` v1；无关任务新增或进度变化不扩大清理范围，目标变为进行中时零写。提交异常或取消后只回读一次且不重放。真实任务标识仅驻留当前 Workspace 内存和请求边界，不展示、记录或持久化。该子能力不代表高级硬件编辑、迁移、克隆或完整导入导出已完成。

@@ -384,6 +384,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
             SearchBox.Text = _viewModel.SearchText;
         }
         SyncFilterPicker();
+        UpdateBtSearchUi();
         UpdateAdaptiveLayout();
     }
 
@@ -439,6 +440,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         {
             return;
         }
+        CloseBtSearchDialog();
         _disposed = true;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();

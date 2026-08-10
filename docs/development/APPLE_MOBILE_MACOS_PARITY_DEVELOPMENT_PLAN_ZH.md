@@ -1,6 +1,6 @@
 # iPhone 与 iPad 移动精选功能开发计划
 
-- 状态：规划基线，尚未开始实施
+- 状态：实施中；第 0～4 波核心/受限切片已持续落地，当前事实与验证等级以跨端账本和 `STATUS.md` 为准
 - 上位计划：[macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)
 - 目标技术栈：Swift 6、SwiftUI、URLSession、Apple 系统框架
 - 最低系统基线：保持当前 iOS/iPadOS 17，不在本计划中提高
@@ -52,7 +52,7 @@
 | NAS | 只有少量只读摘要，远少于 macOS 21 类管理页 | 只补健康与必要只读诊断；配置、电源、账号和长时分析不是当前缺口 |
 | iPad | 只按 horizontal size class 分支，缺实际宽度、键盘、指针和拖放设计 | 补齐当前范围的自适应生产力；多窗口后续 |
 
-立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前分支已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、PHOTO-01 有界时间线、Chat 只读消息、Download 单任务详情与受限暂停/继续、NAS 健康、VMM Guest、Container 实例和本地设置闭环；PhotosPicker、照片基础 EXIF、照片受限写、Chat 写/实时/附件以及 Download 创建/删除/高级设置等其他后续能力仍未实现。后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口只属于后续候选或当前排除项。
+立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息与受限纯文字发送、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，候选提交 `53360d2` 的 Apple Build run `31354549813` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。iPad/真机与真实 NAS 仍待验收。下一波优先 ACT-01；CHAT-03 先做 typed 单附件结果契约，NAS-02/NAS-04 有界只读详情可并行；Chat 实时、Download RSS/文件优先级/BT 高级/设置写，以及后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
 
 ## 3. 移动范围与 macOS 语义基线
 
@@ -380,11 +380,12 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 ### M6：Download Station 受限任务
 
-- 提供单任务列表/筛选/详情、URL/magnet 或任务文件创建、目标目录选择、暂停与继续。
-- Activity 保持 NAS 任务来源，不把服务端进度显示成本机后台传输。
-- 当前不做批量命令、删除任务及数据和高级设置；交给 Mac App 或 DSM Web。
+- 已提供单任务列表/筛选/详情、URL/magnet 与任务文件创建、目标目录选择、暂停、继续和只移除任务；删除已下载数据仍关闭。
+- 官方 BTSearch v1 的提供方/类别、七类排序、有界结果、取消/清理、零提供方状态与单结果创建已完成源码闭环；真实 NAS、iPad/Windows 交互按专项 PUV 验收。
+- ACT-01 仍需把 NAS/Download 任务接入 Activity 的独立来源；当前只有协调器类型，生产组合根尚无 `registerNasTask` 调用，不能把服务端进度冒充本机后台传输。
+- 当前不做批量命令、删除已下载数据、RSS、文件优先级、BT 协议高级设置和设置写；交给 Mac App 或 DSM Web。
 
-出口：内部端点按操作和完整套件版本 gate；创建、暂停和继续分别具备稳定目标、防重复与回读测试，未知环境保持关闭。
+出口：每项写操作按能力和版本 gate；创建、暂停、继续和只移除任务分别具备稳定目标、防重复与回读测试，提交未知不重放。BTSearch 的临时搜索任务只做一次独立 best-effort 清理，清理失败不覆盖原始结果。
 
 ### M7：NAS 健康与服务只读摘要
 
@@ -515,7 +516,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 - 当前范围内每个写操作的成功、部分、拒绝、提交未确认、提交后取消和回读不一致。
 - 合成请求 fixture 验证 API 名、版本、方法、路径、参数、认证材料位置和 no-retry 策略。
 - iPhone/iPad UI 测试覆盖五态、导航返回、Tab/Sidebar 状态、确认框和动态文字主流程。
-- PHOTO-03 经独立范围升级并开始实现后，PhotosPicker adapter 必须用 fake 覆盖选择、取消、临时文件形成与清理；在此之前不作为第 0 波自动化出口，也不建立整库 PhotoKit 授权、增量游标或备份测试。
+- PHOTO-03A 的 PhotosPicker adapter 已用 fake 覆盖选择、取消、临时文件形成与清理；整库 PhotoKit 授权、增量游标和自动备份仍属 DAG 外候选，不建立伪自动化出口。
 - 当前单窗口状态测试证明切换 profile 后 Route、筛选、选择和草稿不串用。
 - 性能测试覆盖大目录可见窗口、合成照片索引、长聊天、缓存上限和快速滚动取消。
 - 对 `MOBILE_EXCLUDED` 项验证无入口或有准确替代说明，并在 Repository/请求层断言零危险请求；不为其建立完整功能测试套件。
@@ -537,7 +538,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 
 - 前台/后台、系统挂起、系统终止、用户强制结束、设备重启和 App 升级；未完成的前台传输不得在重启后被自动重放。
 - Wi-Fi/蜂窝切换、低数据、低电量、无网、慢网和存储不足。
-- 已实现的 Document Picker/Exporter、分享 Sheet、QuickLook/PDFKit/AVKit 与 FILE-07 系统分享；PhotosPicker 和 iCloud-only 主动导入只在 PHOTO-03 源码切片完成后加入本节。
+- 已实现的 Document Picker/Exporter、分享 Sheet、QuickLook/PDFKit/AVKit、FILE-07 系统分享，以及 PHOTO-03A PhotosPicker/iCloud-only 主动导入；分别验证完成、取消、授权失效和临时文件清理。
 - 同一窗口切换 NAS 后，任务、选择、筛选和草稿不串用。
 
 ### 13.3 DSM
@@ -545,7 +546,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 - 局域网、公网直连、QuickConnect 中继和证书变化。
 - 普通账号、受限管理员、功能无权限、套件未安装和 capability 缺失。
 - 当前记录的 DSM build + 套件完整版本；未记录环境的内部写必须关闭。
-- 对已经实现的单文件上传、FILE-07 单对象分享链接、FILE-03 单项新建文件夹/重命名和 Download 单任务暂停/继续，验证成功、权限拒绝、冲突、超时、提交未知、取消后复查和回读不一致；FILE-03 与 Download 未确认结果在核对前不得重放。未实现的 FILE-05/09、PHOTO-03、Chat/NAS 写和 Download 创建/删除/高级设置不进入本矩阵。
+- 对已经实现的单文件上传、FILE-07 单对象分享链接、FILE-03 单项新建文件夹/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 移入回收站/恢复、PHOTO-03A 单项导入、Chat 纯文字发送，以及 Download 单任务创建/暂停/继续/只移除任务，验证成功、权限拒绝、冲突、超时、提交未知、取消后复查和回读不一致；未确认结果在核对前不得重放。永久删除、删除已下载数据、Chat 附件/NAS 写和 Download 高级设置不进入本矩阵。
 
 ## 14. 关键风险
 

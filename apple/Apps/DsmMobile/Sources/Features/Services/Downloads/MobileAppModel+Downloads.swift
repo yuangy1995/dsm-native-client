@@ -84,6 +84,12 @@ extension MobileAppModel {
         )
     }
 
+    var canSearchDownloadBT: Bool {
+        activeProfile != nil &&
+        downloadSnapshot?.hasBTSearch == true &&
+        serviceRepository != nil
+    }
+
     var downloadCreateDefaultDestination: String? {
         let destination = downloadSnapshot?.defaultDestination?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -664,6 +670,7 @@ extension MobileAppModel {
             source: snapshot.source,
             tasks: tasks,
             hasActivitySummary: snapshot.hasActivitySummary,
+            hasBTSearch: snapshot.hasBTSearch,
             downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
             emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
@@ -684,6 +691,7 @@ extension MobileAppModel {
             source: snapshot.source,
             tasks: tasks,
             hasActivitySummary: snapshot.hasActivitySummary,
+            hasBTSearch: snapshot.hasBTSearch,
             downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
             emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,
@@ -699,6 +707,7 @@ extension MobileAppModel {
             source: snapshot.source,
             tasks: tasks,
             hasActivitySummary: snapshot.hasActivitySummary,
+            hasBTSearch: snapshot.hasBTSearch,
             downloadBytesPerSecond: snapshot.downloadBytesPerSecond,
             uploadBytesPerSecond: snapshot.uploadBytesPerSecond,
             emuleDownloadBytesPerSecond: snapshot.emuleDownloadBytesPerSecond,

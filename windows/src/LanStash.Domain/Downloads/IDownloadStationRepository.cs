@@ -53,6 +53,15 @@ public interface IDownloadStationRepository
             null,
             null));
 
+    Task<DownloadBtSearchCatalog> LoadBtSearchCatalogAsync(
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Download Station BT search is not supported.");
+
+    Task<IReadOnlyList<DownloadBtSearchResult>> SearchBtAsync(
+        DownloadBtSearchRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Download Station BT search is not supported.");
+
     Task<DownloadTaskDeleteOutcome> DeleteTaskAsync(
         DownloadTaskDeleteRequest request,
         CancellationToken cancellationToken = default) =>

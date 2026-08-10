@@ -1,0 +1,350 @@
+<UserControl
+    x:Class="LanStash.App.Views.DownloadStationBtSearchDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:downloads="using:LanStash.App.Features.Downloads">
+    <ScrollViewer
+        HorizontalContentAlignment="Stretch"
+        HorizontalScrollBarVisibility="Disabled"
+        HorizontalScrollMode="Disabled"
+        VerticalScrollBarVisibility="Auto"
+        VerticalScrollMode="Auto">
+        <Grid x:Name="DialogLayout" RowSpacing="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup>
+                    <VisualState x:Name="NarrowDialogLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="0" />
+                        </VisualState.StateTriggers>
+                    </VisualState>
+                    <VisualState x:Name="WideDialogLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="900" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="KeywordBox.(Grid.ColumnSpan)" Value="1" />
+                            <Setter Target="TitleFilterBox.(Grid.Row)" Value="0" />
+                            <Setter Target="TitleFilterBox.(Grid.Column)" Value="1" />
+                            <Setter Target="TitleFilterBox.(Grid.ColumnSpan)" Value="1" />
+                            <Setter Target="ModuleScopePicker.(Grid.ColumnSpan)" Value="1" />
+                            <Setter Target="CategoryPicker.(Grid.Row)" Value="0" />
+                            <Setter Target="CategoryPicker.(Grid.Column)" Value="1" />
+                            <Setter Target="CategoryPicker.(Grid.ColumnSpan)" Value="1" />
+                            <Setter Target="SortPicker.(Grid.Row)" Value="1" />
+                            <Setter Target="SortPicker.(Grid.ColumnSpan)" Value="1" />
+                            <Setter Target="DirectionPicker.(Grid.Row)" Value="1" />
+                            <Setter Target="DirectionPicker.(Grid.Column)" Value="1" />
+                            <Setter Target="DirectionPicker.(Grid.ColumnSpan)" Value="1" />
+                        </VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+
+        <StackPanel Spacing="8">
+            <Grid x:Name="SearchTextGrid" ColumnSpacing="12" RowSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBox
+                    x:Uid="DownloadStationBtSearchKeyword"
+                    x:Name="KeywordBox"
+                    Grid.ColumnSpan="2"
+                    IsEnabled="{Binding CanEditBtSearchCriteria}"
+                    MaxLength="200"
+                    MinHeight="48"
+                    TextWrapping="Wrap"
+                    TextChanged="KeywordBox_TextChanged" />
+                <TextBox
+                    x:Uid="DownloadStationBtSearchTitleFilter"
+                    x:Name="TitleFilterBox"
+                    Grid.Row="1"
+                    Grid.ColumnSpan="2"
+                    IsEnabled="{Binding CanEditBtSearchCriteria}"
+                    MaxLength="200"
+                    MinHeight="48"
+                    TextWrapping="Wrap"
+                    TextChanged="TitleFilterBox_TextChanged" />
+            </Grid>
+            <InfoBar
+                x:Uid="DownloadStationBtSearchPrivacy"
+                IsClosable="False"
+                IsOpen="True"
+                Severity="Informational" />
+        </StackPanel>
+
+        <StackPanel
+            x:Name="FiltersPanel"
+            Grid.Row="1"
+            Spacing="8"
+            Visibility="Collapsed">
+            <Grid x:Name="FilterGrid" ColumnSpacing="12" RowSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ComboBox
+                    x:Uid="DownloadStationBtSearchModuleScope"
+                    x:Name="ModuleScopePicker"
+                    Grid.ColumnSpan="2"
+                    IsEnabled="{Binding CanEditBtSearchCriteria}"
+                    MinHeight="48"
+                    DisplayMemberPath="Title"
+                    ItemsSource="{Binding BtSearchModuleScopeOptions}"
+                    SelectionChanged="ModuleScopePicker_SelectionChanged" />
+                <ComboBox
+                    x:Uid="DownloadStationBtSearchCategory"
+                    x:Name="CategoryPicker"
+                    Grid.Row="1"
+                    Grid.ColumnSpan="2"
+                    IsEnabled="{Binding CanEditBtSearchCriteria}"
+                    MinHeight="48"
+                    DisplayMemberPath="Title"
+                    ItemsSource="{Binding BtSearchCategories}"
+                    SelectionChanged="CategoryPicker_SelectionChanged" />
+                <ComboBox
+                    x:Uid="DownloadStationBtSearchSort"
+                    x:Name="SortPicker"
+                    Grid.Row="2"
+                    Grid.ColumnSpan="2"
+                    IsEnabled="{Binding CanEditBtSearchCriteria}"
+                    MinHeight="48"
+                    DisplayMemberPath="Title"
+                    ItemsSource="{Binding BtSearchSortOptions}"
+                    SelectionChanged="SortPicker_SelectionChanged" />
+                <ComboBox
+                    x:Uid="DownloadStationBtSearchDirection"
+                    x:Name="DirectionPicker"
+                    Grid.Row="3"
+                    Grid.ColumnSpan="2"
+                    IsEnabled="{Binding CanEditBtSearchCriteria}"
+                    MinHeight="48"
+                    DisplayMemberPath="Title"
+                    ItemsSource="{Binding BtSearchDirectionOptions}"
+                    SelectionChanged="DirectionPicker_SelectionChanged" />
+            </Grid>
+
+            <StackPanel x:Name="SelectedModulesPanel" Spacing="4" Visibility="Collapsed">
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchSelectedModulesLabel"
+                    FontWeight="SemiBold" />
+                <ListView
+                    x:Uid="DownloadStationBtSearchModuleList"
+                    x:Name="ModuleList"
+                    MaxHeight="120"
+                    IsEnabled="{Binding CanEditBtSearchCriteria}"
+                    ItemsSource="{Binding BtSearchModules}"
+                    SelectionChanged="ModuleList_SelectionChanged"
+                    SelectionMode="Multiple">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="MinHeight" Value="48" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="downloads:DownloadBtSearchModuleOption">
+                            <TextBlock Text="{x:Bind Title}" TextWrapping="Wrap" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchModuleSelectionRequired"
+                    x:Name="ModuleSelectionRequired"
+                    AutomationProperties.LiveSetting="Polite"
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    TextWrapping="Wrap"
+                    Visibility="Collapsed" />
+            </StackPanel>
+        </StackPanel>
+
+        <Grid Grid.Row="2" MinHeight="240">
+            <StackPanel
+                x:Name="BtSearchLoadingState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="12">
+                <ProgressRing
+                    x:Uid="DownloadStationBtSearchLoadingProgress"
+                    Width="40"
+                    Height="40"
+                    IsActive="True" />
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchLoading"
+                    AutomationProperties.LiveSetting="Polite"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+                <Button
+                    x:Uid="DownloadStationBtSearchCancel"
+                    MinHeight="48"
+                    Click="CancelSearch_Click" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="BtSearchReadyState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                Spacing="8"
+                Visibility="Collapsed">
+                <FontIcon Glyph="&#xE721;" FontSize="40" />
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchReadyTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    Style="{ThemeResource SubtitleTextBlockStyle}"
+                    TextAlignment="Center" />
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchReadyMessage"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="BtSearchEmptyState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                Spacing="8"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchEmptyTitle"
+                    AutomationProperties.LiveSetting="Polite"
+                    Style="{ThemeResource SubtitleTextBlockStyle}"
+                    TextAlignment="Center" />
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchEmptyMessage"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="BtSearchNoProvidersState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                Spacing="8"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchNoProvidersTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    AutomationProperties.LiveSetting="Polite"
+                    Style="{ThemeResource SubtitleTextBlockStyle}"
+                    TextAlignment="Center" />
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchNoProvidersMessage"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+                <Button
+                    x:Uid="DownloadStationBtSearchReloadProviders"
+                    MinHeight="48"
+                    Click="Retry_Click" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="BtSearchFilteredEmptyState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                Spacing="8"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchFilteredEmptyTitle"
+                    AutomationProperties.LiveSetting="Polite"
+                    Style="{ThemeResource SubtitleTextBlockStyle}"
+                    TextAlignment="Center" />
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchFilteredEmptyMessage"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="BtSearchErrorState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                Spacing="8"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchErrorTitle"
+                    AutomationProperties.LiveSetting="Assertive"
+                    Style="{ThemeResource SubtitleTextBlockStyle}"
+                    TextAlignment="Center" />
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchErrorMessage"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+                <Button
+                    x:Uid="DownloadStationBtSearchRetry"
+                    MinHeight="48"
+                    Click="Retry_Click" />
+            </StackPanel>
+
+            <Grid x:Name="BtSearchContentState" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock
+                    x:Uid="DownloadStationBtSearchResultsTitle"
+                    AutomationProperties.HeadingLevel="Level2"
+                    FontWeight="SemiBold" />
+                <ListView
+                    x:Uid="DownloadStationBtSearchResultList"
+                    x:Name="ResultList"
+                    Grid.Row="1"
+                    MaxHeight="360"
+                    ItemsSource="{Binding BtSearchResults}"
+                    SelectionChanged="ResultList_SelectionChanged"
+                    SelectionMode="Single">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="MinHeight" Value="72" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="downloads:DownloadBtSearchResultItem">
+                            <StackPanel
+                                Padding="4,8"
+                                Spacing="4"
+                                AutomationProperties.Name="{x:Bind AutomationName}">
+                                <TextBlock
+                                    FontWeight="SemiBold"
+                                    MaxLines="2"
+                                    Text="{x:Bind Title}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{x:Bind MetadataText}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

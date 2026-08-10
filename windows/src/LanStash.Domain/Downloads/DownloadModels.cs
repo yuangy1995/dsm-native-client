@@ -11,6 +11,7 @@ public enum DownloadStationReadFeature
     Tasks,
     ActivitySummary,
     DefaultDestination,
+    BtSearch,
 }
 
 public sealed record DownloadStationAvailability(
@@ -216,6 +217,80 @@ public sealed record DownloadTaskCreateOutcome(
     MutationResult Result,
     string? TaskId,
     DownloadTask? Task);
+
+public sealed record DownloadBtSearchModule(
+    string Id,
+    string Title,
+    bool IsEnabled);
+
+public sealed record DownloadBtSearchCategory(
+    string Id,
+    string Title);
+
+public sealed record DownloadBtSearchCatalog(
+    IReadOnlyList<DownloadBtSearchModule> Modules,
+    IReadOnlyList<DownloadBtSearchCategory> Categories);
+
+public enum DownloadBtSearchModuleScope
+{
+    All,
+    Enabled,
+    Selected,
+}
+
+public enum DownloadBtSearchSort
+{
+    Title,
+    Size,
+    Date,
+    Peers,
+    Provider,
+    Seeds,
+    Leeches,
+}
+
+public enum DownloadBtSearchDirection
+{
+    Ascending,
+    Descending,
+}
+
+public sealed record DownloadBtSearchRequest(
+    Guid ProfileId,
+    string Keyword,
+    DownloadBtSearchModuleScope ModuleScope,
+    IReadOnlySet<string> SelectedModuleIds,
+    string? CategoryId,
+    DownloadBtSearchSort Sort,
+    DownloadBtSearchDirection Direction,
+    string TitleFilter)
+{
+    public DownloadBtSearchRequest(
+        Guid profileId,
+        string keyword)
+        : this(
+            profileId,
+            keyword,
+            DownloadBtSearchModuleScope.Enabled,
+            new HashSet<string>(StringComparer.Ordinal),
+            null,
+            DownloadBtSearchSort.Seeds,
+            DownloadBtSearchDirection.Descending,
+            string.Empty)
+    {
+    }
+}
+
+public sealed record DownloadBtSearchResult(
+    string Title,
+    long? Size,
+    string? ListedAt,
+    string DownloadUri,
+    string? ExternalLink,
+    int? Peers,
+    int? Seeds,
+    int? Leeches,
+    string? Provider);
 
 public enum DownloadTaskFileCreateTransportStatus
 {

@@ -183,6 +183,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     VirtualMachineInventoryReading, ContainerInventoryReading {
     private static let downloadControlReadbackLimit = 5_000
     private static let downloadControlPageSize = 500
+    private static let downloadBTSearchResultLimit = 200
     private let capabilities: CapabilitySet
     private let credential: DsmSessionCredential
     private let baseURL: URL
@@ -250,6 +251,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             source: usesOfficial ? .official : .internalAPI,
             tasks: tasks,
             hasActivitySummary: statistic != nil,
+            hasBTSearch: usesOfficial &&
+                capabilities[DsmAPIName.downloadStationBTSearch]?.selectedVersion != nil,
             downloadBytesPerSecond: statistic?.firstInteger([
                 "download_rate", "download_speed", "speed_download"
             ]) ?? 0,
@@ -264,6 +267,88 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             ]) ?? 0,
             defaultDestination: location?.firstString(["destination", "path", "default_destination"])
         )
+    }
+
+    public func loadDownloadBTSearchCatalog() async throws -> DownloadBTSearchCatalog {
+        let modulesValue = try await call(
+            DsmAPIName.downloadStationBTSearch,
+            method: "getModule"
+        )
+        let categoriesValue = try await call(
+            DsmAPIName.downloadStationBTSearch,
+            method: "getCategory"
+        )
+        return try Self.downloadBTSearchCatalog(
+            modulesValue: modulesValue,
+            categoriesValue: categoriesValue
+        )
+    }
+
+    public func searchDownloadBT(
+        _ request: DownloadBTSearchRequest
+    ) async throws -> [DownloadBTSearchResult] {
+        let prepared = try Self.preparedDownloadBTSearchRequest(request)
+        let started = try await call(
+            DsmAPIName.downloadStationBTSearch,
+            method: "start",
+            parameters: [
+                "keyword": .string(prepared.keyword),
+                "module": .string(prepared.module)
+            ]
+        )
+        guard let taskID = Self.strictNonEmptyString(started["taskid"]) else {
+            throw Self.invalidDownloadBTSearchResponse()
+        }
+
+        do {
+            for _ in 0..<60 {
+                let data = try await call(
+                    DsmAPIName.downloadStationBTSearch,
+                    method: "list",
+                    parameters: [
+                        "taskid": .string(taskID),
+                        "offset": .integer(0),
+                        "limit": .integer(Self.downloadBTSearchResultLimit),
+                        "sort_by": .string(prepared.sort),
+                        "sort_direction": .string(prepared.direction),
+                        "filter_category": .string(prepared.category),
+                        "filter_title": .string(prepared.titleFilter)
+                    ]
+                )
+                guard let finished = Self.strictBoolean(data["finished"]) else {
+                    throw Self.invalidDownloadBTSearchResponse()
+                }
+                if finished {
+                    let results = try Self.downloadBTSearchResults(from: data)
+                    await cleanDownloadBTSearch(taskID: taskID)
+                    return results
+                }
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+            throw Self.invalidDownloadBTSearchResponse()
+        } catch {
+            await cleanDownloadBTSearch(taskID: taskID)
+            throw error
+        }
+    }
+
+    private func cleanDownloadBTSearch(taskID: String) async {
+        guard let capability = capabilities[DsmAPIName.downloadStationBTSearch],
+              let version = capability.selectedVersion else { return }
+        let cleanupClient = client
+        let cleanupCredential = credential
+        let cleanupTask = Task.detached {
+            try? await cleanupClient.callVoid(
+                path: capability.path,
+                api: capability.name,
+                version: version,
+                method: "clean",
+                requestFormat: capability.requestFormat,
+                parameters: ["taskid": .string(taskID)],
+                credential: cleanupCredential
+            )
+        }
+        await cleanupTask.value
     }
 
     public func createDownloadTask(uri: String, destination: String?) async throws {
@@ -3439,6 +3524,221 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 ?? detail?.firstString(["destination"]),
             errorDescription: value.firstString(["error", "error_detail", "message"])
         )
+    }
+
+    private static func downloadBTSearchCatalog(
+        modulesValue: ServiceJSON,
+        categoriesValue: ServiceJSON
+    ) throws -> DownloadBTSearchCatalog {
+        guard let moduleObjects = modulesValue["modules"]?.array,
+              let categoryObjects = categoriesValue["categories"]?.array else {
+            throw invalidDownloadBTSearchResponse()
+        }
+        var moduleIDs = Set<String>()
+        let modules = try moduleObjects.map { node -> DownloadBTSearchModule in
+            guard case .object(let object) = node,
+                  let id = strictNonEmptyString(object["id"], allowComma: false),
+                  let title = strictNonEmptyString(object["title"], allowComma: true),
+                  let enabled = strictBoolean(object["enabled"]),
+                  moduleIDs.insert(id).inserted else {
+                throw invalidDownloadBTSearchResponse()
+            }
+            return DownloadBTSearchModule(id: id, title: title, isEnabled: enabled)
+        }
+        var categoryIDs = Set<String>()
+        let categories = try categoryObjects.map { node -> DownloadBTSearchCategory in
+            guard case .object(let object) = node,
+                  let id = strictNonEmptyString(object["id"], allowComma: true),
+                  let title = strictNonEmptyString(object["title"], allowComma: true),
+                  categoryIDs.insert(id).inserted else {
+                throw invalidDownloadBTSearchResponse()
+            }
+            return DownloadBTSearchCategory(id: id, title: title)
+        }
+        return DownloadBTSearchCatalog(modules: modules, categories: categories)
+    }
+
+    private struct PreparedDownloadBTSearchRequest: Sendable {
+        let keyword: String
+        let module: String
+        let category: String
+        let sort: String
+        let direction: String
+        let titleFilter: String
+    }
+
+    private static func preparedDownloadBTSearchRequest(
+        _ request: DownloadBTSearchRequest
+    ) throws -> PreparedDownloadBTSearchRequest {
+        guard !containsControlCharacters(request.keyword) else {
+            throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+        }
+        let keyword = request.keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty,
+              keyword.count <= 200,
+              !keyword.contains(where: \.isNewline),
+              !containsControlCharacters(keyword) else {
+            throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+        }
+        guard !containsControlCharacters(request.titleFilter) else {
+            throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+        }
+        let titleFilter = request.titleFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard titleFilter.count <= 200,
+              !titleFilter.contains(where: \.isNewline),
+              !containsControlCharacters(titleFilter) else {
+            throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+        }
+        let category: String
+        if let rawCategoryID = request.categoryID {
+            guard !containsControlCharacters(rawCategoryID) else {
+                throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+            }
+            let categoryID = rawCategoryID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if categoryID.isEmpty {
+                category = ""
+            } else {
+                guard isStableDownloadBTSearchIdentifier(categoryID, allowComma: true) else {
+                    throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+                }
+                category = categoryID
+            }
+        } else {
+            category = ""
+        }
+
+        let module: String
+        switch request.moduleScope {
+        case .all:
+            module = "all"
+        case .enabled:
+            module = "enabled"
+        case .selected(let ids):
+            guard ids.allSatisfy({ !containsControlCharacters($0) }) else {
+                throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+            }
+            let normalizedIDs = ids
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard !normalizedIDs.isEmpty,
+                  normalizedIDs.allSatisfy({ isStableDownloadBTSearchIdentifier($0, allowComma: false) }) else {
+                throw validationErrorStatic(L10n.string("shared.ee9bd6266a536859"))
+            }
+            module = Array(Set(normalizedIDs)).sorted().joined(separator: ",")
+        }
+        return PreparedDownloadBTSearchRequest(
+            keyword: keyword,
+            module: module,
+            category: category,
+            sort: request.sort.rawValue,
+            direction: request.direction.rawValue,
+            titleFilter: titleFilter
+        )
+    }
+
+    private static func downloadBTSearchResults(
+        from value: ServiceJSON
+    ) throws -> [DownloadBTSearchResult] {
+        guard let itemNodes = value["items"]?.array,
+              itemNodes.count <= downloadBTSearchResultLimit else {
+            throw invalidDownloadBTSearchResponse()
+        }
+        var downloadURIs = Set<String>()
+        return try itemNodes.map { node in
+            guard case .object(let object) = node,
+                  let downloadURI = strictNonEmptyString(object["download_uri"], allowComma: true),
+                  downloadURIs.insert(downloadURI).inserted else {
+                throw invalidDownloadBTSearchResponse()
+            }
+            return DownloadBTSearchResult(
+                title: strictNonEmptyString(object["title"], allowComma: true) ?? downloadURI,
+                sizeBytes: try strictOptionalNonNegativeInteger(object["size"]),
+                listedAt: strictOptionalString(object["date"]),
+                downloadURI: downloadURI,
+                externalLink: strictOptionalString(object["external_link"]),
+                peers: try strictOptionalInt(object["peers"]),
+                seeds: try strictOptionalInt(object["seeds"]),
+                leeches: try strictOptionalInt(object["leechs"]),
+                provider: strictOptionalString(object["module_title"])
+            )
+        }
+    }
+
+    private static func strictNonEmptyString(
+        _ value: ServiceJSON?,
+        allowComma: Bool = true
+    ) -> String? {
+        guard let text = strictOptionalString(value),
+              isStableDownloadBTSearchIdentifier(text, allowComma: allowComma) else {
+            return nil
+        }
+        return text
+    }
+
+    private static func strictOptionalString(_ value: ServiceJSON?) -> String? {
+        guard let value else { return nil }
+        guard case .string(let text) = value else { return nil }
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty,
+              normalized == text,
+              !containsControlCharacters(normalized) else {
+            return nil
+        }
+        return normalized
+    }
+
+    private static func strictBoolean(_ value: ServiceJSON?) -> Bool? {
+        guard case .boolean(let bool)? = value else { return nil }
+        return bool
+    }
+
+    private static func strictOptionalInt(_ value: ServiceJSON?) throws -> Int? {
+        guard let integer = try strictOptionalNonNegativeInteger(value) else { return nil }
+        guard let result = Int(exactly: integer) else {
+            throw invalidDownloadBTSearchResponse()
+        }
+        return result
+    }
+
+    private static func strictOptionalNonNegativeInteger(
+        _ value: ServiceJSON?
+    ) throws -> Int64? {
+        guard let value else { return nil }
+        guard case .number(let number) = value,
+              number.rounded() == number,
+              let integer = Int64(exactly: number),
+              integer >= 0 else {
+            throw invalidDownloadBTSearchResponse()
+        }
+        return integer
+    }
+
+    private static func isStableDownloadBTSearchIdentifier(
+        _ value: String,
+        allowComma: Bool
+    ) -> Bool {
+        !value.isEmpty &&
+            value == value.trimmingCharacters(in: .whitespacesAndNewlines) &&
+            !containsControlCharacters(value) &&
+            (allowComma || !value.contains(","))
+    }
+
+    private static func containsControlCharacters(_ value: String) -> Bool {
+        value.unicodeScalars.contains { scalar in
+            CharacterSet.controlCharacters.contains(scalar)
+        }
+    }
+
+    private static func invalidDownloadBTSearchResponse() -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: true,
+            safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+        )
+    }
+
+    private static func validationErrorStatic(_ message: String) -> AppError {
+        AppError(category: .conflict, isRetryable: false, safeUserMessage: message)
     }
 
     private static func container(_ object: [String: ServiceJSON]) -> ContainerInstance? {

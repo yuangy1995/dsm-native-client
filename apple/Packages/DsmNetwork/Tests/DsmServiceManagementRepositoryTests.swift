@@ -284,6 +284,220 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.source, .internalAPI)
         XCTAssertEqual(snapshot.tasks.first?.status, "paused")
         XCTAssertEqual(snapshot.defaultDestination, "downloads")
+        XCTAssertFalse(snapshot.hasBTSearch)
+    }
+
+    func testBT搜索目录固定公开V1并解析提供方和类别() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"modules":[{"id":"provider-a","title":"Provider A","enabled":true},{"id":"provider-b","title":"Provider B","enabled":false}]}}"#),
+            response(#"{"success":true,"data":{"categories":[{"id":"_allcat_","title":"All"},{"id":"Books","title":"Books"}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationBTSearch],
+            transport: transport
+        )
+
+        let catalog = try await repository.loadDownloadBTSearchCatalog()
+
+        XCTAssertEqual(catalog.modules.map(\.id), ["provider-a", "provider-b"])
+        XCTAssertEqual(catalog.modules.map(\.isEnabled), [true, false])
+        XCTAssertEqual(catalog.categories.map(\.id), ["_allcat_", "Books"])
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["getModule", "getCategory"])
+        XCTAssertTrue(requests.allSatisfy {
+            requestValue("api", in: $0) == DsmAPIName.downloadStationBTSearch &&
+                requestValue("version", in: $0) == "1"
+        })
+    }
+
+    func testBT搜索目录拒绝重复和畸形标识() async throws {
+        let payloads = [
+            [
+                #"{"success":true,"data":{"modules":[{"id":"provider-a","title":"A","enabled":true},{"id":"provider-a","title":"B","enabled":false}]}}"#,
+                #"{"success":true,"data":{"categories":[]}}"#
+            ],
+            [
+                #"{"success":true,"data":{"modules":[{"id":"provider,a","title":"A","enabled":true}]}}"#,
+                #"{"success":true,"data":{"categories":[]}}"#
+            ],
+            [
+                #"{"success":true,"data":{"modules":[{"id":"provider-a","title":"A","enabled":"true"}]}}"#,
+                #"{"success":true,"data":{"categories":[]}}"#
+            ]
+        ]
+
+        for payload in payloads {
+            let transport = MockHTTPTransport(responses: payload.map(response))
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.downloadStationBTSearch],
+                transport: transport
+            )
+            do {
+                _ = try await repository.loadDownloadBTSearchCatalog()
+                XCTFail("畸形 BT 搜索目录不得伪装成正常目录：\(payload)")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func testBT搜索发送筛选排序并在完成后清理任务() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"taskid":"search-1"}}"#),
+            response(#"{"success":true,"data":{"finished":true,"items":[{"title":"Linux Guide","size":1234,"date":"2026-08-01","download_uri":"magnet:?xt=urn:btih:synthetic","external_link":"https://example.invalid/item","peers":10,"seeds":20,"leechs":3,"module_title":"Provider A"}]}}"#),
+            response(#"{"success":true,"data":{}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationBTSearch],
+            transport: transport
+        )
+
+        let results = try await repository.searchDownloadBT(
+            DownloadBTSearchRequest(
+                keyword: "  linux  ",
+                moduleScope: .selected(["provider-b", "provider-a"]),
+                categoryID: "Books",
+                sort: .size,
+                direction: .ascending,
+                titleFilter: "  guide  "
+            )
+        )
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.title, "Linux Guide")
+        XCTAssertEqual(results.first?.sizeBytes, 1234)
+        XCTAssertEqual(results.first?.downloadURI, "magnet:?xt=urn:btih:synthetic")
+        XCTAssertEqual(results.first?.seeds, 20)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["start", "list", "clean"])
+        XCTAssertEqual(requestValue("keyword", in: requests[0]), "linux")
+        XCTAssertEqual(requestValue("module", in: requests[0]), "provider-a,provider-b")
+        XCTAssertEqual(requestValue("filter_category", in: requests[1]), "Books")
+        XCTAssertEqual(requestValue("filter_title", in: requests[1]), "guide")
+        XCTAssertEqual(requestValue("sort_by", in: requests[1]), "size")
+        XCTAssertEqual(requestValue("sort_direction", in: requests[1]), "asc")
+        XCTAssertEqual(requestValue("taskid", in: requests[2]), "search-1")
+    }
+
+    func testBT搜索非法输入零请求且畸形结果或读取失败仍清理任务() async throws {
+        let invalidTransport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationBTSearch],
+            transport: invalidTransport
+        )
+        for (request, reason) in [
+            (
+                DownloadBTSearchRequest(keyword: "linux", moduleScope: .selected([])),
+                "空提供方选择"
+            ),
+            (DownloadBTSearchRequest(keyword: "\nlinux"), "首部控制字符"),
+            (
+                DownloadBTSearchRequest(keyword: "linux", titleFilter: "guide\t"),
+                "尾部控制字符"
+            ),
+        ] {
+            do {
+                _ = try await repository.searchDownloadBT(request)
+                XCTFail("\(reason)不应发送请求")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .conflict)
+            }
+        }
+        let invalidRequests = await invalidTransport.recordedRequests()
+        XCTAssertTrue(invalidRequests.isEmpty)
+
+        let oversizedItems = (0...200).map { index in
+            #"{"download_uri":"magnet:?xt=urn:btih:synthetic-\#(index)"}"#
+        }.joined(separator: ",")
+        let malformedResults = [
+            (
+                #"{"success":true,"data":{"finished":true,"items":[\#(oversizedItems)]}}"#,
+                "超过 200 条的响应"
+            ),
+            (
+                #"{"success":true,"data":{"finished":true,"items":[{"download_uri":"magnet:?xt=urn:btih:synthetic-max","size":9223372036854775807}]}}"#,
+                "无法由 Double 精确表达的 Int64 上边界"
+            ),
+            (
+                #"{"success":true,"data":{"finished":true,"items":[{"download_uri":"magnet:?xt=urn:btih:synthetic-overflow","size":9223372036854775808}]}}"#,
+                "超过 Int64 的数值"
+            ),
+        ]
+        for (payload, reason) in malformedResults {
+            let transport = MockHTTPTransport(responses: [
+                response(#"{"success":true,"data":{"taskid":"search-malformed"}}"#),
+                response(payload),
+                response(#"{"success":true,"data":{}}"#),
+            ])
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.downloadStationBTSearch],
+                transport: transport
+            )
+            do {
+                _ = try await repository.searchDownloadBT(
+                    DownloadBTSearchRequest(keyword: "linux")
+                )
+                XCTFail("\(reason)不得伪装成正常搜索结果")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(
+                requests.map { requestValue("method", in: $0) },
+                ["start", "list", "clean"],
+                "\(reason)仍须恰好清理一次临时任务"
+            )
+        }
+
+        let failingTransport = MockHTTPTransport(steps: [
+            .response(response(#"{"success":true,"data":{"taskid":"search-2"}}"#)),
+            .urlError(.timedOut),
+            .response(response(#"{"success":true,"data":{}}"#))
+        ])
+        let failingRepository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationBTSearch],
+            transport: failingTransport
+        )
+        do {
+            _ = try await failingRepository.searchDownloadBT(DownloadBTSearchRequest(keyword: "linux"))
+            XCTFail("列表读取失败应抛错")
+        } catch {}
+        let requests = await failingTransport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["start", "list", "clean"])
+    }
+
+    func testBT搜索取消后使用独立请求清理远端任务() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(#"{"success":true,"data":{"taskid":"search-cancelled"}}"#)),
+            .waitUntilCancelled,
+            .response(response(#"{"success":true,"data":{}}"#))
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationBTSearch],
+            transport: transport
+        )
+        let searchTask = Task {
+            try await repository.searchDownloadBT(DownloadBTSearchRequest(keyword: "linux"))
+        }
+        while await transport.recordedRequests().count < 2 {
+            await Task.yield()
+        }
+
+        searchTask.cancel()
+        do {
+            _ = try await searchTask.value
+            XCTFail("取消搜索后不得返回结果")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .cancelled)
+        } catch {
+            XCTFail("取消搜索应返回可识别的取消错误：\(type(of: error))")
+        }
+
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["start", "list", "clean"])
+        XCTAssertEqual(requestValue("taskid", in: requests[2]), "search-cancelled")
+        let cancellationStates = await transport.recordedRequestCancellationStates()
+        XCTAssertEqual(cancellationStates, [false, false, false])
     }
 
     func test暂停任务只提交所选标识且凭据不进入地址() async throws {

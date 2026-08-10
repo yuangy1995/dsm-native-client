@@ -27,12 +27,12 @@
 
 ### 契约与危险写操作
 
-- 在现有脱敏响应 Fixture 之外建立请求契约测试，优先覆盖删除、覆盖上传、权限、
-  套件、容器、虚拟机、网络、防火墙和系统更新；记录 API、方法、版本、路径、参数
-  编码、认证要求、重试策略和危险等级。
-- 评估五端统一的写操作结果语义，至少区分已回读确认、明确失败、已提交但无法确认、
-  部分成功、提交前取消和提交后请求取消；超时或结果未知时禁止界面引导用户立即
-  重复提交。
+- 维护并扩展现有请求契约库；当前已有 94 份请求 Fixture 与 1 份写结果示例，后续优先
+  补齐仍无稳定证据的覆盖上传、套件、容器/VMM 子资源、网络、防火墙和系统更新，继续
+  记录 API、方法、版本、路径、参数编码、认证要求、重试策略和危险等级。
+- 五端统一写操作结果语义已经建立并进入多条生产调用链；继续迁移尚存的旧 Void/瞬时
+  结果路径，并保持已回读确认、明确失败、已提交但无法确认、部分成功、提交前取消和
+  提交后请求取消的区别。超时或结果未知时禁止界面引导用户立即重复提交。
 - 请求契约或结果模型进入公共契约前，必须同步评估五端实现计划、兼容矩阵、迁移和
   回滚，不在单个平台先行固化未经验证的 DSM 行为。
 - 将桌面云盘已使用的诊断字段白名单和“禁止出现”结构测试扩展到其他诊断出口，覆盖
@@ -60,7 +60,10 @@
 
 - 完成大图库、元数据、权限、弱网、缓存和危险写操作验收。
 - 补齐基础相册入口，再按版本化契约评估人物、主题、地点、标签等增强能力。
-- 达到 macOS 发布出口后，Windows 按完整业务语义推进；iPhone/iPad 先交付精选照片浏览、查看、主动导入/分享和有限 NAS 管理，自动照片备份作为后续独立决策；Android 继续按其专项范围推进。
+- macOS 继续完成发布出口；iPhone/iPad 精选照片浏览、查看、主动导入/分享和有限 NAS
+  管理已形成主流程，Windows 也已完成文件夹、时间线、缩略图、单项导入和受限恢复。
+  两端剩余语义、性能与真实设备/NAS 验收可按无依赖切片并行推进；Apple 自动照片备份
+  仍是后续独立决策，Android 继续按其专项范围推进。
 
 详细范围见[照片管理开发计划](../development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
 
@@ -69,14 +72,16 @@
 - 完成首次单聊、私人群聊、附件、提醒、定时消息、投票创建和实时刷新的真实套件验收。
 - 补齐语音、投票参与及其他未完成消息能力。
 - 加密会话必须先完成密钥生命周期、安全评审和跨设备验证，不允许明文降级。
-- macOS 范围稳定后，再推进其他平台原生实现。
+- Android 已形成完整 Chat 主流程，Apple 移动端与 Windows 已进入会话/历史和受限纯文字
+  发送；下一步先冻结单附件 typed 契约再接两端原生 UI。macOS 仍是业务语义与安全基准，
+  但不再把“等待 macOS 全部稳定”作为其他平台无依赖切片的串行前置条件。
 
 详细范围见[Synology Chat 开发计划](../development/NATIVE_DSM_CHAT_DEVELOPMENT_PLAN_ZH.md)。
 
 ### NAS 设置、套件与统一存储
 
 - 使用专用测试目标验证可能断网、改时、停服或影响存储状态的写操作。
-- 在已合并 Download Station 单任务暂停/继续、URL/磁力创建、任务文件创建、单任务删除和跨端当前活动速率摘要的基础上，继续补齐 RSS/BT 高级、文件优先级、设置写入、Container Manager 与 Virtual Machine Manager 的高级功能和异步任务闭环。
+- 在已完成 Download Station 常用单任务流程和当前活动摘要基础上，BTSearch v1 的 Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 闭环也已通过候选提交 `53360d2` 的 Apple、Android、Windows 与 Repository 四组云端门禁；当前只剩真实 NAS、iPad、Windows、Narrator 和键盘验收。下一功能切片优先推进 ACT-01 统一活动中心；CHAT-03 必须先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、设置写入以及 Container/VMM 高危能力继续后置。
 - 验证统一存储管理的大目录、取消、权限、QuickConnect 和 MD5 任务；取得版本化契约后再评估套件历史报告与计划任务。
 
 详细范围见[套件管理计划](../development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)和[统一存储管理计划](../development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)。
@@ -93,7 +98,7 @@
 
 - Apple 移动端自动照片备份、后台常驻传输、iPad 多窗口与 File Provider；只有独立产品、权限、契约和验收决策通过后才进入活动里程碑。
 - File Station 后台任务、异步目录大小、MD5、VFS 扩展和更完整的恢复入口。
-- Download Station 的 RSS/BT 高级、文件优先级、设置写入，以及 Container Manager 和 Virtual Machine Manager 的剩余高级能力；当前活动速率摘要仅保留真实 NAS 字段验收。
+- Download Station 的 RSS、文件优先级、BT 协议高级设置、设置写入，以及 Container Manager 和 Virtual Machine Manager 的剩余高级能力。BTSearch v1 已退出“候选实现”、形成两端源码闭环并通过云端门禁，只保留真实环境验收；不得借此把尚无稳定 typed 契约的 RSS、文件优先级或高级设置并入当前波次。
 - Audio Station、Video Station、Note Station、Synology Drive、Calendar、Contacts、Surveillance Station、Hyper Backup、Active Backup 和 Synology Office。
 - 社区兼容性计划后续阶段，包括静态筛选页、匿名统计口径、报告过期策略和定期复核；
   维护者只读候选生成、冲突检测和 macOS 本地草稿导出已经进入当前实现。

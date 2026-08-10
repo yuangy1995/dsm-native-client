@@ -210,6 +210,356 @@ public sealed class DownloadStationRepositoryContractTests
     }
 
     [Fact]
+    public async Task BtSearchCatalogUsesOfficialV1AndParsesTypedOptions()
+    {
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "getModule" => new JsonObject
+            {
+                ["modules"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["id"] = "provider-a",
+                        ["title"] = "Provider A",
+                        ["enabled"] = true,
+                    },
+                    new JsonObject
+                    {
+                        ["id"] = "provider-b",
+                        ["title"] = "Provider B",
+                        ["enabled"] = false,
+                    }),
+            },
+            "getCategory" => new JsonObject
+            {
+                ["categories"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["id"] = "_allcat_",
+                        ["title"] = "All",
+                    },
+                    new JsonObject
+                    {
+                        ["id"] = "Books",
+                        ["title"] = "Books",
+                    }),
+            },
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        var catalog = await repository.LoadBtSearchCatalogAsync();
+
+        Assert.Equal(new[] { "provider-a", "provider-b" }, catalog.Modules.Select(item => item.Id));
+        Assert.Equal(new[] { true, false }, catalog.Modules.Select(item => item.IsEnabled));
+        Assert.Equal(new[] { "_allcat_", "Books" }, catalog.Categories.Select(item => item.Id));
+        Assert.Contains(DownloadStationReadFeature.BtSearch, repository.Availability.SupportedFeatures);
+        Assert.Collection(
+            api.Requests,
+            request =>
+            {
+                Assert.Equal(PublicBtSearchApi, request.ApiName);
+                Assert.Equal(1, request.Version);
+                Assert.Equal("getModule", request.Method);
+                Assert.Empty(request.Parameters);
+            },
+            request =>
+            {
+                Assert.Equal(PublicBtSearchApi, request.ApiName);
+                Assert.Equal(1, request.Version);
+                Assert.Equal("getCategory", request.Method);
+                Assert.Empty(request.Parameters);
+            });
+    }
+
+    [Fact]
+    public async Task BtSearchCatalogRejectsDuplicateMalformedAndNonNativeOptions()
+    {
+        var responses = new[]
+        {
+            (
+                Modules: new JsonArray(
+                    new JsonObject { ["id"] = "provider-a", ["title"] = "A", ["enabled"] = true },
+                    new JsonObject { ["id"] = "provider-a", ["title"] = "B", ["enabled"] = false }),
+                Categories: new JsonArray()
+            ),
+            (
+                Modules: new JsonArray(
+                    new JsonObject { ["id"] = "provider,a", ["title"] = "A", ["enabled"] = true }),
+                Categories: new JsonArray()
+            ),
+            (
+                Modules: new JsonArray(
+                    new JsonObject { ["id"] = "provider-a", ["title"] = "A", ["enabled"] = "true" }),
+                Categories: new JsonArray()
+            ),
+        };
+
+        foreach (var (modules, categories) in responses)
+        {
+            var api = new DownloadRecordingApiClient(request => request.Method switch
+            {
+                "getModule" => new JsonObject { ["modules"] = modules.DeepClone() },
+                "getCategory" => new JsonObject { ["categories"] = categories.DeepClone() },
+                _ => throw new InvalidOperationException(request.Method),
+            });
+            var repository = (IDownloadStationRepository)CreateRepository(
+                api,
+                Capability(PublicTaskApi),
+                Capability(PublicBtSearchApi));
+
+            await Assert.ThrowsAsync<DsmException>(() => repository.LoadBtSearchCatalogAsync());
+        }
+    }
+
+    [Fact]
+    public async Task BtSearchSendsFilterSortDirectionAndAlwaysCleansFinishedTask()
+    {
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "start" => new JsonObject { ["taskid"] = "search-1" },
+            "list" => new JsonObject
+            {
+                ["finished"] = true,
+                ["items"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["title"] = "Linux Guide",
+                        ["size"] = 1234,
+                        ["date"] = "2026-08-01",
+                        ["download_uri"] = "magnet:?xt=urn:btih:synthetic",
+                        ["external_link"] = "https://example.invalid/item",
+                        ["peers"] = 10,
+                        ["seeds"] = 20,
+                        ["leechs"] = 3,
+                        ["module_title"] = "Provider A",
+                    }),
+            },
+            "clean" => new JsonObject(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        var results = await repository.SearchBtAsync(new(
+            ProfileId,
+            "  linux  ",
+            DownloadBtSearchModuleScope.Selected,
+            new HashSet<string>(["provider-b", "provider-a"], StringComparer.Ordinal),
+            "Books",
+            DownloadBtSearchSort.Size,
+            DownloadBtSearchDirection.Ascending,
+            "  guide  "));
+
+        var result = Assert.Single(results);
+        Assert.Equal("Linux Guide", result.Title);
+        Assert.Equal(1234, result.Size);
+        Assert.Equal(20, result.Seeds);
+        Assert.Equal(
+            new[] { "start", "list", "clean" },
+            api.Requests.Select(request => request.Method));
+        Assert.Equal("linux", api.Requests[0].Parameters["keyword"]);
+        Assert.Equal("provider-a,provider-b", api.Requests[0].Parameters["module"]);
+        Assert.Equal("Books", api.Requests[1].Parameters["filter_category"]);
+        Assert.Equal("guide", api.Requests[1].Parameters["filter_title"]);
+        Assert.Equal("200", api.Requests[1].Parameters["limit"]);
+        Assert.Equal("size", api.Requests[1].Parameters["sort_by"]);
+        Assert.Equal("asc", api.Requests[1].Parameters["sort_direction"]);
+        Assert.Equal("search-1", api.Requests[2].Parameters["taskid"]);
+    }
+
+    [Fact]
+    public async Task BtSearchInvalidOptionsIssueNoRequestsAndListFailureStillCleans()
+    {
+        var invalidApi = new DownloadRecordingApiClient(_ => throw new InvalidOperationException());
+        var invalidRepository = (IDownloadStationRepository)CreateRepository(
+            invalidApi,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => invalidRepository.SearchBtAsync(new(
+            ProfileId,
+            "linux",
+            DownloadBtSearchModuleScope.Selected,
+            new HashSet<string>(StringComparer.Ordinal),
+            null,
+            DownloadBtSearchSort.Seeds,
+            DownloadBtSearchDirection.Descending,
+            string.Empty)));
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            invalidRepository.SearchBtAsync(new DownloadBtSearchRequest(ProfileId, "\nlinux")));
+        await Assert.ThrowsAsync<ArgumentException>(() => invalidRepository.SearchBtAsync(new(
+            ProfileId,
+            "linux",
+            DownloadBtSearchModuleScope.Enabled,
+            new HashSet<string>(StringComparer.Ordinal),
+            null,
+            DownloadBtSearchSort.Seeds,
+            DownloadBtSearchDirection.Descending,
+            "guide\r")));
+        Assert.Empty(invalidApi.Requests);
+
+        var failingApi = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "start" => new JsonObject { ["taskid"] = "search-2" },
+            "list" => throw new DsmException("synthetic", "synthetic"),
+            "clean" => new JsonObject(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var failingRepository = (IDownloadStationRepository)CreateRepository(
+            failingApi,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        await Assert.ThrowsAsync<DsmException>(() =>
+            failingRepository.SearchBtAsync(new DownloadBtSearchRequest(ProfileId, "linux")));
+        Assert.Equal(
+            new[] { "start", "list", "clean" },
+            failingApi.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
+    public async Task BtSearchCleanupFailureDoesNotOverrideSuccessfulResults()
+    {
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "start" => new JsonObject { ["taskid"] = "search-clean-success" },
+            "list" => new JsonObject
+            {
+                ["finished"] = true,
+                ["items"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["title"] = "Linux",
+                        ["download_uri"] = "magnet:?xt=urn:btih:clean-success",
+                    }),
+            },
+            "clean" => throw new DsmException("synthetic-clean", "synthetic-clean"),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        var result = await repository.SearchBtAsync(
+            new DownloadBtSearchRequest(ProfileId, "linux"));
+
+        Assert.Single(result);
+        Assert.Equal(1, api.Requests.Count(request => request.Method == "clean"));
+        Assert.Equal(
+            new[] { "start", "list", "clean" },
+            api.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
+    public async Task BtSearchCleanupFailureDoesNotReplaceOriginalListFailure()
+    {
+        var original = new DsmException("synthetic-list", "synthetic-list");
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "start" => new JsonObject { ["taskid"] = "search-clean-failure" },
+            "list" => throw original,
+            "clean" => throw new DsmException("synthetic-clean", "synthetic-clean"),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        var error = await Assert.ThrowsAsync<DsmException>(() =>
+            repository.SearchBtAsync(new DownloadBtSearchRequest(ProfileId, "linux")));
+
+        Assert.Same(original, error);
+        Assert.Equal(1, api.Requests.Count(request => request.Method == "clean"));
+        Assert.Equal(
+            new[] { "start", "list", "clean" },
+            api.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
+    public async Task BtSearchCancellationSurvivesSingleFailingCleanupWithIndependentToken()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var api = new DownloadRecordingApiClient(request =>
+        {
+            if (request.Method == "start")
+            {
+                return new JsonObject { ["taskid"] = "search-cancelled" };
+            }
+            if (request.Method == "list")
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            }
+            if (request.Method == "clean")
+            {
+                throw new DsmException("synthetic-clean", "synthetic-clean");
+            }
+            throw new InvalidOperationException(request.Method);
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            repository.SearchBtAsync(
+                new DownloadBtSearchRequest(ProfileId, "linux"),
+                cancellation.Token));
+
+        Assert.Equal(1, api.Requests.Count(request => request.Method == "clean"));
+        Assert.Equal(
+            new[] { "start", "list", "clean" },
+            api.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
+    public async Task BtSearchRejectsMoreThanRequestedResultLimitAndCleansExactlyOnce()
+    {
+        var items = new JsonArray();
+        for (var index = 0; index < 201; index++)
+        {
+            items.Add(new JsonObject
+            {
+                ["title"] = $"Synthetic {index}",
+                ["download_uri"] = $"magnet:?xt=urn:btih:synthetic-{index}",
+            });
+        }
+        var api = new DownloadRecordingApiClient(request => request.Method switch
+        {
+            "start" => new JsonObject { ["taskid"] = "search-too-many" },
+            "list" => new JsonObject
+            {
+                ["finished"] = true,
+                ["items"] = items,
+            },
+            "clean" => new JsonObject(),
+            _ => throw new InvalidOperationException(request.Method),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability(PublicBtSearchApi));
+
+        await Assert.ThrowsAsync<DsmException>(() =>
+            repository.SearchBtAsync(new DownloadBtSearchRequest(ProfileId, "linux")));
+
+        Assert.Equal("200", api.Requests.Single(request => request.Method == "list")
+            .Parameters["limit"]);
+        Assert.Equal(1, api.Requests.Count(request => request.Method == "clean"));
+        Assert.Equal(
+            new[] { "start", "list", "clean" },
+            api.Requests.Select(request => request.Method));
+    }
+
+    [Fact]
     public async Task ActivityCancellationIsNotConvertedIntoAnOptionalSectionFailure()
     {
         var api = new DownloadRecordingApiClient(request => request.ApiName switch
@@ -710,6 +1060,7 @@ public sealed class DownloadStationRepositoryContractTests
 
     private const string PublicTaskApi = "SYNO.DownloadStation.Task";
     private const string PublicStatisticApi = "SYNO.DownloadStation.Statistic";
+    private const string PublicBtSearchApi = "SYNO.DownloadStation.BTSearch";
 
     private static DsmRepository CreateRepository(
         DownloadRecordingApiClient api,

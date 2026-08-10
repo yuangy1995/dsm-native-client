@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "download-station.bt-search-start.synthetic-keyword",
+  "module": "download-station",
+  "operation": "startBtSearch",
+  "api": {
+    "name": "SYNO.DownloadStation.BTSearch",
+    "method": "start",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "DownloadStation/btsearch.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {"name": "keyword", "valueType": "string", "encodedValue": "<synthetic-keyword>"},
+    {"name": "module", "valueType": "string", "encodedValue": "enabled"}
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "standardWrite",
+    "readbackPolicy": "taskPoll"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

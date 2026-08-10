@@ -342,5 +342,6 @@ public sealed partial class DownloadStationViewModel
         RaisePropertyChanged(nameof(HasCreateNotice));
         RaisePropertyChanged(nameof(IsCreateNoticeSuccess));
         RaisePropertyChanged(nameof(IsCreateNoticeWarning));
+        RaiseBtSearchProperties();
     }
 }
