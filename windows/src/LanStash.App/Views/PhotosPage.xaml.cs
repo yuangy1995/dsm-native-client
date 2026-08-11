@@ -103,6 +103,8 @@ public sealed partial class PhotosPage : Page, IDisposable
                 _timelineDataSource,
                 thumbnails,
                 SaveTimelineItemAsync,
+                CanSavePhotoForBatch,
+                SaveMultiplePhotosAsync,
                 OpenTimelineViewerAsync,
                 CanCopyPhotoCore,
                 CanMovePhoto,
@@ -117,6 +119,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         }
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        _transfers.DownloadBatchFinished += Transfers_PhotoDownloadBatchFinished;
         Loaded += PhotosPage_Loaded;
         Unloaded += PhotosPage_Unloaded;
         UpdateState();
@@ -481,7 +484,8 @@ public sealed partial class PhotosPage : Page, IDisposable
     {
         var size = item.SizeBytes;
         var space = _viewModel.SelectedSpace;
-        if (_isSaving || item.ProfileId != _dataSource.ProfileId ||
+        if (_isSaving || _photoSaveBatchId is not null ||
+            _isChoosingPhotoBatchSaveTarget || item.ProfileId != _dataSource.ProfileId ||
             space is null || !PhotoTimelineViewModel.ContainsCanonicalPath(space.RootPath, item.Path) ||
             item.Kind is not (PhotoItemKind.Image or PhotoItemKind.Video) || size is not >= 0)
         {
@@ -528,6 +532,8 @@ public sealed partial class PhotosPage : Page, IDisposable
     private bool CanSaveSelectedMedia() =>
         !_viewModel.IsLoading &&
         !_isSaving &&
+        _photoSaveBatchId is null &&
+        !_isChoosingPhotoBatchSaveTarget &&
         _viewModel.SelectedItem is { IsMedia: true, Item.SizeBytes: >= 0 };
 
     private void PhotoPlaceholder_Loaded(object sender, RoutedEventArgs e)
@@ -797,6 +803,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         Loaded -= PhotosPage_Loaded;
         Unloaded -= PhotosPage_Unloaded;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        _transfers.DownloadBatchFinished -= Transfers_PhotoDownloadBatchFinished;
         DisposePhotoImport();
         DisposePhotoViewer();
         ClosePhotoCopyMoveDialog();

@@ -1347,6 +1347,17 @@
   <data name="PhotoRecycleBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 张可移到回收站的照片或视频。</value></data>
   <data name="PhotoMoveBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 个不同的照片或视频；同名项目不能一起移动。</value></data>
   <data name="PhotoCopyBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 个不同的照片或视频；同名项目不能一起复制。</value></data>
+  <data name="PhotoSaveBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 个不同的照片或视频；同名项目不能一起保存。</value></data>
+  <data name="PhotoBrowserSaveMultiple.Label" xml:space="preserve"><value>选择多个副本</value></data>
+  <data name="PhotoBrowserSaveMultiple.Content" xml:space="preserve"><value>选择多个副本</value></data>
+  <data name="PhotoBrowserSaveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择要保存的多个照片或视频</value></data>
+  <data name="PhotoBrowserSaveSelected.Label" xml:space="preserve"><value>保存所选副本</value></data>
+  <data name="PhotoBrowserSaveSelected.Content" xml:space="preserve"><value>保存所选副本</value></data>
+  <data name="PhotoBrowserSaveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>保存所选照片和视频的副本</value></data>
+  <data name="PhotoSaveBatchStartedMessage" xml:space="preserve"><value>正在逐个保存 {0} 个照片或视频副本，进度也会显示在“活动”中。</value></data>
+  <data name="PhotoSaveBatchCancelAutomationName" xml:space="preserve"><value>停止保存多个照片和视频副本</value></data>
+  <data name="PhotoSaveBatchSummaryMessage" xml:space="preserve"><value>已选择：{0}。已保存：{1}。失败：{2}。已取消：{3}。未开始：{4}。</value></data>
+  <data name="PhotoBatchStatus.Title" xml:space="preserve"><value>照片操作</value></data>
   <data name="PhotoMoveBatchSourceChanged" xml:space="preserve"><value>照片空间或所选项目已变化。请核对选择后重试。</value></data>
   <data name="PhotoRecycleBatchSourceChanged" xml:space="preserve"><value>照片空间或所选项目已变化。请核对选择后重试。</value></data>
   <data name="PhotoRecycleBatchConfirmMessage" xml:space="preserve"><value>所选照片和视频将移到 NAS 回收站，不会被永久删除。</value></data>

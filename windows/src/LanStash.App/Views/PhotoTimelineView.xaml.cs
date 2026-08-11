@@ -4,6 +4,7 @@ using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Photos;
 using LanStash.App.Features.Photos.Timeline;
+using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
@@ -23,6 +24,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private IPhotoTimelineDataSource? _source;
     private PhotoThumbnailScheduler? _thumbnails;
     private Func<PhotoItem, Task>? _save;
+    private Func<PhotoItem, bool>? _canSaveMultiple;
+    private Func<IReadOnlyList<PhotoItem>, Task>? _saveMultiple;
     private Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? _open;
     private Func<PhotoItem, bool>? _canMove;
     private Func<PhotoItem, bool>? _canCopy;
@@ -53,6 +56,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         IPhotoTimelineDataSource source,
         PhotoThumbnailScheduler thumbnails,
         Func<PhotoItem, Task> save,
+        Func<PhotoItem, bool>? canSaveMultiple = null,
+        Func<IReadOnlyList<PhotoItem>, Task>? saveMultiple = null,
         Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? open = null,
         Func<PhotoItem, bool>? canCopy = null,
         Func<PhotoItem, bool>? canMove = null,
@@ -68,6 +73,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         _source = source;
         _thumbnails = thumbnails;
         _save = save;
+        _canSaveMultiple = canSaveMultiple;
+        _saveMultiple = saveMultiple;
         _open = open;
         _canCopy = canCopy;
         _canMove = canMove;
@@ -277,6 +284,18 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     { await OpenSelectedAsync(); }
     private async void Save_Click(object sender, RoutedEventArgs e)
     { await SaveSelectedAsync(); }
+    private void SaveMultiple_Click(object sender, RoutedEventArgs e) =>
+        EnterBatchSelection(PhotoBatchSelectionOperation.Save);
+    private async void SaveSelectedItems_Click(object sender, RoutedEventArgs e)
+    {
+        var items = SelectedBatchItems();
+        if (_batchSelectionOperation == PhotoBatchSelectionOperation.Save &&
+            items.Count is > 0 and <= BoundedFileDownloadBatch.MaximumFileCount &&
+            _saveMultiple is not null)
+        {
+            await _saveMultiple(items);
+        }
+    }
     private async void Move_Click(object sender, RoutedEventArgs e)
     { await MoveSelectedAsync(); }
     private async void Restore_Click(object sender, RoutedEventArgs e)
@@ -411,6 +430,9 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         var hasCopyBatchCandidates = _viewModel.Phase != PhotoTimelinePhase.Scanning &&
             _viewModel.Groups.SelectMany(group => group.Items)
                 .Any(entry => _canCopy?.Invoke(entry.Item) == true);
+        var hasSaveBatchCandidates = _viewModel.Phase != PhotoTimelinePhase.Scanning &&
+            _viewModel.Groups.SelectMany(group => group.Items)
+                .Any(entry => _canSaveMultiple?.Invoke(entry.Item) == true);
         var hasMoveBatchCandidates = _viewModel.Phase != PhotoTimelinePhase.Scanning &&
             _viewModel.Groups.SelectMany(group => group.Items)
                 .Any(entry => _canMove?.Invoke(entry.Item) == true);
@@ -418,10 +440,20 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             _viewModel.Groups.SelectMany(group => group.Items)
                 .Any(entry => _canMoveToRecycle?.Invoke(entry.Item) == true);
         var localization = LocalizationService.Current;
+        var isSelectingSave = _batchSelectionOperation == PhotoBatchSelectionOperation.Save;
         var isSelectingMove = _batchSelectionOperation == PhotoBatchSelectionOperation.Move;
         var isSelectingCopy = _batchSelectionOperation == PhotoBatchSelectionOperation.Copy;
         var isSelectingRecycle = _batchSelectionOperation == PhotoBatchSelectionOperation.Recycle;
         var isSelectingBatch = _batchSelectionOperation != PhotoBatchSelectionOperation.None;
+        SaveMultipleButton.Visibility = !isSelectingBatch && hasSaveBatchCandidates
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SaveMultipleButton.IsEnabled = !isSelectingBatch && hasSaveBatchCandidates;
+        SaveSelectedItemsButton.Visibility = isSelectingSave
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SaveSelectedItemsButton.IsEnabled = TimelineGrid.SelectedItems.Count is > 0 and <=
+            BoundedFileDownloadBatch.MaximumFileCount;
         CopyMultipleButton.Visibility = !isSelectingBatch && hasCopyBatchCandidates
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -546,6 +578,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         PhotoItem item,
         PhotoBatchSelectionOperation operation) => operation switch
         {
+            PhotoBatchSelectionOperation.Save => _canSaveMultiple?.Invoke(item) == true,
             PhotoBatchSelectionOperation.Copy => _canCopy?.Invoke(item) == true,
             PhotoBatchSelectionOperation.Move => _canMove?.Invoke(item) == true,
             PhotoBatchSelectionOperation.Recycle => _canMoveToRecycle?.Invoke(item) == true,
@@ -553,18 +586,27 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         };
 
     private static string SelectionCountResource(PhotoBatchSelectionOperation operation) =>
-        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
-            ? "FileCopyMoveBatchSelectionCount"
-            : "FileRecycleBatchSelectionCount";
+        operation switch
+        {
+            PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionCountMessage",
+            PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
+                "FileCopyMoveBatchSelectionCount",
+            _ => "FileRecycleBatchSelectionCount",
+        };
 
     private static string SelectionLimitResource(PhotoBatchSelectionOperation operation) =>
-        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
-            ? "FileCopyMoveBatchSelectionLimit"
-            : "FileRecycleBatchSelectionLimit";
+        operation switch
+        {
+            PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionLimitMessage",
+            PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
+                "FileCopyMoveBatchSelectionLimit",
+            _ => "FileRecycleBatchSelectionLimit",
+        };
 
     private static string SelectionInvalidResource(PhotoBatchSelectionOperation operation) =>
         operation switch
         {
+            PhotoBatchSelectionOperation.Save => "PhotoSaveBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Copy => "PhotoCopyBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Move => "PhotoMoveBatchSelectionInvalid",
             _ => "PhotoRecycleBatchSelectionInvalid",

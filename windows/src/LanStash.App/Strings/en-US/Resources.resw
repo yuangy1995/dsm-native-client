@@ -1347,6 +1347,17 @@
   <data name="PhotoRecycleBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 photos or videos from the current photo space that can be moved to the recycle bin.</value></data>
   <data name="PhotoMoveBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 distinct photos or videos from the current photo space. Items with the same name cannot be moved together.</value></data>
   <data name="PhotoCopyBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 distinct photos or videos from the current photo space. Items with the same name cannot be copied together.</value></data>
+  <data name="PhotoSaveBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 distinct photos or videos from the current photo space. Items with the same name cannot be saved together.</value></data>
+  <data name="PhotoBrowserSaveMultiple.Label" xml:space="preserve"><value>Select copies</value></data>
+  <data name="PhotoBrowserSaveMultiple.Content" xml:space="preserve"><value>Select copies</value></data>
+  <data name="PhotoBrowserSaveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Select multiple photos or videos to save</value></data>
+  <data name="PhotoBrowserSaveSelected.Label" xml:space="preserve"><value>Save copies</value></data>
+  <data name="PhotoBrowserSaveSelected.Content" xml:space="preserve"><value>Save copies</value></data>
+  <data name="PhotoBrowserSaveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save copies of the selected photos and videos</value></data>
+  <data name="PhotoSaveBatchStartedMessage" xml:space="preserve"><value>Saving copies of {0} items one at a time. Progress also appears in Activity.</value></data>
+  <data name="PhotoSaveBatchCancelAutomationName" xml:space="preserve"><value>Stop saving photo and video copies</value></data>
+  <data name="PhotoSaveBatchSummaryMessage" xml:space="preserve"><value>Selected: {0}. Saved: {1}. Failed: {2}. Cancelled: {3}. Not started: {4}.</value></data>
+  <data name="PhotoBatchStatus.Title" xml:space="preserve"><value>Photo actions</value></data>
   <data name="PhotoMoveBatchSourceChanged" xml:space="preserve"><value>The photo space or selected items changed. Review your selection and try again.</value></data>
   <data name="PhotoRecycleBatchSourceChanged" xml:space="preserve"><value>The photo space or selected items changed. Review your selection and try again.</value></data>
   <data name="PhotoRecycleBatchConfirmMessage" xml:space="preserve"><value>This moves the selected photos and videos to the NAS recycle bin. It does not permanently delete them.</value></data>

@@ -2,6 +2,7 @@ using LanStash.App.Features.Files.Locations;
 using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Photos;
+using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
@@ -12,6 +13,7 @@ namespace LanStash.App.Views;
 internal enum PhotoBatchSelectionOperation
 {
     None,
+    Save,
     Copy,
     Move,
     Recycle,
@@ -67,6 +69,7 @@ public sealed partial class PhotosPage
     private bool CanEnterPhotoBatchSelection(PhotoBatchSelectionOperation operation) =>
         operation != PhotoBatchSelectionOperation.None &&
         !_disposed && !_viewModel.IsLoading && !IsSelectingPhotoBatch &&
+        _photoSaveBatchId is null && !_isChoosingPhotoBatchSaveTarget &&
         _photoCopyMoveDialog is null && _photoBatchCopyMoveDialog is null &&
         _photoRecycleDialog is null && _photoBatchRecycleDialog is null &&
         !_isClosingPhotoCopyMove && !_isClosingPhotoBatchCopyMove &&
@@ -78,6 +81,7 @@ public sealed partial class PhotosPage
         PhotoItem item,
         PhotoBatchSelectionOperation operation) => operation switch
         {
+            PhotoBatchSelectionOperation.Save => CanSavePhotoForBatch(item),
             PhotoBatchSelectionOperation.Copy => CanCopyPhotoCore(item),
             PhotoBatchSelectionOperation.Move => CanMovePhotoCore(item),
             PhotoBatchSelectionOperation.Recycle => CanSelectPhotoForBatchRecycle(item),
@@ -409,9 +413,20 @@ public sealed partial class PhotosPage
 
     private void UpdatePhotoBatchControls()
     {
+        var selectingSave = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Save;
         var selectingMove = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Move;
         var selectingCopy = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Copy;
         var selectingRecycle = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Recycle;
+        PhotoSaveMultipleButton.Visibility = IsSelectingPhotoBatch
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        PhotoSaveMultipleButton.IsEnabled = CanEnterPhotoBatchSelection(
+            PhotoBatchSelectionOperation.Save);
+        PhotoSaveSelectedButton.Visibility = selectingSave
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        PhotoSaveSelectedButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
+            BoundedFileDownloadBatch.MaximumFileCount && !_isChoosingPhotoBatchSaveTarget;
         PhotoCopyMultipleButton.Visibility = IsSelectingPhotoBatch
             ? Visibility.Collapsed
             : Visibility.Visible;
@@ -461,18 +476,27 @@ public sealed partial class PhotosPage
     }
 
     private static string SelectionCountResource(PhotoBatchSelectionOperation operation) =>
-        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
-            ? "FileCopyMoveBatchSelectionCount"
-            : "FileRecycleBatchSelectionCount";
+        operation switch
+        {
+            PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionCountMessage",
+            PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
+                "FileCopyMoveBatchSelectionCount",
+            _ => "FileRecycleBatchSelectionCount",
+        };
 
     private static string SelectionLimitResource(PhotoBatchSelectionOperation operation) =>
-        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
-            ? "FileCopyMoveBatchSelectionLimit"
-            : "FileRecycleBatchSelectionLimit";
+        operation switch
+        {
+            PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionLimitMessage",
+            PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
+                "FileCopyMoveBatchSelectionLimit",
+            _ => "FileRecycleBatchSelectionLimit",
+        };
 
     private static string SelectionInvalidResource(PhotoBatchSelectionOperation operation) =>
         operation switch
         {
+            PhotoBatchSelectionOperation.Save => "PhotoSaveBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Copy => "PhotoCopyBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Move => "PhotoMoveBatchSelectionInvalid",
             _ => "PhotoRecycleBatchSelectionInvalid",

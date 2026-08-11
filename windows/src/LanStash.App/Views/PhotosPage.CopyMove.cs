@@ -62,6 +62,7 @@ public sealed partial class PhotosPage
 
     private bool CanMovePhotoCore(PhotoItem item) =>
         !_disposed &&
+        _photoSaveBatchId is null && !_isChoosingPhotoBatchSaveTarget &&
         _photoCopyMoveRepository is { } repository &&
         _photoCopyMoveFolderSource is { } folders &&
         repository.ProfileId == _dataSource.ProfileId &&
@@ -76,6 +77,7 @@ public sealed partial class PhotosPage
 
     private bool CanCopyPhotoCore(PhotoItem item) =>
         !_disposed &&
+        _photoSaveBatchId is null && !_isChoosingPhotoBatchSaveTarget &&
         _photoCopyMoveRepository is { } repository &&
         _photoCopyMoveFolderSource is { } folders &&
         repository.ProfileId == _dataSource.ProfileId &&

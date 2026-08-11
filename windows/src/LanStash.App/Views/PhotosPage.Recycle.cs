@@ -95,6 +95,7 @@ public sealed partial class PhotosPage
     private bool CanPhotoRecycleItemCore(PhotoItem item, FileRecycleOperation operation)
     {
         if (_disposed ||
+            _photoSaveBatchId is not null || _isChoosingPhotoBatchSaveTarget ||
             _photoRecycleRepository is not { ProfileId: var profileId } repository ||
             profileId != _dataSource.ProfileId ||
             _viewModel.ActiveProfileId != _dataSource.ProfileId ||

@@ -162,6 +162,13 @@
                 Icon="Save"
                 MinHeight="44" />
             <AppBarButton
+                x:Uid="PhotoBrowserSaveSelected"
+                x:Name="PhotoSaveSelectedButton"
+                Click="SaveSelectedPhotos_Click"
+                Icon="Save"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileCopyMoveMove"
                 x:Name="PhotoMoveButton"
                 Click="MovePhoto_Click"
@@ -211,6 +218,12 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <CommandBar.SecondaryCommands>
+                <AppBarButton
+                    x:Uid="PhotoBrowserSaveMultiple"
+                    x:Name="PhotoSaveMultipleButton"
+                    Click="SaveMultiplePhotos_Click"
+                    Icon="Save"
+                    MinHeight="44" />
                 <AppBarButton
                     x:Uid="FileCopyMoveCopyMultiple"
                     x:Name="PhotoCopyMultipleButton"
@@ -275,7 +288,7 @@
                 </InfoBar.ActionButton>
             </InfoBar>
             <InfoBar
-                x:Uid="FileRecycleBatchStatus"
+                x:Uid="PhotoBatchStatus"
                 x:Name="PhotoRecycleBatchStatus"
                 AutomationProperties.LiveSetting="Polite"
                 IsClosable="False"

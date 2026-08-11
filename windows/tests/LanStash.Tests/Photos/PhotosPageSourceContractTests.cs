@@ -353,6 +353,41 @@ public sealed class PhotosPageSourceContractTests
     }
 
     [Fact]
+    public void BatchSaveReusesBoundedNoOverwriteDownloadsInFoldersAndTimeline()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var page = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
+        var selection = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.BatchRecycle.cs");
+        var save = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.BatchSave.cs");
+        var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
+        var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
+
+        Assert.Contains("x:Name=\"PhotoSaveMultipleButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoSaveSelectedButton\"", xaml);
+        Assert.Contains("x:Uid=\"PhotoBatchStatus\"", xaml);
+        Assert.Contains("PhotoBatchSelectionOperation.Save", selection);
+        Assert.Contains("BoundedFileDownloadBatch.MaximumFileCount", selection);
+        Assert.Contains("new FileDownloadBatchItem(", save);
+        Assert.Contains("PhotoBatchSaveSourceIsCurrent(", save);
+        Assert.Contains("BoundedFileDownloadBatch.Validate(downloads)", save);
+        Assert.Contains("PickAndStartDownloadBatchAsync(", save);
+        Assert.Contains("CancelDownloadBatch(batchId)", save);
+        Assert.Contains("finished.ProfileId", save);
+        Assert.Contains("_photoSaveBatchId != finished.BatchId", save);
+        Assert.Contains("PhotoSaveBatchSummaryMessage", save);
+        Assert.Contains("_transfers.DownloadBatchFinished +=", page);
+        Assert.Contains("_transfers.DownloadBatchFinished -=", page);
+        Assert.DoesNotContain("DownloadFileAsync", save);
+
+        Assert.Contains("x:Name=\"SaveMultipleButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"SaveSelectedItemsButton\"", timelineXaml);
+        Assert.Contains("x:Uid=\"PhotoBatchStatus\"", timelineXaml);
+        Assert.Contains("EnterBatchSelection(PhotoBatchSelectionOperation.Save)", timeline);
+        Assert.Contains("BoundedFileDownloadBatch.MaximumFileCount", timeline);
+        Assert.Contains("_saveMultiple(items)", timeline);
+    }
+
+    [Fact]
     public void SinglePhotoMoveReusesFileCopyMoveSafetyChainAndRevalidatesSelection()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
