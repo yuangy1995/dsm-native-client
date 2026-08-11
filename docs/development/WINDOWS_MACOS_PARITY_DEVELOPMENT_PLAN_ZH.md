@@ -233,6 +233,8 @@ W0 基线、账本与 ZIP/安装器决策门
 
 FILE-05 单文件夹增量切片已完成源码、本机与云端构建闭环：继续使用同一公开 CopyMove v3，不新增 NAS 请求或平行写协调器。源文件夹必须是普通本地可变路径，复制/移动目标必须位于同一 NAS 的普通本地可写目录；目标选择器排除源文件夹及其后代，Repository 也在提交前拒绝相同目标和后代目标。写前仍执行本地挂载、完整源/目标、权限和同名预检；越过 start transport 后仍只提交一次，取消、断线或未知结果只做独立回读并保留会话 blocker。目录身份冻结使用路径、名称、类型和修改时间，复制回读要求源目录与目标目录同时存在，移动回读要求源目录消失且目标目录存在；不使用非稳定目录大小证明结果。本机 Files CopyMove 聚焦 42/42、Release 完整 xUnit 979/979、本地化检查、RESW/XAML XML 解析和差异检查已通过；GitHub Windows Build run `31460563136` 通过 979/979 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31460563100` 已通过。批量、跨 NAS、覆盖、拖放、撤销、目录回收站操作以及真实 NAS 递归副作用不在本切片；真实 Windows/Narrator/高对比/缩放/窄窗口/键盘/触控继续记为 `PENDING_USER_VALIDATION`。
 
+FILE-09 单文件夹回收站增量已补齐：Windows Files 允许单个普通本地文件夹移入已发现的同共享 `#recycle`，并允许在回收站中恢复可解析原路径的单个文件夹。实现复用既有公开 Delete v2、CopyMove v3、List/GetInfo v2 与 CheckPermission v3，不改变 transport 或公共请求 fixture。确认前冻结 profile、源路径、名称、目录类型、修改时间、当前父目录和 recycle location；Repository 提交前重新读取源目录和当前删除权限，恢复另检查原父目录及目标写权限，同名目标、身份变化或权限消失均零写入；父文件夹与后代项目按路径祖先关系互斥，兄弟项目不受影响。越过 start transport 后仍只提交一次，取消、断线和任务或回读异常进入 session blocker，只做独立回读而不重放。确认成功要求源路径消失、目标路径出现同名同类型且修改时间一致的目录；目录大小不作为递归内容证明。WinUI 使用原生命令栏和 ContentDialog，文件夹确认文案明确其内容会一同移动或恢复，并提供双语 Narrator 名称。本机 Files Recycle 聚焦 21/21、Release 完整 xUnit 985/985、本地化检查、RESW/XAML XML 解析和差异检查已通过；首次完整运行的无关 Preview 时序测试单项与整套原样重跑通过，未修改 Preview 源码。GitHub Windows Build `31462403976` 已通过 985/985 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check `31462403992` 已通过。Apple 移动端与 Photos 保持首片普通文件范围；永久删除、清空回收站、批量、覆盖恢复、跨 NAS 和递归内容逐项验证不在本切片。真实 NAS 目录副作用、同名策略及真实 Windows/Narrator/高对比/缩放/窄窗口/键盘/触控继续记为 `PENDING_USER_VALIDATION`。
+
 ### W3-A：预览与文件系统照片库
 
 工作项：

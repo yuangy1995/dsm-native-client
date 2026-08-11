@@ -96,9 +96,8 @@ public sealed partial class FilesPage
                 return;
             }
 
-            dialog.Title = localization.Get(operation == FileRecycleOperation.MoveToRecycle
-                ? "FileRecycleMoveTitle"
-                : "FileRecycleRestoreTitle");
+            dialog.Title = localization.Get(RecycleTitleKey(
+                operation, model.Source.IsDirectory));
             dialog.CloseButtonText = localization.Get(model.State is
                 FileRecyclePresentationState.Confirming or
                 FileRecyclePresentationState.Submitting
@@ -209,6 +208,15 @@ public sealed partial class FilesPage
         left.Size == right.Size &&
         left.ModifiedAt == right.ModifiedAt &&
         left.CanDelete == right.CanDelete;
+
+    private static string RecycleTitleKey(FileRecycleOperation operation, bool isDirectory) =>
+        (operation, isDirectory) switch
+        {
+            (FileRecycleOperation.MoveToRecycle, true) => "FileRecycleMoveFolderTitle",
+            (FileRecycleOperation.Restore, true) => "FileRecycleRestoreFolderTitle",
+            (FileRecycleOperation.MoveToRecycle, false) => "FileRecycleMoveTitle",
+            _ => "FileRecycleRestoreTitle",
+        };
 
     private void UpdateRecycleControls()
     {

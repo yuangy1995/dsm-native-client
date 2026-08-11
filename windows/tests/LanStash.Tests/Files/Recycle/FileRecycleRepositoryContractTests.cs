@@ -53,6 +53,122 @@ public sealed class FileRecycleRepositoryContractTests
     }
 
     [Fact]
+    public async Task FolderCanMoveToRecycleAndRestoreWithTypeBasedReadback()
+    {
+        var moveApi = new FakeApi(
+            Page(Item("/share/docs/album", "album", isDirectory: true, size: 0,
+                canDelete: true)),
+            Page(Item("/share/#recycle/docs/album", "album", isDirectory: true, size: 0)));
+        var moved = await MakeRepository(moveApi).MoveToRecycleAsync(
+            new MoveToRecycleRequest(
+                Target("/share/docs/album", recycle: false, isDirectory: true),
+                new FileRecycleLocationTarget("/share", "/share/#recycle")));
+
+        var restoreApi = new FakeApi(
+            Page(
+                Item("/share/#recycle/docs/album", "album", isDirectory: true, size: 0),
+                Item("/share/docs", "docs", isDirectory: true, size: 0)),
+            Page(Item("/share/docs/album", "album", isDirectory: true, size: 0)));
+        var restored = await MakeRepository(restoreApi).RestoreFromRecycleAsync(
+            new RestoreFromRecycleRequest(
+                Target("/share/#recycle/docs/album", recycle: true, isDirectory: true)));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, moved.Result.Status);
+        Assert.True(moved.ConfirmedItem?.IsDirectory);
+        Assert.Equal(1, moveApi.StartRecycleCount);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, restored.Result.Status);
+        Assert.True(restored.ConfirmedItem?.IsDirectory);
+        Assert.Equal(1, restoreApi.StartCopyMoveCount);
+    }
+
+    [Fact]
+    public async Task CurrentDeletePermissionIsRequiredBeforeFolderWrite()
+    {
+        var api = new FakeApi(Page(Item(
+            "/share/docs/album", "album", isDirectory: true, size: 0, canDelete: false)));
+
+        var outcome = await MakeRepository(api).MoveToRecycleAsync(
+            new MoveToRecycleRequest(
+                Target("/share/docs/album", recycle: false, isDirectory: true),
+                new FileRecycleLocationTarget("/share", "/share/#recycle")));
+
+        Assert.Equal(MutationResultStatus.PermissionDenied, outcome.Result.Status);
+        Assert.Equal(MutationErrorCategory.Permission, outcome.Result.ErrorCategory);
+        Assert.False(outcome.Result.Submitted);
+        Assert.Equal(0, api.StartRecycleCount);
+    }
+
+    [Fact]
+    public async Task RestoreRechecksFolderDeletePermissionBeforeDestinationPermission()
+    {
+        var api = new FakeApi(Page(
+            Item("/share/#recycle/docs/album", "album", isDirectory: true, size: 0,
+                canDelete: false),
+            Item("/share/docs", "docs", isDirectory: true, size: 0)));
+
+        var outcome = await MakeRepository(api).RestoreFromRecycleAsync(
+            new RestoreFromRecycleRequest(
+                Target("/share/#recycle/docs/album", recycle: true, isDirectory: true)));
+
+        Assert.Equal(MutationResultStatus.PermissionDenied, outcome.Result.Status);
+        Assert.Equal(0, api.PermissionCount);
+        Assert.Equal(0, api.StartCopyMoveCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentFolderAndDescendantOperationsAllowOnlyOneSubmission()
+    {
+        var api = new FakeApi(
+            Page(Item("/share/docs/album", "album", isDirectory: true, size: 0)),
+            Page(Item("/share/#recycle/docs/album", "album", isDirectory: true, size: 0)))
+        {
+            HoldFirstList = true,
+        };
+        var repository = MakeRepository(api);
+        var folderRequest = new MoveToRecycleRequest(
+            Target("/share/docs/album", recycle: false, isDirectory: true),
+            new FileRecycleLocationTarget("/share", "/share/#recycle"));
+        var childRequest = new MoveToRecycleRequest(
+            Target("/share/docs/album/a.txt", recycle: false),
+            new FileRecycleLocationTarget("/share", "/share/#recycle"));
+
+        var folderTask = repository.MoveToRecycleAsync(folderRequest);
+        await api.FirstListEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var child = await repository.MoveToRecycleAsync(childRequest);
+        api.ReleaseFirstList.TrySetResult(true);
+        var folder = await folderTask;
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, folder.Result.Status);
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, child.Result.Status);
+        Assert.Equal(MutationErrorCategory.Conflict, child.Result.ErrorCategory);
+        Assert.Equal(1, api.StartRecycleCount);
+    }
+
+    [Fact]
+    public async Task FolderReadbackRejectsSameNameWithDifferentModifiedTime()
+    {
+        var sourceTime = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+        var otherTime = sourceTime.AddMinutes(1);
+        var api = new FakeApi(
+            Page(Item("/share/docs/album", "album", isDirectory: true, size: 0,
+                modifiedAt: sourceTime)),
+            Page(Item("/share/#recycle/docs/album", "album", isDirectory: true, size: 0,
+                modifiedAt: otherTime)));
+        var target = Target("/share/docs/album", recycle: false, isDirectory: true) with
+        {
+            ModifiedAt = sourceTime,
+        };
+
+        var outcome = await MakeRepository(api).MoveToRecycleAsync(new MoveToRecycleRequest(
+            target, new FileRecycleLocationTarget("/share", "/share/#recycle")));
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, outcome.Result.Status);
+        Assert.True(outcome.Result.RequiresRefresh);
+        Assert.Null(outcome.ConfirmedItem);
+        Assert.Equal(1, api.StartRecycleCount);
+    }
+
+    [Fact]
     public async Task RestoreUnknownResultBlocksReplayAndSecondAttemptOnlyReadsBack()
     {
         var api = new FakeApi(
@@ -78,7 +194,7 @@ public sealed class FileRecycleRepositoryContractTests
     }
 
     [Fact]
-    public async Task InvalidDirectoryAndMismatchedRecycleRootSendZeroWrites()
+    public async Task InvalidRecycleShapeAndMismatchedRecycleRootSendZeroWrites()
     {
         var api = new FakeApi();
         var repository = MakeRepository(api);
@@ -87,7 +203,7 @@ public sealed class FileRecycleRepositoryContractTests
             Target("/share/docs/a.txt", recycle: false),
             new FileRecycleLocationTarget("/other", "/other/#recycle")));
         var invalidRestore = await repository.RestoreFromRecycleAsync(new RestoreFromRecycleRequest(
-            Target("/share/#recycle/folder", recycle: true, isDirectory: true)));
+            Target("/share/folder/#recycle/item.txt", recycle: true)));
 
         Assert.Equal(MutationResultStatus.Unsupported, invalidMove.Result.Status);
         Assert.False(invalidMove.Result.Submitted);
@@ -135,7 +251,8 @@ public sealed class FileRecycleRepositoryContractTests
         string name,
         bool isDirectory,
         long size,
-        bool canDelete = true) => new()
+        bool canDelete = true,
+        DateTimeOffset? modifiedAt = null) => new()
     {
         ["path"] = path,
         ["name"] = name,
@@ -148,6 +265,9 @@ public sealed class FileRecycleRepositoryContractTests
                 ["write"] = true,
                 ["delete"] = canDelete,
             },
+            ["time"] = modifiedAt is null
+                ? null
+                : new JsonObject { ["mtime"] = modifiedAt.Value.ToUnixTimeSeconds() },
         },
     };
 
@@ -166,6 +286,11 @@ public sealed class FileRecycleRepositoryContractTests
         public string? LastCopyMoveSource { get; private set; }
         public string? LastCopyMoveDestination { get; private set; }
         public bool LastCopyMoveRemoveSource { get; private set; }
+        public bool HoldFirstList { get; init; }
+        public TaskCompletionSource<bool> FirstListEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> ReleaseFirstList { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Uri GetBaseUri(NasProfile profile) => new("https://nas.example.invalid/");
         public Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
@@ -183,13 +308,18 @@ public sealed class FileRecycleRepositoryContractTests
             ApiCapability capability, string remotePath, long offset, long length,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
-        public Task<JsonObject> CallReadJsonObjectAsync(NasProfile profile,
+        public async Task<JsonObject> CallReadJsonObjectAsync(NasProfile profile,
             DsmSession session, ApiCapability capability, int requiredVersion, string method,
             IReadOnlyDictionary<string, string>? parameters = null,
             CancellationToken cancellationToken = default)
         {
             ListCount++;
-            return Task.FromResult((JsonObject)_pages.Dequeue().DeepClone());
+            if (HoldFirstList && ListCount == 1)
+            {
+                FirstListEntered.TrySetResult(true);
+                await ReleaseFirstList.Task.WaitAsync(cancellationToken);
+            }
+            return (JsonObject)_pages.Dequeue().DeepClone();
         }
 
         public Task<FilePermissionTransportResult> CheckFileMutationPermissionAsync(

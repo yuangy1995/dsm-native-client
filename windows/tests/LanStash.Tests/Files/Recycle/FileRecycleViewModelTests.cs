@@ -13,6 +13,10 @@ public sealed class FileRecycleViewModelTests
         ProfileId, "team", "/team", "/team/#recycle");
     private static readonly FileItem RecycleSource = new(
         "/team/#recycle/archive.txt", "archive.txt", false, 42, DateTimeOffset.UnixEpoch, null, true, true);
+    private static readonly FileItem FolderSource = new(
+        "/team/album", "album", true, 0, DateTimeOffset.UnixEpoch, null, true, true);
+    private static readonly FileItem RecycleFolderSource = new(
+        "/team/#recycle/album", "album", true, 0, DateTimeOffset.UnixEpoch, null, true, true);
 
     [Fact]
     public async Task MoveToRecycleRequiresExactConfirmedItemAndSendsOnce()
@@ -50,6 +54,35 @@ public sealed class FileRecycleViewModelTests
         Assert.Equal(FileRecyclePresentationState.ConfirmedSuccess, model.State);
         Assert.Equal(RecycleSource.Path, repository.RestoreRequest?.Target.Path);
         Assert.True(repository.RestoreRequest?.Target.IsRecycle);
+    }
+
+    [Fact]
+    public async Task FolderMoveAndRestoreRequireExactDirectoryConfirmation()
+    {
+        var moveRepository = new StubRepository(ProfileId, MoveOutcome(
+            MutationResultStatus.ConfirmedSuccess,
+            "/team/#recycle/album",
+            new FileItem("/team/#recycle/album", "album", true, 0, null, null, true, true),
+            FolderSource.Path));
+        using var move = new FileRecycleViewModel(moveRepository, ProfileId, FolderSource,
+            FileRecycleOperation.MoveToRecycle, 14, RecycleLocation,
+            new FileRecycleReviewBlocker());
+        await move.SubmitAsync();
+
+        var restoreRepository = new StubRepository(ProfileId, restore: RestoreOutcome(
+            MutationResultStatus.ConfirmedSuccess,
+            "/team/album",
+            new FileItem("/team/album", "album", true, 0, null, null, true, true),
+            RecycleFolderSource.Path));
+        using var restore = new FileRecycleViewModel(restoreRepository, ProfileId,
+            RecycleFolderSource, FileRecycleOperation.Restore, 15, null,
+            new FileRecycleReviewBlocker());
+        await restore.SubmitAsync();
+
+        Assert.Equal(FileRecyclePresentationState.ConfirmedSuccess, move.State);
+        Assert.True(moveRepository.MoveRequest?.Target.IsDirectory);
+        Assert.Equal(FileRecyclePresentationState.ConfirmedSuccess, restore.State);
+        Assert.True(restoreRepository.RestoreRequest?.Target.IsDirectory);
     }
 
     [Fact]
@@ -118,10 +151,14 @@ public sealed class FileRecycleViewModelTests
     {
         Assert.True(FileRecycleViewModel.CanMoveToRecycle(
             ProfileId, Source, "/team", FileLocationSource.Browser, [RecycleLocation]));
+        Assert.True(FileRecycleViewModel.CanMoveToRecycle(
+            ProfileId, FolderSource, "/team", FileLocationSource.Browser, [RecycleLocation]));
         Assert.False(FileRecycleViewModel.CanMoveToRecycle(
             ProfileId, Source, "/team", FileLocationSource.Remote, [RecycleLocation]));
         Assert.False(FileRecycleViewModel.CanRestore(
             ProfileId, Source, "/team", FileLocationSource.Recycle));
+        Assert.True(FileRecycleViewModel.CanRestore(
+            ProfileId, RecycleFolderSource, "/team/#recycle", FileLocationSource.Recycle));
         Assert.False(FileRecycleViewModel.CanRestore(
             ProfileId,
             RecycleSource with { Path = "/team/folder/#recycle/archive.txt" },
@@ -144,14 +181,16 @@ public sealed class FileRecycleViewModelTests
     private static FileRecycleOutcome MoveOutcome(
         MutationResultStatus status,
         string destinationPath,
-        FileItem? item = null) =>
-        Outcome(status, Source.Path, destinationPath, item);
+        FileItem? item = null,
+        string? sourcePath = null) =>
+        Outcome(status, sourcePath ?? Source.Path, destinationPath, item);
 
     private static FileRecycleOutcome RestoreOutcome(
         MutationResultStatus status,
         string destinationPath,
-        FileItem? item = null) =>
-        Outcome(status, RecycleSource.Path, destinationPath, item);
+        FileItem? item = null,
+        string? sourcePath = null) =>
+        Outcome(status, sourcePath ?? RecycleSource.Path, destinationPath, item);
 
     private static FileRecycleOutcome Outcome(
         MutationResultStatus status,

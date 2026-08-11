@@ -106,7 +106,7 @@ public sealed class FileRecycleViewModel : ObservableObject, IDisposable
         {
             throw new ArgumentException("file.recycle.profile-mismatch", nameof(repository));
         }
-        if (!IsOrdinaryFile(source))
+        if (!IsOrdinaryItem(source))
         {
             throw new ArgumentException("file.recycle.invalid-source", nameof(source));
         }
@@ -277,8 +277,8 @@ public sealed class FileRecycleViewModel : ObservableObject, IDisposable
         FileLocationSource source,
         IReadOnlyList<FileRecycleLocation> recycleLocations) =>
         source is not (FileLocationSource.Remote or FileLocationSource.Recycle) &&
-        item is { IsDirectory: false, Size: >= 0, CanDelete: true } &&
-        IsOrdinaryFile(item) &&
+        item is { Size: >= 0, CanDelete: true } &&
+        IsOrdinaryItem(item) &&
         IsCanonicalFolder(currentPath) &&
         string.Equals(Parent(item.Path), currentPath, StringComparison.Ordinal) &&
         FindRecycleLocation(profileId, item.Path, recycleLocations) is not null;
@@ -289,7 +289,7 @@ public sealed class FileRecycleViewModel : ObservableObject, IDisposable
         string currentPath,
         FileLocationSource source) =>
         source == FileLocationSource.Recycle &&
-        item is { IsDirectory: false, Size: >= 0 } &&
+        item is { Size: >= 0 } &&
         item.CanDelete &&
         IsCanonicalFolder(currentPath) &&
         string.Equals(Parent(item.Path), currentPath, StringComparison.Ordinal) &&
@@ -340,8 +340,8 @@ public sealed class FileRecycleViewModel : ObservableObject, IDisposable
         string.Equals(outcome.DestinationPath, DestinationPath, StringComparison.Ordinal) &&
         string.Equals(item.Path, DestinationPath, StringComparison.Ordinal) &&
         string.Equals(item.Name, Source.Name, StringComparison.Ordinal) &&
-        !item.IsDirectory &&
-        item.Size == Source.Size &&
+        item.IsDirectory == Source.IsDirectory &&
+        (Source.IsDirectory || item.Size == Source.Size) &&
         (Operation == FileRecycleOperation.MoveToRecycle
             ? HasRecycleSegment(item.Path)
             : !HasRecycleSegment(item.Path));
@@ -372,8 +372,8 @@ public sealed class FileRecycleViewModel : ObservableObject, IDisposable
             ? availability.CanMoveToRecycle
             : availability.CanRestore;
 
-    private static bool IsOrdinaryFile(FileItem item) =>
-        !item.IsDirectory && IsCanonicalAbsolutePath(item.Path) && item.Size >= 0;
+    private static bool IsOrdinaryItem(FileItem item) =>
+        IsCanonicalAbsolutePath(item.Path) && item.Size >= 0;
 
     private static bool IsCanonicalFolder(string value) =>
         value.Length == 0 || IsCanonicalAbsolutePath(value);

@@ -2,8 +2,8 @@
 
 > 状态：A0/W0 共享契约、A1/W1 Files 受限入口和 A2/W2 Photos 受限恢复入口已落盘；Files 基线已通过 GitHub Apple/Windows/Repository 门禁，Photos 入口已整理为单条简体中文功能提交，并通过 Apple/Windows/Repository 最终云端门禁
 > 基线提交：`1c7ee4851feb00903327b0599a0d29ea421be8c9`（`完善跨端文件复制移动与照片导入`）
-> 当前范围：Windows/iPhone/iPad `FILE-09 移入回收站与从回收站恢复`
-> 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；永久删除、清空回收站、目录或批量恢复、跨 NAS 恢复、覆盖恢复、猜测原路径、内部 Core RecycleBin 清理接口、Chat/Download/NAS 写操作
+> 当前范围：Windows/iPhone/iPad `FILE-09 移入回收站与从回收站恢复`；Windows 后续增量包含单个普通本地文件夹
+> 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；永久删除、清空回收站、Apple 移动端目录、批量恢复、跨 NAS 恢复、覆盖恢复、猜测原路径、内部 Core RecycleBin 清理接口、Chat/Download/NAS 写操作
 
 ## 1. 账本口径
 
@@ -12,6 +12,7 @@
 - `关闭`：缺少稳定契约、行为证据或本波授权，生产入口保持隐藏、只读或能力门关闭。
 - “移入回收站”只允许在已发现的同共享 `#recycle` 入口存在时提交；首片只支持单个普通文件，成功必须同时回读确认原路径消失、回收站目标文件出现。
 - “恢复”只允许对可解析的 `/share/#recycle/...` 单个普通文件恢复到同一共享的原位置；无法推导原位置、目标已存在或目标不可写时拒绝提交。
+- Windows 后续增量允许上述两条中的单个普通本地文件夹，沿用同一 Delete v2/CopyMove v3 安全链；目录只按顶层源消失与目标同类型存在确认，不声称逐项验证递归内容。Apple 移动端与 Photos 不随此增量扩围。
 - 本地只执行形态、资源、请求契约和聚焦低负载测试；Windows x64/ARM64、Apple iPhone/iPad、共享 Package/macOS 回归与 Android 未改动回归交给 GitHub 分支门禁。
 - 同一功能的验证修正可以产生临时提交；正式历史必须整理为一条语义完整的简体中文提交，最终精确 SHA 重新跑全量门禁后才能合并 `main`。
 
@@ -101,6 +102,7 @@
 - 当前基线提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 已通过第 2 波四组云端门禁，但该证据只覆盖 FILE-05 与 PHOTO-03A。
 - Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，并通过 `DsmFileRepositoryTests` 107/107；`RecycleLocation`、`discoverRecycleLocations()` 和 FILE-05 `copyMoveResult` 继续作为契约事实来源。Apple Files UI 已接入单个普通本地文件移入回收站与回收站位置恢复，本机 iPhone 17 Pro iOS 26.5 模拟器聚焦 42/42 与完整 DsmMobile 375/375 通过；提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Apple Build` run `31318490495` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建和 macOS 打包。Photos 受限恢复入口已在网格、时间线和查看器中复用同一恢复流程，本机聚焦 `MobileFileRecycleActionPresentationTests` 与 `MobilePhotoViewerPresentationTests` 通过；单条功能提交已通过 GitHub `Apple Build`。真实 iPad 交互、真机和真实 NAS 回收站行为仍待验收。
 - Windows 已新增 `IFileRecycleRepository`、`FileRecycle*` 领域模型、Delete v2 start/status transport、`DsmRepository.FileRecycle` 与 `Files/Recycle` 聚焦测试源码；Windows Files UI 已接入 WinUI ContentDialog 受限入口、普通/回收站来源门和 session blocker，并通过本机 XAML/resw XML、本地化和源码形态静态门。提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Windows Build` run `31318490511` 已通过 830/830 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；同提交 `Repository Check` run `31318490509` 通过。Photos 受限恢复入口已在文件夹视图、时间线选择和 Shell profile 门中复用同一恢复 ViewModel 与对话框；单条功能提交已通过 GitHub `Windows Build` 与 `Repository Check`。真实 Windows 设备、Narrator、键盘、系统生命周期和真实 NAS 副作用仍待验收。
+- Windows 单文件夹增量已扩展同一 `FileRecycleTarget`、Repository 回读、ViewModel 来源门与 ContentDialog：目录写前重读类型、修改时间和当前删除权限，恢复另复用目标权限检查；同名或权限变化零写入，父文件夹与后代项目路径互斥，结果回读匹配目录类型与修改时间，未知结果继续阻断重放。文件夹专用确认与结果文案已加入英中资源，本机 Files Recycle 聚焦 21/21、Release 完整 xUnit 985/985、本地化、XML 与差异检查通过；GitHub Windows Build `31462403976` 已通过 985/985 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check `31462403992` 已通过。
 - 请求契约已有 `contracts/request-fixtures/file-station/delete/synthetic-task/request.json`；恢复首片复用现有 CopyMove v3 合成形态，Windows W0 已新增 Delete start/status typed transport 与契约测试。
 
 ## 9. 本波完成后继续对照的剩余项

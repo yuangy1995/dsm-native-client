@@ -40,7 +40,7 @@ public sealed partial class DsmRepository
         var source = request.Target;
         var destinationPath = RecycleDestinationPath(request);
         var review = new FileRecycleReview(operation, source.Path, destinationPath, source.Name,
-            source.Size, source.ModifiedAt,
+            source.IsDirectory, source.Size, source.ModifiedAt,
             new HashSet<string>([source.Path, destinationPath], StringComparer.Ordinal));
         var reservation = ReserveFileRecycle(review);
         if (!reservation.Acquired)
@@ -62,6 +62,10 @@ public sealed partial class DsmRepository
                 return RecycleOutcome(operation, MutationResultStatus.ConfirmedFailure,
                     false, false, source.Path, destinationPath, MutationErrorCategory.Conflict,
                     "file.recycle.move.preflight-rejected");
+            if (!observedSource!.CanDelete)
+                return RecycleOutcome(operation, MutationResultStatus.PermissionDenied,
+                    false, false, source.Path, destinationPath, MutationErrorCategory.Permission,
+                    "file.recycle.move.permission-denied");
 
             return await SubmitMoveToRecycleAsync(review, cancellationToken)
                 .ConfigureAwait(false);
@@ -106,7 +110,7 @@ public sealed partial class DsmRepository
 
         var source = request.Target;
         var review = new FileRecycleReview(operation, source.Path, destinationPath, source.Name,
-            source.Size, source.ModifiedAt,
+            source.IsDirectory, source.Size, source.ModifiedAt,
             new HashSet<string>([source.Path, destinationPath], StringComparer.Ordinal));
         var reservation = ReserveFileRecycle(review);
         if (!reservation.Acquired)
@@ -131,6 +135,10 @@ public sealed partial class DsmRepository
                 return RecycleOutcome(operation, MutationResultStatus.ConfirmedFailure,
                     false, false, source.Path, destinationPath, MutationErrorCategory.Conflict,
                     "file.recycle.restore.preflight-rejected");
+            if (!observedSource!.CanDelete)
+                return RecycleOutcome(operation, MutationResultStatus.PermissionDenied,
+                    false, false, source.Path, destinationPath, MutationErrorCategory.Permission,
+                    "file.recycle.restore.permission-denied");
 
             var permission = await _api.CheckFileMutationPermissionAsync(
                 _profile, _session, _capabilities["SYNO.FileStation.CheckPermission"],
@@ -389,11 +397,14 @@ public sealed partial class DsmRepository
                 [review.SourcePath, review.DestinationPath], CancellationToken.None)
                 .ConfigureAwait(false);
             var target = items.SingleOrDefault(item =>
-                item.Path == review.DestinationPath && !item.IsDirectory &&
-                item.Size == review.Size && item.Name == review.Name);
+                item.Path == review.DestinationPath &&
+                item.IsDirectory == review.IsDirectory &&
+                (review.IsDirectory || item.Size == review.Size) &&
+                item.ModifiedAt == review.ModifiedAt && item.Name == review.Name);
             if (target is null) return null;
             var sourceStillMatches = items.Any(item =>
-                item.Path == review.SourcePath && !item.IsDirectory && item.Size == review.Size);
+                item.Path == review.SourcePath && item.IsDirectory == review.IsDirectory &&
+                (review.IsDirectory || item.Size == review.Size));
             return sourceStillMatches ? null : target;
         }
         catch (DsmException error) when (IsMutationAuthenticationFailure(error))
@@ -501,7 +512,7 @@ public sealed partial class DsmRepository
     }
 
     private bool ValidRecycleFileTarget(FileRecycleTarget target, bool expectedRecycle) =>
-        target.ProfileId == ProfileId && !target.IsDirectory && target.Size >= 0 &&
+        target.ProfileId == ProfileId && target.Size >= 0 &&
         ValidMutationObjectPath(target.Path) && ValidMutationItemName(target.Name) &&
         MutationParent(target.Path).Length > 0 &&
         target.Path.EndsWith("/" + target.Name, StringComparison.Ordinal) &&
@@ -510,8 +521,9 @@ public sealed partial class DsmRepository
         ContainsRecycleSegment(target.Path) == expectedRecycle;
 
     private static bool MatchesFrozenRecycleSource(FileItem? observed, FileRecycleTarget frozen) =>
-        observed is not null && !observed.IsDirectory && observed.Path == frozen.Path &&
-        observed.Name == frozen.Name && observed.Size == frozen.Size &&
+        observed is not null && observed.IsDirectory == frozen.IsDirectory &&
+        observed.Path == frozen.Path && observed.Name == frozen.Name &&
+        (frozen.IsDirectory || observed.Size == frozen.Size) &&
         observed.ModifiedAt == frozen.ModifiedAt;
 
     private static string RecycleDestinationPath(MoveToRecycleRequest request) =>
@@ -537,16 +549,25 @@ public sealed partial class DsmRepository
         {
             if (state.Reviews.TryGetValue(requested.Key, out var pending))
             {
-                if (state.ActiveTargets.Overlaps(requested.Targets)) return default;
+                if (FileRecycleTargetsOverlap(state.ActiveTargets, requested.Targets))
+                    return default;
                 state.ActiveTargets.UnionWith(requested.Targets);
                 return new(true, pending);
             }
-            if (state.Reviews.Values.Any(review => review.Targets.Overlaps(requested.Targets)) ||
-                state.ActiveTargets.Overlaps(requested.Targets)) return default;
+            if (state.Reviews.Values.Any(review =>
+                    FileRecycleTargetsOverlap(review.Targets, requested.Targets)) ||
+                FileRecycleTargetsOverlap(state.ActiveTargets, requested.Targets)) return default;
             state.ActiveTargets.UnionWith(requested.Targets);
             return new(true, null);
         }
     }
+
+    private static bool FileRecycleTargetsOverlap(
+        IEnumerable<string> left,
+        IEnumerable<string> right) => left.Any(leftPath => right.Any(rightPath =>
+            leftPath == rightPath ||
+            leftPath.StartsWith(rightPath + "/", StringComparison.Ordinal) ||
+            rightPath.StartsWith(leftPath + "/", StringComparison.Ordinal)));
 
     private void ReleaseFileRecycle(HashSet<string> targets)
     {
@@ -617,6 +638,7 @@ public sealed partial class DsmRepository
         string SourcePath,
         string DestinationPath,
         string Name,
+        bool IsDirectory,
         long Size,
         DateTimeOffset? ModifiedAt,
         HashSet<string> Targets)

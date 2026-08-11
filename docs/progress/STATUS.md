@@ -48,6 +48,8 @@ Windows Chat 群公告只读切片已完成源码、本机与云端构建闭环�
 
 Windows FILE-05 单文件夹同 NAS 复制/移动已完成源码、本机与云端构建闭环：复用公开 `SYNO.FileStation.CopyMove` v3 和既有普通本地挂载、权限、同名、一次提交、任务轮询及提交未知只回读不重放链路；WinUI 已允许选择单个普通本地文件夹，目标选择器排除源目录整棵子树，并按文件/文件夹显示双语标题、结果和 Narrator 文案。目录冻结源比较路径、名称、类型和修改时间，最终回读比较源/目标存在性与目录类型，不把 DSM 非稳定目录大小作为身份依据。本机 .NET 10 的 Files CopyMove 聚焦测试 42/42、Release 完整 xUnit 979/979、本地化检查、RESW/XAML XML 解析和 `git diff --check` 已通过；GitHub Windows Build run `31460563136` 通过 979/979 项 xUnit，WinUI x64/ARM64 均为 0 警告、0 错误，Repository Check run `31460563100` 已通过。批量、跨 NAS、覆盖、拖放、撤销和回收站目录操作仍关闭；真实 NAS 递归副作用及真实 Windows/Narrator/高对比/100/150/200% 缩放/窄窗口/键盘/触控为 `PENDING_USER_VALIDATION`。
 
+Windows FILE-09 单文件夹回收站增量已形成闭环：Files 中单个普通本地文件夹可通过原生确认对话框移入同共享的 `#recycle`，并可从回收站恢复到可解析的原位置。实现复用公开 Delete v2、CopyMove v3、List/GetInfo v2 与 CheckPermission v3，不新增请求；写前重新读取路径、名称、目录类型、修改时间和当前删除权限，同名目标或权限变化零写入，父文件夹与后代项目的进程内操作互斥，越过提交边界后只提交一次，取消、断线或未知结果只回读不重放。目录结果按源消失、目标同名同类型且修改时间一致确认，不依赖目录大小；确认与结果文案明确说明文件夹内容会一同移动或恢复。本机 Files Recycle 聚焦测试 21/21、Release 完整 xUnit 985/985、本地化检查、RESW/XAML XML 解析和差异检查已通过；首次完整运行有 1 项无关 Preview 并发时序测试超时，单项与整套原样重跑均通过，未修改 Preview 代码。GitHub Windows Build `31462403976` 已通过 985/985 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check `31462403992` 已通过。Apple 移动端和 Photos 仍只开放普通文件；永久删除、清空回收站、批量、覆盖恢复、跨 NAS 和递归内容逐项校验不在本切片。真实 NAS 的目录副作用、同名策略及真实 Windows/Narrator/高对比/缩放/窄窗口/键盘/触控为 `PENDING_USER_VALIDATION`。
+
 ### 第 2 波已合并（单一简体中文功能提交已全绿）
 
 - 基线：`641852b408ae24f8819e4a49cd70df4c8d9e5011`；功能对齐账本见[第 2 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)。

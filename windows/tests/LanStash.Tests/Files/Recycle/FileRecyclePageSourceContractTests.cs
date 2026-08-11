@@ -43,6 +43,9 @@ public sealed class FileRecyclePageSourceContractTests
         Assert.Contains("model.State != FileRecyclePresentationState.ConfirmedSuccess", partial);
         Assert.Contains("AutomationLiveSetting.Assertive", dialog);
         Assert.Contains("AutomationLiveSetting.Polite", dialog);
+        Assert.DoesNotContain("IsDirectory: false", model);
+        Assert.Contains("FileRecycleMoveFolderTitle", partial);
+        Assert.Contains("FileRecycleMoveFolderMessage", dialog);
         Assert.DoesNotContain("DeleteFilesAsync", partial);
         Assert.DoesNotContain("DeleteFileAsync", partial);
         Assert.DoesNotContain("RemoveAsync", partial);

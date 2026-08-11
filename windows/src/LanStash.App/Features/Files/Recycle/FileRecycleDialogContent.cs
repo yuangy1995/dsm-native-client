@@ -17,7 +17,9 @@ internal static class FileRecycleDialogContent
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         };
         AutomationProperties.SetHeadingLevel(source, AutomationHeadingLevel.Level2);
-        AutomationProperties.SetName(source, localization.Get("FileRecycleSourceLabel"));
+        AutomationProperties.SetName(source, localization.Get(model.Source.IsDirectory
+            ? "FileRecycleSourceFolderLabel"
+            : "FileRecycleSourceLabel"));
         panel.Children.Add(source);
 
         var destination = new TextBlock
@@ -32,9 +34,8 @@ internal static class FileRecycleDialogContent
         {
             panel.Children.Add(new TextBlock
             {
-                Text = localization.Get(model.Operation == FileRecycleOperation.MoveToRecycle
-                    ? "FileRecycleMoveMessage"
-                    : "FileRecycleRestoreMessage"),
+                Text = localization.Get(ConfirmationMessageKey(
+                    model.Operation, model.Source.IsDirectory)),
                 TextWrapping = Microsoft.UI.Xaml.TextWrapping.WrapWholeWords,
             });
             return panel;
@@ -70,8 +71,10 @@ internal static class FileRecycleDialogContent
                 FileRecyclePresentationState.CancelledBeforeSubmission => InfoBarSeverity.Informational,
                 _ => InfoBarSeverity.Error,
             },
-            Title = localization.Get(TitleKey(model.State, model.Operation)),
-            Message = localization.Get(MessageKey(model.State, model.Operation)),
+            Title = localization.Get(TitleKey(
+                model.State, model.Operation, model.Source.IsDirectory)),
+            Message = localization.Get(MessageKey(
+                model.State, model.Operation, model.Source.IsDirectory)),
         };
         AutomationProperties.SetName(message, localization.Get("FileRecycleStatusAutomationName"));
         AutomationProperties.SetLiveSetting(message, AutomationLiveSetting.Assertive);
@@ -81,30 +84,55 @@ internal static class FileRecycleDialogContent
 
     private static string TitleKey(
         FileRecyclePresentationState state,
-        FileRecycleOperation operation) => state switch
+        FileRecycleOperation operation,
+        bool isDirectory) => state switch
     {
         FileRecyclePresentationState.NeedsReview => "FileRecycleReviewTitle",
         FileRecyclePresentationState.PermissionDenied => "FileRecyclePermissionTitle",
         FileRecyclePresentationState.Conflict => "FileRecycleConflictTitle",
         FileRecyclePresentationState.Unsupported => "FileRecycleUnsupportedTitle",
         FileRecyclePresentationState.Failure => "FileRecycleFailureTitle",
-        _ => operation == FileRecycleOperation.MoveToRecycle
-            ? "FileRecycleMoveTitle"
-            : "FileRecycleRestoreTitle",
+        _ => (operation, isDirectory) switch
+        {
+            (FileRecycleOperation.MoveToRecycle, true) => "FileRecycleMoveFolderTitle",
+            (FileRecycleOperation.Restore, true) => "FileRecycleRestoreFolderTitle",
+            (FileRecycleOperation.MoveToRecycle, false) => "FileRecycleMoveTitle",
+            _ => "FileRecycleRestoreTitle",
+        },
     };
 
     private static string MessageKey(
         FileRecyclePresentationState state,
-        FileRecycleOperation operation) => state switch
+        FileRecycleOperation operation,
+        bool isDirectory) => state switch
     {
-        FileRecyclePresentationState.ConfirmedSuccess => operation == FileRecycleOperation.MoveToRecycle
-            ? "FileRecycleMoveSuccessMessage"
-            : "FileRecycleRestoreSuccessMessage",
+        FileRecyclePresentationState.ConfirmedSuccess => SuccessMessageKey(
+            operation, isDirectory),
         FileRecyclePresentationState.NeedsReview => "FileRecycleReviewMessage",
         FileRecyclePresentationState.CancelledBeforeSubmission => "FileRecycleCancelledMessage",
         FileRecyclePresentationState.PermissionDenied => "FileRecyclePermissionMessage",
         FileRecyclePresentationState.Conflict => "FileRecycleConflictMessage",
         FileRecyclePresentationState.Unsupported => "FileRecycleUnsupportedMessage",
         _ => "FileRecycleFailureMessage",
+    };
+
+    private static string ConfirmationMessageKey(
+        FileRecycleOperation operation,
+        bool isDirectory) => (operation, isDirectory) switch
+    {
+        (FileRecycleOperation.MoveToRecycle, true) => "FileRecycleMoveFolderMessage",
+        (FileRecycleOperation.Restore, true) => "FileRecycleRestoreFolderMessage",
+        (FileRecycleOperation.MoveToRecycle, false) => "FileRecycleMoveMessage",
+        _ => "FileRecycleRestoreMessage",
+    };
+
+    private static string SuccessMessageKey(
+        FileRecycleOperation operation,
+        bool isDirectory) => (operation, isDirectory) switch
+    {
+        (FileRecycleOperation.MoveToRecycle, true) => "FileRecycleMoveFolderSuccessMessage",
+        (FileRecycleOperation.Restore, true) => "FileRecycleRestoreFolderSuccessMessage",
+        (FileRecycleOperation.MoveToRecycle, false) => "FileRecycleMoveSuccessMessage",
+        _ => "FileRecycleRestoreSuccessMessage",
     };
 }
