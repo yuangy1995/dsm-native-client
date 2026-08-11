@@ -12,9 +12,15 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
+        <ScrollViewer
+            HorizontalScrollBarVisibility="Auto"
+            HorizontalScrollMode="Enabled"
+            VerticalScrollBarVisibility="Disabled"
+            VerticalScrollMode="Disabled">
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
@@ -37,7 +43,10 @@
                     MinHeight="44" Click="Save_Click" />
             <Button x:Name="RestoreButton" Grid.Column="5"
                     MinHeight="44" Click="Restore_Click" Visibility="Collapsed" />
+            <Button x:Name="MoveToRecycleButton" Grid.Column="6"
+                    MinHeight="44" Click="MoveToRecycle_Click" Visibility="Collapsed" />
         </Grid>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="1" Spacing="8">
             <StackPanel Orientation="Horizontal" Spacing="12">

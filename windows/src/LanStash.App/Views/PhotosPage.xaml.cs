@@ -42,6 +42,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         IPhotoRepository repository,
         string profileId,
         WindowsTransferPickerService transfers,
+        IFileLocationsRepository? locationsRepository = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
         IFilePreviewRepository? previewRepository = null)
@@ -52,6 +53,7 @@ public sealed partial class PhotosPage : Page, IDisposable
             profileId,
             transfers,
             new RepositoryPhotoTimelineDataSource(repository),
+            locationsRepository ?? repository as IFileLocationsRepository,
             recycleRepository,
             recycleReviewBlocker,
             previewRepository)
@@ -65,6 +67,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         string profileId,
         WindowsTransferPickerService transfers,
         IPhotoTimelineDataSource? timelineDataSource = null,
+        IFileLocationsRepository? locationsRepository = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
         IFilePreviewRepository? previewRepository = null)
@@ -78,7 +81,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         _cacheRegistration = AppSettingsService.Current.Caches.Register(thumbnails);
         _profileId = profileId;
         _transfers = transfers;
-        InitializePhotoRecycle(recycleRepository, recycleReviewBlocker);
+        InitializePhotoRecycle(locationsRepository, recycleRepository, recycleReviewBlocker);
         InitializePhotoImport();
         InitializePhotoViewer(previewRepository);
         if (_timelineDataSource is not null)
@@ -89,6 +92,8 @@ public sealed partial class PhotosPage : Page, IDisposable
                 thumbnails,
                 SaveTimelineItemAsync,
                 OpenTimelineViewerAsync,
+                CanMovePhotoToRecycle,
+                MovePhotoToRecycleAsync,
                 CanRestorePhotoItem,
                 RestorePhotoItemAsync);
         }
@@ -137,6 +142,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         {
             ActivatePhotoImportPage();
             UpdatePhotoImportState();
+            await ActivatePhotoRecycleLocationsAsync();
             return;
         }
 
@@ -148,6 +154,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         {
             await TimelineView.ShowAsync(space);
         }
+        await ActivatePhotoRecycleLocationsAsync();
     }
 
     private void PhotosPage_Unloaded(object sender, RoutedEventArgs e)
@@ -157,6 +164,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         TimelineView.HideTimeline();
         DeactivatePhotoImport();
         ClosePhotoRecycleDialog();
+        DeactivatePhotoRecycleLocations();
     }
 
     private void ViewModel_PropertyChanged(
@@ -751,6 +759,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         DisposePhotoImport();
         DisposePhotoViewer();
         ClosePhotoRecycleDialog();
+        DisposePhotoRecycleLocations();
         CancelThumbnailRequests();
         _locationCancellation.Dispose();
         _viewModel.Dispose();

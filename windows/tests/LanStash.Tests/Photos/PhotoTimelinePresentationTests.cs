@@ -79,6 +79,26 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("<local:PhotoTimelineView", xaml);
     }
 
+    [Fact]
+    public void TimelineRecycleCommandIsKeyboardAccessibleAndRevalidatesThroughPageCallbacks()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml"));
+        var source = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("x:Name=\"MoveToRecycleButton\"", xaml);
+        Assert.Contains("HorizontalScrollBarVisibility=\"Auto\"", xaml);
+        Assert.Contains("HorizontalScrollMode=\"Enabled\"", xaml);
+        Assert.Contains("MinHeight=\"44\" Click=\"MoveToRecycle_Click\"", xaml);
+        Assert.Contains("Func<PhotoItem, bool>? canMoveToRecycle", source);
+        Assert.Contains("Func<PhotoItem, Task>? moveToRecycle", source);
+        Assert.Contains("_canMoveToRecycle?.Invoke(entry.Item) == true", source);
+        Assert.Contains("await _moveToRecycle(entry.Item)", source);
+        Assert.Contains("AutomationProperties.SetName(", source);
+        Assert.Contains("MoveToRecycleButton.Visibility = CanMoveSelectedToRecycle", source);
+        Assert.Contains("internal void RefreshActionState() => UpdateState();", source);
+    }
+
     private static string RepositoryRoot([System.Runtime.CompilerServices.CallerFilePath] string file = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, "../../../../"));
 }

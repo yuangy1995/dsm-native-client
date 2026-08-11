@@ -352,6 +352,11 @@ public sealed partial class ShellPage : Page
                     {
                         photoRecycleRepository = null;
                     }
+                    var photoLocationsRepository = _app.Repository as IFileLocationsRepository;
+                    if (photoLocationsRepository?.ProfileId != photoProfile.Id)
+                    {
+                        photoLocationsRepository = null;
+                    }
                     var photoPreviewRepository = _app.Repository as IFilePreviewRepository;
                     if (photoPreviewRepository?.ProfileId != photoProfile.Id)
                     {
@@ -361,6 +366,7 @@ public sealed partial class ShellPage : Page
                         photoRepository,
                         photoProfile.Id.ToString(),
                         photoTransferPicker,
+                        locationsRepository: photoLocationsRepository,
                         recycleRepository: photoRecycleRepository,
                         recycleReviewBlocker: FileRecycleReviewBlocker.Current,
                         previewRepository: photoPreviewRepository);

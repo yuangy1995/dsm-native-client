@@ -22,6 +22,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private PhotoThumbnailScheduler? _thumbnails;
     private Func<PhotoItem, Task>? _save;
     private Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? _open;
+    private Func<PhotoItem, bool>? _canMoveToRecycle;
+    private Func<PhotoItem, Task>? _moveToRecycle;
     private Func<PhotoItem, bool>? _canRestore;
     private Func<PhotoItem, Task>? _restore;
     private CancellationTokenSource _thumbnailCancellation = new();
@@ -42,6 +44,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         PhotoThumbnailScheduler thumbnails,
         Func<PhotoItem, Task> save,
         Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? open = null,
+        Func<PhotoItem, bool>? canMoveToRecycle = null,
+        Func<PhotoItem, Task>? moveToRecycle = null,
         Func<PhotoItem, bool>? canRestore = null,
         Func<PhotoItem, Task>? restore = null)
     {
@@ -49,6 +53,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         _thumbnails = thumbnails;
         _save = save;
         _open = open;
+        _canMoveToRecycle = canMoveToRecycle;
+        _moveToRecycle = moveToRecycle;
         _canRestore = canRestore;
         _restore = restore;
     }
@@ -91,6 +97,10 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
         _canRestore?.Invoke(entry.Item) == true;
 
+    internal bool CanMoveSelectedToRecycle =>
+        TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+        _canMoveToRecycle?.Invoke(entry.Item) == true;
+
     internal bool HasSelectedItem(PhotoItem item) =>
         TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
         HasSameRevision(entry.Item, item);
@@ -116,7 +126,16 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             await _restore(entry.Item);
     }
 
+    internal async Task MoveSelectedToRecycleAsync()
+    {
+        if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+            _canMoveToRecycle?.Invoke(entry.Item) == true && _moveToRecycle is not null)
+            await _moveToRecycle(entry.Item);
+    }
+
     internal void ClearSelection() => TimelineGrid.SelectedItem = null;
+
+    internal void RefreshActionState() => UpdateState();
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
     private void Cancel_Click(object sender, RoutedEventArgs e) { _viewModel.Cancel(); UpdateState(); }
@@ -135,6 +154,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     { await SaveSelectedAsync(); }
     private async void Restore_Click(object sender, RoutedEventArgs e)
     { await RestoreSelectedAsync(); }
+    private async void MoveToRecycle_Click(object sender, RoutedEventArgs e)
+    { await MoveSelectedToRecycleAsync(); }
     private async void OpenAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     { if (CanOpenSelected) { args.Handled = true; await OpenSelectedAsync(); } }
     private async void TimelineGrid_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -187,6 +208,15 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         FilterPicker.IsEnabled = _viewModel.HasCompletedSnapshot;
         OpenButton.IsEnabled = CanOpenSelected;
         SaveButton.IsEnabled = CanSaveSelected;
+        MoveToRecycleButton.Content = LocalizationService.Current.Get("FileRecycleMoveAction");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            MoveToRecycleButton,
+            LocalizationService.Current.Get(
+                "FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"));
+        MoveToRecycleButton.IsEnabled = CanMoveSelectedToRecycle;
+        MoveToRecycleButton.Visibility = CanMoveSelectedToRecycle
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         RestoreButton.Content = LocalizationService.Current.Get("FileRecycleRestoreAction");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
             RestoreButton,

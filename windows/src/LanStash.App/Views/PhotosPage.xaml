@@ -162,6 +162,13 @@
                 Icon="Save"
                 MinHeight="44" />
             <AppBarButton
+                x:Uid="FileRecycleMoveToRecycle"
+                x:Name="PhotoMoveToRecycleButton"
+                Click="MovePhotoToRecycle_Click"
+                Icon="Delete"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileRecycleRestore"
                 x:Name="PhotoRestoreFromRecycleButton"
                 Click="RestorePhotoFromRecycle_Click"
@@ -194,13 +201,27 @@
             </CommandBar.SecondaryCommands>
         </CommandBar>
 
-        <InfoBar
-            x:Uid="PhotoImportStatus"
-            x:Name="ImportStatus"
-            Grid.Row="4"
-            AutomationProperties.LiveSetting="Polite"
-            IsClosable="False"
-            IsOpen="False" />
+        <StackPanel Grid.Row="4" Spacing="8">
+            <InfoBar
+                x:Uid="PhotoImportStatus"
+                x:Name="ImportStatus"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False" />
+            <InfoBar
+                x:Name="PhotoRecycleLocationsStatus"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False"
+                Severity="Warning">
+                <InfoBar.ActionButton>
+                    <Button
+                        x:Name="PhotoRecycleLocationsRetryButton"
+                        Click="PhotoRecycleLocationsRetry_Click"
+                        MinHeight="44" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+        </StackPanel>
 
         <Grid x:Name="BrowserContentHost" Grid.Row="5">
             <Grid

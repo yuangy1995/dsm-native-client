@@ -1442,4 +1442,7 @@
   <data name="DownloadStationBtSearchResultList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载资源搜索结果</value></data>
   <data name="DownloadStationBtSearchResultMetadata" xml:space="preserve"><value>来源：{0} · 大小：{1} · 做种：{2} · 节点：{3} · 下载中：{4} · 日期：{5}</value></data>
   <data name="DownloadStationBtSearchResultAutomationName" xml:space="preserve"><value>{0}。{1}</value></data>
+  <data name="PhotoRecycleLocationsFailureMessage" xml:space="preserve"><value>无法检查回收站。请重试后再移动照片或视频。</value></data>
+  <data name="PhotoRecycleLocationsRetry" xml:space="preserve"><value>重试</value></data>
+  <data name="PhotoRecycleLocationsRetryAutomationName" xml:space="preserve"><value>重新检查回收站</value></data>
 </root>
