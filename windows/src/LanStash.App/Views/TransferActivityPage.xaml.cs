@@ -1,43 +1,113 @@
 using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
+using LanStash.Domain;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 
 namespace LanStash.App.Views;
 
-public sealed partial class TransferActivityPage : Page, IDisposable
+public sealed partial class TransferActivityPage : Page, IAsyncDisposable
 {
     private readonly ForegroundTransferCoordinator _coordinator;
     private readonly WindowsTransferPickerService _transfers;
     private readonly string _profileId;
+    private readonly DownloadStationActivityRefresher _nasRefresher;
+    private readonly bool _canRefreshNasTasks;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private bool _isLoaded;
+    private bool _isWindowVisible = true;
     private bool _disposed;
 
     internal TransferActivityPage(
         ForegroundTransferCoordinator coordinator,
         WindowsTransferPickerService transfers,
-        string profileId)
+        string profileId,
+        IDownloadStationRepository downloadStationRepository)
     {
         InitializeComponent();
         _coordinator = coordinator;
         _transfers = transfers;
         _profileId = profileId;
+        _canRefreshNasTasks = downloadStationRepository.ProfileId.ToString() == profileId &&
+            downloadStationRepository.Availability.Status ==
+                DownloadStationAvailabilityStatus.Available &&
+            downloadStationRepository.Availability.SupportedFeatures.Contains(
+                DownloadStationReadFeature.Tasks);
+        _nasRefresher = new DownloadStationActivityRefresher(
+            downloadStationRepository,
+            tasks => _coordinator.SyncDownloadStationTasks(
+                downloadStationRepository.ProfileId,
+                tasks));
         _timer.Tick += Timer_Tick;
         Loaded += TransferActivityPage_Loaded;
         Unloaded += TransferActivityPage_Unloaded;
         RenderActivities();
     }
 
-    private void TransferActivityPage_Loaded(object sender, RoutedEventArgs e)
+    private async void TransferActivityPage_Loaded(object sender, RoutedEventArgs e)
     {
+        _isLoaded = true;
         RenderActivities();
         _timer.Start();
+        await UpdateNasRefreshLifecycleAsync();
     }
 
-    private void TransferActivityPage_Unloaded(object sender, RoutedEventArgs e) =>
+    private async void TransferActivityPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _isLoaded = false;
         _timer.Stop();
+        await UpdateNasRefreshLifecycleAsync();
+    }
+
+    internal async Task SetWindowVisibleAsync(bool isVisible)
+    {
+        _isWindowVisible = isVisible;
+        await UpdateNasRefreshLifecycleAsync();
+    }
+
+    private async Task UpdateNasRefreshLifecycleAsync()
+    {
+        await _lifecycleGate.WaitAsync();
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            if (_isLoaded && _isWindowVisible)
+            {
+                await _nasRefresher.StartAsync();
+            }
+            else
+            {
+                await _nasRefresher.StopAsync();
+            }
+            RenderActivities();
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
 
     private void Timer_Tick(object? sender, object e) => RenderActivities();
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e)
+    {
+        await _nasRefresher.RefreshAsync();
+        RenderActivities();
+    }
+
+    private async void RefreshAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        await _nasRefresher.RefreshAsync();
+        RenderActivities();
+    }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
@@ -66,20 +136,38 @@ public sealed partial class TransferActivityPage : Page, IDisposable
         ActivityList.ItemsSource = items;
         ActivityList.Visibility = items.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         EmptyState.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        var refreshState = _nasRefresher.State;
+        RefreshButton.IsEnabled = _canRefreshNasTasks && !refreshState.IsRefreshing;
+        RefreshProgress.IsActive = refreshState.IsRefreshing;
+        RefreshProgress.Visibility = refreshState.IsRefreshing
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        RefreshErrorNotice.IsOpen = refreshState.HasFailed;
+        TruncatedNotice.IsOpen = refreshState.IsTruncated;
+        NasUnavailableNotice.IsOpen = !_canRefreshNasTasks;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        await _lifecycleGate.WaitAsync();
+        try
         {
-            return;
-        }
+            if (_disposed)
+            {
+                return;
+            }
 
-        _disposed = true;
-        _timer.Stop();
-        _timer.Tick -= Timer_Tick;
-        Loaded -= TransferActivityPage_Loaded;
-        Unloaded -= TransferActivityPage_Unloaded;
+            _disposed = true;
+            _timer.Stop();
+            _timer.Tick -= Timer_Tick;
+            Loaded -= TransferActivityPage_Loaded;
+            Unloaded -= TransferActivityPage_Unloaded;
+            await _nasRefresher.DisposeAsync();
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
     private sealed class ActivityPresentation

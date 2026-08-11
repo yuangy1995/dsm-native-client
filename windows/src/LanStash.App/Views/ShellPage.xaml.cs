@@ -39,6 +39,7 @@ public sealed partial class ShellPage : Page
     private Guid? _nasDetailsProfileId;
     private INasDetailsRepository? _nasDetailsRepository;
     private TransferActivityPage? _activity;
+    private bool _isWindowVisible = true;
 
     public ShellPage(AppViewModel app)
     {
@@ -113,7 +114,10 @@ public sealed partial class ShellPage : Page
             _nasDetails = null;
             _nasDetailsProfileId = null;
             _nasDetailsRepository = null;
-            _activity?.Dispose();
+            if (_activity is not null)
+            {
+                await _activity.DisposeAsync();
+            }
             _activity = null;
             _transferPicker?.Dispose();
             _transfers.Dispose();
@@ -310,10 +314,18 @@ public sealed partial class ShellPage : Page
                 _app.ActiveProfile is { } activityProfile &&
                 _transferPicker is { } activityPicker)
             {
+                var activityRepository = _app.Repository as IDownloadStationRepository;
+                if (activityRepository?.ProfileId != activityProfile.Id)
+                {
+                    activityRepository = new UnavailableDownloadStationRepository(
+                        activityProfile.Id);
+                }
                 _activity ??= new TransferActivityPage(
                     _transfers,
                     activityPicker,
-                    activityProfile.Id.ToString());
+                    activityProfile.Id.ToString(),
+                    activityRepository);
+                await _activity.SetWindowVisibleAsync(_isWindowVisible);
                 ContentFrame.Content = _activity;
                 return;
             }
@@ -505,6 +517,15 @@ public sealed partial class ShellPage : Page
         finally
         {
             files.Dispose();
+        }
+    }
+
+    internal async Task SetWindowVisibleAsync(bool isVisible)
+    {
+        _isWindowVisible = isVisible;
+        if (_activity is not null)
+        {
+            await _activity.SetWindowVisibleAsync(isVisible);
         }
     }
 

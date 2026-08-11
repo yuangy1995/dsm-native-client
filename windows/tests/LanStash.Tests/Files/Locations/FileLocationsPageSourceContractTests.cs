@@ -165,7 +165,8 @@ public sealed class FileLocationsPageSourceContractTests
         foreach (var cleanup in new[]
         {
             "_photos?.Dispose();", "_chat?.Dispose();", "_downloads?.Dispose();",
-            "_containers?.Dispose();", "_virtualMachines?.Dispose();", "_activity?.Dispose();",
+            "_containers?.Dispose();", "_virtualMachines?.Dispose();",
+            "await _activity.DisposeAsync();",
             "_transferPicker?.Dispose();", "_transfers.Dispose();",
             "_settings.Changed -= Settings_Changed;"
         })

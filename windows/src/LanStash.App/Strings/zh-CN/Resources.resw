@@ -437,6 +437,15 @@
   <data name="TransferArchiveFileType" xml:space="preserve"><value>ZIP 压缩包</value></data>
   <data name="TransferActivityTitle.Text" xml:space="preserve"><value>活动</value></data>
   <data name="TransferActivityDescription.Text" xml:space="preserve"><value>当前窗口打开期间，会在这里显示当前 NAS 的 App 传输和 NAS 下载任务。</value></data>
+  <data name="TransferActivityRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新 NAS 下载任务</value></data>
+  <data name="TransferActivityRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
+  <data name="TransferActivityRefreshProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在刷新 NAS 下载任务</value></data>
+  <data name="TransferActivityRefreshError.Title" xml:space="preserve"><value>无法刷新 NAS 任务</value></data>
+  <data name="TransferActivityRefreshError.Message" xml:space="preserve"><value>仍会显示上次读取的 NAS 任务和 App 传输。请检查连接后重试。</value></data>
+  <data name="TransferActivityTruncated.Title" xml:space="preserve"><value>仅显示前 100 个 NAS 任务</value></data>
+  <data name="TransferActivityTruncated.Message" xml:space="preserve"><value>请打开 Download Station 查找列表以外的任务。</value></data>
+  <data name="TransferActivityNasUnavailable.Title" xml:space="preserve"><value>无法刷新 NAS 任务</value></data>
+  <data name="TransferActivityNasUnavailable.Message" xml:space="preserve"><value>App 传输仍会显示在这里。连接安装了 Download Station 的 NAS 后即可显示其任务。</value></data>
   <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输活动</value></data>
   <data name="TransferActivityProgressBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输进度</value></data>
   <data name="TransferActivityCancel.Content" xml:space="preserve"><value>取消</value></data>

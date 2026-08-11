@@ -79,7 +79,7 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private void OnWindowClosing(
+    private async void OnWindowClosing(
         AppWindow sender,
         AppWindowClosingEventArgs args)
     {
@@ -89,14 +89,22 @@ public sealed partial class MainWindow : Window
         }
         args.Cancel = true;
         sender.Hide();
+        if (RootFrame.Content is ShellPage shell)
+        {
+            await shell.SetWindowVisibleAsync(false);
+        }
     }
 
     private void ShowMainWindow()
     {
-        DispatcherQueue.TryEnqueue(() =>
+        DispatcherQueue.TryEnqueue(async () =>
         {
             _appWindow.Show();
             Activate();
+            if (RootFrame.Content is ShellPage shell)
+            {
+                await shell.SetWindowVisibleAsync(true);
+            }
         });
     }
 
