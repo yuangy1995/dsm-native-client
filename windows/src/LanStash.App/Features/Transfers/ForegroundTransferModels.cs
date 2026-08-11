@@ -68,3 +68,12 @@ internal sealed record ForegroundUploadFinished(
     string ProfileId,
     string FolderPath,
     MutationResult Result);
+
+internal sealed record ForegroundUploadBatchFinished(
+    string ProfileId,
+    string FolderPath,
+    FileUploadBatchSummary Summary);
+
+internal sealed record ForegroundUploadBatchStart(
+    FileUploadBatchValidationStatus Status,
+    int SelectedCount);

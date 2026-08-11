@@ -27,7 +27,7 @@ public sealed class FilesPageSourceContractTests
     }
 
     [Fact]
-    public void DesktopDropAcceptsExactlyOneLocalFileAndReusesUploadActivityLane()
+    public void DesktopDropAcceptsBoundedLocalFilesAndReusesUploadActivityLane()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
         var drop = ReadRepositoryFile(
@@ -37,10 +37,11 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("DragOver=\"FileUpload_DragOver\"", xaml);
         Assert.Contains("Drop=\"FileUpload_Drop\"", xaml);
         Assert.Contains("x:Name=\"FileUploadDropOverlay\"", xaml);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
         Assert.Contains("ThemeResource", xaml);
         Assert.Contains("StandardDataFormats.StorageItems", drop);
-        Assert.Contains("items.Count != 1", drop);
-        Assert.Contains("items[0] is not StorageFile", drop);
+        Assert.Contains("items.Count > BoundedFileUploadBatch.MaximumFileCount", drop);
+        Assert.Contains("item is not StorageFile", drop);
         Assert.Contains("string.IsNullOrWhiteSpace(file.Path)", drop);
         Assert.Contains("DataPackageOperation.Copy", drop);
         Assert.Contains("!IsReadOnlyLocation()", drop);
@@ -49,7 +50,8 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("_fileUploadDragGeneration", drop);
         Assert.Contains("_fileUploadDropGeneration", drop);
         Assert.Contains("string.Equals(targetPath, _viewModel.CurrentPath", drop);
-        Assert.Contains("_transfers.StartUploadAsync(", drop);
+        Assert.Contains("_transfers.StartUploadBatch(", drop);
+        Assert.Contains("BoundedFileUploadBatch.ValidatePaths(paths)", drop);
         Assert.DoesNotContain("UploadFileAsync", drop);
         Assert.DoesNotContain("overwrite", drop, StringComparison.OrdinalIgnoreCase);
     }

@@ -462,7 +462,8 @@
                 VerticalAlignment="Top"
                 IsClosable="True"
                 IsOpen="False"
-                Severity="Error" />
+                AutomationProperties.LiveSetting="Polite"
+                Severity="Informational" />
             </Grid>
 
             <views:FilePreviewPane

@@ -10,6 +10,7 @@ public sealed class WindowsUploadPickerSourceContractTests
 
         Assert.Contains("new FileOpenPicker(windowId)", source);
         Assert.Contains("PickSingleFileAsync()", source);
+        Assert.Contains("PickMultipleFilesAsync()", source);
         Assert.Contains("picker.FileTypeFilter.Add(filter)", source);
         Assert.Contains("return result?.Path;", source);
         Assert.Contains("Win32Interop.GetWindowIdFromWindow", source);
@@ -29,14 +30,10 @@ public sealed class WindowsUploadPickerSourceContractTests
             "public void Cancel");
 
         var cancelled = method.IndexOf("if (sourcePath is null)", StringComparison.Ordinal);
-        var openStream = method.IndexOf("new FileStream(", StringComparison.Ordinal);
-        var running = method.IndexOf("new RunningTransfer(", StringComparison.Ordinal);
-        var start = method.IndexOf("_ = RunUploadAsync", StringComparison.Ordinal);
-        Assert.True(cancelled >= 0 && openStream > cancelled);
-        Assert.True(running > openStream && start > running);
-        Assert.Contains("return null;", method[cancelled..openStream]);
-        Assert.DoesNotContain("UploadFileAsync", method[..openStream]);
-        Assert.DoesNotContain("RunUploadAsync", method[..openStream]);
+        var prepare = method.IndexOf("StartUploadFromPathCoreAsync(", cancelled, StringComparison.Ordinal);
+        Assert.True(cancelled >= 0 && prepare > cancelled);
+        Assert.Contains("return null;", method[cancelled..prepare]);
+        Assert.DoesNotContain("UploadFileAsync", method[..prepare]);
     }
 
     [Fact]
@@ -54,7 +51,8 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Contains("overwrite: false", source);
         Assert.Equal(1, CountOccurrences(source, "_repository.UploadFileAsync("));
         Assert.Contains("upload.Content.Dispose();", source);
-        Assert.DoesNotContain("PickMultipleFilesAsync", source);
+        Assert.Contains("PickMultipleFilesAsync", source);
+        Assert.Contains("StartUploadBatch", source);
         Assert.DoesNotContain("overwrite: true", source);
         Assert.DoesNotContain("Retry", source);
         Assert.DoesNotContain("Resume", source);
@@ -74,7 +72,12 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Contains("\".mov\"", source);
         Assert.Contains("MediaFileExtensions.Contains(Path.GetExtension(sourcePath))", source);
         Assert.Contains("upload.unsupported_media_type", source);
-        Assert.DoesNotContain("PickMultipleFilesAsync", source);
+        var mediaPicker = SliceMethod(
+            source,
+            "private async Task<PhotoMediaUploadStart?> PickAndStartUploadCoreAsync",
+            "private Task<PhotoMediaUploadStart?> StartUploadFromPathCoreAsync");
+        Assert.Contains("PickSingleFilePathAsync", mediaPicker);
+        Assert.DoesNotContain("PickMultipleFilePathsAsync", mediaPicker);
     }
 
     [Fact]
@@ -88,15 +91,19 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Contains("IsSupportedMediaPath(sourcePath)", source);
         Assert.Equal(1, CountOccurrences(source, "new FileStream("));
         Assert.Equal(1, CountOccurrences(source, "new FileUploadRequest("));
-        Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(running, request)"));
+        Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(prepared.Running, prepared.Request)"));
         Assert.Contains("overwrite: false", source);
         Assert.Contains("UploadTarget: uploadTarget", source);
-        Assert.Contains("new UploadTargetKey(profileId, folderPath, fileName)", source);
+        Assert.Contains("CreateUploadTargetKey(profileId, folderPath, fileName)", source);
         Assert.Contains("item.UploadTarget == uploadTarget", source);
         Assert.Contains("upload.target_busy", source);
+        var start = SliceMethod(
+            source,
+            "private Task<PhotoMediaUploadStart?> StartUploadFromPathCoreAsync",
+            "private PreparedUpload PrepareUpload");
         Assert.True(
-            source.IndexOf("upload.target_busy", StringComparison.Ordinal) <
-            source.IndexOf("_ = RunUploadAsync(running, request)", StringComparison.Ordinal));
+            start.IndexOf("PrepareUpload(", StringComparison.Ordinal) <
+            start.IndexOf("_ = RunUploadAsync(prepared.Running, prepared.Request)", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -110,7 +117,7 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Contains("requiresMediaExtension: false", source);
         Assert.Equal(1, CountOccurrences(source, "new FileStream("));
         Assert.Equal(1, CountOccurrences(source, "new FileUploadRequest("));
-        Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(running, request)"));
+        Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(prepared.Running, prepared.Request)"));
         Assert.Contains("overwrite: false", source);
     }
 
@@ -127,6 +134,24 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Contains("running.ActivityId", source);
         Assert.Contains("UploadFinished?.Invoke(new ForegroundUploadFinished(", source);
         Assert.DoesNotContain("sourcePath,\n                result", source);
+    }
+
+    [Fact]
+    public void BoundedBatchReservesTargetsStopsAfterCancellationAndReportsOnlySummary()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+
+        Assert.Contains("BoundedFileUploadBatch.ValidatePaths(sourcePaths)", source);
+        Assert.Contains("_batchReservations.Add(target, batchId)", source);
+        Assert.Contains("_batchCancellations.Add(batchId, batchCancellation)", source);
+        Assert.Contains("CancellationRequestedAfterSubmission", source);
+        Assert.Contains("result.Status == MutationResultStatus.CancellationRequestedAfterSubmission", source);
+        Assert.Contains("batchCancellation.Token", source);
+        Assert.Contains("if (!running.IsBatch)", source);
+        Assert.Contains("UploadBatchFinished?.Invoke(new ForegroundUploadBatchFinished(", source);
+        Assert.Contains("shouldNotify = !_disposed", source);
+        Assert.DoesNotContain("sourcePaths,\n            summary", source);
     }
 
     [Fact]

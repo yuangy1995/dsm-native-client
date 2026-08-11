@@ -422,7 +422,7 @@
   <data name="FileBrowserDownload.Label" xml:space="preserve"><value>Download</value></data>
   <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected file</value></data>
   <data name="FileBrowserUpload.Label" xml:space="preserve"><value>Upload</value></data>
-  <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Upload one file to this folder</value></data>
+  <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Upload files to this folder</value></data>
   <data name="FileBrowserUploadNeedsReview.Title" xml:space="preserve"><value>Check the uploaded file</value></data>
   <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>The upload may have reached the NAS. Refresh this folder and check the file before uploading it again.</value></data>
   <data name="TransferOriginalFileType" xml:space="preserve"><value>Original file type</value></data>
@@ -453,12 +453,17 @@
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>Unable to start the upload</value></data>
   <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>Choose the file again. If the problem continues, check that it is available on this device.</value></data>
   <data name="FileUploadDropTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>File upload drop target</value></data>
-  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>Drop one file to upload it to this folder</value></data>
-  <data name="FileUploadDropCaption" xml:space="preserve"><value>Upload this file</value></data>
+  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>Drop up to 20 files to upload them to this folder</value></data>
+  <data name="FileUploadDropCaption" xml:space="preserve"><value>Upload these files</value></data>
   <data name="FileUploadDropStatus.Title" xml:space="preserve"><value>File upload</value></data>
   <data name="FileUploadDropStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>File upload status</value></data>
-  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>Drop one file that is available on this device. Folders, multiple items, and online-only files can’t be uploaded this way.</value></data>
-  <data name="FileUploadDropFailureMessage" xml:space="preserve"><value>The upload couldn’t be started. Try dropping the file again, or use the Upload button.</value></data>
+  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>Choose up to 20 files that are available on this device. Folders and online-only files can’t be uploaded.</value></data>
+  <data name="FileUploadDropFailureMessage" xml:space="preserve"><value>The uploads couldn’t be started. Choose the files again or try dropping them once more.</value></data>
+  <data name="FileUploadBatchStartedMessage" xml:space="preserve"><value>Files added to the upload queue: {0}. Track or cancel each file in Activity.</value></data>
+  <data name="FileUploadBatchTooManyMessage" xml:space="preserve"><value>Choose no more than 20 files at a time.</value></data>
+  <data name="FileUploadBatchDuplicateMessage" xml:space="preserve"><value>Two or more selected files have the same name. Choose only one file for each name.</value></data>
+  <data name="FileUploadBatchBusyMessage" xml:space="preserve"><value>One of these file names is already being uploaded to this folder. Wait for it to finish, then try again.</value></data>
+  <data name="FileUploadBatchSummaryMessage" xml:space="preserve"><value>Selected: {0}. Uploaded: {1}. Check on NAS: {2}. Failed: {3}. Cancelled: {4}. Not started: {5}.</value></data>
   <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>File-system photo library</value></data>
   <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>Browse photo and video folders from this NAS, preview items, and save a copy to your PC.</value></data>
   <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>Photo space</value></data>

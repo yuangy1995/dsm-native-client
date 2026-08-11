@@ -17,6 +17,8 @@ internal interface IWindowsTransferSavePicker
 internal interface IWindowsTransferOpenPicker
 {
     Task<string?> PickSingleFilePathAsync(IReadOnlyList<string>? fileTypeFilters = null);
+    Task<IReadOnlyList<string>?> PickMultipleFilePathsAsync(
+        IReadOnlyList<string>? fileTypeFilters = null);
 }
 
 internal sealed class WindowsTransferSavePicker(Func<Window?> windowProvider)
@@ -74,6 +76,29 @@ internal sealed class WindowsTransferOpenPicker(Func<Window?> windowProvider)
         var result = await picker.PickSingleFileAsync();
         return result?.Path;
     }
+
+    public async Task<IReadOnlyList<string>?> PickMultipleFilePathsAsync(
+        IReadOnlyList<string>? fileTypeFilters = null)
+    {
+        var window = windowProvider();
+        if (window is null)
+        {
+            return null;
+        }
+
+        var windowId = Win32Interop.GetWindowIdFromWindow(
+            WindowNative.GetWindowHandle(window));
+        var picker = new FileOpenPicker(windowId);
+        if (fileTypeFilters is not null)
+        {
+            foreach (var filter in fileTypeFilters)
+            {
+                picker.FileTypeFilter.Add(filter);
+            }
+        }
+        var results = await picker.PickMultipleFilesAsync();
+        return results?.Select(result => result.Path).ToArray();
+    }
 }
 
 internal sealed class WindowsTransferPickerService : IPhotoImportTransferService, IDisposable
@@ -93,6 +118,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
     private readonly IWindowsTransferSavePicker _savePicker;
     private readonly IWindowsTransferOpenPicker _openPicker;
     private readonly List<RunningTransfer> _running = [];
+    private readonly Dictionary<UploadTargetKey, Guid> _batchReservations = [];
+    private readonly Dictionary<Guid, CancellationTokenSource> _batchCancellations = [];
     private bool _disposed;
 
     public WindowsTransferPickerService(
@@ -109,6 +136,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
     }
 
     public event Action<ForegroundUploadFinished>? UploadFinished;
+    public event Action<ForegroundUploadBatchFinished>? UploadBatchFinished;
     public event Action<PhotoMediaUploadFinished>? MediaUploadFinished;
     public event Action<PhotoMediaUploadInterrupted>? MediaUploadInterrupted;
 
@@ -161,6 +189,68 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             folderPath,
             fileTypeFilters: null,
             requiresMediaExtension: false) is not null;
+
+    public async Task<ForegroundUploadBatchStart> PickAndStartUploadBatchAsync(
+        string profileId,
+        string folderPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
+        var sourcePaths = await _openPicker.PickMultipleFilePathsAsync();
+        return sourcePaths is null
+            ? new ForegroundUploadBatchStart(FileUploadBatchValidationStatus.Empty, 0)
+            : new ForegroundUploadBatchStart(
+                StartUploadBatch(profileId, folderPath, sourcePaths),
+                sourcePaths.Count);
+    }
+
+    public FileUploadBatchValidationStatus StartUploadBatch(
+        string profileId,
+        string folderPath,
+        IReadOnlyList<string> sourcePaths)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
+        ArgumentNullException.ThrowIfNull(sourcePaths);
+
+        var validation = BoundedFileUploadBatch.ValidatePaths(sourcePaths);
+        if (validation != FileUploadBatchValidationStatus.Valid)
+        {
+            return validation;
+        }
+
+        var paths = sourcePaths.ToArray();
+        var targets = paths
+            .Select(path => CreateUploadTargetKey(profileId, folderPath, Path.GetFileName(path)))
+            .ToArray();
+        var batchId = Guid.NewGuid();
+        CancellationTokenSource batchCancellation;
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (targets.Any(target =>
+                    _batchReservations.ContainsKey(target) ||
+                    _running.Any(item => item.UploadTarget == target)))
+            {
+                return FileUploadBatchValidationStatus.TargetBusy;
+            }
+            foreach (var target in targets)
+            {
+                _batchReservations.Add(target, batchId);
+            }
+            batchCancellation = new CancellationTokenSource();
+            _batchCancellations.Add(batchId, batchCancellation);
+        }
+
+        _ = RunUploadBatchAsync(
+            batchId,
+            profileId,
+            folderPath,
+            paths,
+            targets,
+            batchCancellation);
+        return FileUploadBatchValidationStatus.Valid;
+    }
 
     public async Task<bool> StartUploadAsync(
         string profileId,
@@ -249,6 +339,26 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             throw new InvalidDataException("upload.unsupported_media_type");
         }
 
+        var prepared = PrepareUpload(
+            profileId,
+            folderPath,
+            sourcePath,
+            requiresMediaExtension,
+            requestedActivityId,
+            batchId: null);
+        _ = RunUploadAsync(prepared.Running, prepared.Request);
+        return Task.FromResult<PhotoMediaUploadStart?>(
+            new PhotoMediaUploadStart(prepared.Running.ActivityId));
+    }
+
+    private PreparedUpload PrepareUpload(
+        string profileId,
+        string folderPath,
+        string sourcePath,
+        bool requiresMediaExtension,
+        Guid? requestedActivityId,
+        Guid? batchId)
+    {
         var source = new FileStream(
             sourcePath,
             FileMode.Open,
@@ -289,7 +399,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             throw;
         }
 
-        var uploadTarget = new UploadTargetKey(profileId, folderPath, fileName);
+        var uploadTarget = CreateUploadTargetKey(profileId, folderPath, fileName);
         CancellationTokenSource cancellation;
         RunningTransfer running;
         lock (_sync)
@@ -299,7 +409,9 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                 source.Dispose();
                 throw new ObjectDisposedException(nameof(WindowsTransferPickerService));
             }
-            if (_running.Any(item => item.UploadTarget == uploadTarget))
+            if (_running.Any(item => item.UploadTarget == uploadTarget) ||
+                (_batchReservations.TryGetValue(uploadTarget, out var reservationOwner) &&
+                    reservationOwner != batchId))
             {
                 source.Dispose();
                 throw new InvalidOperationException("upload.target_busy");
@@ -310,13 +422,11 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                 profileId,
                 cancellation,
                 IsMedia: requiresMediaExtension,
-                UploadTarget: uploadTarget);
+                UploadTarget: uploadTarget,
+                IsBatch: batchId is not null);
             _running.Add(running);
         }
-
-        _ = RunUploadAsync(running, request);
-        return Task.FromResult<PhotoMediaUploadStart?>(
-            new PhotoMediaUploadStart(running.ActivityId));
+        return new PreparedUpload(running, request);
     }
 
     public void Cancel(string profileId, Guid activityId)
@@ -348,6 +458,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
     public void Dispose()
     {
         RunningTransfer[] running;
+        CancellationTokenSource[] batchCancellations;
         lock (_sync)
         {
             if (_disposed)
@@ -358,6 +469,9 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             _disposed = true;
             running = _running.ToArray();
             _running.Clear();
+            _batchReservations.Clear();
+            batchCancellations = _batchCancellations.Values.ToArray();
+            _batchCancellations.Clear();
         }
 
         foreach (var transfer in running)
@@ -365,6 +479,16 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             try
             {
                 transfer.Cancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+        foreach (var cancellation in batchCancellations)
+        {
+            try
+            {
+                cancellation.Cancel();
             }
             catch (ObjectDisposedException)
             {
@@ -417,7 +541,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         }
     }
 
-    private async Task RunUploadAsync(
+    private async Task<FileUploadBatchAttempt> RunUploadAsync(
         RunningTransfer running,
         FileUploadRequest upload)
     {
@@ -435,10 +559,13 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                     progress,
                     cancellationToken),
                 running.Cancellation.Token);
-            UploadFinished?.Invoke(new ForegroundUploadFinished(
-                running.ProfileId,
-                upload.FolderPath,
-                result));
+            if (!running.IsBatch)
+            {
+                UploadFinished?.Invoke(new ForegroundUploadFinished(
+                    running.ProfileId,
+                    upload.FolderPath,
+                    result));
+            }
             if (running.IsMedia)
             {
                 MediaUploadFinished?.Invoke(new PhotoMediaUploadFinished(
@@ -447,15 +574,27 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                     upload.FolderPath,
                     result));
             }
+            return new FileUploadBatchAttempt(result.Status switch
+            {
+                MutationResultStatus.ConfirmedSuccess => FileUploadBatchAttemptStatus.Confirmed,
+                MutationResultStatus.SubmittedButUnverified or
+                    MutationResultStatus.PartialSuccess => FileUploadBatchAttemptStatus.NeedsReview,
+                MutationResultStatus.CancellationRequestedAfterSubmission =>
+                    FileUploadBatchAttemptStatus.NeedsReview,
+                MutationResultStatus.CancelledBeforeSubmission => FileUploadBatchAttemptStatus.Cancelled,
+                _ => FileUploadBatchAttemptStatus.Failed,
+            }, result.Status == MutationResultStatus.CancellationRequestedAfterSubmission);
         }
         catch (OperationCanceledException)
         {
             NotifyMediaUploadInterrupted(running, upload, isCancelled: true);
+            return new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.Cancelled);
         }
         catch
         {
             NotifyMediaUploadInterrupted(running, upload, isCancelled: false);
             // Activity 使用稳定的本地化状态；源路径和内部异常不会进入界面。
+            return new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.Failed);
         }
         finally
         {
@@ -466,6 +605,61 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             }
             running.Cancellation.Dispose();
         }
+    }
+
+    private async Task RunUploadBatchAsync(
+        Guid batchId,
+        string profileId,
+        string folderPath,
+        IReadOnlyList<string> sourcePaths,
+        IReadOnlyList<UploadTargetKey> targets,
+        CancellationTokenSource batchCancellation)
+    {
+        FileUploadBatchSummary summary;
+        var shouldNotify = false;
+        try
+        {
+            summary = await BoundedFileUploadBatch.RunAsync(
+                sourcePaths,
+                async (sourcePath, _) =>
+                {
+                    var prepared = PrepareUpload(
+                        profileId,
+                        folderPath,
+                        sourcePath,
+                        requiresMediaExtension: false,
+                        requestedActivityId: null,
+                        batchId);
+                    return await RunUploadAsync(prepared.Running, prepared.Request);
+                },
+                batchCancellation.Token);
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                foreach (var target in targets)
+                {
+                    if (_batchReservations.TryGetValue(target, out var owner) && owner == batchId)
+                    {
+                        _batchReservations.Remove(target);
+                    }
+                }
+                _batchCancellations.Remove(batchId);
+                shouldNotify = !_disposed;
+            }
+            batchCancellation.Dispose();
+        }
+
+        if (!shouldNotify)
+        {
+            return;
+        }
+
+        UploadBatchFinished?.Invoke(new ForegroundUploadBatchFinished(
+            profileId,
+            folderPath,
+            summary));
     }
 
     private void NotifyMediaUploadInterrupted(
@@ -488,7 +682,18 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         string ProfileId,
         CancellationTokenSource Cancellation,
         bool IsMedia = false,
-        UploadTargetKey? UploadTarget = null);
+        UploadTargetKey? UploadTarget = null,
+        bool IsBatch = false);
+
+    private sealed record PreparedUpload(
+        RunningTransfer Running,
+        FileUploadRequest Request);
+
+    private static UploadTargetKey CreateUploadTargetKey(
+        string profileId,
+        string folderPath,
+        string fileName) =>
+        new(profileId, folderPath, fileName.ToUpperInvariant());
 
     private sealed record UploadTargetKey(
         string ProfileId,

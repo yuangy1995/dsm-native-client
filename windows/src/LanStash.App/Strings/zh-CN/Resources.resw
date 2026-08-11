@@ -422,7 +422,7 @@
   <data name="FileBrowserDownload.Label" xml:space="preserve"><value>下载</value></data>
   <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>保存所选文件的副本</value></data>
   <data name="FileBrowserUpload.Label" xml:space="preserve"><value>上传</value></data>
-  <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>上传一个文件到此文件夹</value></data>
+  <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>上传文件到此文件夹</value></data>
   <data name="FileBrowserUploadNeedsReview.Title" xml:space="preserve"><value>请检查上传的文件</value></data>
   <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>上传请求可能已到达 NAS。再次上传前，请刷新此文件夹并检查目标文件。</value></data>
   <data name="TransferOriginalFileType" xml:space="preserve"><value>原始文件类型</value></data>
@@ -453,12 +453,17 @@
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>无法开始上传</value></data>
   <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>请重新选择文件。如果问题仍然存在，请检查此设备是否可以访问该文件。</value></data>
   <data name="FileUploadDropTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件上传投放区域</value></data>
-  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>拖放一个文件以上传到此文件夹</value></data>
-  <data name="FileUploadDropCaption" xml:space="preserve"><value>上传此文件</value></data>
+  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>拖放最多 20 个文件以上传到此文件夹</value></data>
+  <data name="FileUploadDropCaption" xml:space="preserve"><value>上传这些文件</value></data>
   <data name="FileUploadDropStatus.Title" xml:space="preserve"><value>文件上传</value></data>
   <data name="FileUploadDropStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件上传状态</value></data>
-  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>请拖放一个此设备可用的文件。文件夹、多个项目和仅联机文件无法通过此方式上传。</value></data>
-  <data name="FileUploadDropFailureMessage" xml:space="preserve"><value>无法开始上传。请重新拖放文件，或使用“上传”按钮。</value></data>
+  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>请选择最多 20 个此设备可用的文件。无法上传文件夹和仅联机文件。</value></data>
+  <data name="FileUploadDropFailureMessage" xml:space="preserve"><value>无法开始上传。请重新选择文件或再次拖放。</value></data>
+  <data name="FileUploadBatchStartedMessage" xml:space="preserve"><value>已将 {0} 个文件加入上传队列。可在“活动”中查看或逐个取消。</value></data>
+  <data name="FileUploadBatchTooManyMessage" xml:space="preserve"><value>每次最多选择 20 个文件。</value></data>
+  <data name="FileUploadBatchDuplicateMessage" xml:space="preserve"><value>所选文件中存在同名文件。请为每个名称只保留一个文件。</value></data>
+  <data name="FileUploadBatchBusyMessage" xml:space="preserve"><value>其中一个同名文件正在上传到此文件夹。请等待完成后重试。</value></data>
+  <data name="FileUploadBatchSummaryMessage" xml:space="preserve"><value>已选择：{0}。已上传：{1}。需在 NAS 检查：{2}。失败：{3}。已取消：{4}。未开始：{5}。</value></data>
   <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>文件系统照片库</value></data>
   <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>浏览这台 NAS 上的照片和视频文件夹，预览项目并将副本保存到电脑。</value></data>
   <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>照片空间</value></data>

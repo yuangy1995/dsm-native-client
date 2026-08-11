@@ -120,6 +120,7 @@ public sealed partial class FilesPage : Page, IDisposable
             _locationsViewModel.Activate(_profileId, locationsRepository, _viewModel);
         }
         _transfers.UploadFinished += Transfers_UploadFinished;
+        _transfers.UploadBatchFinished += Transfers_UploadBatchFinished;
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged += LocationsViewModel_PropertyChanged;
@@ -523,7 +524,10 @@ public sealed partial class FilesPage : Page, IDisposable
         UpdateState();
         try
         {
-            await _transfers.PickAndStartUploadAsync(_profileId.ToString(), folderPath);
+            var start = await _transfers.PickAndStartUploadBatchAsync(
+                _profileId.ToString(),
+                folderPath);
+            ShowFileUploadBatchStart(start.Status, start.SelectedCount);
         }
         catch (ObjectDisposedException)
         {
@@ -578,6 +582,33 @@ public sealed partial class FilesPage : Page, IDisposable
                 MutationResultStatus.PartialSuccess)
             {
                 UploadNeedsReview.IsOpen = true;
+            }
+        });
+    }
+
+    private void Transfers_UploadBatchFinished(ForegroundUploadBatchFinished finished)
+    {
+        if (!string.Equals(finished.ProfileId, _profileId.ToString(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            if (_disposed ||
+                !string.Equals(
+                    _viewModel.CurrentPath,
+                    finished.FolderPath,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            ShowFileUploadBatchSummary(finished.Summary);
+            UploadNeedsReview.IsOpen = finished.Summary.NeedsReviewCount > 0;
+            if (finished.Summary.ConfirmedCount > 0)
+            {
+                await RunAsync(_viewModel.RefreshAsync);
             }
         });
     }
@@ -1301,6 +1332,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
+        _transfers.UploadBatchFinished -= Transfers_UploadBatchFinished;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged -= LocationsViewModel_PropertyChanged;
         _previewViewModel.PropertyChanged -= PreviewViewModel_PropertyChanged;
