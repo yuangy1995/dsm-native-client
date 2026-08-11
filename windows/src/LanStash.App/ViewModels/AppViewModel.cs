@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using LanStash.App.CloudDrive;
+using LanStash.App.Features.Chat;
 using LanStash.App.Localization;
 using LanStash.Domain;
 using LanStash.Infrastructure;
@@ -11,6 +12,7 @@ public sealed partial class AppViewModel : ObservableObject
 {
     private readonly ISecureSessionStore _sessionStore = new CredentialSessionStore();
     private readonly ISecurePasswordStore _passwordStore = new CredentialPasswordStore();
+    private readonly IChatConversationPinStore _chatConversationPins = new FileChatConversationPinStore();
     private IDsmApiClient? _api;
     private HttpClient? _activeHttpClient;
     private readonly DesktopCloudDriveService _cloudDrives = new();
@@ -521,6 +523,7 @@ public sealed partial class AppViewModel : ObservableObject
         await _sessionStore.RemoveAsync(profile.Id).ConfigureAwait(true);
         await _passwordStore.RemoveAsync(profile.Id).ConfigureAwait(true);
         await _certificatePins.RemoveAsync(profile.Id).ConfigureAwait(true);
+        await _chatConversationPins.RemoveAsync(profile.Id).ConfigureAwait(true);
         ClearCertificateChallenge(profile.Id);
         Profiles.Remove(profile);
         RefreshDesktopDriveMappings();

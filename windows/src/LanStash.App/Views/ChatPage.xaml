@@ -10,6 +10,7 @@
         <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="SearchAccelerator_Invoked" />
         <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
         <KeyboardAccelerator Key="A" Modifiers="Control,Shift" Invoked="ChooseAttachmentAccelerator_Invoked" />
+        <KeyboardAccelerator Key="P" Modifiers="Control,Shift" Invoked="TogglePinAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid Padding="24,20,24,16" RowSpacing="12">
@@ -119,6 +120,7 @@
                                             <ColumnDefinition Width="40" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <Border
                                             Width="40"
@@ -131,11 +133,25 @@
                                                 FontWeight="SemiBold"
                                                 Text="{x:Bind Initial}" />
                                         </Border>
-                                        <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock
-                                                FontWeight="SemiBold"
-                                                Text="{x:Bind Title}"
-                                                TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                            <Grid ColumnSpacing="4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock
+                                                    FontWeight="SemiBold"
+                                                    Text="{x:Bind Title}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                                <FontIcon
+                                                    Grid.Column="1"
+                                                    FontSize="12"
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Glyph="&#xE718;"
+                                                    ToolTipService.ToolTip="{x:Bind PinnedStatusText}"
+                                                    AutomationProperties.Name="{x:Bind PinnedStatusText}"
+                                                    Visibility="{x:Bind PinnedVisibility}" />
+                                            </Grid>
                                             <TextBlock
                                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                 MaxLines="1"
@@ -147,10 +163,28 @@
                                             VerticalAlignment="Center"
                                             FontWeight="SemiBold"
                                             Text="{x:Bind UnreadText}" />
+                                        <Button
+                                            Grid.Column="3"
+                                            MinWidth="44"
+                                            MinHeight="44"
+                                            Click="ConversationPin_Click"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="{x:Bind PinActionText}"
+                                            AutomationProperties.Name="{x:Bind PinActionAutomationName}">
+                                            <FontIcon Glyph="{x:Bind PinActionGlyph}" FontSize="16" />
+                                        </Button>
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
+                        <InfoBar
+                            x:Uid="ChatBrowserPinStorageError"
+                            x:Name="PinStorageError"
+                            Grid.Row="3"
+                            AutomationProperties.LiveSetting="Polite"
+                            IsClosable="False"
+                            IsOpen="False"
+                            Severity="Warning" />
                     </Grid>
                 </Border>
 
@@ -173,6 +207,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Button
                                 x:Uid="ChatBrowserBack"
@@ -194,9 +229,21 @@
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <Button
+                                x:Name="SelectedPinButton"
+                                Grid.Column="2"
+                                MinWidth="44"
+                                MinHeight="44"
+                                Click="SelectedPin_Click"
+                                Visibility="Collapsed">
+                                <FontIcon
+                                    x:Name="SelectedPinIcon"
+                                    Glyph="&#xE718;"
+                                    FontSize="16" />
+                            </Button>
+                            <Button
                                 x:Uid="ChatBrowserRefreshMessages"
                                 x:Name="RefreshMessagesButton"
-                                Grid.Column="2"
+                                Grid.Column="3"
                                 MinWidth="44"
                                 MinHeight="44"
                                 Click="RefreshMessages_Click">

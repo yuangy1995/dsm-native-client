@@ -32,6 +32,20 @@ public sealed class ChatBrowserViewModelTests
         Assert.Contains("4", named.AutomationName, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PinnedConversationPresentationUsesIconAndAutomationState()
+    {
+        var item = new ChatConversationItem(new ChatConversation(
+            "channel-1", ChatConversationKind.Direct, "Team", [], 1, null, null, 0, false),
+            IsPinned: true);
+
+        Assert.True(item.IsPinned);
+        Assert.Contains("Team", item.PinActionAutomationName, StringComparison.Ordinal);
+        Assert.Contains(item.Title, item.AutomationName, StringComparison.Ordinal);
+        Assert.Contains(item.PinnedStatusText, item.AutomationName, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(Microsoft.UI.Xaml.Visibility.Visible, item.PinnedVisibility);
+    }
+
     [Theory]
     [InlineData("member-1、member-2、member-3")]
     [InlineData("member-1, member-2,member-3")]
@@ -141,6 +155,91 @@ public sealed class ChatBrowserViewModelTests
         repository.ConversationResults.Enqueue(new IOException("synthetic"));
         await model.RefreshConversationsAsync();
         Assert.Equal(ChatBrowserContentState.Error, model.ContentState);
+    }
+
+    [Fact]
+    public async Task LocalPinsSortFirstPersistByProfileAndStayLocal()
+    {
+        var profile = Guid.NewGuid();
+        var pins = new MemoryPinStore();
+        var repository = Available(profile);
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[
+                Conversation("a", "Alpha", "match"),
+                Conversation("b", "Beta", "match"),
+                Conversation("c", "Charlie", "match")]);
+        using var model = new ChatBrowserViewModel(
+            ChatBrowserViewModel.DefaultPageSize,
+            pins);
+
+        await model.ActivateAsync(repository);
+        Assert.Equal(["c", "b", "a"], model.Conversations.Select(value => value.Id));
+
+        await model.ToggleConversationPinAsync(model.Conversations.Single(value => value.Id == "b"));
+        Assert.Equal(["b", "c", "a"], model.Conversations.Select(value => value.Id));
+        Assert.Equal(["b"], pins.Saved[profile]);
+        Assert.Equal(1, repository.ConversationRequests);
+        Assert.Empty(repository.MessageRequests);
+
+        await model.ToggleConversationPinAsync(model.Conversations.Single(value => value.Id == "c"));
+        Assert.Equal(["c", "b", "a"], model.Conversations.Select(value => value.Id));
+        model.SearchQuery = "match";
+        Assert.Equal(["c", "b", "a"], model.Conversations.Select(value => value.Id));
+
+        await model.ToggleConversationPinAsync(model.Conversations.Single(value => value.Id == "b"));
+        Assert.Equal(["c", "b", "a"], model.Conversations.Select(value => value.Id));
+        Assert.Equal(["c"], pins.Saved[profile]);
+        Assert.Equal(1, repository.ConversationRequests);
+    }
+
+    [Fact]
+    public async Task StoredPinsAreProfileScopedAndSurviveModelRecreation()
+    {
+        var profileA = Guid.NewGuid();
+        var profileB = Guid.NewGuid();
+        var pins = new MemoryPinStore();
+        pins.Saved[profileA] = ["a"];
+        pins.Saved[profileB] = ["b"];
+        var firstA = Available(profileA);
+        firstA.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha"), Conversation("b", "Beta")]);
+        var firstB = Available(profileB);
+        firstB.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha"), Conversation("b", "Beta")]);
+        using var first = new ChatBrowserViewModel(ChatBrowserViewModel.DefaultPageSize, pins);
+
+        await first.ActivateAsync(firstA);
+        Assert.Equal("a", first.Conversations[0].Id);
+        await first.ActivateAsync(firstB);
+        Assert.Equal("b", first.Conversations[0].Id);
+
+        var secondA = Available(profileA);
+        secondA.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha"), Conversation("b", "Beta")]);
+        using var second = new ChatBrowserViewModel(ChatBrowserViewModel.DefaultPageSize, pins);
+        await second.ActivateAsync(secondA);
+
+        Assert.Equal("a", second.Conversations[0].Id);
+        Assert.Equal([profileA, profileB, profileA], pins.LoadedProfiles);
+    }
+
+    [Fact]
+    public async Task PinSaveFailureKeepsLocalOrderingButReportsRecoverableError()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha"), Conversation("b", "Beta")]);
+        using var model = new ChatBrowserViewModel(
+            ChatBrowserViewModel.DefaultPageSize,
+            new FailingSavePinStore());
+
+        await model.ActivateAsync(repository);
+        await model.ToggleConversationPinAsync(model.Conversations.Single(value => value.Id == "a"));
+
+        Assert.True(model.HasPinStorageError);
+        Assert.Equal("a", model.Conversations[0].Id);
+        Assert.Equal(1, repository.ConversationRequests);
+        Assert.Empty(repository.MessageRequests);
     }
 
     [Fact]
@@ -355,5 +454,55 @@ public sealed class ChatBrowserViewModelTests
             ChatTextSendRequest request,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class MemoryPinStore : IChatConversationPinStore
+    {
+        public Dictionary<Guid, IReadOnlyList<string>> Saved { get; } = [];
+        public List<Guid> LoadedProfiles { get; } = [];
+
+        public Task<IReadOnlyList<string>> LoadAsync(
+            Guid profileId,
+            CancellationToken cancellationToken = default)
+        {
+            LoadedProfiles.Add(profileId);
+            return Task.FromResult(Saved.GetValueOrDefault(profileId) ?? (IReadOnlyList<string>)[]);
+        }
+
+        public Task<bool> SaveAsync(
+            Guid profileId,
+            IReadOnlyList<string> conversationIds,
+            CancellationToken cancellationToken = default)
+        {
+            Saved[profileId] = conversationIds.ToArray();
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RemoveAsync(
+            Guid profileId,
+            CancellationToken cancellationToken = default)
+        {
+            Saved.Remove(profileId);
+            return Task.FromResult(true);
+        }
+    }
+
+    private sealed class FailingSavePinStore : IChatConversationPinStore
+    {
+        public Task<IReadOnlyList<string>> LoadAsync(
+            Guid profileId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<bool> SaveAsync(
+            Guid profileId,
+            IReadOnlyList<string> conversationIds,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
+        public Task<bool> RemoveAsync(
+            Guid profileId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
     }
 }

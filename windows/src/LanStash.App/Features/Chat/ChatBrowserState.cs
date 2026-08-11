@@ -16,8 +16,10 @@ public enum ChatBrowserContentState
     RequiresValidation,
 }
 
-public sealed record ChatConversationItem(ChatConversation Conversation)
+public sealed record ChatConversationItem(ChatConversation Conversation, bool IsPinned = false)
 {
+    private const string PinGlyphValue = "\uE718";
+
     public string Id => Conversation.Id;
     public string Title => HasUserFacingTitle
         ? Conversation.Title
@@ -28,16 +30,36 @@ public sealed record ChatConversationItem(ChatConversation Conversation)
     public string UnreadText => UnreadCount > 0
         ? UnreadCount.ToString("N0", CultureInfo.CurrentCulture)
         : string.Empty;
-    public string AutomationName => UnreadCount > 0
-        ? LocalizationService.Current.Format(
-            "ChatBrowserConversationWithUnreadAutomationName",
-            Title,
-            UnreadCount)
-        : LocalizationService.Current.Format("ChatBrowserConversationAutomationName", Title);
+    public string AutomationName
+    {
+        get
+        {
+            var name = UnreadCount > 0
+                ? LocalizationService.Current.Format(
+                    "ChatBrowserConversationWithUnreadAutomationName",
+                    Title,
+                    UnreadCount)
+                : LocalizationService.Current.Format("ChatBrowserConversationAutomationName", Title);
+            return IsPinned
+                ? LocalizationService.Current.Format("ChatBrowserPinnedConversationAutomationName", name)
+                : name;
+        }
+    }
     public bool IsEncrypted => Conversation.IsEncrypted;
     public string Initial => string.IsNullOrWhiteSpace(Title)
         ? "?"
         : StringInfo.GetNextTextElement(Title.Trim()).ToUpper(CultureInfo.CurrentCulture);
+    public Visibility PinnedVisibility => IsPinned ? Visibility.Visible : Visibility.Collapsed;
+    public string PinnedStatusText => LocalizationService.Current.Get("ChatBrowserPinnedStatus");
+    public string PinActionGlyph => PinGlyphValue;
+    public string PinActionText => LocalizationService.Current.Get(IsPinned
+        ? "ChatBrowserUnpinConversation"
+        : "ChatBrowserPinConversation");
+    public string PinActionAutomationName => LocalizationService.Current.Format(
+        IsPinned
+            ? "ChatBrowserUnpinConversationAutomationName"
+            : "ChatBrowserPinConversationAutomationName",
+        Title);
 
     private bool HasUserFacingTitle
     {

@@ -1,7 +1,9 @@
 using LanStash.App.Features.Chat;
+using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Input;
 
 namespace LanStash.App.Views;
@@ -81,6 +83,17 @@ public sealed partial class ChatPage : Page, IDisposable
     private async void LoadEarlier_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.LoadEarlierAsync);
 
+    private async void ConversationPin_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: ChatConversationItem conversation })
+        {
+            await RunAsync(() => _viewModel.ToggleConversationPinAsync(conversation));
+        }
+    }
+
+    private async void SelectedPin_Click(object sender, RoutedEventArgs e) =>
+        await RunAsync(() => _viewModel.ToggleConversationPinAsync(_viewModel.SelectedConversation));
+
     private void ClearSearch_Click(object sender, RoutedEventArgs e)
     {
         SearchBox.Text = string.Empty;
@@ -140,6 +153,17 @@ public sealed partial class ChatPage : Page, IDisposable
         }
     }
 
+    private async void TogglePinAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (_viewModel.HasContent && _viewModel.SelectedConversation is not null)
+        {
+            args.Handled = true;
+            await RunAsync(() => _viewModel.ToggleConversationPinAsync(_viewModel.SelectedConversation));
+        }
+    }
+
     private async Task RunAsync(Func<Task> operation)
     {
         try
@@ -169,7 +193,9 @@ public sealed partial class ChatPage : Page, IDisposable
         RefreshButton.IsEnabled = !_viewModel.IsLoadingConversations &&
             !_viewModel.IsUnavailable && !_viewModel.RequiresValidation;
         ConversationRefreshError.IsOpen = _viewModel.HasConversationError && _viewModel.HasContent;
+        PinStorageError.IsOpen = _viewModel.HasPinStorageError && _viewModel.HasContent;
         ConversationTitle.Text = _viewModel.SelectedConversation?.Title ?? string.Empty;
+        UpdateSelectedPinAction();
         RefreshMessagesButton.IsEnabled = _viewModel.SelectedConversation is { IsEncrypted: false } &&
             !_viewModel.IsLoadingMessages;
         MessageError.IsOpen = _viewModel.HasMessageError;
@@ -224,6 +250,26 @@ public sealed partial class ChatPage : Page, IDisposable
         MessagePane.Visibility = Visibility.Collapsed;
         BackButton.Visibility = Visibility.Collapsed;
         ConversationList.Focus(FocusState.Keyboard);
+    }
+
+    private void UpdateSelectedPinAction()
+    {
+        var selected = _viewModel.SelectedConversation;
+        SelectedPinButton.Visibility = Visible(selected is not null);
+        SelectedPinButton.IsEnabled = selected is not null;
+        SelectedPinIcon.Opacity = selected?.IsPinned == true ? 1 : 0.62;
+        if (selected is null)
+        {
+            ToolTipService.SetToolTip(
+                SelectedPinButton,
+                LocalizationService.Current.Get("ChatBrowserPinConversation"));
+            AutomationProperties.SetName(
+                SelectedPinButton,
+                LocalizationService.Current.Get("ChatBrowserPinConversation"));
+            return;
+        }
+        ToolTipService.SetToolTip(SelectedPinButton, selected.PinActionText);
+        AutomationProperties.SetName(SelectedPinButton, selected.PinActionAutomationName);
     }
 
     private static Visibility Visible(bool value) =>

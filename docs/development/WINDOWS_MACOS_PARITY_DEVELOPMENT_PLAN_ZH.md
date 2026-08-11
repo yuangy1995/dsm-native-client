@@ -258,6 +258,8 @@ W0 基线、账本与 ZIP/安装器决策门
 
 出口：未记录 DSM build + Chat Server 完整版本时写入口关闭；Bot/Webhook 不替代普通用户 Chat；加密会话明确不支持而非明文降级。核心出口不依赖附件 UI。
 
+CH7 局部进展：Windows Chat 已补入本地会话置顶/取消置顶，作为不依赖真实 Chat Server 的低风险源码闭环。用户目标是让常用会话在当前 NAS 档案下优先显示；移动到 Windows 的交互替代为会话列表行内图钉按钮、详情标题栏按钮和 `Ctrl+Shift+P` 快捷键，而不是 macOS 右键菜单的唯一入口。实现只在本机应用数据目录保存版本号和按 profile 隔离的会话 ID 顺序，不保存会话标题、成员、消息、路径、主机或响应正文；退出登录不清除偏好，删除 NAS 档案时清理对应置顶文件。官方 Star、群公告 `Post.pin/unpin`、消息置顶、服务器已读、实时 Socket.IO、成员管理、删除/关闭会话等仍按后续契约批次处理，不在本切片暗中开放。本机已安装 .NET 10 SDK，macOS 以 `AppxGeneratePriEnabled=false` 跑通完整 xUnit 957/957；未临时禁用 PRI 生成时 Windows SDK `MakePri.exe` 不能在 macOS 执行，App 项目本机构建进一步确认 WinUI `XamlCompiler.exe` 也不能在 macOS 执行。本切片 GitHub Windows Build run `31448827122` 已通过 957/957 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31448827088` 已通过；真实设备的 Narrator、高对比、缩放、窄窗口、触控和真实 Chat Server 刷新仍为 `PENDING_USER_VALIDATION`。
+
 ### W3-B2：Chat 附件
 
 - 已在第 5 波按冻结的 `Post.create` v5 / `Post.File` v2 契约接入单附件上传/保存、按需图片缩略图和原生预览；不等待 W3-A 全部照片与格式验收。

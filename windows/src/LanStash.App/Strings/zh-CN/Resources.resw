@@ -449,6 +449,14 @@
   <data name="ChatBrowserUnnamedConversation" xml:space="preserve"><value>未命名会话</value></data>
   <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
   <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}，{1:N0} 条未读</value></data>
+  <data name="ChatBrowserPinnedConversationAutomationName" xml:space="preserve"><value>{0}，已置顶</value></data>
+  <data name="ChatBrowserPinnedStatus" xml:space="preserve"><value>已置顶</value></data>
+  <data name="ChatBrowserPinConversation" xml:space="preserve"><value>置顶</value></data>
+  <data name="ChatBrowserUnpinConversation" xml:space="preserve"><value>取消置顶</value></data>
+  <data name="ChatBrowserPinConversationAutomationName" xml:space="preserve"><value>置顶 {0}</value></data>
+  <data name="ChatBrowserUnpinConversationAutomationName" xml:space="preserve"><value>取消置顶 {0}</value></data>
+  <data name="ChatBrowserPinStorageError.Title" xml:space="preserve"><value>无法保存会话偏好</value></data>
+  <data name="ChatBrowserPinStorageError.Message" xml:space="preserve"><value>会话列表仍可使用。请再次尝试置顶或取消置顶。</value></data>
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回会话列表</value></data>
   <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>支持前台消息和单附件</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新消息</value></data>

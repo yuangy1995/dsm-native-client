@@ -449,6 +449,14 @@
   <data name="ChatBrowserUnnamedConversation" xml:space="preserve"><value>Unnamed conversation</value></data>
   <data name="ChatBrowserConversationAutomationName" xml:space="preserve"><value>{0}</value></data>
   <data name="ChatBrowserConversationWithUnreadAutomationName" xml:space="preserve"><value>{0}, {1:N0} unread</value></data>
+  <data name="ChatBrowserPinnedConversationAutomationName" xml:space="preserve"><value>{0}, pinned</value></data>
+  <data name="ChatBrowserPinnedStatus" xml:space="preserve"><value>Pinned</value></data>
+  <data name="ChatBrowserPinConversation" xml:space="preserve"><value>Pin</value></data>
+  <data name="ChatBrowserUnpinConversation" xml:space="preserve"><value>Unpin</value></data>
+  <data name="ChatBrowserPinConversationAutomationName" xml:space="preserve"><value>Pin {0}</value></data>
+  <data name="ChatBrowserUnpinConversationAutomationName" xml:space="preserve"><value>Unpin {0}</value></data>
+  <data name="ChatBrowserPinStorageError.Title" xml:space="preserve"><value>Conversation preference wasn’t saved</value></data>
+  <data name="ChatBrowserPinStorageError.Message" xml:space="preserve"><value>The list is still usable. Try changing the pin again.</value></data>
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to conversations</value></data>
   <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>Foreground messages and single attachments</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh messages</value></data>

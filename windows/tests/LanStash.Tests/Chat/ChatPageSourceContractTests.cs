@@ -35,9 +35,14 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("Key=\"Left\"", xaml);
         Assert.Contains("Key=\"F\"", xaml);
         Assert.Contains("Key=\"F5\"", xaml);
+        Assert.Contains("Key=\"P\"", xaml);
         Assert.Contains("Modifiers=\"Menu\"", xaml);
         Assert.Contains("Modifiers=\"Control\"", xaml);
+        Assert.Contains("Modifiers=\"Control,Shift\"", xaml);
         Assert.True(Count(xaml, "AutomationProperties.LiveSetting=\"Polite\"") >= 4);
+        Assert.Contains("AutomationProperties.Name=\"{x:Bind PinActionAutomationName}\"", xaml);
+        Assert.Contains("ToolTipService.ToolTip=\"{x:Bind PinActionText}\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"{x:Bind PinnedStatusText}\"", xaml);
         Assert.Contains("ThemeResource CardBackgroundFillColorDefaultBrush", xaml);
         Assert.DoesNotContain("Background=\"#", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Foreground=\"#", xaml, StringComparison.OrdinalIgnoreCase);
@@ -81,6 +86,55 @@ public sealed class ChatPageSourceContractTests
         Assert.DoesNotContain("CreateConversation", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Realtime", combined, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PageSupportsLocalConversationPinsWithoutServerPinOrStarRequests()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        var model = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserViewModel.cs");
+        var state = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserState.cs");
+        var store = Read("windows/src/LanStash.App/Features/Chat/ChatConversationPinStore.cs");
+        var app = Read("windows/src/LanStash.App/ViewModels/AppViewModel.cs");
+        var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = Read("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+        var repository = Read("windows/src/LanStash.Infrastructure/Features/Chat/DsmRepository.Chat.cs");
+        var attachmentRepository = Read(
+            "windows/src/LanStash.Infrastructure/Features/Chat/DsmRepository.ChatAttachment.cs");
+        var combined = xaml + source + model + state + store;
+
+        Assert.Contains("ToggleConversationPinAsync", model);
+        Assert.Contains("FileChatConversationPinStore", store);
+        Assert.Contains("PinnedConversationIds", model);
+        Assert.Contains("profileId", store);
+        Assert.Contains("x:Name=\"PinStorageError\"", xaml);
+        Assert.Contains("x:Name=\"SelectedPinButton\"", xaml);
+        Assert.Contains("TogglePinAccelerator_Invoked", source);
+        Assert.Contains("IsPinned", state);
+        Assert.Contains("PinActionAutomationName", state);
+        Assert.Contains("MaximumPinnedConversations", store);
+        Assert.Contains("_chatConversationPins.RemoveAsync(profile.Id)", app);
+        foreach (var key in new[]
+        {
+            "ChatBrowserPinnedConversationAutomationName",
+            "ChatBrowserPinnedStatus",
+            "ChatBrowserPinConversation",
+            "ChatBrowserUnpinConversation",
+            "ChatBrowserPinConversationAutomationName",
+            "ChatBrowserUnpinConversationAutomationName",
+            "ChatBrowserPinStorageError.Title",
+            "ChatBrowserPinStorageError.Message",
+        })
+        {
+            Assert.Contains($"name=\"{key}\"", english);
+            Assert.Contains($"name=\"{key}\"", chinese);
+        }
+        Assert.DoesNotContain("SYNO.Chat.Star", combined, StringComparison.Ordinal);
+        Assert.DoesNotContain("Post.pin", repository + attachmentRepository, StringComparison.Ordinal);
+        Assert.DoesNotContain("Post.unpin", repository + attachmentRepository, StringComparison.Ordinal);
+        Assert.DoesNotContain("method\", \"pin", repository + attachmentRepository, StringComparison.Ordinal);
+        Assert.DoesNotContain("method\", \"unpin", repository + attachmentRepository, StringComparison.Ordinal);
     }
 
     [Fact]

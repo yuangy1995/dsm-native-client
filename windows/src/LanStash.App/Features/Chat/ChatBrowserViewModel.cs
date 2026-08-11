@@ -9,6 +9,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     public const int DefaultPageSize = 50;
 
     private readonly int _pageSize;
+    private readonly IChatConversationPinStore _pinStore;
     private readonly Dictionary<Guid, ProfileCache> _profiles = [];
     private IChatRepository? _repository;
     private CancellationTokenSource? _conversationCancellation;
@@ -25,12 +26,22 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private bool _hasConversationError;
     private bool _hasMessageError;
     private bool _hasLoadEarlierError;
+    private bool _hasPinStorageError;
     private bool _disposed;
 
     public ChatBrowserViewModel(int pageSize = DefaultPageSize)
+        : this(pageSize, new FileChatConversationPinStore())
+    {
+    }
+
+    internal ChatBrowserViewModel(
+        int pageSize,
+        IChatConversationPinStore pinStore)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        ArgumentNullException.ThrowIfNull(pinStore);
         _pageSize = pageSize;
+        _pinStore = pinStore;
     }
 
     public ObservableCollection<ChatConversationItem> Conversations { get; } = [];
@@ -127,6 +138,12 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _hasLoadEarlierError, value);
     }
 
+    public bool HasPinStorageError
+    {
+        get => _hasPinStorageError;
+        private set => SetProperty(ref _hasPinStorageError, value);
+    }
+
     public bool HasSelection => SelectedConversation is not null;
     public bool IsEncryptedSelection => SelectedConversation?.IsEncrypted == true;
     public bool HasContent => ContentState == ChatBrowserContentState.Content;
@@ -165,16 +182,17 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (_profiles.TryGetValue(repository.ProfileId, out var existing) && existing.Loaded)
+        var profile = GetOrCreateProfile(repository.ProfileId);
+        RestoreSearchQuery(profile);
+        await EnsurePinsLoadedAsync(repository.ProfileId, profile);
+
+        if (profile.Loaded)
         {
-            RestoreSearchQuery(existing);
-            RestoreProfile(existing);
+            ApplyPinState(profile);
+            RestoreProfile(profile);
             return;
         }
 
-        var profile = existing ?? new ProfileCache();
-        _profiles[repository.ProfileId] = profile;
-        RestoreSearchQuery(profile);
         await LoadConversationsAsync(profile, preserveContentOnFailure: false);
     }
 
@@ -290,6 +308,42 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         }
     }
 
+    public async Task ToggleConversationPinAsync(ChatConversationItem? item)
+    {
+        ThrowIfDisposed();
+        if (item is null || ActiveProfileId is not Guid profileId ||
+            CurrentProfile is not { Loaded: true } profile ||
+            !profile.AllConversations.Any(value => value.Id == item.Id))
+        {
+            return;
+        }
+
+        var pins = profile.PinnedConversationIds.ToList();
+        if (!pins.Remove(item.Id))
+        {
+            pins.Insert(0, item.Id);
+        }
+        profile.PinnedConversationIds = FileChatConversationPinStore.Normalize(pins);
+        ApplyPinState(profile);
+        ApplyConversationFilter();
+        RestoreSelectedConversationReference(profile);
+
+        try
+        {
+            HasPinStorageError = !await _pinStore.SaveAsync(
+                profileId,
+                profile.PinnedConversationIds).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            HasPinStorageError = true;
+        }
+    }
+
     private async Task LoadConversationsAsync(ProfileCache profile, bool preserveContentOnFailure)
     {
         var repository = RequireRepository();
@@ -309,11 +363,11 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             {
                 return;
             }
-            profile.AllConversations = conversations
-                .Select(value => new ChatConversationItem(value))
-                .OrderByDescending(value => value.LastActivityAt)
-                .ThenBy(value => value.Title, StringComparer.CurrentCultureIgnoreCase)
-                .ToArray();
+            profile.AllConversations = SortConversations(
+                conversations.Select(value => new ChatConversationItem(
+                    value,
+                    profile.PinnedConversationIds.Contains(value.Id, StringComparer.Ordinal))),
+                profile.PinnedConversationIds);
             var encryptedIds = profile.AllConversations
                 .Where(value => value.IsEncrypted)
                 .Select(value => value.Id)
@@ -432,6 +486,83 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
                 : ChatBrowserContentState.FilteredEmpty;
     }
 
+    private async Task EnsurePinsLoadedAsync(Guid profileId, ProfileCache profile)
+    {
+        if (profile.PinsLoaded)
+        {
+            return;
+        }
+        try
+        {
+            profile.PinnedConversationIds = FileChatConversationPinStore.Normalize(
+                await _pinStore.LoadAsync(profileId).ConfigureAwait(true));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            profile.PinnedConversationIds = [];
+        }
+        profile.PinsLoaded = true;
+    }
+
+    private ProfileCache GetOrCreateProfile(Guid profileId)
+    {
+        if (_profiles.TryGetValue(profileId, out var existing))
+        {
+            return existing;
+        }
+        var profile = new ProfileCache();
+        _profiles[profileId] = profile;
+        return profile;
+    }
+
+    private static IReadOnlyList<ChatConversationItem> SortConversations(
+        IEnumerable<ChatConversationItem> conversations,
+        IReadOnlyList<string> pinnedConversationIds)
+    {
+        var ranks = pinnedConversationIds
+            .Select((id, index) => (id, index))
+            .ToDictionary(value => value.id, value => value.index, StringComparer.Ordinal);
+        return conversations
+            .OrderBy(value => ranks.TryGetValue(value.Id, out var rank)
+                ? rank
+                : int.MaxValue)
+            .ThenByDescending(value => value.LastActivityAt)
+            .ThenBy(value => value.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+    }
+
+    private void ApplyPinState(ProfileCache profile)
+    {
+        var pinned = profile.PinnedConversationIds.ToHashSet(StringComparer.Ordinal);
+        profile.AllConversations = SortConversations(
+            profile.AllConversations.Select(value =>
+            {
+                var isPinned = pinned.Contains(value.Id);
+                return value.IsPinned == isPinned
+                    ? value
+                    : value with { IsPinned = isPinned };
+            }),
+            profile.PinnedConversationIds);
+    }
+
+    private void RestoreSelectedConversationReference(ProfileCache profile)
+    {
+        if (SelectedConversation is not { } selected)
+        {
+            return;
+        }
+        var replacement = profile.AllConversations
+            .FirstOrDefault(value => value.Id == selected.Id);
+        if (replacement is not null && !ReferenceEquals(replacement, selected))
+        {
+            SelectedConversation = replacement;
+        }
+    }
+
     private void RestoreProfile(ProfileCache profile)
     {
         ResetErrors();
@@ -548,6 +679,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         HasConversationError = false;
         HasMessageError = false;
         HasLoadEarlierError = false;
+        HasPinStorageError = false;
     }
 
     private void RaiseStateProperties()
@@ -582,7 +714,9 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private sealed class ProfileCache
     {
         public bool Loaded { get; set; }
+        public bool PinsLoaded { get; set; }
         public IReadOnlyList<ChatConversationItem> AllConversations { get; set; } = [];
+        public IReadOnlyList<string> PinnedConversationIds { get; set; } = [];
         public string? SelectedConversationId { get; set; }
         public string SearchQuery { get; set; } = string.Empty;
         public Dictionary<string, ConversationCache> Messages { get; } =
