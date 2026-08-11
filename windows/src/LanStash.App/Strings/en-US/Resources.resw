@@ -420,7 +420,7 @@
   <data name="FileBrowserRetry.Content" xml:space="preserve"><value>Retry</value></data>
   <data name="FileBrowserFileDetail" xml:space="preserve"><value>{0:N0} bytes · {1}</value></data>
   <data name="FileBrowserDownload.Label" xml:space="preserve"><value>Download</value></data>
-  <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected file</value></data>
+  <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected file or folder</value></data>
   <data name="FileBrowserDownloadMultiple.Label" xml:space="preserve"><value>Select downloads</value></data>
   <data name="FileBrowserDownloadMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Select multiple files to download</value></data>
   <data name="FileBrowserDownloadSelected.Label" xml:space="preserve"><value>Download selected</value></data>
@@ -434,6 +434,7 @@
   <data name="FileBrowserUploadNeedsReview.Title" xml:space="preserve"><value>Check the uploaded file</value></data>
   <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>The upload may have reached the NAS. Refresh this folder and check the file before uploading it again.</value></data>
   <data name="TransferOriginalFileType" xml:space="preserve"><value>Original file type</value></data>
+  <data name="TransferArchiveFileType" xml:space="preserve"><value>ZIP archive</value></data>
   <data name="TransferActivityTitle.Text" xml:space="preserve"><value>Activity</value></data>
   <data name="TransferActivityDescription.Text" xml:space="preserve"><value>App transfers and NAS download tasks from the current NAS stay here while this window is open.</value></data>
   <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Transfer activity</value></data>

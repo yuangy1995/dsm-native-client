@@ -10,6 +10,7 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
     private readonly StorageFile _stagingFile;
     private readonly StorageStreamTransaction _transaction;
     private readonly bool _allowReplaceExisting;
+    private readonly bool _validateZipArchive;
     private ulong _position;
     private bool _transactionClosed;
     private bool _committed;
@@ -20,19 +21,22 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         string targetName,
         StorageFile stagingFile,
         StorageStreamTransaction transaction,
-        bool allowReplaceExisting)
+        bool allowReplaceExisting,
+        bool validateZipArchive)
     {
         _targetFolder = targetFolder;
         _targetName = targetName;
         _stagingFile = stagingFile;
         _transaction = transaction;
         _allowReplaceExisting = allowReplaceExisting;
+        _validateZipArchive = validateZipArchive;
         _transaction.Stream.Size = 0;
     }
 
     public static async Task<WindowsTransactionalDownloadDestination> CreateAsync(
         string targetPath,
-        bool allowReplaceExisting = true)
+        bool allowReplaceExisting = true,
+        bool validateZipArchive = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         var directory = Path.GetDirectoryName(targetPath);
@@ -55,7 +59,8 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
                 targetName,
                 staging,
                 transaction,
-                allowReplaceExisting);
+                allowReplaceExisting,
+                validateZipArchive);
         }
         catch
         {
@@ -88,6 +93,10 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         _transaction.Stream.Size = _position;
         await _transaction.CommitAsync();
         CloseTransaction();
+        if (_validateZipArchive)
+        {
+            await ValidateZipArchiveAsync(_stagingFile, cancellationToken);
+        }
 
         if (!_allowReplaceExisting)
         {
@@ -112,6 +121,16 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
             }
         }
         _committed = true;
+    }
+
+    private static async Task ValidateZipArchiveAsync(
+        StorageFile stagingFile,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var stream = await stagingFile.OpenStreamForReadAsync();
+        FolderArchiveValidator.Validate(stream);
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     public ValueTask AbortAsync(CancellationToken cancellationToken = default)

@@ -35,6 +35,7 @@
     <Compile Remove="Features\Transfers\BoundedFileDownloadBatch.cs" />
     <Compile Remove="Features\Transfers\BoundedFolderUploadPlan.cs" />
     <Compile Remove="Features\Transfers\SafeFileDownloadService.cs" />
+    <Compile Remove="Features\Transfers\SafeFolderArchiveDownloadService.cs" />
     <Compile Remove="Features\Transfers\WindowsTransactionalDownloadDestination.cs" />
     <Compile Remove="Features\VirtualMachines\**\*.cs" />
     <Compile Remove="Localization\*.cs" />

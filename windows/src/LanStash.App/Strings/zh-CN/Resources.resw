@@ -420,7 +420,7 @@
   <data name="FileBrowserRetry.Content" xml:space="preserve"><value>重试</value></data>
   <data name="FileBrowserFileDetail" xml:space="preserve"><value>{0:N0} 字节 · {1}</value></data>
   <data name="FileBrowserDownload.Label" xml:space="preserve"><value>下载</value></data>
-  <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>保存所选文件的副本</value></data>
+  <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>保存所选文件或文件夹的副本</value></data>
   <data name="FileBrowserDownloadMultiple.Label" xml:space="preserve"><value>选择多个下载</value></data>
   <data name="FileBrowserDownloadMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择多个文件下载</value></data>
   <data name="FileBrowserDownloadSelected.Label" xml:space="preserve"><value>下载所选文件</value></data>
@@ -434,6 +434,7 @@
   <data name="FileBrowserUploadNeedsReview.Title" xml:space="preserve"><value>请检查上传的文件</value></data>
   <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>上传请求可能已到达 NAS。再次上传前，请刷新此文件夹并检查目标文件。</value></data>
   <data name="TransferOriginalFileType" xml:space="preserve"><value>原始文件类型</value></data>
+  <data name="TransferArchiveFileType" xml:space="preserve"><value>ZIP 压缩包</value></data>
   <data name="TransferActivityTitle.Text" xml:space="preserve"><value>活动</value></data>
   <data name="TransferActivityDescription.Text" xml:space="preserve"><value>当前窗口打开期间，会在这里显示当前 NAS 的 App 传输和 NAS 下载任务。</value></data>
   <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输活动</value></data>

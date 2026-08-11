@@ -1,6 +1,6 @@
 namespace LanStash.Domain;
 
-public interface IDsmRepository : IFileRangeReader
+public interface IDsmRepository : IFileRangeReader, IFileArchiveReader
 {
     IReadOnlyList<AppModule> AvailableModules { get; }
     Task<FilePage> ListFilesAsync(

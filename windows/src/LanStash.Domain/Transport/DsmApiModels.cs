@@ -277,6 +277,16 @@ public interface IDsmApiClient
         Task.FromException<FileRangeReadResult>(
             new NotSupportedException("The API client does not implement the strict file range contract."));
 
+    Task StreamFolderArchiveAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string remotePath,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException(
+            "The API client does not implement folder archive downloads."));
+
     Task<FileUploadTransportResult> UploadFileAsync(
         NasProfile profile,
         DsmSession session,

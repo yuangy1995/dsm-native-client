@@ -55,6 +55,30 @@ public sealed class WindowsTransferPickerSourceContractTests
     }
 
     [Fact]
+    public void FolderDownloadUsesOfficialArchiveStreamAndValidatesBeforePublication()
+    {
+        var picker = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+        var destination = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransactionalDownloadDestination.cs");
+        var run = SliceMethod(
+            picker,
+            "private async Task RunFolderArchiveDownloadAsync",
+            "private async Task<FileUploadBatchAttempt> RunUploadAsync");
+
+        Assert.Contains("PickArchiveSavePathAsync($\"{entry.Name}.zip\")", picker);
+        Assert.Contains("SafeFolderArchiveDownloadService", picker);
+        Assert.Contains("_archiveDownloadService.DownloadAsync", run);
+        Assert.Contains("validateZipArchive: true", run);
+        Assert.Contains("ForegroundDownloadRequest", run);
+        Assert.DoesNotContain("ReadFileRangeResultAsync", run);
+        var validate = destination.IndexOf("ValidateZipArchiveAsync", StringComparison.Ordinal);
+        var publish = destination.IndexOf("MoveAndReplaceAsync", validate, StringComparison.Ordinal);
+        Assert.True(validate >= 0 && publish > validate);
+        Assert.Contains("FolderArchiveValidator.Validate(stream)", destination);
+    }
+
+    [Fact]
     public void BoundedDownloadBatchPreflightsAndReservesEveryLocalTargetBeforeNetworkWork()
     {
         var source = ReadRepositoryFile(

@@ -3,6 +3,26 @@ namespace LanStash.Tests;
 public sealed class FilesPageSourceContractTests
 {
     [Fact]
+    public void SingleDownloadCommandAcceptsFilesAndFoldersWhilePreviewRemainsFileOnly()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Views/FilesPage.xaml.cs");
+        var download = SliceMethod(
+            source,
+            "private async Task DownloadSelectedAsync()",
+            "private async Task DownloadItemAsync");
+        var state = SliceMethod(
+            source,
+            "private void UpdateState()",
+            "private async Task OpenPreviewAsync");
+
+        Assert.Contains("_viewModel.SelectedItem is not { } entry", download);
+        Assert.DoesNotContain("IsDirectory: false", download);
+        Assert.Contains("_viewModel.SelectedItem is not null", state);
+        Assert.Contains("_viewModel.SelectedItem?.IsDirectory == false", state);
+    }
+
+    [Fact]
     public void FilesPageExposesFiveStatesAndScopedSingleFileTransferCommands()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");

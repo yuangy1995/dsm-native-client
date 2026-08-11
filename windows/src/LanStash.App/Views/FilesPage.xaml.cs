@@ -488,7 +488,7 @@ public sealed partial class FilesPage : Page, IDisposable
         KeyboardAcceleratorInvokedEventArgs args)
     {
         if (_isSelectingDownloads || _isChoosingDownloadTarget ||
-            _viewModel.SelectedItem?.IsDirectory != false)
+            _viewModel.SelectedItem is null)
         {
             return;
         }
@@ -503,7 +503,7 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             return;
         }
-        if (_viewModel.SelectedItem is not { IsDirectory: false } entry)
+        if (_viewModel.SelectedItem is not { } entry)
         {
             return;
         }
@@ -1182,7 +1182,7 @@ public sealed partial class FilesPage : Page, IDisposable
         UpButton.IsEnabled = _viewModel.CanGoUp && !_viewModel.IsLoading;
         RefreshButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsLoadingMore;
         DownloadButton.IsEnabled =
-            !_viewModel.IsLoading && _viewModel.SelectedItem?.IsDirectory == false;
+            !_viewModel.IsLoading && _viewModel.SelectedItem is not null;
         PreviewButton.IsEnabled =
             !_viewModel.IsLoading && _viewModel.SelectedItem?.IsDirectory == false;
         UpdateMutationControls();

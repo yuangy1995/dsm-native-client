@@ -171,7 +171,7 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 | FILE-01 · A | 共享目录、文件夹分页、列表/图标、排序/分组、面包屑、搜索 | 列表/网格切换、BreadcrumbBar、键盘搜索、多选 | **核心**：层级浏览、分页、排序/筛选、搜索与状态恢复 | `WorkspaceView.swift`、`DsmFileRepository.swift` |
 | FILE-02 · A/C | 收藏、最近位置、回收站、远程位置、分享链接入口；公开 VirtualFolder 只读浏览与内部挂载管理分开 | 左侧位置集合与上下文菜单；内部创建/修改/断开在未知环境关闭 | **受限**：收藏/最近/回收站和分享入口；远程挂载管理当前不做 | `WorkspaceModel.swift`、`file-station-remote-mount` |
 | FILE-03 · A | 新建文件夹/空文件、重命名、详情、文件夹统计和 MD5 | 命令栏、F2、属性面板、触控菜单 | **受限**：新建文件夹、重命名和详情；空文件、递归统计与 MD5 当前不做 | `WorkspaceModel.swift`、`FilePropertiesView` |
-| FILE-04 · A/B | 系统选择器上传、覆盖确认、文件/文件夹/批量下载、取消，以及有恢复元数据时的继续/重试；上传重启发送，已知大小普通下载才用严格 Range 分片继续 | FileOpenPicker/FolderPicker/FileSavePicker；Files 已接 1～20 个文件及一个最多 20 文件、20 目录、8 层的小文件夹有界前台上传，并接 1～20 个普通文件的显式多选、目标文件夹无覆盖预检与严格串行事务下载；后台传输和系统通知仍后置 | **核心**：用户选择的单文件导入、导出、分享、取消；文件夹/大批量与常驻后台当前不做 | `WorkspaceModel.swift`、`DsmFileRepository.swift` |
+| FILE-04 · A/B | 系统选择器上传、覆盖确认、文件/文件夹/批量下载、取消，以及有恢复元数据时的继续/重试；上传重启发送，已知大小普通下载才用严格 Range 分片继续 | FileOpenPicker/FolderPicker/FileSavePicker；Files 已接 1～20 个文件及一个最多 20 文件、20 目录、8 层的小文件夹有界前台上传，并接 1～20 个普通文件的显式多选、目标文件夹无覆盖预检与严格串行事务下载；单文件夹可用公开 Download v2 生成 ZIP 流，经事务暂存和 ZIP 中央目录结构校验后保存；后台传输和系统通知仍后置 | **核心**：用户选择的单文件导入、导出、分享、取消；文件夹/大批量与常驻后台当前不做 | `WorkspaceModel.swift`、`DsmFileRepository.swift` |
 | FILE-05 · A/B | 同 NAS 复制/移动、跨 NAS 有界流、粘贴冲突、拖拽移动和限时撤销 | 剪贴板、拖放、键盘快捷键、Undo InfoBar | **受限**：有上限的同 NAS 复制/移动；跨 NAS 与大批量当前不做 | `AppModel`、`WorkspaceModel.swift` |
 | FILE-06 · A | ZIP/7z 压缩、常见格式解压、密码、编码和覆盖确认 | 分步 ContentDialog/任务中心 | **当前不做**：复杂归档交给 Mac App 或 DSM Web | `WorkspaceModel.swift`、请求 fixture |
 | FILE-07 · A | 创建/复制/列出/删除（撤销）分享链接，支持密码和有效期 | 系统剪贴板/分享、管理表格 | **核心/受限**：创建、复制和系统分享为核心；管理动作按已验证端点受限开放 | `WorkspaceModel.swift` |

@@ -14,6 +14,9 @@ namespace LanStash.App.Features.Transfers;
 internal interface IWindowsTransferSavePicker
 {
     Task<string?> PickSavePathAsync(string suggestedName);
+
+    Task<string?> PickArchiveSavePathAsync(string suggestedName) =>
+        PickSavePathAsync(suggestedName);
 }
 
 internal interface IWindowsTransferOpenPicker
@@ -28,6 +31,14 @@ internal sealed class WindowsTransferSavePicker(Func<Window?> windowProvider)
     : IWindowsTransferSavePicker
 {
     public async Task<string?> PickSavePathAsync(string suggestedName)
+        => await PickSavePathAsync(suggestedName, "TransferOriginalFileType");
+
+    public async Task<string?> PickArchiveSavePathAsync(string suggestedName)
+        => await PickSavePathAsync(suggestedName, "TransferArchiveFileType");
+
+    private async Task<string?> PickSavePathAsync(
+        string suggestedName,
+        string fileTypeResourceKey)
     {
         var window = windowProvider();
         if (window is null)
@@ -46,7 +57,7 @@ internal sealed class WindowsTransferSavePicker(Func<Window?> windowProvider)
         {
             picker.DefaultFileExtension = extension;
             picker.FileTypeChoices.Add(
-                LocalizationService.Current.Get("TransferOriginalFileType"),
+                LocalizationService.Current.Get(fileTypeResourceKey),
                 [extension]);
         }
         var result = await picker.PickSaveFileAsync();
@@ -132,6 +143,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
     private readonly object _sync = new();
     private readonly IDsmRepository _repository;
     private readonly SafeFileDownloadService _downloadService;
+    private readonly SafeFolderArchiveDownloadService _archiveDownloadService;
     private readonly ForegroundTransferCoordinator _coordinator;
     private readonly IWindowsTransferSavePicker _savePicker;
     private readonly IWindowsTransferOpenPicker _openPicker;
@@ -155,6 +167,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         _savePicker = savePicker;
         _openPicker = openPicker;
         _downloadService = new SafeFileDownloadService();
+        _archiveDownloadService = new SafeFolderArchiveDownloadService();
     }
 
     public event Action<ForegroundUploadFinished>? UploadFinished;
@@ -170,15 +183,12 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentNullException.ThrowIfNull(entry);
-        if (entry.IsDirectory)
-        {
-            return false;
-        }
-
         string? targetPath;
         try
         {
-            targetPath = await _savePicker.PickSavePathAsync(entry.Name);
+            targetPath = entry.IsDirectory
+                ? await _savePicker.PickArchiveSavePathAsync($"{entry.Name}.zip")
+                : await _savePicker.PickSavePathAsync(entry.Name);
         }
         catch
         {
@@ -190,7 +200,14 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         }
 
         var running = PrepareDownload(profileId, targetPath, batchId: null);
-        _ = RunDownloadAsync(running, entry, targetPath, allowReplaceExisting: true);
+        if (entry.IsDirectory)
+        {
+            _ = RunFolderArchiveDownloadAsync(running, entry, targetPath);
+        }
+        else
+        {
+            _ = RunDownloadAsync(running, entry, targetPath, allowReplaceExisting: true);
+        }
         return true;
     }
 
@@ -737,6 +754,51 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             return new FileDownloadBatchAttempt(
                 FileDownloadBatchAttemptStatus.Failed,
                 StopBatch: running.Cancellation.IsCancellationRequested);
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                _running.Remove(running);
+            }
+            running.Cancellation.Dispose();
+        }
+    }
+
+    private async Task RunFolderArchiveDownloadAsync(
+        RunningTransfer running,
+        FileBrowserEntry entry,
+        string targetPath)
+    {
+        try
+        {
+            await _coordinator.RunAsync(
+                new ForegroundDownloadRequest(
+                    running.ProfileId,
+                    entry.Path,
+                    Path.GetFileName(targetPath),
+                    0,
+                    running.ActivityId),
+                async (_, cancellationToken) =>
+                {
+                    var destination =
+                        await WindowsTransactionalDownloadDestination.CreateAsync(
+                            targetPath,
+                            validateZipArchive: true);
+                    await _archiveDownloadService.DownloadAsync(
+                        _repository,
+                        entry.Path,
+                        destination,
+                        cancellationToken);
+                },
+                running.Cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            // Activity 展示稳定失败状态；页面继续可重试选择其他目标。
         }
         finally
         {

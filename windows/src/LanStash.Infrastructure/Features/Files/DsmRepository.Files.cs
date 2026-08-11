@@ -128,6 +128,18 @@ public sealed partial class DsmRepository
             expectedTotalLength,
             cancellationToken);
 
+    public Task StreamFolderArchiveAsync(
+        string remotePath,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync,
+        CancellationToken cancellationToken = default) =>
+        _api.StreamFolderArchiveAsync(
+            _profile,
+            _session,
+            Required("SYNO.FileStation.Download"),
+            remotePath,
+            writeChunkAsync,
+            cancellationToken);
+
     public async Task<IReadOnlyList<FileItem>> SearchFilesAsync(
         string path,
         string query,
