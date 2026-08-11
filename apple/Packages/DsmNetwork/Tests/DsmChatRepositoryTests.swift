@@ -393,10 +393,13 @@ final class DsmChatRepositoryTests: XCTestCase {
 
     func test读取群成员并使用用户目录补齐名称() async throws {
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"user_ids":[1,2],"broken_user_ids":[]}}"#),
-            response(#"{"success":true,"data":{"users":[{"user_id":1,"nickname":"林青"},{"user_id":2,"nickname":"周明"}]}}"#)
+            response(#"{"success":true,"data":{"user_ids":[1,3,2],"broken_user_ids":[3]}}"#),
+            response(#"{"success":true,"data":{"users":[{"user_id":1,"nickname":"林青","has_avatar":true},{"user_id":2,"nickname":"周明","has_avatar":true},{"user_id":3,"nickname":"失效成员","has_avatar":true}]}}"#)
         ])
-        let repository = try makeRepository(transport: transport)
+        let repository = try makeRepository(
+            transport: transport,
+            includesAvatarCapability: true
+        )
 
         let members = try await repository.listConversationMembers(conversationID: "42")
 
@@ -407,6 +410,11 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(fields["version"], "1")
         XCTAssertEqual(fields["method"], "get")
         XCTAssertEqual(fields["channel_id"], "42")
+        XCTAssertEqual(requests.count, 2)
+        let userFields = try decodeForm(requests[1].httpBody)
+        XCTAssertEqual(userFields["api"], DsmAPIName.chatUser)
+        XCTAssertEqual(userFields["method"], "list")
+        XCTAssertTrue(members.allSatisfy { $0.avatarData == nil })
     }
 
     func test设置群公告使用PostPin并复查公告列表() async throws {

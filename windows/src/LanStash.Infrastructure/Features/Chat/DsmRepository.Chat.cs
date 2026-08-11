@@ -5,10 +5,12 @@ using LanStash.Domain;
 namespace LanStash.Infrastructure;
 
 /// <summary>
-/// Synology Chat 内部只读接口适配器。仅使用已记录的 User.list、Channel.list 与 Post.list。
+/// Synology Chat 内部只读接口适配器。仅使用已记录的 User.list、Channel.list、
+/// Channel.Member.get 与 Post.list。
 /// </summary>
 public sealed partial class DsmRepository
 {
+    private const int ChatMemberReadVersion = 1;
     private const int ChatTextSendVersion = 5;
     private const int ChatTextReadbackLimit = 50;
 
@@ -19,6 +21,7 @@ public sealed partial class DsmRepository
         {
             ["SYNO.Chat.User"] = (1, 3),
             ["SYNO.Chat.Channel"] = (1, 5),
+            ["SYNO.Chat.Channel.Member"] = (1, 1),
             ["SYNO.Chat.Post"] = (1, 8),
         };
 
@@ -40,6 +43,13 @@ public sealed partial class DsmRepository
     private bool HasTextMessageSendContract =>
         HasReadableChatContract &&
         HasExactChatVersion("SYNO.Chat.Post", ChatTextSendVersion);
+
+    private bool HasConversationMembersContract =>
+        HasReadableChatContract &&
+        _capabilities.TryGetValue("SYNO.Chat.Channel.Member", out var capability) &&
+        capability.MinVersion <= ChatMemberReadVersion &&
+        capability.MaxVersion >= ChatMemberReadVersion &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
 
     public ChatAvailability Availability => HasReadableChatContract
         ? new(
@@ -63,6 +73,51 @@ public sealed partial class DsmRepository
         var currentUserId = FirstStableId(data, "current_user_id", "login_user_id", "my_user_id");
         return ContainerObjects(data, "users", "user", "user_list", "list", "members", "items", "results")
             .Select(item => ParseUser(item, currentUserId))
+            .OfType<ChatUser>()
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyList<ChatUser>> ListConversationMembersAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReadableChatContract();
+        ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
+        if (!HasConversationMembersContract)
+        {
+            throw new DsmException(
+                UserText.Key("WinShared11a208e43c34b77c"),
+                UserText.Key("WinShared371d84f48836296f"),
+                102);
+        }
+        var normalizedConversationId = conversationId.Trim();
+        var memberData = await _api.CallReadJsonObjectAsync(
+            _profile,
+            _session,
+            _capabilities["SYNO.Chat.Channel.Member"],
+            ChatMemberReadVersion,
+            "get",
+            new Dictionary<string, string>
+            {
+                ["channel_id"] = normalizedConversationId,
+            },
+            cancellationToken).ConfigureAwait(false);
+        var memberIds = StableIdArray(memberData, "user_ids");
+        var brokenMemberIds = StableIdArray(memberData, "broken_user_ids")
+            .ToHashSet(StringComparer.Ordinal);
+        var readableMemberIds = memberIds
+            .Where(id => !brokenMemberIds.Contains(id))
+            .ToArray();
+        if (readableMemberIds.Length == 0)
+        {
+            return [];
+        }
+        var users = await ListUsersAsync(cancellationToken).ConfigureAwait(false);
+        var usersById = users
+            .GroupBy(user => user.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        return readableMemberIds
+            .Select(id => usersById.GetValueOrDefault(id))
             .OfType<ChatUser>()
             .ToArray();
     }
@@ -750,6 +805,24 @@ public sealed partial class DsmRepository
         return value.TryGetValue<sbyte>(out var signedByteValue)
             ? signedByteValue.ToString(CultureInfo.InvariantCulture)
             : null;
+    }
+
+    private static IReadOnlyList<string> StableIdArray(JsonObject data, string key)
+    {
+        if (data[key] is null)
+        {
+            return [];
+        }
+        if (data[key] is not JsonArray array)
+        {
+            throw InvalidChatResponse();
+        }
+        var values = array.Select(StableId).ToArray();
+        if (values.Any(value => value is null))
+        {
+            throw InvalidChatResponse();
+        }
+        return values.Select(value => value!).ToArray();
     }
 
     private static IEnumerable<JsonObject> ContainerObjects(JsonObject data, params string[] keys)

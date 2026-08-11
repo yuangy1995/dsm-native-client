@@ -8,6 +8,10 @@ public interface IChatRepository
     Task<IReadOnlyList<ChatUser>> ListUsersAsync(
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<ChatUser>> ListConversationMembersAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(
         CancellationToken cancellationToken = default);
 

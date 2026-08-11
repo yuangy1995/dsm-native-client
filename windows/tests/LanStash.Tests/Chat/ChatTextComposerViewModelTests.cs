@@ -125,6 +125,11 @@ public sealed class ChatTextComposerViewModelTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ChatUser>>([]);
 
+        public Task<IReadOnlyList<ChatUser>> ListConversationMembersAsync(
+            string conversationId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ChatUser>>([]);
+
         public Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ChatConversation>>([]);

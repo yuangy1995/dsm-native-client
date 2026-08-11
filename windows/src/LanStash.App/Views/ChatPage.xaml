@@ -10,6 +10,7 @@
         <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="SearchAccelerator_Invoked" />
         <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
         <KeyboardAccelerator Key="A" Modifiers="Control,Shift" Invoked="ChooseAttachmentAccelerator_Invoked" />
+        <KeyboardAccelerator Key="M" Modifiers="Control,Shift" Invoked="MembersAccelerator_Invoked" />
         <KeyboardAccelerator Key="P" Modifiers="Control,Shift" Invoked="TogglePinAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
@@ -208,6 +209,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Button
                                 x:Uid="ChatBrowserBack"
@@ -229,8 +231,18 @@
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <Button
-                                x:Name="SelectedPinButton"
+                                x:Uid="ChatBrowserMembersButton"
+                                x:Name="MembersButton"
                                 Grid.Column="2"
+                                MinWidth="44"
+                                MinHeight="44"
+                                Click="Members_Click"
+                                Visibility="Collapsed">
+                                <FontIcon Glyph="&#xE902;" FontSize="16" />
+                            </Button>
+                            <Button
+                                x:Name="SelectedPinButton"
+                                Grid.Column="3"
                                 MinWidth="44"
                                 MinHeight="44"
                                 Click="SelectedPin_Click"
@@ -243,7 +255,7 @@
                             <Button
                                 x:Uid="ChatBrowserRefreshMessages"
                                 x:Name="RefreshMessagesButton"
-                                Grid.Column="3"
+                                Grid.Column="4"
                                 MinWidth="44"
                                 MinHeight="44"
                                 Click="RefreshMessages_Click">

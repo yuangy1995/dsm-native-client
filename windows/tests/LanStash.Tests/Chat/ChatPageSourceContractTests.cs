@@ -138,6 +138,75 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
+    public void PageHasReadOnlyGroupMembersDialogWithFiveStatesAndAccessibleControls()
+    {
+        var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var pageSource = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        var membersSource = Read("windows/src/LanStash.App/Views/ChatPage.Members.cs");
+        var dialog = Read("windows/src/LanStash.App/Views/ChatMembersDialogContent.xaml");
+        var dialogSource = Read("windows/src/LanStash.App/Views/ChatMembersDialogContent.xaml.cs");
+        var model = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserViewModel.cs");
+        var state = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserState.cs");
+        var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = Read("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+        var combined = page + pageSource + membersSource + dialog + dialogSource + model + state;
+
+        Assert.Contains("x:Name=\"MembersButton\"", page);
+        Assert.Contains("Key=\"M\" Modifiers=\"Control,Shift\"", page);
+        Assert.Contains("MembersAccelerator_Invoked", membersSource);
+        Assert.Contains("ContentDialog", membersSource);
+        Assert.Contains("XamlRoot = XamlRoot", membersSource);
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", membersSource);
+        Assert.Contains("<ListView", dialog);
+        Assert.Contains("x:Name=\"MembersLoadingState\"", dialog);
+        Assert.Contains("x:Name=\"MembersEmptyState\"", dialog);
+        Assert.Contains("x:Name=\"MembersErrorState\"", dialog);
+        Assert.Contains("x:Name=\"MembersContentState\"", dialog);
+        foreach (var value in new[] { "Idle", "Loading", "Empty", "Error", "Content" })
+        {
+            Assert.Contains(value, state);
+        }
+        Assert.Contains("ThemeResource TextFillColorSecondaryBrush", dialog);
+        Assert.DoesNotContain("Foreground=\"#", dialog, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Background=\"#", dialog, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Count(page + dialog, "MinHeight=\"44\"") >= 9);
+        Assert.Contains("AutomationProperties.Name=\"{x:Bind AutomationName}\"", dialog);
+        Assert.Contains("AutomationProperties.SetName", dialogSource);
+        Assert.Contains("ToolTipService.SetToolTip", dialogSource);
+        Assert.Contains("TextWrapping=\"WrapWholeWords\"", dialog);
+        Assert.Contains("TextWrapping=\"Wrap\"", dialog);
+        Assert.Contains("ChatMembersCurrentUser", state);
+        Assert.Contains("ChatMembersDisabled", state);
+        Assert.Contains("ChatMemberAutomationName", state);
+        Assert.Contains("CanViewMembers", combined);
+        Assert.Contains("ChatConversationKind.Group", state);
+        Assert.Contains("CancelConversationMembersLoad", membersSource);
+        foreach (var key in new[]
+        {
+            "ChatBrowserMembersButton",
+            "ChatMembersDialogTitle",
+            "ChatMembersRefresh",
+            "ChatMembersClose",
+            "ChatMembersLoading",
+            "ChatMembersEmptyTitle",
+            "ChatMembersEmptyMessage",
+            "ChatMembersErrorTitle",
+            "ChatMembersErrorMessage",
+            "ChatMembersRetry",
+            "ChatMembersCurrentUser",
+            "ChatMembersDisabled",
+            "ChatMembersCount",
+            "ChatMembersList",
+            "ChatMemberAutomationName",
+            "ChatMemberAutomationNameWithTwoStatuses",
+        })
+        {
+            Assert.Contains($"name=\"{key}", english);
+            Assert.Contains($"name=\"{key}", chinese);
+        }
+    }
+
+    [Fact]
     public void ShellRoutesChatWithoutWorkspaceFallbackAndDisposesPage()
     {
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
@@ -159,6 +228,7 @@ public sealed class ChatPageSourceContractTests
     [InlineData("ChatBrowserConversationList")]
     [InlineData("ChatBrowserBack")]
     [InlineData("ChatBrowserRefreshMessages")]
+    [InlineData("ChatBrowserMembersButton")]
     [InlineData("ChatBrowserLoadEarlier")]
     [InlineData("ChatBrowserMessageList")]
     [InlineData("ChatBrowserComposer")]

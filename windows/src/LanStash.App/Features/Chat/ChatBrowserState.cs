@@ -16,6 +16,15 @@ public enum ChatBrowserContentState
     RequiresValidation,
 }
 
+public enum ChatMembersContentState
+{
+    Idle,
+    Loading,
+    Empty,
+    Error,
+    Content,
+}
+
 public sealed record ChatConversationItem(ChatConversation Conversation, bool IsPinned = false)
 {
     private const string PinGlyphValue = "\uE718";
@@ -46,6 +55,7 @@ public sealed record ChatConversationItem(ChatConversation Conversation, bool Is
         }
     }
     public bool IsEncrypted => Conversation.IsEncrypted;
+    public bool IsGroup => Conversation.Kind == ChatConversationKind.Group;
     public string Initial => string.IsNullOrWhiteSpace(Title)
         ? "?"
         : StringInfo.GetNextTextElement(Title.Trim()).ToUpper(CultureInfo.CurrentCulture);
@@ -80,6 +90,41 @@ public sealed record ChatConversationItem(ChatConversation Conversation, bool Is
                 part.Length > 0 &&
                 Conversation.MemberIds.Contains(part, StringComparer.Ordinal));
             return !isOnlyMemberIds;
+        }
+    }
+}
+
+public sealed record ChatMemberItem(ChatUser User)
+{
+    public string DisplayName => User.DisplayName;
+    public bool IsCurrentUser => User.IsCurrentUser == true;
+    public bool IsDisabled => User.IsDisabled;
+    public string CurrentUserText => LocalizationService.Current.Get("ChatMembersCurrentUser");
+    public string DisabledText => LocalizationService.Current.Get("ChatMembersDisabled");
+    public Visibility CurrentUserVisibility => IsCurrentUser ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility DisabledVisibility => IsDisabled ? Visibility.Visible : Visibility.Collapsed;
+    public string AutomationName
+    {
+        get
+        {
+            var statuses = new[]
+            {
+                IsCurrentUser ? CurrentUserText : null,
+                IsDisabled ? DisabledText : null,
+            }.OfType<string>().ToArray();
+            return statuses.Length switch
+            {
+                0 => DisplayName,
+                1 => LocalizationService.Current.Format(
+                    "ChatMemberAutomationName",
+                    DisplayName,
+                    statuses[0]),
+                _ => LocalizationService.Current.Format(
+                    "ChatMemberAutomationNameWithTwoStatuses",
+                    DisplayName,
+                    statuses[0],
+                    statuses[1]),
+            };
         }
     }
 }

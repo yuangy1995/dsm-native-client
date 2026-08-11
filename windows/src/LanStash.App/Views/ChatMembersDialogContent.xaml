@@ -1,0 +1,123 @@
+<UserControl
+    x:Class="LanStash.App.Views.ChatMembersDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:chat="using:LanStash.App.Features.Chat">
+    <Grid
+        MinWidth="280"
+        MaxWidth="560"
+        MinHeight="320"
+        RowSpacing="12"
+        AutomationProperties.LiveSetting="Polite">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+                x:Name="MembersCountText"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Button
+                x:Name="MembersRefreshButton"
+                Grid.Column="1"
+                MinWidth="44"
+                MinHeight="44"
+                Click="Refresh_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE72C;" FontSize="16" />
+                    <TextBlock x:Name="MembersRefreshText" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="1">
+            <StackPanel
+                x:Name="MembersLoadingState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="12"
+                Visibility="Collapsed">
+                <ProgressRing Width="36" Height="36" IsActive="True" />
+                <TextBlock x:Name="MembersLoadingText" TextAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="MembersEmptyState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="420"
+                Spacing="8"
+                Visibility="Collapsed">
+                <TextBlock x:Name="MembersEmptyTitle" FontSize="20" TextAlignment="Center" />
+                <TextBlock
+                    x:Name="MembersEmptyMessage"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel
+                x:Name="MembersErrorState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="420"
+                Spacing="8"
+                Visibility="Collapsed">
+                <TextBlock x:Name="MembersErrorTitle" FontSize="20" TextAlignment="Center" />
+                <TextBlock
+                    x:Name="MembersErrorMessage"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+                <Button
+                    x:Name="MembersRetryButton"
+                    MinHeight="44"
+                    HorizontalAlignment="Center"
+                    Click="Retry_Click" />
+            </StackPanel>
+
+            <ListView
+                x:Uid="ChatMembersList"
+                x:Name="MembersContentState"
+                ItemsSource="{x:Bind ViewModel.ConversationMembers}"
+                SelectionMode="None"
+                Visibility="Collapsed">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="MinHeight" Value="56" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="chat:ChatMemberItem">
+                        <StackPanel
+                            Padding="8"
+                            Spacing="4"
+                            AutomationProperties.Name="{x:Bind AutomationName}">
+                            <TextBlock
+                                FontWeight="SemiBold"
+                                Text="{x:Bind DisplayName}"
+                                TextWrapping="WrapWholeWords" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{x:Bind CurrentUserText}"
+                                TextWrapping="Wrap"
+                                Visibility="{x:Bind CurrentUserVisibility}" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{x:Bind DisabledText}"
+                                TextWrapping="Wrap"
+                                Visibility="{x:Bind DisabledVisibility}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -101,6 +101,157 @@ public sealed class ChatBrowserViewModelTests
     }
 
     [Fact]
+    public async Task GroupMembersLoadFromMemoryCacheAndRefreshOnDemand()
+    {
+        var repository = Available(Guid.NewGuid(), canListMembers: true);
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[GroupConversation("group", "Team")]);
+        repository.MessageResults.Enqueue(Page("group", [], null, false));
+        repository.MemberResults.Enqueue((IReadOnlyList<ChatUser>)[
+            new("u-1", "Current", null, false, true),
+            new("u-2", "Disabled", null, true, false)]);
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+
+        Assert.True(model.CanViewMembers);
+        await model.LoadConversationMembersAsync();
+        Assert.True(model.HasMembersContent);
+        Assert.Equal(new[] { "u-1", "u-2" },
+            model.ConversationMembers.Select(member => member.User.Id));
+        Assert.True(model.ConversationMembers[0].IsCurrentUser);
+        Assert.True(model.ConversationMembers[1].IsDisabled);
+
+        await model.LoadConversationMembersAsync();
+        Assert.Single(repository.MemberRequests);
+
+        repository.MemberResults.Enqueue((IReadOnlyList<ChatUser>)[
+            new("u-3", "Refreshed", null, false, false)]);
+        await model.RefreshConversationMembersAsync();
+        Assert.Equal(2, repository.MemberRequests.Count);
+        Assert.Equal("u-3", Assert.Single(model.ConversationMembers).User.Id);
+    }
+
+    [Fact]
+    public async Task MemberEmptyAndErrorStatesDoNotDisturbMessages()
+    {
+        var repository = Available(Guid.NewGuid(), canListMembers: true);
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[GroupConversation("group", "Team")]);
+        repository.MessageResults.Enqueue(Page(
+            "group",
+            [Message("message", "group", 1)],
+            null,
+            false));
+        repository.MemberResults.Enqueue((IReadOnlyList<ChatUser>)[]);
+        repository.MemberResults.Enqueue(new IOException("synthetic"));
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+
+        await model.LoadConversationMembersAsync();
+        Assert.True(model.IsMembersEmpty);
+        Assert.Equal("message", Assert.Single(model.Messages).Id);
+
+        await model.RefreshConversationMembersAsync();
+        Assert.True(model.HasMembersError);
+        Assert.Equal("message", Assert.Single(model.Messages).Id);
+        Assert.False(model.HasMessageError);
+    }
+
+    [Fact]
+    public async Task DirectConversationAndMissingFeatureIssueNoMemberRequests()
+    {
+        var directRepository = Available(Guid.NewGuid(), canListMembers: true);
+        directRepository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("direct", "Direct")]);
+        directRepository.MessageResults.Enqueue(Page("direct", [], null, false));
+        using (var directModel = new ChatBrowserViewModel())
+        {
+            await directModel.ActivateAsync(directRepository);
+            await directModel.SelectConversationAsync(directModel.Conversations.Single());
+            await directModel.LoadConversationMembersAsync();
+            Assert.False(directModel.CanViewMembers);
+            Assert.Empty(directRepository.MemberRequests);
+        }
+
+        var unsupportedRepository = Available(Guid.NewGuid());
+        unsupportedRepository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[GroupConversation("group", "Team")]);
+        unsupportedRepository.MessageResults.Enqueue(Page("group", [], null, false));
+        using var unsupportedModel = new ChatBrowserViewModel();
+        await unsupportedModel.ActivateAsync(unsupportedRepository);
+        await unsupportedModel.SelectConversationAsync(unsupportedModel.Conversations.Single());
+        await unsupportedModel.LoadConversationMembersAsync();
+        Assert.False(unsupportedModel.CanViewMembers);
+        Assert.Empty(unsupportedRepository.MemberRequests);
+    }
+
+    [Fact]
+    public async Task SelectionChangeAndCancelRejectLateMemberResults()
+    {
+        var repository = Available(Guid.NewGuid(), canListMembers: true);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[
+            GroupConversation("a", "Alpha"),
+            GroupConversation("b", "Beta")]);
+        repository.MessageResults.Enqueue(Page("a", [], null, false));
+        repository.MessageResults.Enqueue(Page("b", [], null, false));
+        var firstDelayed = new TaskCompletionSource<IReadOnlyList<ChatUser>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.MemberTasks.Enqueue(firstDelayed.Task);
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single(item => item.Id == "a"));
+
+        var firstLoad = model.LoadConversationMembersAsync();
+        await WaitUntilAsync(() => repository.MemberRequests.Count == 1);
+        await model.SelectConversationAsync(model.Conversations.Single(item => item.Id == "b"));
+        firstDelayed.SetResult([new("late-a", "Late A", null, false, false)]);
+        await firstLoad;
+        Assert.True(model.IsMembersIdle);
+        Assert.Empty(model.ConversationMembers);
+
+        var secondDelayed = new TaskCompletionSource<IReadOnlyList<ChatUser>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.MemberTasks.Enqueue(secondDelayed.Task);
+        var secondLoad = model.LoadConversationMembersAsync();
+        await WaitUntilAsync(() => repository.MemberRequests.Count == 2);
+        model.CancelConversationMembersLoad();
+        secondDelayed.SetResult([new("late-b", "Late B", null, false, false)]);
+        await secondLoad;
+        Assert.True(model.IsMembersIdle);
+        Assert.Empty(model.ConversationMembers);
+    }
+
+    [Fact]
+    public async Task ProfileSwitchRejectsLateMemberResult()
+    {
+        var firstRepository = Available(Guid.NewGuid(), canListMembers: true);
+        firstRepository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[GroupConversation("a", "Alpha")]);
+        firstRepository.MessageResults.Enqueue(Page("a", [], null, false));
+        var delayed = new TaskCompletionSource<IReadOnlyList<ChatUser>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        firstRepository.MemberTasks.Enqueue(delayed.Task);
+        var secondRepository = Available(Guid.NewGuid(), canListMembers: true);
+        secondRepository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[GroupConversation("b", "Beta")]);
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(firstRepository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        var load = model.LoadConversationMembersAsync();
+        await WaitUntilAsync(() => firstRepository.MemberRequests.Count == 1);
+
+        await model.ActivateAsync(secondRepository);
+        delayed.SetResult([new("late", "Late", null, false, false)]);
+        await load;
+
+        Assert.Equal(secondRepository.ProfileId, model.ActiveProfileId);
+        Assert.True(model.IsMembersIdle);
+        Assert.Empty(model.ConversationMembers);
+    }
+
+    [Fact]
     public async Task FilteredRefreshClearingSelectionCancelsBlockedMessageAndRejectsLateResult()
     {
         var repository = Available(Guid.NewGuid());
@@ -376,8 +527,8 @@ public sealed class ChatBrowserViewModelTests
         Assert.Equal("b1", Assert.Single(model.Messages).Id);
     }
 
-    private static FakeChatRepository Available(Guid profileId) =>
-        new(profileId, ChatAvailabilityStatus.Available);
+    private static FakeChatRepository Available(Guid profileId, bool canListMembers = false) =>
+        new(profileId, ChatAvailabilityStatus.Available, canListMembers);
 
     private static ChatConversation Conversation(
         string id,
@@ -386,6 +537,10 @@ public sealed class ChatBrowserViewModelTests
         bool encrypted = false) =>
         new(id, ChatConversationKind.Direct, title, [], 2, summary,
             DateTimeOffset.UnixEpoch.AddMinutes(id[0]), 0, encrypted);
+
+    private static ChatConversation GroupConversation(string id, string title) =>
+        new(id, ChatConversationKind.Group, title, [], 3, null,
+            DateTimeOffset.UnixEpoch.AddMinutes(id[0]), 0, false);
 
     private static ChatMessage Message(string id, string conversationId, int minute) =>
         new(id, conversationId, "user", "User", false,
@@ -408,21 +563,45 @@ public sealed class ChatBrowserViewModelTests
         Assert.True(predicate());
     }
 
-    private sealed class FakeChatRepository(Guid profileId, ChatAvailabilityStatus status) : IChatRepository
+    private sealed class FakeChatRepository(
+        Guid profileId,
+        ChatAvailabilityStatus status,
+        bool canListMembers = false) : IChatRepository
     {
         public Guid ProfileId { get; } = profileId;
         public ChatAvailability Availability { get; } = new(status,
             status == ChatAvailabilityStatus.Available
-                ? new HashSet<ChatReadFeature> { ChatReadFeature.Conversations, ChatReadFeature.Messages }
+                ? new HashSet<ChatReadFeature>(
+                    canListMembers
+                        ? [ChatReadFeature.Conversations, ChatReadFeature.Messages, ChatReadFeature.Members]
+                        : [ChatReadFeature.Conversations, ChatReadFeature.Messages])
                 : new HashSet<ChatReadFeature>());
         public Queue<object> ConversationResults { get; } = [];
+        public Queue<object> MemberResults { get; } = [];
         public Queue<object> MessageResults { get; } = [];
+        public Queue<Task<IReadOnlyList<ChatUser>>> MemberTasks { get; } = [];
         public Queue<Task<ChatMessagePage>> MessageTasks { get; } = [];
         public int ConversationRequests { get; private set; }
+        public List<string> MemberRequests { get; } = [];
         public List<(string ConversationId, string? Cursor)> MessageRequests { get; } = [];
 
         public Task<IReadOnlyList<ChatUser>> ListUsersAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ChatUser>>([]);
+
+        public Task<IReadOnlyList<ChatUser>> ListConversationMembersAsync(
+            string conversationId,
+            CancellationToken cancellationToken = default)
+        {
+            MemberRequests.Add(conversationId);
+            if (MemberTasks.Count > 0)
+            {
+                return MemberTasks.Dequeue();
+            }
+            var result = MemberResults.Dequeue();
+            return result is Exception error
+                ? Task.FromException<IReadOnlyList<ChatUser>>(error)
+                : Task.FromResult((IReadOnlyList<ChatUser>)result);
+        }
 
         public Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(CancellationToken cancellationToken = default)
         {

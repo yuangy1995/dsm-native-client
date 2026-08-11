@@ -331,6 +331,10 @@ public sealed partial class DsmRepository
     private IReadOnlySet<ChatReadFeature> SupportedChatReadFeatures()
     {
         var features = new HashSet<ChatReadFeature>(ChatReadFeatures);
+        if (HasConversationMembersContract)
+        {
+            features.Add(ChatReadFeature.Members);
+        }
         if (HasAttachmentBinaryReadContract)
         {
             features.Add(ChatReadFeature.AttachmentThumbnail);

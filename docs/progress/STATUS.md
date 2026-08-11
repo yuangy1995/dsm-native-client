@@ -42,6 +42,8 @@ Windows Chat 本地会话置顶已通过云端门禁：会话列表可通过行�
 
 iPhone/iPad Chat 本地会话置顶已通过云端门禁：移动端会话列表新增原生滑动置顶/取消置顶，消息详情工具栏提供同等按钮并保留 44pt 触控目标和 VoiceOver 标签；置顶顺序按 NAS 配置档保存在本机 `UserDefaults` 版本化 JSON 中，仅包含会话 ID，刷新时修剪已不存在的会话，搜索后保持置顶优先。删除 NAS 档案时清理本地偏好，普通退出登录只清内存会话与消息缓存，不删除置顶偏好；不新增 NAS 请求，不接官方 Star、群公告或消息置顶写接口。本机 iPhone 17 Pro iOS 26.5 模拟器 `MobileChatModelTests` 与 `MobileChatPresentationTests` 聚焦 38/38 通过；GitHub `Apple Build` run `31450710918` 已通过共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、工程生成、iPhone/iPad 通用应用构建、macOS 打包和产物上传，`Repository Check` run `31450710909` 已通过。真实 iPhone/iPad、VoiceOver、最大动态文字、真实 Chat Server 列表刷新和真实 NAS 配置删除仍为 `PENDING_USER_VALIDATION`。
 
+iPhone/iPad 与 Windows Chat 群成员只读列表已完成源码与云端构建闭环：仅在运行时发现 `SYNO.Chat.Channel.Member` v1 且当前会话为群聊时显示入口，固定使用 `get(channel_id)` 读取成员 ID，排除 `broken_user_ids` 后再复用不含头像的用户元数据补齐显示名、当前账号和停用状态。SwiftUI 使用原生 Sheet/List，WinUI 使用 ContentDialog/ListView；两端均覆盖加载、空内容、错误、重试/刷新和正常列表，成员读取失败不影响消息历史，切换会话或 NAS 档案会拒绝迟到结果。成员只驻留内存，不新增持久化、头像二进制或写请求；邀请/移除、角色管理、建群、官方 Star、群公告和服务器已读仍关闭。本机已通过双语资源门禁、Apple 共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、移动 Chat 聚焦 44/44、工程生成、iPhone/iPad 通用模拟器构建、macOS 共享资源回归构建，以及 Windows Chat 聚焦 117/117、完整 xUnit 968/968 与 XAML/RESW 解析。GitHub Apple Build run `31456211435`、Windows Build run `31456211425` 和 Repository Check run `31456211422` 均已通过；Windows 云端为 968/968 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建。本机因 macOS 无法执行 WinUI `XamlCompiler.exe`，未运行 Windows 应用构建，不把云端结果写成本机通过。真实 iPhone/iPad/Windows、VoiceOver/Narrator、高对比、最大动态文字/200% 缩放、键盘/触控、成员权限差异、`broken_user_ids` 真实响应和真实 Chat Server 为 `PENDING_USER_VALIDATION`。
+
 ### 第 2 波已合并（单一简体中文功能提交已全绿）
 
 - 基线：`641852b408ae24f8819e4a49cd70df4c8d9e5011`；功能对齐账本见[第 2 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)。

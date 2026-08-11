@@ -29,6 +29,115 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
+    public void MembersCapabilityIsOptionalAndRequiresVersionOneCoverage()
+    {
+        var exactCapabilities = Capabilities();
+        exactCapabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 1, "FORM");
+        var overlappingCapabilities = Capabilities();
+        overlappingCapabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 3, "FORM");
+        var unsupportedCapabilities = Capabilities();
+        unsupportedCapabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 2, 3, "FORM");
+        var nonFormCapabilities = Capabilities();
+        nonFormCapabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 1, "JSON");
+
+        var withoutMembers = CreateRepository(new RecordingApiClient(_ => new()));
+        var exact = CreateRepository(new RecordingApiClient(_ => new()), exactCapabilities);
+        var overlapping = CreateRepository(new RecordingApiClient(_ => new()), overlappingCapabilities);
+        var unsupported = CreateRepository(new RecordingApiClient(_ => new()), unsupportedCapabilities);
+        var nonForm = CreateRepository(new RecordingApiClient(_ => new()), nonFormCapabilities);
+
+        Assert.Equal(ChatAvailabilityStatus.Available, withoutMembers.Availability.Status);
+        Assert.DoesNotContain(ChatReadFeature.Members, withoutMembers.Availability.SupportedFeatures);
+        Assert.Contains(ChatReadFeature.Members, exact.Availability.SupportedFeatures);
+        Assert.Contains(ChatReadFeature.Members, overlapping.Availability.SupportedFeatures);
+        Assert.DoesNotContain(ChatReadFeature.Members, unsupported.Availability.SupportedFeatures);
+        Assert.DoesNotContain(ChatReadFeature.Members, nonForm.Availability.SupportedFeatures);
+    }
+
+    [Fact]
+    public async Task MembersWireUsesVersionOneGetThenPreservesKnownUserOrder()
+    {
+        var users = Users();
+        Assert.IsType<JsonArray>(users["users"]).Add(new JsonObject
+        {
+            ["user_id"] = "u-broken",
+            ["nickname"] = "Broken",
+        });
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.Channel.Member" => new JsonObject
+            {
+                ["user_ids"] = new JsonArray("u-2", "u-unknown", "u-1", "u-broken"),
+                ["broken_user_ids"] = new JsonArray("u-broken"),
+            },
+            "SYNO.Chat.User" => users,
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var capabilities = Capabilities();
+        capabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 3, "FORM");
+        var repository = CreateRepository(api, capabilities);
+
+        var members = await repository.ListConversationMembersAsync(" channel-1 ");
+
+        Assert.Equal(new[] { "u-2", "u-1" }, members.Select(member => member.Id));
+        Assert.False(members[0].IsCurrentUser);
+        Assert.True(members[1].IsCurrentUser);
+        Assert.Collection(
+            api.Requests,
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Channel.Member", "get", 1, 1);
+                Assert.Equal("channel-1", request.Parameters["channel_id"]);
+                Assert.Equal("entry.cgi", request.Path);
+                Assert.Equal("FORM", request.RequestFormat);
+            },
+            request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0));
+    }
+
+    [Fact]
+    public async Task EmptyOrOnlyBrokenMembersDoNotReadUserDirectory()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.Channel.Member" => new JsonObject
+            {
+                ["user_ids"] = new JsonArray("u-broken"),
+                ["broken_user_ids"] = new JsonArray("u-broken"),
+            },
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var capabilities = Capabilities();
+        capabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 1, "FORM");
+        var repository = CreateRepository(api, capabilities);
+
+        var members = await repository.ListConversationMembersAsync("channel-1");
+
+        Assert.Empty(members);
+        var request = Assert.Single(api.Requests);
+        AssertWire(request, "SYNO.Chat.Channel.Member", "get", 1, 1);
+    }
+
+    [Fact]
+    public async Task MissingMembersCapabilityIssuesNoRequests()
+    {
+        var api = new RecordingApiClient(_ => throw new InvalidOperationException());
+        var repository = CreateRepository(api);
+
+        await Assert.ThrowsAsync<DsmException>(() =>
+            repository.ListConversationMembersAsync("channel-1"));
+
+        Assert.Equal(ChatAvailabilityStatus.Available, repository.Availability.Status);
+        Assert.DoesNotContain(ChatReadFeature.Members, repository.Availability.SupportedFeatures);
+        Assert.Empty(api.Requests);
+    }
+
+    [Fact]
     public async Task UserAndConversationWireUsesOnlyRecordedListMethods()
     {
         var api = new RecordingApiClient(request => request.ApiName switch
@@ -1063,6 +1172,8 @@ public sealed class ChatRepositoryContractTests
         string ApiName,
         string Method,
         int Version,
+        string Path,
+        string RequestFormat,
         IReadOnlyDictionary<string, string> Parameters);
 
     private sealed record AttachmentRequest(
@@ -1094,6 +1205,31 @@ public sealed class ChatRepositoryContractTests
                 capability.Name,
                 method,
                 capability.MaxVersion,
+                capability.Path,
+                capability.RequestFormat,
+                new Dictionary<string, string>(
+                    parameters ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    StringComparer.Ordinal));
+            Requests.Add(request);
+            return Task.FromResult(response(request));
+        }
+
+        public Task<JsonObject> CallReadJsonObjectAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            int requiredVersion,
+            string method,
+            IReadOnlyDictionary<string, string>? parameters = null,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var request = new ApiRequest(
+                capability.Name,
+                method,
+                requiredVersion,
+                capability.Path,
+                capability.RequestFormat,
                 new Dictionary<string, string>(
                     parameters ?? new Dictionary<string, string>(StringComparer.Ordinal),
                     StringComparer.Ordinal));

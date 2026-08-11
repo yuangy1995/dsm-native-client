@@ -118,6 +118,10 @@ public actor DsmChatRepository: ChatRepository {
     }
 
     public func listUsers() async throws -> [ChatUser] {
+        try await listUsers(loadAvatars: true)
+    }
+
+    private func listUsers(loadAvatars: Bool) async throws -> [ChatUser] {
         let payload = try await call(
             DsmAPIName.chatUser,
             method: "list",
@@ -128,8 +132,15 @@ public actor DsmChatRepository: ChatRepository {
         let parsedUsers = userValues(from: payload).compactMap {
             makeUser(from: $0, currentUserID: currentUserID)
         }
-        let users = await usersByLoadingAvatars(parsedUsers)
-            .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+        let resolvedUsers: [ChatUser]
+        if loadAvatars {
+            resolvedUsers = await usersByLoadingAvatars(parsedUsers)
+        } else {
+            resolvedUsers = parsedUsers
+        }
+        let users = resolvedUsers.sorted {
+            $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+        }
         for user in users { knownUsersByID[user.id] = user }
         return users
     }
@@ -162,11 +173,16 @@ public actor DsmChatRepository: ChatRepository {
             version: 1
         )
         let object = payload.objectValue ?? [:]
-        let memberIDs = object.array(for: "user_ids").compactMap(\.stringValue)
+        let brokenMemberIDs = Set(
+            object.array(for: "broken_user_ids").compactMap(\.stringValue)
+        )
+        let memberIDs = object.array(for: "user_ids")
+            .compactMap(\.stringValue)
+            .filter { !brokenMemberIDs.contains($0) }
         guard !memberIDs.isEmpty else { return [] }
         let missingIDs = memberIDs.filter { knownUsersByID[$0] == nil }
         if !missingIDs.isEmpty {
-            _ = try await listUsers()
+            _ = try await listUsers(loadAvatars: false)
         }
         return memberIDs.compactMap { knownUsersByID[$0] }
     }

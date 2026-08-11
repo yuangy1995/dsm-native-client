@@ -13,9 +13,11 @@ final class MobileChatModel {
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
     @ObservationIgnored private var messageTask: Task<Void, Never>?
+    @ObservationIgnored private var memberTask: Task<Void, Never>?
     @ObservationIgnored private var sendTask: Task<Void, Never>?
     @ObservationIgnored private var conversationGeneration = 0
     @ObservationIgnored private var messageGeneration = 0
+    @ObservationIgnored private var memberGeneration = 0
     @ObservationIgnored private var sendGeneration = 0
     @ObservationIgnored private let conversationPinStore: any MobileChatConversationPinStore
     private let attachmentFileManager: FileManager
@@ -65,6 +67,13 @@ final class MobileChatModel {
 
     var canSendSelectedDraft: Bool {
         attachmentModel.canSendSelectedDraft
+    }
+
+    func canViewMembers(for conversation: ChatConversation) -> Bool {
+        state.selectedConversationID == conversation.id
+            && conversation.kind == .group
+            && state.availability.status == .available
+            && state.availability.supportedFeatures.contains(.groupMembers)
     }
 
     func activate(profileID: UUID?, repository: (any ChatRepository)?) async {
@@ -219,11 +228,18 @@ final class MobileChatModel {
         }
         attachmentModel.cancelAllWork()
         cancelMessageWork()
+        cancelMemberWork()
         updateActive { profile in
             profile.selectedConversationID = canonical.id
             profile.messageErrorCategory = nil
+            profile.memberErrorCategory = nil
             profile.sendErrorCategory = nil
             profile.loadMoreMessagesFailed = false
+            if let cachedMembers = profile.membersByConversation[canonical.id] {
+                profile.memberPageState = cachedMembers.isEmpty ? .empty : .content
+            } else {
+                profile.memberPageState = .empty
+            }
             if canonical.isEncrypted {
                 // 加密消息在当前只读切片中不进入内存缓存，避免正文意外泄漏。
                 profile.messagesByConversation[canonical.id] = nil
@@ -242,6 +258,65 @@ final class MobileChatModel {
             repository: repository,
             preservesContent: false
         )
+    }
+
+    func loadConversationMembers(forceRefresh: Bool = false) async {
+        guard let profileID = activeProfileID,
+              let repository = repositories[profileID],
+              let conversation = state.selectedConversation,
+              canViewMembers(for: conversation),
+              memberTask == nil else { return }
+
+        let conversationID = conversation.id
+        if !forceRefresh,
+           let cachedMembers = state.membersByConversation[conversationID] {
+            updateActive {
+                $0.memberPageState = cachedMembers.isEmpty ? .empty : .content
+                $0.memberErrorCategory = nil
+            }
+            return
+        }
+
+        let preservesContent = state.membersByConversation[conversationID] != nil
+        let requestGeneration = beginMemberRequest { profile in
+            profile.isRefreshingMembers = preservesContent
+            profile.memberErrorCategory = nil
+            if !preservesContent {
+                profile.memberPageState = .loading
+            }
+        }
+        let task = Task { [weak self] in
+            do {
+                let members = try await repository.listConversationMembers(
+                    conversationID: conversationID
+                )
+                try Task.checkCancellation()
+                self?.finishConversationMembers(
+                    members,
+                    conversationID: conversationID,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch is CancellationError {
+                self?.finishMemberCancellation(
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            } catch {
+                self?.finishMemberFailure(
+                    error,
+                    conversationID: conversationID,
+                    profileID: profileID,
+                    generation: requestGeneration
+                )
+            }
+        }
+        memberTask = task
+        await task.value
+    }
+
+    func cancelConversationMemberLoad() {
+        cancelMemberWork()
     }
 
     func refreshMessages() async {
@@ -428,6 +503,9 @@ final class MobileChatModel {
         messageTask?.cancel()
         messageTask = nil
         messageGeneration &+= 1
+        memberTask?.cancel()
+        memberTask = nil
+        memberGeneration &+= 1
         sendTask?.cancel()
         sendTask = nil
         sendGeneration &+= 1
@@ -435,6 +513,7 @@ final class MobileChatModel {
         updateActive {
             $0.isRefreshingConversations = false
             $0.isRefreshingMessages = false
+            $0.isRefreshingMembers = false
             $0.isLoadingMoreMessages = false
             $0.isSendingMessage = false
         }
@@ -519,6 +598,16 @@ final class MobileChatModel {
         return sendGeneration
     }
 
+    private func beginMemberRequest(
+        _ update: (inout MobileChatProfileState) -> Void
+    ) -> Int {
+        memberTask?.cancel()
+        memberTask = nil
+        memberGeneration &+= 1
+        updateActive(update)
+        return memberGeneration
+    }
+
     private func cancelMessageWork() {
         messageTask?.cancel()
         messageTask = nil
@@ -526,6 +615,21 @@ final class MobileChatModel {
         updateActive {
             $0.isRefreshingMessages = false
             $0.isLoadingMoreMessages = false
+        }
+    }
+
+    private func cancelMemberWork() {
+        memberTask?.cancel()
+        memberTask = nil
+        memberGeneration &+= 1
+        updateActive { profile in
+            profile.isRefreshingMembers = false
+            if let conversationID = profile.selectedConversationID,
+               let cachedMembers = profile.membersByConversation[conversationID] {
+                profile.memberPageState = cachedMembers.isEmpty ? .empty : .content
+            } else {
+                profile.memberPageState = .empty
+            }
         }
     }
 
@@ -571,6 +675,7 @@ final class MobileChatModel {
         }
         if invalidatesMessageLane {
             cancelMessageWork()
+            cancelMemberWork()
             attachmentModel.cancelAllWork()
         }
         if let pinnedConversationIDsToSave {
@@ -586,12 +691,14 @@ final class MobileChatModel {
             profile.visibleConversations = []
             profile.selectedConversationID = nil
             profile.messagesByConversation = [:]
+            profile.membersByConversation = [:]
             profile.conversationPageState = .empty
             profile.messagePageState = .empty
             profile.isRefreshingConversations = false
             profile.conversationErrorCategory = nil
         }
         cancelMessageWork()
+        cancelMemberWork()
         attachmentModel.cancelAllWork()
         conversationTask = nil
     }
@@ -663,6 +770,23 @@ final class MobileChatModel {
             profile.sendErrorCategory = nil
         }
         sendTask = nil
+    }
+
+    private func finishConversationMembers(
+        _ members: [ChatUser],
+        conversationID: String,
+        profileID: UUID,
+        generation: Int
+    ) {
+        guard isCurrentMember(profileID: profileID, generation: generation),
+              state.selectedConversationID == conversationID else { return }
+        updateActive {
+            $0.membersByConversation[conversationID] = members
+            $0.memberPageState = members.isEmpty ? .empty : .content
+            $0.isRefreshingMembers = false
+            $0.memberErrorCategory = nil
+        }
+        memberTask = nil
     }
 
     private func finishSendFailure(
@@ -791,6 +915,22 @@ final class MobileChatModel {
         messageTask = nil
     }
 
+    private func finishMemberFailure(
+        _ error: Error,
+        conversationID: String,
+        profileID: UUID,
+        generation: Int
+    ) {
+        guard isCurrentMember(profileID: profileID, generation: generation),
+              state.selectedConversationID == conversationID else { return }
+        updateActive {
+            $0.memberPageState = .error
+            $0.isRefreshingMembers = false
+            $0.memberErrorCategory = Self.category(for: error)
+        }
+        memberTask = nil
+    }
+
     private func finishConversationCancellation(profileID: UUID, generation: Int) {
         guard isCurrentConversation(profileID: profileID, generation: generation) else { return }
         updateActive {
@@ -806,6 +946,12 @@ final class MobileChatModel {
             $0.isLoadingMoreMessages = false
         }
         messageTask = nil
+    }
+
+    private func finishMemberCancellation(profileID: UUID, generation: Int) {
+        guard isCurrentMember(profileID: profileID, generation: generation) else { return }
+        updateActive { $0.isRefreshingMembers = false }
+        memberTask = nil
     }
 
     private func finishSendCancellation(profileID: UUID, generation: Int) {
@@ -833,6 +979,10 @@ final class MobileChatModel {
 
     private func isCurrentMessage(profileID: UUID, generation: Int) -> Bool {
         activeProfileID == profileID && messageGeneration == generation
+    }
+
+    private func isCurrentMember(profileID: UUID, generation: Int) -> Bool {
+        activeProfileID == profileID && memberGeneration == generation
     }
 
     private func isCurrentSend(profileID: UUID, generation: Int) -> Bool {

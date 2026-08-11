@@ -15,12 +15,15 @@ struct MobileChatProfileState: Equatable, Sendable {
     var conversationFilter = ""
     var selectedConversationID: String?
     var messagesByConversation: [String: MobileChatMessageCache] = [:]
+    var membersByConversation: [String: [ChatUser]] = [:]
     var draftsByConversation: [String: String] = [:]
     var sendReviewBlockedTextsByConversation: [String: Set<String>] = [:]
     var conversationPageState: MobilePageState = .loading
     var messagePageState: MobilePageState = .empty
     var isRefreshingConversations = false
     var isRefreshingMessages = false
+    var memberPageState: MobilePageState = .empty
+    var isRefreshingMembers = false
     var isLoadingMoreMessages = false
     var isSendingMessage = false
     var isPreparingAttachment = false
@@ -35,6 +38,7 @@ struct MobileChatProfileState: Equatable, Sendable {
     var loadMoreMessagesFailed = false
     var conversationErrorCategory: AppErrorCategory?
     var messageErrorCategory: AppErrorCategory?
+    var memberErrorCategory: AppErrorCategory?
     var sendErrorCategory: AppErrorCategory?
     var attachmentErrorCategory: AppErrorCategory?
     var remoteAttachmentErrorCategory: AppErrorCategory?
@@ -55,6 +59,11 @@ struct MobileChatProfileState: Equatable, Sendable {
     var selectedMessages: MobileChatMessageCache {
         guard let selectedConversationID else { return MobileChatMessageCache() }
         return messagesByConversation[selectedConversationID] ?? MobileChatMessageCache()
+    }
+
+    var selectedConversationMembers: [ChatUser] {
+        guard let selectedConversationID else { return [] }
+        return membersByConversation[selectedConversationID] ?? []
     }
 
     var selectedDraft: String {

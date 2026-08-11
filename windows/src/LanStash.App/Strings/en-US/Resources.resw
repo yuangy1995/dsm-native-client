@@ -460,6 +460,23 @@
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to conversations</value></data>
   <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>Foreground messages and single attachments</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh messages</value></data>
+  <data name="ChatBrowserMembersButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>View group members</value></data>
+  <data name="ChatBrowserMembersButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>View group members</value></data>
+  <data name="ChatMembersDialogTitle" xml:space="preserve"><value>Group members</value></data>
+  <data name="ChatMembersRefresh" xml:space="preserve"><value>Refresh members</value></data>
+  <data name="ChatMembersClose" xml:space="preserve"><value>Close</value></data>
+  <data name="ChatMembersLoading" xml:space="preserve"><value>Loading group members…</value></data>
+  <data name="ChatMembersEmptyTitle" xml:space="preserve"><value>No members to display</value></data>
+  <data name="ChatMembersEmptyMessage" xml:space="preserve"><value>Member information may be restricted by your Chat permissions.</value></data>
+  <data name="ChatMembersErrorTitle" xml:space="preserve"><value>Group members couldn’t be loaded</value></data>
+  <data name="ChatMembersErrorMessage" xml:space="preserve"><value>Try again. If this keeps happening, check your access to this group in Synology Chat.</value></data>
+  <data name="ChatMembersRetry" xml:space="preserve"><value>Try again</value></data>
+  <data name="ChatMembersCurrentUser" xml:space="preserve"><value>You</value></data>
+  <data name="ChatMembersDisabled" xml:space="preserve"><value>Unavailable</value></data>
+  <data name="ChatMembersCount" xml:space="preserve"><value>Member count: {0:N0}</value></data>
+  <data name="ChatMembersList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Group members</value></data>
+  <data name="ChatMemberAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="ChatMemberAutomationNameWithTwoStatuses" xml:space="preserve"><value>{0}, {1}, {2}</value></data>
   <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>Message</value></data>
   <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>Type a message</value></data>
   <data name="ChatBrowserComposer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Message text</value></data>

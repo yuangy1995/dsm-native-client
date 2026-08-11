@@ -195,6 +195,8 @@ public sealed partial class ChatPage : Page, IDisposable
         ConversationRefreshError.IsOpen = _viewModel.HasConversationError && _viewModel.HasContent;
         PinStorageError.IsOpen = _viewModel.HasPinStorageError && _viewModel.HasContent;
         ConversationTitle.Text = _viewModel.SelectedConversation?.Title ?? string.Empty;
+        MembersButton.Visibility = Visible(_viewModel.CanViewMembers);
+        MembersButton.IsEnabled = _viewModel.CanViewMembers;
         UpdateSelectedPinAction();
         RefreshMessagesButton.IsEnabled = _viewModel.SelectedConversation is { IsEncrypted: false } &&
             !_viewModel.IsLoadingMessages;
@@ -285,6 +287,7 @@ public sealed partial class ChatPage : Page, IDisposable
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _composer.PropertyChanged -= ViewModel_PropertyChanged;
         _attachmentComposer.PropertyChanged -= ViewModel_PropertyChanged;
+        DisposeMembersDialog();
         CancelAttachmentRead();
         _attachmentComposer.Dispose();
         _composer.Dispose();

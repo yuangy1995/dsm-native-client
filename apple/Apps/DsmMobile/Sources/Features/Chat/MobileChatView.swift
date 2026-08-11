@@ -298,6 +298,7 @@ private struct MobileChatMessagesView: View {
     @Bindable var chat: MobileChatModel
     let conversation: ChatConversation
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var presentsMembers = false
 
     var body: some View {
         Group {
@@ -342,6 +343,17 @@ private struct MobileChatMessagesView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if chat.canViewMembers(for: conversation) {
+                    Button {
+                        presentsMembers = true
+                    } label: {
+                        Image(systemName: "person.2")
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.string("mobile.chat.members.action"))
+                    .accessibilityHint(L10n.string("mobile.chat.members.hint"))
+                }
+
                 Button {
                     chat.toggleConversationPinned(conversation)
                 } label: {
@@ -360,6 +372,9 @@ private struct MobileChatMessagesView: View {
                 .disabled(conversation.isEncrypted || chat.state.isRefreshingMessages)
                 .accessibilityLabel(L10n.string("mobile.chat.action.refresh-messages"))
             }
+        }
+        .sheet(isPresented: $presentsMembers) {
+            MobileChatMembersSheet(chat: chat, conversation: conversation)
         }
         .safeAreaInset(edge: .bottom) {
             if chat.canComposeMessage, !conversation.isEncrypted {
@@ -440,6 +455,124 @@ private struct MobileChatMessagesView: View {
             filteredEmptyMessage: L10n.string("mobile.chat.messages.empty.message"),
             errorTitle: L10n.string("mobile.chat.error.title"),
             errorMessage: L10n.string("mobile.chat.messages.error.message"),
+            retryTitle: L10n.string("mobile.chat.action.retry")
+        )
+    }
+}
+
+private struct MobileChatMembersSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var chat: MobileChatModel
+    let conversation: ChatConversation
+
+    var body: some View {
+        NavigationStack {
+            MobilePageStateView(
+                state: chat.state.memberPageState,
+                labels: memberStateLabels,
+                emptySystemImage: "person.2",
+                errorSystemImage: "person.2.slash",
+                retryAction: {
+                    Task { await chat.loadConversationMembers(forceRefresh: true) }
+                }
+            ) {
+                List {
+                    Section {
+                        ForEach(chat.state.selectedConversationMembers) { member in
+                            memberRow(member)
+                        }
+                    } header: {
+                        Text(
+                            L10n.string(
+                                "mobile.chat.members.count",
+                                chat.state.selectedConversationMembers.count
+                            )
+                        )
+                    }
+                }
+                .listStyle(.plain)
+                .refreshable {
+                    await chat.loadConversationMembers(forceRefresh: true)
+                }
+            }
+            .navigationTitle(L10n.string("mobile.chat.members.title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("mobile.chat.members.close")) {
+                        chat.cancelConversationMemberLoad()
+                        dismiss()
+                    }
+                    .frame(minWidth: 44, minHeight: 44)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { await chat.loadConversationMembers(forceRefresh: true) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 44, height: 44)
+                    }
+                    .disabled(
+                        chat.state.memberPageState == .loading
+                            || chat.state.isRefreshingMembers
+                    )
+                    .accessibilityLabel(L10n.string("mobile.chat.members.refresh"))
+                }
+            }
+            .overlay(alignment: .top) {
+                if chat.state.isRefreshingMembers {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(8)
+                        .background(.regularMaterial, in: .capsule)
+                        .accessibilityLabel(L10n.string("mobile.chat.members.loading"))
+                }
+            }
+        }
+        .task(id: conversation.id) {
+            await chat.loadConversationMembers()
+        }
+        .onDisappear {
+            chat.cancelConversationMemberLoad()
+        }
+    }
+
+    private func memberRow(_ member: ChatUser) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(member.displayName)
+                    .font(.body.weight(.medium))
+                if member.isCurrentUser == true {
+                    Text(L10n.string("mobile.chat.members.current-user"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if member.isDisabled {
+                    Text(L10n.string("mobile.chat.members.disabled"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var memberStateLabels: MobilePageStateLabels {
+        MobilePageStateLabels(
+            loading: L10n.string("mobile.chat.members.loading"),
+            emptyTitle: L10n.string("mobile.chat.members.empty.title"),
+            emptyMessage: L10n.string("mobile.chat.members.empty.message"),
+            filteredEmptyTitle: L10n.string("mobile.chat.members.empty.title"),
+            filteredEmptyMessage: L10n.string("mobile.chat.members.empty.message"),
+            errorTitle: L10n.string("mobile.chat.members.error.title"),
+            errorMessage: L10n.string("mobile.chat.members.error.message"),
             retryTitle: L10n.string("mobile.chat.action.retry")
         )
     }

@@ -460,6 +460,23 @@
   <data name="ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回会话列表</value></data>
   <data name="ChatBrowserConversationReadOnly.Text" xml:space="preserve"><value>支持前台消息和单附件</value></data>
   <data name="ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新消息</value></data>
+  <data name="ChatBrowserMembersButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>查看群成员</value></data>
+  <data name="ChatBrowserMembersButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>查看群成员</value></data>
+  <data name="ChatMembersDialogTitle" xml:space="preserve"><value>群成员</value></data>
+  <data name="ChatMembersRefresh" xml:space="preserve"><value>刷新成员</value></data>
+  <data name="ChatMembersClose" xml:space="preserve"><value>关闭</value></data>
+  <data name="ChatMembersLoading" xml:space="preserve"><value>正在加载群成员…</value></data>
+  <data name="ChatMembersEmptyTitle" xml:space="preserve"><value>没有可显示的成员</value></data>
+  <data name="ChatMembersEmptyMessage" xml:space="preserve"><value>当前账号的 Chat 权限可能限制了成员信息。</value></data>
+  <data name="ChatMembersErrorTitle" xml:space="preserve"><value>无法加载群成员</value></data>
+  <data name="ChatMembersErrorMessage" xml:space="preserve"><value>请重试；如果仍然失败，请在 Synology Chat 中检查当前账号对这个群聊的访问权限。</value></data>
+  <data name="ChatMembersRetry" xml:space="preserve"><value>重试</value></data>
+  <data name="ChatMembersCurrentUser" xml:space="preserve"><value>你</value></data>
+  <data name="ChatMembersDisabled" xml:space="preserve"><value>不可用</value></data>
+  <data name="ChatMembersCount" xml:space="preserve"><value>成员数：{0:N0}</value></data>
+  <data name="ChatMembersList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>群成员</value></data>
+  <data name="ChatMemberAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="ChatMemberAutomationNameWithTwoStatuses" xml:space="preserve"><value>{0}，{1}，{2}</value></data>
   <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>消息</value></data>
   <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>输入消息</value></data>
   <data name="ChatBrowserComposer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>消息正文</value></data>

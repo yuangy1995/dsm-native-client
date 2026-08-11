@@ -11,6 +11,7 @@ public enum ChatReadFeature
 {
     Users,
     Conversations,
+    Members,
     Messages,
     AttachmentMetadata,
     AttachmentThumbnail,

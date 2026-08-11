@@ -105,6 +105,46 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertFalse(model.contains("setMessagePinned"))
     }
 
+    func test群成员仅按能力显示并使用原生Sheet五态和无障碍入口() throws {
+        let source = try chatViewSources()
+        let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
+        let state = try sourceFile("Sources/Features/Chat/MobileChatState.swift")
+        let repository = try sourceFile("Sources/Features/Chat/MobileReadOnlyChatRepository.swift")
+
+        XCTAssertTrue(source.contains("if chat.canViewMembers(for: conversation)"))
+        XCTAssertTrue(source.contains(".sheet(isPresented: $presentsMembers)"))
+        XCTAssertTrue(source.contains("private struct MobileChatMembersSheet: View"))
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains("chat.state.memberPageState"))
+        XCTAssertTrue(source.contains("chat.loadConversationMembers(forceRefresh: true)"))
+        XCTAssertTrue(source.contains("chat.cancelConversationMemberLoad()"))
+        XCTAssertTrue(source.contains(".frame(width: 44, height: 44)"))
+        XCTAssertTrue(source.contains(".frame(maxWidth: .infinity, minHeight: 44"))
+        for key in [
+            "mobile.chat.members.action",
+            "mobile.chat.members.hint",
+            "mobile.chat.members.title",
+            "mobile.chat.members.close",
+            "mobile.chat.members.refresh",
+            "mobile.chat.members.loading",
+            "mobile.chat.members.empty.title",
+            "mobile.chat.members.empty.message",
+            "mobile.chat.members.error.title",
+            "mobile.chat.members.error.message",
+            "mobile.chat.members.current-user",
+            "mobile.chat.members.disabled",
+            "mobile.chat.members.count"
+        ] {
+            XCTAssertTrue(source.contains(key), key)
+        }
+        XCTAssertTrue(model.contains("conversation.kind == .group"))
+        XCTAssertTrue(model.contains("supportedFeatures.contains(.groupMembers)"))
+        XCTAssertTrue(model.contains("memberGeneration"))
+        XCTAssertTrue(state.contains("membersByConversation"))
+        XCTAssertTrue(repository.contains(".groupMembers"))
+        XCTAssertFalse(source.contains("mobile.chat.members.filtered"))
+    }
+
     func testAppModel持有单一聊天模型且生命周期接入配置档和工作区() throws {
         let appModel = try sourceFile("Sources/AppShell/MobileAppModel.swift")
         let workspace = try sourceFile("Sources/AppShell/MobileAppModel+Workspace.swift")

@@ -13,7 +13,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .imageAttachment,
             .videoAttachment,
             .fileAttachment,
-            .attachmentDownload
+            .attachmentDownload,
+            .groupMembers
         ]
         let mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
@@ -118,7 +119,12 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     }
 
     func listConversationMembers(conversationID: String) async throws -> [ChatUser] {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.groupMembers) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return try await base.listConversationMembers(conversationID: conversationID)
     }
 
     func listPinnedMessages(conversationID: String) async throws -> [ChatMessage] {
