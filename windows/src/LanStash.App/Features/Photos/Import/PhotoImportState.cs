@@ -13,6 +13,7 @@ internal enum PhotoImportPhase
 {
     Idle,
     Choosing,
+    PreparingDrop,
     Activity,
     Confirmed,
     ConfirmedElsewhere,
@@ -20,6 +21,7 @@ internal enum PhotoImportPhase
     Cancelled,
     PermissionDenied,
     Unsupported,
+    InvalidDrop,
     Failed,
 }
 
@@ -45,6 +47,12 @@ internal interface IPhotoImportTransferService
     Task<PhotoMediaUploadStart?> PickAndStartMediaUploadAsync(
         string profileId,
         string folderPath,
+        Guid activityId);
+
+    Task<PhotoMediaUploadStart?> StartMediaUploadAsync(
+        string profileId,
+        string folderPath,
+        string sourcePath,
         Guid activityId);
 }
 

@@ -27,7 +27,15 @@
             Invoked="PhotoViewerImmersiveAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
-    <Grid Padding="24,20,24,16" RowSpacing="12" ColumnSpacing="16">
+    <Grid
+        x:Name="PhotoBrowserRoot"
+        Padding="24,20,24,16"
+        RowSpacing="12"
+        ColumnSpacing="16"
+        AllowDrop="True"
+        DragOver="PhotoImport_DragOver"
+        DragLeave="PhotoImport_DragLeave"
+        Drop="PhotoImport_Drop">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition x:Name="PhotoViewerColumn" Width="0" />
@@ -370,6 +378,36 @@
             </StackPanel>
         </Grid>
         <local:PhotoTimelineView x:Name="TimelineView" Grid.Row="5" Visibility="Collapsed" />
+        <Border
+            x:Uid="PhotoImportDropTarget"
+            x:Name="PhotoImportDropOverlay"
+            Grid.Row="5"
+            Margin="12"
+            Padding="24"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+            BorderThickness="2"
+            CornerRadius="8"
+            IsHitTestVisible="False"
+            Visibility="Collapsed">
+            <StackPanel
+                MaxWidth="440"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="12">
+                <FontIcon
+                    HorizontalAlignment="Center"
+                    FontSize="40"
+                    Glyph="&#xE898;" />
+                <TextBlock
+                    x:Uid="PhotoImportDropTargetMessage"
+                    Style="{ThemeResource SubtitleTextBlockStyle}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
         <Grid
             x:Name="PhotoViewerHost"
             Grid.Column="1"

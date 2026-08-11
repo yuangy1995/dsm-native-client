@@ -179,6 +179,28 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             activityId);
     }
 
+    public Task<PhotoMediaUploadStart?> StartMediaUploadAsync(
+        string profileId,
+        string folderPath,
+        string sourcePath,
+        Guid activityId)
+    {
+        if (activityId == Guid.Empty)
+        {
+            throw new ArgumentOutOfRangeException(nameof(activityId));
+        }
+        return StartUploadFromPathCoreAsync(
+            profileId,
+            folderPath,
+            sourcePath,
+            requiresMediaExtension: true,
+            activityId);
+    }
+
+    internal static bool IsSupportedMediaPath(string? sourcePath) =>
+        !string.IsNullOrWhiteSpace(sourcePath) &&
+        MediaFileExtensions.Contains(Path.GetExtension(sourcePath));
+
     private async Task<PhotoMediaUploadStart?> PickAndStartUploadCoreAsync(
         string profileId,
         string folderPath,
@@ -194,8 +216,25 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         {
             return null;
         }
-        if (requiresMediaExtension &&
-            !MediaFileExtensions.Contains(Path.GetExtension(sourcePath)))
+        return await StartUploadFromPathCoreAsync(
+            profileId,
+            folderPath,
+            sourcePath,
+            requiresMediaExtension,
+            requestedActivityId);
+    }
+
+    private Task<PhotoMediaUploadStart?> StartUploadFromPathCoreAsync(
+        string profileId,
+        string folderPath,
+        string sourcePath,
+        bool requiresMediaExtension,
+        Guid? requestedActivityId = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        if (requiresMediaExtension && !IsSupportedMediaPath(sourcePath))
         {
             throw new InvalidDataException("upload.unsupported_media_type");
         }
@@ -258,7 +297,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         }
 
         _ = RunUploadAsync(running, request);
-        return new PhotoMediaUploadStart(running.ActivityId);
+        return Task.FromResult<PhotoMediaUploadStart?>(
+            new PhotoMediaUploadStart(running.ActivityId));
     }
 
     public void Cancel(string profileId, Guid activityId)

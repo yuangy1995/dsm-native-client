@@ -31,7 +31,7 @@ internal sealed class PhotoImportCoordinator : IDisposable
         Phase is (PhotoImportPhase.Idle or PhotoImportPhase.Confirmed or
             PhotoImportPhase.ConfirmedElsewhere or PhotoImportPhase.Cancelled or
             PhotoImportPhase.PermissionDenied or PhotoImportPhase.Unsupported or
-            PhotoImportPhase.Failed) &&
+            PhotoImportPhase.InvalidDrop or PhotoImportPhase.Failed) &&
         HasEligibleTarget;
 
     internal void UpdateContext(PhotoImportContext? context)
@@ -56,7 +56,43 @@ internal sealed class PhotoImportCoordinator : IDisposable
         UpdateContext(null);
     }
 
-    internal async Task StartAsync()
+    internal Task StartAsync() => StartCoreAsync(
+        PhotoImportPhase.Choosing,
+        static (transfers, target, activityId) => transfers.PickAndStartMediaUploadAsync(
+            target.ProfileId.ToString(),
+            target.FolderPath,
+            activityId),
+        nullMeansCancelled: true);
+
+    internal Task StartDroppedAsync(string sourcePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        return StartCoreAsync(
+            PhotoImportPhase.PreparingDrop,
+            (transfers, target, activityId) => transfers.StartMediaUploadAsync(
+                target.ProfileId.ToString(),
+                target.FolderPath,
+                sourcePath,
+                activityId),
+            nullMeansCancelled: false);
+    }
+
+    internal void ReportInvalidDrop()
+    {
+        if (!CanStart)
+        {
+            return;
+        }
+        Phase = PhotoImportPhase.InvalidDrop;
+        CompletionActivityId = null;
+        Changed?.Invoke();
+    }
+
+    private async Task StartCoreAsync(
+        PhotoImportPhase startingPhase,
+        Func<IPhotoImportTransferService, PhotoImportTarget, Guid,
+            Task<PhotoMediaUploadStart?>> start,
+        bool nullMeansCancelled)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!CanStart || PhotoImportTarget.Create(_context, _contextGeneration) is not { } target)
@@ -68,21 +104,23 @@ internal sealed class PhotoImportCoordinator : IDisposable
         _pendingActivityId = Guid.NewGuid();
         _consumedActivityId = null;
         CompletionActivityId = null;
-        Phase = PhotoImportPhase.Choosing;
+        Phase = startingPhase;
         Changed?.Invoke();
 
         try
         {
-            var started = await _transfers.PickAndStartMediaUploadAsync(
-                target.ProfileId.ToString(),
-                target.FolderPath,
-                _pendingActivityId.Value);
+            var started = await start(_transfers, target, _pendingActivityId.Value);
             if (_disposed || !ReferenceEquals(_pendingTarget, target))
             {
                 return;
             }
             if (started is null)
             {
+                if (!nullMeansCancelled)
+                {
+                    ApplyStartFailure(target);
+                    return;
+                }
                 _pendingTarget = null;
                 _pendingActivityId = null;
                 Phase = PhotoImportPhase.Idle;
@@ -95,7 +133,7 @@ internal sealed class PhotoImportCoordinator : IDisposable
                 ApplyStartFailure(target);
                 return;
             }
-            if (Phase == PhotoImportPhase.Choosing)
+            if (Phase == startingPhase)
             {
                 Phase = PhotoImportPhase.Activity;
                 Changed?.Invoke();
@@ -116,7 +154,8 @@ internal sealed class PhotoImportCoordinator : IDisposable
 
     internal void ClearPresentation()
     {
-        if (_disposed || Phase is PhotoImportPhase.Choosing or PhotoImportPhase.Activity)
+        if (_disposed || Phase is PhotoImportPhase.Choosing or
+            PhotoImportPhase.PreparingDrop or PhotoImportPhase.Activity)
         {
             return;
         }

@@ -1127,6 +1127,10 @@
   <data name="PhotoImportAction.AccessKey" xml:space="preserve"><value>I</value></data>
   <data name="PhotoImportAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>导入一张照片或一个视频</value></data>
   <data name="PhotoImportChoosing.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在选择照片或视频</value></data>
+  <data name="PhotoImportDropTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>照片导入投放区域</value></data>
+  <data name="PhotoImportDropTargetMessage.Text" xml:space="preserve"><value>拖放一张照片或一个视频以导入到这里</value></data>
+  <data name="PhotoImportDropCaption" xml:space="preserve"><value>导入这张照片或这个视频</value></data>
+  <data name="PhotoImportPreparingDrop" xml:space="preserve"><value>正在准备拖入的照片或视频</value></data>
   <data name="PhotoImportTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>导入位置</value></data>
   <data name="PhotoImportStatus.Title" xml:space="preserve"><value>照片导入</value></data>
   <data name="PhotoImportStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>照片导入状态</value></data>
@@ -1139,6 +1143,7 @@
   <data name="PhotoImportCancelledMessage" xml:space="preserve"><value>上传已在发送前取消。</value></data>
   <data name="PhotoImportPermissionMessage" xml:space="preserve"><value>你没有权限导入到此位置。请选择其他文件夹，或联系管理员获取权限。</value></data>
   <data name="PhotoImportUnsupportedMessage" xml:space="preserve"><value>此位置无法导入照片。请选择普通照片文件夹。</value></data>
+  <data name="PhotoImportInvalidDropMessage" xml:space="preserve"><value>请从此设备拖放一张受支持的照片或一个视频。文件夹、多个项目和仅联机文件无法通过此方式导入。</value></data>
   <data name="PhotoImportFailureMessage" xml:space="preserve"><value>无法开始或完成导入。请重新选择项目，并在“活动”中查看状态。</value></data>
   <data name="FileCopyMoveCopy.Label" xml:space="preserve"><value>复制</value></data>
   <data name="FileCopyMoveCopy.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>复制所选项目</value></data>

@@ -59,6 +59,32 @@ public sealed class PhotoImportPageSourceContractTests
         Assert.DoesNotContain("PickAndStartMediaUploadAsync", main);
     }
 
+    [Fact]
+    public void DesktopDropAcceptsExactlyOneLocalMediaFileAndReusesImportCoordinator()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Views/PhotosPage.Import.cs");
+
+        Assert.Contains("AllowDrop=\"True\"", xaml);
+        Assert.Contains("DragOver=\"PhotoImport_DragOver\"", xaml);
+        Assert.Contains("Drop=\"PhotoImport_Drop\"", xaml);
+        Assert.Contains("x:Name=\"PhotoImportDropOverlay\"", xaml);
+        Assert.Contains("ThemeResource", Slice(xaml, "x:Name=\"PhotoImportDropOverlay\"", "</Border>"));
+        Assert.Contains("StandardDataFormats.StorageItems", source);
+        Assert.Contains("items.Count != 1", source);
+        Assert.Contains("items[0] is not StorageFile", source);
+        Assert.Contains("string.IsNullOrWhiteSpace(file.Path)", source);
+        Assert.Contains("IsSupportedMediaPath(file.Path)", source);
+        Assert.Contains("DataPackageOperation.Copy", source);
+        Assert.Contains("_photoImport!.StartDroppedAsync(sourcePath)", source);
+        Assert.Contains("_photoImport?.ReportInvalidDrop()", source);
+        Assert.Contains("PhotoViewerHost.Visibility != Visibility.Visible", source);
+        Assert.Contains("_photoDragGeneration", source);
+        Assert.DoesNotContain("UploadFileAsync", source);
+        Assert.DoesNotContain("overwrite", source, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string Slice(string source, string start, string end)
     {
         var startIndex = source.IndexOf(start, StringComparison.Ordinal);

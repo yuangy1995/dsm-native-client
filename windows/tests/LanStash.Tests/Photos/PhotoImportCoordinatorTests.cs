@@ -20,6 +20,38 @@ public sealed class PhotoImportCoordinatorTests
     }
 
     [Fact]
+    public async Task DroppedMediaUsesFrozenTargetAndSameActivityCompletionLane()
+    {
+        var transfers = new RecordingTransferService();
+        using var model = new PhotoImportCoordinator(transfers);
+        model.UpdateContext(Context("/home/Photos/Trips"));
+
+        await model.StartDroppedAsync("C:\\Users\\Public\\Pictures\\photo.jpg");
+
+        Assert.Equal(PhotoImportPhase.Activity, model.Phase);
+        Assert.Equal(
+            "C:\\Users\\Public\\Pictures\\photo.jpg",
+            Assert.Single(transfers.DroppedPaths));
+        Assert.Equal("/home/Photos/Trips", Assert.Single(transfers.Requests).FolderPath);
+        transfers.Complete(MutationResultStatus.ConfirmedSuccess);
+        Assert.Equal(PhotoImportPhase.Confirmed, model.Phase);
+    }
+
+    [Fact]
+    public void InvalidDropShowsRecoverableStateWithoutStartingTransfer()
+    {
+        var transfers = new RecordingTransferService();
+        using var model = new PhotoImportCoordinator(transfers);
+        model.UpdateContext(Context("/home/Photos/Trips"));
+
+        model.ReportInvalidDrop();
+
+        Assert.Equal(PhotoImportPhase.InvalidDrop, model.Phase);
+        Assert.True(model.CanStart);
+        Assert.Empty(transfers.Requests);
+    }
+
+    [Fact]
     public async Task ConfirmedUploadRefreshesOnlyUnchangedProfileRepositorySpaceAndPath()
     {
         var transfers = new RecordingTransferService();
@@ -209,6 +241,7 @@ public sealed class PhotoImportCoordinatorTests
         public MutationResultStatus? CompleteBeforeReturn { get; set; }
         public bool? InterruptBeforeReturn { get; set; }
         public List<(string ProfileId, string FolderPath)> Requests { get; } = [];
+        public List<string> DroppedPaths { get; } = [];
         public int SubscriberCount { get; private set; }
 
         public event Action<PhotoMediaUploadFinished>? MediaUploadFinished
@@ -224,6 +257,21 @@ public sealed class PhotoImportCoordinatorTests
         }
 
         public Task<PhotoMediaUploadStart?> PickAndStartMediaUploadAsync(
+            string profileId,
+            string folderPath,
+            Guid activityId) => Start(profileId, folderPath, activityId);
+
+        public Task<PhotoMediaUploadStart?> StartMediaUploadAsync(
+            string profileId,
+            string folderPath,
+            string sourcePath,
+            Guid activityId)
+        {
+            DroppedPaths.Add(sourcePath);
+            return Start(profileId, folderPath, activityId);
+        }
+
+        private Task<PhotoMediaUploadStart?> Start(
             string profileId,
             string folderPath,
             Guid activityId)

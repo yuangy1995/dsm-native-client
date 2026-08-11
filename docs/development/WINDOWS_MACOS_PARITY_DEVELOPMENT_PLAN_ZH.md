@@ -250,6 +250,8 @@ FILE-07 分享链接管理增量已补齐：Windows Files 复用既有公开 Sha
 
 PHOTO-02 图片预览控制增量已完成源码、本机与云端构建闭环：共享 `FilePreviewPane` 仅在图片准备完成后显示原生紧凑命令栏，提供 25%～400% 放大/缩小、适应查看区域、向左/向右 90 度旋转，以及 `Ctrl+加号/减号/0/L/R` 键盘入口；缩放百分比和旋转角度使用当前 App 语言格式并作为 polite live region 更新。切换项目、关闭或失败会复位缩放、滚动位置和角度；所有变换只存在当前预览内存，不修改本地临时产物或 NAS 文件，不新增 NAS 请求，也不影响视频、PDF 或文本预览。本机 .NET 10 已通过 Preview/Photos 聚焦 27/27、Release 全量 xUnit 1003/1003、本地化门禁和 XAML/RESW XML 解析；macOS 无法运行 WinUI `XamlCompiler.exe`，不把本机 App 构建写成通过。GitHub Windows Build run `31470288572` 已通过 1003/1003 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31470288573` 已通过。真实 Windows、Narrator、高对比、100/150/200% 缩放、窄窗口、鼠标滚轮、触控板和触屏为 `PENDING_USER_VALIDATION`。
 
+PHOTO-03A 桌面拖放单项导入增量已完成源码、本机与云端构建闭环：Photos 文件夹与时间线页面只接受一个由 Windows 提供真实本机路径的 `StorageFile`，且扩展名必须属于既有图片/视频白名单；拖入有效项目时显示使用系统主题资源的原生投放框，无效的文件夹、多项目、无本机路径或非媒体项目零上传并给出双语恢复提示。页面仅把路径交给既有 `PhotoImportCoordinator`，继续冻结 profile、Repository、空间、目标路径、上下文代次和 Activity ID；传输层仍以只读共享打开单一源文件，`overwrite=false`，复用 ForegroundTransfer、一次上传、取消和 typed `MutationResult`，提交未知只进入 Activity 核对而不重放，确认成功只刷新未变化的原目标。该切片不新增 NAS 请求、批量/文件夹拖放、覆盖、后台上传或跨重启恢复。本机 .NET 10 已通过 Photo Import/Picker 聚焦 30/30、Release 全量 xUnit 1007/1007、本地化门禁、XAML/RESW XML 和差异检查；macOS App 构建按预期停在不可执行的 WinUI `XamlCompiler.exe`，不写成本机通过。GitHub Windows Build run `31472759838` 已通过 1007/1007 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31472759859` 已通过。真实 Explorer 拖放、在线占位文件、Narrator、高对比、100/150/200% 缩放、窄窗口、触控和真实 NAS 为 `PENDING_USER_VALIDATION`。
+
 语义要求：界面必须称为文件系统照片库；真正 Synology Photos 相册、人物、地点、标签等内部能力仍关闭。
 
 出口：大目录/大图库不在 UI 线程解码；缓存有上限；图片、视频、PDF、文本和不可支持格式均有状态测试。

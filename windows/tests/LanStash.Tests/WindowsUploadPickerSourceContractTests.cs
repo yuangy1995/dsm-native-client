@@ -78,6 +78,21 @@ public sealed class WindowsUploadPickerSourceContractTests
     }
 
     [Fact]
+    public void DroppedMediaPathReusesTheSameSingleFileNoOverwriteUpload()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+
+        Assert.Contains("StartMediaUploadAsync", source);
+        Assert.Contains("StartUploadFromPathCoreAsync", source);
+        Assert.Contains("IsSupportedMediaPath(sourcePath)", source);
+        Assert.Equal(1, CountOccurrences(source, "new FileStream("));
+        Assert.Equal(1, CountOccurrences(source, "new FileUploadRequest("));
+        Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(running, request)"));
+        Assert.Contains("overwrite: false", source);
+    }
+
+    [Fact]
     public void UploadUsesUniqueActivityCancellationAndReportsCompletionWithoutPaths()
     {
         var source = ReadRepositoryFile(
