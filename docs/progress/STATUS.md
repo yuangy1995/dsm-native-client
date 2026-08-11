@@ -275,12 +275,14 @@ Windows FILE-07 分享链接管理已形成闭环：Files 次级命令可打开�
 | CH6 macOS 发布验收 | 未开始 | 稳定性、兼容、安全、性能与可访问性出口通过 |
 | CH7 其他平台对齐 | 进行中 | Android 已建立会话、消息、发送、附件、实时降级与多类稳定写结果，仍待服务器已读契约、真实 Chat Server 行为和设备验收；iPhone/iPad、Windows 按各自计划推进 |
 
+Windows CH7 已补齐不依赖新契约的前台自动刷新源码闭环：Chat 页面与窗口同时可见时立即回读会话，此后每 30 秒严格单飞刷新，并在当前选择为未加密会话时顺序回读消息；离页、窗口隐藏到托盘或页面释放会取消读取并拒绝旧代结果。读取失败沿用现有错误态并保留已加载内容，用户仍可手动重试。本切片不新增 NAS 请求、Socket.IO、后台常驻、通知、服务器已读或成员/公告自动刷新；本机 macOS 使用 .NET 10 且关闭 PRI 生成后，Chat 聚焦测试 63/63、Release 全量 xUnit 1178/1178 通过。GitHub Windows Build run `31531069884` 通过 1178/1178 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31531069860` 已通过。真实 Chat Server、窗口/托盘切换、Narrator、键盘、高对比、200% 缩放和窄窗口为 `PENDING_USER_VALIDATION`。
+
 Chat 模块按[Synology Chat 原生聊天功能开发计划](../development/NATIVE_DSM_CHAT_DEVELOPMENT_PLAN_ZH.md)推进。基础契约、Apple 领域模型、能力保护适配器、首次单聊、文字、单附件发送和无附件投票创建已经建立；每项内部写能力仍须按 DSM build 与 Chat Server 版本分别验收，静态契约确认不能替代真实行为验证。
 
 ## 下一步
 
 1. **ACT-01 统一活动中心前台刷新增量** 已完成 Windows 源码和本机门禁：Activity 可见时立即读取并每 5 秒刷新前 100 个 Download Station 任务，支持手动刷新、失败保留、能力门、离页停止和迟到结果隔离；不新增危险写、后台常驻、Statistic 或自动重试。Windows Build run `31510553951` 与 Repository Check run `31510553731` 已通过，真实 NAS、Windows 与无障碍验收继续后置。
-2. **CHAT-03 单附件** 的 Apple A0/A1 与 Windows W0/W1 已通过 GitHub Apple、Windows 与 Repository 门禁：下一步以脱敏专用环境验收真实 Chat Server、系统选择器、iPad/Windows 无障碍与弱网边界。Apple Mobile 前台实时与轮询降级源码已完成，云端门禁与真机验收按其独立切片推进；Windows 前台实时继续后置。
+2. **CHAT-02/03 前台消息主流程**：Apple Mobile 前台 Socket.IO 与轮询降级、Apple/Windows 单附件均已完成既有云端门禁；Windows 可见时立即回读与 30 秒单飞刷新已通过 Windows Build run `31531069884` 和 Repository Check run `31531069860`。下一步以脱敏专用环境验收真实 Chat Server、系统选择器、前后台/托盘切换和 iPad/Windows 无障碍与弱网边界；服务器已读、Windows Socket.IO、后台即时消息和通知继续关闭。
 3. **NAS-02/NAS-04 有界只读详情**：iPhone/iPad 已完成四分区只读详情；Windows 已完成 typed 契约、专用 WinUI 页面、分区独立失败、50 项截断和隐私白名单，并通过 GitHub Windows/Repository 门禁。下一步只保留脱敏专用 NAS 的真实字段/权限验收，以及 Narrator、键盘、高对比和窗口缩放验收；不接断开连接、套件生命周期、任务执行或设置写。
 4. 使用脱敏专用环境验收 BTSearch 与 ACT-01 的真实 NAS 搜索目录、结果字段、临时任务清理、Download Station 任务状态字段，以及 iPad/Windows/Narrator/键盘交互；补充当前测试 NAS 的 File Station 与 Download Station 版本，并将实机结果写入[DSM 兼容矩阵](../compatibility/DSM_COMPATIBILITY_MATRIX.md)。
 5. 按[当前开发与验收计划](../development/NATIVE_DSM_FILE_APP_DEVELOPMENT_PLAN_ZH.md)完成登录、浏览、预览、传输和写操作回归，并为发现的问题补正式自动化。

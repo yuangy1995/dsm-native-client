@@ -359,6 +359,13 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             : Task.CompletedTask;
     }
 
+    public void CancelForegroundRefreshes()
+    {
+        ThrowIfDisposed();
+        CancelConversationRequest();
+        CancelMessageRequest();
+    }
+
     public async Task LoadEarlierAsync()
     {
         ThrowIfDisposed();

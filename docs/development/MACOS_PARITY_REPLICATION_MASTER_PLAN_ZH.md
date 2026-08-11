@@ -188,6 +188,8 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 | DS-01 · A/C | 下载任务列表、详情、进度/速度、网址或任务文件创建、目标目录 | 专用任务页、筛选与多选命令 | **受限**：列表/详情和单任务创建；不承接复杂批量任务 | `ServiceManagementModel.swift`、`ServiceManagementView.swift` |
 | DS-02 · A/C | 暂停/继续/开始/删除，删除数据分支；官方基础设置 | 批量命令、设置页、结果回读 | **受限**：单任务暂停/继续；删除数据、批量与高级设置当前不做 | 同上 |
 | CM-01 · C | 概览、容器、映像、网络、项目、事件 | 模块专用分页/详情、键盘与多选 | **受限**：只读健康与资源摘要；iPad 列表-详情，iPhone 分层导航 | `ContainerManagerPane`、服务管理 Repository |
+
+Windows CHAT-02 已补入前台轮询降级闭环：Chat 页面与窗口可见时立即刷新，并每 30 秒严格单飞回读会话和当前未加密会话消息；离页、隐藏、profile 切换或释放会取消并隔离迟到结果，失败保留旧内容。该能力复用既有只读契约，不新增 Socket.IO、后台常驻、通知或服务器已读；本机聚焦 63/63、Release 全量 xUnit 1178/1178 通过，Windows Build run `31531069884` 与 Repository Check run `31531069860` 已通过。真实设备/Chat Server/辅助功能仍待验证。
 | CM-02 · C | 容器生命周期/删除、映像删除、网络创建/删除、Registry 搜索/标签/拉取 | 分步对话、后台任务状态 | **当前不做**：生命周期、删除、拉取和网络写交给 Mac App 或 DSM Web | `ServiceManagementModel.swift` |
 | VM-01 · C | 虚拟机、主机、存储、网络、映像、保护与事件读取 | 数据视图、详情与多选操作 | **受限**：只读健康与资源摘要；iPad 多栏，iPhone 摘要优先 | `VirtualMachineManagerPane` |
 | VM-02 · C | 基础创建/修改、电源/删除、网络修改/删除、映像删除、独立远程控制台 | 分步向导和可调整控制台窗口 | **当前不做**：创建/编辑/删除/网络写/电源与控制台交给 Mac App 或 DSM Web | `ServiceManagementModel.swift`、`ServiceManagementView.swift` |

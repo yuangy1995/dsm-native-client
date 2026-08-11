@@ -51,7 +51,7 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void PageHasTextAndSingleAttachmentComposersWithoutRealtimeOrConversationActions()
+    public void PageHasTextSingleAttachmentAndForegroundRefreshWithoutSocketOrConversationActions()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
@@ -60,7 +60,9 @@ public sealed class ChatPageSourceContractTests
         var composer = Read("windows/src/LanStash.App/Features/Chat/ChatTextComposerViewModel.cs");
         var attachmentComposer = Read(
             "windows/src/LanStash.App/Features/Chat/ChatAttachmentComposerViewModel.cs");
-        var combined = xaml + source + send + attachments + composer + attachmentComposer;
+        var foreground = Read(
+            "windows/src/LanStash.App/Features/Chat/ChatForegroundRefresher.cs");
+        var combined = xaml + source + send + attachments + composer + attachmentComposer + foreground;
 
         Assert.Contains("x:Name=\"ComposerPanel\"", xaml);
         Assert.Contains("x:Name=\"ComposerInput\"", xaml);
@@ -83,9 +85,30 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("FileMode.CreateNew", attachments);
         Assert.Contains("ChatAttachmentSendReviewBlocker", attachmentComposer);
         Assert.Contains("MinHeight=\"48\"", xaml);
+        Assert.Contains("ChatForegroundRefresher", source);
+        Assert.Contains("TimeSpan.FromSeconds(30)", foreground);
+        Assert.Contains("await _refreshConversations()", foreground);
+        Assert.Contains("await _refreshMessages()", foreground);
+        Assert.Contains("viewModel.CancelForegroundRefreshes", source);
         Assert.DoesNotContain("CreateConversation", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Realtime", combined, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ForegroundRefreshFollowsPageAndWindowVisibility()
+    {
+        var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+
+        Assert.Contains("Loaded += ChatPage_Loaded", page);
+        Assert.Contains("Unloaded += ChatPage_Unloaded", page);
+        Assert.Contains("_isLoaded && _isWindowVisible", page);
+        Assert.Contains("_foregroundRefresher.StartAsync(refreshImmediately)", page);
+        Assert.Contains("_foregroundRefresher.StopAsync()", page);
+        Assert.Contains("internal async Task SetWindowVisibleAsync(bool isVisible)", page);
+        Assert.Contains("await _chat.SetWindowVisibleAsync(_isWindowVisible)", shell);
+        Assert.Contains("await _chat.SetWindowVisibleAsync(isVisible)", shell);
     }
 
     [Fact]

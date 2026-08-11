@@ -413,6 +413,7 @@ public sealed partial class ShellPage : Page
                     _chat = new ChatPage(chatRepository);
                     _chatProfileId = chatProfile.Id;
                 }
+                await _chat.SetWindowVisibleAsync(_isWindowVisible);
                 ContentFrame.Content = _chat;
                 return;
             }
@@ -548,6 +549,10 @@ public sealed partial class ShellPage : Page
     {
         _isWindowVisible = isVisible;
         _photos?.SetWindowVisible(isVisible);
+        if (_chat is not null)
+        {
+            await _chat.SetWindowVisibleAsync(isVisible);
+        }
         if (_activity is not null)
         {
             await _activity.SetWindowVisibleAsync(isVisible);

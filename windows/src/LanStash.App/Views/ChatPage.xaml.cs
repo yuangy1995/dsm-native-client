@@ -16,7 +16,11 @@ public sealed partial class ChatPage : Page, IDisposable
     private readonly ChatBrowserViewModel _viewModel;
     private readonly ChatTextComposerViewModel _composer;
     private readonly ChatAttachmentComposerViewModel _attachmentComposer;
+    private readonly ChatForegroundRefresher _foregroundRefresher;
+    private readonly SemaphoreSlim _foregroundLifecycleGate = new(1, 1);
     private bool _initialized;
+    private bool _isLoaded;
+    private bool _isWindowVisible = true;
     private bool _compactShowsConversationList;
     private bool _disposed;
 
@@ -34,22 +38,67 @@ public sealed partial class ChatPage : Page, IDisposable
         _viewModel = viewModel;
         _composer = new(ChatTextSendReviewBlocker.Current);
         _attachmentComposer = new(ChatAttachmentSendReviewBlocker.Current);
+        _foregroundRefresher = new(
+            viewModel.RefreshConversationsAsync,
+            () => viewModel.SelectedConversation is { IsEncrypted: false },
+            viewModel.RefreshMessagesAsync,
+            viewModel.CancelForegroundRefreshes);
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _composer.PropertyChanged += ViewModel_PropertyChanged;
         _attachmentComposer.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += ChatPage_Loaded;
+        Unloaded += ChatPage_Unloaded;
         UpdateState();
     }
 
     private async void ChatPage_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_initialized)
+        _isLoaded = true;
+        if (!_initialized)
         {
-            return;
+            _initialized = true;
+            await RunAsync(() => _viewModel.ActivateAsync(_repository));
+            await UpdateForegroundRefreshLifecycleAsync(refreshImmediately: false);
         }
-        _initialized = true;
-        await RunAsync(() => _viewModel.ActivateAsync(_repository));
+        else
+        {
+            await UpdateForegroundRefreshLifecycleAsync();
+        }
+    }
+
+    private async void ChatPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _isLoaded = false;
+        await UpdateForegroundRefreshLifecycleAsync();
+    }
+
+    internal async Task SetWindowVisibleAsync(bool isVisible)
+    {
+        _isWindowVisible = isVisible;
+        await UpdateForegroundRefreshLifecycleAsync();
+    }
+
+    private async Task UpdateForegroundRefreshLifecycleAsync(bool refreshImmediately = true)
+    {
+        Task transition;
+        await _foregroundLifecycleGate.WaitAsync();
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            transition = _isLoaded && _isWindowVisible
+                ? _foregroundRefresher.StartAsync(refreshImmediately)
+                : _foregroundRefresher.StopAsync();
+        }
+        finally
+        {
+            _foregroundLifecycleGate.Release();
+        }
+        await transition;
+        UpdateState();
     }
 
     private void ViewModel_PropertyChanged(
@@ -286,6 +335,9 @@ public sealed partial class ChatPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        Loaded -= ChatPage_Loaded;
+        Unloaded -= ChatPage_Unloaded;
+        _foregroundRefresher.Dispose();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _composer.PropertyChanged -= ViewModel_PropertyChanged;
         _attachmentComposer.PropertyChanged -= ViewModel_PropertyChanged;

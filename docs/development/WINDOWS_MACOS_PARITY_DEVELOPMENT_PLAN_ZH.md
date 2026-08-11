@@ -289,6 +289,8 @@ CH7 群成员只读切片已完成源码与云端构建闭环：Domain 新增独
 
 CH7 群公告只读切片已完成源码、本机与云端构建闭环：Domain 新增独立 `PinnedMessages` 能力和不含附件的 typed 公告模型，Infrastructure 仅在基础 Chat 可读且 `SYNO.Chat.Post` 精确覆盖 v5、请求格式为 FORM 时开放；固定发送一次 `search(channel_id, offset=0, limit=100, has=["pin"], sort_by=last_pin_at)`，兼容已记录的 `search_results`/`posts` 容器，拒绝显式跨会话记录，并按置顶时间倒序。入口只对未加密群聊显示，标题栏按钮、`Ctrl+Shift+N` 和原生 ContentDialog/ListView 覆盖加载、空、错误、重试/刷新与内容态。公告只在 profile/会话内存缓存中保留消息 ID、会话 ID、发送者、正文、发送时间和置顶时间；切换会话/档案、关闭弹窗或销毁页面会取消旧读取并拒绝迟到结果，失败不影响消息历史。不读取头像或附件，不持久化原始响应，不调用 `pin/unpin`，不开放公告管理、实时刷新或 Apple 移动端服务端置顶。本机 .NET 10 已通过 Chat 聚焦 124/124、Release 全量 xUnit 975/975、本地化门禁和 XAML/RESW XML 解析；GitHub Windows Build run `31459279684` 通过 975/975 项 xUnit与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31459279618` 已通过。本机 macOS 未运行 WinUI `XamlCompiler.exe`。当前私有契约仍是 `observed/degraded`，真实 Chat Server 权限、空列表、排序、附件型公告和撤销后刷新，以及真实 Windows/Narrator/高对比/缩放/窄窗口/键盘/触控为 `PENDING_USER_VALIDATION`。
 
+CH7 前台自动刷新切片已完成源码与聚焦自动化：`ChatPage` 仅在页面已加载且窗口可见时启动，首次进入沿用初始化读取，重新进入或从托盘恢复立即读取，此后每 30 秒严格单飞刷新会话，并在当前选择为未加密会话时顺序刷新消息。离页、窗口隐藏、切换 profile 或释放页面会取消会话与消息请求；代次门禁止旧会话阶段继续触发消息读取。失败保留已加载内容并沿用现有 InfoBar 与手动重试，不增加新文案。该切片复用现有只读端点，不接 Socket.IO、后台常驻、系统通知、服务器已读、成员/公告自动刷新或新 NAS 请求。本机 macOS 使用 .NET 10 且关闭 PRI 生成后 Chat 聚焦 63/63、Release 全量 xUnit 1178/1178 通过；GitHub Windows Build run `31531069884` 通过 1178/1178 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31531069860` 已通过。真实 Chat Server、窗口/托盘生命周期、Narrator、键盘、高对比、200% 缩放、窄窗口和触控为 `PENDING_USER_VALIDATION`。
+
 ### W3-B2：Chat 附件
 
 - 已在第 5 波按冻结的 `Post.create` v5 / `Post.File` v2 契约接入单附件上传/保存、按需图片缩略图和原生预览；不等待 W3-A 全部照片与格式验收。
@@ -337,7 +339,7 @@ Container Manager：
 ### BTSearch 后的近期实现顺序
 
 1. **ACT-01 统一活动中心前台刷新增量已完成源码和本机闭环**：在正式提交 `2491212` 的 App/NAS 分源投影上，Activity 进入可见状态后立即通过公开 `SYNO.DownloadStation.Task` v1 读取前 100 项，并在可见期间每 5 秒严格单飞刷新；`F5` 和原生按钮可手动刷新，离页、窗口隐藏到托盘、退出或释放会取消并等待在途读取，窗口恢复或快速返回页面会启动新一代立即读取，迟到结果按代次拒绝。读取失败保留上次 NAS 快照和全部 App 传输，能力缺失零请求，超过 100 项只提示截断；不调用 Statistic 或完整 Snapshot，也不新增写操作、后台常驻、自动重试、系统通知或托盘联动。本机 .NET 10 聚焦 12/12、Release 全量 xUnit 1148/1148、本地化与 XML 门禁已通过；macOS 上 WinUI App 构建按预期停在不可执行的 Windows `XamlCompiler.exe`，GitHub Windows Build run `31510553951` 已通过 1148/1148 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31510553731` 已通过。真实 NAS 状态字段、断线重连、Narrator、键盘、高对比、200% 缩放和窄窗口为 `PENDING_USER_VALIDATION`。
-2. **CHAT-03 单附件**：Windows 已完成上传、缩略图和下载 typed 结果契约，以及选择、进度、预览与保存的 WinUI 闭环；GitHub .NET/WinUI 门禁已通过，下一步仅保留真实 Chat Server、系统选择器和辅助功能验收。前台实时继续后置。
+2. **CHAT-02/03 前台消息主流程**：Windows 已完成文字、单附件及可见时立即读取、30 秒单飞刷新闭环；本切片 GitHub Windows Build run `31531069884` 与 Repository Check run `31531069860` 已通过。真实 Chat Server、系统选择器、托盘切换和辅助功能验收继续后置；Socket.IO、服务器已读、后台即时消息和通知保持关闭。
 3. **NAS-01/NAS-02/NAS-04 有界只读详情已扩展为九区**：专用 `NasDetailsPage` 与 typed Repository 现提供系统概览、存储健康、系统更新、当前账号共享访问、系统活动、套件、计划任务、日志和当前连接。系统活动仅在运行时发现 `SYNO.Core.System.Process` v1 时单次读取 `start=0, limit=500`，只向领域层交付前 50 个进程的本地 ID、数字 PID、清理后的名称、可选状态和受限服务组标识；命令、路径、工作目录、账号、环境变量、端口、地址和原始响应始终丢弃。`System.ProcessGroup.list` v1 是可选补充，缺失、失败或列表不完整时保留进程并明确提示服务详情暂不可用；`service_info`、结束进程、服务控制和持续轮询保持关闭。共享访问继续固定公开 `list_share` v2 和 500 项源上限。九区独立表达失败、不可用、空内容、截断和正常状态。本机已通过系统活动/NAS 聚焦 28/28、Release xUnit 1035/1035、本地化、请求/Fixture 契约、XML 解析与差异检查；功能分支 Windows Build `31484643296` 已通过 1035/1035 与 WinUI x64/ARM64 构建，Repository Check `31484643292` 已通过。macOS App 构建按预期停在不可执行的 Windows `XamlCompiler.exe`，不写成本机通过。系统活动真实 API 仍只有静态证据，真实 NAS 的字段、权限、500 项边界及服务组降级，以及 Narrator、键盘、高对比和 200% 缩放继续后置验收。
 4. Download RSS、文件优先级、BT 协议高级设置以及 Container/VMM 高风险写不进入这一波；没有公开或已记录契约的能力继续关闭。
 
