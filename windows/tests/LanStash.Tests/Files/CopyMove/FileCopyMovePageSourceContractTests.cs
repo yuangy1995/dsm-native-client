@@ -11,7 +11,11 @@ public sealed class FileCopyMovePageSourceContractTests
 
         Assert.Contains("x:Name=\"CopyFileButton\"", xaml);
         Assert.Contains("x:Name=\"MoveFileButton\"", xaml);
-        Assert.Equal(2, Count(xaml, "FileCopyMove"));
+        Assert.Contains("x:Name=\"CopyMultipleButton\"", xaml);
+        Assert.Contains("x:Name=\"MoveMultipleButton\"", xaml);
+        Assert.Contains("x:Name=\"CopySelectedItemsButton\"", xaml);
+        Assert.Contains("x:Name=\"MoveSelectedItemsButton\"", xaml);
+        Assert.Equal(8, Count(xaml, "FileCopyMove"));
         Assert.Contains("MinHeight=\"48\"", xaml);
         Assert.DoesNotContain("CopyMoveAsync", page);
         Assert.Contains("CopyMoveAsync", partial);
@@ -25,6 +29,34 @@ public sealed class FileCopyMovePageSourceContractTests
         Assert.Contains("FileCopyMoveViewModel.IsDestination(item.Path)", partial);
         Assert.DoesNotContain("IsDirectory: false", partial);
         Assert.Contains("CopyMoveTitleKey(model.Source.IsDirectory", partial);
+    }
+
+    [Fact]
+    public void BatchPartialKeepsBoundedSelectionAndTypedSummary()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
+        var page = Read("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
+        var selection = Read("windows/src/LanStash.App/Views/FilesPage.BatchDownload.cs");
+        var partial = Read("windows/src/LanStash.App/Views/FilesPage.BatchCopyMove.cs");
+        var model = Read(
+            "windows/src/LanStash.App/Features/Files/CopyMove/FileCopyMoveBatchViewModel.cs");
+
+        Assert.Contains("x:Name=\"FileCopyMoveBatchStatus\"", xaml);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
+        Assert.Contains("FileCopyMoveBatchViewModel.MaximumItemCount", partial);
+        Assert.Contains("FileCopyMoveBatchViewModel.Validate", partial);
+        Assert.Contains("FileBatchSelectionOperation.Copy", selection);
+        Assert.Contains("FileBatchSelectionOperation.Move", selection);
+        Assert.Contains("ContentDialog", partial);
+        Assert.Contains("AutomationLiveSetting.Assertive", partial);
+        Assert.Contains("model.Cancel()", partial);
+        Assert.Contains("CloseBatchCopyMoveDialog();", page);
+        Assert.Contains("NeedsReviewCount", partial);
+        Assert.Contains("MaximumItemCount = 20", model);
+        Assert.Contains("await _repository.CopyMoveAsync", model);
+        Assert.Contains("BlockReview(source, destination)", model);
+        Assert.DoesNotContain("Task.WhenAll", model);
+        Assert.DoesNotContain("overwrite", partial, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

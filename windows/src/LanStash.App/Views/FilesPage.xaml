@@ -168,6 +168,20 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <AppBarButton
+                x:Uid="FileCopyMoveCopySelected"
+                x:Name="CopySelectedItemsButton"
+                Click="CopySelectedItems_Click"
+                Icon="Copy"
+                MinHeight="48"
+                Visibility="Collapsed" />
+            <AppBarButton
+                x:Uid="FileCopyMoveMoveSelected"
+                x:Name="MoveSelectedItemsButton"
+                Click="MoveSelectedItems_Click"
+                Icon="MoveToFolder"
+                MinHeight="48"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileBrowserCancelDownloadSelection"
                 x:Name="CancelDownloadSelectionButton"
                 Click="CancelDownloadSelection_Click"
@@ -194,6 +208,18 @@
                 </AppBarButton.KeyboardAccelerators>
             </AppBarButton>
             <CommandBar.SecondaryCommands>
+                <AppBarButton
+                    x:Uid="FileCopyMoveCopyMultiple"
+                    x:Name="CopyMultipleButton"
+                    Click="CopyMultiple_Click"
+                    Icon="Copy"
+                    MinHeight="48" />
+                <AppBarButton
+                    x:Uid="FileCopyMoveMoveMultiple"
+                    x:Name="MoveMultipleButton"
+                    Click="MoveMultiple_Click"
+                    Icon="MoveToFolder"
+                    MinHeight="48" />
                 <AppBarButton
                     x:Uid="FileShareLinkManage"
                     x:Name="ManageShareLinksButton"
@@ -498,6 +524,13 @@
                 <InfoBar
                     x:Uid="FileDownloadBatchStatus"
                     x:Name="FileDownloadBatchStatus"
+                    IsClosable="True"
+                    IsOpen="False"
+                    AutomationProperties.LiveSetting="Polite"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="FileCopyMoveBatchStatus"
+                    x:Name="FileCopyMoveBatchStatus"
                     IsClosable="True"
                     IsOpen="False"
                     AutomationProperties.LiveSetting="Polite"

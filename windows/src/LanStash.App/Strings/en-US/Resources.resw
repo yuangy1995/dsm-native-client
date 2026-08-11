@@ -426,7 +426,7 @@
   <data name="FileBrowserDownloadSelected.Label" xml:space="preserve"><value>Download selected</value></data>
   <data name="FileBrowserDownloadSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Download the selected files</value></data>
   <data name="FileBrowserCancelDownloadSelection.Label" xml:space="preserve"><value>Cancel selection</value></data>
-  <data name="FileBrowserCancelDownloadSelection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Cancel download selection</value></data>
+  <data name="FileBrowserCancelDownloadSelection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Cancel multiple selection</value></data>
   <data name="FileBrowserUpload.Label" xml:space="preserve"><value>Upload</value></data>
   <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Upload files to this folder</value></data>
   <data name="FolderUpload.Label" xml:space="preserve"><value>Upload folder</value></data>
@@ -1292,6 +1292,30 @@
   <data name="FileCopyMove_Status_Cancelled" xml:space="preserve"><value>The action was cancelled before it was sent.</value></data>
   <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>File or folder action status</value></data>
   <data name="FileCopyMove_A11y_DestinationTree" xml:space="preserve"><value>Destination folders</value></data>
+  <data name="FileCopyMoveCopyMultiple.Label" xml:space="preserve"><value>Copy multiple</value></data>
+  <data name="FileCopyMoveCopyMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Select multiple files or folders to copy</value></data>
+  <data name="FileCopyMoveMoveMultiple.Label" xml:space="preserve"><value>Move multiple</value></data>
+  <data name="FileCopyMoveMoveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Select multiple files or folders to move</value></data>
+  <data name="FileCopyMoveCopySelected.Label" xml:space="preserve"><value>Copy selected</value></data>
+  <data name="FileCopyMoveCopySelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose where to copy the selected items</value></data>
+  <data name="FileCopyMoveMoveSelected.Label" xml:space="preserve"><value>Move selected</value></data>
+  <data name="FileCopyMoveMoveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose where to move the selected items</value></data>
+  <data name="FileCopyMoveBatchStatus.Title" xml:space="preserve"><value>Multiple file actions</value></data>
+  <data name="FileCopyMoveBatchSelectionCount" xml:space="preserve"><value>Selected: {0} of 20.</value></data>
+  <data name="FileCopyMoveBatchSelectionLimit" xml:space="preserve"><value>You can select up to 20 files or folders.</value></data>
+  <data name="FileCopyMoveBatchSelectionInvalid" xml:space="preserve"><value>Select distinct items from this folder. Don’t select a folder together with an item inside it.</value></data>
+  <data name="FileCopyMoveBatchCopyTitle" xml:space="preserve"><value>Copy selected items</value></data>
+  <data name="FileCopyMoveBatchMoveTitle" xml:space="preserve"><value>Move selected items</value></data>
+  <data name="FileCopyMoveBatchSelectedSummary" xml:space="preserve"><value>{0} items selected</value></data>
+  <data name="FileCopyMoveBatchDestinationHint" xml:space="preserve"><value>Choose a writable destination outside the selected folders.</value></data>
+  <data name="FileCopyMoveBatchCopyButton" xml:space="preserve"><value>Copy {0} items</value></data>
+  <data name="FileCopyMoveBatchMoveButton" xml:space="preserve"><value>Move {0} items</value></data>
+  <data name="FileCopyMoveBatchCopying" xml:space="preserve"><value>Copying item {0} of {1}…</value></data>
+  <data name="FileCopyMoveBatchMoving" xml:space="preserve"><value>Moving item {0} of {1}…</value></data>
+  <data name="FileCopyMoveBatchCopySummary" xml:space="preserve"><value>Selected: {0}. Copied: {1}. Needs review: {2}. Failed: {3}. Cancelled: {4}. Not started: {5}.</value></data>
+  <data name="FileCopyMoveBatchMoveSummary" xml:space="preserve"><value>Selected: {0}. Moved: {1}. Needs review: {2}. Failed: {3}. Cancelled: {4}. Not started: {5}.</value></data>
+  <data name="FileCopyMoveBatchInvalidDestination" xml:space="preserve"><value>This destination can’t be used. Choose a writable folder outside the selected folders.</value></data>
+  <data name="FileCopyMoveBatchCancelled" xml:space="preserve"><value>The remaining items were not started.</value></data>
   <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>Move to Recycle Bin</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected item to the recycle bin</value></data>
   <data name="FileRecycleRestore.Label" xml:space="preserve"><value>Restore</value></data>

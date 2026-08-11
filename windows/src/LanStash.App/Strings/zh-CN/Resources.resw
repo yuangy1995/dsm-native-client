@@ -426,7 +426,7 @@
   <data name="FileBrowserDownloadSelected.Label" xml:space="preserve"><value>下载所选文件</value></data>
   <data name="FileBrowserDownloadSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载已选择的文件</value></data>
   <data name="FileBrowserCancelDownloadSelection.Label" xml:space="preserve"><value>取消选择</value></data>
-  <data name="FileBrowserCancelDownloadSelection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>取消下载文件选择</value></data>
+  <data name="FileBrowserCancelDownloadSelection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>取消多项选择</value></data>
   <data name="FileBrowserUpload.Label" xml:space="preserve"><value>上传</value></data>
   <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>上传文件到此文件夹</value></data>
   <data name="FolderUpload.Label" xml:space="preserve"><value>上传文件夹</value></data>
@@ -1292,6 +1292,30 @@
   <data name="FileCopyMove_Status_Cancelled" xml:space="preserve"><value>操作已在发送前取消。</value></data>
   <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>文件或文件夹操作状态</value></data>
   <data name="FileCopyMove_A11y_DestinationTree" xml:space="preserve"><value>目标文件夹</value></data>
+  <data name="FileCopyMoveCopyMultiple.Label" xml:space="preserve"><value>复制多个项目</value></data>
+  <data name="FileCopyMoveCopyMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择多个文件或文件夹进行复制</value></data>
+  <data name="FileCopyMoveMoveMultiple.Label" xml:space="preserve"><value>移动多个项目</value></data>
+  <data name="FileCopyMoveMoveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择多个文件或文件夹进行移动</value></data>
+  <data name="FileCopyMoveCopySelected.Label" xml:space="preserve"><value>复制所选项目</value></data>
+  <data name="FileCopyMoveCopySelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择所选项目的复制目标</value></data>
+  <data name="FileCopyMoveMoveSelected.Label" xml:space="preserve"><value>移动所选项目</value></data>
+  <data name="FileCopyMoveMoveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择所选项目的移动目标</value></data>
+  <data name="FileCopyMoveBatchStatus.Title" xml:space="preserve"><value>多个文件操作</value></data>
+  <data name="FileCopyMoveBatchSelectionCount" xml:space="preserve"><value>已选择：{0}/20。</value></data>
+  <data name="FileCopyMoveBatchSelectionLimit" xml:space="preserve"><value>最多可以选择 20 个文件或文件夹。</value></data>
+  <data name="FileCopyMoveBatchSelectionInvalid" xml:space="preserve"><value>请选择当前文件夹中的不同项目，不要同时选择文件夹和其中的项目。</value></data>
+  <data name="FileCopyMoveBatchCopyTitle" xml:space="preserve"><value>复制所选项目</value></data>
+  <data name="FileCopyMoveBatchMoveTitle" xml:space="preserve"><value>移动所选项目</value></data>
+  <data name="FileCopyMoveBatchSelectedSummary" xml:space="preserve"><value>已选择 {0} 个项目</value></data>
+  <data name="FileCopyMoveBatchDestinationHint" xml:space="preserve"><value>请选择所选文件夹以外的可写目标位置。</value></data>
+  <data name="FileCopyMoveBatchCopyButton" xml:space="preserve"><value>复制 {0} 个项目</value></data>
+  <data name="FileCopyMoveBatchMoveButton" xml:space="preserve"><value>移动 {0} 个项目</value></data>
+  <data name="FileCopyMoveBatchCopying" xml:space="preserve"><value>正在复制第 {0}/{1} 个项目…</value></data>
+  <data name="FileCopyMoveBatchMoving" xml:space="preserve"><value>正在移动第 {0}/{1} 个项目…</value></data>
+  <data name="FileCopyMoveBatchCopySummary" xml:space="preserve"><value>已选择：{0}。已复制：{1}。待核对：{2}。失败：{3}。已取消：{4}。未开始：{5}。</value></data>
+  <data name="FileCopyMoveBatchMoveSummary" xml:space="preserve"><value>已选择：{0}。已移动：{1}。待核对：{2}。失败：{3}。已取消：{4}。未开始：{5}。</value></data>
+  <data name="FileCopyMoveBatchInvalidDestination" xml:space="preserve"><value>此目标位置不可用。请选择所选文件夹以外的可写文件夹。</value></data>
+  <data name="FileCopyMoveBatchCancelled" xml:space="preserve"><value>剩余项目尚未开始。</value></data>
   <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>移到回收站</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将所选项目移到回收站</value></data>
   <data name="FileRecycleRestore.Label" xml:space="preserve"><value>恢复</value></data>

@@ -1,4 +1,5 @@
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using Microsoft.UI.Xaml;
@@ -9,11 +10,25 @@ namespace LanStash.App.Views;
 
 public sealed partial class FilesPage
 {
-    private readonly HashSet<string> _downloadSelection = new(StringComparer.Ordinal);
-    private bool _isSelectingDownloads;
+    private enum FileBatchSelectionOperation
+    {
+        Download,
+        Copy,
+        Move,
+    }
+
+    private readonly HashSet<string> _batchSelection = new(StringComparer.Ordinal);
+    private FileBatchSelectionOperation? _batchSelectionOperation;
     private bool _isSynchronizingDownloadSelection;
     private bool _isChoosingDownloadTarget;
     private Guid? _downloadBatchId;
+
+    private bool _isSelectingDownloads =>
+        _batchSelectionOperation == FileBatchSelectionOperation.Download;
+    private bool _isSelectingCopyMove =>
+        _batchSelectionOperation is FileBatchSelectionOperation.Copy or
+            FileBatchSelectionOperation.Move;
+    private bool _isSelectingItems => _batchSelectionOperation is not null;
 
     private async void DownloadMultiple_Click(object sender, RoutedEventArgs e)
     {
@@ -34,24 +49,26 @@ public sealed partial class FilesPage
         {
             return;
         }
-        _isSelectingDownloads = true;
-        _downloadSelection.Clear();
+        var selected = _viewModel.SelectedItem;
+        _batchSelectionOperation = FileBatchSelectionOperation.Download;
+        _batchSelection.Clear();
         FileList.SelectionMode = ListViewSelectionMode.Multiple;
         FileGrid.SelectionMode = ListViewSelectionMode.Multiple;
         FileList.SelectedItems.Clear();
         FileGrid.SelectedItems.Clear();
-        if (_viewModel.SelectedItem is { IsDirectory: false } selected)
+        if (selected is { IsDirectory: false })
         {
-            _downloadSelection.Add(selected.Path);
+            _batchSelection.Add(selected.Path);
             ApplyDownloadSelection(VisibleFilesControl());
         }
-        AnnounceDownloadSelection();
+        AnnounceBatchSelection();
         UpdateState();
     }
 
     private void ExitDownloadSelectionMode()
     {
-        if (!_isSelectingDownloads)
+        CloseBatchCopyMoveDialog();
+        if (!_isSelectingItems)
         {
             return;
         }
@@ -61,9 +78,10 @@ public sealed partial class FilesPage
         FileList.SelectionMode = ListViewSelectionMode.Single;
         FileGrid.SelectionMode = ListViewSelectionMode.Single;
         _isSynchronizingDownloadSelection = false;
-        _downloadSelection.Clear();
-        _isSelectingDownloads = false;
+        _batchSelection.Clear();
+        _batchSelectionOperation = null;
         FileDownloadBatchStatus.IsOpen = false;
+        FileCopyMoveBatchStatus.IsOpen = false;
         UpdateState();
     }
 
@@ -71,39 +89,50 @@ public sealed partial class FilesPage
         ListViewBase source,
         SelectionChangedEventArgs args)
     {
-        if (!_isSelectingDownloads || _isSynchronizingDownloadSelection)
+        if (!_isSelectingItems || _isSynchronizingDownloadSelection)
         {
             return;
         }
 
         foreach (var removed in args.RemovedItems.OfType<FileBrowserEntry>())
         {
-            _downloadSelection.Remove(removed.Path);
+            _batchSelection.Remove(removed.Path);
         }
         var rejected = false;
+        var rejectedForLimit = false;
         foreach (var added in args.AddedItems.OfType<FileBrowserEntry>())
         {
-            if (added.IsDirectory ||
-                (_downloadSelection.Count == BoundedFileDownloadBatch.MaximumFileCount &&
-                    !_downloadSelection.Contains(added.Path)))
+            var rejectsItem = _isSelectingDownloads
+                ? added.IsDirectory
+                : !FileCopyMoveViewModel.IsDestination(added.Path) ||
+                    (_batchSelectionOperation == FileBatchSelectionOperation.Move &&
+                        !added.Item.CanDelete);
+            if (rejectsItem ||
+                (_batchSelection.Count == BoundedFileDownloadBatch.MaximumFileCount &&
+                    !_batchSelection.Contains(added.Path)))
             {
+                rejectedForLimit |= !rejectsItem;
                 _isSynchronizingDownloadSelection = true;
                 source.SelectedItems.Remove(added);
                 _isSynchronizingDownloadSelection = false;
                 rejected = true;
                 continue;
             }
-            _downloadSelection.Add(added.Path);
+            _batchSelection.Add(added.Path);
         }
         if (rejected)
         {
-            ShowBatchDownloadMessage(
-                "FileDownloadBatchSelectionLimitMessage",
+            ShowBatchSelectionMessage(
+                _isSelectingDownloads
+                    ? "FileDownloadBatchSelectionLimitMessage"
+                    : rejectedForLimit
+                        ? "FileCopyMoveBatchSelectionLimit"
+                        : "FileCopyMoveBatchSelectionInvalid",
                 InfoBarSeverity.Warning);
         }
         else
         {
-            AnnounceDownloadSelection();
+            AnnounceBatchSelection();
         }
         UpdateState();
     }
@@ -111,7 +140,7 @@ public sealed partial class FilesPage
     private async Task StartSelectedDownloadsAsync()
     {
         var items = _viewModel.Items
-            .Where(item => !item.IsDirectory && _downloadSelection.Contains(item.Path))
+            .Where(item => !item.IsDirectory && _batchSelection.Contains(item.Path))
             .Select(item => new FileDownloadBatchItem(item.Path, item.Name, item.Item.Size))
             .ToArray();
         if (BoundedFileDownloadBatch.Validate(items) != FileDownloadBatchValidationStatus.Valid)
@@ -217,7 +246,7 @@ public sealed partial class FilesPage
 
     private void UpdateBatchDownloadControls()
     {
-        DownloadMultipleButton.Visibility = _isSelectingDownloads
+        DownloadMultipleButton.Visibility = _isSelectingItems
             ? Visibility.Collapsed
             : Visibility.Visible;
         DownloadMultipleButton.IsEnabled =
@@ -226,14 +255,14 @@ public sealed partial class FilesPage
         DownloadSelectedFilesButton.Visibility = _isSelectingDownloads
             ? Visibility.Visible
             : Visibility.Collapsed;
-        DownloadSelectedFilesButton.IsEnabled = _downloadSelection.Count is > 0 and <= BoundedFileDownloadBatch.MaximumFileCount;
+        DownloadSelectedFilesButton.IsEnabled = _batchSelection.Count is > 0 and <= BoundedFileDownloadBatch.MaximumFileCount;
         DownloadSelectedFilesButton.IsEnabled &= !_isChoosingDownloadTarget;
-        CancelDownloadSelectionButton.Visibility = _isSelectingDownloads
+        CancelDownloadSelectionButton.Visibility = _isSelectingItems
             ? Visibility.Visible
             : Visibility.Collapsed;
         CancelDownloadSelectionButton.IsEnabled = !_isChoosingDownloadTarget;
 
-        if (_isSelectingDownloads || _downloadBatchId is not null || _isChoosingDownloadTarget)
+        if (_isSelectingItems || _downloadBatchId is not null || _isChoosingDownloadTarget)
         {
             CreateFolderButton.IsEnabled = false;
             RenameButton.IsEnabled = false;
@@ -251,7 +280,7 @@ public sealed partial class FilesPage
 
     private void SynchronizeDownloadSelectionAfterLayoutChange()
     {
-        if (_isSelectingDownloads)
+        if (_isSelectingItems)
         {
             ApplyDownloadSelection(VisibleFilesControl());
         }
@@ -261,7 +290,7 @@ public sealed partial class FilesPage
     {
         _isSynchronizingDownloadSelection = true;
         target.SelectedItems.Clear();
-        foreach (var item in _viewModel.Items.Where(item => _downloadSelection.Contains(item.Path)))
+        foreach (var item in _viewModel.Items.Where(item => _batchSelection.Contains(item.Path)))
         {
             target.SelectedItems.Add(item);
         }
@@ -271,11 +300,30 @@ public sealed partial class FilesPage
     private ListViewBase VisibleFilesControl() =>
         _viewModel.IsListLayout ? FileList : FileGrid;
 
-    private void AnnounceDownloadSelection() =>
-        ShowBatchDownloadMessage(
-            "FileDownloadBatchSelectionCountMessage",
+    private void AnnounceBatchSelection() =>
+        ShowBatchSelectionMessage(
+            _isSelectingDownloads
+                ? "FileDownloadBatchSelectionCountMessage"
+                : "FileCopyMoveBatchSelectionCount",
             InfoBarSeverity.Informational,
-            _downloadSelection.Count);
+            _batchSelection.Count);
+
+    private void ShowBatchSelectionMessage(
+        string resourceKey,
+        InfoBarSeverity severity,
+        object? argument = null)
+    {
+        if (_isSelectingCopyMove)
+        {
+            FileCopyMoveBatchStatus.Severity = severity;
+            FileCopyMoveBatchStatus.Message = argument is null
+                ? LocalizationService.Current.Get(resourceKey)
+                : LocalizationService.Current.Format(resourceKey, argument);
+            FileCopyMoveBatchStatus.IsOpen = true;
+            return;
+        }
+        ShowBatchDownloadMessage(resourceKey, severity, argument);
+    }
 
     private void ShowBatchDownloadStartError(FileDownloadBatchValidationStatus status) =>
         ShowBatchDownloadMessage(status switch

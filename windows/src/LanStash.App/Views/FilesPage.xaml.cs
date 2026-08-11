@@ -299,7 +299,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Files_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (_isSelectingDownloads)
+        if (_isSelectingItems)
         {
             return;
         }
@@ -378,7 +378,7 @@ public sealed partial class FilesPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (_isSelectingDownloads)
+        if (_isSelectingItems)
         {
             return;
         }
@@ -419,7 +419,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Files_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_isSelectingDownloads && sender is ListViewBase source)
+        if (_isSelectingItems && sender is ListViewBase source)
         {
             HandleDownloadSelectionChanged(source, e);
             return;
@@ -487,7 +487,7 @@ public sealed partial class FilesPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (_isSelectingDownloads || _isChoosingDownloadTarget ||
+        if (_isSelectingItems || _isChoosingDownloadTarget ||
             _viewModel.SelectedItem is null)
         {
             return;
@@ -499,7 +499,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async Task DownloadSelectedAsync()
     {
-        if (_isSelectingDownloads || _isChoosingDownloadTarget)
+        if (_isSelectingItems || _isChoosingDownloadTarget)
         {
             return;
         }
@@ -1216,6 +1216,7 @@ public sealed partial class FilesPage : Page, IDisposable
                 ? Visibility.Collapsed
                 : Visibility.Visible;
         UpdateBatchDownloadControls();
+        UpdateBatchCopyMoveControls();
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
 
@@ -1372,6 +1373,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseShareLinkDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
+        CloseBatchCopyMoveDialog();
         CloseRecycleDialog();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
@@ -1393,6 +1395,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseShareLinkDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
+        CloseBatchCopyMoveDialog();
         CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
