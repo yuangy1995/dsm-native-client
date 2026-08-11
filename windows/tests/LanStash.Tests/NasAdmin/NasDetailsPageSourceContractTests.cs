@@ -38,6 +38,7 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsSectionSystem",
             "NasDetailsSectionStorage",
             "NasDetailsSectionUpdate",
+            "NasDetailsSectionShareAccess",
             "NasDetailsSectionPackages",
             "NasDetailsSectionTasks",
             "NasDetailsSectionLogs",
@@ -46,6 +47,10 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsUpdateAvailable",
             "NasDetailsUpdateCurrent",
             "NasDetailsUpdateReleaseNotes",
+            "NasDetailsShareAccessScopeTitle",
+            "NasDetailsShareAccessReadWrite",
+            "NasDetailsShareAccessReadOnly",
+            "NasDetailsShareAccessUnknown",
         })
         {
             Assert.Contains(allowed, combined);
@@ -71,6 +76,10 @@ public sealed class NasDetailsPageSourceContractTests
             "Upgrade.Server.download",
             "Upgrade.Server.install",
             "Upgrade.Server.upload",
+            "SharedFolder.create",
+            "SharedFolder.set",
+            "SharedFolder.delete",
+            "set_acl",
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);
@@ -108,7 +117,6 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsSectionList",
             "NasDetailsItemList",
             "NasDetailsLoading",
-            "NasDetailsEmptyTitle",
             "NasDetailsErrorTitle",
             "NasDetailsTryAgain",
             "NasDetailsUnavailableTitle",
@@ -116,6 +124,8 @@ public sealed class NasDetailsPageSourceContractTests
         {
             Assert.Contains($"x:Uid=\"{uid}\"", xaml, StringComparison.Ordinal);
         }
+        Assert.Contains("Text=\"{Binding EmptyTitle}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding EmptyMessage}\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(" Text=\"NAS", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(" Content=\"Refresh", xaml, StringComparison.Ordinal);
     }

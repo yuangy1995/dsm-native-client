@@ -33,6 +33,9 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses["SYNO.Core.Upgrade.Server"] = Json("""
             {"update":{"version":" 7.2.1 ","release_note":" Reliability improvements ","download_url":"https://private.invalid/update","serial":"update-secret"},"promotion":{"version":"9.9"},"task_id":"private-task"}
             """);
+        api.Responses["SYNO.FileStation.List"] = Json("""
+            {"offset":0,"total":4,"shares":[{"name":"Projects","path":"/private/projects","isdir":true,"additional":{"mount_point_type":"normal","owner":"private-owner","perm":{"adv_right":{"read":true,"write":true,"delete":true},"private_acl":"secret"}}},{"name":"Archive","path":"/private/archive","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":false,"delete":false}}}},{"name":"Remote","path":"/private/remote","isdir":true,"additional":{"mount_point_type":"cifs","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"#recycle","path":"/private/#recycle","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}
+            """);
         api.Responses["SYNO.Core.Package"] = Json("""
             {"packages":[{"id":"pkg-drive","name":"Drive","version":"3.0","status":"running","description":"hidden"}]}
             """);
@@ -62,6 +65,10 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal("7.2", update.CurrentVersion);
         Assert.Equal("7.2.1", update.LatestVersion);
         Assert.Equal("Reliability improvements", update.ReleaseNotes);
+        Assert.Equal(new[] { "Archive", "Projects" }, snapshot.ShareAccess.Items.Select(item => item.Name));
+        Assert.Equal(NasShareAccessLevel.ReadOnly, snapshot.ShareAccess.Items[0].AccessLevel);
+        Assert.Equal(NasShareAccessLevel.ReadWrite, snapshot.ShareAccess.Items[1].AccessLevel);
+        Assert.True(snapshot.ShareAccess.Items[1].CanDelete);
         var safeProjection = snapshot.ToString();
         Assert.DoesNotContain("private-host", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("system-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
@@ -73,6 +80,9 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.DoesNotContain("private.invalid", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("private-task", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("update-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/private/", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private-owner", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private_acl", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Drive", Assert.Single(snapshot.Packages.Items).Name);
         Assert.Equal("Backup", Assert.Single(snapshot.ScheduledTasks.Items).Name);
         var log = Assert.Single(snapshot.Logs.Items);
@@ -89,6 +99,7 @@ public sealed class NasDetailsRepositoryContractTests
                 "SYNO.Core.System:3:info",
                 "SYNO.Storage.CGI.Storage:1:load_info",
                 "SYNO.Core.Upgrade.Server:3:check",
+                "SYNO.FileStation.List:2:list_share",
                 "SYNO.Core.Package:2:list",
                 "SYNO.Core.TaskScheduler:3:list",
                 "SYNO.LogCenter.History:1:list",
@@ -104,6 +115,10 @@ public sealed class NasDetailsRepositoryContractTests
                 ["need_promotion"] = "false",
             },
             updateCall.Parameters);
+        var shareCall = api.Calls.Single(call => call.ApiName == "SYNO.FileStation.List");
+        Assert.Equal("[\"mount_point_type\",\"perm\"]", shareCall.Parameters["additional"]);
+        Assert.Equal("name", shareCall.Parameters["sort_by"]);
+        Assert.Equal("asc", shareCall.Parameters["sort_direction"]);
     }
 
     [Fact]
@@ -113,6 +128,7 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses["SYNO.Core.Package"] = Json("""{"packages":[{"id":"pkg","name":"Drive","status":"running"}]}""");
         api.Errors["SYNO.Core.TaskScheduler"] = new DsmException("failed", "retry");
         api.Errors["SYNO.Storage.CGI.Storage"] = new DsmException("failed", "retry");
+        api.Errors["SYNO.FileStation.List"] = new DsmException("failed", "retry");
         api.Responses["SYNO.LogCenter.History"] = Json("""{"logs":[]}""");
         api.Responses["SYNO.Core.CurrentConnection"] = Json("""{"connections":[]}""");
         var repository = Repository(api);
@@ -122,10 +138,64 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemOverview.Status);
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.StorageHealth.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemUpdate.Status);
+        Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.ShareAccess.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Packages.Status);
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.ScheduledTasks.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Logs.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Connections.Status);
+    }
+
+    [Fact]
+    public async Task ShareAccessUsesBoundedPaginationAndLaterDuplicateWins()
+    {
+        var api = new FakeApiClient();
+        api.ResponseSequences["SYNO.FileStation.List"] = new Queue<JsonObject>(
+        [
+            Json("""{"offset":0,"total":3,"shares":[{"name":"Data","path":"/private/data","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":false,"delete":false}}}},{"name":"Remote","path":"/private/remote","isdir":true,"additional":{"mount_point_type":"nfs"}}]}"""),
+            Json("""{"offset":2,"total":3,"shares":[{"name":"Data","path":"/private/data","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":true,"delete":false}}}}]}"""),
+        ]);
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        var share = Assert.Single(snapshot.ShareAccess.Items);
+        Assert.Equal("Data", share.Name);
+        Assert.Equal(NasShareAccessLevel.ReadWrite, share.AccessLevel);
+        Assert.False(share.CanDelete);
+        Assert.Equal(
+            new[] { "0", "2" },
+            api.Calls.Where(call => call.ApiName == "SYNO.FileStation.List")
+                .Select(call => call.Parameters["offset"]));
+        Assert.DoesNotContain("/private/", snapshot.ShareAccess.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MissingPermissionBitsRemainUnknownInsteadOfDenied()
+    {
+        var api = new FakeApiClient();
+        api.Responses["SYNO.FileStation.List"] = Json("""
+            {"offset":0,"total":1,"shares":[{"name":"Visible","path":"/private/visible","isdir":true,"additional":{"mount_point_type":"shared_folder"}}]}
+            """);
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        var share = Assert.Single(snapshot.ShareAccess.Items);
+        Assert.Equal(NasShareAccessLevel.Unknown, share.AccessLevel);
+        Assert.False(share.CanDelete);
+    }
+
+    [Fact]
+    public async Task ShareAccessIsLimitedToFirstFiftySafeItems()
+    {
+        var api = new FakeApiClient();
+        var shares = string.Join(",", Enumerable.Range(0, 51)
+            .Select(index => $$"""{"name":"Share {{index:D2}}","path":"/private/share-{{index}}","isdir":true}"""));
+        api.Responses["SYNO.FileStation.List"] = Json($"{{\"offset\":0,\"total\":51,\"shares\":[{shares}]}}");
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        Assert.True(snapshot.ShareAccess.IsTruncated);
+        Assert.Equal(50, snapshot.ShareAccess.Items.Count);
+        Assert.DoesNotContain("/private/", snapshot.ShareAccess.ToString(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -218,6 +288,7 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses.TryAdd("SYNO.Core.System", Json("""{"model":"DS-synthetic"}"""));
         api.Responses.TryAdd("SYNO.Storage.CGI.Storage", Json("""{"storagePools":[],"volumes":[],"disks":[]}"""));
         api.Responses.TryAdd("SYNO.Core.Upgrade.Server", Json("""{"update":null}"""));
+        api.Responses.TryAdd("SYNO.FileStation.List", Json("""{"offset":0,"total":0,"shares":[]}"""));
         api.Responses.TryAdd("SYNO.Core.Package", Json("""{"packages":[]}"""));
         api.Responses.TryAdd("SYNO.Core.TaskScheduler", Json("""{"tasks":[]}"""));
         api.Responses.TryAdd("SYNO.LogCenter.History", Json("""{"logs":[]}"""));
@@ -227,6 +298,7 @@ public sealed class NasDetailsRepositoryContractTests
             ["SYNO.Core.System"] = Capability("SYNO.Core.System", max: 3),
             ["SYNO.Storage.CGI.Storage"] = Capability("SYNO.Storage.CGI.Storage", max: 1),
             ["SYNO.Core.Upgrade.Server"] = Capability("SYNO.Core.Upgrade.Server", max: 3),
+            ["SYNO.FileStation.List"] = Capability("SYNO.FileStation.List"),
             ["SYNO.Core.Package"] = Capability("SYNO.Core.Package"),
             ["SYNO.Core.TaskScheduler"] = Capability("SYNO.Core.TaskScheduler", max: 4),
             ["SYNO.LogCenter.History"] = Capability("SYNO.LogCenter.History"),
@@ -244,6 +316,7 @@ public sealed class NasDetailsRepositoryContractTests
     {
         public Dictionary<string, JsonObject> Responses { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, Exception> Errors { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, Queue<JsonObject>> ResponseSequences { get; } = new(StringComparer.Ordinal);
         public List<ReadCall> Calls { get; } = [];
 
         public Uri GetBaseUri(NasProfile profile) => new("https://nas.invalid");
@@ -292,6 +365,11 @@ public sealed class NasDetailsRepositoryContractTests
             if (Errors.TryGetValue(capability.Name, out var error))
             {
                 return Task.FromException<JsonObject>(error);
+            }
+            if (ResponseSequences.TryGetValue(capability.Name, out var responses) &&
+                responses.Count > 0)
+            {
+                return Task.FromResult(responses.Dequeue());
             }
             return Task.FromResult(Responses[capability.Name]);
         }

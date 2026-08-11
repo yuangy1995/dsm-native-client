@@ -26,6 +26,7 @@ public enum NasDetailsReadFeature
     SystemOverview,
     StorageHealth,
     SystemUpdate,
+    ShareAccess,
     Packages,
     ScheduledTasks,
     Logs,
@@ -70,6 +71,19 @@ public sealed record NasSystemUpdateSummary(
     string? CurrentVersion,
     string? LatestVersion,
     string? ReleaseNotes);
+
+public enum NasShareAccessLevel
+{
+    ReadWrite,
+    ReadOnly,
+    Unknown,
+}
+
+public sealed record NasShareAccessSummary(
+    string Id,
+    string Name,
+    NasShareAccessLevel AccessLevel,
+    bool CanDelete);
 
 public enum NasDetailsAvailabilityStatus
 {
@@ -125,6 +139,7 @@ public sealed record NasDetailsSnapshot(
     NasDetailsSection<NasSystemHealthSummary> SystemOverview,
     NasDetailsSection<NasStorageHealthSummary> StorageHealth,
     NasDetailsSection<NasSystemUpdateSummary> SystemUpdate,
+    NasDetailsSection<NasShareAccessSummary> ShareAccess,
     NasDetailsSection<NasPackageSummary> Packages,
     NasDetailsSection<NasScheduledTaskSummary> ScheduledTasks,
     NasDetailsSection<NasLogSummary> Logs,

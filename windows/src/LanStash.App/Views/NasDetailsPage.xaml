@@ -196,14 +196,14 @@
                 Spacing="8"
                 Visibility="Collapsed">
                 <TextBlock
-                    x:Uid="NasDetailsEmptyTitle"
                     FontSize="20"
                     FontWeight="SemiBold"
+                    Text="{Binding EmptyTitle}"
                     TextAlignment="Center"
                     AutomationProperties.HeadingLevel="Level2" />
                 <TextBlock
-                    x:Uid="NasDetailsEmptyMessage"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="{Binding EmptyMessage}"
                     TextAlignment="Center"
                     TextWrapping="Wrap" />
             </StackPanel>

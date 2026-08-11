@@ -35,6 +35,12 @@ public sealed class NasDetailsViewModelTests
             new NasDetailsSection<NasSystemUpdateSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasSystemUpdateSummary(true, "7.2", "7.2.1", "Reliability improvements")]),
+            new NasDetailsSection<NasShareAccessSummary>(
+                NasDetailsSectionStatus.Available,
+                [
+                    new NasShareAccessSummary("share-1", "Archive", NasShareAccessLevel.ReadOnly, false),
+                    new NasShareAccessSummary("share-2", "Projects", NasShareAccessLevel.ReadWrite, true),
+                ]),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", "Drive", "3.0", "running", ResourceState.Running)]),
@@ -59,6 +65,11 @@ public sealed class NasDetailsViewModelTests
         Assert.Equal(2, model.Rows.Count);
         Assert.Contains(model.Rows, row => row.Id == "system-update" && row.Status.Contains("7.2.1"));
         Assert.Contains(model.Rows, row => row.Id == "system-update-notes" && row.Detail == "Reliability improvements");
+        model.SelectSection(NasDetailsSectionKind.ShareAccess);
+        Assert.Equal(3, model.Rows.Count);
+        Assert.Contains(model.Rows, row => row.Id == "share-access-scope");
+        Assert.Contains(model.Rows, row => row.Title == "Archive" && row.Detail == "Read only");
+        Assert.Contains(model.Rows, row => row.Title == "Projects" && row.Status == "Delete allowed");
         model.SelectSection(NasDetailsSectionKind.Packages);
         Assert.Equal("Drive", Assert.Single(model.Rows).Title);
         model.SelectSection(NasDetailsSectionKind.ScheduledTasks);
@@ -86,6 +97,7 @@ public sealed class NasDetailsViewModelTests
             EmptySystem(),
             EmptyStorage(),
             EmptyUpdate(),
+            EmptyShareAccess(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 packages,
@@ -126,6 +138,7 @@ public sealed class NasDetailsViewModelTests
             new NasDetailsSection<NasSystemUpdateSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasSystemUpdateSummary(false, null, null, null)]),
+            EmptyShareAccess(),
             new NasDetailsSection<NasPackageSummary>(NasDetailsSectionStatus.Available, []),
             new NasDetailsSection<NasScheduledTaskSummary>(NasDetailsSectionStatus.Available, []),
             new NasDetailsSection<NasLogSummary>(NasDetailsSectionStatus.Available, []),
@@ -138,6 +151,22 @@ public sealed class NasDetailsViewModelTests
         var row = Assert.Single(model.Rows);
         Assert.Equal("Couldn’t determine update status", row.Title);
         Assert.DoesNotContain("up to date", row.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmptyShareAccessExplainsCurrentAccountScopeAndRefreshPath()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(repository.ProfileId, packageName: "Package"));
+        using var model = new NasDetailsViewModel();
+
+        await model.ActivateAsync(repository);
+        model.SelectSection(NasDetailsSectionKind.ShareAccess);
+
+        Assert.Equal(NasDetailsContentState.Empty, model.ContentState);
+        Assert.Equal("No visible shared folders", model.EmptyTitle);
+        Assert.Contains("administrator", model.EmptyMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Refresh", model.EmptyMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -192,6 +221,7 @@ public sealed class NasDetailsViewModelTests
             EmptySystem(),
             EmptyStorage(),
             EmptyUpdate(),
+            EmptyShareAccess(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", packageName, "1.0", "running", ResourceState.Running)]),
@@ -212,6 +242,9 @@ public sealed class NasDetailsViewModelTests
         new(NasDetailsSectionStatus.Available, []);
 
     private static NasDetailsSection<NasSystemUpdateSummary> EmptyUpdate() =>
+        new(NasDetailsSectionStatus.Available, []);
+
+    private static NasDetailsSection<NasShareAccessSummary> EmptyShareAccess() =>
         new(NasDetailsSectionStatus.Available, []);
 
     private static async Task WaitUntilAsync(Func<bool> predicate)
@@ -240,6 +273,7 @@ public sealed class NasDetailsViewModelTests
                     NasDetailsReadFeature.SystemOverview,
                     NasDetailsReadFeature.StorageHealth,
                     NasDetailsReadFeature.SystemUpdate,
+                    NasDetailsReadFeature.ShareAccess,
                     NasDetailsReadFeature.Packages,
                     NasDetailsReadFeature.ScheduledTasks,
                     NasDetailsReadFeature.Logs,

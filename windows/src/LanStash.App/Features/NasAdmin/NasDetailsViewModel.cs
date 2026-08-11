@@ -49,7 +49,14 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     public NasDetailsSectionKind SelectedSection
     {
         get => _selectedSection;
-        private set => SetProperty(ref _selectedSection, value);
+        private set
+        {
+            if (SetProperty(ref _selectedSection, value))
+            {
+                RaisePropertyChanged(nameof(EmptyTitle));
+                RaisePropertyChanged(nameof(EmptyMessage));
+            }
+        }
     }
 
     public bool IsLoading
@@ -92,6 +99,12 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     public bool IsEmpty => ContentState == NasDetailsContentState.Empty;
     public bool HasError => ContentState == NasDetailsContentState.Error;
     public bool IsUnavailable => ContentState == NasDetailsContentState.Unavailable;
+    public string EmptyTitle => SelectedSection == NasDetailsSectionKind.ShareAccess
+        ? L.Get("NasDetailsShareAccessEmptyTitle")
+        : L.Get("NasDetailsEmptyTitleText");
+    public string EmptyMessage => SelectedSection == NasDetailsSectionKind.ShareAccess
+        ? L.Get("NasDetailsShareAccessEmptyMessage")
+        : L.Get("NasDetailsEmptyMessageText");
     public bool CanRefresh => !IsLoading &&
         _repository?.Availability.Status == NasDetailsAvailabilityStatus.Available;
 
@@ -244,6 +257,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
                 snapshot.StorageHealth,
                 StorageRow),
             NasDetailsSectionKind.SystemUpdate => ProjectUpdateSection(snapshot.SystemUpdate),
+            NasDetailsSectionKind.ShareAccess => ProjectShareAccessSection(snapshot.ShareAccess),
             NasDetailsSectionKind.Packages => ProjectSection(
                 snapshot.Packages,
                 PackageRow),
@@ -299,6 +313,10 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             NasDetailsSectionKind.SystemUpdate,
             snapshot.SystemUpdate.Status,
             snapshot.SystemUpdate.Items.SelectMany(UpdateRows).Count()));
+        Sections.Add(SectionOption(
+            NasDetailsSectionKind.ShareAccess,
+            snapshot.ShareAccess.Status,
+            snapshot.ShareAccess.Items.Count));
         Sections.Add(SectionOption(
             NasDetailsSectionKind.Packages,
             snapshot.Packages.Status,
@@ -388,6 +406,51 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
                 string.Empty,
                 "\uE8A5");
         }
+    }
+
+    private static SectionProjection ProjectShareAccessSection(
+        NasDetailsSection<NasShareAccessSummary> section)
+    {
+        if (section.Status != NasDetailsSectionStatus.Available || section.Items.Count == 0)
+        {
+            return new(section.Status, [], section.IsTruncated);
+        }
+        var rows = new List<NasDetailsRow>
+        {
+            Row(
+                "share-access-scope",
+                L.Get("NasDetailsShareAccessScopeTitle"),
+                L.Get("NasDetailsShareAccessScopeMessage"),
+                string.Empty,
+                "\uE77B"),
+        };
+        rows.AddRange(section.Items.Select(ShareAccessRow));
+        return new(section.Status, rows, section.IsTruncated);
+    }
+
+    private static NasDetailsRow ShareAccessRow(NasShareAccessSummary item)
+    {
+        var access = item.AccessLevel switch
+        {
+            NasShareAccessLevel.ReadWrite => L.Get("NasDetailsShareAccessReadWrite"),
+            NasShareAccessLevel.ReadOnly => L.Get("NasDetailsShareAccessReadOnly"),
+            NasShareAccessLevel.Unknown => L.Get("NasDetailsShareAccessUnknown"),
+            _ => throw new ArgumentOutOfRangeException(nameof(item.AccessLevel)),
+        };
+        var delete = item.CanDelete
+            ? L.Get("NasDetailsShareAccessCanDelete")
+            : string.Empty;
+        return Row(
+            item.Id,
+            item.Name,
+            access,
+            delete,
+            item.AccessLevel switch
+            {
+                NasShareAccessLevel.ReadWrite => "\uE70F",
+                NasShareAccessLevel.ReadOnly => "\uE890",
+                _ => "\uE897",
+            });
     }
 
     private static IEnumerable<NasDetailsRow> SystemRows(NasSystemHealthSummary item)
@@ -573,6 +636,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         NasDetailsSectionKind.SystemOverview => L.Get("NasDetailsSectionSystem"),
         NasDetailsSectionKind.StorageHealth => L.Get("NasDetailsSectionStorage"),
         NasDetailsSectionKind.SystemUpdate => L.Get("NasDetailsSectionUpdate"),
+        NasDetailsSectionKind.ShareAccess => L.Get("NasDetailsSectionShareAccess"),
         NasDetailsSectionKind.Packages => L.Get("NasDetailsSectionPackages"),
         NasDetailsSectionKind.ScheduledTasks => L.Get("NasDetailsSectionTasks"),
         NasDetailsSectionKind.Logs => L.Get("NasDetailsSectionLogs"),

@@ -51,8 +51,8 @@
   <data name="NasDetailsSectionList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>NAS 详情分区</value></data>
   <data name="NasDetailsItemList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>NAS 详情项目</value></data>
   <data name="NasDetailsLoading.Text" xml:space="preserve"><value>正在加载 NAS 详情…</value></data>
-  <data name="NasDetailsEmptyTitle.Text" xml:space="preserve"><value>此分区没有项目</value></data>
-  <data name="NasDetailsEmptyMessage.Text" xml:space="preserve"><value>DSM 没有返回所选分区的项目。</value></data>
+  <data name="NasDetailsEmptyTitleText" xml:space="preserve"><value>此分区没有项目</value></data>
+  <data name="NasDetailsEmptyMessageText" xml:space="preserve"><value>DSM 没有返回所选分区的项目。</value></data>
   <data name="NasDetailsErrorTitle.Text" xml:space="preserve"><value>无法加载此分区</value></data>
   <data name="NasDetailsErrorMessage.Text" xml:space="preserve"><value>请检查连接和权限，然后重试。</value></data>
   <data name="NasDetailsTryAgain.Content" xml:space="preserve"><value>重试</value></data>
@@ -77,6 +77,15 @@
   <data name="NasDetailsSectionSystem" xml:space="preserve"><value>系统</value></data>
   <data name="NasDetailsSectionStorage" xml:space="preserve"><value>存储</value></data>
   <data name="NasDetailsSectionUpdate" xml:space="preserve"><value>系统更新</value></data>
+  <data name="NasDetailsSectionShareAccess" xml:space="preserve"><value>共享访问</value></data>
+  <data name="NasDetailsShareAccessScopeTitle" xml:space="preserve"><value>当前账号的访问权限</value></data>
+  <data name="NasDetailsShareAccessScopeMessage" xml:space="preserve"><value>这里只显示当前账号可以看到的共享文件夹。隐藏或不可访问的文件夹不会列出，因此这不是完整的管理员权限列表。</value></data>
+  <data name="NasDetailsShareAccessReadWrite" xml:space="preserve"><value>可读取和修改</value></data>
+  <data name="NasDetailsShareAccessReadOnly" xml:space="preserve"><value>仅可读取</value></data>
+  <data name="NasDetailsShareAccessUnknown" xml:space="preserve"><value>暂时无法判断访问权限</value></data>
+  <data name="NasDetailsShareAccessCanDelete" xml:space="preserve"><value>允许删除</value></data>
+  <data name="NasDetailsShareAccessEmptyTitle" xml:space="preserve"><value>没有可见的共享文件夹</value></data>
+  <data name="NasDetailsShareAccessEmptyMessage" xml:space="preserve"><value>当前账号可能没有任何共享文件夹的访问权限。管理员调整权限后，请刷新再试。</value></data>
   <data name="NasDetailsUpdateAvailable" xml:space="preserve"><value>有可用更新</value></data>
   <data name="NasDetailsUpdateCurrent" xml:space="preserve"><value>DSM 已是最新版本</value></data>
   <data name="NasDetailsUpdateStatusUnavailable" xml:space="preserve"><value>无法确定更新状态</value></data>

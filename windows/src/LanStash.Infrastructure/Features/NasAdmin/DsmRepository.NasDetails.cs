@@ -9,6 +9,9 @@ namespace LanStash.Infrastructure;
 public sealed partial class DsmRepository
 {
     private const int NasDetailsPageLimit = 50;
+    private const int ShareAccessApiVersion = 2;
+    private const int ShareAccessPageSize = 200;
+    private const int ShareAccessSourceLimit = 500;
 
     NasDetailsAvailability INasDetailsRepository.Availability => NasDetailsAvailability;
 
@@ -28,6 +31,10 @@ public sealed partial class DsmRepository
             if (Supports("SYNO.Core.Upgrade.Server"))
             {
                 features.Add(NasDetailsReadFeature.SystemUpdate);
+            }
+            if (SupportsShareAccess())
+            {
+                features.Add(NasDetailsReadFeature.ShareAccess);
             }
             if (Supports("SYNO.Core.Package"))
             {
@@ -64,11 +71,213 @@ public sealed partial class DsmRepository
             systemOverview,
             await LoadStorageHealthSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadSystemUpdateSectionAsync(systemOverview, cancellationToken).ConfigureAwait(false),
+            await LoadShareAccessSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadPackagesSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadScheduledTasksSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadLogsSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadConnectionsSectionAsync(cancellationToken).ConfigureAwait(false));
     }
+
+    private bool SupportsShareAccess() =>
+        _capabilities.TryGetValue("SYNO.FileStation.List", out var capability) &&
+        string.Equals(capability.Name, "SYNO.FileStation.List", StringComparison.Ordinal) &&
+        capability.MinVersion <= ShareAccessApiVersion &&
+        capability.MaxVersion >= ShareAccessApiVersion &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<NasDetailsSection<NasShareAccessSummary>> LoadShareAccessSectionAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!SupportsShareAccess())
+        {
+            return Unavailable<NasShareAccessSummary>("nas-details.share-access.unavailable");
+        }
+        try
+        {
+            var candidates = new Dictionary<string, ShareAccessCandidate>(StringComparer.Ordinal);
+            var offset = 0;
+            int? expectedTotal = null;
+            var sourceTruncated = false;
+            while (offset < ShareAccessSourceLimit)
+            {
+                var requestLimit = Math.Min(ShareAccessPageSize, ShareAccessSourceLimit - offset);
+                var data = await _api.CallReadJsonObjectAsync(
+                    _profile,
+                    _session,
+                    Required("SYNO.FileStation.List"),
+                    ShareAccessApiVersion,
+                    "list_share",
+                    new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["offset"] = offset.ToString(CultureInfo.InvariantCulture),
+                        ["limit"] = requestLimit.ToString(CultureInfo.InvariantCulture),
+                        ["sort_by"] = "name",
+                        ["sort_direction"] = "asc",
+                        ["additional"] = "[\"mount_point_type\",\"perm\"]",
+                    },
+                    cancellationToken).ConfigureAwait(false);
+                var page = ShareAccessRequiredArray(data, "shares");
+                var responseOffset = ShareAccessRequiredNonnegativeInt(data, "offset");
+                var total = ShareAccessRequiredNonnegativeInt(data, "total");
+                if (page.Count > requestLimit || responseOffset != offset || responseOffset > total ||
+                    page.Count > total - responseOffset ||
+                    expectedTotal is { } stableTotal && stableTotal != total)
+                {
+                    throw new InvalidDataException("Invalid shared-folder pagination.");
+                }
+                expectedTotal ??= total;
+                if (page.Count == 0 && offset < Math.Min(total, ShareAccessSourceLimit))
+                {
+                    throw new InvalidDataException("Shared-folder pagination made no progress.");
+                }
+                foreach (var node in page)
+                {
+                    var item = node as JsonObject
+                        ?? throw new InvalidDataException("Invalid shared-folder item.");
+                    var path = ShareAccessRequiredPath(item, "path");
+                    var name = ShareAccessRequiredName(item, "name");
+                    if (!ShareAccessRequiredBoolean(item, "isdir") || IsRecycleShare(path, name))
+                    {
+                        continue;
+                    }
+                    var additional = ShareAccessOptionalObject(item, "additional");
+                    var mountType = ShareAccessOptionalText(additional, "mount_point_type")
+                        ?.ToLowerInvariant();
+                    if (mountType is not null and not ("normal" or "shared_folder"))
+                    {
+                        continue;
+                    }
+                    var rights = ShareAccessOptionalObject(
+                        ShareAccessOptionalObject(additional, "perm"),
+                        "adv_right");
+                    var canRead = ShareAccessOptionalBoolean(rights, "read");
+                    var canWrite = ShareAccessOptionalBoolean(rights, "write");
+                    var canDelete = ShareAccessOptionalBoolean(rights, "delete");
+                    var accessLevel = canWrite == true
+                        ? NasShareAccessLevel.ReadWrite
+                        : canRead == true
+                            ? NasShareAccessLevel.ReadOnly
+                            : NasShareAccessLevel.Unknown;
+                    candidates[path] = new ShareAccessCandidate(name, accessLevel, canDelete == true);
+                }
+                var nextOffset = checked(offset + page.Count);
+                var boundedTotal = Math.Min(total, ShareAccessSourceLimit);
+                if (nextOffset > boundedTotal)
+                {
+                    throw new InvalidDataException("Shared-folder pagination exceeded its bound.");
+                }
+                if (nextOffset >= boundedTotal)
+                {
+                    sourceTruncated = total > ShareAccessSourceLimit;
+                    break;
+                }
+                offset = nextOffset;
+            }
+            var ordered = candidates.Values
+                .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(item => item.Name, StringComparer.Ordinal)
+                .Select((item, index) => new NasShareAccessSummary(
+                    $"share-{index + 1}",
+                    item.Name,
+                    item.AccessLevel,
+                    item.CanDelete))
+                .ToArray();
+            var section = Available<NasShareAccessSummary>(ordered);
+            return section with { IsTruncated = section.IsTruncated || sourceTruncated };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return Failed<NasShareAccessSummary>("nas-details.share-access.failed");
+        }
+    }
+
+    private static JsonArray ShareAccessRequiredArray(JsonObject value, string key) =>
+        value[key] as JsonArray ?? throw new InvalidDataException("Invalid shared-folder list.");
+
+    private static int ShareAccessRequiredNonnegativeInt(JsonObject value, string key) =>
+        value[key] is JsonValue node && node.TryGetValue<int>(out var result) && result >= 0
+            ? result
+            : throw new InvalidDataException("Invalid shared-folder count.");
+
+    private static string ShareAccessRequiredPath(JsonObject value, string key)
+    {
+        var result = value[key] is JsonValue node && node.TryGetValue<string>(out var text)
+            ? text.Trim()
+            : null;
+        if (string.IsNullOrWhiteSpace(result) || result.Length > 4_096 || result[0] != '/' ||
+            result.EndsWith("/", StringComparison.Ordinal) ||
+            result.Contains("//", StringComparison.Ordinal) || result.Contains('\\') ||
+            result.Any(char.IsControl) ||
+            result.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Any(segment => segment is "." or ".."))
+        {
+            throw new InvalidDataException("Invalid shared-folder path.");
+        }
+        return result;
+    }
+
+    private static string ShareAccessRequiredName(JsonObject value, string key)
+    {
+        var result = value[key] is JsonValue node && node.TryGetValue<string>(out var text)
+            ? text.Trim()
+            : null;
+        return !string.IsNullOrWhiteSpace(result) && result.Length <= 1_024 &&
+            !result.Any(char.IsControl) && !result.Contains('/') && !result.Contains('\\')
+                ? result
+                : throw new InvalidDataException("Invalid shared-folder name.");
+    }
+
+    private static JsonObject? ShareAccessOptionalObject(JsonObject? value, string key)
+    {
+        if (value is null || !value.ContainsKey(key) || value[key] is null)
+        {
+            return null;
+        }
+        return value[key] as JsonObject
+            ?? throw new InvalidDataException("Invalid shared-folder object.");
+    }
+
+    private static string? ShareAccessOptionalText(JsonObject? value, string key)
+    {
+        if (value is null || !value.ContainsKey(key) || value[key] is null)
+        {
+            return null;
+        }
+        if (value[key] is not JsonValue node || !node.TryGetValue<string>(out var text))
+        {
+            throw new InvalidDataException("Invalid shared-folder text.");
+        }
+        return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+    }
+
+    private static bool ShareAccessRequiredBoolean(JsonObject value, string key) =>
+        value[key] is JsonValue node && node.TryGetValue<bool>(out var result)
+            ? result
+            : throw new InvalidDataException("Invalid shared-folder type.");
+
+    private static bool? ShareAccessOptionalBoolean(JsonObject? value, string key)
+    {
+        if (value is null || !value.ContainsKey(key) || value[key] is null)
+        {
+            return null;
+        }
+        return value[key] is JsonValue node && node.TryGetValue<bool>(out var result)
+            ? result
+            : throw new InvalidDataException("Invalid shared-folder permission.");
+    }
+
+    private static bool IsRecycleShare(string path, string name) =>
+        string.Equals(name, "#recycle", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(path.Split('/').LastOrDefault(), "#recycle", StringComparison.OrdinalIgnoreCase);
+
+    private sealed record ShareAccessCandidate(
+        string Name,
+        NasShareAccessLevel AccessLevel,
+        bool CanDelete);
 
     private async Task<NasDetailsSection<NasSystemUpdateSummary>> LoadSystemUpdateSectionAsync(
         NasDetailsSection<NasSystemHealthSummary> systemOverview,
