@@ -76,6 +76,35 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertFalse(source.contains("withAnimation"))
     }
 
+    func test本地会话置顶覆盖列表详情和可访问性入口() throws {
+        let source = try chatViewSources()
+        let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
+        let state = try sourceFile("Sources/Features/Chat/MobileChatState.swift")
+        let store = try sourceFile("Sources/Features/Chat/MobileChatConversationPinStore.swift")
+        let session = try sourceFile("Sources/Session/MobileAppModel+Session.swift")
+
+        XCTAssertTrue(source.contains(".swipeActions(edge: .trailing, allowsFullSwipe: false)"))
+        XCTAssertTrue(source.contains("conversationPinButton(conversation, isPinned:"))
+        XCTAssertTrue(source.contains("ToolbarItemGroup(placement: .topBarTrailing)"))
+        XCTAssertTrue(source.contains("chat.toggleConversationPinned(conversation)"))
+        XCTAssertTrue(source.contains("pin.fill"))
+        XCTAssertTrue(source.contains("mobile.chat.pin.action.pin"))
+        XCTAssertTrue(source.contains("mobile.chat.pin.action.unpin"))
+        XCTAssertTrue(source.contains("mobile.chat.pin.hint"))
+        XCTAssertTrue(source.contains("mobile.chat.conversation.accessibility.pinned"))
+        XCTAssertTrue(model.contains("conversationPinStore"))
+        XCTAssertTrue(model.contains("toggleConversationPinned(_ conversation: ChatConversation)"))
+        XCTAssertTrue(model.contains("removePersistentPins(profileID: UUID)"))
+        XCTAssertTrue(model.contains("normalizedPinnedConversationIDs"))
+        XCTAssertTrue(state.contains("pinnedConversationIDs"))
+        XCTAssertTrue(state.contains("isConversationPinned(_ conversationID: String)"))
+        XCTAssertTrue(store.contains("StoredPinnedConversations"))
+        XCTAssertTrue(store.contains("version: 1"))
+        XCTAssertTrue(session.contains("chatModel.removePersistentPins(profileID: profile.id)"))
+        XCTAssertFalse(model.contains("listPinnedMessages"))
+        XCTAssertFalse(model.contains("setMessagePinned"))
+    }
+
     func testAppModel持有单一聊天模型且生命周期接入配置档和工作区() throws {
         let appModel = try sourceFile("Sources/AppShell/MobileAppModel.swift")
         let workspace = try sourceFile("Sources/AppShell/MobileAppModel+Workspace.swift")
@@ -92,14 +121,16 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(workspaceView.contains("if module != .chat"))
         XCTAssertTrue(session.contains("chatModel.purge(profileID: profile.id)"))
         XCTAssertTrue(session.contains("chatModel.purge(profileID: profileID)"))
+        XCTAssertTrue(session.contains("chatModel.removePersistentPins(profileID: profile.id)"))
     }
 
-    func testRegular详情不会对已选择会话发起第二次选择且详情只有消息刷新() throws {
+    func testRegular详情不会对已选择会话发起第二次选择且详情工具栏包含置顶和刷新() throws {
         let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
 
         XCTAssertTrue(source.contains("if chat.state.selectedConversationID != conversation.id"))
         XCTAssertTrue(source.contains("if chat.state.selectedConversationID != conversation.id {\n                ProgressView"))
-        XCTAssertEqual(source.components(separatedBy: "ToolbarItem(placement: .topBarTrailing)").count - 1, 1)
+        XCTAssertEqual(source.components(separatedBy: "ToolbarItemGroup(placement: .topBarTrailing)").count - 1, 1)
+        XCTAssertTrue(source.contains("chat.toggleConversationPinned(conversation)"))
         XCTAssertTrue(source.contains("chat.refreshMessages()"))
     }
 

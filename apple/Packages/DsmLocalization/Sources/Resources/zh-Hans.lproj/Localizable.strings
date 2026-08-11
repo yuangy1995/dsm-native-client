@@ -2922,6 +2922,9 @@
 "mobile.chat.action.refresh-messages" = "刷新消息";
 "mobile.chat.action.retry" = "重试";
 "mobile.chat.action.load-earlier" = "加载更早消息";
+"mobile.chat.pin.action.pin" = "置顶会话";
+"mobile.chat.pin.action.unpin" = "取消置顶";
+"mobile.chat.pin.hint" = "将此会话固定在这台设备的列表顶部。";
 "mobile.chat.loading.conversations" = "正在加载会话…";
 "mobile.chat.loading.messages" = "正在加载消息…";
 "mobile.chat.loading.earlier" = "正在加载更早消息…";
@@ -2949,6 +2952,7 @@
 "mobile.chat.conversation.accessibility.unread" = "会话：%@，%lld 条未读消息";
 "mobile.chat.conversation.accessibility.encrypted" = "加密会话：%@";
 "mobile.chat.conversation.accessibility.encrypted-unread" = "加密会话：%@，%lld 条未读消息";
+"mobile.chat.conversation.accessibility.pinned" = "已置顶，%@";
 "mobile.chat.messages.empty.title" = "暂无消息";
 "mobile.chat.messages.empty.message" = "此会话中暂无可阅读的消息。";
 "mobile.chat.load-earlier.failed" = "无法加载更早消息，请重试";

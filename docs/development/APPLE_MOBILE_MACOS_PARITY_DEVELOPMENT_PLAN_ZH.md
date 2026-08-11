@@ -52,7 +52,7 @@
 | NAS | 只有少量只读摘要，远少于 macOS 21 类管理页 | 只补健康与必要只读诊断；配置、电源、账号和长时分析不是当前缺口 |
 | iPad | 只按 horizontal size class 分支，缺实际宽度、键盘、指针和拖放设计 | 补齐当前范围的自适应生产力；多窗口后续 |
 
-立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息与受限纯文字发送、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、NAS-02/NAS-04 四分区有界只读详情、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，正式提交 `5850f4c` 的 Apple Build run `31356270194` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。ACT-01 首片已合入正式提交 `2491212`，把 Download Station 已加载任务快照投影到 Activity 的独立 NAS 来源，新增暂停态与 NAS 项只读控制边界；本地 Activity 聚焦测试已通过，GitHub Apple Build run `31360092209` 通过共享包 675 项 XCTest（2 跳过）+10 Swift Testing、iPhone/iPad 通用应用构建和 macOS 打包，真机与真实 NAS 待验收。当前分支正在收口 CHAT-03 单附件 typed 结果、移动端附件选择/前台发送/缩略预览与另存；共享层聚焦、iOS 通用构建及 Chat/NAS 移动聚焦已通过，本波完成后统一进入云端门禁。Chat 实时、Download RSS/文件优先级/BT 高级/设置写、Activity 主动后台轮询、后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
+立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息、受限纯文字与单附件发送、Chat 本地会话置顶、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、NAS-02/NAS-04 四分区有界只读详情、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，正式提交 `5850f4c` 的 Apple Build run `31356270194` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。ACT-01 首片已合入正式提交 `2491212`，把 Download Station 已加载任务快照投影到 Activity 的独立 NAS 来源，新增暂停态与 NAS 项只读控制边界；本地 Activity 聚焦测试已通过，GitHub Apple Build run `31360092209` 通过共享包 675 项 XCTest（2 跳过）+10 Swift Testing、iPhone/iPad 通用应用构建和 macOS 打包，真机与真实 NAS 待验收。Chat 本地会话置顶只保存 profile 绑定会话 ID 顺序，列表滑动操作和详情工具栏可完成置顶/取消置顶，本机 iPhone 模拟器 Chat 聚焦 38/38 通过，GitHub Apple Build run `31450710918` 和 Repository Check run `31450710909` 已通过。Chat 实时、Download RSS/文件优先级/BT 高级/设置写、Activity 主动后台轮询、后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
 
 ## 3. 移动范围与 macOS 语义基线
 
@@ -367,6 +367,7 @@ M0 冻结产品范围、黄金测试、机械拆分
 - 消息分页、草稿、文字/Emoji、发送失败恢复、本地已读和可解释未读。
 - 前台 Socket.IO + 轮询降级，重连去重，进入后台后释放不必要连接。
 - iPhone 会话 → 消息 Stack；iPad 会话列表 + 消息 + 可选详情，返回保持草稿和滚动锚点。
+- 本地会话置顶只作为移动本机偏好，使用列表滑动操作和详情工具栏按钮完成，不接 Chat Server 官方置顶/Star 写入。
 
 出口：未记录 DSM build + Chat Server 完整版本时内部写入口关闭；无 APNs 时不承诺后台即时消息。核心出口不依赖附件或高级消息动作。
 
@@ -374,7 +375,7 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 - 接入 Photos/Files 单附件选择、上传进度/取消/失败恢复、保存和图片预览。
 - 删除本人消息、转发、关闭会话等只在范围账本明确列出且端点已验证时逐项开放。
-- 提醒、定时消息、投票、服务端置顶、语音和完整加密不作为当前交付；未实现入口不得出现。
+- 提醒、定时消息、投票、服务端置顶、官方 Star、语音和完整加密不作为当前交付；未实现入口不得出现。
 
 出口：选择器状态、取消、失败恢复和去重有独立测试；附件能力不能反向阻塞纯文字 Chat。
 

@@ -134,24 +134,54 @@ struct MobileChatView: View {
 
     @ViewBuilder
     private func conversationDestination(_ conversation: ChatConversation) -> some View {
+        let isPinned = model.chatModel.state.isConversationPinned(conversation.id)
         if horizontalSizeClass == .regular {
             Button {
                 Task { await model.chatModel.selectConversation(conversation) }
             } label: {
                 MobileChatConversationRow(
                     conversation: conversation,
-                    isSelected: model.chatModel.state.selectedConversationID == conversation.id
+                    isSelected: model.chatModel.state.selectedConversationID == conversation.id,
+                    isPinned: isPinned
                 )
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(
                 model.chatModel.state.selectedConversationID == conversation.id ? .isSelected : []
             )
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                conversationPinButton(conversation, isPinned: isPinned)
+            }
         } else {
             NavigationLink(value: conversation) {
-                MobileChatConversationRow(conversation: conversation, isSelected: false)
+                MobileChatConversationRow(
+                    conversation: conversation,
+                    isSelected: false,
+                    isPinned: isPinned
+                )
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                conversationPinButton(conversation, isPinned: isPinned)
             }
         }
+    }
+
+    private func conversationPinButton(_ conversation: ChatConversation, isPinned: Bool) -> some View {
+        Button {
+            model.chatModel.toggleConversationPinned(conversation)
+        } label: {
+            Label(
+                conversationPinActionTitle(isPinned: isPinned),
+                systemImage: isPinned ? "pin.slash" : "pin"
+            )
+        }
+        .tint(.accentColor)
+        .accessibilityLabel(conversationPinActionTitle(isPinned: isPinned))
+        .accessibilityHint(L10n.string("mobile.chat.pin.hint"))
+    }
+
+    private func conversationPinActionTitle(isPinned: Bool) -> String {
+        L10n.string(isPinned ? "mobile.chat.pin.action.unpin" : "mobile.chat.pin.action.pin")
     }
 
     private var conversationFilterBinding: Binding<String> {
@@ -178,6 +208,7 @@ struct MobileChatView: View {
 private struct MobileChatConversationRow: View {
     let conversation: ChatConversation
     let isSelected: Bool
+    let isPinned: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -190,6 +221,12 @@ private struct MobileChatConversationRow: View {
                     Text(conversation.title)
                         .font(.headline)
                         .lineLimit(2)
+                    if isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption)
+                            .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
+                    }
                     Spacer(minLength: 8)
                     if let date = conversation.lastActivityAt {
                         Text(date, style: .relative)
@@ -230,27 +267,30 @@ private struct MobileChatConversationRow: View {
     }
 
     private var conversationAccessibilityLabel: String {
+        let baseLabel: String
         if conversation.isEncrypted, conversation.unreadCount > 0 {
-            return L10n.string(
+            baseLabel = L10n.string(
                 "mobile.chat.conversation.accessibility.encrypted-unread",
                 conversation.title,
                 conversation.unreadCount
             )
-        }
-        if conversation.isEncrypted {
-            return L10n.string(
+        } else if conversation.isEncrypted {
+            baseLabel = L10n.string(
                 "mobile.chat.conversation.accessibility.encrypted",
                 conversation.title
             )
-        }
-        if conversation.unreadCount > 0 {
-            return L10n.string(
+        } else if conversation.unreadCount > 0 {
+            baseLabel = L10n.string(
                 "mobile.chat.conversation.accessibility.unread",
                 conversation.title,
                 conversation.unreadCount
             )
+        } else {
+            baseLabel = L10n.string("mobile.chat.conversation.accessibility", conversation.title)
         }
-        return L10n.string("mobile.chat.conversation.accessibility", conversation.title)
+        return isPinned
+            ? L10n.string("mobile.chat.conversation.accessibility.pinned", baseLabel)
+            : baseLabel
     }
 }
 
@@ -301,7 +341,16 @@ private struct MobileChatMessagesView: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    chat.toggleConversationPinned(conversation)
+                } label: {
+                    Image(systemName: conversationPinSystemImageName)
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel(conversationPinActionTitle)
+                .accessibilityHint(L10n.string("mobile.chat.pin.hint"))
+
                 Button {
                     Task { await chat.refreshMessages() }
                 } label: {
@@ -318,6 +367,18 @@ private struct MobileChatMessagesView: View {
             }
         }
         .mobileChatRemoteAttachmentPresentation(chat: chat)
+    }
+
+    private var conversationPinSystemImageName: String {
+        chat.state.isConversationPinned(conversation.id) ? "pin.fill" : "pin"
+    }
+
+    private var conversationPinActionTitle: String {
+        L10n.string(
+            chat.state.isConversationPinned(conversation.id)
+                ? "mobile.chat.pin.action.unpin"
+                : "mobile.chat.pin.action.pin"
+        )
     }
 
     private var messageContent: some View {

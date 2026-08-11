@@ -71,6 +71,7 @@ extension MobileAppModel {
         purgeFileLocations(profileID: profile.id)
         Task { await photoLibraryModel.purge(profileID: profile.id) }
         chatModel.purge(profileID: profile.id)
+        chatModel.removePersistentPins(profileID: profile.id)
         nasHealthModel.purge(profileID: profile.id)
         containerInventoryModel.purge(profileID: profile.id)
         virtualMachineInventoryModel.purge(profileID: profile.id)

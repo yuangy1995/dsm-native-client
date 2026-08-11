@@ -2922,6 +2922,9 @@
 "mobile.chat.action.refresh-messages" = "Refresh messages";
 "mobile.chat.action.retry" = "Try Again";
 "mobile.chat.action.load-earlier" = "Load Earlier Messages";
+"mobile.chat.pin.action.pin" = "Pin conversation";
+"mobile.chat.pin.action.unpin" = "Unpin conversation";
+"mobile.chat.pin.hint" = "Keeps this conversation at the top on this device.";
 "mobile.chat.loading.conversations" = "Loading conversations…";
 "mobile.chat.loading.messages" = "Loading messages…";
 "mobile.chat.loading.earlier" = "Loading earlier messages…";
@@ -2949,6 +2952,7 @@
 "mobile.chat.conversation.accessibility.unread" = "Conversation: %@, %lld unread messages";
 "mobile.chat.conversation.accessibility.encrypted" = "Encrypted conversation: %@";
 "mobile.chat.conversation.accessibility.encrypted-unread" = "Encrypted conversation: %@, %lld unread messages";
+"mobile.chat.conversation.accessibility.pinned" = "Pinned, %@";
 "mobile.chat.messages.empty.title" = "No Messages";
 "mobile.chat.messages.empty.message" = "There are no messages to read in this conversation.";
 "mobile.chat.load-earlier.failed" = "Couldn’t load earlier messages. Try Again";

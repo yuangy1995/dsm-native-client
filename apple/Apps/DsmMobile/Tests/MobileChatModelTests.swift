@@ -819,6 +819,108 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(messageRequestCount, 1)
     }
 
+    func test本地置顶按Profile保存排序且不触发远端请求() async {
+        let profileID = UUID()
+        let older = Self.conversation(
+            id: "older",
+            title: "较早会话",
+            lastActivityAt: Date(timeIntervalSince1970: 10)
+        )
+        let newer = Self.conversation(
+            id: "newer",
+            title: "较新会话",
+            lastActivityAt: Date(timeIntervalSince1970: 20)
+        )
+        let repository = ChatRepositoryStub(conversations: [older, newer])
+        let store = InMemoryMobileChatConversationPinStore()
+        let model = MobileChatModel(conversationPinStore: store)
+        await model.activate(profileID: profileID, repository: repository)
+
+        XCTAssertEqual(model.state.visibleConversations.map(\.id), ["newer", "older"])
+
+        model.toggleConversationPinned(older)
+
+        XCTAssertEqual(model.state.visibleConversations.map(\.id), ["older", "newer"])
+        XCTAssertEqual(model.state.pinnedConversationIDs, ["older"])
+        XCTAssertEqual(store.loadPinnedConversationIDs(profileID: profileID), ["older"])
+
+        model.toggleConversationPinned(older)
+
+        XCTAssertEqual(model.state.visibleConversations.map(\.id), ["newer", "older"])
+        XCTAssertTrue(model.state.pinnedConversationIDs.isEmpty)
+        XCTAssertTrue(store.loadPinnedConversationIDs(profileID: profileID).isEmpty)
+        let conversationRequestCount = await repository.conversationRequestCount()
+        let messageRequests = await repository.messageRequests()
+        let nonReadCallCount = await repository.nonReadCallCount()
+        XCTAssertEqual(conversationRequestCount, 1)
+        XCTAssertTrue(messageRequests.isEmpty)
+        XCTAssertEqual(nonReadCallCount, 0)
+    }
+
+    func test本地置顶重新激活恢复且不同Profile隔离() async {
+        let profileA = UUID()
+        let profileB = UUID()
+        let firstPinned = Self.conversation(
+            id: "first",
+            title: "第一置顶",
+            lastActivityAt: Date(timeIntervalSince1970: 10)
+        )
+        let secondPinned = Self.conversation(
+            id: "second",
+            title: "第二置顶",
+            lastActivityAt: Date(timeIntervalSince1970: 30)
+        )
+        let unpinned = Self.conversation(
+            id: "regular",
+            title: "普通会话",
+            lastActivityAt: Date(timeIntervalSince1970: 40)
+        )
+        let store = InMemoryMobileChatConversationPinStore(values: [
+            profileA: ["second", "missing", "first"]
+        ])
+        let model = MobileChatModel(conversationPinStore: store)
+        await model.activate(
+            profileID: profileA,
+            repository: ChatRepositoryStub(conversations: [firstPinned, secondPinned, unpinned])
+        )
+
+        XCTAssertEqual(model.state.visibleConversations.map(\.id), ["second", "first", "regular"])
+        XCTAssertEqual(model.state.pinnedConversationIDs, ["second", "first"])
+        XCTAssertEqual(store.loadPinnedConversationIDs(profileID: profileA), ["second", "first"])
+
+        await model.activate(
+            profileID: profileB,
+            repository: ChatRepositoryStub(conversations: [firstPinned, unpinned])
+        )
+
+        XCTAssertEqual(model.state.visibleConversations.map(\.id), ["regular", "first"])
+        XCTAssertTrue(model.state.pinnedConversationIDs.isEmpty)
+
+        let restoredModel = MobileChatModel(conversationPinStore: store)
+        await restoredModel.activate(
+            profileID: profileA,
+            repository: ChatRepositoryStub(conversations: [firstPinned, secondPinned, unpinned])
+        )
+
+        XCTAssertEqual(restoredModel.state.visibleConversations.map(\.id), ["second", "first", "regular"])
+    }
+
+    func test删除Profile清理置顶但普通Purge保留本地偏好() async {
+        let profileID = UUID()
+        let conversation = Self.conversation(id: "c1", title: "家庭")
+        let store = InMemoryMobileChatConversationPinStore(values: [profileID: [conversation.id]])
+        let model = MobileChatModel(conversationPinStore: store)
+        await model.activate(profileID: profileID, repository: ChatRepositoryStub(conversations: [conversation]))
+
+        model.purge(profileID: profileID)
+
+        XCTAssertEqual(store.loadPinnedConversationIDs(profileID: profileID), [conversation.id])
+
+        model.removePersistentPins(profileID: profileID)
+
+        XCTAssertTrue(store.loadPinnedConversationIDs(profileID: profileID).isEmpty)
+    }
+
     private func assertReadOnlyFailure<T>(
         _ operation: () async throws -> T,
         file: StaticString = #filePath,
@@ -840,13 +942,15 @@ final class MobileChatModelTests: XCTestCase {
     private static func conversation(
         id: String,
         title: String,
-        isEncrypted: Bool = false
+        isEncrypted: Bool = false,
+        lastActivityAt: Date? = nil
     ) -> ChatConversation {
         ChatConversation(
             id: id,
             kind: .group,
             title: title,
             memberIDs: [],
+            lastActivityAt: lastActivityAt,
             isEncrypted: isEncrypted
         )
     }
@@ -876,6 +980,26 @@ final class MobileChatModelTests: XCTestCase {
 private struct ChatMessageRequest: Hashable, Sendable {
     let conversationID: String
     let cursor: String?
+}
+
+private final class InMemoryMobileChatConversationPinStore: MobileChatConversationPinStore {
+    private var values: [UUID: [String]]
+
+    init(values: [UUID: [String]] = [:]) {
+        self.values = values
+    }
+
+    func loadPinnedConversationIDs(profileID: UUID) -> [String] {
+        values[profileID] ?? []
+    }
+
+    func savePinnedConversationIDs(_ conversationIDs: [String], profileID: UUID) {
+        values[profileID] = conversationIDs
+    }
+
+    func removePinnedConversationIDs(profileID: UUID) {
+        values.removeValue(forKey: profileID)
+    }
 }
 
 private actor ChatRepositoryStub: ChatRepository {

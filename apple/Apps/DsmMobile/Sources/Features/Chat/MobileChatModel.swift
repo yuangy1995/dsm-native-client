@@ -17,6 +17,7 @@ final class MobileChatModel {
     @ObservationIgnored private var conversationGeneration = 0
     @ObservationIgnored private var messageGeneration = 0
     @ObservationIgnored private var sendGeneration = 0
+    @ObservationIgnored private let conversationPinStore: any MobileChatConversationPinStore
     private let attachmentFileManager: FileManager
     private let attachmentCopier: any MobileDocumentImportCopying
     private let attachmentRootURL: URL
@@ -30,8 +31,10 @@ final class MobileChatModel {
     init(
         attachmentFileManager: FileManager = .default,
         attachmentCopier: any MobileDocumentImportCopying = MobileSecurityScopedDocumentCopier(),
-        attachmentRootURL: URL? = nil
+        attachmentRootURL: URL? = nil,
+        conversationPinStore: any MobileChatConversationPinStore = UserDefaultsMobileChatConversationPinStore()
     ) {
+        self.conversationPinStore = conversationPinStore
         self.attachmentFileManager = attachmentFileManager
         self.attachmentCopier = attachmentCopier
         self.attachmentRootURL = attachmentRootURL ?? attachmentFileManager.temporaryDirectory
@@ -79,7 +82,11 @@ final class MobileChatModel {
         activeProfileID = profileID
         repositories[profileID] = MobileReadOnlyChatRepository(base: repository)
         if profiles[profileID] == nil {
-            profiles[profileID] = MobileChatProfileState()
+            var profile = MobileChatProfileState()
+            profile.pinnedConversationIDs = Self.normalizedPinnedConversationIDs(
+                conversationPinStore.loadPinnedConversationIDs(profileID: profileID)
+            )
+            profiles[profileID] = profile
             await reloadConversations()
         }
     }
@@ -103,10 +110,41 @@ final class MobileChatModel {
         profiles[profileID] = nil
     }
 
+    /// 删除配置档时清除对应的本地置顶偏好；普通退出只清内存态，保留本机偏好。
+    func removePersistentPins(profileID: UUID) {
+        conversationPinStore.removePinnedConversationIDs(profileID: profileID)
+    }
+
     func setConversationFilter(_ value: String) {
         updateActive { profile in
             profile.conversationFilter = value
             Self.applyConversationFilter(to: &profile)
+        }
+    }
+
+    func toggleConversationPinned(_ conversation: ChatConversation) {
+        guard let profileID = activeProfileID else { return }
+        var pinnedConversationIDs: [String] = []
+        var shouldSave = false
+        updateActive { profile in
+            let conversationID = conversation.id
+            guard profile.conversations.contains(where: { $0.id == conversationID }) else { return }
+            if profile.pinnedConversationIDs.contains(conversationID) {
+                profile.pinnedConversationIDs.removeAll { $0 == conversationID }
+            } else {
+                profile.pinnedConversationIDs.append(conversationID)
+            }
+            profile.pinnedConversationIDs = Self.normalizedPinnedConversationIDs(profile.pinnedConversationIDs)
+            profile.conversations = Self.normalizedConversations(
+                profile.conversations,
+                pinnedConversationIDs: profile.pinnedConversationIDs
+            )
+            Self.applyConversationFilter(to: &profile)
+            pinnedConversationIDs = profile.pinnedConversationIDs
+            shouldSave = true
+        }
+        if shouldSave {
+            conversationPinStore.savePinnedConversationIDs(pinnedConversationIDs, profileID: profileID)
         }
     }
 
@@ -498,8 +536,20 @@ final class MobileChatModel {
     ) {
         guard isCurrentConversation(profileID: profileID, generation: generation) else { return }
         var invalidatesMessageLane = false
+        var pinnedConversationIDsToSave: [String]?
         updateActive { profile in
-            profile.conversations = Self.normalizedConversations(conversations)
+            profile.conversations = Self.normalizedConversations(
+                conversations,
+                pinnedConversationIDs: profile.pinnedConversationIDs
+            )
+            let availableConversationIDs = Set(profile.conversations.map(\.id))
+            let prunedPinnedConversationIDs = profile.pinnedConversationIDs.filter {
+                availableConversationIDs.contains($0)
+            }
+            if prunedPinnedConversationIDs != profile.pinnedConversationIDs {
+                profile.pinnedConversationIDs = prunedPinnedConversationIDs
+                pinnedConversationIDsToSave = prunedPinnedConversationIDs
+            }
             let encryptedIDs = Set(
                 profile.conversations.lazy.filter(\.isEncrypted).map(\.id)
             )
@@ -522,6 +572,9 @@ final class MobileChatModel {
         if invalidatesMessageLane {
             cancelMessageWork()
             attachmentModel.cancelAllWork()
+        }
+        if let pinnedConversationIDsToSave {
+            conversationPinStore.savePinnedConversationIDs(pinnedConversationIDsToSave, profileID: profileID)
         }
         conversationTask = nil
     }
@@ -803,11 +856,26 @@ final class MobileChatModel {
     }
 
     private static func normalizedConversations(
-        _ conversations: [ChatConversation]
+        _ conversations: [ChatConversation],
+        pinnedConversationIDs: [String] = []
     ) -> [ChatConversation] {
         var valuesByID: [String: ChatConversation] = [:]
         for conversation in conversations { valuesByID[conversation.id] = conversation }
+        var pinnedRanks: [String: Int] = [:]
+        for conversationID in pinnedConversationIDs where pinnedRanks[conversationID] == nil {
+            pinnedRanks[conversationID] = pinnedRanks.count
+        }
         return valuesByID.values.sorted { lhs, rhs in
+            switch (pinnedRanks[lhs.id], pinnedRanks[rhs.id]) {
+            case let (left?, right?) where left != right:
+                return left < right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                break
+            }
             switch (lhs.lastActivityAt, rhs.lastActivityAt) {
             case let (left?, right?) where left != right:
                 return left > right
@@ -819,6 +887,18 @@ final class MobileChatModel {
                 return lhs.id < rhs.id
             }
         }
+    }
+
+    private static func normalizedPinnedConversationIDs(_ conversationIDs: [String]) -> [String] {
+        var result: [String] = []
+        var seen: Set<String> = []
+        for conversationID in conversationIDs {
+            let trimmed = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else { continue }
+            seen.insert(trimmed)
+            result.append(trimmed)
+        }
+        return result
     }
 
     static func normalizedMessages(_ messages: [ChatMessage]) -> [ChatMessage] {

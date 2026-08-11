@@ -11,6 +11,7 @@ struct MobileChatProfileState: Equatable, Sendable {
     var availability = ChatAvailability(status: .requiresValidation)
     var conversations: [ChatConversation] = []
     var visibleConversations: [ChatConversation] = []
+    var pinnedConversationIDs: [String] = []
     var conversationFilter = ""
     var selectedConversationID: String?
     var messagesByConversation: [String: MobileChatMessageCache] = [:]
@@ -45,6 +46,10 @@ struct MobileChatProfileState: Equatable, Sendable {
 
     var selectedConversationIsEncrypted: Bool {
         selectedConversation?.isEncrypted == true
+    }
+
+    func isConversationPinned(_ conversationID: String) -> Bool {
+        pinnedConversationIDs.contains(conversationID)
     }
 
     var selectedMessages: MobileChatMessageCache {
