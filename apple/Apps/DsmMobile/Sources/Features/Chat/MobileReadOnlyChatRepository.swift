@@ -14,7 +14,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .videoAttachment,
             .fileAttachment,
             .attachmentDownload,
-            .groupMembers
+            .groupMembers,
+            .pinnedMessages
         ]
         let mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
@@ -128,7 +129,35 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     }
 
     func listPinnedMessages(conversationID: String) async throws -> [ChatMessage] {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.pinnedMessages) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return try await base.listPinnedMessages(conversationID: conversationID)
+            .filter {
+                $0.conversationID == conversationID
+                    && $0.pinnedAt != nil
+                    && $0.encryptionState == .notEncrypted
+            }
+            .prefix(100)
+            .map {
+                ChatMessage(
+                    id: $0.id,
+                    clientRequestID: nil,
+                    conversationID: $0.conversationID,
+                    senderID: $0.senderID,
+                    senderDisplayName: $0.senderDisplayName,
+                    isFromCurrentUser: $0.isFromCurrentUser,
+                    sentAt: $0.sentAt,
+                    text: $0.text,
+                    attachments: [],
+                    poll: nil,
+                    deliveryState: .sent,
+                    encryptionState: .notEncrypted,
+                    pinnedAt: $0.pinnedAt
+                )
+            }
     }
 
     func setMessagePinned(

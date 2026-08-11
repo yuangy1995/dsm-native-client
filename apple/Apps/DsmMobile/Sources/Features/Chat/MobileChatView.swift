@@ -1,5 +1,6 @@
 import DsmCore
 import DsmLocalization
+import Foundation
 import SwiftUI
 
 struct MobileChatView: View {
@@ -299,6 +300,7 @@ private struct MobileChatMessagesView: View {
     let conversation: ChatConversation
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var presentsMembers = false
+    @State private var presentsAnnouncements = false
 
     var body: some View {
         Group {
@@ -343,6 +345,17 @@ private struct MobileChatMessagesView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if chat.canViewAnnouncements(for: conversation) {
+                    Button {
+                        presentsAnnouncements = true
+                    } label: {
+                        Image(systemName: "megaphone")
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.string("mobile.chat.announcements.action"))
+                    .accessibilityHint(L10n.string("mobile.chat.announcements.hint"))
+                }
+
                 if chat.canViewMembers(for: conversation) {
                     Button {
                         presentsMembers = true
@@ -375,6 +388,9 @@ private struct MobileChatMessagesView: View {
         }
         .sheet(isPresented: $presentsMembers) {
             MobileChatMembersSheet(chat: chat, conversation: conversation)
+        }
+        .sheet(isPresented: $presentsAnnouncements) {
+            MobileChatAnnouncementsSheet(chat: chat, conversation: conversation)
         }
         .safeAreaInset(edge: .bottom) {
             if chat.canComposeMessage, !conversation.isEncrypted {
@@ -455,6 +471,138 @@ private struct MobileChatMessagesView: View {
             filteredEmptyMessage: L10n.string("mobile.chat.messages.empty.message"),
             errorTitle: L10n.string("mobile.chat.error.title"),
             errorMessage: L10n.string("mobile.chat.messages.error.message"),
+            retryTitle: L10n.string("mobile.chat.action.retry")
+        )
+    }
+}
+
+private struct MobileChatAnnouncementsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var chat: MobileChatModel
+    let conversation: ChatConversation
+
+    var body: some View {
+        NavigationStack {
+            MobilePageStateView(
+                state: chat.state.announcementPageState,
+                labels: announcementStateLabels,
+                emptySystemImage: "megaphone",
+                errorSystemImage: "exclamationmark.bubble",
+                retryAction: {
+                    Task { await chat.loadConversationAnnouncements(forceRefresh: true) }
+                }
+            ) {
+                List {
+                    Section {
+                        ForEach(chat.state.selectedConversationAnnouncements) { announcement in
+                            announcementRow(announcement)
+                        }
+                    } header: {
+                        Text(
+                            L10n.string(
+                                "mobile.chat.announcements.count",
+                                chat.state.selectedConversationAnnouncements.count
+                            )
+                        )
+                    }
+                }
+                .listStyle(.plain)
+                .refreshable {
+                    await chat.loadConversationAnnouncements(forceRefresh: true)
+                }
+            }
+            .navigationTitle(L10n.string("mobile.chat.announcements.title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("mobile.chat.announcements.close")) {
+                        chat.cancelConversationAnnouncementLoad()
+                        dismiss()
+                    }
+                    .frame(minWidth: 44, minHeight: 44)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { await chat.loadConversationAnnouncements(forceRefresh: true) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 44, height: 44)
+                    }
+                    .disabled(
+                        chat.state.announcementPageState == .loading
+                            || chat.state.isRefreshingAnnouncements
+                    )
+                    .accessibilityLabel(L10n.string("mobile.chat.announcements.refresh"))
+                }
+            }
+            .overlay(alignment: .top) {
+                if chat.state.isRefreshingAnnouncements {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(8)
+                        .background(.regularMaterial, in: .capsule)
+                        .accessibilityLabel(L10n.string("mobile.chat.announcements.loading"))
+                }
+            }
+        }
+        .task(id: conversation.id) {
+            await chat.loadConversationAnnouncements()
+        }
+        .onDisappear {
+            chat.cancelConversationAnnouncementLoad()
+        }
+    }
+
+    private func announcementRow(_ announcement: ChatMessage) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(
+                announcement.senderDisplayName
+                    ?? L10n.string("mobile.chat.sender.unknown")
+            )
+            .font(.subheadline.weight(.semibold))
+            Text(announcementText(announcement))
+                .font(.body)
+                .textSelection(.enabled)
+            if let pinnedAt = announcement.pinnedAt {
+                Text(
+                    L10n.string(
+                        "mobile.chat.announcements.pinned-at",
+                        pinnedAt.formatted(
+                            .dateTime
+                                .year()
+                                .month()
+                                .day()
+                                .hour()
+                                .minute()
+                                .locale(L10n.locale)
+                        )
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func announcementText(_ announcement: ChatMessage) -> String {
+        let text = announcement.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty
+            ? L10n.string("mobile.chat.announcements.no-text")
+            : text
+    }
+
+    private var announcementStateLabels: MobilePageStateLabels {
+        MobilePageStateLabels(
+            loading: L10n.string("mobile.chat.announcements.loading"),
+            emptyTitle: L10n.string("mobile.chat.announcements.empty.title"),
+            emptyMessage: L10n.string("mobile.chat.announcements.empty.message"),
+            filteredEmptyTitle: L10n.string("mobile.chat.announcements.empty.title"),
+            filteredEmptyMessage: L10n.string("mobile.chat.announcements.empty.message"),
+            errorTitle: L10n.string("mobile.chat.announcements.error.title"),
+            errorMessage: L10n.string("mobile.chat.announcements.error.message"),
             retryTitle: L10n.string("mobile.chat.action.retry")
         )
     }

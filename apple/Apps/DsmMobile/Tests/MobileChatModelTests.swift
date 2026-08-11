@@ -5,15 +5,35 @@ import XCTest
 
 @MainActor
 final class MobileChatModelTests: XCTestCase {
-    func test移动适配层开放纯文字和群成员只读并继续拒绝高级能力() async throws {
+    func test移动适配层开放纯文字群成员和群公告只读并继续拒绝高级能力() async throws {
         let member = ChatUser(id: "member", displayName: "成员")
+        let pinnedAt = Date(timeIntervalSince1970: 100)
+        let announcement = ChatMessage(
+            id: "announcement",
+            clientRequestID: UUID(),
+            conversationID: "conversation",
+            senderID: "sender",
+            senderDisplayName: "发送者",
+            sentAt: Date(timeIntervalSince1970: 90),
+            text: "公告正文",
+            attachments: [
+                ChatAttachment(id: "attachment", kind: .file, fileName: "private.txt")
+            ],
+            pinnedAt: pinnedAt
+        )
         let base = ChatRepositoryStub(
             availability: ChatAvailability(
                 status: .available,
-                supportedFeatures: [.textMessage, .groupConversation, .groupMembers]
+                supportedFeatures: [
+                    .textMessage,
+                    .groupConversation,
+                    .groupMembers,
+                    .pinnedMessages
+                ]
             ),
             conversations: [],
-            members: ["conversation": [member]]
+            members: ["conversation": [member]],
+            announcements: ["conversation": [announcement]]
         )
         let repository = MobileReadOnlyChatRepository(base: base)
         let draft = try ChatMessageDraft(conversationID: "conversation", text: "不会发送")
@@ -61,6 +81,15 @@ final class MobileChatModelTests: XCTestCase {
         }
         let members = try await repository.listConversationMembers(conversationID: "conversation")
         XCTAssertEqual(members, [member])
+        let announcements = try await repository.listPinnedMessages(conversationID: "conversation")
+        let sanitizedAnnouncement = try XCTUnwrap(announcements.first)
+        XCTAssertEqual(announcements.count, 1)
+        XCTAssertEqual(sanitizedAnnouncement.id, announcement.id)
+        XCTAssertEqual(sanitizedAnnouncement.text, announcement.text)
+        XCTAssertEqual(sanitizedAnnouncement.pinnedAt, pinnedAt)
+        XCTAssertNil(sanitizedAnnouncement.clientRequestID)
+        XCTAssertTrue(sanitizedAnnouncement.attachments.isEmpty)
+        XCTAssertNil(sanitizedAnnouncement.poll)
         await assertReadOnlyFailure {
             try await repository.setMessagePinned(
                 conversationID: "conversation",
@@ -104,9 +133,6 @@ final class MobileChatModelTests: XCTestCase {
             )
         }
         await assertReadOnlyFailure {
-            try await repository.listPinnedMessages(conversationID: "conversation")
-        }
-        await assertReadOnlyFailure {
             try await repository.listScheduledMessages(conversationID: "conversation")
         }
         await assertReadOnlyFailure {
@@ -128,7 +154,10 @@ final class MobileChatModelTests: XCTestCase {
 
         let availability = await repository.availability()
         XCTAssertEqual(availability.status, .available)
-        XCTAssertEqual(availability.supportedFeatures, [.textMessage, .groupMembers])
+        XCTAssertEqual(
+            availability.supportedFeatures,
+            [.textMessage, .groupMembers, .pinnedMessages]
+        )
         let events = await repository.realtimeEvents()
         var receivedEvents: [ChatRealtimeEvent] = []
         for await event in events { receivedEvents.append(event) }
@@ -146,6 +175,9 @@ final class MobileChatModelTests: XCTestCase {
         )
         await assertReadOnlyFailure {
             try await unsupported.listConversationMembers(conversationID: "conversation")
+        }
+        await assertReadOnlyFailure {
+            try await unsupported.listPinnedMessages(conversationID: "conversation")
         }
     }
 
@@ -437,6 +469,154 @@ final class MobileChatModelTests: XCTestCase {
 
         XCTAssertNil(model.state.membersByConversation[conversationA.id])
         XCTAssertFalse(model.state.isRefreshingMembers)
+    }
+
+    func test群公告按需加载命中缓存且显式刷新更新内容() async {
+        let conversation = Self.conversation(id: "group", title: "群聊")
+        let first = Self.message(
+            id: "first",
+            conversationID: conversation.id,
+            seconds: 10,
+            pinnedAt: Date(timeIntervalSince1970: 20)
+        )
+        let second = Self.message(
+            id: "second",
+            conversationID: conversation.id,
+            seconds: 30,
+            pinnedAt: Date(timeIntervalSince1970: 40)
+        )
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(
+                status: .available,
+                supportedFeatures: [.pinnedMessages]
+            ),
+            conversations: [conversation],
+            announcements: [conversation.id: [first]]
+        )
+        let model = MobileChatModel()
+
+        await model.activate(profileID: UUID(), repository: repository)
+        await model.selectConversation(conversation)
+        await model.loadConversationAnnouncements()
+
+        XCTAssertTrue(model.canViewAnnouncements(for: conversation))
+        XCTAssertEqual(model.state.announcementPageState, .content)
+        XCTAssertEqual(model.state.selectedConversationAnnouncements, [first])
+        var requests = await repository.announcementRequests()
+        XCTAssertEqual(requests, [conversation.id])
+
+        await model.loadConversationAnnouncements()
+        requests = await repository.announcementRequests()
+        XCTAssertEqual(requests, [conversation.id])
+
+        await repository.setAnnouncements([second], conversationID: conversation.id)
+        await model.loadConversationAnnouncements(forceRefresh: true)
+
+        XCTAssertEqual(model.state.selectedConversationAnnouncements, [second])
+        XCTAssertFalse(model.state.isRefreshingAnnouncements)
+        requests = await repository.announcementRequests()
+        XCTAssertEqual(requests, [conversation.id, conversation.id])
+    }
+
+    func test群公告空内容和错误均独立于消息页() async {
+        let emptyConversation = Self.conversation(id: "empty-announcements", title: "空公告群")
+        let failedConversation = Self.conversation(id: "failed-announcements", title: "失败公告群")
+        let message = Self.message(
+            id: "message",
+            conversationID: failedConversation.id,
+            seconds: 10
+        )
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(
+                status: .available,
+                supportedFeatures: [.pinnedMessages]
+            ),
+            conversations: [emptyConversation, failedConversation],
+            pages: [
+                ChatMessageRequest(
+                    conversationID: failedConversation.id,
+                    cursor: nil
+                ): ChatMessagePage(
+                    messages: [message],
+                    previousCursor: nil,
+                    hasMoreBefore: false
+                )
+            ],
+            announcementFailures: [failedConversation.id: Self.networkError]
+        )
+        let model = MobileChatModel()
+
+        await model.activate(profileID: UUID(), repository: repository)
+        await model.selectConversation(emptyConversation)
+        await model.loadConversationAnnouncements()
+
+        XCTAssertEqual(model.state.announcementPageState, .empty)
+        XCTAssertTrue(model.state.selectedConversationAnnouncements.isEmpty)
+
+        await model.selectConversation(failedConversation)
+        await model.loadConversationAnnouncements()
+
+        XCTAssertEqual(model.state.announcementPageState, .error)
+        XCTAssertEqual(model.state.announcementErrorCategory, .networkUnavailable)
+        XCTAssertEqual(model.state.messagePageState, .content)
+        XCTAssertEqual(model.state.selectedMessages.messages, [message])
+    }
+
+    func test单聊和加密群不读取公告且切换会话拒绝迟到公告() async {
+        let conversationA = Self.conversation(id: "a", title: "群聊 A")
+        let conversationB = Self.conversation(id: "b", title: "群聊 B")
+        let direct = Self.conversation(id: "direct", title: "单聊", kind: .direct)
+        let encrypted = Self.conversation(
+            id: "encrypted",
+            title: "加密群",
+            isEncrypted: true
+        )
+        let announcementA = Self.message(
+            id: "announcement-a",
+            conversationID: conversationA.id,
+            seconds: 10,
+            pinnedAt: Date(timeIntervalSince1970: 20)
+        )
+        let announcementB = Self.message(
+            id: "announcement-b",
+            conversationID: conversationB.id,
+            seconds: 30,
+            pinnedAt: Date(timeIntervalSince1970: 40)
+        )
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(
+                status: .available,
+                supportedFeatures: [.pinnedMessages]
+            ),
+            conversations: [conversationA, conversationB, direct, encrypted],
+            announcements: [
+                conversationA.id: [announcementA],
+                conversationB.id: [announcementB]
+            ],
+            blockedAnnouncementRequests: [conversationA.id]
+        )
+        let model = MobileChatModel()
+
+        await model.activate(profileID: UUID(), repository: repository)
+        await model.selectConversation(direct)
+        XCTAssertFalse(model.canViewAnnouncements(for: direct))
+        await model.loadConversationAnnouncements()
+        await model.selectConversation(encrypted)
+        XCTAssertFalse(model.canViewAnnouncements(for: encrypted))
+        await model.loadConversationAnnouncements()
+
+        await model.selectConversation(conversationA)
+        let oldTask = Task { await model.loadConversationAnnouncements() }
+        await repository.waitUntilAnnouncementBlocked(conversationA.id)
+        await model.selectConversation(conversationB)
+        await repository.releaseAnnouncement(conversationA.id)
+        await oldTask.value
+        await model.loadConversationAnnouncements()
+
+        XCTAssertNil(model.state.announcementsByConversation[conversationA.id])
+        XCTAssertEqual(model.state.selectedConversationAnnouncements, [announcementB])
+        let requests = await repository.announcementRequests()
+        XCTAssertEqual(requests, [conversationA.id, conversationB.id])
     }
 
     func test向上分页透传原始Cursor并合并去重() async {
@@ -1162,14 +1342,16 @@ final class MobileChatModelTests: XCTestCase {
         id: String,
         conversationID: String,
         seconds: TimeInterval,
-        text: String = "正文"
+        text: String = "正文",
+        pinnedAt: Date? = nil
     ) -> ChatMessage {
         ChatMessage(
             id: id,
             conversationID: conversationID,
             senderID: "sender",
             sentAt: Date(timeIntervalSince1970: seconds),
-            text: text
+            text: text,
+            pinnedAt: pinnedAt
         )
     }
 
@@ -1214,10 +1396,13 @@ private actor ChatRepositoryStub: ChatRepository {
     private var sendFailureValues: [AppError]
     private var memberValues: [String: [ChatUser]]
     private var memberFailureValues: [String: AppError]
+    private var announcementValues: [String: [ChatMessage]]
+    private var announcementFailureValues: [String: AppError]
     private var sentDraftValues: [ChatMessageDraft] = []
     private var conversationRequests = 0
     private var messageRequestValues: [ChatMessageRequest] = []
     private var memberRequestValues: [String] = []
+    private var announcementRequestValues: [String] = []
     private var rejectedBaseCalls = 0
     private var realtimeBaseCalls = 0
 
@@ -1230,6 +1415,9 @@ private actor ChatRepositoryStub: ChatRepository {
     private var blockedMemberRequests: Set<String>
     private var memberContinuations: [String: CheckedContinuation<Void, Never>] = [:]
     private var memberBlockedWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private var blockedAnnouncementRequests: Set<String>
+    private var announcementContinuations: [String: CheckedContinuation<Void, Never>] = [:]
+    private var announcementBlockedWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     init(
         availability: ChatAvailability = ChatAvailability(status: .available),
@@ -1240,9 +1428,12 @@ private actor ChatRepositoryStub: ChatRepository {
         sendFailures: [AppError] = [],
         members: [String: [ChatUser]] = [:],
         memberFailures: [String: AppError] = [:],
+        announcements: [String: [ChatMessage]] = [:],
+        announcementFailures: [String: AppError] = [:],
         blockedConversationList: Bool = false,
         blockedMessageRequests: Set<ChatMessageRequest> = [],
-        blockedMemberRequests: Set<String> = []
+        blockedMemberRequests: Set<String> = [],
+        blockedAnnouncementRequests: Set<String> = []
     ) {
         availabilityValue = availability
         conversationValues = conversations
@@ -1252,9 +1443,12 @@ private actor ChatRepositoryStub: ChatRepository {
         sendFailureValues = sendFailures
         memberValues = members
         memberFailureValues = memberFailures
+        announcementValues = announcements
+        announcementFailureValues = announcementFailures
         blocksConversationList = blockedConversationList
         self.blockedMessageRequests = blockedMessageRequests
         self.blockedMemberRequests = blockedMemberRequests
+        self.blockedAnnouncementRequests = blockedAnnouncementRequests
     }
 
     func availability() async -> ChatAvailability { availabilityValue }
@@ -1309,6 +1503,7 @@ private actor ChatRepositoryStub: ChatRepository {
     func conversationRequestCount() -> Int { conversationRequests }
     func messageRequests() -> [ChatMessageRequest] { messageRequestValues }
     func memberRequests() -> [String] { memberRequestValues }
+    func announcementRequests() -> [String] { announcementRequestValues }
     func sentDrafts() -> [ChatMessageDraft] { sentDraftValues }
     func nonReadCallCount() -> Int { rejectedBaseCalls }
     func realtimeCallCount() -> Int { realtimeBaseCalls }
@@ -1352,6 +1547,22 @@ private actor ChatRepositoryStub: ChatRepository {
     func releaseMember(_ conversationID: String) {
         blockedMemberRequests.remove(conversationID)
         memberContinuations.removeValue(forKey: conversationID)?.resume()
+    }
+
+    func setAnnouncements(_ announcements: [ChatMessage], conversationID: String) {
+        announcementValues[conversationID] = announcements
+    }
+
+    func waitUntilAnnouncementBlocked(_ conversationID: String) async {
+        guard announcementContinuations[conversationID] == nil else { return }
+        await withCheckedContinuation {
+            announcementBlockedWaiters[conversationID, default: []].append($0)
+        }
+    }
+
+    func releaseAnnouncement(_ conversationID: String) {
+        blockedAnnouncementRequests.remove(conversationID)
+        announcementContinuations.removeValue(forKey: conversationID)?.resume()
     }
 
     func openDirectConversation(
@@ -1454,8 +1665,13 @@ private actor ChatRepositoryStub: ChatRepository {
     }
 
     func listPinnedMessages(conversationID: String) async throws -> [ChatMessage] {
-        rejectedBaseCalls += 1
-        return []
+        announcementRequestValues.append(conversationID)
+        if blockedAnnouncementRequests.contains(conversationID) {
+            announcementBlockedWaiters.removeValue(forKey: conversationID)?.forEach { $0.resume() }
+            await withCheckedContinuation { announcementContinuations[conversationID] = $0 }
+        }
+        if let failure = announcementFailureValues[conversationID] { throw failure }
+        return announcementValues[conversationID] ?? []
     }
 
     func setMessagePinned(

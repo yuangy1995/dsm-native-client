@@ -16,6 +16,7 @@ struct MobileChatProfileState: Equatable, Sendable {
     var selectedConversationID: String?
     var messagesByConversation: [String: MobileChatMessageCache] = [:]
     var membersByConversation: [String: [ChatUser]] = [:]
+    var announcementsByConversation: [String: [ChatMessage]] = [:]
     var draftsByConversation: [String: String] = [:]
     var sendReviewBlockedTextsByConversation: [String: Set<String>] = [:]
     var conversationPageState: MobilePageState = .loading
@@ -24,6 +25,8 @@ struct MobileChatProfileState: Equatable, Sendable {
     var isRefreshingMessages = false
     var memberPageState: MobilePageState = .empty
     var isRefreshingMembers = false
+    var announcementPageState: MobilePageState = .empty
+    var isRefreshingAnnouncements = false
     var isLoadingMoreMessages = false
     var isSendingMessage = false
     var isPreparingAttachment = false
@@ -39,6 +42,7 @@ struct MobileChatProfileState: Equatable, Sendable {
     var conversationErrorCategory: AppErrorCategory?
     var messageErrorCategory: AppErrorCategory?
     var memberErrorCategory: AppErrorCategory?
+    var announcementErrorCategory: AppErrorCategory?
     var sendErrorCategory: AppErrorCategory?
     var attachmentErrorCategory: AppErrorCategory?
     var remoteAttachmentErrorCategory: AppErrorCategory?
@@ -64,6 +68,11 @@ struct MobileChatProfileState: Equatable, Sendable {
     var selectedConversationMembers: [ChatUser] {
         guard let selectedConversationID else { return [] }
         return membersByConversation[selectedConversationID] ?? []
+    }
+
+    var selectedConversationAnnouncements: [ChatMessage] {
+        guard let selectedConversationID else { return [] }
+        return announcementsByConversation[selectedConversationID] ?? []
     }
 
     var selectedDraft: String {

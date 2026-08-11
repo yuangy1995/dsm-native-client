@@ -373,6 +373,8 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 CHAT-01～02 群成员只读切片已完成源码与云端构建闭环：移动适配器只在共享 Repository 明确宣告 `.groupMembers` 时透传能力，群聊详情工具栏打开原生 Sheet/List，展示显示名、当前账号和停用状态，并覆盖加载、空内容、错误、重试/刷新和正常列表。成员按 profile/会话仅缓存在内存，关闭页面、切换会话或切换 profile 会取消旧读取并拒绝迟到结果；失败只留在成员 Sheet，不影响消息列表。该切片固定复用既有 `Channel.Member.get` v1 和用户目录，合成契约会排除 `broken_user_ids`，成员补名固定关闭头像读取；不新增 API 契约或持久化，只在用户打开列表时发起成员读取，也不开放建群、邀请/移除、角色管理、群公告、官方 Star、服务器已读或实时同步。本机已通过双语资源门禁、Apple 共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、移动 Chat 聚焦 44/44、工程生成、iPhone/iPad 通用模拟器构建及 macOS 共享资源回归构建；GitHub Apple Build run `31456211435` 已通过同组 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、工程生成、iPhone/iPad 通用应用构建、macOS 打包和产物上传，Repository Check run `31456211422` 已通过。真实 iPhone/iPad、VoiceOver、最大动态文字、键盘/触控、成员权限、`broken_user_ids` 真实响应与真实 Chat Server 为 `PENDING_USER_VALIDATION`。
 
+CHAT-01～02 群公告只读增量已完成源码、本机与云端构建闭环：移动适配器仅在共享 Repository 明确宣告 `.pinnedMessages` 时开放，并复用既有 `SYNO.Chat.Post` v5 `search` 有界读取，最多接收 100 条；不新增或猜测契约。入口仅对未加密群聊显示，使用详情工具栏 `megaphone` 和原生 SwiftUI Sheet/List，覆盖加载、空内容、错误、重试/刷新和正常列表。移动边界会再次核对会话 ID、置顶时间和非加密状态，并只保留消息 ID、会话 ID、发送者、正文、发送时间和置顶时间，强制清空附件、投票和客户端请求 ID；结果按 profile/会话仅驻留内存，关闭 Sheet、切换会话或 profile 会取消旧读取并拒绝迟到结果，失败不影响消息历史。该切片不调用 `pin/unpin`，不开放公告管理、附件展示、实时刷新、单聊/加密群入口或持久化。本机已通过 Apple 共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、移动 Chat 聚焦 48/48、DsmMobile 全量 419/419、本地化门禁、工程生成和 iPhone/iPad 通用模拟器构建；GitHub Apple Build run `31467502691` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建、macOS 打包和产物上传，Repository Check run `31467502719` 已通过。真实 iPhone/iPad、VoiceOver、最大动态文字、键盘/触控，以及真实 Chat Server 的权限、空列表、排序、附件型公告和撤销后刷新为 `PENDING_USER_VALIDATION`。
+
 ### M5-B：单附件与少量消息动作（受限）
 
 - 接入 Photos/Files 单附件选择、上传进度/取消/失败恢复、保存和图片预览。

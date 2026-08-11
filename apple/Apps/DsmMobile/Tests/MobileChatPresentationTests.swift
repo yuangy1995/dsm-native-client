@@ -101,7 +101,6 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(store.contains("StoredPinnedConversations"))
         XCTAssertTrue(store.contains("version: 1"))
         XCTAssertTrue(session.contains("chatModel.removePersistentPins(profileID: profile.id)"))
-        XCTAssertFalse(model.contains("listPinnedMessages"))
         XCTAssertFalse(model.contains("setMessagePinned"))
     }
 
@@ -143,6 +142,47 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(state.contains("membersByConversation"))
         XCTAssertTrue(repository.contains(".groupMembers"))
         XCTAssertFalse(source.contains("mobile.chat.members.filtered"))
+    }
+
+    func test群公告仅按能力显示并使用原生Sheet五态和隐私白名单() throws {
+        let source = try chatViewSources()
+        let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
+        let state = try sourceFile("Sources/Features/Chat/MobileChatState.swift")
+        let repository = try sourceFile("Sources/Features/Chat/MobileReadOnlyChatRepository.swift")
+
+        XCTAssertTrue(source.contains("if chat.canViewAnnouncements(for: conversation)"))
+        XCTAssertTrue(source.contains(".sheet(isPresented: $presentsAnnouncements)"))
+        XCTAssertTrue(source.contains("private struct MobileChatAnnouncementsSheet: View"))
+        XCTAssertTrue(source.contains("chat.state.announcementPageState"))
+        XCTAssertTrue(source.contains("chat.loadConversationAnnouncements(forceRefresh: true)"))
+        XCTAssertTrue(source.contains("chat.cancelConversationAnnouncementLoad()"))
+        XCTAssertTrue(source.contains("Image(systemName: \"megaphone\")"))
+        XCTAssertTrue(source.contains(".frame(width: 44, height: 44)"))
+        XCTAssertTrue(source.contains(".frame(maxWidth: .infinity, minHeight: 44"))
+        for key in [
+            "mobile.chat.announcements.action",
+            "mobile.chat.announcements.hint",
+            "mobile.chat.announcements.title",
+            "mobile.chat.announcements.close",
+            "mobile.chat.announcements.refresh",
+            "mobile.chat.announcements.loading",
+            "mobile.chat.announcements.empty.title",
+            "mobile.chat.announcements.empty.message",
+            "mobile.chat.announcements.error.title",
+            "mobile.chat.announcements.error.message",
+            "mobile.chat.announcements.count",
+            "mobile.chat.announcements.no-text",
+            "mobile.chat.announcements.pinned-at"
+        ] {
+            XCTAssertTrue(source.contains(key), key)
+        }
+        XCTAssertTrue(model.contains("conversation.kind == .group"))
+        XCTAssertTrue(model.contains("supportedFeatures.contains(.pinnedMessages)"))
+        XCTAssertTrue(model.contains("announcementGeneration"))
+        XCTAssertTrue(state.contains("announcementsByConversation"))
+        XCTAssertTrue(repository.contains(".pinnedMessages"))
+        XCTAssertTrue(repository.contains("attachments: []"))
+        XCTAssertFalse(model.contains("setMessagePinned"))
     }
 
     func testAppModel持有单一聊天模型且生命周期接入配置档和工作区() throws {
