@@ -393,6 +393,13 @@
   <data name="TransferSaveErrorMessage" xml:space="preserve"><value>Choose a save location again. If the problem continues, check access to that location.</value></data>
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>Unable to start the upload</value></data>
   <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>Choose the file again. If the problem continues, check that it is available on this device.</value></data>
+  <data name="FileUploadDropTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>File upload drop target</value></data>
+  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>Drop one file to upload it to this folder</value></data>
+  <data name="FileUploadDropCaption" xml:space="preserve"><value>Upload this file</value></data>
+  <data name="FileUploadDropStatus.Title" xml:space="preserve"><value>File upload</value></data>
+  <data name="FileUploadDropStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>File upload status</value></data>
+  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>Drop one file that is available on this device. Folders, multiple items, and online-only files can’t be uploaded this way.</value></data>
+  <data name="FileUploadDropFailureMessage" xml:space="preserve"><value>The upload couldn’t be started. Try dropping the file again, or use the Upload button.</value></data>
   <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>File-system photo library</value></data>
   <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>Browse photo and video folders from this NAS, preview items, and save a copy to your PC.</value></data>
   <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>Photo space</value></data>

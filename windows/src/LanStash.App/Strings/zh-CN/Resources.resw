@@ -393,6 +393,13 @@
   <data name="TransferSaveErrorMessage" xml:space="preserve"><value>请重新选择保存位置。如果问题仍然存在，请检查该位置的访问权限。</value></data>
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>无法开始上传</value></data>
   <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>请重新选择文件。如果问题仍然存在，请检查此设备是否可以访问该文件。</value></data>
+  <data name="FileUploadDropTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件上传投放区域</value></data>
+  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>拖放一个文件以上传到此文件夹</value></data>
+  <data name="FileUploadDropCaption" xml:space="preserve"><value>上传此文件</value></data>
+  <data name="FileUploadDropStatus.Title" xml:space="preserve"><value>文件上传</value></data>
+  <data name="FileUploadDropStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件上传状态</value></data>
+  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>请拖放一个此设备可用的文件。文件夹、多个项目和仅联机文件无法通过此方式上传。</value></data>
+  <data name="FileUploadDropFailureMessage" xml:space="preserve"><value>无法开始上传。请重新拖放文件，或使用“上传”按钮。</value></data>
   <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>文件系统照片库</value></data>
   <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>浏览这台 NAS 上的照片和视频文件夹，预览项目并将副本保存到电脑。</value></data>
   <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>照片空间</value></data>

@@ -162,6 +162,16 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             fileTypeFilters: null,
             requiresMediaExtension: false) is not null;
 
+    public async Task<bool> StartUploadAsync(
+        string profileId,
+        string folderPath,
+        string sourcePath) =>
+        await StartUploadFromPathCoreAsync(
+            profileId,
+            folderPath,
+            sourcePath,
+            requiresMediaExtension: false) is not null;
+
     public Task<PhotoMediaUploadStart?> PickAndStartMediaUploadAsync(
         string profileId,
         string folderPath,
@@ -279,20 +289,28 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             throw;
         }
 
-        var cancellation = new CancellationTokenSource();
-        var running = new RunningTransfer(
-            requestedActivityId ?? Guid.NewGuid(),
-            profileId,
-            cancellation,
-            IsMedia: requiresMediaExtension);
+        var uploadTarget = new UploadTargetKey(profileId, folderPath, fileName);
+        CancellationTokenSource cancellation;
+        RunningTransfer running;
         lock (_sync)
         {
             if (_disposed)
             {
                 source.Dispose();
-                cancellation.Dispose();
                 throw new ObjectDisposedException(nameof(WindowsTransferPickerService));
             }
+            if (_running.Any(item => item.UploadTarget == uploadTarget))
+            {
+                source.Dispose();
+                throw new InvalidOperationException("upload.target_busy");
+            }
+            cancellation = new CancellationTokenSource();
+            running = new RunningTransfer(
+                requestedActivityId ?? Guid.NewGuid(),
+                profileId,
+                cancellation,
+                IsMedia: requiresMediaExtension,
+                UploadTarget: uploadTarget);
             _running.Add(running);
         }
 
@@ -469,5 +487,11 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         Guid ActivityId,
         string ProfileId,
         CancellationTokenSource Cancellation,
-        bool IsMedia = false);
+        bool IsMedia = false,
+        UploadTargetKey? UploadTarget = null);
+
+    private sealed record UploadTargetKey(
+        string ProfileId,
+        string FolderPath,
+        string FileName);
 }

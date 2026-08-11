@@ -279,7 +279,12 @@
                 <ColumnDefinition x:Name="BrowserColumn" Width="*" />
                 <ColumnDefinition x:Name="PreviewColumn" Width="0" />
             </Grid.ColumnDefinitions>
-            <Grid x:Name="BrowserSurface">
+            <Grid
+                x:Name="BrowserSurface"
+                AllowDrop="True"
+                DragOver="FileUpload_DragOver"
+                DragLeave="FileUpload_DragLeave"
+                Drop="FileUpload_Drop">
             <Grid x:Name="ContentState" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
@@ -420,6 +425,44 @@
                 <TextBlock x:Uid="FileBrowserErrorMessage" TextAlignment="Center" TextWrapping="Wrap" />
                 <Button x:Uid="FileBrowserRetry" Click="Refresh_Click" HorizontalAlignment="Center" MinHeight="44" />
             </StackPanel>
+            <Border
+                x:Uid="FileUploadDropTarget"
+                x:Name="FileUploadDropOverlay"
+                Margin="12"
+                Padding="24"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                BorderThickness="2"
+                CornerRadius="8"
+                IsHitTestVisible="False"
+                Visibility="Collapsed">
+                <StackPanel
+                    MaxWidth="440"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="12">
+                    <FontIcon
+                        HorizontalAlignment="Center"
+                        FontSize="40"
+                        Glyph="&#xE898;" />
+                    <TextBlock
+                        x:Uid="FileUploadDropTargetMessage"
+                        Style="{ThemeResource SubtitleTextBlockStyle}"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+            <InfoBar
+                x:Uid="FileUploadDropStatus"
+                x:Name="FileUploadDropStatus"
+                Margin="12"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Top"
+                IsClosable="True"
+                IsOpen="False"
+                Severity="Error" />
             </Grid>
 
             <views:FilePreviewPane

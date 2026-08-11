@@ -90,6 +90,28 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Equal(1, CountOccurrences(source, "new FileUploadRequest("));
         Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(running, request)"));
         Assert.Contains("overwrite: false", source);
+        Assert.Contains("UploadTarget: uploadTarget", source);
+        Assert.Contains("new UploadTargetKey(profileId, folderPath, fileName)", source);
+        Assert.Contains("item.UploadTarget == uploadTarget", source);
+        Assert.Contains("upload.target_busy", source);
+        Assert.True(
+            source.IndexOf("upload.target_busy", StringComparison.Ordinal) <
+            source.IndexOf("_ = RunUploadAsync(running, request)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DroppedFilePathReusesTheSameSingleFileNoOverwriteUpload()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+
+        Assert.Contains("public async Task<bool> StartUploadAsync(", source);
+        Assert.Contains("StartUploadFromPathCoreAsync(", source);
+        Assert.Contains("requiresMediaExtension: false", source);
+        Assert.Equal(1, CountOccurrences(source, "new FileStream("));
+        Assert.Equal(1, CountOccurrences(source, "new FileUploadRequest("));
+        Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(running, request)"));
+        Assert.Contains("overwrite: false", source);
     }
 
     [Fact]

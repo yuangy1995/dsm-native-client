@@ -1270,6 +1270,7 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             return;
         }
+        DeactivateFileUploadDrop();
         LocationsPane.CancelOpening();
         _locationsViewModel.Deactivate();
         CloseShareManagementDialog();
@@ -1292,6 +1293,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
 
         _disposed = true;
+        DeactivateFileUploadDrop();
         CloseShareManagementDialog();
         CloseShareLinkDialog();
         CloseMutationDialog();
