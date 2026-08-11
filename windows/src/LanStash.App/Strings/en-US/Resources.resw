@@ -1317,6 +1317,24 @@
   <data name="FileCopyMoveBatchInvalidDestination" xml:space="preserve"><value>This destination can’t be used. Choose a writable folder outside the selected folders.</value></data>
   <data name="FileCopyMoveBatchCancelled" xml:space="preserve"><value>The remaining items were not started.</value></data>
   <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>Move to Recycle Bin</value></data>
+  <data name="FileRecycleBatchMoveMultiple.Label" xml:space="preserve"><value>Move multiple to Recycle Bin</value></data>
+  <data name="FileRecycleBatchMoveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Select multiple items to move to the recycle bin</value></data>
+  <data name="FileRecycleBatchMoveSelected.Label" xml:space="preserve"><value>Move selected</value></data>
+  <data name="FileRecycleBatchMoveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected items to the recycle bin</value></data>
+  <data name="FileRecycleBatchStatus.Title" xml:space="preserve"><value>Recycle bin actions</value></data>
+  <data name="FileRecycleBatchSelectionCount" xml:space="preserve"><value>{0} items selected</value></data>
+  <data name="FileRecycleBatchSelectionLimit" xml:space="preserve"><value>You can move up to 20 items at a time.</value></data>
+  <data name="FileRecycleBatchSelectionInvalid" xml:space="preserve"><value>Select ordinary items from this folder that you can delete.</value></data>
+  <data name="FileRecycleBatchSourceChanged" xml:space="preserve"><value>The folder or selected items changed. Review your selection and try again.</value></data>
+  <data name="FileRecycleBatchTitle" xml:space="preserve"><value>Move items to Recycle Bin</value></data>
+  <data name="FileRecycleBatchMoveAction" xml:space="preserve"><value>Move {0} items</value></data>
+  <data name="FileRecycleBatchSelectedSummary" xml:space="preserve"><value>{0} items selected</value></data>
+  <data name="FileRecycleBatchConfirmMessage" xml:space="preserve"><value>This moves the selected items, including the contents of selected folders, to the NAS recycle bin. It does not permanently delete them.</value></data>
+  <data name="FileRecycleBatchWorking" xml:space="preserve"><value>Moving item {0} of {1}…</value></data>
+  <data name="FileRecycleBatchProgressAutomationName" xml:space="preserve"><value>Recycle bin progress</value></data>
+  <data name="FileRecycleBatchStatusAutomationName" xml:space="preserve"><value>Multiple recycle bin action status</value></data>
+  <data name="FileRecycleBatchUnsupported" xml:space="preserve"><value>These items can’t be moved to the recycle bin. Refresh the folder and review your selection.</value></data>
+  <data name="FileRecycleBatchSummary" xml:space="preserve"><value>Selected: {0}. Moved: {1}. Check: {2}. Failed: {3}. Cancelled: {4}. Not started: {5}.</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected item to the recycle bin</value></data>
   <data name="FileRecycleRestore.Label" xml:space="preserve"><value>Restore</value></data>
   <data name="FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Restore the selected item from the recycle bin</value></data>

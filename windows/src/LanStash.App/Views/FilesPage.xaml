@@ -182,6 +182,13 @@
                 MinHeight="48"
                 Visibility="Collapsed" />
             <AppBarButton
+                x:Uid="FileRecycleBatchMoveSelected"
+                x:Name="MoveSelectedToRecycleButton"
+                Click="MoveSelectedToRecycle_Click"
+                Icon="Delete"
+                MinHeight="48"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileBrowserCancelDownloadSelection"
                 x:Name="CancelDownloadSelectionButton"
                 Click="CancelDownloadSelection_Click"
@@ -219,6 +226,12 @@
                     x:Name="MoveMultipleButton"
                     Click="MoveMultiple_Click"
                     Icon="MoveToFolder"
+                    MinHeight="48" />
+                <AppBarButton
+                    x:Uid="FileRecycleBatchMoveMultiple"
+                    x:Name="MoveMultipleToRecycleButton"
+                    Click="MoveMultipleToRecycle_Click"
+                    Icon="Delete"
                     MinHeight="48" />
                 <AppBarButton
                     x:Uid="FileShareLinkManage"
@@ -531,6 +544,13 @@
                 <InfoBar
                     x:Uid="FileCopyMoveBatchStatus"
                     x:Name="FileCopyMoveBatchStatus"
+                    IsClosable="True"
+                    IsOpen="False"
+                    AutomationProperties.LiveSetting="Polite"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="FileRecycleBatchStatus"
+                    x:Name="FileRecycleBatchStatus"
                     IsClosable="True"
                     IsOpen="False"
                     AutomationProperties.LiveSetting="Polite"

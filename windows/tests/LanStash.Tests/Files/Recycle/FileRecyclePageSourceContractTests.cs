@@ -52,6 +52,30 @@ public sealed class FileRecyclePageSourceContractTests
         Assert.DoesNotContain("UploadAsync", partial);
     }
 
+    [Fact]
+    public void BatchRecycleUsesBoundedNativeSelectionAndOneConfirmation()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
+        var selection = Read("windows/src/LanStash.App/Views/FilesPage.BatchDownload.cs");
+        var partial = Read("windows/src/LanStash.App/Views/FilesPage.BatchRecycle.cs");
+        var model = Read("windows/src/LanStash.App/Features/Files/Recycle/FileRecycleBatchViewModel.cs");
+
+        Assert.Contains("x:Name=\"MoveMultipleToRecycleButton\"", xaml);
+        Assert.Contains("x:Name=\"MoveSelectedToRecycleButton\"", xaml);
+        Assert.Contains("x:Name=\"FileRecycleBatchStatus\"", xaml);
+        Assert.Contains("FileBatchSelectionOperation.Recycle", selection);
+        Assert.Contains("FileRecycleBatchViewModel.MaximumItemCount", selection);
+        Assert.Contains("ContentDialog", partial);
+        Assert.Contains("FileRecycleBatchConfirmMessage", partial);
+        Assert.Contains("ProgressBar", partial);
+        Assert.Contains("AutomationLiveSetting.Assertive", partial);
+        Assert.Contains("FileRecycleReviewBlocker", model);
+        Assert.DoesNotContain("Task.WhenAll", model);
+        Assert.DoesNotContain("RestoreFromRecycleAsync", model);
+        Assert.DoesNotContain("DeleteFile", model);
+        Assert.DoesNotContain("overwrite", partial, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string Read(string relativePath) =>
         File.ReadAllText(Path.Combine(FindRoot(), relativePath));
 

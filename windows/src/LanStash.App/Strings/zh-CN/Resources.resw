@@ -1317,6 +1317,24 @@
   <data name="FileCopyMoveBatchInvalidDestination" xml:space="preserve"><value>此目标位置不可用。请选择所选文件夹以外的可写文件夹。</value></data>
   <data name="FileCopyMoveBatchCancelled" xml:space="preserve"><value>剩余项目尚未开始。</value></data>
   <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>移到回收站</value></data>
+  <data name="FileRecycleBatchMoveMultiple.Label" xml:space="preserve"><value>多项移到回收站</value></data>
+  <data name="FileRecycleBatchMoveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择多项并移到回收站</value></data>
+  <data name="FileRecycleBatchMoveSelected.Label" xml:space="preserve"><value>移动所选项目</value></data>
+  <data name="FileRecycleBatchMoveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将所选项目移到回收站</value></data>
+  <data name="FileRecycleBatchStatus.Title" xml:space="preserve"><value>回收站操作</value></data>
+  <data name="FileRecycleBatchSelectionCount" xml:space="preserve"><value>已选择 {0} 项</value></data>
+  <data name="FileRecycleBatchSelectionLimit" xml:space="preserve"><value>每次最多可以移动 20 项。</value></data>
+  <data name="FileRecycleBatchSelectionInvalid" xml:space="preserve"><value>请选择此文件夹中您有权删除的普通项目。</value></data>
+  <data name="FileRecycleBatchSourceChanged" xml:space="preserve"><value>文件夹或所选项目已变化。请核对选择后重试。</value></data>
+  <data name="FileRecycleBatchTitle" xml:space="preserve"><value>将项目移到回收站</value></data>
+  <data name="FileRecycleBatchMoveAction" xml:space="preserve"><value>移动 {0} 项</value></data>
+  <data name="FileRecycleBatchSelectedSummary" xml:space="preserve"><value>已选择 {0} 项</value></data>
+  <data name="FileRecycleBatchConfirmMessage" xml:space="preserve"><value>所选项目及所选文件夹中的全部内容将移到 NAS 回收站，不会被永久删除。</value></data>
+  <data name="FileRecycleBatchWorking" xml:space="preserve"><value>正在移动第 {0} 项，共 {1} 项…</value></data>
+  <data name="FileRecycleBatchProgressAutomationName" xml:space="preserve"><value>回收站操作进度</value></data>
+  <data name="FileRecycleBatchStatusAutomationName" xml:space="preserve"><value>多项回收站操作状态</value></data>
+  <data name="FileRecycleBatchUnsupported" xml:space="preserve"><value>无法将这些项目移到回收站。请刷新文件夹并核对选择。</value></data>
+  <data name="FileRecycleBatchSummary" xml:space="preserve"><value>已选 {0} 项，已移动 {1} 项，待核对 {2} 项，失败 {3} 项，已取消 {4} 项，未开始 {5} 项。</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将所选项目移到回收站</value></data>
   <data name="FileRecycleRestore.Label" xml:space="preserve"><value>恢复</value></data>
   <data name="FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>从回收站恢复所选项目</value></data>

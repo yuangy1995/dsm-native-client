@@ -176,7 +176,7 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 | FILE-06 · A | ZIP/7z 压缩、常见格式解压、密码、编码和覆盖确认 | 分步 ContentDialog/任务中心 | **当前不做**：复杂归档交给 Mac App 或 DSM Web | `WorkspaceModel.swift`、请求 fixture |
 | FILE-07 · A | 创建/复制/列出/删除（撤销）分享链接，支持密码和有效期 | 系统剪贴板/分享、管理表格 | **核心/受限**：创建、复制和系统分享为核心；管理动作按已验证端点受限开放 | `WorkspaceModel.swift` |
 | FILE-08 · A/B | 缩略图、图片/PDF/文本/音频/视频预览、图片切换缩放、媒体 Range、文本编辑与格式整理 | 原生媒体/文档控件、可调整预览区或独立窗口 | **核心**：系统原生预览与分享；文本编辑/格式整理当前不做 | `FilePreviewView.swift` |
-| FILE-09 · A/C | 安全删除、回收站发现与受兼容开关保护的恢复 | 权限摘要、强化确认、结果分级与刷新 | **受限**：移入回收站和恢复；永久删除当前不做 | `WorkspaceModel.swift`、`MutationResult.swift` |
+| FILE-09 · A/C | 安全删除、回收站发现与受兼容开关保护的恢复 | 权限摘要、强化确认、结果分级与刷新；Files 已接当前目录最多 20 个文件/文件夹严格串行移入回收站 | **受限**：移入回收站和恢复；永久删除当前不做 | `WorkspaceModel.swift`、`MutationResult.swift` |
 | ACT-01 · B | App 传输与 NAS 后台任务分源、速度/剩余时间、筛选、分页、通知 | 活动中心、Toast/系统通知、托盘摘要 | **核心**：前台传输与 NAS 任务分源状态；系统后台与通知仅在后续获批时增强 | `ActivityTask.swift`、`WorkspaceView.swift` |
 | PHOTO-01 · A/D | 基于公开 File Station 扫描 `/home/Photos` 与 `/photo` 的个人/共享空间、文件夹、时间线、文件夹式相册、分页、搜索筛选、年/月定位；人物/地点/标签/真正相册实体未实现 | 自适应照片网格和时间线 | **核心**：内容优先网格、文件夹和用户主动时间线；不宣传智能相册 | `PhotoLibraryModel.swift`、`PhotoLibraryView.swift`、`photos-internal-candidate` |
 | PHOTO-02 · A/B | 缩略图缓存、完整查看、HEIC/MOV/Live Photo 兜底、EXIF 详情 | 查看器、键盘前后切换、元数据面板 | **核心**：沉浸查看、分享和基础元数据；iPad Inspector；受控内存上限 | `PhotoLibraryModel.swift`、`FilePreviewView.swift` |

@@ -1217,6 +1217,7 @@ public sealed partial class FilesPage : Page, IDisposable
                 : Visibility.Visible;
         UpdateBatchDownloadControls();
         UpdateBatchCopyMoveControls();
+        UpdateBatchRecycleControls();
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
 
@@ -1374,6 +1375,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseMutationDialog();
         CloseCopyMoveDialog();
         CloseBatchCopyMoveDialog();
+        CloseBatchRecycleDialog();
         CloseRecycleDialog();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
@@ -1396,6 +1398,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseMutationDialog();
         CloseCopyMoveDialog();
         CloseBatchCopyMoveDialog();
+        CloseBatchRecycleDialog();
         CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;

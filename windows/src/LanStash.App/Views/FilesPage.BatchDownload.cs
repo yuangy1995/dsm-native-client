@@ -1,5 +1,6 @@
 using LanStash.App.Features.Files;
 using LanStash.App.Features.Files.CopyMove;
+using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using Microsoft.UI.Xaml;
@@ -15,6 +16,7 @@ public sealed partial class FilesPage
         Download,
         Copy,
         Move,
+        Recycle,
     }
 
     private readonly HashSet<string> _batchSelection = new(StringComparer.Ordinal);
@@ -28,6 +30,8 @@ public sealed partial class FilesPage
     private bool _isSelectingCopyMove =>
         _batchSelectionOperation is FileBatchSelectionOperation.Copy or
             FileBatchSelectionOperation.Move;
+    private bool _isSelectingRecycle =>
+        _batchSelectionOperation == FileBatchSelectionOperation.Recycle;
     private bool _isSelectingItems => _batchSelectionOperation is not null;
 
     private async void DownloadMultiple_Click(object sender, RoutedEventArgs e)
@@ -68,6 +72,7 @@ public sealed partial class FilesPage
     private void ExitDownloadSelectionMode()
     {
         CloseBatchCopyMoveDialog();
+        CloseBatchRecycleDialog();
         if (!_isSelectingItems)
         {
             return;
@@ -82,6 +87,7 @@ public sealed partial class FilesPage
         _batchSelectionOperation = null;
         FileDownloadBatchStatus.IsOpen = false;
         FileCopyMoveBatchStatus.IsOpen = false;
+        FileRecycleBatchStatus.IsOpen = false;
         UpdateState();
     }
 
@@ -104,9 +110,11 @@ public sealed partial class FilesPage
         {
             var rejectsItem = _isSelectingDownloads
                 ? added.IsDirectory
-                : !FileCopyMoveViewModel.IsDestination(added.Path) ||
-                    (_batchSelectionOperation == FileBatchSelectionOperation.Move &&
-                        !added.Item.CanDelete);
+                : _isSelectingRecycle
+                    ? !CanSelectForBatchRecycle(added.Item)
+                    : !FileCopyMoveViewModel.IsDestination(added.Path) ||
+                        (_batchSelectionOperation == FileBatchSelectionOperation.Move &&
+                            !added.Item.CanDelete);
             if (rejectsItem ||
                 (_batchSelection.Count == BoundedFileDownloadBatch.MaximumFileCount &&
                     !_batchSelection.Contains(added.Path)))
@@ -125,9 +133,13 @@ public sealed partial class FilesPage
             ShowBatchSelectionMessage(
                 _isSelectingDownloads
                     ? "FileDownloadBatchSelectionLimitMessage"
-                    : rejectedForLimit
-                        ? "FileCopyMoveBatchSelectionLimit"
-                        : "FileCopyMoveBatchSelectionInvalid",
+                    : _isSelectingRecycle
+                        ? rejectedForLimit
+                            ? "FileRecycleBatchSelectionLimit"
+                            : "FileRecycleBatchSelectionInvalid"
+                        : rejectedForLimit
+                            ? "FileCopyMoveBatchSelectionLimit"
+                            : "FileCopyMoveBatchSelectionInvalid",
                 InfoBarSeverity.Warning);
         }
         else
@@ -257,6 +269,11 @@ public sealed partial class FilesPage
             : Visibility.Collapsed;
         DownloadSelectedFilesButton.IsEnabled = _batchSelection.Count is > 0 and <= BoundedFileDownloadBatch.MaximumFileCount;
         DownloadSelectedFilesButton.IsEnabled &= !_isChoosingDownloadTarget;
+        MoveSelectedToRecycleButton.Visibility = _isSelectingRecycle
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        MoveSelectedToRecycleButton.IsEnabled = _batchSelection.Count is > 0 and <=
+            FileRecycleBatchViewModel.MaximumItemCount;
         CancelDownloadSelectionButton.Visibility = _isSelectingItems
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -269,6 +286,7 @@ public sealed partial class FilesPage
             CopyFileButton.IsEnabled = false;
             MoveFileButton.IsEnabled = false;
             MoveToRecycleButton.IsEnabled = false;
+            MoveMultipleToRecycleButton.IsEnabled = false;
             RestoreFromRecycleButton.IsEnabled = false;
             UploadButton.IsEnabled = false;
             UploadFolderButton.IsEnabled = false;
@@ -304,7 +322,9 @@ public sealed partial class FilesPage
         ShowBatchSelectionMessage(
             _isSelectingDownloads
                 ? "FileDownloadBatchSelectionCountMessage"
-                : "FileCopyMoveBatchSelectionCount",
+                : _isSelectingRecycle
+                    ? "FileRecycleBatchSelectionCount"
+                    : "FileCopyMoveBatchSelectionCount",
             InfoBarSeverity.Informational,
             _batchSelection.Count);
 
@@ -313,6 +333,15 @@ public sealed partial class FilesPage
         InfoBarSeverity severity,
         object? argument = null)
     {
+        if (_isSelectingRecycle)
+        {
+            FileRecycleBatchStatus.Severity = severity;
+            FileRecycleBatchStatus.Message = argument is null
+                ? LocalizationService.Current.Get(resourceKey)
+                : LocalizationService.Current.Format(resourceKey, argument);
+            FileRecycleBatchStatus.IsOpen = true;
+            return;
+        }
         if (_isSelectingCopyMove)
         {
             FileCopyMoveBatchStatus.Severity = severity;
