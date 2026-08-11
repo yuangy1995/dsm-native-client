@@ -16,7 +16,7 @@ public static class FilePreviewClassifier
 
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff",
+        "jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "heic", "heif", "webp",
     };
 
     private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -26,7 +26,7 @@ public static class FilePreviewClassifier
 
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "mp4", "m4v", "mov", "avi", "wmv",
+        "mp4", "m4v", "mov", "avi", "wmv", "mkv", "webm",
     };
 
     public static FilePreviewKind Classify(FileItem item)
@@ -84,6 +84,8 @@ public static class FilePreviewClassifier
             (FilePreviewKind.Video, "mov") => "video/quicktime",
             (FilePreviewKind.Video, "avi") => "video/x-msvideo",
             (FilePreviewKind.Video, "wmv") => "video/x-ms-wmv",
+            (FilePreviewKind.Video, "mkv") => "video/x-matroska",
+            (FilePreviewKind.Video, "webm") => "video/webm",
             _ => throw new InvalidOperationException("The file is not an allowed media preview type."),
         };
     }

@@ -15,6 +15,8 @@ public sealed partial class MainWindow : Window
     private readonly AppWindow _appWindow;
     private readonly TrayIcon _trayIcon;
     private bool _isExplicitExit;
+    private bool _photoViewerOwnsFullScreen;
+    private bool _restorePhotoViewerMaximized;
 
     public MainWindow()
     {
@@ -55,6 +57,7 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            ExitPhotoViewerFullScreen();
             Title = LocalizationService.Current.Get("AppName");
             _trayIcon.UpdateText(
                 LocalizationService.Current.Get("TrayTooltip"),
@@ -73,6 +76,7 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            ExitPhotoViewerFullScreen();
             RootFrame.Content = connected
                 ? new ShellPage(_viewModel)
                 : new LoginPage(_viewModel);
@@ -113,6 +117,7 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             _isExplicitExit = true;
+            ExitPhotoViewerFullScreen();
             _viewModel.Shutdown();
             _trayIcon.Dispose();
             Close();
@@ -132,4 +137,39 @@ public sealed partial class MainWindow : Window
     }
 
     private void ShowCloudDriveIssues() => ShowMainWindow();
+
+    internal bool EnterPhotoViewerFullScreen()
+    {
+        if (_photoViewerOwnsFullScreen)
+        {
+            return true;
+        }
+        if (_appWindow.Presenter is not OverlappedPresenter presenter)
+        {
+            return false;
+        }
+
+        _restorePhotoViewerMaximized =
+            presenter.State == OverlappedPresenterState.Maximized;
+        _appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+        _photoViewerOwnsFullScreen = true;
+        return true;
+    }
+
+    internal void ExitPhotoViewerFullScreen()
+    {
+        if (!_photoViewerOwnsFullScreen)
+        {
+            return;
+        }
+
+        var restoreMaximized = _restorePhotoViewerMaximized;
+        _photoViewerOwnsFullScreen = false;
+        _restorePhotoViewerMaximized = false;
+        _appWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+        if (restoreMaximized && _appWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.Maximize();
+        }
+    }
 }

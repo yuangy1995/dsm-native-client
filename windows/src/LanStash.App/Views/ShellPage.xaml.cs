@@ -523,6 +523,7 @@ public sealed partial class ShellPage : Page
     internal async Task SetWindowVisibleAsync(bool isVisible)
     {
         _isWindowVisible = isVisible;
+        _photos?.SetWindowVisible(isVisible);
         if (_activity is not null)
         {
             await _activity.SetWindowVisibleAsync(isVisible);

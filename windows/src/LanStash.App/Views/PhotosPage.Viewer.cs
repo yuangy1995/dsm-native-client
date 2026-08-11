@@ -158,9 +158,9 @@ public sealed partial class PhotosPage
     private async Task ClosePhotoViewerAsync(bool restoreBrowserFocus = false)
     {
         Interlocked.Increment(ref _photoViewerGeneration);
+        ExitPhotoViewerImmersive(restoreFocus: false);
         _photoViewerItems = [];
         _photoViewerIndex = -1;
-        _isPhotoViewerImmersive = false;
         if (_previewViewModel is null)
         {
             UpdatePhotoViewerState();
@@ -295,22 +295,48 @@ public sealed partial class PhotosPage
             return;
         }
 
+        if (!_isPhotoViewerImmersive &&
+            (Application.Current as App)?.MainWindow?.EnterPhotoViewerFullScreen() != true)
+        {
+            return;
+        }
+
+        if (_isPhotoViewerImmersive)
+        {
+            (Application.Current as App)?.MainWindow?.ExitPhotoViewerFullScreen();
+        }
         _isPhotoViewerImmersive = !_isPhotoViewerImmersive;
         UpdatePhotoViewerState();
         PhotoPreviewPane.FocusHeading();
     }
 
-    private bool ExitPhotoViewerImmersive()
+    private bool ExitPhotoViewerImmersive(bool restoreFocus = true)
     {
         if (!_isPhotoViewerImmersive)
         {
+            (Application.Current as App)?.MainWindow?.ExitPhotoViewerFullScreen();
             return false;
         }
 
+        (Application.Current as App)?.MainWindow?.ExitPhotoViewerFullScreen();
         _isPhotoViewerImmersive = false;
         UpdatePhotoViewerState();
-        PhotoPreviewPane.FocusHeading();
+        if (restoreFocus)
+        {
+            PhotoPreviewPane.FocusHeading();
+        }
         return true;
+    }
+
+    internal void SetWindowVisible(bool isVisible)
+    {
+        if (isVisible)
+        {
+            return;
+        }
+
+        ExitPhotoViewerImmersive(restoreFocus: false);
+        PhotoPreviewPane.PauseMediaPlayback();
     }
 
     private PhotoItem? CurrentPhotoViewerItem() =>
@@ -329,7 +355,7 @@ public sealed partial class PhotosPage
         var isOpen = item is not null;
         if (!isOpen)
         {
-            _isPhotoViewerImmersive = false;
+            ExitPhotoViewerImmersive(restoreFocus: false);
         }
         PhotoViewerHost.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         ApplyPhotoViewerLayout(isOpen);
@@ -607,6 +633,7 @@ public sealed partial class PhotosPage
 
     private void DisposePhotoViewer()
     {
+        ExitPhotoViewerImmersive(restoreFocus: false);
         if (_previewViewModel is not null)
         {
             _previewViewModel.PropertyChanged -= PhotoPreviewViewModel_PropertyChanged;

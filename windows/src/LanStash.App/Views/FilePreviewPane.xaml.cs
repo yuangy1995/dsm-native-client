@@ -10,6 +10,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Data.Pdf;
 using Windows.Graphics.Imaging;
 using Windows.Media.Core;
+using Windows.Media.Playback;
 using Windows.Storage.Streams;
 
 namespace LanStash.App.Views;
@@ -18,6 +19,9 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
 {
     private FilePreviewViewModel? _viewModel;
     private MediaSource? _mediaSource;
+    private MediaPlayer? _mediaPlayer;
+    private FilePreviewViewModel? _mediaViewModel;
+    private long _mediaPresenterGeneration;
     private PdfDocument? _pdfDocument;
     private uint _pdfPageIndex;
     private long _renderGeneration;
@@ -164,7 +168,15 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
                     if (snapshot.Media is { } media)
                     {
                         _mediaSource = MediaSource.CreateFromStream(media.Stream, media.ContentType);
-                        MediaPreview.Source = _mediaSource;
+                        _mediaPlayer = new MediaPlayer
+                        {
+                            AutoPlay = false,
+                        };
+                        _mediaViewModel = _viewModel;
+                        _mediaPresenterGeneration = generation;
+                        _mediaPlayer.MediaFailed += MediaPlayer_MediaFailed;
+                        MediaPreview.SetMediaPlayer(_mediaPlayer);
+                        _mediaPlayer.Source = _mediaSource;
                         AutomationProperties.SetName(
                             MediaPreview,
                             localization.Format("FilePreviewMediaAutomationName", snapshot.Item?.Name ?? string.Empty));
@@ -308,10 +320,60 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         !cancellationToken.IsCancellationRequested &&
         generation == Volatile.Read(ref _renderGeneration);
 
+    private void MediaPlayer_MediaFailed(
+        MediaPlayer sender,
+        MediaPlayerFailedEventArgs args)
+    {
+        var generation = _mediaPresenterGeneration;
+        var viewModel = _mediaViewModel;
+        DispatcherQueue.TryEnqueue(
+            async () => await ReportMediaPresentationFailureAsync(sender, generation, viewModel));
+    }
+
+    private async Task ReportMediaPresentationFailureAsync(
+        MediaPlayer sender,
+        long generation,
+        FilePreviewViewModel? viewModel)
+    {
+        if (_disposed ||
+            _isClosingPresenter ||
+            viewModel is null ||
+            !ReferenceEquals(_viewModel, viewModel) ||
+            !ReferenceEquals(_mediaViewModel, viewModel) ||
+            !ReferenceEquals(_mediaPlayer, sender) ||
+            generation != _mediaPresenterGeneration ||
+            generation != Volatile.Read(ref _renderGeneration))
+        {
+            return;
+        }
+
+        ReleasePresenterCore();
+        await viewModel.ReportPresentationFailureAsync();
+    }
+
+    public void PauseMediaPlayback()
+    {
+        if (!_disposed)
+        {
+            _mediaPlayer?.Pause();
+        }
+    }
+
     private void ReleasePresenterCore()
     {
-        MediaPreview.Source = null;
+        var mediaPlayer = _mediaPlayer;
+        _mediaPlayer = null;
+        _mediaViewModel = null;
+        _mediaPresenterGeneration = 0;
+        if (mediaPlayer is not null)
+        {
+            mediaPlayer.MediaFailed -= MediaPlayer_MediaFailed;
+            mediaPlayer.Pause();
+            mediaPlayer.Source = null;
+        }
+        MediaPreview.SetMediaPlayer(null);
         MediaPreview.Visibility = Visibility.Collapsed;
+        mediaPlayer?.Dispose();
         _mediaSource?.Dispose();
         _mediaSource = null;
         _pdfDocument = null;
@@ -579,6 +641,7 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         }
         Interlocked.Increment(ref _renderGeneration);
         _presenterCancellation?.Cancel();
+        ReleasePresenterCore();
     }
 }
 

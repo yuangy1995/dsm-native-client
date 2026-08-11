@@ -6,8 +6,8 @@ namespace LanStash.App;
 
 public partial class App : Application
 {
-    private Window? _window;
-    internal Window? MainWindow => _window;
+    private MainWindow? _window;
+    internal MainWindow? MainWindow => _window;
 
     public App()
     {

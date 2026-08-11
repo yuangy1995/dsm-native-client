@@ -27,6 +27,8 @@ public sealed class FilePreviewPageSourceContractTests
         Assert.Contains("DestinationWidth", pane);
         Assert.Contains("DestinationHeight", pane);
         Assert.Contains("MediaSource.CreateFromStream", pane);
+        Assert.Contains("new MediaPlayer", pane);
+        Assert.Contains("MediaPreview.SetMediaPlayer(_mediaPlayer)", pane);
         Assert.Contains("IFilePreviewMetadataReader", model);
         Assert.Contains("FilePreviewMediaMetadata", model);
         Assert.Contains("BitmapDecoder.CreateAsync", model);
@@ -75,6 +77,40 @@ public sealed class FilePreviewPageSourceContractTests
             Assert.DoesNotContain(forbidden, pane);
             Assert.DoesNotContain(forbidden, media);
         }
+    }
+
+    [Fact]
+    public void MediaPlaybackFailureIsGenerationBoundAndReleasedDeterministically()
+    {
+        var pane = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml.cs");
+        var failureHandler = Slice(
+            pane,
+            "private void MediaPlayer_MediaFailed",
+            "public void PauseMediaPlayback()");
+        var release = Slice(
+            pane,
+            "private void ReleasePresenterCore()",
+            "private void Close_Click");
+        var dispose = Slice(
+            pane,
+            "public void Dispose()",
+            "public sealed class FilePreviewKeyboardCloseRequestedEventArgs");
+
+        Assert.Contains("_mediaPlayer.MediaFailed += MediaPlayer_MediaFailed", pane);
+        Assert.Contains("DispatcherQueue.TryEnqueue", failureHandler);
+        Assert.Contains("ReferenceEquals(_viewModel, viewModel)", failureHandler);
+        Assert.Contains("ReferenceEquals(_mediaPlayer, sender)", failureHandler);
+        Assert.Contains("generation != Volatile.Read(ref _renderGeneration)", failureHandler);
+        Assert.Contains("await viewModel.ReportPresentationFailureAsync()", failureHandler);
+        Assert.DoesNotContain("args.", failureHandler);
+        Assert.Contains("_mediaPlayer?.Pause()", pane);
+        Assert.Contains("mediaPlayer.MediaFailed -= MediaPlayer_MediaFailed", release);
+        Assert.Contains("mediaPlayer.Pause()", release);
+        Assert.Contains("mediaPlayer.Source = null", release);
+        Assert.Contains("MediaPreview.SetMediaPlayer(null)", release);
+        Assert.Contains("mediaPlayer?.Dispose()", release);
+        Assert.Contains("_mediaSource?.Dispose()", release);
+        Assert.Contains("ReleasePresenterCore();", dispose);
     }
 
     [Fact]

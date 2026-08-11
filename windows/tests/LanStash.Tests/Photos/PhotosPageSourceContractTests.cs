@@ -111,6 +111,7 @@ public sealed class PhotosPageSourceContractTests
         var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
         var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
         var shell = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+        var window = ReadRepositoryFile("windows/src/LanStash.App/MainWindow.xaml.cs");
 
         Assert.Contains("x:Uid=\"PhotoBrowserOpen\"", xaml);
         Assert.Contains("x:Uid=\"PhotoTimelineOpen\"", timelineXaml);
@@ -171,7 +172,18 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("PhotoViewerExitImmersive.Content", viewer);
         Assert.Contains("PhotoViewerPositionAutomationName", viewer);
         Assert.Contains("PhotoViewerHostAutomationName", viewer);
-        Assert.DoesNotContain("AppWindow", viewer);
+        Assert.Contains("EnterPhotoViewerFullScreen()", viewer);
+        Assert.Contains("ExitPhotoViewerFullScreen()", viewer);
+        Assert.Contains("internal MainWindow? MainWindow => _window;", ReadRepositoryFile(
+            "windows/src/LanStash.App/App.xaml.cs"));
+        Assert.Contains("internal void SetWindowVisible(bool isVisible)", viewer);
+        Assert.Contains("PhotoPreviewPane.PauseMediaPlayback();", viewer);
+        Assert.Contains("_photos?.SetWindowVisible(isVisible);", shell);
+        Assert.Contains("AppWindowPresenterKind.FullScreen", window);
+        Assert.Contains("OverlappedPresenterState.Maximized", window);
+        Assert.Contains("presenter.Maximize();", window);
+        Assert.Contains("ExitPhotoViewerFullScreen();", window);
+        Assert.DoesNotContain("AppWindowPresenterKind", viewer);
         Assert.DoesNotContain("OverlappedPresenter", viewer);
 
         Assert.Contains("var photoPreviewRepository = _app.Repository as IFilePreviewRepository;", shell);
