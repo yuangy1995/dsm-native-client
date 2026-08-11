@@ -152,6 +152,29 @@
                 </AppBarButton.KeyboardAccelerators>
             </AppBarButton>
             <AppBarButton
+                x:Uid="FileBrowserDownloadMultiple"
+                x:Name="DownloadMultipleButton"
+                Click="DownloadMultiple_Click"
+                MinHeight="44">
+                <AppBarButton.Icon>
+                    <FontIcon Glyph="&#xE762;" />
+                </AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton
+                x:Uid="FileBrowserDownloadSelected"
+                x:Name="DownloadSelectedFilesButton"
+                Click="DownloadSelectedFiles_Click"
+                Icon="Accept"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
+                x:Uid="FileBrowserCancelDownloadSelection"
+                x:Name="CancelDownloadSelectionButton"
+                Click="CancelDownloadSelection_Click"
+                Icon="Cancel"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FilePreviewOpen"
                 x:Name="PreviewButton"
                 Click="Preview_Click"
@@ -460,16 +483,26 @@
                         TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
-            <InfoBar
-                x:Uid="FileUploadDropStatus"
-                x:Name="FileUploadDropStatus"
+            <StackPanel
                 Margin="12"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Top"
-                IsClosable="True"
-                IsOpen="False"
-                AutomationProperties.LiveSetting="Polite"
-                Severity="Informational" />
+                Spacing="8">
+                <InfoBar
+                    x:Uid="FileUploadDropStatus"
+                    x:Name="FileUploadDropStatus"
+                    IsClosable="True"
+                    IsOpen="False"
+                    AutomationProperties.LiveSetting="Polite"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="FileDownloadBatchStatus"
+                    x:Name="FileDownloadBatchStatus"
+                    IsClosable="True"
+                    IsOpen="False"
+                    AutomationProperties.LiveSetting="Polite"
+                    Severity="Informational" />
+            </StackPanel>
             </Grid>
 
             <views:FilePreviewPane

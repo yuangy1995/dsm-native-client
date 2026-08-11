@@ -122,6 +122,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _transfers.UploadFinished += Transfers_UploadFinished;
         _transfers.UploadBatchFinished += Transfers_UploadBatchFinished;
         _transfers.FolderUploadBatchFinished += Transfers_FolderUploadBatchFinished;
+        _transfers.DownloadBatchFinished += Transfers_DownloadBatchFinished;
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged += LocationsViewModel_PropertyChanged;
@@ -167,8 +168,11 @@ public sealed partial class FilesPage : Page, IDisposable
         System.ComponentModel.PropertyChangedEventArgs e) =>
         DispatcherQueue.TryEnqueue(UpdateState);
 
-    private async void PathBreadcrumbs_ItemClicked(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args) =>
+    private async void PathBreadcrumbs_ItemClicked(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.NavigateToBreadcrumbAsync(args.Item as FileBrowserBreadcrumb));
+    }
 
     private void Locations_Click(object sender, RoutedEventArgs e)
     {
@@ -220,6 +224,7 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             return false;
         }
+        ExitDownloadSelectionMode();
         try
         {
             var opened = await _locationsViewModel.OpenLocationAsync(path, source, cancellationToken);
@@ -286,6 +291,7 @@ public sealed partial class FilesPage : Page, IDisposable
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
         {
+            ExitDownloadSelectionMode();
             _viewModel.SetFilter(sender.Text);
             UpdateState();
         }
@@ -293,6 +299,10 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Files_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
+        if (_isSelectingDownloads)
+        {
+            return;
+        }
         if (sender is not ListViewBase itemsControl ||
             e.OriginalSource is not DependencyObject source)
         {
@@ -339,6 +349,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Back_Click(object sender, RoutedEventArgs e)
     {
+        ExitDownloadSelectionMode();
         if (_previewViewModel.IsOpen)
         {
             await ClosePreviewAsync();
@@ -353,6 +364,7 @@ public sealed partial class FilesPage : Page, IDisposable
         KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
+        ExitDownloadSelectionMode();
         if (_previewViewModel.IsOpen)
         {
             await ClosePreviewAsync();
@@ -366,6 +378,10 @@ public sealed partial class FilesPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (_isSelectingDownloads)
+        {
+            return;
+        }
         if (_viewModel.SelectedItem is not { } selected)
         {
             return;
@@ -384,6 +400,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Up_Click(object sender, RoutedEventArgs e)
     {
+        ExitDownloadSelectionMode();
         await ClosePreviewAsync();
         FilterBox.Text = string.Empty;
         await RunAsync(_viewModel.GoUpAsync);
@@ -391,6 +408,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Refresh_Click(object sender, RoutedEventArgs e)
     {
+        ExitDownloadSelectionMode();
         await ClosePreviewAsync();
         await RunAsync(_viewModel.RefreshAsync);
         UploadNeedsReview.IsOpen = false;
@@ -401,6 +419,11 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Files_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_isSelectingDownloads && sender is ListViewBase source)
+        {
+            HandleDownloadSelectionChanged(source, e);
+            return;
+        }
         PreviewPane.SetSaveCopyEnabled(false);
         if (_previewViewModel.IsOpen &&
             !string.Equals(
@@ -449,6 +472,7 @@ public sealed partial class FilesPage : Page, IDisposable
     {
         if (_viewModel.IsLoading ||
             _isChoosingUpload ||
+            _downloadBatchId is not null ||
             IsReadOnlyLocation() ||
             string.IsNullOrWhiteSpace(_viewModel.CurrentPath))
         {
@@ -463,7 +487,8 @@ public sealed partial class FilesPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (_viewModel.SelectedItem?.IsDirectory != false)
+        if (_isSelectingDownloads || _isChoosingDownloadTarget ||
+            _viewModel.SelectedItem?.IsDirectory != false)
         {
             return;
         }
@@ -474,6 +499,10 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async Task DownloadSelectedAsync()
     {
+        if (_isSelectingDownloads || _isChoosingDownloadTarget)
+        {
+            return;
+        }
         if (_viewModel.SelectedItem is not { IsDirectory: false } entry)
         {
             return;
@@ -616,40 +645,66 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void ClearFilter_Click(object sender, RoutedEventArgs e)
     {
+        ExitDownloadSelectionMode();
         FilterBox.Text = string.Empty;
         await RunAsync(_viewModel.ClearFiltersAsync);
         UpdateState();
     }
 
-    private async void SortName_Click(object sender, RoutedEventArgs e) =>
+    private async void SortName_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetSortFieldAsync(FileListSortField.Name));
+    }
 
-    private async void SortModified_Click(object sender, RoutedEventArgs e) =>
+    private async void SortModified_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetSortFieldAsync(FileListSortField.ModifiedTime));
+    }
 
-    private async void SortSize_Click(object sender, RoutedEventArgs e) =>
+    private async void SortSize_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetSortFieldAsync(FileListSortField.Size));
+    }
 
-    private async void SortAscending_Click(object sender, RoutedEventArgs e) =>
+    private async void SortAscending_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetSortDirectionAsync(FileListSortDirection.Ascending));
+    }
 
-    private async void SortDescending_Click(object sender, RoutedEventArgs e) =>
+    private async void SortDescending_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetSortDirectionAsync(FileListSortDirection.Descending));
+    }
 
-    private async void TypeAll_Click(object sender, RoutedEventArgs e) =>
+    private async void TypeAll_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetTypeFilterAsync(FileListTypeFilter.All));
+    }
 
-    private async void TypeFiles_Click(object sender, RoutedEventArgs e) =>
+    private async void TypeFiles_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetTypeFilterAsync(FileListTypeFilter.Files));
+    }
 
-    private async void TypeFolders_Click(object sender, RoutedEventArgs e) =>
+    private async void TypeFolders_Click(object sender, RoutedEventArgs e)
+    {
+        ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.SetTypeFilterAsync(FileListTypeFilter.Folders));
+    }
 
     private void ListLayout_Click(object sender, RoutedEventArgs e)
     {
         _viewModel.Layout = FileBrowserLayout.List;
         _selectionNeedsScroll = true;
         UpdateState();
+        SynchronizeDownloadSelectionAfterLayoutChange();
     }
 
     private void GridLayout_Click(object sender, RoutedEventArgs e)
@@ -657,6 +712,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _viewModel.Layout = FileBrowserLayout.Grid;
         _selectionNeedsScroll = true;
         UpdateState();
+        SynchronizeDownloadSelectionAfterLayoutChange();
     }
 
 
@@ -1159,6 +1215,7 @@ public sealed partial class FilesPage : Page, IDisposable
                 _mutationRepository?.FileMutationAvailability.CanCreateFolder != true
                 ? Visibility.Collapsed
                 : Visibility.Visible;
+        UpdateBatchDownloadControls();
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
 
@@ -1341,6 +1398,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _transfers.UploadFinished -= Transfers_UploadFinished;
         _transfers.UploadBatchFinished -= Transfers_UploadBatchFinished;
         _transfers.FolderUploadBatchFinished -= Transfers_FolderUploadBatchFinished;
+        _transfers.DownloadBatchFinished -= Transfers_DownloadBatchFinished;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged -= LocationsViewModel_PropertyChanged;
         _previewViewModel.PropertyChanged -= PreviewViewModel_PropertyChanged;

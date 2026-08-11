@@ -111,6 +111,7 @@ public sealed partial class FilesPage
         !_disposed &&
         !_viewModel.IsLoading &&
         !_isChoosingUpload &&
+        _downloadBatchId is null &&
         !IsReadOnlyLocation() &&
         !string.IsNullOrWhiteSpace(_viewModel.CurrentPath);
 

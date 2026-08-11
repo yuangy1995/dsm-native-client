@@ -85,6 +85,35 @@ public sealed class FilesPageSourceContractTests
     }
 
     [Fact]
+    public void MultipleDownloadModeUsesNativeBoundedSelectionAndDisablesSingleItemCommands()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
+        var batch = ReadRepositoryFile(
+            "windows/src/LanStash.App/Views/FilesPage.BatchDownload.cs");
+
+        Assert.Contains("x:Name=\"DownloadMultipleButton\"", xaml);
+        Assert.Contains("x:Name=\"DownloadSelectedFilesButton\"", xaml);
+        Assert.Contains("x:Name=\"CancelDownloadSelectionButton\"", xaml);
+        Assert.Contains("x:Name=\"FileDownloadBatchStatus\"", xaml);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
+        Assert.Contains("ListViewSelectionMode.Multiple", batch);
+        Assert.Contains("BoundedFileDownloadBatch.MaximumFileCount", batch);
+        Assert.Contains("added.IsDirectory", batch);
+        Assert.Contains("StringComparer.Ordinal", batch);
+        Assert.Contains("ApplyDownloadSelection(VisibleFilesControl())", batch);
+        Assert.Contains("ExitDownloadSelectionMode();", batch);
+        Assert.Contains("PickAndStartDownloadBatchAsync", batch);
+        Assert.Contains("CancelDownloadBatch(batchId)", batch);
+        Assert.Contains("AutomationProperties.SetName(cancel", batch);
+        Assert.Contains("CreateFolderButton.IsEnabled = false", batch);
+        Assert.Contains("MoveToRecycleButton.IsEnabled = false", batch);
+        Assert.Contains("ShareLinkButton.IsEnabled = false", batch);
+        Assert.Contains("FileDownloadBatchSummaryMessage", batch);
+        Assert.Contains("FileDownloadBatchStatus.ActionButton", batch);
+        Assert.DoesNotContain("DownloadAsync(", batch);
+    }
+
+    [Fact]
     public void TouchTargetsAndKeyboardRoutesRemainAvailable()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
@@ -166,6 +195,9 @@ public sealed class FilesPageSourceContractTests
     [InlineData("FileBrowserUp")]
     [InlineData("FileBrowserRefresh")]
     [InlineData("FileBrowserDownload")]
+    [InlineData("FileBrowserDownloadMultiple")]
+    [InlineData("FileBrowserDownloadSelected")]
+    [InlineData("FileBrowserCancelDownloadSelection")]
     [InlineData("FileBrowserUpload")]
     [InlineData("FolderUpload")]
     [InlineData("FileBrowserSort")]

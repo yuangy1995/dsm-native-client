@@ -17,6 +17,7 @@ public sealed partial class FilesPage
         !_disposed &&
         !_viewModel.IsLoading &&
         !_isChoosingUpload &&
+        _downloadBatchId is null &&
         _folderUploadBatchId is null &&
         !IsReadOnlyLocation() &&
         _mutationRepository?.FileMutationAvailability.CanCreateFolder == true &&

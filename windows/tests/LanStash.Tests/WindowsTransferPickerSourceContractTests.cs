@@ -44,12 +44,58 @@ public sealed class WindowsTransferPickerSourceContractTests
         Assert.Contains("OpenTransactedWriteAsync", source);
         Assert.Contains("_transaction.CommitAsync()", source);
         Assert.Contains("MoveAndReplaceAsync", source);
+        Assert.Contains("if (!_allowReplaceExisting)", source);
+        Assert.Contains("NameCollisionOption.FailIfExists", source);
         Assert.Contains(".lanstash-", source);
         Assert.Contains("_transaction.Dispose()", source);
         Assert.DoesNotContain("FileMode.Create", source);
         Assert.DoesNotContain("File.Write", source);
         Assert.DoesNotContain("new FileStream", source);
         Assert.DoesNotContain("file.Path", source);
+    }
+
+    [Fact]
+    public void BoundedDownloadBatchPreflightsAndReservesEveryLocalTargetBeforeNetworkWork()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+        var start = SliceMethod(
+            source,
+            "public async Task<ForegroundDownloadBatchStart> PickAndStartDownloadBatchAsync",
+            "public async Task<bool> PickAndStartUploadAsync");
+
+        var picker = start.IndexOf("PickSingleFolderPathAsync", StringComparison.Ordinal);
+        var existing = start.IndexOf("targetFolder.TryGetItemAsync", picker, StringComparison.Ordinal);
+        var reserve = start.IndexOf("_downloadBatchReservations.Add", existing, StringComparison.Ordinal);
+        var run = start.IndexOf("RunDownloadBatchAsync(", reserve, StringComparison.Ordinal);
+        Assert.True(picker >= 0 && existing > picker && reserve > existing && run > reserve);
+        Assert.Contains("BoundedFileDownloadBatch.Validate(items)", start);
+        Assert.Contains("FileDownloadBatchValidationStatus.TargetExists", start);
+        Assert.Contains("_running.Any", start);
+        Assert.DoesNotContain("RunAsync(", start[..existing]);
+    }
+
+    [Fact]
+    public void BoundedDownloadBatchIsSerialCancelableAndNeverReplacesTargets()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+        var execute = SliceMethod(
+            source,
+            "private async Task RunDownloadBatchAsync",
+            "private async Task RunFolderUploadBatchAsync");
+
+        Assert.Contains("BoundedFileDownloadBatch.RunAsync(", execute);
+        Assert.Contains("PrepareDownload(", execute);
+        Assert.Contains("allowReplaceExisting: false", execute);
+        Assert.Contains("batchCancellation.Token", execute);
+        Assert.Contains("DownloadBatchFinished?.Invoke", execute);
+        Assert.Contains("_downloadBatchReservations.Remove(target)", execute);
+        Assert.Contains("finally", execute);
+        Assert.Contains("StopBatch: running.Cancellation.IsCancellationRequested", source);
+        Assert.Contains("await Task.Yield()", execute);
+        Assert.DoesNotContain("Task.WhenAll", execute);
+        Assert.DoesNotContain("Retry", execute);
     }
 
     [Fact]

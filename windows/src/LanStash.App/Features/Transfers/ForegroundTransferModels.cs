@@ -98,3 +98,12 @@ internal sealed record FolderUploadBatchFinished(
     int DirectoryCount,
     int FileCount,
     FileUploadBatchSummary Summary);
+
+internal sealed record ForegroundDownloadBatchStart(
+    FileDownloadBatchValidationStatus Status,
+    Guid? BatchId = null);
+
+internal sealed record ForegroundDownloadBatchFinished(
+    Guid BatchId,
+    string ProfileId,
+    FileDownloadBatchSummary Summary);

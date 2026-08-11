@@ -421,6 +421,12 @@
   <data name="FileBrowserFileDetail" xml:space="preserve"><value>{0:N0} 字节 · {1}</value></data>
   <data name="FileBrowserDownload.Label" xml:space="preserve"><value>下载</value></data>
   <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>保存所选文件的副本</value></data>
+  <data name="FileBrowserDownloadMultiple.Label" xml:space="preserve"><value>选择多个下载</value></data>
+  <data name="FileBrowserDownloadMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择多个文件下载</value></data>
+  <data name="FileBrowserDownloadSelected.Label" xml:space="preserve"><value>下载所选文件</value></data>
+  <data name="FileBrowserDownloadSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>下载已选择的文件</value></data>
+  <data name="FileBrowserCancelDownloadSelection.Label" xml:space="preserve"><value>取消选择</value></data>
+  <data name="FileBrowserCancelDownloadSelection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>取消下载文件选择</value></data>
   <data name="FileBrowserUpload.Label" xml:space="preserve"><value>上传</value></data>
   <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>上传文件到此文件夹</value></data>
   <data name="FolderUpload.Label" xml:space="preserve"><value>上传文件夹</value></data>
@@ -466,6 +472,18 @@
   <data name="FileUploadBatchDuplicateMessage" xml:space="preserve"><value>所选文件中存在同名文件。请为每个名称只保留一个文件。</value></data>
   <data name="FileUploadBatchBusyMessage" xml:space="preserve"><value>其中一个同名文件正在上传到此文件夹。请等待完成后重试。</value></data>
   <data name="FileUploadBatchSummaryMessage" xml:space="preserve"><value>已选择：{0}。已上传：{1}。需在 NAS 检查：{2}。失败：{3}。已取消：{4}。未开始：{5}。</value></data>
+  <data name="FileDownloadBatchSelectionCountMessage" xml:space="preserve"><value>已选择下载：{0}/20。</value></data>
+  <data name="FileDownloadBatchSelectionLimitMessage" xml:space="preserve"><value>最多选择 20 个文件，文件夹不会加入下载。</value></data>
+  <data name="FileDownloadBatchInvalidMessage" xml:space="preserve"><value>无法一起下载这些文件。请检查文件名，并重新选择最多 20 个文件。</value></data>
+  <data name="FileDownloadBatchTargetExistsMessage" xml:space="preserve"><value>所选文件夹中已有一个同名项目。请选择其他文件夹；现有项目不会被替换。</value></data>
+  <data name="FileDownloadBatchBusyMessage" xml:space="preserve"><value>其中一个文件正在保存到该文件夹。请等待完成后重试。</value></data>
+  <data name="FileDownloadBatchTooManyMessage" xml:space="preserve"><value>一次最多选择 20 个文件。</value></data>
+  <data name="FileDownloadBatchFolderErrorMessage" xml:space="preserve"><value>无法使用此文件夹。请检查访问权限，然后选择其他文件夹。</value></data>
+  <data name="FileDownloadBatchStartedMessage" xml:space="preserve"><value>正在逐个下载 {0} 个文件，进度也会显示在“活动”中。</value></data>
+  <data name="FileDownloadBatchCancelAutomationName" xml:space="preserve"><value>停止多个下载</value></data>
+  <data name="FileDownloadBatchCancellingMessage" xml:space="preserve"><value>正在停止这些下载，已经保存的文件会保留。</value></data>
+  <data name="FileDownloadBatchSummaryMessage" xml:space="preserve"><value>已选择：{0}。已下载：{1}。失败：{2}。已取消：{3}。未开始：{4}。</value></data>
+  <data name="FileDownloadBatchStatus.Title" xml:space="preserve"><value>多个文件下载</value></data>
   <data name="FolderUploadConfirmTitle" xml:space="preserve"><value>上传此文件夹？</value></data>
   <data name="FolderUploadConfirmAction" xml:space="preserve"><value>上传文件夹</value></data>
   <data name="FolderUploadConfirmMessage" xml:space="preserve"><value>将在当前 NAS 文件夹中为“{0}”创建 {2} 个文件夹并上传 {1} 个文件。</value></data>

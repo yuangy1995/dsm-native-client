@@ -9,6 +9,7 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
     private readonly string _targetName;
     private readonly StorageFile _stagingFile;
     private readonly StorageStreamTransaction _transaction;
+    private readonly bool _allowReplaceExisting;
     private ulong _position;
     private bool _transactionClosed;
     private bool _committed;
@@ -18,17 +19,20 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         StorageFolder targetFolder,
         string targetName,
         StorageFile stagingFile,
-        StorageStreamTransaction transaction)
+        StorageStreamTransaction transaction,
+        bool allowReplaceExisting)
     {
         _targetFolder = targetFolder;
         _targetName = targetName;
         _stagingFile = stagingFile;
         _transaction = transaction;
+        _allowReplaceExisting = allowReplaceExisting;
         _transaction.Stream.Size = 0;
     }
 
     public static async Task<WindowsTransactionalDownloadDestination> CreateAsync(
-        string targetPath)
+        string targetPath,
+        bool allowReplaceExisting = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         var directory = Path.GetDirectoryName(targetPath);
@@ -50,7 +54,8 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
                 folder,
                 targetName,
                 staging,
-                transaction);
+                transaction,
+                allowReplaceExisting);
         }
         catch
         {
@@ -84,8 +89,7 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         await _transaction.CommitAsync();
         CloseTransaction();
 
-        var target = await _targetFolder.TryGetItemAsync(_targetName) as StorageFile;
-        if (target is null)
+        if (!_allowReplaceExisting)
         {
             await _stagingFile.MoveAsync(
                 _targetFolder,
@@ -94,7 +98,18 @@ internal sealed class WindowsTransactionalDownloadDestination : ITransactionalDo
         }
         else
         {
-            await _stagingFile.MoveAndReplaceAsync(target);
+            var target = await _targetFolder.TryGetItemAsync(_targetName) as StorageFile;
+            if (target is null)
+            {
+                await _stagingFile.MoveAsync(
+                    _targetFolder,
+                    _targetName,
+                    NameCollisionOption.FailIfExists);
+            }
+            else
+            {
+                await _stagingFile.MoveAndReplaceAsync(target);
+            }
         }
         _committed = true;
     }
