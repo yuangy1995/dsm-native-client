@@ -26,6 +26,12 @@ public sealed class NasDetailsViewModelTests
         var repository = Available(Guid.NewGuid());
         repository.Results.Enqueue(new NasDetailsSnapshot(
             repository.ProfileId,
+            new NasDetailsSection<NasSystemHealthSummary>(
+                NasDetailsSectionStatus.Available,
+                [new NasSystemHealthSummary("DS", "7.2", 90_000, "CPU", 4, 2400, 4L * 1024 * 1024 * 1024, 42, false)]),
+            new NasDetailsSection<NasStorageHealthSummary>(
+                NasDetailsSectionStatus.Available,
+                [new NasStorageHealthSummary("volume-1", NasStorageItemKind.Volume, 1, "normal", ResourceState.Healthy, 200, 100, "btrfs", IsEncrypted: true)]),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", "Drive", "3.0", "running", ResourceState.Running)]),
@@ -43,6 +49,10 @@ public sealed class NasDetailsViewModelTests
         await model.ActivateAsync(repository);
 
         Assert.Equal(NasDetailsContentState.Content, model.ContentState);
+        Assert.Contains(model.Rows, row => row.Id == "system-device");
+        model.SelectSection(NasDetailsSectionKind.StorageHealth);
+        Assert.Equal("volume-1", Assert.Single(model.Rows).Id);
+        model.SelectSection(NasDetailsSectionKind.Packages);
         Assert.Equal("Drive", Assert.Single(model.Rows).Title);
         model.SelectSection(NasDetailsSectionKind.ScheduledTasks);
         Assert.Equal("Backup", Assert.Single(model.Rows).Title);
@@ -66,6 +76,8 @@ public sealed class NasDetailsViewModelTests
         var repository = Available(Guid.NewGuid());
         repository.Results.Enqueue(new NasDetailsSnapshot(
             repository.ProfileId,
+            EmptySystem(),
+            EmptyStorage(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 packages,
@@ -82,6 +94,7 @@ public sealed class NasDetailsViewModelTests
         using var model = new NasDetailsViewModel();
 
         await model.ActivateAsync(repository);
+        model.SelectSection(NasDetailsSectionKind.Packages);
 
         Assert.Equal(NasDetailsContentState.Content, model.ContentState);
         Assert.True(model.SectionNoticeIsOpen);
@@ -129,6 +142,7 @@ public sealed class NasDetailsViewModelTests
         await WaitUntilAsync(() => repositoryA.Requests.Count == 1);
         var oldToken = repositoryA.Requests.Single();
         await model.ActivateAsync(repositoryB);
+        model.SelectSection(NasDetailsSectionKind.Packages);
         delayed.SetResult(Snapshot(profileA, packageName: "Late A"));
         await activationA;
 
@@ -142,6 +156,8 @@ public sealed class NasDetailsViewModelTests
     private static NasDetailsSnapshot Snapshot(Guid profileId, string packageName) =>
         new(
             profileId,
+            EmptySystem(),
+            EmptyStorage(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", packageName, "1.0", "running", ResourceState.Running)]),
@@ -154,6 +170,12 @@ public sealed class NasDetailsViewModelTests
             new NasDetailsSection<NasConnectionSummary>(
                 NasDetailsSectionStatus.Available,
                 []));
+
+    private static NasDetailsSection<NasSystemHealthSummary> EmptySystem() =>
+        new(NasDetailsSectionStatus.Available, []);
+
+    private static NasDetailsSection<NasStorageHealthSummary> EmptyStorage() =>
+        new(NasDetailsSectionStatus.Available, []);
 
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
@@ -178,6 +200,8 @@ public sealed class NasDetailsViewModelTests
             available
                 ? new HashSet<NasDetailsReadFeature>
                 {
+                    NasDetailsReadFeature.SystemOverview,
+                    NasDetailsReadFeature.StorageHealth,
                     NasDetailsReadFeature.Packages,
                     NasDetailsReadFeature.ScheduledTasks,
                     NasDetailsReadFeature.Logs,

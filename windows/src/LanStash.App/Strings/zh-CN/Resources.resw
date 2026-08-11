@@ -41,7 +41,7 @@
   <data name="CategoryProtection" xml:space="preserve"><value>保护</value></data>
   <data name="CategorySecurity" xml:space="preserve"><value>安全</value></data>
   <data name="NasDetailsTitle.Text" xml:space="preserve"><value>NAS 详情</value></data>
-  <data name="NasDetailsDescription.Text" xml:space="preserve"><value>查看套件、计划任务、系统日志和当前连接。此页面不会更改 NAS 设置。</value></data>
+  <data name="NasDetailsDescription.Text" xml:space="preserve"><value>查看系统健康、存储、套件、计划任务、日志和当前连接。此页面不会更改 NAS 设置。</value></data>
   <data name="NasDetailsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新 NAS 详情</value></data>
   <data name="NasDetailsRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
   <data name="NasDetailsReadOnly.Title" xml:space="preserve"><value>只读视图</value></data>
@@ -74,6 +74,39 @@
   <data name="NasDetailsConnectionCurrent" xml:space="preserve"><value>当前会话</value></data>
   <data name="NasDetailsConnectionActive" xml:space="preserve"><value>活动中</value></data>
   <data name="NasDetailsRowAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="NasDetailsSectionSystem" xml:space="preserve"><value>系统</value></data>
+  <data name="NasDetailsSectionStorage" xml:space="preserve"><value>存储</value></data>
+  <data name="NasDetailsSystemDevice" xml:space="preserve"><value>设备</value></data>
+  <data name="NasDetailsSystemVersionValue" xml:space="preserve"><value>DSM {0}</value></data>
+  <data name="NasDetailsSystemUptime" xml:space="preserve"><value>运行时间</value></data>
+  <data name="NasDetailsSystemProcessor" xml:space="preserve"><value>处理器</value></data>
+  <data name="NasDetailsSystemMemory" xml:space="preserve"><value>内存</value></data>
+  <data name="NasDetailsSystemTemperature" xml:space="preserve"><value>系统温度</value></data>
+  <data name="NasDetailsTemperatureValue" xml:space="preserve"><value>{0} °C</value></data>
+  <data name="NasDetailsTemperatureWarning" xml:space="preserve"><value>温度警告</value></data>
+  <data name="NasDetailsProcessorCoresClock" xml:space="preserve"><value>{0} 核，{1} MHz</value></data>
+  <data name="NasDetailsProcessorCores" xml:space="preserve"><value>{0} 核</value></data>
+  <data name="NasDetailsProcessorClock" xml:space="preserve"><value>{0} MHz</value></data>
+  <data name="NasDetailsDurationDaysHours" xml:space="preserve"><value>{0} 天 {1} 小时</value></data>
+  <data name="NasDetailsDurationHoursMinutes" xml:space="preserve"><value>{0} 小时 {1} 分钟</value></data>
+  <data name="NasDetailsStoragePoolName" xml:space="preserve"><value>存储池 {0}</value></data>
+  <data name="NasDetailsStorageVolumeName" xml:space="preserve"><value>存储空间 {0}</value></data>
+  <data name="NasDetailsStorageDriveName" xml:space="preserve"><value>硬盘 {0}</value></data>
+  <data name="NasDetailsStorageUsage" xml:space="preserve"><value>已用 {0}，共 {1}</value></data>
+  <data name="NasDetailsStorageCapacity" xml:space="preserve"><value>容量 {0}</value></data>
+  <data name="NasDetailsStorageCapacityUnavailable" xml:space="preserve"><value>容量不可用</value></data>
+  <data name="NasDetailsStorageEncrypted" xml:space="preserve"><value>已加密</value></data>
+  <data name="NasDetailsStorageSsd" xml:space="preserve"><value>固态硬盘</value></data>
+  <data name="NasDetailsStorageSmartNormal" xml:space="preserve"><value>硬盘健康正常</value></data>
+  <data name="NasDetailsStorageSmartWarning" xml:space="preserve"><value>硬盘健康警告</value></data>
+  <data name="NasDetailsStorageSmartError" xml:space="preserve"><value>硬盘健康异常</value></data>
+  <data name="NasDetailsByteValue" xml:space="preserve"><value>{0} {1}</value></data>
+  <data name="NasDetailsByteUnitB" xml:space="preserve"><value>B</value></data>
+  <data name="NasDetailsByteUnitKB" xml:space="preserve"><value>KB</value></data>
+  <data name="NasDetailsByteUnitMB" xml:space="preserve"><value>MB</value></data>
+  <data name="NasDetailsByteUnitGB" xml:space="preserve"><value>GB</value></data>
+  <data name="NasDetailsByteUnitTB" xml:space="preserve"><value>TB</value></data>
+  <data name="NasDetailsValueSeparator" xml:space="preserve"><value> · </value></data>
   <data name="BrandTitle.Text" xml:space="preserve"><value>岚仓</value></data>
   <data name="BrandSubtitle.Text" xml:space="preserve"><value>管理你的 NAS</value></data>
   <data name="AddNasButton.Content" xml:space="preserve"><value>添加 NAS</value></data>

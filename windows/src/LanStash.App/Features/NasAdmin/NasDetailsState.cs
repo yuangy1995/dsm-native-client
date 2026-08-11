@@ -4,6 +4,8 @@ namespace LanStash.App.Features.NasAdmin;
 
 public enum NasDetailsSectionKind
 {
+    SystemOverview,
+    StorageHealth,
     Packages,
     ScheduledTasks,
     Logs,
@@ -36,6 +38,6 @@ public sealed record NasDetailsRow(
 internal sealed class NasDetailsProfileState
 {
     public NasDetailsSnapshot? Snapshot { get; set; }
-    public NasDetailsSectionKind SelectedSection { get; set; } = NasDetailsSectionKind.Packages;
+    public NasDetailsSectionKind SelectedSection { get; set; } = NasDetailsSectionKind.SystemOverview;
     public bool Loaded { get; set; }
 }

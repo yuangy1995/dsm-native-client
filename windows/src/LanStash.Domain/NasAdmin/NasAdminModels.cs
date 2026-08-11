@@ -23,11 +23,46 @@ public sealed record NasSettingsSnapshot(
 
 public enum NasDetailsReadFeature
 {
+    SystemOverview,
+    StorageHealth,
     Packages,
     ScheduledTasks,
     Logs,
     Connections,
 }
+
+public sealed record NasSystemHealthSummary(
+    string? Model,
+    string? Version,
+    long? UptimeSeconds,
+    string? CpuModel,
+    int? CpuCoreCount,
+    int? CpuClockMhz,
+    long? MemoryBytes,
+    double? TemperatureCelsius,
+    bool HasTemperatureWarning);
+
+public enum NasStorageItemKind
+{
+    Pool,
+    Volume,
+    Drive,
+}
+
+public sealed record NasStorageHealthSummary(
+    string Id,
+    NasStorageItemKind Kind,
+    int Ordinal,
+    string? Status,
+    ResourceState State,
+    long? TotalBytes,
+    long? UsedBytes = null,
+    string? FileSystem = null,
+    string? RaidType = null,
+    string? SmartStatus = null,
+    double? TemperatureCelsius = null,
+    bool IsSsd = false,
+    bool IsEncrypted = false);
 
 public enum NasDetailsAvailabilityStatus
 {
@@ -80,6 +115,8 @@ public sealed record NasConnectionSummary(
 
 public sealed record NasDetailsSnapshot(
     Guid ProfileId,
+    NasDetailsSection<NasSystemHealthSummary> SystemOverview,
+    NasDetailsSection<NasStorageHealthSummary> StorageHealth,
     NasDetailsSection<NasPackageSummary> Packages,
     NasDetailsSection<NasScheduledTaskSummary> ScheduledTasks,
     NasDetailsSection<NasLogSummary> Logs,

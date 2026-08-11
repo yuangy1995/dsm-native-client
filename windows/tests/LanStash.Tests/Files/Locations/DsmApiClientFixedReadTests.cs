@@ -38,6 +38,44 @@ public sealed class DsmApiClientFixedReadTests
     }
 
     [Theory]
+    [InlineData("info")]
+    [InlineData("load_info")]
+    public async Task AllowsParameterlessFixedVersionOverviewReads(string method)
+    {
+        var handler = new RecordingHandler("{\"success\":true,\"data\":{}}");
+        var client = new DsmApiClient(new HttpClient(handler));
+
+        await client.CallReadJsonObjectAsync(
+            Profile,
+            Session,
+            new ApiCapability("api", "entry.cgi", 1, 3, "FORM"),
+            method == "info" ? 3 : 1,
+            method);
+
+        Assert.Contains($"method={method}", handler.Body);
+        Assert.Equal(1, handler.SendCount);
+    }
+
+    [Theory]
+    [InlineData("info")]
+    [InlineData("load_info")]
+    public async Task RejectsParametersForOverviewReadsBeforeSending(string method)
+    {
+        var handler = new RecordingHandler("{\"success\":true,\"data\":{}}");
+        var client = new DsmApiClient(new HttpClient(handler));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CallReadJsonObjectAsync(
+            Profile,
+            Session,
+            new ApiCapability("api", "entry.cgi", 1, 3, "FORM"),
+            1,
+            method,
+            new Dictionary<string, string> { ["extra"] = "not-allowed" }));
+
+        Assert.Equal(0, handler.SendCount);
+    }
+
+    [Theory]
     [InlineData("https://evil.invalid/entry.cgi")]
     [InlineData("//evil.invalid/entry.cgi")]
     [InlineData("../entry.cgi")]

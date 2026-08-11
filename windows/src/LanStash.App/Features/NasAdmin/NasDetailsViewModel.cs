@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using LanStash.App.Localization;
 using LanStash.App.ViewModels;
@@ -16,7 +17,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     private long _generation;
     private Guid? _activeProfileId;
     private NasDetailsContentState _contentState = NasDetailsContentState.Loading;
-    private NasDetailsSectionKind _selectedSection = NasDetailsSectionKind.Packages;
+    private NasDetailsSectionKind _selectedSection = NasDetailsSectionKind.SystemOverview;
     private bool _isLoading;
     private bool _hasRefreshError;
     private bool _sectionNoticeIsOpen;
@@ -238,6 +239,10 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         SectionNoticeIsOpen = false;
         var section = SelectedSection switch
         {
+            NasDetailsSectionKind.SystemOverview => ProjectSystemSection(snapshot.SystemOverview),
+            NasDetailsSectionKind.StorageHealth => ProjectSection(
+                snapshot.StorageHealth,
+                StorageRow),
             NasDetailsSectionKind.Packages => ProjectSection(
                 snapshot.Packages,
                 PackageRow),
@@ -281,6 +286,14 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     {
         var selected = SelectedSection;
         Sections.Clear();
+        Sections.Add(SectionOption(
+            NasDetailsSectionKind.SystemOverview,
+            snapshot.SystemOverview.Status,
+            snapshot.SystemOverview.Items.SelectMany(SystemRows).Count()));
+        Sections.Add(SectionOption(
+            NasDetailsSectionKind.StorageHealth,
+            snapshot.StorageHealth.Status,
+            snapshot.StorageHealth.Items.Count));
         Sections.Add(SectionOption(
             NasDetailsSectionKind.Packages,
             snapshot.Packages.Status,
@@ -327,6 +340,138 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             section.Status,
             section.Items.Select(projector).ToArray(),
             section.IsTruncated);
+
+    private static SectionProjection ProjectSystemSection(
+        NasDetailsSection<NasSystemHealthSummary> section) =>
+        new(
+            section.Status,
+            section.Items.SelectMany(SystemRows).ToArray(),
+            section.IsTruncated);
+
+    private static IEnumerable<NasDetailsRow> SystemRows(NasSystemHealthSummary item)
+    {
+        if (item.Model is not null || item.Version is not null)
+        {
+            yield return Row(
+                "system-device",
+                L.Get("NasDetailsSystemDevice"),
+                item.Model ?? L.Get("UnknownValue"),
+                item.Version is { } version
+                    ? L.Format("NasDetailsSystemVersionValue", version)
+                    : L.Get("UnknownValue"),
+                "\uE770");
+        }
+        if (item.UptimeSeconds is long uptime)
+        {
+            var value = FormatDuration(uptime);
+            yield return Row(
+                "system-uptime",
+                L.Get("NasDetailsSystemUptime"),
+                value,
+                string.Empty,
+                "\uE823");
+        }
+        if (item.CpuModel is not null || item.CpuCoreCount is not null || item.CpuClockMhz is not null)
+        {
+            var detail = item.CpuModel ?? L.Get("UnknownValue");
+            var status = FormatProcessor(item.CpuCoreCount, item.CpuClockMhz);
+            yield return Row(
+                "system-processor",
+                L.Get("NasDetailsSystemProcessor"),
+                detail,
+                status,
+                "\uE950");
+        }
+        if (item.MemoryBytes is long memory)
+        {
+            var value = FormatBytes(memory);
+            yield return Row(
+                "system-memory",
+                L.Get("NasDetailsSystemMemory"),
+                value,
+                string.Empty,
+                "\uE964");
+        }
+        if (item.TemperatureCelsius is double temperature)
+        {
+            var detail = L.Format(
+                "NasDetailsTemperatureValue",
+                temperature.ToString("0.#", CultureInfo.CurrentCulture));
+            var status = item.HasTemperatureWarning
+                ? L.Get("NasDetailsTemperatureWarning")
+                : L.Get("StatusNormal");
+            yield return Row(
+                "system-temperature",
+                L.Get("NasDetailsSystemTemperature"),
+                detail,
+                status,
+                "\uE7E7");
+        }
+    }
+
+    private static NasDetailsRow StorageRow(NasStorageHealthSummary item)
+    {
+        var title = L.Format(item.Kind switch
+        {
+            NasStorageItemKind.Pool => "NasDetailsStoragePoolName",
+            NasStorageItemKind.Volume => "NasDetailsStorageVolumeName",
+            NasStorageItemKind.Drive => "NasDetailsStorageDriveName",
+            _ => throw new ArgumentOutOfRangeException(nameof(item.Kind)),
+        }, item.Ordinal);
+        var capacity = item.UsedBytes is long used && item.TotalBytes is long total
+            ? L.Format("NasDetailsStorageUsage", FormatBytes(used), FormatBytes(total))
+            : item.TotalBytes is long capacityBytes
+                ? L.Format("NasDetailsStorageCapacity", FormatBytes(capacityBytes))
+                : L.Get("NasDetailsStorageCapacityUnavailable");
+        var characteristic = item.Kind switch
+        {
+            NasStorageItemKind.Pool => item.RaidType,
+            NasStorageItemKind.Volume => JoinDetails(
+                item.FileSystem,
+                item.IsEncrypted ? L.Get("NasDetailsStorageEncrypted") : null),
+            NasStorageItemKind.Drive => item.IsSsd ? L.Get("NasDetailsStorageSsd") : null,
+            _ => null,
+        };
+        string? status = item.State == ResourceState.Unknown
+            ? null
+            : StatusText(item.State, string.Empty);
+        if (item.Kind == NasStorageItemKind.Drive)
+        {
+            status = JoinDetails(
+                status,
+                StorageHealthText(item.SmartStatus),
+                item.TemperatureCelsius is double temperature
+                    ? L.Format(
+                        "NasDetailsTemperatureValue",
+                        temperature.ToString("0.#", CultureInfo.CurrentCulture))
+                    : null);
+        }
+        return Row(
+            item.Id,
+            title,
+            JoinDetails(capacity, characteristic) ?? capacity,
+            status ?? L.Get("UnknownValue"),
+            item.Kind switch
+            {
+                NasStorageItemKind.Pool => "\uEDA2",
+                NasStorageItemKind.Volume => "\uE7F1",
+                _ => "\uEDA2",
+            });
+    }
+
+    private static NasDetailsRow Row(
+        string id,
+        string title,
+        string detail,
+        string status,
+        string glyph) =>
+        new(
+            id,
+            title,
+            detail,
+            status,
+            glyph,
+            L.Format("NasDetailsRowAutomationName", title, JoinDetails(detail, status) ?? detail));
 
     private static NasDetailsRow PackageRow(NasPackageSummary item) =>
         new(
@@ -383,6 +528,8 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
 
     private string SectionTitle(NasDetailsSectionKind section) => section switch
     {
+        NasDetailsSectionKind.SystemOverview => L.Get("NasDetailsSectionSystem"),
+        NasDetailsSectionKind.StorageHealth => L.Get("NasDetailsSectionStorage"),
         NasDetailsSectionKind.Packages => L.Get("NasDetailsSectionPackages"),
         NasDetailsSectionKind.ScheduledTasks => L.Get("NasDetailsSectionTasks"),
         NasDetailsSectionKind.Logs => L.Get("NasDetailsSectionLogs"),
@@ -400,6 +547,72 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         ResourceState.Error => L.Get("StatusError"),
         _ => string.IsNullOrWhiteSpace(fallback) ? L.Get("UnknownValue") : fallback,
     };
+
+    private static string? StorageHealthText(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "normal" or "healthy" or "good" => L.Get("NasDetailsStorageSmartNormal"),
+            "warning" or "warn" => L.Get("NasDetailsStorageSmartWarning"),
+            "error" or "failed" or "failing" => L.Get("NasDetailsStorageSmartError"),
+            _ => null,
+        };
+    }
+
+    private static string FormatProcessor(int? cores, int? clockMhz) =>
+        (cores, clockMhz) switch
+        {
+            (int coreCount, int clock) => L.Format("NasDetailsProcessorCoresClock", coreCount, clock),
+            (int coreCount, null) => L.Format("NasDetailsProcessorCores", coreCount),
+            (null, int clock) => L.Format("NasDetailsProcessorClock", clock),
+            _ => L.Get("UnknownValue"),
+        };
+
+    private static string FormatDuration(long totalSeconds)
+    {
+        var safeSeconds = Math.Max(0, totalSeconds);
+        var totalHours = safeSeconds / 3600;
+        var minutes = (safeSeconds / 60) % 60;
+        return totalHours >= 24
+            ? L.Format("NasDetailsDurationDaysHours", totalHours / 24, totalHours % 24)
+            : L.Format("NasDetailsDurationHoursMinutes", totalHours, minutes);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] unitKeys =
+        [
+            "NasDetailsByteUnitB",
+            "NasDetailsByteUnitKB",
+            "NasDetailsByteUnitMB",
+            "NasDetailsByteUnitGB",
+            "NasDetailsByteUnitTB",
+        ];
+        var scaled = (double)Math.Max(0, bytes);
+        var unit = 0;
+        while (scaled >= 1024 && unit < unitKeys.Length - 1)
+        {
+            scaled /= 1024;
+            unit++;
+        }
+        var format = unit == 0 ? "N0" : scaled >= 10 ? "N1" : "N2";
+        return L.Format(
+            "NasDetailsByteValue",
+            scaled.ToString(format, CultureInfo.CurrentCulture),
+            L.Get(unitKeys[unit]));
+    }
+
+    private static string? JoinDetails(params string?[] values)
+    {
+        var safe = values.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+        return safe.Length switch
+        {
+            0 => null,
+            1 => safe[0],
+            _ => string.Join(L.Get("NasDetailsValueSeparator"), safe),
+        };
+    }
 
     private void RestoreProfile(NasDetailsProfileState profile)
     {

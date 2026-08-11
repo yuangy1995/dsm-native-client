@@ -205,9 +205,15 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(method);
         ArgumentException.ThrowIfNullOrWhiteSpace(capability.Name);
-        if (method is not ("get" or "list" or "list_share"))
+        if (method is not ("get" or "list" or "list_share" or "info" or "load_info"))
         {
             throw new ArgumentException("The fixed-version read method is not allowed.", nameof(method));
+        }
+        if (method is "info" or "load_info" && parameters is { Count: > 0 })
+        {
+            throw new ArgumentException(
+                "The fixed-version overview method does not accept caller parameters.",
+                nameof(parameters));
         }
         ArgumentOutOfRangeException.ThrowIfLessThan(requiredVersion, 1);
         if (session.ProfileId != profile.Id)

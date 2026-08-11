@@ -325,7 +325,7 @@ Container Manager：
 
 1. **ACT-01 统一活动中心首片已合入并通过云端门禁**：正式提交 `2491212` 已把 Download Station 已加载任务快照投影到同一 Activity 入口，保留 App 传输与 NAS 下载任务的来源差异和控制边界；GitHub Windows Build run `31360092210` 已通过 889/889 项 xUnit，并完成 WinUI x64 与 ARM64 构建。Narrator、真实设备和真实 NAS 待用户验证；Activity 主动轮询、系统通知、托盘联动和后台常驻继续后置。
 2. **CHAT-03 单附件**：Windows 已完成上传、缩略图和下载 typed 结果契约，以及选择、进度、预览与保存的 WinUI 闭环；GitHub .NET/WinUI 门禁已通过，下一步仅保留真实 Chat Server、系统选择器和辅助功能验收。前台实时继续后置。
-3. **NAS-02/NAS-04 有界只读详情已完成当前 Windows 切片**：专用 `NasDetailsPage` 与 typed Repository 已把扁平 NAS 摘要拆为套件、计划任务、日志和当前连接四区，具备分区独立失败、不可用、空内容、50 项截断和隐私字段白名单；GitHub Windows Build 已通过 933/933 项 xUnit，WinUI x64/ARM64 为 0 警告、0 错误。真实 NAS、Narrator、键盘、高对比和窗口缩放继续后置验收；断开连接、套件生命周期、任务执行和设置写仍关闭。
+3. **NAS-01/NAS-02/NAS-04 有界只读详情已扩展为六区**：专用 `NasDetailsPage` 与 typed Repository 现提供系统概览、存储健康、套件、计划任务、日志和当前连接；新增系统区固定使用已登记内部只读 `SYNO.Core.System` v3 `info`，存储区固定使用 `SYNO.Storage.CGI.Storage` v1 `load_info`，两个方法只允许无业务参数调用。系统与存储在 Infrastructure 边界立即窄化为隐私白名单，主机名、原始设备/卷/池标识、路径、序列号、位置、厂商/硬盘型号和固件不进入领域结果或 UI；六区独立表达失败、不可用、空内容和正常状态，存储合计最多 50 项并提示截断。本机已通过聚焦 52/52、Release xUnit 1014/1014、本地化与 XML 解析；功能分支 GitHub Windows Build run `31476657572` 已通过 1014/1014 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31476657570` 已通过。真实 NAS、Narrator、键盘、高对比和窗口缩放继续后置验收；性能轮询、更新检查、SMART 操作、连接断开、套件生命周期、任务执行和设置写仍关闭。
 4. Download RSS、文件优先级、BT 协议高级设置以及 Container/VMM 高风险写不进入这一波；没有公开或已记录契约的能力继续关闭。
 
 ### W5-A：页面级 Windows 体验收口

@@ -85,9 +85,11 @@
                 <ListView
                     x:Uid="NasDetailsSectionList"
                     x:Name="SectionList"
-                    MaxHeight="72"
                     HorizontalAlignment="Left"
                     ItemsSource="{Binding Sections}"
+                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                    ScrollViewer.HorizontalScrollMode="Enabled"
+                    ScrollViewer.VerticalScrollMode="Disabled"
                     SelectionChanged="SectionList_SelectionChanged"
                     SelectionMode="Single">
                     <ListView.ItemsPanel>
@@ -148,7 +150,6 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="36" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon
                                         VerticalAlignment="Center"
@@ -166,13 +167,11 @@
                                             Text="{x:Bind Detail}"
                                             TextTrimming="CharacterEllipsis"
                                             TextWrapping="Wrap" />
+                                        <TextBlock
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            Text="{x:Bind Status}"
+                                            TextWrapping="Wrap" />
                                     </StackPanel>
-                                    <TextBlock
-                                        Grid.Column="2"
-                                        VerticalAlignment="Center"
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Text="{x:Bind Status}"
-                                        TextWrapping="Wrap" />
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>

@@ -17,6 +17,14 @@ public sealed partial class DsmRepository
         get
         {
             var features = new HashSet<NasDetailsReadFeature>();
+            if (Supports("SYNO.Core.System"))
+            {
+                features.Add(NasDetailsReadFeature.SystemOverview);
+            }
+            if (Supports("SYNO.Storage.CGI.Storage"))
+            {
+                features.Add(NasDetailsReadFeature.StorageHealth);
+            }
             if (Supports("SYNO.Core.Package"))
             {
                 features.Add(NasDetailsReadFeature.Packages);
@@ -47,10 +55,136 @@ public sealed partial class DsmRepository
         cancellationToken.ThrowIfCancellationRequested();
         return new NasDetailsSnapshot(
             _profile.Id,
+            await LoadSystemOverviewSectionAsync(cancellationToken).ConfigureAwait(false),
+            await LoadStorageHealthSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadPackagesSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadScheduledTasksSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadLogsSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadConnectionsSectionAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    private async Task<NasDetailsSection<NasSystemHealthSummary>> LoadSystemOverviewSectionAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!Supports("SYNO.Core.System"))
+        {
+            return Unavailable<NasSystemHealthSummary>("nas-details.system.unavailable");
+        }
+        try
+        {
+            var data = await _api.CallReadJsonObjectAsync(
+                _profile,
+                _session,
+                Required("SYNO.Core.System"),
+                3,
+                "info",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            var rawMemory = data.Long("ram_size") ?? data.Long("memory_size");
+            var item = new NasSystemHealthSummary(
+                RequiredDisplayString(data, "model"),
+                RequiredDisplayString(data, "firmware_ver")
+                    ?? RequiredDisplayString(data, "version"),
+                ParseUptimeSeconds(data.String("up_time") ?? data.String("uptime")),
+                RequiredDisplayString(data, "cpu_series")
+                    ?? RequiredDisplayString(data, "cpu_family")
+                    ?? RequiredDisplayString(data, "cpu_model"),
+                data.Int("cpu_cores"),
+                data.Int("cpu_clock_speed"),
+                NormalizeMemoryBytes(rawMemory),
+                JsonNumber(data, "sys_temp"),
+                data.Bool("temperature_warning")
+                    ?? data.Bool("sys_tempwarn")
+                    ?? data.Bool("systempwarn")
+                    ?? false);
+            return Available<NasSystemHealthSummary>([item]);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return Failed<NasSystemHealthSummary>("nas-details.system.failed");
+        }
+    }
+
+    private async Task<NasDetailsSection<NasStorageHealthSummary>> LoadStorageHealthSectionAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!Supports("SYNO.Storage.CGI.Storage"))
+        {
+            return Unavailable<NasStorageHealthSummary>("nas-details.storage.unavailable");
+        }
+        try
+        {
+            var data = await _api.CallReadJsonObjectAsync(
+                _profile,
+                _session,
+                Required("SYNO.Storage.CGI.Storage"),
+                1,
+                "load_info",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            var items = ParseStorageItems(data)
+                .Take(NasDetailsPageLimit + 1)
+                .ToArray();
+            return Available(items);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return Failed<NasStorageHealthSummary>("nas-details.storage.failed");
+        }
+    }
+
+    private static IEnumerable<NasStorageHealthSummary> ParseStorageItems(JsonObject data)
+    {
+        var pools = data.Array("storagePools").OfType<JsonObject>();
+        var volumes = data.Array("volumes").OfType<JsonObject>();
+        var drives = data.Array("disks").OfType<JsonObject>();
+        return pools.Select((item, index) =>
+            StorageItem(item, NasStorageItemKind.Pool, index + 1))
+            .Concat(volumes.Select((item, index) =>
+                StorageItem(item, NasStorageItemKind.Volume, index + 1)))
+            .Concat(drives.Select((item, index) =>
+                StorageItem(item, NasStorageItemKind.Drive, index + 1)));
+    }
+
+    private static NasStorageHealthSummary StorageItem(
+        JsonObject item,
+        NasStorageItemKind kind,
+        int ordinal)
+    {
+        var size = item.Object("size");
+        var status = RequiredDisplayString(item, "summary_status")
+            ?? RequiredDisplayString(item, "summary_status_key")
+            ?? RequiredDisplayString(item, "drive_status_key")
+            ?? RequiredDisplayString(item, "space_status")
+            ?? RequiredDisplayString(item, "overview_status")
+            ?? RequiredDisplayString(item, "status");
+        return new NasStorageHealthSummary(
+            $"{kind.ToString().ToLowerInvariant()}-{ordinal}",
+            kind,
+            ordinal,
+            status,
+            ParseState(status),
+            Nonnegative(size?.Long("total") ?? item.Long("size_total")),
+            Nonnegative(size?.Long("used")),
+            kind == NasStorageItemKind.Volume
+                ? RequiredDisplayString(item, "fs_type")
+                : null,
+            kind == NasStorageItemKind.Pool
+                ? RequiredDisplayString(item, "raidType")
+                    ?? RequiredDisplayString(item, "device_type")
+                : null,
+            kind == NasStorageItemKind.Drive
+                ? RequiredDisplayString(item, "smart_status")
+                : null,
+            kind == NasStorageItemKind.Drive ? JsonNumber(item, "temp") : null,
+            kind == NasStorageItemKind.Drive && (item.Bool("isSsd") ?? false),
+            kind == NasStorageItemKind.Volume && (item.Bool("is_encrypted") ?? false));
     }
 
     private async Task<NasDetailsSection<NasPackageSummary>> LoadPackagesSectionAsync(
@@ -296,5 +430,57 @@ public sealed partial class DsmRepository
     {
         var value = item.String(key);
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static long? ParseUptimeSeconds(string? value)
+    {
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds))
+        {
+            return Nonnegative(seconds);
+        }
+        var parts = value?.Split(':');
+        if (parts is not { Length: 3 } ||
+            !long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours) ||
+            !long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes) ||
+            !long.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var remainingSeconds) ||
+            hours < 0 || minutes is < 0 or > 59 || remainingSeconds is < 0 or > 59)
+        {
+            return null;
+        }
+        return hours <= (long.MaxValue - (minutes * 60) - remainingSeconds) / 3600
+            ? (hours * 3600) + (minutes * 60) + remainingSeconds
+            : null;
+    }
+
+    private static long? NormalizeMemoryBytes(long? value)
+    {
+        if (value is null || value < 0)
+        {
+            return null;
+        }
+        return value < 1_000_000 && value <= long.MaxValue / (1024 * 1024)
+            ? value * 1024 * 1024
+            : value;
+    }
+
+    private static long? Nonnegative(long? value) => value >= 0 ? value : null;
+
+    private static double? JsonNumber(JsonObject item, string key)
+    {
+        if (item[key] is not JsonValue node)
+        {
+            return null;
+        }
+        if (node.TryGetValue<double>(out var value) && double.IsFinite(value))
+        {
+            return value;
+        }
+        return double.TryParse(
+            node.ToString().Trim('"'),
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out value) && double.IsFinite(value)
+                ? value
+                : null;
     }
 }

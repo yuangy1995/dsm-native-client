@@ -24,6 +24,12 @@ public sealed class NasDetailsRepositoryContractTests
     public async Task LoadDetailsUsesFixedReadVersionsAndReturnsSafeProjection()
     {
         var api = new FakeApiClient();
+        api.Responses["SYNO.Core.System"] = Json("""
+            {"model":"DS-synthetic","firmware_ver":"7.2","up_time":"25:02:03","cpu_series":"Synthetic CPU","cpu_cores":"4","cpu_clock_speed":2400,"ram_size":4096,"sys_temp":42.5,"hostname":"private-host","serial":"system-secret"}
+            """);
+        api.Responses["SYNO.Storage.CGI.Storage"] = Json("""
+            {"storagePools":[{"id":"private-pool-id","raidType":"raid1","summary_status":"normal","size":{"used":100,"total":200},"disks":["private-device"]}],"volumes":[{"uuid":"private-volume-id","vol_path":"/private/path","fs_type":"btrfs","is_encrypted":true,"status":"normal","size":{"used":50,"total":100}}],"disks":[{"device":"private-device","serial":"drive-secret","vendor":"private-vendor","model":"private-model","size_total":400,"smart_status":"normal","temp":37,"isSsd":true,"status":"normal"}]}
+            """);
         api.Responses["SYNO.Core.Package"] = Json("""
             {"packages":[{"id":"pkg-drive","name":"Drive","version":"3.0","status":"running","description":"hidden"}]}
             """);
@@ -41,6 +47,21 @@ public sealed class NasDetailsRepositoryContractTests
         var snapshot = await repository.LoadDetailsAsync();
 
         Assert.Equal(ProfileId, snapshot.ProfileId);
+        var system = Assert.Single(snapshot.SystemOverview.Items);
+        Assert.Equal("DS-synthetic", system.Model);
+        Assert.Equal(90_123, system.UptimeSeconds);
+        Assert.Equal(4L * 1024 * 1024 * 1024, system.MemoryBytes);
+        var storage = snapshot.StorageHealth.Items;
+        Assert.Equal(3, storage.Count);
+        Assert.Equal(new[] { "pool-1", "volume-1", "drive-1" }, storage.Select(item => item.Id));
+        var safeProjection = snapshot.ToString();
+        Assert.DoesNotContain("private-host", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("system-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private-device", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private-path", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("drive-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private-vendor", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private-model", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Drive", Assert.Single(snapshot.Packages.Items).Name);
         Assert.Equal("Backup", Assert.Single(snapshot.ScheduledTasks.Items).Name);
         var log = Assert.Single(snapshot.Logs.Items);
@@ -54,6 +75,8 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal(
             new[]
             {
+                "SYNO.Core.System:3:info",
+                "SYNO.Storage.CGI.Storage:1:load_info",
                 "SYNO.Core.Package:2:list",
                 "SYNO.Core.TaskScheduler:3:list",
                 "SYNO.LogCenter.History:1:list",
@@ -68,12 +91,15 @@ public sealed class NasDetailsRepositoryContractTests
         var api = new FakeApiClient();
         api.Responses["SYNO.Core.Package"] = Json("""{"packages":[{"id":"pkg","name":"Drive","status":"running"}]}""");
         api.Errors["SYNO.Core.TaskScheduler"] = new DsmException("failed", "retry");
+        api.Errors["SYNO.Storage.CGI.Storage"] = new DsmException("failed", "retry");
         api.Responses["SYNO.LogCenter.History"] = Json("""{"logs":[]}""");
         api.Responses["SYNO.Core.CurrentConnection"] = Json("""{"connections":[]}""");
         var repository = Repository(api);
 
         var snapshot = await repository.LoadDetailsAsync();
 
+        Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemOverview.Status);
+        Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.StorageHealth.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Packages.Status);
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.ScheduledTasks.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Logs.Status);
@@ -99,14 +125,41 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal("pkg-49", snapshot.Packages.Items[^1].Id);
     }
 
-    private static DsmRepository Repository(FakeApiClient api) =>
-        new(Profile, Session, api, new Dictionary<string, ApiCapability>(StringComparer.Ordinal)
+    [Fact]
+    public async Task StorageSectionUsesOneCombinedFiftyItemLimit()
+    {
+        var api = new FakeApiClient();
+        var disks = string.Join(",", Enumerable.Range(0, 51)
+            .Select(index => $$"""{"device":"private-{{index}}","status":"normal","size_total":100}"""));
+        api.Responses["SYNO.Storage.CGI.Storage"] = Json($"{{\"storagePools\":[],\"volumes\":[],\"disks\":[{disks}]}}");
+        var repository = Repository(api);
+
+        var snapshot = await repository.LoadDetailsAsync();
+
+        Assert.True(snapshot.StorageHealth.IsTruncated);
+        Assert.Equal(50, snapshot.StorageHealth.Items.Count);
+        Assert.Equal("drive-50", snapshot.StorageHealth.Items[^1].Id);
+        Assert.DoesNotContain("private-", snapshot.StorageHealth.ToString(), StringComparison.Ordinal);
+    }
+
+    private static DsmRepository Repository(FakeApiClient api)
+    {
+        api.Responses.TryAdd("SYNO.Core.System", Json("""{"model":"DS-synthetic"}"""));
+        api.Responses.TryAdd("SYNO.Storage.CGI.Storage", Json("""{"storagePools":[],"volumes":[],"disks":[]}"""));
+        api.Responses.TryAdd("SYNO.Core.Package", Json("""{"packages":[]}"""));
+        api.Responses.TryAdd("SYNO.Core.TaskScheduler", Json("""{"tasks":[]}"""));
+        api.Responses.TryAdd("SYNO.LogCenter.History", Json("""{"logs":[]}"""));
+        api.Responses.TryAdd("SYNO.Core.CurrentConnection", Json("""{"connections":[]}"""));
+        return new(Profile, Session, api, new Dictionary<string, ApiCapability>(StringComparer.Ordinal)
         {
+            ["SYNO.Core.System"] = Capability("SYNO.Core.System", max: 3),
+            ["SYNO.Storage.CGI.Storage"] = Capability("SYNO.Storage.CGI.Storage", max: 1),
             ["SYNO.Core.Package"] = Capability("SYNO.Core.Package"),
             ["SYNO.Core.TaskScheduler"] = Capability("SYNO.Core.TaskScheduler", max: 4),
             ["SYNO.LogCenter.History"] = Capability("SYNO.LogCenter.History"),
             ["SYNO.Core.CurrentConnection"] = Capability("SYNO.Core.CurrentConnection"),
         });
+    }
 
     private static ApiCapability Capability(string name, int max = 2) =>
         new(name, "entry.cgi", 1, max, "FORM");

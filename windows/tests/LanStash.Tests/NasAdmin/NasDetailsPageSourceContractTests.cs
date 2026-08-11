@@ -17,6 +17,7 @@ public sealed class NasDetailsPageSourceContractTests
         Assert.Contains("x:Name=\"ContentState\"", xaml);
         Assert.Contains("NasDetailsReadOnly", xaml);
         Assert.Contains("Key=\"F5\"", xaml);
+        Assert.Contains("ScrollViewer.HorizontalScrollMode=\"Enabled\"", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
         Assert.True(Count(xaml, "MinHeight=\"44\"") >= 2);
         Assert.Contains("_viewModel.HasRefreshError", source);
@@ -34,6 +35,8 @@ public sealed class NasDetailsPageSourceContractTests
 
         foreach (var allowed in new[]
         {
+            "NasDetailsSectionSystem",
+            "NasDetailsSectionStorage",
             "NasDetailsSectionPackages",
             "NasDetailsSectionTasks",
             "NasDetailsSectionLogs",
@@ -57,6 +60,10 @@ public sealed class NasDetailsPageSourceContractTests
             "source address",
             "device_id",
             "process_id",
+            "serial",
+            "vol_path",
+            "pool_path",
+            "private-device",
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);

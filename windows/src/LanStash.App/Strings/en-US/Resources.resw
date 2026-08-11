@@ -41,7 +41,7 @@
   <data name="CategoryProtection" xml:space="preserve"><value>Protection</value></data>
   <data name="CategorySecurity" xml:space="preserve"><value>Security</value></data>
   <data name="NasDetailsTitle.Text" xml:space="preserve"><value>NAS details</value></data>
-  <data name="NasDetailsDescription.Text" xml:space="preserve"><value>Review packages, scheduled tasks, system logs, and current connections. This page does not change NAS settings.</value></data>
+  <data name="NasDetailsDescription.Text" xml:space="preserve"><value>Review system health, storage, packages, scheduled tasks, logs, and current connections. This page does not change NAS settings.</value></data>
   <data name="NasDetailsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh NAS details</value></data>
   <data name="NasDetailsRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
   <data name="NasDetailsReadOnly.Title" xml:space="preserve"><value>Read-only view</value></data>
@@ -74,6 +74,39 @@
   <data name="NasDetailsConnectionCurrent" xml:space="preserve"><value>Current session</value></data>
   <data name="NasDetailsConnectionActive" xml:space="preserve"><value>Active</value></data>
   <data name="NasDetailsRowAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="NasDetailsSectionSystem" xml:space="preserve"><value>System</value></data>
+  <data name="NasDetailsSectionStorage" xml:space="preserve"><value>Storage</value></data>
+  <data name="NasDetailsSystemDevice" xml:space="preserve"><value>Device</value></data>
+  <data name="NasDetailsSystemVersionValue" xml:space="preserve"><value>DSM {0}</value></data>
+  <data name="NasDetailsSystemUptime" xml:space="preserve"><value>Uptime</value></data>
+  <data name="NasDetailsSystemProcessor" xml:space="preserve"><value>Processor</value></data>
+  <data name="NasDetailsSystemMemory" xml:space="preserve"><value>Memory</value></data>
+  <data name="NasDetailsSystemTemperature" xml:space="preserve"><value>System temperature</value></data>
+  <data name="NasDetailsTemperatureValue" xml:space="preserve"><value>{0} °C</value></data>
+  <data name="NasDetailsTemperatureWarning" xml:space="preserve"><value>Temperature warning</value></data>
+  <data name="NasDetailsProcessorCoresClock" xml:space="preserve"><value>{0} cores, {1} MHz</value></data>
+  <data name="NasDetailsProcessorCores" xml:space="preserve"><value>{0} cores</value></data>
+  <data name="NasDetailsProcessorClock" xml:space="preserve"><value>{0} MHz</value></data>
+  <data name="NasDetailsDurationDaysHours" xml:space="preserve"><value>{0} days, {1} hours</value></data>
+  <data name="NasDetailsDurationHoursMinutes" xml:space="preserve"><value>{0} hours, {1} minutes</value></data>
+  <data name="NasDetailsStoragePoolName" xml:space="preserve"><value>Storage pool {0}</value></data>
+  <data name="NasDetailsStorageVolumeName" xml:space="preserve"><value>Volume {0}</value></data>
+  <data name="NasDetailsStorageDriveName" xml:space="preserve"><value>Drive {0}</value></data>
+  <data name="NasDetailsStorageUsage" xml:space="preserve"><value>{0} used of {1}</value></data>
+  <data name="NasDetailsStorageCapacity" xml:space="preserve"><value>{0} capacity</value></data>
+  <data name="NasDetailsStorageCapacityUnavailable" xml:space="preserve"><value>Capacity unavailable</value></data>
+  <data name="NasDetailsStorageEncrypted" xml:space="preserve"><value>Encrypted</value></data>
+  <data name="NasDetailsStorageSsd" xml:space="preserve"><value>SSD</value></data>
+  <data name="NasDetailsStorageSmartNormal" xml:space="preserve"><value>Drive health normal</value></data>
+  <data name="NasDetailsStorageSmartWarning" xml:space="preserve"><value>Drive health warning</value></data>
+  <data name="NasDetailsStorageSmartError" xml:space="preserve"><value>Drive health error</value></data>
+  <data name="NasDetailsByteValue" xml:space="preserve"><value>{0} {1}</value></data>
+  <data name="NasDetailsByteUnitB" xml:space="preserve"><value>B</value></data>
+  <data name="NasDetailsByteUnitKB" xml:space="preserve"><value>KB</value></data>
+  <data name="NasDetailsByteUnitMB" xml:space="preserve"><value>MB</value></data>
+  <data name="NasDetailsByteUnitGB" xml:space="preserve"><value>GB</value></data>
+  <data name="NasDetailsByteUnitTB" xml:space="preserve"><value>TB</value></data>
+  <data name="NasDetailsValueSeparator" xml:space="preserve"><value> · </value></data>
   <data name="BrandTitle.Text" xml:space="preserve"><value>LanStash</value></data>
   <data name="BrandSubtitle.Text" xml:space="preserve"><value>Manage your NAS</value></data>
   <data name="AddNasButton.Content" xml:space="preserve"><value>Add NAS</value></data>
