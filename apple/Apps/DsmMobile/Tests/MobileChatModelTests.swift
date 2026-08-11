@@ -378,6 +378,185 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(model.state.messagePageState, .content)
     }
 
+    func test成功读取会话后本地清零且旧服务端未读不会反弹() async {
+        let profileID = UUID()
+        let activity = Date(timeIntervalSince1970: 3_000)
+        let conversation = Self.conversation(
+            id: "read",
+            title: "已读会话",
+            lastActivityAt: activity,
+            unreadCount: 3
+        )
+        let message = Self.message(id: "message", conversationID: conversation.id, seconds: 3_000)
+        let repository = ChatRepositoryStub(
+            conversations: [conversation],
+            pages: [
+                .init(conversationID: conversation.id, cursor: nil): .init(
+                    messages: [message], previousCursor: nil, hasMoreBefore: false
+                )
+            ]
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: profileID, repository: repository)
+
+        model.enterConversation(conversation.id)
+        await model.selectConversation(conversation)
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 0)
+
+        await repository.setConversations([conversation])
+        await model.reloadConversations()
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 0)
+    }
+
+    func test读后出现更晚活动会重新显示服务端未读() async {
+        let profileID = UUID()
+        let conversation = Self.conversation(
+            id: "new-activity",
+            title: "有新消息",
+            lastActivityAt: Date(timeIntervalSince1970: 3_000),
+            unreadCount: 2
+        )
+        let repository = ChatRepositoryStub(
+            conversations: [conversation],
+            pages: [
+                .init(conversationID: conversation.id, cursor: nil): .init(
+                    messages: [Self.message(
+                        id: "old-message",
+                        conversationID: conversation.id,
+                        seconds: 3_000
+                    )],
+                    previousCursor: nil,
+                    hasMoreBefore: false
+                )
+            ]
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: profileID, repository: repository)
+        model.enterConversation(conversation.id)
+        await model.selectConversation(conversation)
+
+        let refreshed = Self.conversation(
+            id: conversation.id,
+            title: conversation.title,
+            lastActivityAt: Date(timeIntervalSince1970: 4_000),
+            unreadCount: 1
+        )
+        await repository.setConversations([refreshed])
+        await model.reloadConversations()
+
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 1)
+
+        model.leaveConversation(conversation.id)
+        await repository.setPage(
+            .init(
+                messages: [Self.message(
+                    id: "new-message",
+                    conversationID: conversation.id,
+                    seconds: 4_000
+                )],
+                previousCursor: nil,
+                hasMoreBefore: false
+            ),
+            for: .init(conversationID: conversation.id, cursor: nil)
+        )
+        await model.refreshMessages()
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 1)
+
+        model.enterConversation(conversation.id)
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 0)
+    }
+
+    func test加密会话和消息读取失败都不会本地标记已读() async {
+        let encrypted = Self.conversation(
+            id: "encrypted-unread",
+            title: "加密会话",
+            isEncrypted: true,
+            lastActivityAt: Date(timeIntervalSince1970: 2_000),
+            unreadCount: 4
+        )
+        let failed = Self.conversation(
+            id: "failed-unread",
+            title: "读取失败",
+            lastActivityAt: Date(timeIntervalSince1970: 3_000),
+            unreadCount: 5
+        )
+        let repository = ChatRepositoryStub(
+            conversations: [encrypted, failed],
+            failures: [
+                .init(conversationID: failed.id, cursor: nil): Self.networkError
+            ]
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: UUID(), repository: repository)
+
+        model.enterConversation(encrypted.id)
+        await model.selectConversation(encrypted)
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 4)
+        model.leaveConversation(encrypted.id)
+        model.enterConversation(failed.id)
+        await model.selectConversation(failed)
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 5)
+    }
+
+    func test直接切换Profile不会继承旧详情可见状态() async {
+        let profileA = UUID()
+        let profileB = UUID()
+        let conversationA = Self.conversation(
+            id: "shared-id",
+            title: "配置档 A",
+            lastActivityAt: Date(timeIntervalSince1970: 3_000),
+            unreadCount: 2
+        )
+        let repositoryA = ChatRepositoryStub(
+            conversations: [conversationA],
+            pages: [
+                .init(conversationID: conversationA.id, cursor: nil): .init(
+                    messages: [Self.message(
+                        id: "old-message",
+                        conversationID: conversationA.id,
+                        seconds: 3_000
+                    )],
+                    previousCursor: nil,
+                    hasMoreBefore: false
+                )
+            ]
+        )
+        let repositoryB = ChatRepositoryStub(
+            conversations: [Self.conversation(id: "b", title: "配置档 B")]
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: profileA, repository: repositoryA)
+        model.enterConversation(conversationA.id)
+        await model.selectConversation(conversationA)
+
+        await model.activate(profileID: profileB, repository: repositoryB)
+        await model.activate(profileID: profileA, repository: repositoryA)
+        let newerConversation = Self.conversation(
+            id: conversationA.id,
+            title: conversationA.title,
+            lastActivityAt: Date(timeIntervalSince1970: 4_000),
+            unreadCount: 1
+        )
+        await repositoryA.setConversations([newerConversation])
+        await repositoryA.setPage(
+            .init(
+                messages: [Self.message(
+                    id: "new-message",
+                    conversationID: conversationA.id,
+                    seconds: 4_000
+                )],
+                previousCursor: nil,
+                hasMoreBefore: false
+            ),
+            for: .init(conversationID: conversationA.id, cursor: nil)
+        )
+        await model.reloadConversations()
+        await model.refreshMessages()
+
+        XCTAssertNil(model.state.visibleConversationID)
+        XCTAssertEqual(model.state.selectedConversation?.unreadCount, 1)
+    }
+
     func test群成员按需加载后命中缓存且显式刷新更新内容() async {
         let conversation = Self.conversation(id: "group", title: "家庭")
         let currentUser = ChatUser(
@@ -1439,7 +1618,8 @@ final class MobileChatModelTests: XCTestCase {
         title: String,
         kind: ChatConversationKind = .group,
         isEncrypted: Bool = false,
-        lastActivityAt: Date? = nil
+        lastActivityAt: Date? = nil,
+        unreadCount: Int = 0
     ) -> ChatConversation {
         ChatConversation(
             id: id,
@@ -1447,6 +1627,7 @@ final class MobileChatModelTests: XCTestCase {
             title: title,
             memberIDs: [],
             lastActivityAt: lastActivityAt,
+            unreadCount: unreadCount,
             isEncrypted: isEncrypted
         )
     }

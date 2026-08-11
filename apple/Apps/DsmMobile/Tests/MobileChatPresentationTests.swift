@@ -27,6 +27,8 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("chat.loadMoreMessages()"))
         XCTAssertTrue(source.contains("state.loadMoreMessagesFailed"))
         XCTAssertTrue(source.contains("state.selectedMessages.hasMoreBefore"))
+        XCTAssertTrue(source.contains("chat.enterConversation(conversation.id)"))
+        XCTAssertTrue(source.contains("chat.leaveConversation(conversation.id)"))
         XCTAssertTrue(source.contains("case .unavailable"))
         XCTAssertTrue(source.contains("case .requiresValidation"))
     }

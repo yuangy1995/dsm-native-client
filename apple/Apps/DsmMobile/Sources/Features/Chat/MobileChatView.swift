@@ -320,6 +320,7 @@ private struct MobileChatMessagesView: View {
             }
         }
         .task(id: conversation.id) {
+            chat.enterConversation(conversation.id)
             if chat.state.selectedConversationID != conversation.id {
                 await chat.selectConversation(conversation)
             }

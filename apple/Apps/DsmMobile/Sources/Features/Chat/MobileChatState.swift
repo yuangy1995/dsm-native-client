@@ -12,8 +12,10 @@ struct MobileChatProfileState: Equatable, Sendable {
     var conversations: [ChatConversation] = []
     var visibleConversations: [ChatConversation] = []
     var pinnedConversationIDs: [String] = []
+    var locallyReadThroughActivityByConversationID: [String: Date] = [:]
     var conversationFilter = ""
     var selectedConversationID: String?
+    var visibleConversationID: String?
     var messagesByConversation: [String: MobileChatMessageCache] = [:]
     var membersByConversation: [String: [ChatUser]] = [:]
     var announcementsByConversation: [String: [ChatMessage]] = [:]

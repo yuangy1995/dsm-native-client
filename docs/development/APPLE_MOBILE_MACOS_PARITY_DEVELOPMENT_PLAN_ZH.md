@@ -381,6 +381,8 @@ CHAT-01～02 群公告只读增量已完成源码、本机与云端构建闭环�
 
 CHAT-02 前台实时与轮询降级已形成源码、本机模拟器与云端构建闭环：移动适配器只透传共享 Repository 已有的 `realtimeEvents/startRealtime/stopRealtime`，不解析或持久化 Socket.IO 事件载荷；只有 App 处于 active、已连接且当前显示 Chat 模块时才建立实时通道。`.contentChanged` 在 200 ms 内合并后复用既有会话列表与当前未加密会话消息回读，连接建立前或断开后每 30 秒执行一次单飞轮询；`.connected` 立即停止轮询。离开 Chat、进入后台、切换或删除 profile 会取消事件、合并、轮询和回读任务，等待旧连接停止后才允许重新启动；稳定消息 ID 继续负责结果去重，迟到结果不得写入新 profile 或会话。该切片不刷新成员/公告，不新增 NAS 请求、后台保活、APNs、服务器已读、通知或高级消息写。本机 iPhone 17 Pro iOS 26.5 模拟器 Chat 聚焦 52/52、DsmMobile 全量 423/423、共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing 已通过；GitHub Apple Build `31505887860` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建、macOS 打包与产物上传，Repository Check `31505887864` 已通过。真实 iPhone/iPad 前后台切换、弱网/断线/重连、真实 Chat Server Socket.IO 3/4、VoiceOver、最大动态文字和外接键盘为 `PENDING_USER_VALIDATION`。
 
+CHAT-01 本地已读切片已完成源码与聚焦自动化：`MobileChatProfileState` 按 profile/会话仅在内存保存实际成功读取消息的最大 `sentAt`，`MobileChatMessagesView` 明确登记详情可见生命周期；只有当前未加密会话详情可见且最新页读取成功才清零。会话列表刷新以 `lastActivityAt <= readThrough` 压制旧未读反弹，更晚活动恢复服务端未读；返回 iPhone 列表后即使前台同步成功也不会代替用户清零。读取失败/取消、加密会话、历史分页和缺少可靠时间边界不改变未读；消失会话和 profile 清理会删除基线。本切片不持久化已读、不新增文案、NAS 请求或服务器已读写。本机模型与展示聚焦 56/56、DsmMobile 全量 433/433 通过，GitHub Apple Build run `31533388602` 通过共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、iPhone/iPad 通用构建和 macOS 打包，Repository Check run `31533388647` 已通过；真实 iPhone/iPad、Chat Server 未读字段、VoiceOver、最大动态文字、键盘和分屏为 `PENDING_USER_VALIDATION`。
+
 ### M5-B：单附件与少量消息动作（受限）
 
 - 接入 Photos/Files 单附件选择、上传进度/取消/失败恢复、保存和图片预览。

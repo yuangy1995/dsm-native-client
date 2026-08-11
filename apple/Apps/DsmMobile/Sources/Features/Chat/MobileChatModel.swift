@@ -102,6 +102,9 @@ final class MobileChatModel {
     }
 
     func activate(profileID: UUID?, repository: (any ChatRepository)?) async {
+        if let activeProfileID {
+            profiles[activeProfileID]?.visibleConversationID = nil
+        }
         cancelAllWork()
         guard let profileID else {
             activeProfileID = nil
@@ -130,6 +133,7 @@ final class MobileChatModel {
         foregroundRealtimeRequested = false
         cancelAllWork()
         if let profileID {
+            profiles[profileID]?.visibleConversationID = nil
             repositories[profileID] = nil
         }
         activeProfileID = nil
@@ -570,7 +574,29 @@ final class MobileChatModel {
     }
 
     func leaveConversation(_ conversationID: String) {
+        updateActive { profile in
+            if profile.visibleConversationID == conversationID {
+                profile.visibleConversationID = nil
+            }
+        }
         attachmentModel.leaveConversation(conversationID)
+    }
+
+    func enterConversation(_ conversationID: String) {
+        updateActive { profile in
+            guard let conversation = profile.conversations.first(where: { $0.id == conversationID }) else {
+                return
+            }
+            profile.visibleConversationID = conversationID
+            if !conversation.isEncrypted,
+               let cached = profile.messagesByConversation[conversationID] {
+                Self.markConversationReadLocally(
+                    in: &profile,
+                    conversationID: conversationID,
+                    through: cached.messages.map(\.sentAt).max()
+                )
+            }
+        }
     }
 
     func loadAttachmentThumbnail(for message: ChatMessage) {
@@ -966,11 +992,18 @@ final class MobileChatModel {
         var invalidatesMessageLane = false
         var pinnedConversationIDsToSave: [String]?
         updateActive { profile in
+            let locallyAdjusted = conversations.map {
+                Self.applyingLocalReadState($0, profile: profile)
+            }
             profile.conversations = Self.normalizedConversations(
-                conversations,
+                locallyAdjusted,
                 pinnedConversationIDs: profile.pinnedConversationIDs
             )
             let availableConversationIDs = Set(profile.conversations.map(\.id))
+            profile.locallyReadThroughActivityByConversationID =
+                profile.locallyReadThroughActivityByConversationID.filter {
+                    availableConversationIDs.contains($0.key)
+                }
             let prunedPinnedConversationIDs = profile.pinnedConversationIDs.filter {
                 availableConversationIDs.contains($0)
             }
@@ -988,6 +1021,9 @@ final class MobileChatModel {
             if let selectedID = profile.selectedConversationID,
                !profile.conversations.contains(where: { $0.id == selectedID }) {
                 profile.selectedConversationID = nil
+                if profile.visibleConversationID == selectedID {
+                    profile.visibleConversationID = nil
+                }
                 profile.messagePageState = .empty
                 invalidatesMessageLane = true
             } else if profile.selectedConversation?.isEncrypted == true {
@@ -1016,6 +1052,7 @@ final class MobileChatModel {
             profile.conversations = []
             profile.visibleConversations = []
             profile.selectedConversationID = nil
+            profile.visibleConversationID = nil
             profile.messagesByConversation = [:]
             profile.membersByConversation = [:]
             profile.announcementsByConversation = [:]
@@ -1058,6 +1095,13 @@ final class MobileChatModel {
             profile.isLoadingMoreMessages = false
             profile.loadMoreMessagesFailed = false
             profile.messageErrorCategory = nil
+            if !appending, profile.visibleConversationID == conversationID {
+                Self.markConversationReadLocally(
+                    in: &profile,
+                    conversationID: conversationID,
+                    through: messages.map(\.sentAt).max()
+                )
+            }
             if !appending {
                 profile.sendReviewBlockedTextsByConversation[conversationID] = nil
                 profile.sendErrorCategory = nil
@@ -1428,6 +1472,56 @@ final class MobileChatModel {
             result.append(trimmed)
         }
         return result
+    }
+
+    private static func markConversationReadLocally(
+        in profile: inout MobileChatProfileState,
+        conversationID: String,
+        through activity: Date?
+    ) {
+        guard let activity else { return }
+        let existing = profile.locallyReadThroughActivityByConversationID[conversationID]
+            ?? .distantPast
+        profile.locallyReadThroughActivityByConversationID[conversationID] = max(existing, activity)
+        guard let index = profile.conversations.firstIndex(where: { $0.id == conversationID }) else {
+            return
+        }
+        let conversation = profile.conversations[index]
+        if let conversationActivity = conversation.lastActivityAt,
+           conversationActivity > activity {
+            return
+        }
+        profile.conversations[index] = Self.conversation(conversation, unreadCount: 0)
+        applyConversationFilter(to: &profile)
+    }
+
+    private static func applyingLocalReadState(
+        _ conversation: ChatConversation,
+        profile: MobileChatProfileState
+    ) -> ChatConversation {
+        guard let readThrough = profile.locallyReadThroughActivityByConversationID[conversation.id],
+              let activity = conversation.lastActivityAt,
+              activity <= readThrough else {
+            return conversation
+        }
+        return self.conversation(conversation, unreadCount: 0)
+    }
+
+    private static func conversation(
+        _ value: ChatConversation,
+        unreadCount: Int
+    ) -> ChatConversation {
+        ChatConversation(
+            id: value.id,
+            kind: value.kind,
+            title: value.title,
+            memberIDs: value.memberIDs,
+            memberCount: value.memberCount,
+            lastMessageSummary: value.lastMessageSummary,
+            lastActivityAt: value.lastActivityAt,
+            unreadCount: unreadCount,
+            isEncrypted: value.isEncrypted
+        )
     }
 
     static func normalizedMessages(_ messages: [ChatMessage]) -> [ChatMessage] {
