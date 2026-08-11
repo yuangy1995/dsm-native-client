@@ -139,6 +139,23 @@ public sealed class PhotoTimelinePresentationTests
     }
 
     [Fact]
+    public void TimelineBatchCopyUsesTheSharedBoundedSelectionSession()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml"));
+        var source = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("x:Uid=\"FileCopyMoveCopyMultiple\"", xaml);
+        Assert.Contains("x:Uid=\"FileCopyMoveCopySelected\"", xaml);
+        Assert.Contains("Click=\"CopyMultiple_Click\"", xaml);
+        Assert.Contains("Click=\"CopySelectedItems_Click\"", xaml);
+        Assert.Contains("Func<PhotoItem, bool>? _canCopy", source);
+        Assert.Contains("Func<IReadOnlyList<PhotoItem>, Task>? _copyMultiple", source);
+        Assert.Contains("EnterBatchSelection(PhotoBatchSelectionOperation.Copy)", source);
+        Assert.Contains("PhotoCopyBatchSelectionInvalid", source);
+    }
+
+    [Fact]
     public void TimelineMoveCommandUsesSharedPageCallbackAndNativeScrollableToolbar()
     {
         var root = RepositoryRoot();

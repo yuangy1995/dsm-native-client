@@ -74,6 +74,20 @@ public sealed partial class PhotosPage
         ToRecycleFileItem(item) is not null &&
         ParentPath(item.Path) is not null;
 
+    private bool CanCopyPhotoCore(PhotoItem item) =>
+        !_disposed &&
+        _photoCopyMoveRepository is { } repository &&
+        _photoCopyMoveFolderSource is { } folders &&
+        repository.ProfileId == _dataSource.ProfileId &&
+        folders.ProfileId == _dataSource.ProfileId &&
+        repository.Availability.CanCopy &&
+        _viewModel.ActiveProfileId == _dataSource.ProfileId &&
+        _viewModel.SelectedSpace is { } space &&
+        PhotoTimelineViewModel.ContainsCanonicalPath(space.RootPath, item.Path) &&
+        !HasRecyclePathSegment(item.Path) &&
+        ToRecycleFileItem(item) is not null &&
+        ParentPath(item.Path) is not null;
+
     private Task MovePhotoAsync(PhotoItem item) => ShowPhotoMoveAsync(item);
 
     private async Task ShowPhotoMoveAsync(PhotoItem item)

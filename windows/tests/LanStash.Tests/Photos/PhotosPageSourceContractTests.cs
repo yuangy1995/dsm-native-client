@@ -317,16 +317,20 @@ public sealed class PhotosPageSourceContractTests
 
         Assert.Contains("x:Name=\"PhotoMoveMultipleButton\"", xaml);
         Assert.Contains("x:Name=\"PhotoMoveSelectedButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoCopyMultipleButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoCopySelectedButton\"", xaml);
         Assert.Contains("PhotoBatchSelectionOperation", selection);
+        Assert.Contains("PhotoBatchSelectionOperation.Copy", selection);
         Assert.Contains("PhotoBatchSelectionOperation.Move", selection);
         Assert.Contains("PhotoBatchSelectionOperation.Recycle", selection);
         Assert.Contains("PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple", selection);
         Assert.Contains("FileCopyMoveBatchViewModel.MaximumItemCount", selection);
 
         Assert.Contains("new FileCopyMoveBatchViewModel(", move);
+        Assert.Contains("FileCopyMoveOperation.Copy", move);
         Assert.Contains("FileCopyMoveBatchSourceScope.CurrentFolder", move);
         Assert.Contains("FileCopyMoveBatchSourceScope.DescendantsOfRoot", move);
-        Assert.Contains("PhotoBatchMoveSourceIsCurrent(", move);
+        Assert.Contains("PhotoBatchCopyMoveSourceIsCurrent(", move);
         Assert.Contains("_photoBatchCopyMoveDialog is not null", move);
         Assert.Contains("_photoBatchCopyMoveModel is not null", move);
         Assert.Contains("await ClosePhotoViewerAsync(restoreBrowserFocus: false);", move);
@@ -341,6 +345,8 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("if (IsSelectingPhotoBatch", page);
         Assert.Contains("x:Name=\"MoveMultipleButton\"", timelineXaml);
         Assert.Contains("x:Name=\"MoveSelectedItemsButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"CopyMultipleButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"CopySelectedItemsButton\"", timelineXaml);
         Assert.Contains("HasSelectedBatchItems", timeline);
         Assert.Contains("_batchSelectionOperation", timeline);
         Assert.Contains("FileCopyMoveBatchViewModel.MaximumItemCount", timeline);

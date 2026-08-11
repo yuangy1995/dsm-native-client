@@ -25,7 +25,9 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private Func<PhotoItem, Task>? _save;
     private Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? _open;
     private Func<PhotoItem, bool>? _canMove;
+    private Func<PhotoItem, bool>? _canCopy;
     private Func<PhotoItem, Task>? _move;
+    private Func<IReadOnlyList<PhotoItem>, Task>? _copyMultiple;
     private Func<IReadOnlyList<PhotoItem>, Task>? _moveMultiple;
     private Func<PhotoItem, bool>? _canMoveToRecycle;
     private Func<PhotoItem, Task>? _moveToRecycle;
@@ -52,8 +54,10 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         PhotoThumbnailScheduler thumbnails,
         Func<PhotoItem, Task> save,
         Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? open = null,
+        Func<PhotoItem, bool>? canCopy = null,
         Func<PhotoItem, bool>? canMove = null,
         Func<PhotoItem, Task>? move = null,
+        Func<IReadOnlyList<PhotoItem>, Task>? copyMultiple = null,
         Func<IReadOnlyList<PhotoItem>, Task>? moveMultiple = null,
         Func<PhotoItem, bool>? canMoveToRecycle = null,
         Func<PhotoItem, Task>? moveToRecycle = null,
@@ -65,8 +69,10 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         _thumbnails = thumbnails;
         _save = save;
         _open = open;
+        _canCopy = canCopy;
         _canMove = canMove;
         _move = move;
+        _copyMultiple = copyMultiple;
         _moveMultiple = moveMultiple;
         _canMoveToRecycle = canMoveToRecycle;
         _moveToRecycle = moveToRecycle;
@@ -277,6 +283,18 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     { await RestoreSelectedAsync(); }
     private async void MoveToRecycle_Click(object sender, RoutedEventArgs e)
     { await MoveSelectedToRecycleAsync(); }
+    private void CopyMultiple_Click(object sender, RoutedEventArgs e) =>
+        EnterBatchSelection(PhotoBatchSelectionOperation.Copy);
+    private async void CopySelectedItems_Click(object sender, RoutedEventArgs e)
+    {
+        var items = SelectedBatchItems();
+        if (_batchSelectionOperation == PhotoBatchSelectionOperation.Copy &&
+            items.Count is > 0 and <= FileCopyMoveBatchViewModel.MaximumItemCount &&
+            _copyMultiple is not null)
+        {
+            await _copyMultiple(items);
+        }
+    }
     private void MoveMultiple_Click(object sender, RoutedEventArgs e) =>
         EnterBatchSelection(PhotoBatchSelectionOperation.Move);
     private async void MoveSelectedItems_Click(object sender, RoutedEventArgs e)
@@ -390,6 +408,9 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         MoveToRecycleButton.Visibility = CanMoveSelectedToRecycle
             ? Visibility.Visible
             : Visibility.Collapsed;
+        var hasCopyBatchCandidates = _viewModel.Phase != PhotoTimelinePhase.Scanning &&
+            _viewModel.Groups.SelectMany(group => group.Items)
+                .Any(entry => _canCopy?.Invoke(entry.Item) == true);
         var hasMoveBatchCandidates = _viewModel.Phase != PhotoTimelinePhase.Scanning &&
             _viewModel.Groups.SelectMany(group => group.Items)
                 .Any(entry => _canMove?.Invoke(entry.Item) == true);
@@ -398,8 +419,18 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
                 .Any(entry => _canMoveToRecycle?.Invoke(entry.Item) == true);
         var localization = LocalizationService.Current;
         var isSelectingMove = _batchSelectionOperation == PhotoBatchSelectionOperation.Move;
+        var isSelectingCopy = _batchSelectionOperation == PhotoBatchSelectionOperation.Copy;
         var isSelectingRecycle = _batchSelectionOperation == PhotoBatchSelectionOperation.Recycle;
         var isSelectingBatch = _batchSelectionOperation != PhotoBatchSelectionOperation.None;
+        CopyMultipleButton.Visibility = !isSelectingBatch && hasCopyBatchCandidates
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CopyMultipleButton.IsEnabled = !isSelectingBatch && hasCopyBatchCandidates;
+        CopySelectedItemsButton.Visibility = isSelectingCopy
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CopySelectedItemsButton.IsEnabled = TimelineGrid.SelectedItems.Count is > 0 and <=
+            FileCopyMoveBatchViewModel.MaximumItemCount;
         MoveMultipleButton.Visibility = !isSelectingBatch && hasMoveBatchCandidates
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -515,25 +546,29 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         PhotoItem item,
         PhotoBatchSelectionOperation operation) => operation switch
         {
+            PhotoBatchSelectionOperation.Copy => _canCopy?.Invoke(item) == true,
             PhotoBatchSelectionOperation.Move => _canMove?.Invoke(item) == true,
             PhotoBatchSelectionOperation.Recycle => _canMoveToRecycle?.Invoke(item) == true,
             _ => false,
         };
 
     private static string SelectionCountResource(PhotoBatchSelectionOperation operation) =>
-        operation == PhotoBatchSelectionOperation.Move
+        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
             ? "FileCopyMoveBatchSelectionCount"
             : "FileRecycleBatchSelectionCount";
 
     private static string SelectionLimitResource(PhotoBatchSelectionOperation operation) =>
-        operation == PhotoBatchSelectionOperation.Move
+        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
             ? "FileCopyMoveBatchSelectionLimit"
             : "FileRecycleBatchSelectionLimit";
 
     private static string SelectionInvalidResource(PhotoBatchSelectionOperation operation) =>
-        operation == PhotoBatchSelectionOperation.Move
-            ? "PhotoMoveBatchSelectionInvalid"
-            : "PhotoRecycleBatchSelectionInvalid";
+        operation switch
+        {
+            PhotoBatchSelectionOperation.Copy => "PhotoCopyBatchSelectionInvalid",
+            PhotoBatchSelectionOperation.Move => "PhotoMoveBatchSelectionInvalid",
+            _ => "PhotoRecycleBatchSelectionInvalid",
+        };
 
     private static bool CanOpen(PhotoItem item) =>
         item.Kind is PhotoItemKind.Image or PhotoItemKind.Video &&

@@ -13,6 +13,18 @@ public sealed partial class PhotosPage
     private ContentDialog? _photoBatchCopyMoveDialog;
     private bool _isClosingPhotoBatchCopyMove;
 
+    private async void CopyMultiplePhotos_Click(object sender, RoutedEventArgs e)
+    {
+        await ClosePhotoViewerAsync();
+        EnterPhotoBatchSelection(PhotoBatchSelectionOperation.Copy);
+    }
+
+    private async void CopySelectedPhotos_Click(object sender, RoutedEventArgs e) =>
+        await ShowPhotoBatchCopyMoveAsync(
+            SelectedFolderPhotos(),
+            timelineMode: false,
+            FileCopyMoveOperation.Copy);
+
     private async void MoveMultiplePhotos_Click(object sender, RoutedEventArgs e)
     {
         await ClosePhotoViewerAsync();
@@ -20,14 +32,21 @@ public sealed partial class PhotosPage
     }
 
     private async void MoveSelectedPhotos_Click(object sender, RoutedEventArgs e) =>
-        await ShowPhotoBatchMoveAsync(SelectedFolderPhotos(), timelineMode: false);
+        await ShowPhotoBatchCopyMoveAsync(
+            SelectedFolderPhotos(),
+            timelineMode: false,
+            FileCopyMoveOperation.Move);
+
+    private Task CopyMultiplePhotosAsync(IReadOnlyList<PhotoItem> items) =>
+        ShowPhotoBatchCopyMoveAsync(items, timelineMode: true, FileCopyMoveOperation.Copy);
 
     private Task MoveMultiplePhotosAsync(IReadOnlyList<PhotoItem> items) =>
-        ShowPhotoBatchMoveAsync(items, timelineMode: true);
+        ShowPhotoBatchCopyMoveAsync(items, timelineMode: true, FileCopyMoveOperation.Move);
 
-    private async Task ShowPhotoBatchMoveAsync(
+    private async Task ShowPhotoBatchCopyMoveAsync(
         IReadOnlyList<PhotoItem> items,
-        bool timelineMode)
+        bool timelineMode,
+        FileCopyMoveOperation operation)
     {
         if (_disposed || !_isPhotoPageActive ||
             _photoBatchCopyMoveDialog is not null ||
@@ -47,16 +66,17 @@ public sealed partial class PhotosPage
         var sourceScope = timelineMode
             ? FileCopyMoveBatchSourceScope.DescendantsOfRoot
             : FileCopyMoveBatchSourceScope.CurrentFolder;
-        if (!PhotoBatchMoveSourceIsCurrent(
+        if (!PhotoBatchCopyMoveSourceIsCurrent(
                 repository,
                 folders,
                 sourceSpace,
                 sourceRoot,
                 items,
-                timelineMode) ||
+                timelineMode,
+                operation) ||
             FileCopyMoveBatchViewModel.Validate(
                 sources,
-                FileCopyMoveOperation.Move,
+                operation,
                 sourceRoot,
                 sourceScope) != FileCopyMoveBatchValidationStatus.Valid)
         {
@@ -72,7 +92,7 @@ public sealed partial class PhotosPage
             folders,
             _dataSource.ProfileId,
             sources,
-            FileCopyMoveOperation.Move,
+            operation,
             sourceRoot,
             sourceScope,
             _photoCopyMoveReviewBlocker);
@@ -91,7 +111,9 @@ public sealed partial class PhotosPage
             {
                 return;
             }
-            dialog.Title = localization.Get("FileCopyMoveBatchMoveTitle");
+            dialog.Title = localization.Get(operation == FileCopyMoveOperation.Copy
+                ? "FileCopyMoveBatchCopyTitle"
+                : "FileCopyMoveBatchMoveTitle");
             dialog.CloseButtonText = localization.Get(
                 model.State is FileCopyMoveBatchState.Submitting or
                     FileCopyMoveBatchState.ChoosingDestination or
@@ -99,7 +121,11 @@ public sealed partial class PhotosPage
                     ? "FileCopyMove_Cancel_Button"
                     : "FileCopyMove_Close_Button");
             dialog.PrimaryButtonText = model.State == FileCopyMoveBatchState.ChoosingDestination
-                ? localization.Format("FileCopyMoveBatchMoveButton", sources.Length)
+                ? localization.Format(
+                    operation == FileCopyMoveOperation.Copy
+                        ? "FileCopyMoveBatchCopyButton"
+                        : "FileCopyMoveBatchMoveButton",
+                    sources.Length)
                 : string.Empty;
             dialog.IsPrimaryButtonEnabled = model.CanSubmit;
             dialog.DefaultButton = string.IsNullOrEmpty(dialog.PrimaryButtonText)
@@ -112,13 +138,14 @@ public sealed partial class PhotosPage
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             args.Cancel = true;
-            if (!PhotoBatchMoveSourceIsCurrent(
+            if (!PhotoBatchCopyMoveSourceIsCurrent(
                     repository,
                     folders,
                     sourceSpace,
                     sourceRoot,
                     items,
-                    timelineMode))
+                    timelineMode,
+                    operation))
             {
                 ShowPhotoBatchSelectionMessage(
                     "PhotoMoveBatchSourceChanged",
@@ -131,13 +158,14 @@ public sealed partial class PhotosPage
             try
             {
                 await ClosePhotoViewerAsync(restoreBrowserFocus: false);
-                if (!PhotoBatchMoveSourceIsCurrent(
+                if (!PhotoBatchCopyMoveSourceIsCurrent(
                         repository,
                         folders,
                         sourceSpace,
                         sourceRoot,
                         items,
-                        timelineMode))
+                        timelineMode,
+                        operation))
                 {
                     return;
                 }
@@ -210,7 +238,8 @@ public sealed partial class PhotosPage
         {
             return;
         }
-        if (summary.ConfirmedCount > 0 && repository.ProfileId == _dataSource.ProfileId)
+        if (operation == FileCopyMoveOperation.Move && summary.ConfirmedCount > 0 &&
+            repository.ProfileId == _dataSource.ProfileId)
         {
             await RefreshAfterPhotoMoveAsync(
                 sourceSpace,
@@ -231,29 +260,38 @@ public sealed partial class PhotosPage
             PhotoRecycleBatchStatus.Message = FilesPage.FormatBatchCopyMoveSummary(
                 localization,
                 summary,
-                FileCopyMoveOperation.Move);
+                operation);
             PhotoRecycleBatchStatus.IsOpen = true;
         }
         UpdateState();
     }
 
-    private bool PhotoBatchMoveSourceIsCurrent(
+    private bool PhotoBatchCopyMoveSourceIsCurrent(
         IFileCopyMoveRepository repository,
         IFileCopyMoveFolderSource folders,
         PhotoSpace sourceSpace,
         string sourceRoot,
         IReadOnlyList<PhotoItem> items,
-        bool timelineMode) =>
+        bool timelineMode,
+        FileCopyMoveOperation operation)
+    {
+        var selectionOperation = operation == FileCopyMoveOperation.Copy
+            ? PhotoBatchSelectionOperation.Copy
+            : PhotoBatchSelectionOperation.Move;
+        return
         !_disposed && repository.ProfileId == _dataSource.ProfileId &&
         folders.ProfileId == _dataSource.ProfileId &&
         _viewModel.SelectedSpace?.Id == sourceSpace.Id &&
         timelineMode == (TimelineMode.IsChecked == true) &&
         (timelineMode
-            ? TimelineView.HasSelectedBatchItems(items, PhotoBatchSelectionOperation.Move)
+            ? TimelineView.HasSelectedBatchItems(items, selectionOperation)
             : string.Equals(_viewModel.CurrentPath, sourceRoot, StringComparison.Ordinal) &&
-                _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Move &&
+                _photoBatchSelectionOperation == selectionOperation &&
                 FolderSelectionMatches(items)) &&
-        items.All(CanMovePhotoCore);
+        items.All(item => operation == FileCopyMoveOperation.Copy
+            ? CanCopyPhotoCore(item)
+            : CanMovePhotoCore(item));
+    }
 
     private void ClosePhotoBatchCopyMoveDialog()
     {

@@ -12,6 +12,7 @@ namespace LanStash.App.Views;
 internal enum PhotoBatchSelectionOperation
 {
     None,
+    Copy,
     Move,
     Recycle,
 }
@@ -77,6 +78,7 @@ public sealed partial class PhotosPage
         PhotoItem item,
         PhotoBatchSelectionOperation operation) => operation switch
         {
+            PhotoBatchSelectionOperation.Copy => CanCopyPhotoCore(item),
             PhotoBatchSelectionOperation.Move => CanMovePhotoCore(item),
             PhotoBatchSelectionOperation.Recycle => CanSelectPhotoForBatchRecycle(item),
             _ => false,
@@ -408,7 +410,13 @@ public sealed partial class PhotosPage
     private void UpdatePhotoBatchControls()
     {
         var selectingMove = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Move;
+        var selectingCopy = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Copy;
         var selectingRecycle = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Recycle;
+        PhotoCopyMultipleButton.Visibility = IsSelectingPhotoBatch
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        PhotoCopyMultipleButton.IsEnabled = CanEnterPhotoBatchSelection(
+            PhotoBatchSelectionOperation.Copy);
         PhotoMoveMultipleButton.Visibility = IsSelectingPhotoBatch
             ? Visibility.Collapsed
             : Visibility.Visible;
@@ -422,11 +430,15 @@ public sealed partial class PhotosPage
         PhotoMoveSelectedButton.Visibility = selectingMove
             ? Visibility.Visible
             : Visibility.Collapsed;
+        PhotoCopySelectedButton.Visibility = selectingCopy
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         PhotoMoveSelectedToRecycleButton.Visibility = selectingRecycle
             ? Visibility.Visible
             : Visibility.Collapsed;
         PhotoMoveSelectedButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
             FileCopyMoveBatchViewModel.MaximumItemCount && _photoBatchCopyMoveDialog is null;
+        PhotoCopySelectedButton.IsEnabled = PhotoMoveSelectedButton.IsEnabled;
         PhotoMoveSelectedToRecycleButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
             FileRecycleBatchViewModel.MaximumItemCount;
         PhotoCancelRecycleSelectionButton.Visibility = IsSelectingPhotoBatch
@@ -449,19 +461,22 @@ public sealed partial class PhotosPage
     }
 
     private static string SelectionCountResource(PhotoBatchSelectionOperation operation) =>
-        operation == PhotoBatchSelectionOperation.Move
+        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
             ? "FileCopyMoveBatchSelectionCount"
             : "FileRecycleBatchSelectionCount";
 
     private static string SelectionLimitResource(PhotoBatchSelectionOperation operation) =>
-        operation == PhotoBatchSelectionOperation.Move
+        operation is PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move
             ? "FileCopyMoveBatchSelectionLimit"
             : "FileRecycleBatchSelectionLimit";
 
     private static string SelectionInvalidResource(PhotoBatchSelectionOperation operation) =>
-        operation == PhotoBatchSelectionOperation.Move
-            ? "PhotoMoveBatchSelectionInvalid"
-            : "PhotoRecycleBatchSelectionInvalid";
+        operation switch
+        {
+            PhotoBatchSelectionOperation.Copy => "PhotoCopyBatchSelectionInvalid",
+            PhotoBatchSelectionOperation.Move => "PhotoMoveBatchSelectionInvalid",
+            _ => "PhotoRecycleBatchSelectionInvalid",
+        };
 
     private void ClosePhotoBatchRecycleDialog()
     {

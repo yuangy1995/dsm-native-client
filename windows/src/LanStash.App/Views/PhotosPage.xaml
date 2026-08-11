@@ -169,6 +169,13 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <AppBarButton
+                x:Uid="FileCopyMoveCopySelected"
+                x:Name="PhotoCopySelectedButton"
+                Click="CopySelectedPhotos_Click"
+                Icon="Copy"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileCopyMoveMoveSelected"
                 x:Name="PhotoMoveSelectedButton"
                 Click="MoveSelectedPhotos_Click"
@@ -204,6 +211,12 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <CommandBar.SecondaryCommands>
+                <AppBarButton
+                    x:Uid="FileCopyMoveCopyMultiple"
+                    x:Name="PhotoCopyMultipleButton"
+                    Click="CopyMultiplePhotos_Click"
+                    Icon="Copy"
+                    MinHeight="44" />
                 <AppBarButton
                     x:Uid="FileCopyMoveMoveMultiple"
                     x:Name="PhotoMoveMultipleButton"
