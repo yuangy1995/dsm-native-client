@@ -109,6 +109,8 @@ final class MobilePhotosPresentationTests: XCTestCase {
         XCTAssertTrue(view.contains("copyMove.deactivate()"))
         XCTAssertTrue(view.contains("model.activeProfile?.id == success.profileID"))
         XCTAssertTrue(view.contains("model.fileRepository?.profileID == success.profileID"))
+        XCTAssertTrue(view.contains("repositoryIdentity: repositoryIdentity"))
+        XCTAssertTrue(view.contains("model.fileRepository.map(ObjectIdentifier.init) == repositoryIdentity"))
         XCTAssertTrue(view.contains("await library.reload()"))
         XCTAssertFalse(view.contains("copyMoveResult("))
 
@@ -116,6 +118,26 @@ final class MobilePhotosPresentationTests: XCTestCase {
         XCTAssertTrue(grid.contains("!item.fileItem.isRecyclePath"))
         XCTAssertTrue(grid.contains("item.sizeBytes.map { $0 >= 0 } == true"))
         XCTAssertTrue(cell.contains("mobile.files.copy-move.move.action"))
+    }
+
+    func test文件夹网格普通媒体复用共享回收站安全写闭环() throws {
+        let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
+        let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
+        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
+
+        XCTAssertTrue(view.contains("MobileFileRecycleActionModel.canMoveToRecycle("))
+        XCTAssertTrue(view.contains("recycleLocations: model.fileBrowserModel.locations.state.recycle.locations"))
+        XCTAssertTrue(view.contains("recycleAction.beginMoveToRecycle("))
+        XCTAssertTrue(view.contains("source: .browser"))
+        XCTAssertTrue(view.contains("visibleItems: visiblePhotoSnapshot.map(\\.fileItem)"))
+        XCTAssertTrue(view.contains("closePreview()"))
+        XCTAssertTrue(view.contains("model.activeProfile?.id == success.profileID"))
+        XCTAssertTrue(view.contains("model.fileRepository?.profileID == success.profileID"))
+        XCTAssertFalse(view.contains("moveToRecycleResult("))
+
+        XCTAssertTrue(grid.contains("isMoveToRecycleAvailable(item) ? onMoveToRecycle : nil"))
+        XCTAssertTrue(cell.contains("mobile.files.recycle.move.action"))
+        XCTAssertTrue(cell.contains("role: .destructive"))
     }
 
     func test触控VoiceOver动态文字与平台原生控件均有明确实现() throws {
@@ -165,6 +187,7 @@ final class MobilePhotosPresentationTests: XCTestCase {
             "mobile.photos.action.save-copy",
             "mobile.photos.action.share",
             "mobile.files.copy-move.move.action",
+            "mobile.files.recycle.move.action",
             "mobile.photos.item-actions",
             "mobile.photos.open-album",
             "mobile.photos.open-photo",

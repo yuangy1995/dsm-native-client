@@ -14,6 +14,8 @@ struct MobilePhotoGrid: View {
     let onSaveCopy: (PhotoLibraryItem) -> Void
     let onShare: (PhotoLibraryItem) -> Void
     let onMove: (PhotoLibraryItem) -> Void
+    let isMoveToRecycleAvailable: (PhotoLibraryItem) -> Bool
+    let onMoveToRecycle: (PhotoLibraryItem) -> Void
     let onRestoreFromRecycle: (PhotoLibraryItem) -> Void
     let onLoadMore: () -> Void
 
@@ -41,6 +43,7 @@ struct MobilePhotoGrid: View {
                         onSaveCopy: onSaveCopy,
                         onShare: onShare,
                         onMove: canMove(item) ? onMove : nil,
+                        onMoveToRecycle: isMoveToRecycleAvailable(item) ? onMoveToRecycle : nil,
                         onRestoreFromRecycle: canRestoreFromRecycle(item) ? onRestoreFromRecycle : nil
                     )
                 }

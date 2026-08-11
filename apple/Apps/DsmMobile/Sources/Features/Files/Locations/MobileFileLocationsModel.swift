@@ -32,6 +32,7 @@ final class MobileFileLocationsModel {
     private(set) var activeProfileID: UUID?
     private(set) var profiles: [UUID: MobileFileLocationsProfileState] = [:]
     @ObservationIgnored private var repositoryIdentity: ObjectIdentifier?
+    @ObservationIgnored private var profileRepositoryIdentities: [UUID: ObjectIdentifier] = [:]
     @ObservationIgnored private var requestTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var pendingRefresh: PendingRefresh?
@@ -46,14 +47,18 @@ final class MobileFileLocationsModel {
     func activate(profileID: UUID?, repository: (any MobileFileLocationBrowsing)?) {
         cancelRequest()
         activeProfileID = profileID
-        repositoryIdentity = repository.map { ObjectIdentifier($0) }
         guard let profileID,
               let repository,
               repository.profileID == profileID else {
             repositoryIdentity = nil
             return
         }
-        if profiles[profileID] == nil {
+        let identity = ObjectIdentifier(repository)
+        repositoryIdentity = identity
+        if profileRepositoryIdentities[profileID] != identity {
+            profiles[profileID] = MobileFileLocationsProfileState()
+            profileRepositoryIdentities[profileID] = identity
+        } else if profiles[profileID] == nil {
             profiles[profileID] = MobileFileLocationsProfileState()
         }
     }
@@ -74,6 +79,7 @@ final class MobileFileLocationsModel {
             deactivate()
         }
         profiles.removeValue(forKey: profileID)
+        profileRepositoryIdentities.removeValue(forKey: profileID)
     }
 
     func refresh(repository: any MobileFileLocationBrowsing) async {

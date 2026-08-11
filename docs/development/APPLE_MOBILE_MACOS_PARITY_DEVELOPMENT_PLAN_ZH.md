@@ -363,6 +363,8 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 PHOTO-03 受限 NAS 管理继续完成单项普通媒体同 NAS 移动源码闭环：文件夹网格和主动时间线只对已知大小、非回收站的单个图片或视频开放“移动到…”，复用 FILE-05 的 `MobileFileCopyMoveModel`、原生目标 Sheet 与共享 CopyMove 协调器，不新增照片专用写契约。目标仍限普通本地可写文件夹，固定无覆盖；提交前后继续执行身份、来源删除权限、目标权限、冲突、一次提交、未知结果只回读不重放和最终回读。切换 profile、Repository 或离页会撤销旧上下文，成功后只刷新当前照片来源。本机 iPhone 17 Pro 模拟器双架构构建与 Photos/CopyMove 聚焦 16/16 已通过；Apple Build run `31521369954` 与 Repository Check run `31521369961` 已通过。复制、批量、跨 NAS、覆盖、自动改名、系统照片图库移动、查看器独立写入口和自动备份不在本切片；真实 iPhone/iPad、真实 NAS 副作用、VoiceOver、最大动态文字、iPad 键盘/指针、弱网和取消为 `PENDING_USER_VALIDATION`。
 
+PHOTO-03 继续补齐单项普通媒体移入回收站源码主流程：Photos 会在自身激活时并发加载公开 FILE-02 回收站位置，不要求用户先打开 Files，也不阻塞照片空间与文件夹首屏；回收站白名单按 Repository 身份绑定，重连会先清空旧入口并重新发现，发现失败保持零入口。文件夹网格、主动时间线和当前查看器只对当前可见快照内、已知大小、非远程、非 `#recycle` 且已发现同共享回收站的一个图片或视频开放破坏性动作，查看器先关闭后再显示既有原生确认 Sheet。实现复用既有 FILE-02 位置发现、FILE-09 的 `MobileFileRecycleActionModel` 和共享 Delete v2 结果链，不新增 API 契约或照片专用写请求；共享协调器继续负责身份与删除权限重读、目标冲突、路径互斥、一次提交、提交未知只回读不重放和最终回读。确认 Sheet 冻结 Repository 身份，成功刷新前必须精确匹配当前 profile 与 Repository。本机 iPhone 17 Pro 模拟器 Photos/Recycle/Locations 聚焦 43/43、DsmMobile 全量 429/429、共享包 685 项 XCTest（2 项按环境跳过）与 10 项 Swift Testing、arm64/x86_64 通用模拟器构建、本地化和 Repository Check 同义脚本均已通过；GitHub Apple Build run `31527045156` 与 Repository Check run `31527045155` 已通过。批量、永久删除、清空回收站、系统照片图库删除和自动备份不在本切片；真实 iPhone/iPad、真实 NAS 副作用、弱网取消、VoiceOver、最大动态文字及 iPad 键盘/指针为 `PENDING_USER_VALIDATION`。
+
 ### M5-A：文字 Chat 核心
 
 - 会话/用户/消息/成员 typed 状态、首次单聊与非加密私人群聊。

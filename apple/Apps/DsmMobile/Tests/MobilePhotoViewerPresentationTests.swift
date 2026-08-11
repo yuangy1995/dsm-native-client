@@ -57,6 +57,19 @@ final class MobilePhotoViewerPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("viewer.close()"))
     }
 
+    func test查看器为合格普通媒体提供原生破坏性回收站入口() throws {
+        let controls = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerView.swift")
+        let photos = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
+
+        XCTAssertTrue(controls.contains("if let onMoveToRecycle"))
+        XCTAssertTrue(controls.contains("key: \"mobile.files.recycle.move.action\""))
+        XCTAssertTrue(controls.contains("systemImage: \"trash\""))
+        XCTAssertTrue(controls.contains("role: .destructive"))
+        XCTAssertTrue(photos.contains("moveCurrentPhotoToRecycleAction"))
+        XCTAssertTrue(photos.contains("canMoveToRecycle(item)"))
+        XCTAssertTrue(photos.contains("beginMoveToRecycle(item)"))
+    }
+
     func test全部可见文案由待补双语资源键提供() throws {
         let source = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerView.swift")
         for key in [

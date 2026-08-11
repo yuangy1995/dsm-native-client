@@ -68,10 +68,16 @@ struct MobilePhotosView: View {
         }
         .sheet(isPresented: recycleActionPresentationBinding) {
             if let repository = model.fileRepository {
+                let repositoryIdentity = ObjectIdentifier(repository)
                 MobileFileRecycleActionView(
                     recycleAction: recycleAction,
                     repository: repository,
-                    didConfirm: recycleActionDidConfirm
+                    didConfirm: { success in
+                        await recycleActionDidConfirm(
+                            success,
+                            repositoryIdentity: repositoryIdentity
+                        )
+                    }
                 )
             }
         }
@@ -165,6 +171,8 @@ struct MobilePhotosView: View {
                     onSaveCopy: saveCopy,
                     onShare: share,
                     onMove: beginMove,
+                    isMoveToRecycleAvailable: canMoveToRecycle,
+                    onMoveToRecycle: beginMoveToRecycle,
                     onRestoreFromRecycle: beginRestoreFromRecycle
                 )
             } else {
@@ -200,6 +208,8 @@ struct MobilePhotosView: View {
                 onSaveCopy: saveCopy,
                 onShare: share,
                 onMove: beginMove,
+                isMoveToRecycleAvailable: canMoveToRecycle,
+                onMoveToRecycle: beginMoveToRecycle,
                 onRestoreFromRecycle: beginRestoreFromRecycle,
                 onLoadMore: loadMore
             )
@@ -256,6 +266,7 @@ struct MobilePhotosView: View {
                         onNext: { openNextPhoto() },
                         onSaveCopy: { saveCurrentPhotoCopy() },
                         onShare: { shareCurrentPhoto() },
+                        onMoveToRecycle: moveCurrentPhotoToRecycleAction,
                         onRestoreFromRecycle: restoreCurrentPhotoFromRecycleAction
                     )
                 }
@@ -519,7 +530,10 @@ struct MobilePhotosView: View {
     }
 
     private func activatePhotoContext() async {
-        model.documentTransferController.setActiveProfile(model.activeProfile?.id)
+        let profileID = model.activeProfile?.id
+        let fileRepository = model.fileRepository
+        let fileRepositoryIdentity = fileRepository.map(ObjectIdentifier.init)
+        model.documentTransferController.setActiveProfile(profileID)
         photoImport.activate(
             profileID: model.activeProfile?.id,
             repositoryIdentity: model.fileRepository.map { ObjectIdentifier($0) }
@@ -548,13 +562,35 @@ struct MobilePhotosView: View {
             repository: model.photoRepository,
             repositoryProfileID: model.fileRepository?.profileID
         )
+        model.fileBrowserModel.locations.activate(
+            profileID: profileID,
+            repository: fileRepository
+        )
+        let locationLoadTask: Task<Void, Never>?
+        if let profileID,
+           let fileRepository,
+           fileRepository.profileID == profileID {
+            locationLoadTask = Task {
+                await model.fileBrowserModel.locations.loadIfNeeded(repository: fileRepository)
+            }
+        } else {
+            locationLoadTask = nil
+        }
         await library.activate(
-            profileID: model.activeProfile?.id,
+            profileID: profileID,
             repository: model.photoRepository
         )
+        guard model.activeProfile?.id == profileID,
+              model.fileRepository.map(ObjectIdentifier.init) == fileRepositoryIdentity else {
+            locationLoadTask?.cancel()
+            await locationLoadTask?.value
+            return
+        }
         if browseMode == .timeline {
             await timeline.show(space: library.state.selectedSpace)
         }
+        if Task.isCancelled { locationLoadTask?.cancel() }
+        await locationLoadTask?.value
     }
 
     private var activationIdentity: MobilePhotoActivationIdentity {
@@ -618,6 +654,11 @@ struct MobilePhotosView: View {
     private var canRestoreCurrentPhotoFromRecycle: Bool {
         guard let item = viewer.state.selectedItem else { return false }
         return canRestoreFromRecycle(item)
+    }
+
+    private var moveCurrentPhotoToRecycleAction: (() -> Void)? {
+        guard let item = viewer.state.selectedItem, canMoveToRecycle(item) else { return nil }
+        return { beginMoveToRecycle(item) }
     }
 
     private var restoreCurrentPhotoFromRecycleAction: (() -> Void)? {
@@ -688,6 +729,38 @@ struct MobilePhotosView: View {
         )
     }
 
+    private func canMoveToRecycle(_ item: PhotoLibraryItem) -> Bool {
+        guard let item = canonicalPhotoItem(item),
+              let activeProfileID = model.activeProfile?.id,
+              let repository = model.fileRepository,
+              repository.profileID == activeProfileID,
+              let parentPath = Self.parentPath(of: item.path) else { return false }
+        return MobileFileRecycleActionModel.canMoveToRecycle(
+            item: item.fileItem,
+            parentPath: parentPath,
+            source: .browser,
+            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
+            recycleLocations: model.fileBrowserModel.locations.state.recycle.locations,
+            profileID: activeProfileID
+        )
+    }
+
+    private func beginMoveToRecycle(_ item: PhotoLibraryItem) {
+        guard let item = canonicalPhotoItem(item),
+              canMoveToRecycle(item),
+              let repository = model.fileRepository,
+              let parentPath = Self.parentPath(of: item.path) else { return }
+        closePreview()
+        recycleAction.beginMoveToRecycle(
+            item: item.fileItem,
+            parentPath: parentPath,
+            source: .browser,
+            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
+            recycleLocations: model.fileBrowserModel.locations.state.recycle.locations,
+            repository: repository
+        )
+    }
+
     private func beginMove(_ item: PhotoLibraryItem) {
         guard let item = canonicalPhotoItem(item),
               canMove(item),
@@ -735,7 +808,13 @@ struct MobilePhotosView: View {
         }
     }
 
-    private func recycleActionDidConfirm(_ success: MobileFileRecycleActionSuccess) async {
+    private func recycleActionDidConfirm(
+        _ success: MobileFileRecycleActionSuccess,
+        repositoryIdentity: ObjectIdentifier
+    ) async {
+        guard model.activeProfile?.id == success.profileID,
+              model.fileRepository?.profileID == success.profileID,
+              model.fileRepository.map(ObjectIdentifier.init) == repositoryIdentity else { return }
         if viewer.state.selectedItem?.path == success.sourcePath {
             closePreview()
         }

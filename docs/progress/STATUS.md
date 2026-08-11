@@ -36,6 +36,8 @@
 
 iPhone/iPad PHOTO-03 已补入单项普通媒体同 NAS 移动源码闭环：Photos 文件夹网格和主动时间线只向已知大小、非回收站的单个图片或视频显示“移动到…”，复用 FILE-05 的原生目标 Sheet、公开 CopyMove v3、无覆盖、一次提交、提交未知只回读不重放和最终回读；切换 profile、Repository 或离页会撤销旧上下文，确认成功后只刷新当前照片来源。本机 iPhone 17 Pro 模拟器双架构构建、Photos/CopyMove 聚焦 16/16、DsmMobile 全量 425/425、共享包 685 项 XCTest（2 项按环境跳过）与 10 项 Swift Testing 均已通过，本地化资源与硬编码门禁通过。Apple Build run `31521369954` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建、macOS 打包与产物上传，Repository Check run `31521369961` 已通过。复制、批量、跨 NAS、覆盖、自动改名、系统照片图库移动和自动备份未开放；真实 iPhone/iPad、真实 NAS 副作用、VoiceOver、最大动态文字、iPad 键盘/指针、弱网与取消为 `PENDING_USER_VALIDATION`。
 
+iPhone/iPad PHOTO-03 单项普通媒体移入回收站已完成源码主流程：Photos 自身会并发加载按 Repository 身份绑定的公开回收站位置白名单，用户无需先打开 Files，且照片空间与文件夹首屏不等待位置发现；同资料重连先清空旧入口并重新发现，发现失败保持关闭。文件夹网格、主动时间线和查看器仅对当前可见、已知大小、普通本地且不在 `#recycle` 的一个图片或视频显示破坏性入口，查看器先关闭再进入既有双语确认 Sheet。实现复用既有 FILE-02 位置发现、FILE-09 的公开 Delete v2 与共享安全协调器，不新增 API 契约或照片专用写请求；身份/删除权限/目标冲突在提交前重读，路径互斥且只提交一次，未知结果只回读不重放，确认成功必须最终回读；确认 Sheet 冻结 Repository 身份，刷新前必须精确匹配当前 profile 与 Repository。本机 Photos/Recycle/Locations 聚焦 43/43、DsmMobile 全量 429/429、共享包 685 项 XCTest（2 项按环境跳过）与 10 项 Swift Testing、arm64/x86_64 通用模拟器构建、本地化和 Repository Check 同义脚本均已通过；GitHub Apple Build run `31527045156` 与 Repository Check run `31527045155` 已通过。批量、永久删除、清空回收站和系统照片图库删除未开放；真实 iPhone/iPad、真实 NAS 副作用、弱网取消、VoiceOver、最大动态文字及 iPad 键盘/指针为 `PENDING_USER_VALIDATION`。
+
 Windows PHOTO-02 本地媒体元数据白名单已通过云端门禁：照片查看器已在既有本地预览产物上解析白名单字段，并在元数据面板显示图片/基础视频尺寸、拍摄时间、相机品牌/型号和基础视频时长。该能力不新增 NAS 请求，不读取位置、厂商私有、设备序列、镜头序列或 Synology Photos 私有字段；MP4/MOV/M4V 仅从已读取首段 ISO BMFF 结构解析，缺少 `moov` 或非 ISO BMFF 视频时显示不可用。GitHub `Windows Build` run `31410536634` 已通过 943/943 项 xUnit 与 WinUI x64/ARM64 构建，`Repository Check` run `31410536680` 已通过。真实 Windows 解码器、格式矩阵、Narrator、高对比和窗口缩放继续后置。
 
 Windows PHOTO-02 沉浸式查看器体验已通过当前分支云端门禁：照片文件夹与时间线媒体继续复用 `FilePreviewPane`，新增页面内全窗口查看切换、F11 切换、左右方向键前后项、Esc 在沉浸式下优先返回普通查看、关闭后焦点回到照片网格或时间线、Ctrl+S 保存当前查看项，以及查看区域/位置/按钮的双语无障碍名称。该历史切片当时不引入系统级 `AppWindow` 全屏 presenter，也不开放编辑、收藏、删除、相册、人物、地点或标签能力；GitHub `Windows Build` run `31414591711` 通过 949/949 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，`Repository Check` run `31414591262` 通过。真实设备/Narrator/高对比/缩放/真实 NAS 仍待验证。
@@ -254,7 +256,7 @@ Windows FILE-07 分享链接管理已形成闭环：Files 次级命令可打开�
 | PH3 管理与分享 | 基础能力已实现 | 已接入上传、批量导出、删除、分享、收藏（File Station Favorite）和移动（照片内文件夹选择器）；照片页和预览窗口已增加回收站恢复入口（识别 #recycle 路径并调用恢复流程）；待基础相册入口和实机危险操作验收 |
 | PH4 智能照片库 | 未开始 | 内部增强能力按 DSM 和套件版本验证，并可逐项降级 |
 | PH5 macOS 发布验收 | 未开始 | 自动化、实机、安全、缓存、键盘、VoiceOver 和深色模式出口通过 |
-| PH6 iPhone/iPad 精选体验与自动备份 | PH6-A 精选体验已实现；PH6-B 自动备份后续 | 已完成个人/共享空间、文件夹、主动有界时间线、缩略图、PHOTO-02 查看/基础元数据、PHOTO-03A 单项导入、导出/分享和受限回收站恢复；继续完成 iPad/真机/真实 NAS 验收。整库自动备份、后台恢复和释放设备空间不在当前 DAG，须独立范围升级 |
+| PH6 iPhone/iPad 精选体验与自动备份 | PH6-A 精选体验已实现；PH6-B 自动备份后续 | 已完成个人/共享空间、文件夹、主动有界时间线、缩略图、PHOTO-02 查看/基础元数据、PHOTO-03A 单项导入、导出/分享、单项同 NAS 移动、单项移入回收站和受限恢复；继续完成 iPad/真机/真实 NAS 验收。整库自动备份、后台恢复和释放设备空间不在当前 DAG，须独立范围升级 |
 | PH7 Android 对齐 | 进行中 | Compose 照片浏览、查看、管理和用户选定项目的安全移动备份调用链已建立；“释放设备空间”仅建立五项全真的 fail-closed 门禁，仍无 UI、媒体删除权限和本机删除执行器；待设备格式、大图库、真实 NAS 写操作及未来独立释放空间流程验收 |
 | PH8 Windows 对齐 | 基础精选体验、PHOTO-02 查看器和 PHOTO-03 单项移入回收站已通过 Windows 云端门禁 | 已完成个人/共享空间、文件夹浏览、有界时间线、搜索/筛选、缩略图、保存副本、单项导入、回收站恢复和图片/视频查看；PHOTO-03 新增文件夹/时间线普通媒体移入已发现同共享回收站，复用 FILE-09 安全结果链。GitHub Windows Build run `31516242228` 与 Repository Check run `31516242282` 已通过。批量/永久删除、照片内移动、收藏写及真实 Windows/NAS/辅助功能验收继续后置 |
 

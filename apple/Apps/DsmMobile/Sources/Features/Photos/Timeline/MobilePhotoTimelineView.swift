@@ -11,6 +11,8 @@ struct MobilePhotoTimelineView: View {
     let onSaveCopy: (PhotoLibraryItem) -> Void
     let onShare: (PhotoLibraryItem) -> Void
     let onMove: (PhotoLibraryItem) -> Void
+    let isMoveToRecycleAvailable: (PhotoLibraryItem) -> Bool
+    let onMoveToRecycle: (PhotoLibraryItem) -> Void
     let onRestoreFromRecycle: (PhotoLibraryItem) -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -128,6 +130,9 @@ struct MobilePhotoTimelineView: View {
                                             onSaveCopy: { onSaveCopy(item) },
                                             onShare: { onShare(item) },
                                             onMove: canMove(item) ? { onMove(item) } : nil,
+                                            onMoveToRecycle: isMoveToRecycleAvailable(item)
+                                                ? { onMoveToRecycle(item) }
+                                                : nil,
                                             onRestoreFromRecycle: canRestoreFromRecycle(item)
                                                 ? { onRestoreFromRecycle(item) }
                                                 : nil
@@ -272,6 +277,7 @@ private struct TimelinePhotoCell: View {
     let onSaveCopy: () -> Void
     let onShare: () -> Void
     let onMove: (() -> Void)?
+    let onMoveToRecycle: (() -> Void)?
     let onRestoreFromRecycle: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -298,6 +304,13 @@ private struct TimelinePhotoCell: View {
                 Button(L10n.string("mobile.photos.action.share"), action: onShare)
                 if let onMove {
                     Button(L10n.string("mobile.files.copy-move.move.action"), action: onMove)
+                }
+                if let onMoveToRecycle {
+                    Button(
+                        L10n.string("mobile.files.recycle.move.action"),
+                        role: .destructive,
+                        action: onMoveToRecycle
+                    )
                 }
                 if let onRestoreFromRecycle {
                     Button(L10n.string("mobile.files.recycle.restore.action"), action: onRestoreFromRecycle)

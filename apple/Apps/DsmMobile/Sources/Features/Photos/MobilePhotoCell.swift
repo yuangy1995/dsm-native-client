@@ -12,6 +12,7 @@ struct MobilePhotoCell: View {
     let onSaveCopy: (PhotoLibraryItem) -> Void
     let onShare: (PhotoLibraryItem) -> Void
     let onMove: ((PhotoLibraryItem) -> Void)?
+    let onMoveToRecycle: ((PhotoLibraryItem) -> Void)?
     let onRestoreFromRecycle: ((PhotoLibraryItem) -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -44,6 +45,11 @@ struct MobilePhotoCell: View {
                     Button(L10n.string("mobile.photos.action.share")) { onShare(item) }
                     if let onMove {
                         Button(L10n.string("mobile.files.copy-move.move.action")) { onMove(item) }
+                    }
+                    if let onMoveToRecycle {
+                        Button(L10n.string("mobile.files.recycle.move.action"), role: .destructive) {
+                            onMoveToRecycle(item)
+                        }
                     }
                     if let onRestoreFromRecycle {
                         Button(L10n.string("mobile.files.recycle.restore.action")) {

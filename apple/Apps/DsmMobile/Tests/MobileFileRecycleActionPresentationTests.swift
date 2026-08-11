@@ -51,7 +51,7 @@ final class MobileFileRecycleActionPresentationTests: XCTestCase {
         XCTAssertFalse(locations.contains("beginMoveToRecycle"))
     }
 
-    func test照片页只对回收站项目复用恢复流程() throws {
+    func test照片页复用共享移入回收站与恢复流程() throws {
         let photos = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
         let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
         let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
@@ -60,20 +60,41 @@ final class MobileFileRecycleActionPresentationTests: XCTestCase {
 
         XCTAssertTrue(photos.contains("@State private var recycleAction = MobileFileRecycleActionModel()"))
         XCTAssertTrue(photos.contains("MobileFileRecycleActionView("))
+        XCTAssertTrue(photos.contains("isMoveToRecycleAvailable: canMoveToRecycle"))
+        XCTAssertTrue(photos.contains("MobileFileRecycleActionModel.canMoveToRecycle("))
+        XCTAssertTrue(photos.contains("recycleAction.beginMoveToRecycle("))
+        XCTAssertTrue(photos.contains("source: .browser"))
         XCTAssertTrue(photos.contains("onRestoreFromRecycle: beginRestoreFromRecycle"))
         XCTAssertTrue(photos.contains("MobileFileRecycleActionModel.canRestoreFromRecycle("))
         XCTAssertTrue(photos.contains("source: .recycle"))
         XCTAssertTrue(photos.contains("recycleActionDidConfirm"))
+        XCTAssertTrue(photos.contains("repositoryIdentity: repositoryIdentity"))
         XCTAssertTrue(photos.contains("await timeline.refresh()"))
         XCTAssertTrue(photos.contains("await library.reload()"))
         XCTAssertTrue(photos.contains("recycleAction.deactivate()"))
-        XCTAssertFalse(photos.contains("beginMoveToRecycle("))
+        XCTAssertTrue(photos.contains("model.fileBrowserModel.locations.activate("))
+        XCTAssertTrue(photos.contains("let locationLoadTask: Task<Void, Never>?"))
+        XCTAssertTrue(photos.contains("locationLoadTask = Task {"))
+        XCTAssertTrue(photos.contains("model.fileBrowserModel.locations.loadIfNeeded(repository: fileRepository)"))
+        let activation = try slice(photos, from: "private func activatePhotoContext()", to: "private var activationIdentity")
+        XCTAssertLessThan(
+            try XCTUnwrap(activation.range(of: "await library.activate(")?.lowerBound),
+            try XCTUnwrap(activation.range(of: "await locationLoadTask?.value")?.lowerBound)
+        )
+        XCTAssertTrue(photos.contains("model.fileRepository.map(ObjectIdentifier.init) == repositoryIdentity"))
+        XCTAssertFalse(photos.contains("moveToRecycleResult("))
+        XCTAssertFalse(photos.contains("restoreFromRecycleResult("))
 
+        XCTAssertTrue(grid.contains("isMoveToRecycleAvailable(item) ? onMoveToRecycle : nil"))
         XCTAssertTrue(grid.contains("item.fileItem.isRecyclePath"))
         XCTAssertTrue(grid.contains("restoreDestinationPath(for: item.path)"))
+        XCTAssertTrue(cell.contains("\"mobile.files.recycle.move.action\""))
         XCTAssertTrue(cell.contains("\"mobile.files.recycle.restore.action\""))
+        XCTAssertTrue(timeline.contains("\"mobile.files.recycle.move.action\""))
         XCTAssertTrue(timeline.contains("\"mobile.files.recycle.restore.action\""))
+        XCTAssertTrue(viewer.contains("onMoveToRecycle"))
         XCTAssertTrue(viewer.contains("onRestoreFromRecycle"))
+        XCTAssertTrue(viewer.contains("\"mobile.files.recycle.move.action\""))
         XCTAssertTrue(viewer.contains("\"mobile.files.recycle.restore.action\""))
     }
 

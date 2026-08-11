@@ -8,6 +8,7 @@ struct MobilePhotoViewerNavigationControls: View {
     let onNext: () -> Void
     let onSaveCopy: () -> Void
     let onShare: () -> Void
+    let onMoveToRecycle: (() -> Void)?
     let onRestoreFromRecycle: (() -> Void)?
 
     var body: some View {
@@ -51,6 +52,14 @@ struct MobilePhotoViewerNavigationControls: View {
                 systemImage: "square.and.arrow.up",
                 action: onShare
             )
+            if let onMoveToRecycle {
+                actionButton(
+                    key: "mobile.files.recycle.move.action",
+                    systemImage: "trash",
+                    role: .destructive,
+                    action: onMoveToRecycle
+                )
+            }
             if let onRestoreFromRecycle {
                 actionButton(
                     key: "mobile.files.recycle.restore.action",
@@ -83,10 +92,11 @@ struct MobilePhotoViewerNavigationControls: View {
     private func actionButton(
         key: String,
         systemImage: String,
+        role: ButtonRole? = nil,
         shortcut: KeyEquivalent? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        let button = Button(action: action) {
+        let button = Button(role: role, action: action) {
             Label(L10n.string(key), systemImage: systemImage)
                 .labelStyle(.iconOnly)
                 .frame(width: 44, height: 44)

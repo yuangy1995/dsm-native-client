@@ -252,25 +252,60 @@ final class MobileFileLocationsModelTests: XCTestCase {
         let profileID = UUID()
         let stale = FavoriteLocation(name: "Stale", path: "/stale")
         let fresh = FavoriteLocation(name: "Fresh", path: "/fresh")
+        let staleRecycle = recycleLocation(shareName: "Stale", sharePath: "/stale")
+        let freshRecycle = recycleLocation(shareName: "Fresh", sharePath: "/fresh")
         let oldRepository = MobileFileLocationsRepositoryStub(
             profileID: profileID,
             favoritePages: [.value(favoritePage([stale]), 150_000_000)],
-            remotePages: [.value(remotePage([]), 150_000_000)]
+            remotePages: [.value(remotePage([]), 150_000_000)],
+            recycleResults: [.value(recycleResult(profileID: profileID, locations: [staleRecycle]), 150_000_000)]
         )
         let newRepository = MobileFileLocationsRepositoryStub(
             profileID: profileID,
             favoritePages: [.value(favoritePage([fresh]))],
-            remotePages: [.value(remotePage([]))]
+            remotePages: [.value(remotePage([]))],
+            recycleResults: [.value(recycleResult(profileID: profileID, locations: [freshRecycle]))]
         )
         let model = MobileFileLocationsModel()
         model.activate(profileID: profileID, repository: oldRepository)
         let oldTask = Task { await model.refresh(repository: oldRepository) }
         await Task.yield()
         model.activate(profileID: profileID, repository: newRepository)
-        await model.refresh(repository: newRepository)
+        XCTAssertTrue(model.state.recycle.locations.isEmpty)
+        await model.loadIfNeeded(repository: newRepository)
         await oldTask.value
 
         XCTAssertEqual(model.state.favorites.locations, [fresh])
+        XCTAssertEqual(model.state.recycle.locations, [freshRecycle])
+    }
+
+    func test同Profile更换Repository后旧回收站白名单立即失效且发现失败保持关闭() async {
+        let profileID = UUID()
+        let oldRecycle = recycleLocation(shareName: "Old", sharePath: "/old")
+        let oldRepository = MobileFileLocationsRepositoryStub(
+            profileID: profileID,
+            favoritePages: [.value(favoritePage([]))],
+            remotePages: [.value(remotePage([]))],
+            recycleResults: [.value(recycleResult(profileID: profileID, locations: [oldRecycle]))]
+        )
+        let newRepository = MobileFileLocationsRepositoryStub(
+            profileID: profileID,
+            favoritePages: [.failure()],
+            remotePages: [.failure()],
+            recycleResults: [.failure()]
+        )
+        let model = MobileFileLocationsModel()
+        model.activate(profileID: profileID, repository: oldRepository)
+        await model.loadIfNeeded(repository: oldRepository)
+        XCTAssertEqual(model.state.recycle.locations, [oldRecycle])
+
+        model.activate(profileID: profileID, repository: newRepository)
+        XCTAssertTrue(model.state.recycle.locations.isEmpty)
+        XCTAssertFalse(model.state.hasLoadedSnapshot)
+        await model.loadIfNeeded(repository: newRepository)
+
+        XCTAssertTrue(model.state.recycle.locations.isEmpty)
+        XCTAssertEqual(model.state.recycle.pageState, .error)
     }
 
     func test取消刷新精确恢复已提交位置快照() async {
@@ -433,6 +468,14 @@ final class MobileFileLocationsModelTests: XCTestCase {
             scannedShareCount: locations.count,
             permissionDeniedShareCount: 0,
             isTruncated: false
+        )
+    }
+
+    private func recycleLocation(shareName: String, sharePath: String) -> FileRecycleLocation {
+        FileRecycleLocation(
+            shareName: shareName,
+            sharePath: sharePath,
+            recyclePath: "\(sharePath)/#recycle"
         )
     }
 
