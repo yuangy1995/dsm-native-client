@@ -159,16 +159,17 @@ final class MobileChatModelTests: XCTestCase {
             [.textMessage, .groupMembers, .pinnedMessages]
         )
         let events = await repository.realtimeEvents()
-        var receivedEvents: [ChatRealtimeEvent] = []
-        for await event in events { receivedEvents.append(event) }
+        var iterator = events.makeAsyncIterator()
         await repository.startRealtime()
+        await base.emitRealtimeEvent(.connected)
+        let receivedEvent = await iterator.next()
         await repository.stopRealtime()
 
         let nonReadCallCount = await base.nonReadCallCount()
         let realtimeCallCount = await base.realtimeCallCount()
         XCTAssertEqual(nonReadCallCount, 0)
-        XCTAssertEqual(realtimeCallCount, 0)
-        XCTAssertTrue(receivedEvents.isEmpty)
+        XCTAssertEqual(realtimeCallCount, 3)
+        XCTAssertEqual(receivedEvent, .connected)
 
         let unsupported = MobileReadOnlyChatRepository(
             base: ChatRepositoryStub(conversations: [], members: ["conversation": [member]])
@@ -193,6 +194,106 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(model.state.conversationPageState, .content)
         let requestCount = await repository.conversationRequestCount()
         XCTAssertEqual(requestCount, 1)
+    }
+
+    func test前台实时事件合并刷新会话与当前未加密消息() async {
+        let profileID = UUID()
+        let conversation = Self.conversation(id: "c1", title: "旧标题")
+        let oldMessage = Self.message(id: "m1", conversationID: conversation.id, seconds: 1)
+        let repository = ChatRepositoryStub(
+            conversations: [conversation],
+            pages: [
+                .init(conversationID: conversation.id, cursor: nil): .init(
+                    messages: [oldMessage], previousCursor: nil, hasMoreBefore: false
+                )
+            ]
+        )
+        let model = MobileChatModel(realtimePollingIntervalNanoseconds: 1_000_000_000)
+        await model.activate(profileID: profileID, repository: repository)
+        await model.selectConversation(conversation)
+
+        let refreshedConversation = Self.conversation(id: conversation.id, title: "新标题")
+        let refreshedMessage = Self.message(id: "m2", conversationID: conversation.id, seconds: 2)
+        await repository.setConversations([refreshedConversation])
+        await repository.setPage(
+            .init(messages: [refreshedMessage], previousCursor: nil, hasMoreBefore: false),
+            for: .init(conversationID: conversation.id, cursor: nil)
+        )
+
+        await model.setForegroundRealtimeActive(true)
+        await eventually { await repository.realtimeStartCallCount() == 1 }
+        await repository.emitRealtimeEvent(.connected)
+        await repository.emitRealtimeEvent(.contentChanged)
+        await repository.emitRealtimeEvent(.contentChanged)
+
+        await eventually {
+            let conversationCount = await repository.conversationRequestCount()
+            let messageCount = await repository.messageRequests().count
+            return conversationCount == 2 && messageCount == 2
+        }
+        XCTAssertEqual(model.state.selectedConversation?.title, "新标题")
+        XCTAssertEqual(model.state.selectedMessages.messages, [refreshedMessage])
+        let memberRequests = await repository.memberRequests()
+        let announcementRequests = await repository.announcementRequests()
+        XCTAssertTrue(memberRequests.isEmpty)
+        XCTAssertTrue(announcementRequests.isEmpty)
+        await model.setForegroundRealtimeActive(false)
+    }
+
+    func test实时断开时固定轮询且Connected后停止() async {
+        let repository = ChatRepositoryStub(
+            conversations: [Self.conversation(id: "c1", title: "家庭")]
+        )
+        let model = MobileChatModel(realtimePollingIntervalNanoseconds: 5_000_000)
+        await model.activate(profileID: UUID(), repository: repository)
+
+        await model.setForegroundRealtimeActive(true)
+        await eventually { await repository.conversationRequestCount() >= 2 }
+        await repository.emitRealtimeEvent(.connected)
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        let connectedCount = await repository.conversationRequestCount()
+        try? await Task.sleep(nanoseconds: 30_000_000)
+
+        let finalConversationCount = await repository.conversationRequestCount()
+        XCTAssertEqual(finalConversationCount, connectedCount)
+        await model.setForegroundRealtimeActive(false)
+        let stopCallCount = await repository.realtimeStopCallCount()
+        XCTAssertEqual(stopCallCount, 1)
+    }
+
+    func test后台与切换Profile取消实时并隔离迟到结果() async {
+        let oldProfileID = UUID()
+        let oldConversation = Self.conversation(id: "old", title: "旧配置档")
+        let oldRepository = ChatRepositoryStub(conversations: [oldConversation])
+        let model = MobileChatModel(realtimePollingIntervalNanoseconds: 1_000_000_000)
+        await model.activate(profileID: oldProfileID, repository: oldRepository)
+        await model.setForegroundRealtimeActive(true)
+        await eventually { await oldRepository.realtimeStartCallCount() == 1 }
+
+        await model.setForegroundRealtimeActive(false)
+        await oldRepository.emitRealtimeEvent(.contentChanged)
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        let backgroundConversationCount = await oldRepository.conversationRequestCount()
+        let backgroundStopCount = await oldRepository.realtimeStopCallCount()
+        XCTAssertEqual(backgroundConversationCount, 1)
+        XCTAssertEqual(backgroundStopCount, 1)
+
+        await model.setForegroundRealtimeActive(true)
+        await eventually { await oldRepository.realtimeStartCallCount() == 2 }
+        await oldRepository.blockConversationList()
+        await oldRepository.emitRealtimeEvent(.contentChanged)
+        await oldRepository.waitUntilConversationListBlocked()
+
+        model.deactivate()
+        let newProfileID = UUID()
+        let newConversation = Self.conversation(id: "new", title: "新配置档")
+        let newRepository = ChatRepositoryStub(conversations: [newConversation])
+        await model.activate(profileID: newProfileID, repository: newRepository)
+        await oldRepository.releaseConversationList()
+        await eventually { await oldRepository.realtimeStopCallCount() == 2 }
+
+        XCTAssertEqual(model.activeProfileID, newProfileID)
+        XCTAssertEqual(model.state.conversations, [newConversation])
     }
 
     func test本地筛选为空使用筛选空态且不重复读取会话() async {
@@ -1321,6 +1422,18 @@ final class MobileChatModelTests: XCTestCase {
         }
     }
 
+    private func eventually(
+        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        condition: @escaping @Sendable () async -> Bool
+    ) async {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while !(await condition()) && DispatchTime.now().uptimeNanoseconds < deadline {
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        let didSatisfyCondition = await condition()
+        XCTAssertTrue(didSatisfyCondition)
+    }
+
     private static func conversation(
         id: String,
         title: String,
@@ -1404,7 +1517,10 @@ private actor ChatRepositoryStub: ChatRepository {
     private var memberRequestValues: [String] = []
     private var announcementRequestValues: [String] = []
     private var rejectedBaseCalls = 0
-    private var realtimeBaseCalls = 0
+    private var realtimeEventCalls = 0
+    private var realtimeStartCalls = 0
+    private var realtimeStopCalls = 0
+    private var realtimeContinuation: AsyncStream<ChatRealtimeEvent>.Continuation?
 
     private var blocksConversationList: Bool
     private var conversationListContinuation: CheckedContinuation<Void, Never>?
@@ -1492,6 +1608,10 @@ private actor ChatRepositoryStub: ChatRepository {
         conversationValues = conversations
     }
 
+    func setPage(_ page: ChatMessagePage, for request: ChatMessageRequest) {
+        pages[request] = page
+    }
+
     func blockConversationList() {
         blocksConversationList = true
     }
@@ -1506,7 +1626,13 @@ private actor ChatRepositoryStub: ChatRepository {
     func announcementRequests() -> [String] { announcementRequestValues }
     func sentDrafts() -> [ChatMessageDraft] { sentDraftValues }
     func nonReadCallCount() -> Int { rejectedBaseCalls }
-    func realtimeCallCount() -> Int { realtimeBaseCalls }
+    func realtimeCallCount() -> Int { realtimeEventCalls + realtimeStartCalls + realtimeStopCalls }
+    func realtimeStartCallCount() -> Int { realtimeStartCalls }
+    func realtimeStopCallCount() -> Int { realtimeStopCalls }
+
+    func emitRealtimeEvent(_ event: ChatRealtimeEvent) {
+        realtimeContinuation?.yield(event)
+    }
 
     func waitUntilConversationListBlocked() async {
         guard conversationListContinuation == nil else { return }
@@ -1753,10 +1879,12 @@ private actor ChatRepositoryStub: ChatRepository {
     }
 
     func realtimeEvents() async -> AsyncStream<ChatRealtimeEvent> {
-        realtimeBaseCalls += 1
-        return AsyncStream { $0.finish() }
+        realtimeEventCalls += 1
+        let pair = AsyncStream<ChatRealtimeEvent>.makeStream()
+        realtimeContinuation = pair.continuation
+        return pair.stream
     }
 
-    func startRealtime() async { realtimeBaseCalls += 1 }
-    func stopRealtime() async { realtimeBaseCalls += 1 }
+    func startRealtime() async { realtimeStartCalls += 1 }
+    func stopRealtime() async { realtimeStopCalls += 1 }
 }

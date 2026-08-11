@@ -204,6 +204,24 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(session.contains("chatModel.removePersistentPins(profileID: profile.id)"))
     }
 
+    func testChat前台实时刷新由Scene和当前模块共同控制() throws {
+        let app = try sourceFile("Sources/DsmMobileApp.swift")
+        let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
+        let repository = try sourceFile("Sources/Features/Chat/MobileReadOnlyChatRepository.swift")
+
+        XCTAssertTrue(app.contains("@Environment(\\.scenePhase)"))
+        XCTAssertTrue(app.contains("model.selectedModule == .chat"))
+        XCTAssertTrue(app.contains("setForegroundRealtimeActive"))
+        XCTAssertTrue(model.contains("case .contentChanged:"))
+        XCTAssertTrue(model.contains("await self?.reloadConversations()"))
+        XCTAssertTrue(model.contains("await self?.refreshMessages()"))
+        XCTAssertFalse(model.contains("loadConversationMembers(forceRefresh: true)"))
+        XCTAssertFalse(model.contains("loadConversationAnnouncements(forceRefresh: true)"))
+        XCTAssertTrue(repository.contains("await base.realtimeEvents()"))
+        XCTAssertTrue(repository.contains("await base.startRealtime()"))
+        XCTAssertTrue(repository.contains("await base.stopRealtime()"))
+    }
+
     func testRegular详情不会对已选择会话发起第二次选择且详情工具栏包含置顶和刷新() throws {
         let source = try sourceFile("Sources/Features/Chat/MobileChatView.swift")
 

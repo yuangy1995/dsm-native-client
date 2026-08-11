@@ -40,12 +40,16 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     }
 
     func realtimeEvents() async -> AsyncStream<ChatRealtimeEvent> {
-        AsyncStream { $0.finish() }
+        await base.realtimeEvents()
     }
 
-    func startRealtime() async {}
+    func startRealtime() async {
+        await base.startRealtime()
+    }
 
-    func stopRealtime() async {}
+    func stopRealtime() async {
+        await base.stopRealtime()
+    }
 
     func openDirectConversation(
         userID: String,

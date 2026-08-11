@@ -16,12 +16,23 @@ final class MobileChatModel {
     @ObservationIgnored private var memberTask: Task<Void, Never>?
     @ObservationIgnored private var announcementTask: Task<Void, Never>?
     @ObservationIgnored private var sendTask: Task<Void, Never>?
+    @ObservationIgnored private var realtimeTask: Task<Void, Never>?
+    @ObservationIgnored private var pollingTask: Task<Void, Never>?
+    @ObservationIgnored private var realtimeDebounceTask: Task<Void, Never>?
+    @ObservationIgnored private var realtimeSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var realtimeStopTask: Task<Void, Never>?
     @ObservationIgnored private var conversationGeneration = 0
     @ObservationIgnored private var messageGeneration = 0
     @ObservationIgnored private var memberGeneration = 0
     @ObservationIgnored private var announcementGeneration = 0
     @ObservationIgnored private var sendGeneration = 0
+    @ObservationIgnored private var realtimeGeneration = 0
+    @ObservationIgnored private var foregroundRealtimeRequested = false
+    @ObservationIgnored private var realtimeConnected = false
+    @ObservationIgnored private var pendingRealtimeSync = false
     @ObservationIgnored private let conversationPinStore: any MobileChatConversationPinStore
+    @ObservationIgnored private let realtimePollingIntervalNanoseconds: UInt64
+    @ObservationIgnored private let realtimeDebounceIntervalNanoseconds: UInt64
     private let attachmentFileManager: FileManager
     private let attachmentCopier: any MobileDocumentImportCopying
     private let attachmentRootURL: URL
@@ -36,13 +47,17 @@ final class MobileChatModel {
         attachmentFileManager: FileManager = .default,
         attachmentCopier: any MobileDocumentImportCopying = MobileSecurityScopedDocumentCopier(),
         attachmentRootURL: URL? = nil,
-        conversationPinStore: any MobileChatConversationPinStore = UserDefaultsMobileChatConversationPinStore()
+        conversationPinStore: any MobileChatConversationPinStore = UserDefaultsMobileChatConversationPinStore(),
+        realtimePollingIntervalNanoseconds: UInt64 = 30_000_000_000,
+        realtimeDebounceIntervalNanoseconds: UInt64 = 200_000_000
     ) {
         self.conversationPinStore = conversationPinStore
         self.attachmentFileManager = attachmentFileManager
         self.attachmentCopier = attachmentCopier
         self.attachmentRootURL = attachmentRootURL ?? attachmentFileManager.temporaryDirectory
             .appendingPathComponent("LanStashChatAttachments", isDirectory: true)
+        self.realtimePollingIntervalNanoseconds = max(realtimePollingIntervalNanoseconds, 1_000_000)
+        self.realtimeDebounceIntervalNanoseconds = max(realtimeDebounceIntervalNanoseconds, 1_000_000)
     }
 
     /// 附件临时文件只由附件状态机持有，不写入配置档状态。
@@ -112,6 +127,7 @@ final class MobileChatModel {
 
     func deactivate() {
         let profileID = activeProfileID
+        foregroundRealtimeRequested = false
         cancelAllWork()
         if let profileID {
             repositories[profileID] = nil
@@ -122,6 +138,7 @@ final class MobileChatModel {
     /// 用户明确退出或删除配置档时，清除该配置档关联的会话与消息明文缓存。
     func purge(profileID: UUID) {
         if activeProfileID == profileID {
+            foregroundRealtimeRequested = false
             cancelAllWork()
             activeProfileID = nil
         }
@@ -138,6 +155,18 @@ final class MobileChatModel {
         updateActive { profile in
             profile.conversationFilter = value
             Self.applyConversationFilter(to: &profile)
+        }
+    }
+
+    /// 实时刷新只在 Chat 可见且 App 位于前台时运行；后台不保活也不承诺即时到达。
+    func setForegroundRealtimeActive(_ isActive: Bool) async {
+        foregroundRealtimeRequested = isActive
+        if isActive {
+            await waitForForegroundRealtimeStop()
+            startForegroundRealtimeIfNeeded()
+        } else {
+            scheduleForegroundRealtimeStop()
+            await waitForForegroundRealtimeStop()
         }
     }
 
@@ -573,6 +602,7 @@ final class MobileChatModel {
     }
 
     func cancelAllWork() {
+        stopForegroundRealtimeSoon()
         conversationTask?.cancel()
         conversationTask = nil
         conversationGeneration &+= 1
@@ -597,6 +627,195 @@ final class MobileChatModel {
             $0.isLoadingMoreMessages = false
             $0.isSendingMessage = false
         }
+    }
+
+    private func startForegroundRealtimeIfNeeded() {
+        guard foregroundRealtimeRequested,
+              realtimeTask == nil,
+              let profileID = activeProfileID,
+              let repository = repositories[profileID],
+              state.availability.status == .available else { return }
+
+        realtimeGeneration &+= 1
+        let generation = realtimeGeneration
+        realtimeConnected = false
+        startPollingIfNeeded(profileID: profileID, repository: repository, generation: generation)
+        realtimeTask = Task { [weak self] in
+            let events = await repository.realtimeEvents()
+            guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
+                return
+            }
+            await repository.startRealtime()
+            guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
+                await repository.stopRealtime()
+                return
+            }
+            for await event in events {
+                guard !Task.isCancelled,
+                      self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
+                    break
+                }
+                self?.handleRealtimeEvent(
+                    event,
+                    profileID: profileID,
+                    repository: repository,
+                    generation: generation
+                )
+            }
+            guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
+                return
+            }
+            self?.realtimeTask = nil
+            self?.realtimeConnected = false
+            self?.startPollingIfNeeded(
+                profileID: profileID,
+                repository: repository,
+                generation: generation
+            )
+        }
+    }
+
+    private func handleRealtimeEvent(
+        _ event: ChatRealtimeEvent,
+        profileID: UUID,
+        repository: any ChatRepository,
+        generation: Int
+    ) {
+        switch event {
+        case .connected:
+            realtimeConnected = true
+            pollingTask?.cancel()
+            pollingTask = nil
+        case .contentChanged:
+            requestRealtimeSync(
+                profileID: profileID,
+                generation: generation,
+                waitsForDebounce: true
+            )
+        case .disconnected:
+            realtimeConnected = false
+            startPollingIfNeeded(profileID: profileID, repository: repository, generation: generation)
+        }
+    }
+
+    private func startPollingIfNeeded(
+        profileID: UUID,
+        repository: any ChatRepository,
+        generation: Int
+    ) {
+        guard !realtimeConnected,
+              pollingTask == nil,
+              isCurrentRealtime(profileID: profileID, generation: generation) else { return }
+        let interval = realtimePollingIntervalNanoseconds
+        pollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: interval)
+                } catch {
+                    return
+                }
+                guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true,
+                      self?.realtimeConnected == false else { return }
+                self?.requestRealtimeSync(
+                    profileID: profileID,
+                    generation: generation,
+                    waitsForDebounce: false
+                )
+            }
+        }
+    }
+
+    private func requestRealtimeSync(
+        profileID: UUID,
+        generation: Int,
+        waitsForDebounce: Bool
+    ) {
+        guard isCurrentRealtime(profileID: profileID, generation: generation) else { return }
+        if waitsForDebounce {
+            realtimeDebounceTask?.cancel()
+            let interval = realtimeDebounceIntervalNanoseconds
+            realtimeDebounceTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: interval)
+                } catch {
+                    return
+                }
+                guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
+                    return
+                }
+                self?.realtimeDebounceTask = nil
+                self?.enqueueRealtimeSync(profileID: profileID, generation: generation)
+            }
+            return
+        }
+        enqueueRealtimeSync(profileID: profileID, generation: generation)
+    }
+
+    private func enqueueRealtimeSync(profileID: UUID, generation: Int) {
+        guard isCurrentRealtime(profileID: profileID, generation: generation) else { return }
+        pendingRealtimeSync = true
+        guard realtimeSyncTask == nil else { return }
+        realtimeSyncTask = Task { [weak self] in
+            while self?.consumePendingRealtimeSync(
+                profileID: profileID,
+                generation: generation
+            ) == true {
+                await self?.reloadConversations()
+                guard !Task.isCancelled,
+                      self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
+                    break
+                }
+                await self?.refreshMessages()
+            }
+            guard self?.isCurrentRealtime(profileID: profileID, generation: generation) == true else {
+                return
+            }
+            self?.realtimeSyncTask = nil
+        }
+    }
+
+    private func consumePendingRealtimeSync(profileID: UUID, generation: Int) -> Bool {
+        guard pendingRealtimeSync,
+              isCurrentRealtime(profileID: profileID, generation: generation) else { return false }
+        pendingRealtimeSync = false
+        return true
+    }
+
+    private func stopForegroundRealtimeSoon() {
+        scheduleForegroundRealtimeStop()
+    }
+
+    private func scheduleForegroundRealtimeStop() {
+        guard realtimeStopTask == nil,
+              let (repository, eventTask) = cancelForegroundRealtimeTasks() else { return }
+        realtimeStopTask = Task {
+            await eventTask?.value
+            await repository.stopRealtime()
+        }
+    }
+
+    private func waitForForegroundRealtimeStop() async {
+        guard let realtimeStopTask else { return }
+        await realtimeStopTask.value
+        self.realtimeStopTask = nil
+    }
+
+    private func cancelForegroundRealtimeTasks() -> ((any ChatRepository), Task<Void, Never>?)? {
+        let repository = activeProfileID.flatMap { repositories[$0] }
+        let eventTask = realtimeTask
+        realtimeGeneration &+= 1
+        realtimeTask?.cancel()
+        realtimeTask = nil
+        pollingTask?.cancel()
+        pollingTask = nil
+        realtimeDebounceTask?.cancel()
+        realtimeDebounceTask = nil
+        realtimeSyncTask?.cancel()
+        realtimeSyncTask = nil
+        pendingRealtimeSync = false
+        realtimeConnected = false
+        guard let repository else { return nil }
+        return (repository, eventTask)
     }
 
     private func replaceMessages(
@@ -1140,6 +1359,13 @@ final class MobileChatModel {
 
     private func isCurrentSend(profileID: UUID, generation: Int) -> Bool {
         activeProfileID == profileID && sendGeneration == generation
+    }
+
+    private func isCurrentRealtime(profileID: UUID, generation: Int) -> Bool {
+        foregroundRealtimeRequested
+            && activeProfileID == profileID
+            && realtimeGeneration == generation
+            && repositories[profileID] != nil
     }
 
     private static func applyConversationFilter(to profile: inout MobileChatProfileState) {

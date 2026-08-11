@@ -182,7 +182,7 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 | PHOTO-02 · A/B | 缩略图缓存、完整查看、HEIC/MOV/Live Photo 兜底、EXIF 详情 | 查看器、键盘前后切换、元数据面板 | **核心**：沉浸查看、分享和基础元数据；iPad Inspector；受控内存上限 | `PhotoLibraryModel.swift`、`FilePreviewView.swift` |
 | PHOTO-03 · A/C | 上传、导出、删除、分享、移动和照片页回收站恢复 | 多选命令栏、拖放导入导出 | **受限**：主动导入/导出/分享和有上限的 NAS 内移动/回收站；不删除系统图库 | `PhotoLibraryModel.swift` |
 | CHAT-01 · C | 会话、用户、首次单聊、私人群聊、成员与未读/置顶/本地已读 | 会话-消息-详情布局、通知入口 | **核心**：会话、成员、可解释未读；iPhone Stack、iPad 双栏 | `ChatWorkspaceModel.swift`、`DsmChatRepository.swift` |
-| CHAT-02 · C | 消息分页、草稿、发送/失败重试、实时 Socket.IO 与轮询降级 | 键盘发送、连接状态与可恢复错误 | **核心**：文字/Emoji、草稿、分页、失败恢复与前台实时 | `ChatWorkspaceModel.swift`、`DsmChatRealtimeClient.swift` |
+| CHAT-02 · C | 消息分页、草稿、发送/失败重试、实时 Socket.IO 与轮询降级 | 键盘发送、连接状态与可恢复错误 | **核心**：文字/Emoji、草稿、分页、失败恢复与前台实时；源码与模拟器闭环已完成 | `ChatWorkspaceModel.swift`、`DsmChatRealtimeClient.swift` |
 | CHAT-03 · C | 单附件上传/保存、缩略图、图片预览；提醒、定时消息与投票第一阶段 | 文件选择器、详情窗格、任务反馈 | **受限**：单附件选择、上传/保存与预览；提醒、定时和投票不作为当前完成条件 | `ChatWorkspaceView.swift`、Chat 请求 fixture |
 | CHAT-04 · C | 删除本人消息、关闭会话、消息转发、服务端消息置顶/取消置顶；语音发送和完整加密实现不存在 | 可发现的消息/会话菜单与结果回读 | **受限**：少量常用消息动作按端点开放；高级管理、语音和加密当前不做 | `ChatWorkspaceModel.swift`、`DsmChatRepository.swift` |
 | DS-01 · A/C | 下载任务列表、详情、进度/速度、网址或任务文件创建、目标目录 | 专用任务页、筛选与多选命令 | **受限**：列表/详情和单任务创建；不承接复杂批量任务 | `ServiceManagementModel.swift`、`ServiceManagementView.swift` |
