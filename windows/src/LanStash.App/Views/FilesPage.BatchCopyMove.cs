@@ -316,7 +316,7 @@ public sealed partial class FilesPage
                     IsItemClickEnabled = true,
                     SelectionMode = ListViewSelectionMode.None,
                     MaxHeight = 320,
-                    ItemTemplate = BuildFolderTemplate(),
+                    ItemTemplate = FileCopyMoveDialogContent.BuildFolderTemplate(),
                 };
                 AutomationProperties.SetName(
                     list,

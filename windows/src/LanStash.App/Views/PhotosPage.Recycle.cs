@@ -85,6 +85,7 @@ public sealed partial class PhotosPage
 
     private bool CanOpenPhotoRecycleDialog(PhotoItem item, FileRecycleOperation operation) =>
         _photoRecycleDialog is null &&
+        _photoCopyMoveDialog is null &&
         !_isClosingPhotoRecycle &&
         CanPhotoRecycleItemCore(item, operation);
 

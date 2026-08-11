@@ -99,6 +99,23 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("internal void RefreshActionState() => UpdateState();", source);
     }
 
+    [Fact]
+    public void TimelineMoveCommandUsesSharedPageCallbackAndNativeScrollableToolbar()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml"));
+        var source = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("x:Uid=\"FileCopyMoveMove\" x:Name=\"MoveButton\"", xaml);
+        Assert.Contains("MinHeight=\"44\" Click=\"Move_Click\"", xaml);
+        Assert.Contains("HorizontalScrollBarVisibility=\"Auto\"", xaml);
+        Assert.Contains("Func<PhotoItem, bool>? canMove", source);
+        Assert.Contains("Func<PhotoItem, Task>? move", source);
+        Assert.Contains("_canMove?.Invoke(entry.Item) == true", source);
+        Assert.Contains("await _move(entry.Item)", source);
+        Assert.Contains("MoveButton.Visibility = CanMoveSelected", source);
+    }
+
     private static string RepositoryRoot([System.Runtime.CompilerServices.CallerFilePath] string file = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, "../../../../"));
 }

@@ -22,6 +22,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private PhotoThumbnailScheduler? _thumbnails;
     private Func<PhotoItem, Task>? _save;
     private Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? _open;
+    private Func<PhotoItem, bool>? _canMove;
+    private Func<PhotoItem, Task>? _move;
     private Func<PhotoItem, bool>? _canMoveToRecycle;
     private Func<PhotoItem, Task>? _moveToRecycle;
     private Func<PhotoItem, bool>? _canRestore;
@@ -44,6 +46,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         PhotoThumbnailScheduler thumbnails,
         Func<PhotoItem, Task> save,
         Func<PhotoItem, IReadOnlyList<PhotoItem>, Task>? open = null,
+        Func<PhotoItem, bool>? canMove = null,
+        Func<PhotoItem, Task>? move = null,
         Func<PhotoItem, bool>? canMoveToRecycle = null,
         Func<PhotoItem, Task>? moveToRecycle = null,
         Func<PhotoItem, bool>? canRestore = null,
@@ -53,6 +57,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         _thumbnails = thumbnails;
         _save = save;
         _open = open;
+        _canMove = canMove;
+        _move = move;
         _canMoveToRecycle = canMoveToRecycle;
         _moveToRecycle = moveToRecycle;
         _canRestore = canRestore;
@@ -97,6 +103,10 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
         _canRestore?.Invoke(entry.Item) == true;
 
+    internal bool CanMoveSelected =>
+        TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+        _canMove?.Invoke(entry.Item) == true;
+
     internal bool CanMoveSelectedToRecycle =>
         TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
         _canMoveToRecycle?.Invoke(entry.Item) == true;
@@ -126,6 +136,13 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             await _restore(entry.Item);
     }
 
+    internal async Task MoveSelectedAsync()
+    {
+        if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+            _canMove?.Invoke(entry.Item) == true && _move is not null)
+            await _move(entry.Item);
+    }
+
     internal async Task MoveSelectedToRecycleAsync()
     {
         if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
@@ -152,6 +169,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     { await OpenSelectedAsync(); }
     private async void Save_Click(object sender, RoutedEventArgs e)
     { await SaveSelectedAsync(); }
+    private async void Move_Click(object sender, RoutedEventArgs e)
+    { await MoveSelectedAsync(); }
     private async void Restore_Click(object sender, RoutedEventArgs e)
     { await RestoreSelectedAsync(); }
     private async void MoveToRecycle_Click(object sender, RoutedEventArgs e)
@@ -208,6 +227,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         FilterPicker.IsEnabled = _viewModel.HasCompletedSnapshot;
         OpenButton.IsEnabled = CanOpenSelected;
         SaveButton.IsEnabled = CanSaveSelected;
+        MoveButton.IsEnabled = CanMoveSelected;
+        MoveButton.Visibility = CanMoveSelected ? Visibility.Visible : Visibility.Collapsed;
         MoveToRecycleButton.Content = LocalizationService.Current.Get("FileRecycleMoveAction");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
             MoveToRecycleButton,

@@ -92,6 +92,21 @@ public sealed class FileCopyMoveRepositoryContractTests
     }
 
     [Fact]
+    public async Task MoveRechecksObservedSourceDeletePermissionBeforeWriting()
+    {
+        var source = File("/share/source/item.txt", "item.txt", 7, 10);
+        ((JsonObject)((JsonObject)source["additional"]!)["perm"]!)["delete"] = false;
+        var api = new FakeApi(Page(source));
+
+        var outcome = await Repository(api).CopyMoveAsync(Request(FileCopyMoveOperation.Move));
+
+        Assert.Equal(MutationResultStatus.PermissionDenied, outcome.Result.Status);
+        Assert.Equal(MutationErrorCategory.Permission, outcome.Result.ErrorCategory);
+        Assert.Equal(0, api.PermissionCount);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
     public async Task ProfileRemoteVirtualRecycleAndSameTargetRequestsSendZeroWrites()
     {
         var api = new FakeApi();
@@ -350,7 +365,7 @@ public sealed class FileCopyMoveRepositoryContractTests
         ["additional"] = new JsonObject
         {
             ["time"] = new JsonObject { ["mtime"] = modified },
-            ["perm"] = new JsonObject { ["write"] = true },
+            ["perm"] = new JsonObject { ["write"] = true, ["delete"] = true },
         },
     };
 
@@ -360,7 +375,7 @@ public sealed class FileCopyMoveRepositoryContractTests
         ["additional"] = new JsonObject
         {
             ["time"] = new JsonObject { ["mtime"] = modified },
-            ["perm"] = new JsonObject { ["write"] = true },
+            ["perm"] = new JsonObject { ["write"] = true, ["delete"] = true },
         },
     };
 

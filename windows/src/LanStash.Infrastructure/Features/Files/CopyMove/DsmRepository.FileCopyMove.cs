@@ -70,6 +70,10 @@ public sealed partial class DsmRepository
                 return CopyMoveOutcome(operation, MutationResultStatus.ConfirmedFailure,
                     false, false, MutationErrorCategory.Validation,
                     "file.copy-move.source-changed");
+            if (request.Operation == FileCopyMoveOperation.Move && !observedSource!.CanDelete)
+                return CopyMoveOutcome(operation, MutationResultStatus.PermissionDenied,
+                    false, false, MutationErrorCategory.Permission,
+                    "file.copy-move.source-permission");
 
             var destinationItems = sourceParent == request.DestinationDirectoryPath
                 ? sourceItems

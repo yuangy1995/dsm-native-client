@@ -269,6 +269,47 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("FileRecycleStatusAutomationName", dialog);
     }
 
+    [Fact]
+    public void SinglePhotoMoveReusesFileCopyMoveSafetyChainAndRevalidatesSelection()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var page = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
+        var move = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.CopyMove.cs");
+        var sharedDialog = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Files/CopyMove/FileCopyMoveDialogContent.cs");
+        var filesMove = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.CopyMove.cs");
+        var shell = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+
+        Assert.Contains("x:Uid=\"FileCopyMoveMove\"", xaml);
+        Assert.Contains("x:Name=\"PhotoMoveButton\"", xaml);
+        Assert.Contains("Click=\"MovePhoto_Click\"", xaml);
+        Assert.Contains("InitializePhotoCopyMove(copyMoveRepository, copyMoveFolderSource, copyMoveReviewBlocker);", page);
+        Assert.Contains("copyMoveRepository: photoCopyMoveRepository", shell);
+        Assert.Contains("copyMoveFolderSource: photoCopyMoveFolderSource", shell);
+        Assert.Contains("new RepositoryFileCopyMoveFolderSource(", shell);
+
+        Assert.Contains("new FileCopyMoveViewModel(", move);
+        Assert.Contains("FileCopyMoveOperation.Move", move);
+        Assert.Contains("repository.Availability.CanMove", move);
+        Assert.Contains("!HasRecyclePathSegment(item.Path)", move);
+        Assert.Contains("IsCurrentPhotoMoveRequest(", move);
+        Assert.Contains("await ClosePhotoViewerAsync(restoreBrowserFocus: false);", move);
+        Assert.Contains("var operation = model.SubmitAsync();", move);
+        Assert.Contains("await operation;", move);
+        Assert.Contains("model.State != FileCopyMovePresentationState.ConfirmedSuccess", move);
+        Assert.Contains("await TimelineView.RefreshAsync()", move);
+        Assert.Contains("await RunLocationChangeAsync(_viewModel.RefreshAsync)", move);
+        Assert.DoesNotContain("FileCopyMoveOperation.Copy", Slice(
+            move,
+            "private async Task ShowPhotoMoveAsync",
+            "private bool IsCurrentPhotoMoveRequest"));
+
+        Assert.Contains("FileCopyMoveDialogContent.Build(model, localization, RenderAsync)", move);
+        Assert.Contains("FileCopyMoveDialogContent.Build(model, localization, RenderAsync)", filesMove);
+        Assert.Contains("FileCopyMove_A11y_DestinationTree", sharedDialog);
+        Assert.Contains("AutomationLiveSetting.Assertive", sharedDialog);
+    }
+
     [Theory]
     [InlineData("PhotoBrowserSpace")]
     [InlineData("PhotoBrowserBreadcrumbs")]

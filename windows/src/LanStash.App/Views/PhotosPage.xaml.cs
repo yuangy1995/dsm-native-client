@@ -1,4 +1,5 @@
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Preview;
 using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Photos;
@@ -45,7 +46,10 @@ public sealed partial class PhotosPage : Page, IDisposable
         IFileLocationsRepository? locationsRepository = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
-        IFilePreviewRepository? previewRepository = null)
+        IFilePreviewRepository? previewRepository = null,
+        IFileCopyMoveRepository? copyMoveRepository = null,
+        IFileCopyMoveFolderSource? copyMoveFolderSource = null,
+        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null)
         : this(
             new RepositoryPhotoBrowserDataSource(repository),
             new PhotoBrowserViewModel(),
@@ -56,7 +60,10 @@ public sealed partial class PhotosPage : Page, IDisposable
             locationsRepository ?? repository as IFileLocationsRepository,
             recycleRepository,
             recycleReviewBlocker,
-            previewRepository)
+            previewRepository,
+            copyMoveRepository,
+            copyMoveFolderSource,
+            copyMoveReviewBlocker)
     {
     }
 
@@ -70,7 +77,10 @@ public sealed partial class PhotosPage : Page, IDisposable
         IFileLocationsRepository? locationsRepository = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
-        IFilePreviewRepository? previewRepository = null)
+        IFilePreviewRepository? previewRepository = null,
+        IFileCopyMoveRepository? copyMoveRepository = null,
+        IFileCopyMoveFolderSource? copyMoveFolderSource = null,
+        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null)
     {
         EnsureMatchingProfile(dataSource.ProfileId, profileId);
         InitializeComponent();
@@ -82,6 +92,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         _profileId = profileId;
         _transfers = transfers;
         InitializePhotoRecycle(locationsRepository, recycleRepository, recycleReviewBlocker);
+        InitializePhotoCopyMove(copyMoveRepository, copyMoveFolderSource, copyMoveReviewBlocker);
         InitializePhotoImport();
         InitializePhotoViewer(previewRepository);
         if (_timelineDataSource is not null)
@@ -92,6 +103,8 @@ public sealed partial class PhotosPage : Page, IDisposable
                 thumbnails,
                 SaveTimelineItemAsync,
                 OpenTimelineViewerAsync,
+                CanMovePhoto,
+                MovePhotoAsync,
                 CanMovePhotoToRecycle,
                 MovePhotoToRecycleAsync,
                 CanRestorePhotoItem,
@@ -163,6 +176,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         _ = ClosePhotoViewerAsync();
         TimelineView.HideTimeline();
         DeactivatePhotoImport();
+        ClosePhotoCopyMoveDialog();
         ClosePhotoRecycleDialog();
         DeactivatePhotoRecycleLocations();
     }
@@ -645,6 +659,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         OpenButton.IsEnabled = CanOpenSelectedMedia();
         SaveButton.IsEnabled = CanSaveSelectedMedia();
         UpdatePhotoViewerState();
+        UpdatePhotoCopyMoveControls();
         UpdatePhotoRecycleControls();
         SpacePicker.IsEnabled = !_viewModel.IsLoading && _viewModel.Spaces.Count > 1;
         FilterButton.IsEnabled = !_viewModel.IsLoading;
@@ -758,6 +773,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         DisposePhotoImport();
         DisposePhotoViewer();
+        ClosePhotoCopyMoveDialog();
         ClosePhotoRecycleDialog();
         DisposePhotoRecycleLocations();
         CancelThumbnailRequests();

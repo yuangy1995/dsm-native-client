@@ -1,6 +1,8 @@
 using LanStash.App.Localization;
 using LanStash.App.Features.Settings;
 using LanStash.App.Features.Files.Sharing;
+using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Locations;
 using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Files.Recycle;
@@ -362,6 +364,19 @@ public sealed partial class ShellPage : Page
                     {
                         photoPreviewRepository = null;
                     }
+                    var photoCopyMoveRepository = _app.Repository as IFileCopyMoveRepository;
+                    if (photoCopyMoveRepository?.ProfileId != photoProfile.Id)
+                    {
+                        photoCopyMoveRepository = null;
+                    }
+                    IFileCopyMoveFolderSource? photoCopyMoveFolderSource = null;
+                    if (photoLocationsRepository is not null)
+                    {
+                        photoCopyMoveFolderSource = new RepositoryFileCopyMoveFolderSource(
+                            photoProfile.Id,
+                            new RepositoryFileBrowserDataSource(_app.Repository),
+                            photoLocationsRepository);
+                    }
                     _photos = new PhotosPage(
                         photoRepository,
                         photoProfile.Id.ToString(),
@@ -369,7 +384,10 @@ public sealed partial class ShellPage : Page
                         locationsRepository: photoLocationsRepository,
                         recycleRepository: photoRecycleRepository,
                         recycleReviewBlocker: FileRecycleReviewBlocker.Current,
-                        previewRepository: photoPreviewRepository);
+                        previewRepository: photoPreviewRepository,
+                        copyMoveRepository: photoCopyMoveRepository,
+                        copyMoveFolderSource: photoCopyMoveFolderSource,
+                        copyMoveReviewBlocker: FileCopyMoveReviewBlocker.Current);
                     _photosProfileId = photoProfile.Id;
                     _photosRepository = photoRepository;
                 }

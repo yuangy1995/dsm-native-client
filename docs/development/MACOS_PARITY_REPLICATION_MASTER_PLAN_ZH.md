@@ -195,6 +195,8 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 Windows PHOTO-02 已在既有查看器语义上补齐系统级全屏、进入前窗口状态恢复、托盘隐藏暂停视频、当前代次媒体失败恢复，以及 HEIC/HEIF/WebP/MKV/WebM 的安全预览尝试；不捆绑编解码器、不新增 NAS 请求。源码本机聚焦 100/100、全量 xUnit 1164/1164 通过；GitHub Windows Build run `31513964648` 已通过 1164/1164 与 WinUI x64/ARM64 构建，Repository Check run `31513964640` 已通过。真实设备、编解码器、Range 播放和辅助功能保留为 `PENDING_USER_VALIDATION`。
 
 Windows PHOTO-03 已补入文件夹网格与主动时间线的单项普通媒体移入回收站源码闭环：只消费已发现的同共享回收站入口，并复用 FILE-09 的权限预检、typed 结果、防重复、未知结果只回读和最终核对，不删除系统图库。本机聚焦 138/138、完整 xUnit 1165/1165 通过；GitHub Windows Build run `31516242228` 已通过 1165/1165 与 WinUI x64/ARM64 构建，Repository Check run `31516242282` 已通过。批量、永久删除、收藏写及真实 Windows/NAS 副作用不在本切片。
+
+Windows PHOTO-03 已继续补入单项普通媒体同 NAS 移动闭环：文件夹网格和主动时间线共用 FILE-05 CopyMove v3 与原生目标文件夹选择器，只允许一个普通图片或视频移到普通本地可写目标，不覆盖、不自动改名。提交前关闭预览并重新核对 profile、资料库、来源身份与删除权限、选择和版本；Repository 继续负责本地挂载、权限、冲突、一次提交、任务轮询和最终回读，提交未知只回读、不重放。本机聚焦 110/110、完整 xUnit 1168/1168、本地化与 XML 门禁通过；macOS 无法执行 Windows `XamlCompiler.exe`，不写成本机 WinUI 构建通过。GitHub Windows Build run `31519022162` 已通过 1168/1168 与 WinUI x64/ARM64 构建，Repository Check run `31519022189` 已通过。批量、复制、跨 NAS、撤销、后台恢复、系统图库移动和查看器独立写入口不在本切片；真实 NAS/Windows、Narrator、高对比、200% 缩放、窄窗口、键鼠与触控为 `PENDING_USER_VALIDATION`。
 | NAS-01 · A/C | 系统概况、性能趋势、更新检查/发布说明、存储/硬盘/外接存储/ZRAM | Dashboard + 原生图表/数据表 | **核心**：系统、连接、容量与健康只读摘要；更新仅查看说明 | `NasAdministrationModel.swift` |
 | NAS-02 · A/C | 文件服务、终端、代理、接口、DDNS、区域时间、QuickConnect | 分类设置页、表单验证与写后回读 | **受限**：只读连接/配置摘要；所有设置写当前不做 | `NasAdministrationView.swift`、NAS Repository |
 | NAS-03 · A/C | 硬件/休眠、UPS、防火墙基础控制、电源操作 | 危险操作与普通设置空间分离 | **当前不做**：硬件、防火墙与电源写交给 Mac App 或 DSM Web | 同上、私有 API 记录 |

@@ -162,6 +162,13 @@
                 Icon="Save"
                 MinHeight="44" />
             <AppBarButton
+                x:Uid="FileCopyMoveMove"
+                x:Name="PhotoMoveButton"
+                Click="MovePhoto_Click"
+                Icon="MoveToFolder"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileRecycleMoveToRecycle"
                 x:Name="PhotoMoveToRecycleButton"
                 Click="MovePhotoToRecycle_Click"

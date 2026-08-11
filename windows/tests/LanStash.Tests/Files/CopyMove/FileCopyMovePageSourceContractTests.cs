@@ -8,6 +8,8 @@ public sealed class FileCopyMovePageSourceContractTests
         var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
         var page = Read("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
         var partial = Read("windows/src/LanStash.App/Views/FilesPage.CopyMove.cs");
+        var dialog = Read(
+            "windows/src/LanStash.App/Features/Files/CopyMove/FileCopyMoveDialogContent.cs");
 
         Assert.Contains("x:Name=\"CopyFileButton\"", xaml);
         Assert.Contains("x:Name=\"MoveFileButton\"", xaml);
@@ -21,14 +23,15 @@ public sealed class FileCopyMovePageSourceContractTests
         Assert.Contains("CopyMoveAsync", partial);
         Assert.Contains("ContentDialog", partial);
         Assert.Contains("IFileCopyMoveFolderSource", partial);
-        Assert.Contains("AutomationLiveSetting.Assertive", partial);
+        Assert.Contains("AutomationLiveSetting.Assertive", dialog);
+        Assert.Contains("FileCopyMoveDialogContent.Build", partial);
         Assert.Contains("model.State != FileCopyMovePresentationState.ConfirmedSuccess", partial);
         Assert.DoesNotContain("ReviewAsync", partial);
         Assert.DoesNotContain("FileCopyMove_Review_Button", partial);
         Assert.Contains("IsReadOnlyLocation()", partial);
         Assert.Contains("FileCopyMoveViewModel.IsDestination(item.Path)", partial);
         Assert.DoesNotContain("IsDirectory: false", partial);
-        Assert.Contains("CopyMoveTitleKey(model.Source.IsDirectory", partial);
+        Assert.Contains("FileCopyMoveDialogContent.TitleKey(model.Source.IsDirectory", partial);
     }
 
     [Fact]

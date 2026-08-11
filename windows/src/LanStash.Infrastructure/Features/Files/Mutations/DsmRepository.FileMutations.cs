@@ -374,11 +374,16 @@ public sealed partial class DsmRepository
                 if (size < 0) throw new InvalidDataException("file.mutation.invalid-size");
                 var modified = OptionalMutationTime(item, additional);
                 var canWrite = false;
-                if (additional?["perm"] is not null &&
-                    (additional["perm"] is not JsonObject permission ||
-                        !NativeBool(permission, "write", out canWrite)))
-                    throw new InvalidDataException("file.mutation.invalid-permission");
-                items.Add(new FileItem(itemPath, name, isDir, size, modified, null, canWrite, false));
+                var canDelete = false;
+                if (additional?["perm"] is not null)
+                {
+                    if (additional["perm"] is not JsonObject permission ||
+                        !NativeBool(permission, "write", out canWrite) ||
+                        permission["delete"] is not null &&
+                        !NativeBool(permission, "delete", out canDelete))
+                        throw new InvalidDataException("file.mutation.invalid-permission");
+                }
+                items.Add(new FileItem(itemPath, name, isDir, size, modified, null, canWrite, canDelete));
             }
             offset = nextOffset;
             if (offset >= total) break;

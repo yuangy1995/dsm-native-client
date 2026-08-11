@@ -26,6 +26,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="PhotoTimelineSearch" x:Name="SearchBox" MinHeight="44"
                      TextChanged="SearchBox_TextChanged" />
@@ -41,9 +42,11 @@
                     MinHeight="44" Click="Open_Click" />
             <Button x:Uid="PhotoTimelineSave" x:Name="SaveButton" Grid.Column="4"
                     MinHeight="44" Click="Save_Click" />
-            <Button x:Name="RestoreButton" Grid.Column="5"
+            <Button x:Uid="FileCopyMoveMove" x:Name="MoveButton" Grid.Column="5"
+                    MinHeight="44" Click="Move_Click" Visibility="Collapsed" />
+            <Button x:Name="RestoreButton" Grid.Column="6"
                     MinHeight="44" Click="Restore_Click" Visibility="Collapsed" />
-            <Button x:Name="MoveToRecycleButton" Grid.Column="6"
+            <Button x:Name="MoveToRecycleButton" Grid.Column="7"
                     MinHeight="44" Click="MoveToRecycle_Click" Visibility="Collapsed" />
         </Grid>
         </ScrollViewer>
