@@ -78,6 +78,14 @@
   <data name="NasDetailsSectionStorage" xml:space="preserve"><value>Storage</value></data>
   <data name="NasDetailsSectionUpdate" xml:space="preserve"><value>Updates</value></data>
   <data name="NasDetailsSectionShareAccess" xml:space="preserve"><value>Share access</value></data>
+  <data name="NasDetailsSectionSystemActivity" xml:space="preserve"><value>System activity</value></data>
+  <data name="NasDetailsSystemActivityProcessId" xml:space="preserve"><value>Process ID {0}</value></data>
+  <data name="NasDetailsSystemActivityGroup" xml:space="preserve"><value>Service: {0}</value></data>
+  <data name="NasDetailsSystemActivityStatusAndGroup" xml:space="preserve"><value>{0} · Service: {1}</value></data>
+  <data name="NasDetailsSystemActivityGroupUnavailable" xml:space="preserve"><value>Unavailable</value></data>
+  <data name="NasDetailsSystemActivityScopeTitle" xml:space="preserve"><value>Private single snapshot</value></data>
+  <data name="NasDetailsSystemActivityScopeMessage" xml:space="preserve"><value>Shows process names and IDs from one refresh. Commands, paths, accounts, ports, and network addresses stay hidden.</value></data>
+  <data name="NasDetailsSystemActivityGroupsUnavailable" xml:space="preserve"><value>Service details are temporarily unavailable.</value></data>
   <data name="NasDetailsShareAccessScopeTitle" xml:space="preserve"><value>Access for the current account</value></data>
   <data name="NasDetailsShareAccessScopeMessage" xml:space="preserve"><value>Only shared folders visible to this account are shown. Hidden or unavailable folders are not listed, so this is not a complete administrator permission list.</value></data>
   <data name="NasDetailsShareAccessReadWrite" xml:space="preserve"><value>Read and write</value></data>

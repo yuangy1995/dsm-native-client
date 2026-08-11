@@ -12,6 +12,9 @@ public sealed partial class DsmRepository
     private const int ShareAccessApiVersion = 2;
     private const int ShareAccessPageSize = 200;
     private const int ShareAccessSourceLimit = 500;
+    private const int SystemActivityApiVersion = 1;
+    private const int SystemActivitySourceLimit = 500;
+    private const int SystemActivityMaximumTotal = 1_000_000;
 
     NasDetailsAvailability INasDetailsRepository.Availability => NasDetailsAvailability;
 
@@ -35,6 +38,10 @@ public sealed partial class DsmRepository
             if (SupportsShareAccess())
             {
                 features.Add(NasDetailsReadFeature.ShareAccess);
+            }
+            if (SupportsSystemActivity("SYNO.Core.System.Process"))
+            {
+                features.Add(NasDetailsReadFeature.SystemActivity);
             }
             if (Supports("SYNO.Core.Package"))
             {
@@ -72,10 +79,283 @@ public sealed partial class DsmRepository
             await LoadStorageHealthSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadSystemUpdateSectionAsync(systemOverview, cancellationToken).ConfigureAwait(false),
             await LoadShareAccessSectionAsync(cancellationToken).ConfigureAwait(false),
+            await LoadSystemActivitySectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadPackagesSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadScheduledTasksSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadLogsSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadConnectionsSectionAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    private bool SupportsSystemActivity(string apiName) =>
+        _capabilities.TryGetValue(apiName, out var capability) &&
+        string.Equals(capability.Name, apiName, StringComparison.Ordinal) &&
+        capability.MinVersion <= SystemActivityApiVersion &&
+        capability.MaxVersion >= SystemActivityApiVersion &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<NasDetailsSection<NasSystemActivitySummary>> LoadSystemActivitySectionAsync(
+        CancellationToken cancellationToken)
+    {
+        const string processApi = "SYNO.Core.System.Process";
+        const string groupApi = "SYNO.Core.System.ProcessGroup";
+        if (!SupportsSystemActivity(processApi))
+        {
+            return Unavailable<NasSystemActivitySummary>("nas-details.system-activity.unavailable");
+        }
+        try
+        {
+            var parameters = SystemActivityParameters();
+            var data = await _api.CallReadJsonObjectAsync(
+                _profile,
+                _session,
+                Required(processApi),
+                SystemActivityApiVersion,
+                "list",
+                parameters,
+                cancellationToken).ConfigureAwait(false);
+            var processRows = SystemActivityRequiredArray(data, "processes", "items");
+            if (processRows.Count > SystemActivitySourceLimit)
+            {
+                throw new InvalidDataException("System process list exceeded its bound.");
+            }
+            var processes = ParseSystemProcesses(processRows);
+            var reportedTotal = SystemActivityOptionalTotal(data);
+            if (reportedTotal is { } total && total < processRows.Count)
+            {
+                throw new InvalidDataException("System process total is smaller than the returned list.");
+            }
+            var visibleProcesses = processes.Take(NasDetailsPageLimit).ToArray();
+            var isTruncated = processes.Count > visibleProcesses.Length ||
+                (reportedTotal is { } reported
+                    ? reported > processRows.Count
+                    : processRows.Count == SystemActivitySourceLimit);
+
+            IReadOnlyList<NasProcessGroupSummary> groups = [];
+            var groupsUnavailable = !SupportsSystemActivity(groupApi);
+            if (!groupsUnavailable)
+            {
+                try
+                {
+                    var groupData = await _api.CallReadJsonObjectAsync(
+                        _profile,
+                        _session,
+                        Required(groupApi),
+                        SystemActivityApiVersion,
+                        "list",
+                        SystemActivityParameters(),
+                        cancellationToken).ConfigureAwait(false);
+                    var groupRows = SystemActivityRequiredArray(groupData, "groups", "items");
+                    if (groupRows.Count > SystemActivitySourceLimit)
+                    {
+                        throw new InvalidDataException("System process group list exceeded its bound.");
+                    }
+                    groups = ParseProcessGroups(groupRows);
+                    var groupTotal = SystemActivityOptionalTotal(groupData);
+                    if (groupTotal is { } reportedGroupTotal &&
+                        reportedGroupTotal < groupRows.Count)
+                    {
+                        throw new InvalidDataException(
+                            "System process group total is smaller than the returned list.");
+                    }
+                    groupsUnavailable = groupTotal is { } completeGroupTotal
+                        ? completeGroupTotal > groupRows.Count
+                        : groupRows.Count == SystemActivitySourceLimit;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception error) when (IsNasDetailsReadFailure(error))
+                {
+                    groupsUnavailable = true;
+                }
+            }
+
+            var visibleGroupIds = visibleProcesses
+                .Select(item => item.GroupId)
+                .OfType<string>()
+                .ToHashSet(StringComparer.Ordinal);
+            var visibleGroups = groups.Where(item => visibleGroupIds.Contains(item.Id)).ToArray();
+            var section = Available<NasSystemActivitySummary>(
+            [
+                new(visibleProcesses, visibleGroups, groupsUnavailable),
+            ]);
+            return section with { IsTruncated = isTruncated };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return Failed<NasSystemActivitySummary>("nas-details.system-activity.failed");
+        }
+    }
+
+    private static Dictionary<string, string> SystemActivityParameters() =>
+        new(StringComparer.Ordinal)
+        {
+            ["start"] = "0",
+            ["limit"] = SystemActivitySourceLimit.ToString(CultureInfo.InvariantCulture),
+        };
+
+    private static JsonArray SystemActivityRequiredArray(
+        JsonObject data,
+        string primaryKey,
+        string fallbackKey)
+    {
+        if (data.ContainsKey(primaryKey))
+        {
+            return data[primaryKey] as JsonArray
+                ?? throw new InvalidDataException("Invalid system activity list.");
+        }
+        return data[fallbackKey] as JsonArray
+            ?? throw new InvalidDataException("Missing system activity list.");
+    }
+
+    private static int? SystemActivityOptionalTotal(JsonObject data)
+    {
+        var key = data.ContainsKey("total") ? "total" : "total_count";
+        if (!data.ContainsKey(key) || data[key] is null)
+        {
+            return null;
+        }
+        return data[key] is JsonValue node && node.TryGetValue<int>(out var total) &&
+            total >= 0 && total <= SystemActivityMaximumTotal
+                ? total
+                : throw new InvalidDataException("Invalid system process total.");
+    }
+
+    private static IReadOnlyList<NasSystemProcessSummary> ParseSystemProcesses(JsonArray rows)
+    {
+        var seen = new HashSet<int>();
+        var processes = new List<NasSystemProcessSummary>();
+        foreach (var node in rows)
+        {
+            var item = node as JsonObject
+                ?? throw new InvalidDataException("Invalid system process item.");
+            var processId = SystemActivityProcessId(item);
+            var name = SystemActivityDisplayName(item, "name", "process_name");
+            if (processId is null || name is null || !seen.Add(processId.Value))
+            {
+                continue;
+            }
+            processes.Add(new NasSystemProcessSummary(
+                $"process:{processId.Value.ToString(CultureInfo.InvariantCulture)}",
+                processId.Value,
+                name,
+                SystemActivityText(item, 80, "status"),
+                SystemActivityGroupId(item, "group_id", "group", "service")));
+        }
+        return processes
+            .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.ProcessId)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<NasProcessGroupSummary> ParseProcessGroups(JsonArray rows)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var groups = new List<NasProcessGroupSummary>();
+        foreach (var node in rows)
+        {
+            var item = node as JsonObject
+                ?? throw new InvalidDataException("Invalid system process group item.");
+            var id = SystemActivityGroupId(item, "id", "group_id", "service");
+            var name = SystemActivityDisplayName(item, "display_name", "name", "service");
+            if (id is null || name is null || !seen.Add(id))
+            {
+                continue;
+            }
+            groups.Add(new NasProcessGroupSummary(
+                id,
+                name,
+                SystemActivityText(item, 80, "status"),
+                SystemActivityOptionalCount(item, "process_count", "count")));
+        }
+        return groups
+            .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static int? SystemActivityProcessId(JsonObject item)
+    {
+        foreach (var key in new[] { "pid", "process_id" })
+        {
+            if (!item.ContainsKey(key) || item[key] is null)
+            {
+                continue;
+            }
+            return item[key] is JsonValue node && node.TryGetValue<int>(out var value) && value >= 0
+                ? value
+                : null;
+        }
+        return null;
+    }
+
+    private static string? SystemActivityDisplayName(JsonObject item, params string[] keys)
+    {
+        var value = SystemActivityText(item, 512, keys);
+        if (value is null)
+        {
+            return null;
+        }
+        var components = value.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        return SystemActivityNormalizeText(components.LastOrDefault() ?? value, 160);
+    }
+
+    private static string? SystemActivityGroupId(JsonObject item, params string[] keys)
+    {
+        var value = SystemActivityText(item, 128, keys);
+        return value is not null && value.All(character =>
+            char.IsLetterOrDigit(character) || character is '.' or '_' or '-' or ':')
+                ? value
+                : null;
+    }
+
+    private static string? SystemActivityText(
+        JsonObject item,
+        int maximumLength,
+        params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (item[key] is JsonValue node && node.TryGetValue<string>(out var value))
+            {
+                return SystemActivityNormalizeText(value, maximumLength);
+            }
+        }
+        return null;
+    }
+
+    private static string? SystemActivityNormalizeText(string? value, int maximumLength)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+        var normalized = string.Join(' ', value.Split(['\r', '\n']))
+            .Trim();
+        return string.IsNullOrWhiteSpace(normalized)
+            ? null
+            : normalized[..Math.Min(normalized.Length, maximumLength)];
+    }
+
+    private static int? SystemActivityOptionalCount(JsonObject item, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!item.ContainsKey(key) || item[key] is null)
+            {
+                continue;
+            }
+            return item[key] is JsonValue node && node.TryGetValue<int>(out var count) &&
+                count >= 0 && count <= SystemActivityMaximumTotal
+                    ? count
+                    : null;
+        }
+        return null;
     }
 
     private bool SupportsShareAccess() =>

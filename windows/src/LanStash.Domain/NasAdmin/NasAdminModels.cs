@@ -27,6 +27,7 @@ public enum NasDetailsReadFeature
     StorageHealth,
     SystemUpdate,
     ShareAccess,
+    SystemActivity,
     Packages,
     ScheduledTasks,
     Logs,
@@ -85,6 +86,24 @@ public sealed record NasShareAccessSummary(
     NasShareAccessLevel AccessLevel,
     bool CanDelete);
 
+public sealed record NasSystemProcessSummary(
+    string Id,
+    int ProcessId,
+    string Name,
+    string? Status,
+    string? GroupId);
+
+public sealed record NasProcessGroupSummary(
+    string Id,
+    string Name,
+    string? Status,
+    int? ProcessCount);
+
+public sealed record NasSystemActivitySummary(
+    IReadOnlyList<NasSystemProcessSummary> Processes,
+    IReadOnlyList<NasProcessGroupSummary> Groups,
+    bool AreGroupsUnavailable);
+
 public enum NasDetailsAvailabilityStatus
 {
     Available,
@@ -140,6 +159,7 @@ public sealed record NasDetailsSnapshot(
     NasDetailsSection<NasStorageHealthSummary> StorageHealth,
     NasDetailsSection<NasSystemUpdateSummary> SystemUpdate,
     NasDetailsSection<NasShareAccessSummary> ShareAccess,
+    NasDetailsSection<NasSystemActivitySummary> SystemActivity,
     NasDetailsSection<NasPackageSummary> Packages,
     NasDetailsSection<NasScheduledTaskSummary> ScheduledTasks,
     NasDetailsSection<NasLogSummary> Logs,

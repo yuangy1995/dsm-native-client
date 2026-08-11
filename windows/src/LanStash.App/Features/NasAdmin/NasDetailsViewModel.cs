@@ -258,6 +258,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
                 StorageRow),
             NasDetailsSectionKind.SystemUpdate => ProjectUpdateSection(snapshot.SystemUpdate),
             NasDetailsSectionKind.ShareAccess => ProjectShareAccessSection(snapshot.ShareAccess),
+            NasDetailsSectionKind.SystemActivity => ProjectSystemActivitySection(snapshot.SystemActivity),
             NasDetailsSectionKind.Packages => ProjectSection(
                 snapshot.Packages,
                 PackageRow),
@@ -317,6 +318,10 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             NasDetailsSectionKind.ShareAccess,
             snapshot.ShareAccess.Status,
             snapshot.ShareAccess.Items.Count));
+        Sections.Add(SectionOption(
+            NasDetailsSectionKind.SystemActivity,
+            snapshot.SystemActivity.Status,
+            snapshot.SystemActivity.Items.Sum(item => item.Processes.Count)));
         Sections.Add(SectionOption(
             NasDetailsSectionKind.Packages,
             snapshot.Packages.Status,
@@ -451,6 +456,44 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
                 NasShareAccessLevel.ReadOnly => "\uE890",
                 _ => "\uE897",
             });
+    }
+
+    private static SectionProjection ProjectSystemActivitySection(
+        NasDetailsSection<NasSystemActivitySummary> section)
+    {
+        if (section.Status != NasDetailsSectionStatus.Available || section.Items.Count == 0 ||
+            section.Items[0].Processes.Count == 0)
+        {
+            return new(section.Status, [], section.IsTruncated);
+        }
+        var activity = section.Items[0];
+        var groups = activity.Groups.ToDictionary(group => group.Id, StringComparer.Ordinal);
+        var rows = new List<NasDetailsRow>
+        {
+            Row(
+                "system-activity-scope",
+                L.Get("NasDetailsSystemActivityScopeTitle"),
+                L.Get("NasDetailsSystemActivityScopeMessage"),
+                activity.AreGroupsUnavailable
+                    ? L.Get("NasDetailsSystemActivityGroupsUnavailable")
+                    : string.Empty,
+                "\uE946"),
+        };
+        rows.AddRange(activity.Processes.Select(item =>
+        {
+            var groupName = item.GroupId is { } groupId && groups.TryGetValue(groupId, out var group)
+                ? group.Name
+                : L.Get("NasDetailsSystemActivityGroupUnavailable");
+            return Row(
+                item.Id,
+                item.Name,
+                L.Format("NasDetailsSystemActivityProcessId", item.ProcessId),
+                item.Status is { } status
+                    ? L.Format("NasDetailsSystemActivityStatusAndGroup", status, groupName)
+                    : L.Format("NasDetailsSystemActivityGroup", groupName),
+                "\uE9D9");
+        }));
+        return new(section.Status, rows, section.IsTruncated);
     }
 
     private static IEnumerable<NasDetailsRow> SystemRows(NasSystemHealthSummary item)
@@ -637,6 +680,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         NasDetailsSectionKind.StorageHealth => L.Get("NasDetailsSectionStorage"),
         NasDetailsSectionKind.SystemUpdate => L.Get("NasDetailsSectionUpdate"),
         NasDetailsSectionKind.ShareAccess => L.Get("NasDetailsSectionShareAccess"),
+        NasDetailsSectionKind.SystemActivity => L.Get("NasDetailsSectionSystemActivity"),
         NasDetailsSectionKind.Packages => L.Get("NasDetailsSectionPackages"),
         NasDetailsSectionKind.ScheduledTasks => L.Get("NasDetailsSectionTasks"),
         NasDetailsSectionKind.Logs => L.Get("NasDetailsSectionLogs"),

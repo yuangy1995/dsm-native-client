@@ -39,6 +39,7 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsSectionStorage",
             "NasDetailsSectionUpdate",
             "NasDetailsSectionShareAccess",
+            "NasDetailsSectionSystemActivity",
             "NasDetailsSectionPackages",
             "NasDetailsSectionTasks",
             "NasDetailsSectionLogs",
@@ -51,6 +52,9 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsShareAccessReadWrite",
             "NasDetailsShareAccessReadOnly",
             "NasDetailsShareAccessUnknown",
+            "NasDetailsSystemActivityScopeTitle",
+            "NasDetailsSystemActivityProcessId",
+            "NasDetailsSystemActivityGroupsUnavailable",
         })
         {
             Assert.Contains(allowed, combined);
@@ -80,6 +84,11 @@ public sealed class NasDetailsPageSourceContractTests
             "SharedFolder.set",
             "SharedFolder.delete",
             "set_acl",
+            "service_info",
+            "kill_process",
+            "command_line",
+            "working_directory",
+            "environment_variables",
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);

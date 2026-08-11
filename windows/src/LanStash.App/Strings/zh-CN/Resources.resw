@@ -78,6 +78,14 @@
   <data name="NasDetailsSectionStorage" xml:space="preserve"><value>存储</value></data>
   <data name="NasDetailsSectionUpdate" xml:space="preserve"><value>系统更新</value></data>
   <data name="NasDetailsSectionShareAccess" xml:space="preserve"><value>共享访问</value></data>
+  <data name="NasDetailsSectionSystemActivity" xml:space="preserve"><value>系统活动</value></data>
+  <data name="NasDetailsSystemActivityProcessId" xml:space="preserve"><value>进程编号 {0}</value></data>
+  <data name="NasDetailsSystemActivityGroup" xml:space="preserve"><value>服务：{0}</value></data>
+  <data name="NasDetailsSystemActivityStatusAndGroup" xml:space="preserve"><value>{0} · 服务：{1}</value></data>
+  <data name="NasDetailsSystemActivityGroupUnavailable" xml:space="preserve"><value>暂不可用</value></data>
+  <data name="NasDetailsSystemActivityScopeTitle" xml:space="preserve"><value>保护隐私的单次快照</value></data>
+  <data name="NasDetailsSystemActivityScopeMessage" xml:space="preserve"><value>每次刷新只显示进程名称和编号。命令、路径、账号、端口和网络地址始终隐藏。</value></data>
+  <data name="NasDetailsSystemActivityGroupsUnavailable" xml:space="preserve"><value>服务详情暂时不可用。</value></data>
   <data name="NasDetailsShareAccessScopeTitle" xml:space="preserve"><value>当前账号的访问权限</value></data>
   <data name="NasDetailsShareAccessScopeMessage" xml:space="preserve"><value>这里只显示当前账号可以看到的共享文件夹。隐藏或不可访问的文件夹不会列出，因此这不是完整的管理员权限列表。</value></data>
   <data name="NasDetailsShareAccessReadWrite" xml:space="preserve"><value>可读取和修改</value></data>

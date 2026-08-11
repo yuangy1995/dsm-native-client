@@ -36,6 +36,12 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses["SYNO.FileStation.List"] = Json("""
             {"offset":0,"total":4,"shares":[{"name":"Projects","path":"/private/projects","isdir":true,"additional":{"mount_point_type":"normal","owner":"private-owner","perm":{"adv_right":{"read":true,"write":true,"delete":true},"private_acl":"secret"}}},{"name":"Archive","path":"/private/archive","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":false,"delete":false}}}},{"name":"Remote","path":"/private/remote","isdir":true,"additional":{"mount_point_type":"cifs","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"#recycle","path":"/private/#recycle","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}
             """);
+        api.Responses["SYNO.Core.System.Process"] = Json("""
+            {"total":1,"processes":[{"pid":42,"name":"/private/bin/indexer","status":"running","group_id":"service-a","command_line":"--private","user":"private-user","working_directory":"/private/work","listen_port":5000,"source_address":"192.0.2.1"}]}
+            """);
+        api.Responses["SYNO.Core.System.ProcessGroup"] = Json("""
+            {"groups":[{"id":"service-a","display_name":"Indexing","status":"running","process_count":1,"account":"private-user","path":"/private/service"}]}
+            """);
         api.Responses["SYNO.Core.Package"] = Json("""
             {"packages":[{"id":"pkg-drive","name":"Drive","version":"3.0","status":"running","description":"hidden"}]}
             """);
@@ -69,6 +75,13 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal(NasShareAccessLevel.ReadOnly, snapshot.ShareAccess.Items[0].AccessLevel);
         Assert.Equal(NasShareAccessLevel.ReadWrite, snapshot.ShareAccess.Items[1].AccessLevel);
         Assert.True(snapshot.ShareAccess.Items[1].CanDelete);
+        var activity = Assert.Single(snapshot.SystemActivity.Items);
+        var process = Assert.Single(activity.Processes);
+        Assert.Equal(42, process.ProcessId);
+        Assert.Equal("indexer", process.Name);
+        Assert.Equal("Indexing", Assert.Single(activity.Groups).Name);
+        Assert.DoesNotContain("private", activity.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("192.0.2.1", activity.ToString(), StringComparison.Ordinal);
         var safeProjection = snapshot.ToString();
         Assert.DoesNotContain("private-host", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("system-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
@@ -100,6 +113,8 @@ public sealed class NasDetailsRepositoryContractTests
                 "SYNO.Storage.CGI.Storage:1:load_info",
                 "SYNO.Core.Upgrade.Server:3:check",
                 "SYNO.FileStation.List:2:list_share",
+                "SYNO.Core.System.Process:1:list",
+                "SYNO.Core.System.ProcessGroup:1:list",
                 "SYNO.Core.Package:2:list",
                 "SYNO.Core.TaskScheduler:3:list",
                 "SYNO.LogCenter.History:1:list",
@@ -119,6 +134,11 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal("[\"mount_point_type\",\"perm\"]", shareCall.Parameters["additional"]);
         Assert.Equal("name", shareCall.Parameters["sort_by"]);
         Assert.Equal("asc", shareCall.Parameters["sort_direction"]);
+        foreach (var call in api.Calls.Where(call => call.ApiName.StartsWith("SYNO.Core.System.Process", StringComparison.Ordinal)))
+        {
+            Assert.Equal("0", call.Parameters["start"]);
+            Assert.Equal("500", call.Parameters["limit"]);
+        }
     }
 
     [Fact]
@@ -139,10 +159,106 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.StorageHealth.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemUpdate.Status);
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.ShareAccess.Status);
+        Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemActivity.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Packages.Status);
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.ScheduledTasks.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Logs.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Connections.Status);
+    }
+
+    [Fact]
+    public async Task SystemActivityCapabilityMissingMakesNoGuessedRequest()
+    {
+        var api = new FakeApiClient();
+
+        var snapshot = await Repository(api, includeSystemActivity: false).LoadDetailsAsync();
+
+        Assert.Equal(NasDetailsSectionStatus.Unavailable, snapshot.SystemActivity.Status);
+        Assert.DoesNotContain(api.Calls, call =>
+            call.ApiName.StartsWith("SYNO.Core.System.Process", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SystemActivityGroupFailureKeepsSafeProcessSnapshot()
+    {
+        var api = new FakeApiClient();
+        api.Responses["SYNO.Core.System.Process"] = Json("""
+            {"processes":[{"pid":7,"name":"worker","group":"service-a"}]}
+            """);
+        api.Errors["SYNO.Core.System.ProcessGroup"] = new DsmException("failed", "retry");
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        var activity = Assert.Single(snapshot.SystemActivity.Items);
+        Assert.Equal("worker", Assert.Single(activity.Processes).Name);
+        Assert.Empty(activity.Groups);
+        Assert.True(activity.AreGroupsUnavailable);
+    }
+
+    [Fact]
+    public async Task SystemActivityFullGroupPageKeepsRowsAndReportsIncompleteDetails()
+    {
+        var api = new FakeApiClient();
+        api.Responses["SYNO.Core.System.Process"] = Json("""
+            {"processes":[{"pid":7,"name":"worker","group":"service-0"}]}
+            """);
+        var groups = string.Join(",", Enumerable.Range(0, 500)
+            .Select(index => $$"""{"id":"service-{{index}}","name":"Service {{index}}"}"""));
+        api.Responses["SYNO.Core.System.ProcessGroup"] = Json($"{{\"groups\":[{groups}]}}");
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        var activity = Assert.Single(snapshot.SystemActivity.Items);
+        Assert.Equal("Service 0", Assert.Single(activity.Groups).Name);
+        Assert.True(activity.AreGroupsUnavailable);
+    }
+
+    [Fact]
+    public async Task SystemActivityMalformedProcessPayloadFailsOnlyItsSection()
+    {
+        var api = new FakeApiClient();
+        api.Responses["SYNO.Core.System.Process"] = Json("""{"processes":{}}""");
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.SystemActivity.Status);
+        Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Packages.Status);
+        Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Connections.Status);
+    }
+
+    [Fact]
+    public void SystemActivitySourceKeepsUnknownAndWriteMethodsClosed()
+    {
+        var source = File.ReadAllText(FindRepositoryFile());
+
+        Assert.Contains("SYNO.Core.System.Process", source, StringComparison.Ordinal);
+        Assert.Contains("SystemActivityApiVersion = 1", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("service_info", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kill_process", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("terminate", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("command_line", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("working_directory", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("environment_variables", source, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SystemActivityLimitsVisibleProcessesAndRejectsContradictoryTotal()
+    {
+        var api = new FakeApiClient();
+        var processes = string.Join(",", Enumerable.Range(1, 51)
+            .Select(index => $$"""{"pid":{{index}},"name":"Process {{index:D2}}"}"""));
+        api.Responses["SYNO.Core.System.Process"] = Json($"{{\"total\":51,\"processes\":[{processes}]}}");
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        Assert.True(snapshot.SystemActivity.IsTruncated);
+        Assert.Equal(50, Assert.Single(snapshot.SystemActivity.Items).Processes.Count);
+
+        api.Responses["SYNO.Core.System.Process"] = Json("""
+            {"total":0,"processes":[{"pid":1,"name":"worker"}]}
+            """);
+        var failed = await Repository(api).LoadDetailsAsync();
+        Assert.Equal(NasDetailsSectionStatus.Failed, failed.SystemActivity.Status);
     }
 
     [Fact]
@@ -283,17 +399,22 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.DoesNotContain("private-", snapshot.StorageHealth.ToString(), StringComparison.Ordinal);
     }
 
-    private static DsmRepository Repository(FakeApiClient api)
+    private static DsmRepository Repository(
+        FakeApiClient api,
+        bool includeSystemActivity = true,
+        bool includeSystemActivityGroups = true)
     {
         api.Responses.TryAdd("SYNO.Core.System", Json("""{"model":"DS-synthetic"}"""));
         api.Responses.TryAdd("SYNO.Storage.CGI.Storage", Json("""{"storagePools":[],"volumes":[],"disks":[]}"""));
         api.Responses.TryAdd("SYNO.Core.Upgrade.Server", Json("""{"update":null}"""));
         api.Responses.TryAdd("SYNO.FileStation.List", Json("""{"offset":0,"total":0,"shares":[]}"""));
+        api.Responses.TryAdd("SYNO.Core.System.Process", Json("""{"total":0,"processes":[]}"""));
+        api.Responses.TryAdd("SYNO.Core.System.ProcessGroup", Json("""{"groups":[]}"""));
         api.Responses.TryAdd("SYNO.Core.Package", Json("""{"packages":[]}"""));
         api.Responses.TryAdd("SYNO.Core.TaskScheduler", Json("""{"tasks":[]}"""));
         api.Responses.TryAdd("SYNO.LogCenter.History", Json("""{"logs":[]}"""));
         api.Responses.TryAdd("SYNO.Core.CurrentConnection", Json("""{"connections":[]}"""));
-        return new(Profile, Session, api, new Dictionary<string, ApiCapability>(StringComparer.Ordinal)
+        var capabilities = new Dictionary<string, ApiCapability>(StringComparer.Ordinal)
         {
             ["SYNO.Core.System"] = Capability("SYNO.Core.System", max: 3),
             ["SYNO.Storage.CGI.Storage"] = Capability("SYNO.Storage.CGI.Storage", max: 1),
@@ -303,7 +424,16 @@ public sealed class NasDetailsRepositoryContractTests
             ["SYNO.Core.TaskScheduler"] = Capability("SYNO.Core.TaskScheduler", max: 4),
             ["SYNO.LogCenter.History"] = Capability("SYNO.LogCenter.History"),
             ["SYNO.Core.CurrentConnection"] = Capability("SYNO.Core.CurrentConnection"),
-        });
+        };
+        if (includeSystemActivity)
+        {
+            capabilities["SYNO.Core.System.Process"] = Capability("SYNO.Core.System.Process", max: 1);
+        }
+        if (includeSystemActivityGroups)
+        {
+            capabilities["SYNO.Core.System.ProcessGroup"] = Capability("SYNO.Core.System.ProcessGroup", max: 1);
+        }
+        return new(Profile, Session, api, capabilities);
     }
 
     private static ApiCapability Capability(string name, int max = 2) =>
@@ -311,6 +441,23 @@ public sealed class NasDetailsRepositoryContractTests
 
     private static JsonObject Json(string source) =>
         JsonNode.Parse(source) as JsonObject ?? throw new InvalidDataException();
+
+    private static string FindRepositoryFile()
+    {
+        var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "windows/src/LanStash.Infrastructure/Features/NasAdmin/DsmRepository.NasDetails.cs");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+            directory = directory.Parent;
+        }
+        throw new DirectoryNotFoundException("DsmRepository.NasDetails.cs");
+    }
 
     private sealed class FakeApiClient : IDsmApiClient
     {

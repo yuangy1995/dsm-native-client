@@ -41,6 +41,12 @@ public sealed class NasDetailsViewModelTests
                     new NasShareAccessSummary("share-1", "Archive", NasShareAccessLevel.ReadOnly, false),
                     new NasShareAccessSummary("share-2", "Projects", NasShareAccessLevel.ReadWrite, true),
                 ]),
+            new NasDetailsSection<NasSystemActivitySummary>(
+                NasDetailsSectionStatus.Available,
+                [new NasSystemActivitySummary(
+                    [new NasSystemProcessSummary("process-42", 42, "worker", "running", "service-a")],
+                    [new NasProcessGroupSummary("service-a", "Indexing", "running", 1)],
+                    false)]),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", "Drive", "3.0", "running", ResourceState.Running)]),
@@ -70,6 +76,10 @@ public sealed class NasDetailsViewModelTests
         Assert.Contains(model.Rows, row => row.Id == "share-access-scope");
         Assert.Contains(model.Rows, row => row.Title == "Archive" && row.Detail == "Read only");
         Assert.Contains(model.Rows, row => row.Title == "Projects" && row.Status == "Delete allowed");
+        model.SelectSection(NasDetailsSectionKind.SystemActivity);
+        Assert.Equal(2, model.Rows.Count);
+        Assert.Contains(model.Rows, row => row.Id == "system-activity-scope");
+        Assert.Contains(model.Rows, row => row.Id == "process-42" && row.Title == "worker");
         model.SelectSection(NasDetailsSectionKind.Packages);
         Assert.Equal("Drive", Assert.Single(model.Rows).Title);
         model.SelectSection(NasDetailsSectionKind.ScheduledTasks);
@@ -98,6 +108,7 @@ public sealed class NasDetailsViewModelTests
             EmptyStorage(),
             EmptyUpdate(),
             EmptyShareAccess(),
+            EmptySystemActivity(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 packages,
@@ -139,6 +150,7 @@ public sealed class NasDetailsViewModelTests
                 NasDetailsSectionStatus.Available,
                 [new NasSystemUpdateSummary(false, null, null, null)]),
             EmptyShareAccess(),
+            EmptySystemActivity(),
             new NasDetailsSection<NasPackageSummary>(NasDetailsSectionStatus.Available, []),
             new NasDetailsSection<NasScheduledTaskSummary>(NasDetailsSectionStatus.Available, []),
             new NasDetailsSection<NasLogSummary>(NasDetailsSectionStatus.Available, []),
@@ -222,6 +234,7 @@ public sealed class NasDetailsViewModelTests
             EmptyStorage(),
             EmptyUpdate(),
             EmptyShareAccess(),
+            EmptySystemActivity(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", packageName, "1.0", "running", ResourceState.Running)]),
@@ -245,6 +258,9 @@ public sealed class NasDetailsViewModelTests
         new(NasDetailsSectionStatus.Available, []);
 
     private static NasDetailsSection<NasShareAccessSummary> EmptyShareAccess() =>
+        new(NasDetailsSectionStatus.Available, []);
+
+    private static NasDetailsSection<NasSystemActivitySummary> EmptySystemActivity() =>
         new(NasDetailsSectionStatus.Available, []);
 
     private static async Task WaitUntilAsync(Func<bool> predicate)
@@ -274,6 +290,7 @@ public sealed class NasDetailsViewModelTests
                     NasDetailsReadFeature.StorageHealth,
                     NasDetailsReadFeature.SystemUpdate,
                     NasDetailsReadFeature.ShareAccess,
+                    NasDetailsReadFeature.SystemActivity,
                     NasDetailsReadFeature.Packages,
                     NasDetailsReadFeature.ScheduledTasks,
                     NasDetailsReadFeature.Logs,
