@@ -18,7 +18,8 @@ public sealed class ChatRepositoryContractTests
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
 
         Assert.Equal(ChatAvailabilityStatus.Available, complete.Availability.Status);
-        Assert.Equal(5, complete.Availability.SupportedFeatures.Count);
+        Assert.Equal(6, complete.Availability.SupportedFeatures.Count);
+        Assert.Contains(ChatReadFeature.PinnedMessages, complete.Availability.SupportedFeatures);
         Assert.Contains(ChatWriteFeature.TextMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(ChatWriteFeature.AttachmentMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(AppModule.Chat, complete.AvailableModules);
@@ -135,6 +136,106 @@ public sealed class ChatRepositoryContractTests
         Assert.Equal(ChatAvailabilityStatus.Available, repository.Availability.Status);
         Assert.DoesNotContain(ChatReadFeature.Members, repository.Availability.SupportedFeatures);
         Assert.Empty(api.Requests);
+    }
+
+    [Fact]
+    public void PinnedMessagesCapabilityRequiresVersionFiveAndFormRequests()
+    {
+        var unsupportedCapabilities = Capabilities();
+        unsupportedCapabilities["SYNO.Chat.Post"] =
+            new("SYNO.Chat.Post", "entry.cgi", 1, 4, "FORM");
+        var nonFormCapabilities = Capabilities();
+        nonFormCapabilities["SYNO.Chat.Post"] =
+            new("SYNO.Chat.Post", "entry.cgi", 1, 8, "JSON");
+
+        var supported = CreateRepository(new RecordingApiClient(_ => new()));
+        var unsupported = CreateRepository(
+            new RecordingApiClient(_ => new()),
+            unsupportedCapabilities);
+        var nonForm = CreateRepository(
+            new RecordingApiClient(_ => new()),
+            nonFormCapabilities);
+
+        Assert.Contains(ChatReadFeature.PinnedMessages, supported.Availability.SupportedFeatures);
+        Assert.DoesNotContain(ChatReadFeature.PinnedMessages, unsupported.Availability.SupportedFeatures);
+        Assert.DoesNotContain(ChatReadFeature.PinnedMessages, nonForm.Availability.SupportedFeatures);
+    }
+
+    [Fact]
+    public async Task PinnedMessagesUseBoundedVersionFiveSearchAndWhitelistResponse()
+    {
+        var api = new RecordingApiClient(_ => new JsonObject
+        {
+            ["search_results"] = new JsonArray(
+                new JsonObject
+                {
+                    ["post_id"] = "older",
+                    ["channel_id"] = "channel-1",
+                    ["creator_id"] = "u-2",
+                    ["creator_name"] = "Other",
+                    ["create_at"] = 10,
+                    ["last_pin_at"] = 20,
+                    ["message"] = "Older announcement",
+                    ["files"] = new JsonArray(new JsonObject { ["name"] = "private.bin" }),
+                    ["server_path"] = "/private/path",
+                },
+                new JsonObject
+                {
+                    ["post_id"] = "newer",
+                    ["channel_id"] = "channel-1",
+                    ["creator_id"] = "u-1",
+                    ["create_at"] = 11,
+                    ["last_pin_at"] = 30,
+                    ["message"] = "Newer announcement",
+                },
+                new JsonObject
+                {
+                    ["post_id"] = "not-pinned",
+                    ["channel_id"] = "channel-1",
+                    ["message"] = "Not pinned",
+                })
+        });
+
+        var values = await CreateRepository(api).ListPinnedMessagesAsync(" channel-1 ");
+
+        Assert.Equal(new[] { "newer", "older" }, values.Select(value => value.Id));
+        Assert.Equal("Other", values[1].SenderDisplayName);
+        Assert.Equal("Older announcement", values[1].Text);
+        var request = Assert.Single(api.Requests);
+        AssertWire(request, "SYNO.Chat.Post", "search", 5, 6);
+        Assert.Equal("channel-1", request.Parameters["channel_id"]);
+        Assert.Equal("0", request.Parameters["offset"]);
+        Assert.Equal("100", request.Parameters["limit"]);
+        Assert.Equal("[\"pin\"]", request.Parameters["has"]);
+        Assert.Equal("last_pin_at", request.Parameters["sort_by"]);
+        Assert.Equal("[\"is_sticky\",\"last_pin_at\"]", request.Parameters["sort_by_array"]);
+    }
+
+    [Fact]
+    public async Task PinnedMessagesRejectForeignConversationAndUnsupportedContractBeforeTransport()
+    {
+        var foreignApi = new RecordingApiClient(_ => new JsonObject
+        {
+            ["posts"] = new JsonArray(new JsonObject
+            {
+                ["post_id"] = "foreign",
+                ["channel_id"] = "channel-2",
+                ["last_pin_at"] = 20,
+            })
+        });
+        await Assert.ThrowsAsync<DsmException>(() =>
+            CreateRepository(foreignApi).ListPinnedMessagesAsync("channel-1"));
+
+        var unsupportedCapabilities = Capabilities();
+        unsupportedCapabilities["SYNO.Chat.Post"] =
+            new("SYNO.Chat.Post", "entry.cgi", 1, 4, "FORM");
+        var unsupportedApi = new RecordingApiClient(_ => throw new InvalidOperationException());
+        await Assert.ThrowsAsync<DsmException>(() =>
+            CreateRepository(unsupportedApi, unsupportedCapabilities)
+                .ListPinnedMessagesAsync("channel-1"));
+
+        Assert.Single(foreignApi.Requests);
+        Assert.Empty(unsupportedApi.Requests);
     }
 
     [Fact]

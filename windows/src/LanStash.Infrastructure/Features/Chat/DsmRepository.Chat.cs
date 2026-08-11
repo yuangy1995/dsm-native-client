@@ -11,6 +11,7 @@ namespace LanStash.Infrastructure;
 public sealed partial class DsmRepository
 {
     private const int ChatMemberReadVersion = 1;
+    private const int ChatPinnedMessageReadVersion = 5;
     private const int ChatTextSendVersion = 5;
     private const int ChatTextReadbackLimit = 50;
 
@@ -49,6 +50,13 @@ public sealed partial class DsmRepository
         _capabilities.TryGetValue("SYNO.Chat.Channel.Member", out var capability) &&
         capability.MinVersion <= ChatMemberReadVersion &&
         capability.MaxVersion >= ChatMemberReadVersion &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+
+    private bool HasPinnedMessageReadContract =>
+        HasReadableChatContract &&
+        _capabilities.TryGetValue("SYNO.Chat.Post", out var capability) &&
+        capability.MinVersion <= ChatPinnedMessageReadVersion &&
+        capability.MaxVersion >= ChatPinnedMessageReadVersion &&
         string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
 
     public ChatAvailability Availability => HasReadableChatContract
@@ -120,6 +128,59 @@ public sealed partial class DsmRepository
             .Select(id => usersById.GetValueOrDefault(id))
             .OfType<ChatUser>()
             .ToArray();
+    }
+
+    public async Task<IReadOnlyList<ChatPinnedMessage>> ListPinnedMessagesAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReadableChatContract();
+        ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
+        if (!HasPinnedMessageReadContract)
+        {
+            throw new DsmException(
+                UserText.Key("WinShared11a208e43c34b77c"),
+                UserText.Key("WinShared371d84f48836296f"),
+                102);
+        }
+
+        var normalizedConversationId = conversationId.Trim();
+        var data = await CallChatExactVersionAsync(
+            "SYNO.Chat.Post",
+            "search",
+            ChatPinnedMessageReadVersion,
+            new Dictionary<string, string>
+            {
+                ["channel_id"] = normalizedConversationId,
+                ["offset"] = "0",
+                ["limit"] = "100",
+                ["has"] = "[\"pin\"]",
+                ["sort_by"] = "last_pin_at",
+                ["sort_by_array"] = "[\"is_sticky\",\"last_pin_at\"]",
+            },
+            cancellationToken).ConfigureAwait(false);
+        var searchResults = ContainerObjects(data, "search_results").ToArray();
+        var source = searchResults.Length == 0
+            ? ContainerObjects(data, "posts")
+            : searchResults;
+        var values = new List<ChatPinnedMessage>();
+        foreach (var item in source)
+        {
+            foreach (var key in new[] { "channel_id", "conversation_id" })
+            {
+                if (item.ContainsKey(key) &&
+                    !string.Equals(StableId(item[key]), normalizedConversationId, StringComparison.Ordinal))
+                {
+                    throw InvalidChatResponse();
+                }
+            }
+            var value = ParsePinnedMessage(item, normalizedConversationId);
+            if (value is not null)
+            {
+                values.Add(value);
+            }
+        }
+        return values.OrderByDescending(value => value.PinnedAt).ToArray();
     }
 
     public async Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(
@@ -604,6 +665,37 @@ public sealed partial class DsmRepository
             text,
             attachments,
             encrypted ? ChatEncryptionState.Locked : ChatEncryptionState.NotEncrypted);
+    }
+
+    private static ChatPinnedMessage? ParsePinnedMessage(
+        JsonObject item,
+        string fallbackConversationId)
+    {
+        var id = FirstStableId(item, "post_id", "id");
+        var rawPinnedAt = FirstLong(item, "last_pin_at", "pinned_at");
+        if (id is null || rawPinnedAt is null || rawPinnedAt <= 0)
+        {
+            return null;
+        }
+        var pinnedAt = FirstDate(item, "last_pin_at", "pinned_at");
+        if (pinnedAt is null)
+        {
+            return null;
+        }
+        var creator = item.Object("creator") ?? item.Object("user") ?? item.Object("sender");
+        var senderId = FirstStableId(item, "creator_id", "user_id", "sender_id")
+            ?? StableId(item["creator"])
+            ?? FirstStableId(creator, "user_id", "creator_id", "sender_id", "id")
+            ?? "unknown";
+        return new ChatPinnedMessage(
+            id,
+            FirstStableId(item, "channel_id", "conversation_id") ?? fallbackConversationId,
+            senderId,
+            FirstNonEmpty(item, "creator_name", "sender_name", "nickname", "display_name")
+                ?? FirstNonEmpty(creator, "nickname", "display_name", "name", "username"),
+            FirstDate(item, "create_at", "created_at", "timestamp") ?? DateTimeOffset.UnixEpoch,
+            pinnedAt.Value,
+            FirstNonEmpty(item, "message", "text", "content"));
     }
 
     private static IReadOnlyList<ChatAttachment> ParseAttachments(JsonObject item, string messageId)

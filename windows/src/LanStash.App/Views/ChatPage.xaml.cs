@@ -197,6 +197,8 @@ public sealed partial class ChatPage : Page, IDisposable
         ConversationTitle.Text = _viewModel.SelectedConversation?.Title ?? string.Empty;
         MembersButton.Visibility = Visible(_viewModel.CanViewMembers);
         MembersButton.IsEnabled = _viewModel.CanViewMembers;
+        AnnouncementsButton.Visibility = Visible(_viewModel.CanViewAnnouncements);
+        AnnouncementsButton.IsEnabled = _viewModel.CanViewAnnouncements;
         UpdateSelectedPinAction();
         RefreshMessagesButton.IsEnabled = _viewModel.SelectedConversation is { IsEncrypted: false } &&
             !_viewModel.IsLoadingMessages;
@@ -288,6 +290,7 @@ public sealed partial class ChatPage : Page, IDisposable
         _composer.PropertyChanged -= ViewModel_PropertyChanged;
         _attachmentComposer.PropertyChanged -= ViewModel_PropertyChanged;
         DisposeMembersDialog();
+        DisposeAnnouncementsDialog();
         CancelAttachmentRead();
         _attachmentComposer.Dispose();
         _composer.Dispose();

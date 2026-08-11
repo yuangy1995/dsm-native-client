@@ -477,6 +477,25 @@
   <data name="ChatMembersList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Group members</value></data>
   <data name="ChatMemberAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
   <data name="ChatMemberAutomationNameWithTwoStatuses" xml:space="preserve"><value>{0}, {1}, {2}</value></data>
+  <data name="ChatBrowserAnnouncementsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>View group announcements</value></data>
+  <data name="ChatBrowserAnnouncementsButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>View group announcements</value></data>
+  <data name="ChatAnnouncementsDialogTitle" xml:space="preserve"><value>Group announcements</value></data>
+  <data name="ChatAnnouncementsRefresh" xml:space="preserve"><value>Refresh announcements</value></data>
+  <data name="ChatAnnouncementsClose" xml:space="preserve"><value>Close</value></data>
+  <data name="ChatAnnouncementsLoading" xml:space="preserve"><value>Loading group announcements...</value></data>
+  <data name="ChatAnnouncementsEmptyTitle" xml:space="preserve"><value>No announcements</value></data>
+  <data name="ChatAnnouncementsEmptyMessage" xml:space="preserve"><value>No messages are currently pinned in this group.</value></data>
+  <data name="ChatAnnouncementsErrorTitle" xml:space="preserve"><value>Group announcements couldn't be loaded</value></data>
+  <data name="ChatAnnouncementsErrorMessage" xml:space="preserve"><value>Try again. If this keeps happening, check your access to this group in Synology Chat.</value></data>
+  <data name="ChatAnnouncementsRetry" xml:space="preserve"><value>Try again</value></data>
+  <data name="ChatAnnouncementsCount" xml:space="preserve"><value>Announcement count: {0:N0}</value></data>
+  <data name="ChatAnnouncementsList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Group announcements</value></data>
+  <data name="ChatAnnouncementsUnknownSender" xml:space="preserve"><value>Unknown sender</value></data>
+  <data name="ChatAnnouncementsNoText" xml:space="preserve"><value>This announcement has no text.</value></data>
+  <data name="ChatAnnouncementsPinnedAt" xml:space="preserve"><value>Pinned {0:g}</value></data>
+  <data name="ChatAnnouncementsSentAt" xml:space="preserve"><value>Sent {0:g}</value></data>
+  <data name="ChatAnnouncementsSentAtUnavailable" xml:space="preserve"><value>Sent time unavailable</value></data>
+  <data name="ChatAnnouncementAutomationName" xml:space="preserve"><value>{0}, {1}, {2}</value></data>
   <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>Message</value></data>
   <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>Type a message</value></data>
   <data name="ChatBrowserComposer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Message text</value></data>

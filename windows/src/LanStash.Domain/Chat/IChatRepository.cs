@@ -12,6 +12,12 @@ public interface IChatRepository
         string conversationId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<ChatPinnedMessage>> ListPinnedMessagesAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<IReadOnlyList<ChatPinnedMessage>>(
+            new NotSupportedException("Chat pinned message reading is not implemented by this repository."));
+
     Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(
         CancellationToken cancellationToken = default);
 

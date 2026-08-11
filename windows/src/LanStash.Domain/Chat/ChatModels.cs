@@ -12,6 +12,7 @@ public enum ChatReadFeature
     Users,
     Conversations,
     Members,
+    PinnedMessages,
     Messages,
     AttachmentMetadata,
     AttachmentThumbnail,
@@ -100,6 +101,15 @@ public sealed record ChatMessage(
     string? Text,
     IReadOnlyList<ChatAttachment> Attachments,
     ChatEncryptionState EncryptionState);
+
+public sealed record ChatPinnedMessage(
+    string Id,
+    string ConversationId,
+    string SenderId,
+    string? SenderDisplayName,
+    DateTimeOffset SentAt,
+    DateTimeOffset PinnedAt,
+    string? Text);
 
 public sealed record ChatMessagePage(
     IReadOnlyList<ChatMessage> Messages,

@@ -335,6 +335,10 @@ public sealed partial class DsmRepository
         {
             features.Add(ChatReadFeature.Members);
         }
+        if (HasPinnedMessageReadContract)
+        {
+            features.Add(ChatReadFeature.PinnedMessages);
+        }
         if (HasAttachmentBinaryReadContract)
         {
             features.Add(ChatReadFeature.AttachmentThumbnail);

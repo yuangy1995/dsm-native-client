@@ -207,6 +207,73 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
+    public void PageHasReadOnlyGroupAnnouncementsDialogWithFiveStatesAndAccessibleControls()
+    {
+        var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var pageSource = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        var announcementsSource = Read("windows/src/LanStash.App/Views/ChatPage.Announcements.cs");
+        var dialog = Read("windows/src/LanStash.App/Views/ChatAnnouncementsDialogContent.xaml");
+        var dialogSource = Read("windows/src/LanStash.App/Views/ChatAnnouncementsDialogContent.xaml.cs");
+        var model = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserViewModel.cs");
+        var state = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserState.cs");
+        var repository = Read("windows/src/LanStash.Infrastructure/Features/Chat/DsmRepository.Chat.cs");
+        var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = Read("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+        var combined = page + pageSource + announcementsSource + dialog + dialogSource + model + state;
+
+        Assert.Contains("x:Name=\"AnnouncementsButton\"", page);
+        Assert.Contains("Key=\"N\" Modifiers=\"Control,Shift\"", page);
+        Assert.Contains("AnnouncementsAccelerator_Invoked", announcementsSource);
+        Assert.Contains("ContentDialog", announcementsSource);
+        Assert.Contains("XamlRoot = XamlRoot", announcementsSource);
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", announcementsSource);
+        Assert.Contains("<ListView", dialog);
+        Assert.Contains("x:Name=\"AnnouncementsLoadingState\"", dialog);
+        Assert.Contains("x:Name=\"AnnouncementsEmptyState\"", dialog);
+        Assert.Contains("x:Name=\"AnnouncementsErrorState\"", dialog);
+        Assert.Contains("x:Name=\"AnnouncementsContentState\"", dialog);
+        Assert.Contains("ThemeResource TextFillColorSecondaryBrush", dialog);
+        Assert.DoesNotContain("Foreground=\"#", dialog, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Background=\"#", dialog, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("AutomationProperties.Name=\"{x:Bind AutomationName}\"", dialog);
+        Assert.Contains("AutomationProperties.SetName", dialogSource);
+        Assert.Contains("ToolTipService.SetToolTip", dialogSource);
+        Assert.Contains("TextWrapping=\"WrapWholeWords\"", dialog);
+        Assert.Contains("CanViewAnnouncements", combined);
+        Assert.Contains("IsEncrypted: false", model);
+        Assert.Contains("CancelConversationAnnouncementsLoad", announcementsSource);
+        Assert.Contains("\"search\"", repository);
+        Assert.Contains("[\"has\"] = \"[\\\"pin\\\"]\"", repository);
+        Assert.DoesNotContain("\"pin\",", repository);
+        Assert.DoesNotContain("\"unpin\",", repository);
+        foreach (var key in new[]
+        {
+            "ChatBrowserAnnouncementsButton",
+            "ChatAnnouncementsDialogTitle",
+            "ChatAnnouncementsRefresh",
+            "ChatAnnouncementsClose",
+            "ChatAnnouncementsLoading",
+            "ChatAnnouncementsEmptyTitle",
+            "ChatAnnouncementsEmptyMessage",
+            "ChatAnnouncementsErrorTitle",
+            "ChatAnnouncementsErrorMessage",
+            "ChatAnnouncementsRetry",
+            "ChatAnnouncementsCount",
+            "ChatAnnouncementsList",
+            "ChatAnnouncementsUnknownSender",
+            "ChatAnnouncementsNoText",
+            "ChatAnnouncementsPinnedAt",
+            "ChatAnnouncementsSentAt",
+            "ChatAnnouncementsSentAtUnavailable",
+            "ChatAnnouncementAutomationName",
+        })
+        {
+            Assert.Contains($"name=\"{key}", english);
+            Assert.Contains($"name=\"{key}", chinese);
+        }
+    }
+
+    [Fact]
     public void ShellRoutesChatWithoutWorkspaceFallbackAndDisposesPage()
     {
         var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");

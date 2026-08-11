@@ -25,6 +25,15 @@ public enum ChatMembersContentState
     Content,
 }
 
+public enum ChatAnnouncementsContentState
+{
+    Idle,
+    Loading,
+    Empty,
+    Error,
+    Content,
+}
+
 public sealed record ChatConversationItem(ChatConversation Conversation, bool IsPinned = false)
 {
     private const string PinGlyphValue = "\uE718";
@@ -127,6 +136,27 @@ public sealed record ChatMemberItem(ChatUser User)
             };
         }
     }
+}
+
+public sealed record ChatAnnouncementItem(ChatPinnedMessage Message)
+{
+    public string Sender => string.IsNullOrWhiteSpace(Message.SenderDisplayName)
+        ? LocalizationService.Current.Get("ChatAnnouncementsUnknownSender")
+        : Message.SenderDisplayName;
+    public string Text => string.IsNullOrWhiteSpace(Message.Text)
+        ? LocalizationService.Current.Get("ChatAnnouncementsNoText")
+        : Message.Text;
+    public string SentAtText => Message.SentAt <= DateTimeOffset.UnixEpoch
+        ? LocalizationService.Current.Get("ChatAnnouncementsSentAtUnavailable")
+        : LocalizationService.Current.Format("ChatAnnouncementsSentAt", Message.SentAt);
+    public string PinnedAtText => LocalizationService.Current.Format(
+        "ChatAnnouncementsPinnedAt",
+        Message.PinnedAt);
+    public string AutomationName => LocalizationService.Current.Format(
+        "ChatAnnouncementAutomationName",
+        Sender,
+        PinnedAtText,
+        Text);
 }
 
 public sealed record ChatMessageItem(ChatMessage Message)

@@ -477,6 +477,25 @@
   <data name="ChatMembersList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>群成员</value></data>
   <data name="ChatMemberAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
   <data name="ChatMemberAutomationNameWithTwoStatuses" xml:space="preserve"><value>{0}，{1}，{2}</value></data>
+  <data name="ChatBrowserAnnouncementsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>查看群公告</value></data>
+  <data name="ChatBrowserAnnouncementsButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>查看群公告</value></data>
+  <data name="ChatAnnouncementsDialogTitle" xml:space="preserve"><value>群公告</value></data>
+  <data name="ChatAnnouncementsRefresh" xml:space="preserve"><value>刷新公告</value></data>
+  <data name="ChatAnnouncementsClose" xml:space="preserve"><value>关闭</value></data>
+  <data name="ChatAnnouncementsLoading" xml:space="preserve"><value>正在加载群公告…</value></data>
+  <data name="ChatAnnouncementsEmptyTitle" xml:space="preserve"><value>没有群公告</value></data>
+  <data name="ChatAnnouncementsEmptyMessage" xml:space="preserve"><value>这个群聊当前没有置顶消息。</value></data>
+  <data name="ChatAnnouncementsErrorTitle" xml:space="preserve"><value>无法加载群公告</value></data>
+  <data name="ChatAnnouncementsErrorMessage" xml:space="preserve"><value>请重试；如果仍然失败，请在 Synology Chat 中检查当前账号对这个群聊的访问权限。</value></data>
+  <data name="ChatAnnouncementsRetry" xml:space="preserve"><value>重试</value></data>
+  <data name="ChatAnnouncementsCount" xml:space="preserve"><value>公告数：{0:N0}</value></data>
+  <data name="ChatAnnouncementsList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>群公告</value></data>
+  <data name="ChatAnnouncementsUnknownSender" xml:space="preserve"><value>未知发送者</value></data>
+  <data name="ChatAnnouncementsNoText" xml:space="preserve"><value>这条公告没有文字内容。</value></data>
+  <data name="ChatAnnouncementsPinnedAt" xml:space="preserve"><value>置顶于 {0:g}</value></data>
+  <data name="ChatAnnouncementsSentAt" xml:space="preserve"><value>发送于 {0:g}</value></data>
+  <data name="ChatAnnouncementsSentAtUnavailable" xml:space="preserve"><value>发送时间不可用</value></data>
+  <data name="ChatAnnouncementAutomationName" xml:space="preserve"><value>{0}，{1}，{2}</value></data>
   <data name="ChatBrowserComposerLabel.Text" xml:space="preserve"><value>消息</value></data>
   <data name="ChatBrowserComposer.PlaceholderText" xml:space="preserve"><value>输入消息</value></data>
   <data name="ChatBrowserComposer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>消息正文</value></data>

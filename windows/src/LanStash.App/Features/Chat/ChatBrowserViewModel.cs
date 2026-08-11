@@ -15,9 +15,11 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _conversationCancellation;
     private CancellationTokenSource? _messageCancellation;
     private CancellationTokenSource? _memberCancellation;
+    private CancellationTokenSource? _announcementCancellation;
     private long _conversationGeneration;
     private long _messageGeneration;
     private long _memberGeneration;
+    private long _announcementGeneration;
     private Guid? _activeProfileId;
     private ChatBrowserContentState _contentState = ChatBrowserContentState.Loading;
     private ChatConversationItem? _selectedConversation;
@@ -30,6 +32,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private bool _hasLoadEarlierError;
     private bool _hasPinStorageError;
     private ChatMembersContentState _membersContentState = ChatMembersContentState.Idle;
+    private ChatAnnouncementsContentState _announcementsContentState = ChatAnnouncementsContentState.Idle;
     private bool _disposed;
 
     public ChatBrowserViewModel(int pageSize = DefaultPageSize)
@@ -50,6 +53,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     public ObservableCollection<ChatConversationItem> Conversations { get; } = [];
     public ObservableCollection<ChatMessageItem> Messages { get; } = [];
     public ObservableCollection<ChatMemberItem> ConversationMembers { get; } = [];
+    public ObservableCollection<ChatAnnouncementItem> ConversationAnnouncements { get; } = [];
 
     public Guid? ActiveProfileId
     {
@@ -80,6 +84,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
                 RaisePropertyChanged(nameof(IsEncryptedSelection));
                 RaisePropertyChanged(nameof(CanLoadEarlier));
                 RaisePropertyChanged(nameof(CanViewMembers));
+                RaisePropertyChanged(nameof(CanViewAnnouncements));
             }
         }
     }
@@ -161,6 +166,18 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         }
     }
 
+    public ChatAnnouncementsContentState AnnouncementsContentState
+    {
+        get => _announcementsContentState;
+        private set
+        {
+            if (SetProperty(ref _announcementsContentState, value))
+            {
+                RaiseAnnouncementStateProperties();
+            }
+        }
+    }
+
     public bool HasSelection => SelectedConversation is not null;
     public bool IsEncryptedSelection => SelectedConversation?.IsEncrypted == true;
     public bool HasContent => ContentState == ChatBrowserContentState.Content;
@@ -180,6 +197,15 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     public bool IsMembersEmpty => MembersContentState == ChatMembersContentState.Empty;
     public bool HasMembersError => MembersContentState == ChatMembersContentState.Error;
     public bool HasMembersContent => MembersContentState == ChatMembersContentState.Content;
+    public bool CanViewAnnouncements =>
+        _repository is { Availability.Status: ChatAvailabilityStatus.Available } repository &&
+        repository.Availability.SupportedFeatures.Contains(ChatReadFeature.PinnedMessages) &&
+        SelectedConversation is { IsGroup: true, IsEncrypted: false };
+    public bool IsAnnouncementsIdle => AnnouncementsContentState == ChatAnnouncementsContentState.Idle;
+    public bool IsLoadingAnnouncements => AnnouncementsContentState == ChatAnnouncementsContentState.Loading;
+    public bool IsAnnouncementsEmpty => AnnouncementsContentState == ChatAnnouncementsContentState.Empty;
+    public bool HasAnnouncementsError => AnnouncementsContentState == ChatAnnouncementsContentState.Error;
+    public bool HasAnnouncementsContent => AnnouncementsContentState == ChatAnnouncementsContentState.Content;
 
     private ProfileCache? CurrentProfile => ActiveProfileId is Guid id &&
         _profiles.TryGetValue(id, out var cache) ? cache : null;
@@ -197,7 +223,9 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         _repository = repository;
         ActiveProfileId = repository.ProfileId;
         ResetMemberView();
+        ResetAnnouncementView();
         RaisePropertyChanged(nameof(CanViewMembers));
+        RaisePropertyChanged(nameof(CanViewAnnouncements));
 
         if (repository.Availability.Status != ChatAvailabilityStatus.Available)
         {
@@ -232,7 +260,9 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         _repository = null;
         ActiveProfileId = null;
         ResetMemberView();
+        ResetAnnouncementView();
         RaisePropertyChanged(nameof(CanViewMembers));
+        RaisePropertyChanged(nameof(CanViewAnnouncements));
         Conversations.Clear();
         Messages.Clear();
         SelectedConversation = null;
@@ -256,10 +286,12 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         {
             CancelMessageRequest();
             CancelMemberRequest();
+            CancelAnnouncementRequest();
             SelectedConversation = null;
             RequireProfile().SelectedConversationId = null;
             Messages.Clear();
             ResetMemberView();
+            ResetAnnouncementView();
             HasMessageError = false;
             HasLoadEarlierError = false;
             return;
@@ -271,7 +303,9 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
 
         CancelMessageRequest();
         CancelMemberRequest();
+        CancelAnnouncementRequest();
         ResetMemberView();
+        ResetAnnouncementView();
         SelectedConversation = item;
         RequireProfile().SelectedConversationId = item.Id;
         Messages.Clear();
@@ -302,6 +336,19 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         ThrowIfDisposed();
         CancelMemberRequest();
         ResetMemberView();
+    }
+
+    public Task LoadConversationAnnouncementsAsync() =>
+        LoadConversationAnnouncementsAsync(forceRefresh: false);
+
+    public Task RefreshConversationAnnouncementsAsync() =>
+        LoadConversationAnnouncementsAsync(forceRefresh: true);
+
+    public void CancelConversationAnnouncementsLoad()
+    {
+        ThrowIfDisposed();
+        CancelAnnouncementRequest();
+        ResetAnnouncementView();
     }
 
     public Task RefreshMessagesAsync()
@@ -572,6 +619,63 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         }
     }
 
+    private async Task LoadConversationAnnouncementsAsync(bool forceRefresh)
+    {
+        ThrowIfDisposed();
+        var repository = _repository;
+        var profile = CurrentProfile;
+        var selected = SelectedConversation;
+        if (repository is null || profile is null ||
+            selected is not { IsGroup: true, IsEncrypted: false } ||
+            repository.Availability.Status != ChatAvailabilityStatus.Available ||
+            !repository.Availability.SupportedFeatures.Contains(ChatReadFeature.PinnedMessages))
+        {
+            CancelAnnouncementRequest();
+            ResetAnnouncementView();
+            return;
+        }
+
+        if (!forceRefresh && profile.Announcements.TryGetValue(selected.Id, out var cached))
+        {
+            ReplaceAnnouncements(cached);
+            AnnouncementsContentState = cached.Count == 0
+                ? ChatAnnouncementsContentState.Empty
+                : ChatAnnouncementsContentState.Content;
+            return;
+        }
+
+        var generation = BeginAnnouncementRequest();
+        var cancellation = _announcementCancellation!;
+        AnnouncementsContentState = ChatAnnouncementsContentState.Loading;
+        try
+        {
+            var announcements = await repository.ListPinnedMessagesAsync(
+                selected.Id,
+                cancellation.Token);
+            if (!IsCurrentAnnouncementRequest(generation, repository, selected.Id))
+            {
+                return;
+            }
+            var items = announcements.Select(value => new ChatAnnouncementItem(value)).ToArray();
+            profile.Announcements[selected.Id] = items;
+            ReplaceAnnouncements(items);
+            AnnouncementsContentState = items.Length == 0
+                ? ChatAnnouncementsContentState.Empty
+                : ChatAnnouncementsContentState.Content;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            if (IsCurrentAnnouncementRequest(generation, repository, selected.Id))
+            {
+                ConversationAnnouncements.Clear();
+                AnnouncementsContentState = ChatAnnouncementsContentState.Error;
+            }
+        }
+    }
+
     private void ApplyConversationFilter()
     {
         var profile = CurrentProfile;
@@ -738,6 +842,15 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void ReplaceAnnouncements(IEnumerable<ChatAnnouncementItem> announcements)
+    {
+        ConversationAnnouncements.Clear();
+        foreach (var announcement in announcements)
+        {
+            ConversationAnnouncements.Add(announcement);
+        }
+    }
+
     private void SaveCurrentProfileState()
     {
         if (CurrentProfile is { } profile)
@@ -767,6 +880,13 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         return _memberGeneration;
     }
 
+    private long BeginAnnouncementRequest()
+    {
+        CancelAnnouncementRequest();
+        _announcementCancellation = new CancellationTokenSource();
+        return _announcementGeneration;
+    }
+
     private bool IsCurrentConversationRequest(long generation, IChatRepository repository) =>
         !_disposed && generation == _conversationGeneration &&
         ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId;
@@ -780,6 +900,12 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         !_disposed && generation == _memberGeneration &&
         ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId &&
         SelectedConversation is { IsGroup: true } selected && selected.Id == conversationId;
+
+    private bool IsCurrentAnnouncementRequest(long generation, IChatRepository repository, string conversationId) =>
+        !_disposed && generation == _announcementGeneration &&
+        ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId &&
+        SelectedConversation is { IsGroup: true, IsEncrypted: false } selected &&
+        selected.Id == conversationId;
 
     private IChatRepository RequireRepository() => _repository ??
         throw new InvalidOperationException("Chat is not active for a NAS profile.");
@@ -814,17 +940,32 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         _memberCancellation = null;
     }
 
+    private void CancelAnnouncementRequest()
+    {
+        _announcementGeneration++;
+        _announcementCancellation?.Cancel();
+        _announcementCancellation?.Dispose();
+        _announcementCancellation = null;
+    }
+
     private void CancelAllRequests()
     {
         CancelConversationRequest();
         CancelMessageRequest();
         CancelMemberRequest();
+        CancelAnnouncementRequest();
     }
 
     private void ResetMemberView()
     {
         ConversationMembers.Clear();
         MembersContentState = ChatMembersContentState.Idle;
+    }
+
+    private void ResetAnnouncementView()
+    {
+        ConversationAnnouncements.Clear();
+        AnnouncementsContentState = ChatAnnouncementsContentState.Idle;
     }
 
     private void ResetErrors()
@@ -854,6 +995,15 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(HasMembersContent));
     }
 
+    private void RaiseAnnouncementStateProperties()
+    {
+        RaisePropertyChanged(nameof(IsAnnouncementsIdle));
+        RaisePropertyChanged(nameof(IsLoadingAnnouncements));
+        RaisePropertyChanged(nameof(IsAnnouncementsEmpty));
+        RaisePropertyChanged(nameof(HasAnnouncementsError));
+        RaisePropertyChanged(nameof(HasAnnouncementsContent));
+    }
+
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     public void Dispose()
@@ -866,15 +1016,19 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         _conversationGeneration++;
         _messageGeneration++;
         _memberGeneration++;
+        _announcementGeneration++;
         _conversationCancellation?.Cancel();
         _conversationCancellation?.Dispose();
         _messageCancellation?.Cancel();
         _messageCancellation?.Dispose();
         _memberCancellation?.Cancel();
         _memberCancellation?.Dispose();
+        _announcementCancellation?.Cancel();
+        _announcementCancellation?.Dispose();
         _conversationCancellation = null;
         _messageCancellation = null;
         _memberCancellation = null;
+        _announcementCancellation = null;
     }
 
     private sealed class ProfileCache
@@ -888,6 +1042,8 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         public Dictionary<string, ConversationCache> Messages { get; } =
             new(StringComparer.Ordinal);
         public Dictionary<string, IReadOnlyList<ChatMemberItem>> Members { get; } =
+            new(StringComparer.Ordinal);
+        public Dictionary<string, IReadOnlyList<ChatAnnouncementItem>> Announcements { get; } =
             new(StringComparer.Ordinal);
     }
 
