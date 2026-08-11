@@ -235,6 +235,8 @@ FILE-05 单文件夹增量切片已完成源码、本机与云端构建闭环：
 
 FILE-09 单文件夹回收站增量已补齐：Windows Files 允许单个普通本地文件夹移入已发现的同共享 `#recycle`，并允许在回收站中恢复可解析原路径的单个文件夹。实现复用既有公开 Delete v2、CopyMove v3、List/GetInfo v2 与 CheckPermission v3，不改变 transport 或公共请求 fixture。确认前冻结 profile、源路径、名称、目录类型、修改时间、当前父目录和 recycle location；Repository 提交前重新读取源目录和当前删除权限，恢复另检查原父目录及目标写权限，同名目标、身份变化或权限消失均零写入；父文件夹与后代项目按路径祖先关系互斥，兄弟项目不受影响。越过 start transport 后仍只提交一次，取消、断线和任务或回读异常进入 session blocker，只做独立回读而不重放。确认成功要求源路径消失、目标路径出现同名同类型且修改时间一致的目录；目录大小不作为递归内容证明。WinUI 使用原生命令栏和 ContentDialog，文件夹确认文案明确其内容会一同移动或恢复，并提供双语 Narrator 名称。本机 Files Recycle 聚焦 21/21、Release 完整 xUnit 985/985、本地化检查、RESW/XAML XML 解析和差异检查已通过；首次完整运行的无关 Preview 时序测试单项与整套原样重跑通过，未修改 Preview 源码。GitHub Windows Build `31462403976` 已通过 985/985 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check `31462403992` 已通过。Apple 移动端与 Photos 保持首片普通文件范围；永久删除、清空回收站、批量、覆盖恢复、跨 NAS 和递归内容逐项验证不在本切片。真实 NAS 目录副作用、同名策略及真实 Windows/Narrator/高对比/缩放/窄窗口/键盘/触控继续记为 `PENDING_USER_VALIDATION`。
 
+FILE-07 分享链接管理增量已补齐：Windows Files 复用既有公开 Sharing v3 `list`/`delete` 合成契约与创建链接的严格解析，不新增私有 API 或 NAS 请求类型。管理对话框覆盖加载、空、错误、不可用、列表、确认、删除中和八态结果，本地每次展开 100 条，最多处理严格分页读取的 5,000 条；列表只显示路径、密码保护状态和到期日，密码本身不进入领域模型、界面、剪贴板或日志。单条撤销冻结稳定 ID、路径、URL、密码状态和到期日，提交前重新读取完整列表；目标缺失或变化零写入，同 ID 在途互斥，传输层固定 v3 form 且只执行一次 `SendAsync`。提交后取消、网络或响应不明进入按 API 会话/profile/稳定 ID 保存的内存复核门，跨页面或 Repository 重建只读列表，绝不重放；只有稳定 ID 已消失才确认成功。复制继续复用 Windows 不漫游、默认不进入历史的剪贴板实现。本机 Files Sharing 聚焦 113/113、Release 完整 xUnit 1002/1002、本地化、RESW/XAML XML 与差异检查已通过；GitHub Windows Build `31465173331` 已通过 1002/1002 与 WinUI x64/ARM64，Repository Check `31465173335` 已通过。批量撤销、编辑密码/到期日、跨 NAS 汇总、Photos 管理入口与 Apple 移动端扩展不在本切片。真实 NAS 撤销传播/权限/断线及真实 Windows/Narrator/高对比/200% 缩放/窄窗口/键盘/触控继续记为 `PENDING_USER_VALIDATION`。
+
 ### W3-A：预览与文件系统照片库
 
 工作项：

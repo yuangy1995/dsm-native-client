@@ -922,6 +922,34 @@
   <data name="FileShareLinkCancelledTitle" xml:space="preserve"><value>已停止创建链接</value></data>
   <data name="FileShareLinkCancelledMessage" xml:space="preserve"><value>请求已在发出前停止，没有创建链接。</value></data>
   <data name="FileShareLinkTryAgainAction" xml:space="preserve"><value>重试</value></data>
+  <data name="FileShareLinkManage.Label" xml:space="preserve"><value>管理分享链接</value></data>
+  <data name="FileShareLinkManage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>查看和管理分享链接</value></data>
+  <data name="FileShareLinkManageTitle" xml:space="preserve"><value>分享链接</value></data>
+  <data name="FileShareLinkManageLoading" xml:space="preserve"><value>正在载入分享链接…</value></data>
+  <data name="FileShareLinkManageEmptyTitle" xml:space="preserve"><value>没有分享链接</value></data>
+  <data name="FileShareLinkManageEmptyMessage" xml:space="preserve"><value>为文件或文件夹创建的链接会显示在这里。</value></data>
+  <data name="FileShareLinkManageErrorTitle" xml:space="preserve"><value>无法载入分享链接</value></data>
+  <data name="FileShareLinkManageErrorMessage" xml:space="preserve"><value>请检查与 NAS 的连接，然后刷新此列表。</value></data>
+  <data name="FileShareLinkManageCount" xml:space="preserve"><value>{0:N0} 个分享链接</value></data>
+  <data name="FileShareLinkManageShowMoreAction" xml:space="preserve"><value>显示更多</value></data>
+  <data name="FileShareLinkManageShowMoreAutomationName" xml:space="preserve"><value>显示更多分享链接</value></data>
+  <data name="FileShareLinkManageProtected" xml:space="preserve"><value>受密码保护</value></data>
+  <data name="FileShareLinkManageCopyAutomationName" xml:space="preserve"><value>复制此分享链接</value></data>
+  <data name="FileShareLinkManageDeleteAutomationName" xml:space="preserve"><value>撤销此分享链接</value></data>
+  <data name="FileShareLinkManageDeleteAction" xml:space="preserve"><value>撤销链接</value></data>
+  <data name="FileShareLinkManageDeleteTitle" xml:space="preserve"><value>要撤销此分享链接吗？</value></data>
+  <data name="FileShareLinkManageDeleteMessage" xml:space="preserve"><value>“{0}”的链接将无法继续使用。文件或文件夹不会被删除。</value></data>
+  <data name="FileShareLinkManageDeleting" xml:space="preserve"><value>正在撤销链接并核对结果…</value></data>
+  <data name="FileShareLinkManageConfirmDeleteAutomationName" xml:space="preserve"><value>确认撤销此分享链接</value></data>
+  <data name="FileShareLinkManageRefreshAutomationName" xml:space="preserve"><value>刷新分享链接</value></data>
+  <data name="FileShareLinkManageRefreshAction" xml:space="preserve"><value>刷新</value></data>
+  <data name="FileShareLinkManageDeletedMessage" xml:space="preserve"><value>分享链接已撤销，并且已不再出现在 NAS 上。</value></data>
+  <data name="FileShareLinkManageReviewMessage" xml:space="preserve"><value>请求可能已经到达 NAS，但结果尚未确认。再次撤销前，请先刷新此列表。</value></data>
+  <data name="FileShareLinkManageChangedMessage" xml:space="preserve"><value>载入列表后此链接发生了变化，因此没有撤销任何内容。请刷新列表并重新核对。</value></data>
+  <data name="FileShareLinkManagePermissionMessage" xml:space="preserve"><value>当前 NAS 账号无权撤销此链接。请向管理员申请权限，然后刷新列表。</value></data>
+  <data name="FileShareLinkManageUnsupportedMessage" xml:space="preserve"><value>此 NAS 无法通过兼容的分享功能撤销链接。你仍可继续使用“文件”的其他功能。</value></data>
+  <data name="FileShareLinkManageFailureMessage" xml:space="preserve"><value>无法确认链接已经撤销。请检查连接并刷新列表。</value></data>
+  <data name="FileShareLinkManageCancelledMessage" xml:space="preserve"><value>请求在发送前已停止，分享链接没有变化。</value></data>
   <data name="PhotoModeFolders.Content" xml:space="preserve"><value>文件夹</value></data>
   <data name="PhotoModeTimeline.Content" xml:space="preserve"><value>时间线</value></data>
   <data name="PhotoTimelineSearch.PlaceholderText" xml:space="preserve"><value>搜索文件名</value></data>

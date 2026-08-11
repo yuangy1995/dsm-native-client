@@ -160,6 +160,17 @@ public interface IDsmApiClient
             ErrorCategory: MutationErrorCategory.Unsupported,
             DiagnosticTag: "file.share.create.unsupported"));
 
+    Task<FileShareLinkTransportResult> DeleteFileShareLinkAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string id,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileShareLinkTransportResult(
+            FileShareLinkTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "file.share.delete.unsupported"));
+
     Task<FilePermissionTransportResult> CheckFileMutationPermissionAsync(
         NasProfile profile, DsmSession session, ApiCapability capability,
         string folderPath, string name,

@@ -1832,6 +1832,166 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         }
     }
 
+    public async Task<FileShareLinkTransportResult> DeleteFileShareLinkAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        if (!string.Equals(capability.Name, "SYNO.FileStation.Sharing", StringComparison.Ordinal) ||
+            capability.MinVersion != 3 || capability.MaxVersion != 3 ||
+            !string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase) ||
+            !IsSafeWebApiPath(capability.Path) || profile.Id != session.ProfileId ||
+            string.IsNullOrWhiteSpace(id) || id.Length > 512 ||
+            !string.Equals(id, id.Trim(), StringComparison.Ordinal))
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported,
+                DiagnosticTag: "file.share.delete.unsupported");
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.CancelledBeforeSubmission,
+                DiagnosticTag: "file.share.delete.cancelled-before-submit");
+        }
+
+        Uri baseUri;
+        try
+        {
+            baseUri = GetBaseUri(profile);
+        }
+        catch (DsmException)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Validation,
+                DiagnosticTag: "file.share.delete.invalid-endpoint");
+        }
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "3",
+            ["method"] = "delete",
+            ["id"] = JsonSerializer.Serialize(new[] { id }),
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri(baseUri, capability.Path.StartsWith('/')
+                ? capability.Path
+                : $"/webapi/{capability.Path}"))
+        {
+            Content = new FormUrlEncodedContent(values),
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
+        request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
+        if (!string.IsNullOrWhiteSpace(session.SynoToken))
+        {
+            request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
+        }
+
+        SetNasConnectionContext(request, profile);
+        HttpResponseMessage response;
+        try
+        {
+            // SendAsync 是唯一提交边界；进入调用后任何不确定结果均禁止重放。
+            response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.CancellationRequestedAfterSubmission,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.share.delete.cancelled-after-submit");
+        }
+        catch (Exception error) when (
+            error is HttpRequestException or IOException or InvalidOperationException)
+        {
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.SubmittedButUnverified,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.share.delete.network-unverified");
+        }
+
+        using (response)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.share.delete.cancelled-after-submit");
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: response.StatusCode is HttpStatusCode.Unauthorized or
+                        HttpStatusCode.Forbidden
+                            ? MutationErrorCategory.Authentication
+                            : MutationErrorCategory.Server,
+                    DiagnosticTag: "file.share.delete.http-unverified");
+            }
+
+            JsonObject? envelope;
+            try
+            {
+                await using var stream = await response.Content
+                    .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                envelope = await JsonNode.ParseAsync(
+                    stream,
+                    cancellationToken: cancellationToken).ConfigureAwait(false) as JsonObject;
+            }
+            catch (OperationCanceledException)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.share.delete.cancelled-after-submit");
+            }
+            catch (Exception error) when (
+                error is JsonException or HttpRequestException or IOException)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "file.share.delete.response-unverified");
+            }
+
+            var success = StrictNativeBool(envelope, "success");
+            if (success == true)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.ResponseReceived,
+                    envelope?["data"]?.DeepClone());
+            }
+            var code = StrictNativeInt(envelope?["error"] as JsonObject, "code");
+            if (success != false || code is null)
+            {
+                return new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "file.share.delete.response-unverified");
+            }
+            return new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.ConfirmedFailure,
+                ErrorCategory: code == 105
+                    ? MutationErrorCategory.Permission
+                    : MutationErrorCategory.Server,
+                DiagnosticTag: code is >= 100 and <= 9999
+                    ? $"file.share.delete.dsm-{code}"
+                    : "file.share.delete.dsm-failure");
+        }
+    }
+
     private static bool? StrictNativeBool(JsonObject? item, string key) =>
         item?[key] is JsonValue value && value.TryGetValue<bool>(out var result)
             ? result

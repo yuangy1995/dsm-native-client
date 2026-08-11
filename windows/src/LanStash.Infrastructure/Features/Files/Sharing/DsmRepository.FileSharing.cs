@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
@@ -13,13 +14,19 @@ public sealed partial class DsmRepository
     private const int FileListVersion = 2;
     private const int FileShareLinkPageSize = 500;
     private const int ShareMaximumItems = 5_000;
-    private readonly object _shareClaimSync = new();
-    private readonly HashSet<string> _activeSharePaths = new(StringComparer.Ordinal);
-
+    private static readonly ConditionalWeakTable<IDsmApiClient, FileShareDeleteReviewState>
+        FileShareDeleteReviewStates = new();
     public FileShareLinkAvailability ShareLinkAvailability =>
         HasFileShareContract
             ? new(FileShareLinkAvailabilityStatus.Available, SharingVersion)
             : new(FileShareLinkAvailabilityStatus.Unavailable);
+
+    public Task<IReadOnlyList<FileShareLink>> ListFileShareLinksAsync(
+        CancellationToken cancellationToken = default) =>
+        HasFileShareContract
+            ? LoadAllShareLinksAsync(cancellationToken)
+            : Task.FromException<IReadOnlyList<FileShareLink>>(
+                new NotSupportedException("file.share.list.unsupported"));
 
     public async Task<FileShareLinkCreationOutcome> CreateFileShareLinkAsync(
         CreateFileShareLinkRequest request,
@@ -224,6 +231,252 @@ public sealed partial class DsmRepository
         {
             ReleaseSharePath(target.Path);
         }
+    }
+
+    public async Task<FileShareLinkDeletionOutcome> DeleteFileShareLinkAsync(
+        DeleteFileShareLinkRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var link = request.Link;
+        if (!ValidShareLink(link))
+        {
+            return DeleteOutcome(
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                failed: 1,
+                category: MutationErrorCategory.Validation,
+                diagnosticTag: "file.share.delete.invalid-input",
+                link: link);
+        }
+        if (!HasFileShareContract)
+        {
+            return DeleteOutcome(
+                MutationResultStatus.Unsupported,
+                submitted: false,
+                failed: 1,
+                category: MutationErrorCategory.Unsupported,
+                diagnosticTag: "file.share.delete.unsupported",
+                link: link);
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return DeleteOutcome(
+                MutationResultStatus.CancelledBeforeSubmission,
+                submitted: false,
+                diagnosticTag: "file.share.delete.cancelled-before-submit",
+                link: link);
+        }
+        if (!TryClaimShareDeletion(link, out var pendingReview))
+        {
+            return DeleteOutcome(
+                MutationResultStatus.ConfirmedFailure,
+                submitted: false,
+                failed: 1,
+                category: MutationErrorCategory.Conflict,
+                diagnosticTag: "file.share.delete.duplicate-submission",
+                link: link);
+        }
+
+        try
+        {
+            if (pendingReview is not null)
+            {
+                return await ReviewShareDeletionAsync(pendingReview).ConfigureAwait(false);
+            }
+
+            IReadOnlyList<FileShareLink> baseline;
+            try
+            {
+                baseline = await LoadAllShareLinksAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return DeleteOutcome(
+                    MutationResultStatus.CancelledBeforeSubmission,
+                    submitted: false,
+                    diagnosticTag: "file.share.delete.cancelled-before-submit",
+                    link: link);
+            }
+            catch (DsmException error)
+            {
+                return DeleteOutcome(
+                    error.Code == 105
+                        ? MutationResultStatus.PermissionDenied
+                        : MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    failed: 1,
+                    category: error.Code == 105
+                        ? MutationErrorCategory.Permission
+                        : MutationErrorCategory.Server,
+                    diagnosticTag: "file.share.delete.preflight-failed",
+                    link: link);
+            }
+            catch (Exception error) when (
+                error is InvalidDataException or InvalidOperationException or OverflowException)
+            {
+                return DeleteOutcome(
+                    MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    failed: 1,
+                    category: MutationErrorCategory.Server,
+                    diagnosticTag: "file.share.delete.preflight-invalid",
+                    link: link);
+            }
+
+            var observed = baseline.SingleOrDefault(item =>
+                string.Equals(item.Id, link.Id, StringComparison.Ordinal));
+            if (observed is null)
+            {
+                RemoveShareDeleteReview(link.Id);
+                return DeleteOutcome(
+                    MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    failed: 1,
+                    category: MutationErrorCategory.Conflict,
+                    diagnosticTag: "file.share.delete.already-absent",
+                    link: link);
+            }
+            if (!ExactShareLink(observed, link))
+            {
+                return DeleteOutcome(
+                    MutationResultStatus.ConfirmedFailure,
+                    submitted: false,
+                    failed: 1,
+                    category: MutationErrorCategory.Conflict,
+                    diagnosticTag: "file.share.delete.baseline-changed",
+                    link: link);
+            }
+
+            FileShareLinkTransportResult transport;
+            try
+            {
+                transport = await _api.DeleteFileShareLinkAsync(
+                    _profile,
+                    _session,
+                    FixedCapability(SharingApi, SharingVersion),
+                    link.Id,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                transport = new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.share.delete.cancelled-after-submit");
+            }
+            catch
+            {
+                transport = new FileShareLinkTransportResult(
+                    FileShareLinkTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Unknown,
+                    DiagnosticTag: "file.share.delete.transport-unverified");
+            }
+
+            if (transport.Status is FileShareLinkTransportStatus.CancelledBeforeSubmission or
+                FileShareLinkTransportStatus.Unsupported)
+            {
+                return DeleteOutcome(
+                    transport.Status == FileShareLinkTransportStatus.CancelledBeforeSubmission
+                        ? MutationResultStatus.CancelledBeforeSubmission
+                        : MutationResultStatus.Unsupported,
+                    submitted: false,
+                    failed: transport.Status == FileShareLinkTransportStatus.Unsupported ? 1 : 0,
+                    category: transport.ErrorCategory,
+                    diagnosticTag: transport.DiagnosticTag,
+                    link: link);
+            }
+            return await FinishShareDeletionAsync(link, transport).ConfigureAwait(false);
+        }
+        finally
+        {
+            ReleaseShareDeletion(link);
+        }
+    }
+
+    private async Task<FileShareLinkDeletionOutcome> FinishShareDeletionAsync(
+        FileShareLink link,
+        FileShareLinkTransportResult transport)
+    {
+        try
+        {
+            var current = await LoadAllShareLinksAsync(CancellationToken.None).ConfigureAwait(false);
+            if (!current.Any(item => string.Equals(item.Id, link.Id, StringComparison.Ordinal)))
+            {
+                RemoveShareDeleteReview(link.Id);
+                return DeleteOutcome(
+                    MutationResultStatus.ConfirmedSuccess,
+                    submitted: true,
+                    succeeded: 1,
+                    diagnosticTag: transport.Status ==
+                        FileShareLinkTransportStatus.CancellationRequestedAfterSubmission
+                            ? "file.share.delete.confirmed-after-cancel"
+                            : "file.share.delete.confirmed",
+                    link: link);
+            }
+        }
+        catch (Exception error) when (
+            error is DsmException or InvalidDataException or InvalidOperationException or
+                OverflowException)
+        {
+        }
+
+        if (transport.Status == FileShareLinkTransportStatus.ConfirmedFailure)
+        {
+            RemoveShareDeleteReview(link.Id);
+            return DeleteOutcome(
+                transport.ErrorCategory == MutationErrorCategory.Permission
+                    ? MutationResultStatus.PermissionDenied
+                    : MutationResultStatus.ConfirmedFailure,
+                submitted: true,
+                failed: 1,
+                category: transport.ErrorCategory,
+                diagnosticTag: transport.DiagnosticTag,
+                link: link);
+        }
+
+        StoreShareDeleteReview(link);
+        return DeleteOutcome(
+            transport.Status == FileShareLinkTransportStatus.CancellationRequestedAfterSubmission
+                ? MutationResultStatus.CancellationRequestedAfterSubmission
+                : MutationResultStatus.SubmittedButUnverified,
+            submitted: true,
+            requiresRefresh: true,
+            unknown: 1,
+            category: transport.ErrorCategory ?? MutationErrorCategory.Server,
+            diagnosticTag: transport.DiagnosticTag ?? "file.share.delete.readback-unverified",
+            link: link);
+    }
+
+    private async Task<FileShareLinkDeletionOutcome> ReviewShareDeletionAsync(FileShareLink link)
+    {
+        try
+        {
+            var current = await LoadAllShareLinksAsync(CancellationToken.None).ConfigureAwait(false);
+            if (!current.Any(item => string.Equals(item.Id, link.Id, StringComparison.Ordinal)))
+            {
+                RemoveShareDeleteReview(link.Id);
+                return DeleteOutcome(
+                    MutationResultStatus.ConfirmedSuccess,
+                    submitted: true,
+                    succeeded: 1,
+                    diagnosticTag: "file.share.delete.review-confirmed",
+                    link: link);
+            }
+        }
+        catch (Exception error) when (
+            error is DsmException or InvalidDataException or InvalidOperationException or
+                OverflowException)
+        {
+        }
+        return DeleteOutcome(
+            MutationResultStatus.SubmittedButUnverified,
+            submitted: true,
+            requiresRefresh: true,
+            unknown: 1,
+            category: MutationErrorCategory.Unknown,
+            diagnosticTag: "file.share.delete.review-pending",
+            link: link);
     }
 
     private bool HasFileShareContract =>
@@ -525,6 +778,20 @@ public sealed partial class DsmRepository
         (target.IsDirectory ||
             observed.Size == target.Size && observed.ModifiedAt == target.ModifiedAt);
 
+    private static bool ExactShareLink(FileShareLink observed, FileShareLink frozen) =>
+        string.Equals(observed.Id, frozen.Id, StringComparison.Ordinal) &&
+        string.Equals(observed.Path, frozen.Path, StringComparison.Ordinal) &&
+        observed.Url == frozen.Url && observed.HasPassword == frozen.HasPassword &&
+        observed.ExpiresOn == frozen.ExpiresOn;
+
+    private static bool ValidShareLink(FileShareLink link) =>
+        !string.IsNullOrWhiteSpace(link.Id) && link.Id.Length <= 512 &&
+        string.Equals(link.Id, link.Id.Trim(), StringComparison.Ordinal) &&
+        StrictDsmAbsolutePath(link.Path) &&
+        link.Url.IsAbsoluteUri &&
+        (link.Url.Scheme == Uri.UriSchemeHttp || link.Url.Scheme == Uri.UriSchemeHttps) &&
+        !string.IsNullOrEmpty(link.Url.Host) && string.IsNullOrEmpty(link.Url.UserInfo);
+
     private static bool ValidTarget(FileShareLinkTarget target) =>
         target.ProfileId != Guid.Empty &&
         StrictDsmAbsolutePath(target.Path) &&
@@ -533,17 +800,89 @@ public sealed partial class DsmRepository
 
     private bool TryClaimSharePath(string path)
     {
-        lock (_shareClaimSync)
+        var state = ShareDeleteReviewState();
+        lock (state.Sync)
         {
-            return _activeSharePaths.Add(path);
+            var key = (_profile.Id, path);
+            return !state.ActiveDeletePaths.Contains(key) &&
+                !state.Reviews.Any(item =>
+                    item.Key.ProfileId == _profile.Id &&
+                    string.Equals(item.Value.Path, path, StringComparison.Ordinal)) &&
+                state.ActiveSharePaths.Add(key);
+        }
+    }
+
+    private bool TryClaimShareDeletion(FileShareLink link, out FileShareLink? pendingReview)
+    {
+        var state = ShareDeleteReviewState();
+        lock (state.Sync)
+        {
+            pendingReview = null;
+            var idKey = (_profile.Id, link.Id);
+            var pathKey = (_profile.Id, link.Path);
+            if (state.ActiveSharePaths.Contains(pathKey) ||
+                state.ActiveDeleteIds.Contains(idKey) ||
+                state.ActiveDeletePaths.Contains(pathKey))
+            {
+                return false;
+            }
+            if (state.Reviews.TryGetValue(idKey, out var pending))
+            {
+                if (!ExactShareLink(pending, link))
+                {
+                    return false;
+                }
+                pendingReview = pending;
+            }
+            else if (state.Reviews.Any(item =>
+                item.Key.ProfileId == _profile.Id &&
+                string.Equals(item.Value.Path, link.Path, StringComparison.Ordinal)))
+            {
+                return false;
+            }
+            state.ActiveDeleteIds.Add(idKey);
+            state.ActiveDeletePaths.Add(pathKey);
+            return true;
+        }
+    }
+
+    private void StoreShareDeleteReview(FileShareLink link)
+    {
+        var state = ShareDeleteReviewState();
+        lock (state.Sync)
+        {
+            state.Reviews[(_profile.Id, link.Id)] = link;
+        }
+    }
+
+    private void RemoveShareDeleteReview(string id)
+    {
+        var state = ShareDeleteReviewState();
+        lock (state.Sync)
+        {
+            state.Reviews.Remove((_profile.Id, id));
+        }
+    }
+
+    private FileShareDeleteReviewState ShareDeleteReviewState() =>
+        FileShareDeleteReviewStates.GetValue(_api, static _ => new());
+
+    private void ReleaseShareDeletion(FileShareLink link)
+    {
+        var state = ShareDeleteReviewState();
+        lock (state.Sync)
+        {
+            state.ActiveDeleteIds.Remove((_profile.Id, link.Id));
+            state.ActiveDeletePaths.Remove((_profile.Id, link.Path));
         }
     }
 
     private void ReleaseSharePath(string path)
     {
-        lock (_shareClaimSync)
+        var state = ShareDeleteReviewState();
+        lock (state.Sync)
         {
-            _activeSharePaths.Remove(path);
+            state.ActiveSharePaths.Remove((_profile.Id, path));
         }
     }
 
@@ -589,6 +928,28 @@ public sealed partial class DsmRepository
                 diagnosticTag: diagnosticTag),
             link);
 
+    private static FileShareLinkDeletionOutcome DeleteOutcome(
+        MutationResultStatus status,
+        bool submitted,
+        bool requiresRefresh = false,
+        int succeeded = 0,
+        int failed = 0,
+        int unknown = 0,
+        MutationErrorCategory? category = null,
+        string? diagnosticTag = null,
+        FileShareLink? link = null) =>
+        new(
+            new MutationResult(
+                1,
+                status,
+                "shareLinkDelete",
+                submitted,
+                requiresRefresh,
+                new MutationResultCounts(succeeded, failed, unknown),
+                category,
+                diagnosticTag: diagnosticTag),
+            link);
+
     private sealed record ObservedShareTarget(
         string Path,
         string Name,
@@ -601,4 +962,13 @@ public sealed partial class DsmRepository
         bool CanDelete);
 
     private readonly record struct SubmittedShare(bool AllowsMissingIdFallback, string? Id);
+
+    private sealed class FileShareDeleteReviewState
+    {
+        public object Sync { get; } = new();
+        public Dictionary<(Guid ProfileId, string Id), FileShareLink> Reviews { get; } = [];
+        public HashSet<(Guid ProfileId, string Path)> ActiveSharePaths { get; } = [];
+        public HashSet<(Guid ProfileId, string Id)> ActiveDeleteIds { get; } = [];
+        public HashSet<(Guid ProfileId, string Path)> ActiveDeletePaths { get; } = [];
+    }
 }

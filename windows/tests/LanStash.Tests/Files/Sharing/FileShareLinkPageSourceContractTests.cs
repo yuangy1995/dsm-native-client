@@ -79,6 +79,54 @@ public sealed class FileShareLinkPageSourceContractTests
         Assert.Contains("public static FileShareLinkReviewBlocker Current", blocker, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ManagementDialogCoversNativeAccessibleListAndDeleteStates()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Views", "FilesPage.xaml"));
+        var management = File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Views",
+            "FilesPage.ShareManagement.cs"));
+
+        Assert.Contains("ManageShareLinksButton", xaml, StringComparison.Ordinal);
+        Assert.Contains("CommandBar.SecondaryCommands", xaml, StringComparison.Ordinal);
+        Assert.Contains("ContentDialog", management, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManagementState.Loading", management, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManagementState.Empty", management, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManagementState.Error", management, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManagementState.Content", management, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkDeletionState.Confirming", management, StringComparison.Ordinal);
+        Assert.Contains("ConfirmDeleteAsync", management, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.SetName", management, StringComparison.Ordinal);
+        Assert.Contains("MinHeight = 44", management, StringComparison.Ordinal);
+        Assert.Contains("Symbol.Copy", management, StringComparison.Ordinal);
+        Assert.Contains("Symbol.Delete", management, StringComparison.Ordinal);
+        Assert.DoesNotContain("Password =", management, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ManagementResourcesAreBilingualAndPageClosesItsDialog()
+    {
+        var root = RepositoryRoot();
+        var page = File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Views", "FilesPage.xaml.cs"));
+        var management = File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Views",
+            "FilesPage.ShareManagement.cs"));
+        var english = File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Strings", "en-US", "Resources.resw"));
+        var chinese = File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Strings", "zh-CN", "Resources.resw"));
+
+        Assert.Contains("CloseShareManagementDialog();", page, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManageDeleteMessage", english, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManageDeleteMessage", chinese, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManageReviewMessage", english, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManageReviewMessage", chinese, StringComparison.Ordinal);
+        Assert.Contains("AutomationLiveSetting.Polite", management, StringComparison.Ordinal);
+    }
+
     private static string RepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

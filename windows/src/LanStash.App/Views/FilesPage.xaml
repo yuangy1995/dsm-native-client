@@ -166,6 +166,12 @@
             </AppBarButton>
             <CommandBar.SecondaryCommands>
                 <AppBarButton
+                    x:Uid="FileShareLinkManage"
+                    x:Name="ManageShareLinksButton"
+                    Click="ManageShareLinks_Click"
+                    Icon="Link"
+                    MinHeight="44" />
+                <AppBarButton
                     x:Uid="FileBrowserSort"
                     x:Name="SortButton"
                     Icon="Sort"

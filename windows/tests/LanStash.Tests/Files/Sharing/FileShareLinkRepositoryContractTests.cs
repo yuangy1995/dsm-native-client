@@ -10,6 +10,136 @@ public sealed class FileShareLinkRepositoryContractTests
     private static readonly DateTimeOffset Modified = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
 
     [Fact]
+    public async Task ListUsesStrictBoundedPagination()
+    {
+        var api = new SharingApiClient(
+            [
+                LinkPageAt(0, 2, Link("one", "/share/a.txt")),
+                LinkPageAt(1, 2, Link("two", "/share/folder")),
+            ],
+            UnsupportedTransport());
+
+        var links = await Repository(api).ListFileShareLinksAsync();
+
+        Assert.Equal(["one", "two"], links.Select(link => link.Id));
+        Assert.Equal(2, api.Requests.Count);
+        Assert.All(api.Requests, request =>
+        {
+            Assert.Equal("list", request.Method);
+            Assert.Equal(3, request.Capability.MinVersion);
+            Assert.Equal(3, request.Capability.MaxVersion);
+        });
+    }
+
+    [Fact]
+    public async Task DeleteConfirmsStableIdIsAbsentAfterOneSubmission()
+    {
+        var link = LinkModel("one", "/share/a.txt");
+        var api = new SharingApiClient(
+            [LinkPage(1, Link("one", "/share/a.txt")), LinkPage(0)],
+            UnsupportedTransport(),
+            deleteResult: new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.ResponseReceived));
+
+        var outcome = await Repository(api).DeleteFileShareLinkAsync(new(link));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, outcome.Result.Status);
+        Assert.True(outcome.Result.Submitted);
+        Assert.Equal("shareLinkDelete", outcome.Result.Operation);
+        Assert.Equal("one", outcome.Link?.Id);
+        Assert.Equal(1, api.DeleteCount);
+        Assert.Equal("one", api.DeleteId);
+    }
+
+    [Fact]
+    public async Task ChangedDeletionBaselineMakesZeroWrites()
+    {
+        var api = new SharingApiClient(
+            [LinkPage(1, Link("one", "/share/a.txt", url: "https://share.invalid/changed"))],
+            UnsupportedTransport(),
+            deleteResult: new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.ResponseReceived));
+
+        var outcome = await Repository(api).DeleteFileShareLinkAsync(
+            new(LinkModel("one", "/share/a.txt")));
+
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, outcome.Result.Status);
+        Assert.Equal(MutationErrorCategory.Conflict, outcome.Result.ErrorCategory);
+        Assert.False(outcome.Result.Submitted);
+        Assert.Equal(0, api.DeleteCount);
+    }
+
+    [Fact]
+    public async Task AlreadyAbsentDeletionTargetMakesZeroWritesAndRequestsRefresh()
+    {
+        var api = new SharingApiClient(
+            [LinkPage(0)],
+            UnsupportedTransport(),
+            deleteResult: new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.ResponseReceived));
+
+        var outcome = await Repository(api).DeleteFileShareLinkAsync(
+            new(LinkModel("one", "/share/a.txt")));
+
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, outcome.Result.Status);
+        Assert.Equal(MutationErrorCategory.Conflict, outcome.Result.ErrorCategory);
+        Assert.False(outcome.Result.Submitted);
+        Assert.Equal(0, api.DeleteCount);
+    }
+
+    [Fact]
+    public async Task UnknownDeleteBlocksReplayAndSecondAttemptOnlyReadsBack()
+    {
+        var link = LinkModel("one", "/share/a.txt");
+        var api = new SharingApiClient(
+            [
+                LinkPage(1, Link("one", "/share/a.txt")),
+                LinkPage(1, Link("one", "/share/a.txt")),
+                LinkPage(0),
+            ],
+            UnsupportedTransport(),
+            deleteResult: new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.SubmittedButUnverified,
+                ErrorCategory: MutationErrorCategory.Network));
+        var first = await Repository(api).DeleteFileShareLinkAsync(new(link));
+        var second = await Repository(api).DeleteFileShareLinkAsync(new(link));
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        Assert.Equal(1, api.DeleteCount);
+        Assert.Equal(3, api.Requests.Count(request => request.Method == "list"));
+    }
+
+    [Fact]
+    public async Task ConcurrentSameLinkDeletionAllowsOnlyOneSubmission()
+    {
+        var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var link = LinkModel("one", "/share/a.txt");
+        var api = new SharingApiClient(
+            [LinkPage(1, Link("one", "/share/a.txt")), LinkPage(0)],
+            UnsupportedTransport(),
+            deleteResult: new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.ResponseReceived),
+            beforeDelete: async () =>
+            {
+                entered.SetResult(true);
+                await release.Task;
+            });
+        var first = Repository(api).DeleteFileShareLinkAsync(new(link));
+        await entered.Task;
+
+        var duplicate = await Repository(api).DeleteFileShareLinkAsync(new(link));
+        release.SetResult(true);
+        var completed = await first;
+
+        Assert.Equal(MutationErrorCategory.Conflict, duplicate.Result.ErrorCategory);
+        Assert.False(duplicate.Result.Submitted);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, completed.Result.Status);
+        Assert.Equal(1, api.DeleteCount);
+    }
+
+    [Fact]
     public async Task ConfirmedFileCreationUsesFixedContractsAndStrictReadback()
     {
         var api = new SharingApiClient(
@@ -719,6 +849,13 @@ public sealed class FileShareLinkRepositoryContractTests
         ["date_expired"] = expiry ?? "0",
     };
 
+    private static FileShareLink LinkModel(string id, string path) => new(
+        id,
+        path,
+        new Uri($"https://share.invalid/{id}"),
+        HasPassword: false,
+        ExpiresOn: null);
+
     private static JsonObject CreateDataWithoutId() => new()
     {
         ["links"] = new JsonArray(new JsonObject { ["error"] = 0 }),
@@ -736,11 +873,15 @@ public sealed class FileShareLinkRepositoryContractTests
     private sealed class SharingApiClient(
         IEnumerable<JsonObject> reads,
         FileShareLinkTransportResult createResult,
-        Func<Task>? beforeCreate = null) : IDsmApiClient
+        Func<Task>? beforeCreate = null,
+        FileShareLinkTransportResult? deleteResult = null,
+        Func<Task>? beforeDelete = null) : IDsmApiClient
     {
         private readonly Queue<JsonObject> _reads = new(reads.Select(item => item.DeepClone().AsObject()));
         public List<ReadRequest> Requests { get; } = [];
         public int CreateCount { get; private set; }
+        public int DeleteCount { get; private set; }
+        public string? DeleteId { get; private set; }
         public IReadOnlyDictionary<string, string>? CreateParameters { get; private set; }
 
         public async Task<FileShareLinkTransportResult> CreateFileShareLinkAsync(
@@ -758,6 +899,26 @@ public sealed class FileShareLinkRepositoryContractTests
                 await beforeCreate();
             }
             return createResult;
+        }
+
+        public async Task<FileShareLinkTransportResult> DeleteFileShareLinkAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            string id,
+            CancellationToken cancellationToken = default)
+        {
+            DeleteCount++;
+            DeleteId = id;
+            Requests.Add(new ReadRequest(
+                capability,
+                "delete",
+                new Dictionary<string, string> { ["id"] = id }));
+            if (beforeDelete is not null)
+            {
+                await beforeDelete();
+            }
+            return deleteResult ?? UnsupportedTransport();
         }
 
         public Task<JsonObject> CallAsync(

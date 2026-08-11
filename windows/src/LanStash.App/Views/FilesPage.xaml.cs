@@ -1108,6 +1108,11 @@ public sealed partial class FilesPage : Page, IDisposable
         ShareLinkButton.Visibility = IsReadOnlyLocation()
             ? Visibility.Collapsed
             : Visibility.Visible;
+        ManageShareLinksButton.IsEnabled =
+            _shareRepository is not null &&
+            _shareManagementDialog is null &&
+            _shareLinkDialog is null &&
+            !_isClosingShareLink;
         UploadButton.IsEnabled =
             !_viewModel.IsLoading &&
             !_isChoosingUpload &&
@@ -1267,6 +1272,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
         LocationsPane.CancelOpening();
         _locationsViewModel.Deactivate();
+        CloseShareManagementDialog();
         CloseShareLinkDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();
@@ -1286,6 +1292,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
 
         _disposed = true;
+        CloseShareManagementDialog();
         CloseShareLinkDialog();
         CloseMutationDialog();
         CloseCopyMoveDialog();

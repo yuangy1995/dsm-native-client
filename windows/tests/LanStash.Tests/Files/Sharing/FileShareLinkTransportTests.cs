@@ -34,6 +34,52 @@ public sealed class FileShareLinkTransportTests
     }
 
     [Fact]
+    public async Task DeletePostsOneStableIdWithFixedV3FormExactlyOnce()
+    {
+        var handler = new RecordingHandler(_ => Json("""{"success":true,"data":{}}"""));
+
+        var result = await Client(handler).DeleteFileShareLinkAsync(
+            Profile(), Session(), Capability(), "link-1");
+
+        Assert.Equal(FileShareLinkTransportStatus.ResponseReceived, result.Status);
+        Assert.Equal(1, handler.Count);
+        Assert.Equal("3", handler.Form!["version"]);
+        Assert.Equal("delete", handler.Form["method"]);
+        Assert.Equal("[\"link-1\"]", handler.Form["id"]);
+        Assert.Equal(ProfileId, handler.ProfileId);
+        Assert.Equal(DsmConnectionSource.DirectAddress, handler.ConnectionSource);
+    }
+
+    [Fact]
+    public async Task InvalidOrPreCancelledDeleteMakesZeroRequests()
+    {
+        var handler = new RecordingHandler(_ => Json("""{"success":true,"data":{}}"""));
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var invalid = await Client(handler).DeleteFileShareLinkAsync(
+            Profile(), Session(), Capability(), " link-1 ");
+        var cancelled = await Client(handler).DeleteFileShareLinkAsync(
+            Profile(), Session(), Capability(), "link-1", cancellation.Token);
+
+        Assert.Equal(FileShareLinkTransportStatus.Unsupported, invalid.Status);
+        Assert.Equal(FileShareLinkTransportStatus.CancelledBeforeSubmission, cancelled.Status);
+        Assert.Equal(0, handler.Count);
+    }
+
+    [Fact]
+    public async Task DeleteNetworkFailureIsUnverifiedAndNeverReplayed()
+    {
+        var handler = new RecordingHandler(_ => throw new HttpRequestException("synthetic"));
+
+        var result = await Client(handler).DeleteFileShareLinkAsync(
+            Profile(), Session(), Capability(), "link-1");
+
+        Assert.Equal(FileShareLinkTransportStatus.SubmittedButUnverified, result.Status);
+        Assert.Equal(1, handler.Count);
+    }
+
+    [Fact]
     public async Task PreCancelledAndInvalidCapabilitiesMakeZeroRequests()
     {
         var handler = new RecordingHandler(_ => Json("""{"success":true,"data":{}}"""));
@@ -275,12 +321,20 @@ public sealed class FileShareLinkTransportTests
 
         public int Count { get; private set; }
         public Dictionary<string, string>? Form { get; private set; }
+        public Guid? ProfileId { get; private set; }
+        public DsmConnectionSource? ConnectionSource { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             Count++;
+            if (WindowsCertificateTrustHandler.TryGetConnectionContext(
+                    request, out var profileId, out var source))
+            {
+                ProfileId = profileId;
+                ConnectionSource = source;
+            }
             var content = await request.Content!.ReadAsStringAsync(cancellationToken);
             Form = content.Split('&', StringSplitOptions.RemoveEmptyEntries)
                 .Select(value => value.Split('=', 2))

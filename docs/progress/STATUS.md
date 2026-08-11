@@ -50,6 +50,8 @@ Windows FILE-05 单文件夹同 NAS 复制/移动已完成源码、本机与云�
 
 Windows FILE-09 单文件夹回收站增量已形成闭环：Files 中单个普通本地文件夹可通过原生确认对话框移入同共享的 `#recycle`，并可从回收站恢复到可解析的原位置。实现复用公开 Delete v2、CopyMove v3、List/GetInfo v2 与 CheckPermission v3，不新增请求；写前重新读取路径、名称、目录类型、修改时间和当前删除权限，同名目标或权限变化零写入，父文件夹与后代项目的进程内操作互斥，越过提交边界后只提交一次，取消、断线或未知结果只回读不重放。目录结果按源消失、目标同名同类型且修改时间一致确认，不依赖目录大小；确认与结果文案明确说明文件夹内容会一同移动或恢复。本机 Files Recycle 聚焦测试 21/21、Release 完整 xUnit 985/985、本地化检查、RESW/XAML XML 解析和差异检查已通过；首次完整运行有 1 项无关 Preview 并发时序测试超时，单项与整套原样重跑均通过，未修改 Preview 代码。GitHub Windows Build `31462403976` 已通过 985/985 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check `31462403992` 已通过。Apple 移动端和 Photos 仍只开放普通文件；永久删除、清空回收站、批量、覆盖恢复、跨 NAS 和递归内容逐项校验不在本切片。真实 NAS 的目录副作用、同名策略及真实 Windows/Narrator/高对比/缩放/窄窗口/键盘/触控为 `PENDING_USER_VALIDATION`。
 
+Windows FILE-07 分享链接管理已形成闭环：Files 次级命令可打开原生 ContentDialog，使用公开 `SYNO.FileStation.Sharing` v3 严格分页读取当前 NAS 最多 5,000 条链接，并以本地每次 100 条有界展开提供复制和单条撤销。列表仅展示路径、是否受密码保护和到期日，不读取或显示密码；复制仍使用不可漫游、默认不进入历史的 Windows 剪贴板路径。撤销前冻结稳定 ID、路径、URL、密码状态和到期日并重新读取完整列表，目标缺失或变化时零写入；同 ID 在途互斥，`delete` 只提交一次，取消、断线或响应未知后把待复核记录绑定到当前 API 会话与 profile，跨 Files 页面/Repository 重建只回读、不重放，只有稳定 ID 已消失才确认成功。WinUI 覆盖加载、空内容、错误、不可用、列表、确认、删除中、成功、权限不足、目标变化、取消和待核对状态，全部文案已进入英中资源。本机 Files Sharing 聚焦 113/113、Release 完整 xUnit 1002/1002、本地化检查、RESW/XAML XML 解析和 `git diff --check` 已通过；GitHub Windows Build `31465173331` 已通过 1002/1002 与 WinUI x64/ARM64，Repository Check `31465173335` 已通过。批量撤销、编辑密码/到期日、跨 NAS 汇总、Photos 管理入口和 Apple 移动端管理扩展不在本切片。真实 Windows/Narrator/高对比/200% 缩放/窄窗口/键盘/触控，以及真实 NAS 列表字段、权限拒绝、撤销传播和提交后断线为 `PENDING_USER_VALIDATION`；失败时只回传脱敏状态与诊断标签，不回传链接 URL、真实路径或响应正文。
+
 ### 第 2 波已合并（单一简体中文功能提交已全绿）
 
 - 基线：`641852b408ae24f8819e4a49cd70df4c8d9e5011`；功能对齐账本见[第 2 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)。

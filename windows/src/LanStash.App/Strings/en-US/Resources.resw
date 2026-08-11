@@ -922,6 +922,34 @@
   <data name="FileShareLinkCancelledTitle" xml:space="preserve"><value>Link creation stopped</value></data>
   <data name="FileShareLinkCancelledMessage" xml:space="preserve"><value>The request was stopped before it was sent. No link was created.</value></data>
   <data name="FileShareLinkTryAgainAction" xml:space="preserve"><value>Try again</value></data>
+  <data name="FileShareLinkManage.Label" xml:space="preserve"><value>Manage share links</value></data>
+  <data name="FileShareLinkManage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>View and manage share links</value></data>
+  <data name="FileShareLinkManageTitle" xml:space="preserve"><value>Share links</value></data>
+  <data name="FileShareLinkManageLoading" xml:space="preserve"><value>Loading share links…</value></data>
+  <data name="FileShareLinkManageEmptyTitle" xml:space="preserve"><value>No share links</value></data>
+  <data name="FileShareLinkManageEmptyMessage" xml:space="preserve"><value>Links you create for files and folders will appear here.</value></data>
+  <data name="FileShareLinkManageErrorTitle" xml:space="preserve"><value>Share links couldn’t be loaded</value></data>
+  <data name="FileShareLinkManageErrorMessage" xml:space="preserve"><value>Check the connection to your NAS, then refresh this list.</value></data>
+  <data name="FileShareLinkManageCount" xml:space="preserve"><value>{0:N0} share links</value></data>
+  <data name="FileShareLinkManageShowMoreAction" xml:space="preserve"><value>Show more</value></data>
+  <data name="FileShareLinkManageShowMoreAutomationName" xml:space="preserve"><value>Show more share links</value></data>
+  <data name="FileShareLinkManageProtected" xml:space="preserve"><value>Password protected</value></data>
+  <data name="FileShareLinkManageCopyAutomationName" xml:space="preserve"><value>Copy this share link</value></data>
+  <data name="FileShareLinkManageDeleteAutomationName" xml:space="preserve"><value>Revoke this share link</value></data>
+  <data name="FileShareLinkManageDeleteAction" xml:space="preserve"><value>Revoke link</value></data>
+  <data name="FileShareLinkManageDeleteTitle" xml:space="preserve"><value>Revoke this share link?</value></data>
+  <data name="FileShareLinkManageDeleteMessage" xml:space="preserve"><value>The link for “{0}” will stop working. The file or folder will not be deleted.</value></data>
+  <data name="FileShareLinkManageDeleting" xml:space="preserve"><value>Revoking the link and checking the result…</value></data>
+  <data name="FileShareLinkManageConfirmDeleteAutomationName" xml:space="preserve"><value>Confirm that this share link should be revoked</value></data>
+  <data name="FileShareLinkManageRefreshAutomationName" xml:space="preserve"><value>Refresh share links</value></data>
+  <data name="FileShareLinkManageRefreshAction" xml:space="preserve"><value>Refresh</value></data>
+  <data name="FileShareLinkManageDeletedMessage" xml:space="preserve"><value>The share link was revoked and no longer appears on your NAS.</value></data>
+  <data name="FileShareLinkManageReviewMessage" xml:space="preserve"><value>The request may have reached your NAS, but the result could not be confirmed. Refresh this list before trying to revoke the link again.</value></data>
+  <data name="FileShareLinkManageChangedMessage" xml:space="preserve"><value>This link changed after the list was loaded, so nothing was revoked. Refresh the list and review it again.</value></data>
+  <data name="FileShareLinkManagePermissionMessage" xml:space="preserve"><value>Your NAS account cannot revoke this link. Ask an administrator for access, then refresh the list.</value></data>
+  <data name="FileShareLinkManageUnsupportedMessage" xml:space="preserve"><value>This NAS cannot revoke share links with the compatible sharing feature. You can continue using the rest of Files.</value></data>
+  <data name="FileShareLinkManageFailureMessage" xml:space="preserve"><value>The link was not confirmed as revoked. Check the connection and refresh the list.</value></data>
+  <data name="FileShareLinkManageCancelledMessage" xml:space="preserve"><value>The request stopped before it was sent. The share link was not changed.</value></data>
   <data name="PhotoModeFolders.Content" xml:space="preserve"><value>Folders</value></data>
   <data name="PhotoModeTimeline.Content" xml:space="preserve"><value>Timeline</value></data>
   <data name="PhotoTimelineSearch.PlaceholderText" xml:space="preserve"><value>Search file names</value></data>
