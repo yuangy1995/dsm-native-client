@@ -231,6 +231,8 @@ W0 基线、账本与 ZIP/安装器决策门
 
 第 2 波已完成 W2 中 FILE-05 的单文件同 NAS 复制/移动：固定 CopyMove v3、普通本地共享根写前门、完整源/目标预检、无覆盖、一次提交、任务轮询、独立回读和跨页面 review blocker；WinUI 使用独立 partial 与 ViewModel 选择目标目录。最终提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 的 Windows Build 已通过 815/815 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；目录、批量、跨 NAS、覆盖、删除和恢复仍关闭，真实 NAS 与 Windows 设备交互继续后置验收。
 
+FILE-05 单文件夹增量切片已完成源码、本机与云端构建闭环：继续使用同一公开 CopyMove v3，不新增 NAS 请求或平行写协调器。源文件夹必须是普通本地可变路径，复制/移动目标必须位于同一 NAS 的普通本地可写目录；目标选择器排除源文件夹及其后代，Repository 也在提交前拒绝相同目标和后代目标。写前仍执行本地挂载、完整源/目标、权限和同名预检；越过 start transport 后仍只提交一次，取消、断线或未知结果只做独立回读并保留会话 blocker。目录身份冻结使用路径、名称、类型和修改时间，复制回读要求源目录与目标目录同时存在，移动回读要求源目录消失且目标目录存在；不使用非稳定目录大小证明结果。本机 Files CopyMove 聚焦 42/42、Release 完整 xUnit 979/979、本地化检查、RESW/XAML XML 解析和差异检查已通过；GitHub Windows Build run `31460563136` 通过 979/979 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31460563100` 已通过。批量、跨 NAS、覆盖、拖放、撤销、目录回收站操作以及真实 NAS 递归副作用不在本切片；真实 Windows/Narrator/高对比/缩放/窄窗口/键盘/触控继续记为 `PENDING_USER_VALIDATION`。
+
 ### W3-A：预览与文件系统照片库
 
 工作项：

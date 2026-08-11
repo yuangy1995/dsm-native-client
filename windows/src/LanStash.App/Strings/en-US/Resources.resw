@@ -1102,12 +1102,15 @@
   <data name="PhotoImportUnsupportedMessage" xml:space="preserve"><value>This location can’t accept photo imports. Choose a regular photo folder.</value></data>
   <data name="PhotoImportFailureMessage" xml:space="preserve"><value>The import couldn’t be started or completed. Choose the item again and check Activity for details.</value></data>
   <data name="FileCopyMoveCopy.Label" xml:space="preserve"><value>Copy</value></data>
-  <data name="FileCopyMoveCopy.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Copy the selected file</value></data>
+  <data name="FileCopyMoveCopy.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Copy the selected item</value></data>
   <data name="FileCopyMoveMove.Label" xml:space="preserve"><value>Move</value></data>
-  <data name="FileCopyMoveMove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected file</value></data>
+  <data name="FileCopyMoveMove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected item</value></data>
   <data name="FileCopyMove_Dialog_TitleCopy" xml:space="preserve"><value>Copy file</value></data>
   <data name="FileCopyMove_Dialog_TitleMove" xml:space="preserve"><value>Move file</value></data>
+  <data name="FileCopyMove_Dialog_TitleCopyFolder" xml:space="preserve"><value>Copy folder</value></data>
+  <data name="FileCopyMove_Dialog_TitleMoveFolder" xml:space="preserve"><value>Move folder</value></data>
   <data name="FileCopyMove_Source_Label" xml:space="preserve"><value>Source</value></data>
+  <data name="FileCopyMove_SourceFolder_Label" xml:space="preserve"><value>Source folder</value></data>
   <data name="FileCopyMove_Destination_Label" xml:space="preserve"><value>Destination folder</value></data>
   <data name="FileCopyMove_Destination_Placeholder" xml:space="preserve"><value>Choose a folder</value></data>
   <data name="FileCopyMove_ChooseDestination_Button" xml:space="preserve"><value>Choose folder</value></data>
@@ -1120,13 +1123,18 @@
   <data name="FileCopyMove_Status_Moving" xml:space="preserve"><value>Moving…</value></data>
   <data name="FileCopyMove_Status_SuccessCopy" xml:space="preserve"><value>File copied.</value></data>
   <data name="FileCopyMove_Status_SuccessMove" xml:space="preserve"><value>File moved.</value></data>
+  <data name="FileCopyMove_Status_SuccessCopyFolder" xml:space="preserve"><value>Folder copied.</value></data>
+  <data name="FileCopyMove_Status_SuccessMoveFolder" xml:space="preserve"><value>Folder moved.</value></data>
   <data name="FileCopyMove_Status_Conflict" xml:space="preserve"><value>A file with the same name already exists, or the file changed. Choose another folder and try again.</value></data>
+  <data name="FileCopyMove_Status_ConflictFolder" xml:space="preserve"><value>A folder with the same name already exists, the source changed, or the destination is inside the source folder. Choose another folder and try again.</value></data>
   <data name="FileCopyMove_Status_Permission" xml:space="preserve"><value>You don’t have permission to use this location. Choose another folder.</value></data>
   <data name="FileCopyMove_Status_Unknown" xml:space="preserve"><value>The request may have been accepted, but the result could not be confirmed. Refresh before trying again.</value></data>
   <data name="FileCopyMove_Status_Unsupported" xml:space="preserve"><value>This file or destination can’t be used for this action.</value></data>
+  <data name="FileCopyMove_Status_UnsupportedFolder" xml:space="preserve"><value>This folder or destination can’t be used for this action.</value></data>
   <data name="FileCopyMove_Status_Error" xml:space="preserve"><value>The action couldn’t be completed. Check the file and destination, then try again.</value></data>
+  <data name="FileCopyMove_Status_ErrorFolder" xml:space="preserve"><value>The action couldn’t be completed. Check the folder and destination, then try again.</value></data>
   <data name="FileCopyMove_Status_Cancelled" xml:space="preserve"><value>The action was cancelled before it was sent.</value></data>
-  <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>File action status</value></data>
+  <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>File or folder action status</value></data>
   <data name="FileCopyMove_A11y_DestinationTree" xml:space="preserve"><value>Destination folders</value></data>
   <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>Move to Recycle Bin</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected file to the recycle bin</value></data>

@@ -23,6 +23,8 @@ public sealed class FileCopyMovePageSourceContractTests
         Assert.DoesNotContain("FileCopyMove_Review_Button", partial);
         Assert.Contains("IsReadOnlyLocation()", partial);
         Assert.Contains("FileCopyMoveViewModel.IsDestination(item.Path)", partial);
+        Assert.DoesNotContain("IsDirectory: false", partial);
+        Assert.Contains("CopyMoveTitleKey(model.Source.IsDirectory", partial);
     }
 
     [Fact]

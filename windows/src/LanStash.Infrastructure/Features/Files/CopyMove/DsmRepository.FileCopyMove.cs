@@ -46,7 +46,7 @@ public sealed partial class DsmRepository
 
         var review = new FileCopyMoveReview(operation, source.Path, sourceParent,
             request.DestinationDirectoryPath, destinationPath, source.Name, source.Size,
-            source.ModifiedAt, request.Operation,
+            source.ModifiedAt, source.IsDirectory, request.Operation,
             new HashSet<string>([source.Path, destinationPath], StringComparer.Ordinal));
         var reservation = ReserveFileCopyMove(review);
         if (!reservation.Acquired)
@@ -248,11 +248,13 @@ public sealed partial class DsmRepository
                 : await LoadMutationFolderAsync(review.DestinationParent, CancellationToken.None)
                     .ConfigureAwait(false);
             var target = destinationItems.SingleOrDefault(item =>
-                item.Path == review.DestinationPath && !item.IsDirectory &&
-                item.Size == review.Size && item.Name == review.Name);
+                item.Path == review.DestinationPath &&
+                item.IsDirectory == review.IsDirectory &&
+                (review.IsDirectory || item.Size == review.Size) && item.Name == review.Name);
             if (target is null) return null;
             var sourceStillMatches = sourceItems.Any(item =>
-                item.Path == review.SourcePath && !item.IsDirectory && item.Size == review.Size);
+                item.Path == review.SourcePath && item.IsDirectory == review.IsDirectory &&
+                (review.IsDirectory || item.Size == review.Size));
             return review.Kind switch
             {
                 FileCopyMoveOperation.Copy when sourceStillMatches => target,
@@ -301,8 +303,9 @@ public sealed partial class DsmRepository
     }
 
     private static bool MatchesFrozenSource(FileItem? observed, FileCopyMoveTarget frozen) =>
-        observed is not null && !observed.IsDirectory && observed.Path == frozen.Path &&
-        observed.Name == frozen.Name && observed.Size == frozen.Size &&
+        observed is not null && observed.IsDirectory == frozen.IsDirectory &&
+        observed.Path == frozen.Path && observed.Name == frozen.Name &&
+        (frozen.IsDirectory || observed.Size == frozen.Size) &&
         observed.ModifiedAt == frozen.ModifiedAt;
 
     private static bool ContainsRecycleSegment(string path) =>
@@ -460,6 +463,7 @@ public sealed partial class DsmRepository
         string Name,
         long Size,
         DateTimeOffset? ModifiedAt,
+        bool IsDirectory,
         FileCopyMoveOperation Kind,
         HashSet<string> Targets)
     {

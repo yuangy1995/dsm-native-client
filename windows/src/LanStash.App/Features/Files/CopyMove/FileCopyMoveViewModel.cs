@@ -105,7 +105,7 @@ public sealed class FileCopyMoveViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(source);
         if (repository.ProfileId != profileId || folders.ProfileId != profileId)
             throw new ArgumentException("file.copy-move.profile-mismatch");
-        if (!IsOrdinaryFile(source))
+        if (!IsOrdinaryItem(source))
             throw new ArgumentException("file.copy-move.invalid-source", nameof(source));
         _repository = repository;
         _folders = folders;
@@ -129,7 +129,8 @@ public sealed class FileCopyMoveViewModel : ObservableObject, IDisposable
     public FileCopyMovePresentationState State { get => _state; private set { if (SetProperty(ref _state, value)) RaisePropertyChanged(nameof(CanSubmit)); } }
     public bool CanSubmit => State == FileCopyMovePresentationState.ChoosingDestination &&
         DestinationCanWrite && IsDestination(DestinationPath) && !_folders.IsReadOnlyPath(DestinationPath) &&
-        !string.Equals($"{DestinationPath}/{Source.Name}", Source.Path, StringComparison.Ordinal);
+        !string.Equals($"{DestinationPath}/{Source.Name}", Source.Path, StringComparison.Ordinal) &&
+        (!Source.IsDirectory || !DestinationPath.StartsWith(Source.Path + "/", StringComparison.Ordinal));
 
     public async Task LoadFoldersAsync(string path, bool destinationCanWrite = false)
     {
@@ -152,7 +153,7 @@ public sealed class FileCopyMoveViewModel : ObservableObject, IDisposable
             foreach (var folder in folders) _knownWritableFolders[folder.Path] = folder.CanWrite;
             DestinationPath = path;
             DestinationCanWrite = path.Length > 0 && destinationCanWrite;
-            Folders = folders.Where(folder => folder.CanWrite).ToArray();
+            Folders = folders.Where(folder => folder.CanWrite && IsSafeDestinationFolder(folder.Path)).ToArray();
             Review = _blocker.Find(_profileId, Operation, Source.Path, path);
             State = Review is null ? FileCopyMovePresentationState.ChoosingDestination : FileCopyMovePresentationState.NeedsReview;
         }
@@ -179,7 +180,7 @@ public sealed class FileCopyMoveViewModel : ObservableObject, IDisposable
         try
         {
             var outcome = await _repository.CopyMoveAsync(new FileCopyMoveRequest(
-                new FileCopyMoveTarget(_profileId, Source.Path, Source.Name, Source.Size,
+                new FileCopyMoveTarget(_profileId, Source.Path, Source.Name, Source.IsDirectory, Source.Size,
                     Source.ModifiedAt, true, Source.CanDelete, false, false, false),
                 destination, Operation, DestinationCanWrite, false, false, false), cancellation.Token);
             if (!IsCurrent(generation)) return;
@@ -227,7 +228,8 @@ public sealed class FileCopyMoveViewModel : ObservableObject, IDisposable
     }
 
     public bool IsKnownWritableFolder(string path) =>
-        _knownWritableFolders.GetValueOrDefault(path) && !_folders.IsReadOnlyPath(path);
+        _knownWritableFolders.GetValueOrDefault(path) && !_folders.IsReadOnlyPath(path) &&
+        IsSafeDestinationFolder(path);
 
     public void Cancel()
     {
@@ -248,9 +250,12 @@ public sealed class FileCopyMoveViewModel : ObservableObject, IDisposable
     private bool IsCurrent(long generation) => !_disposed && generation == _generation && _repository.ProfileId == _profileId && _folders.ProfileId == _profileId;
     private bool IsExactConfirmation(FileItem item, string destination) =>
         string.Equals(item.Path, $"{destination}/{Source.Name}", StringComparison.Ordinal) &&
-        string.Equals(item.Name, Source.Name, StringComparison.Ordinal) && !item.IsDirectory && item.Size == Source.Size;
+        string.Equals(item.Name, Source.Name, StringComparison.Ordinal) &&
+        item.IsDirectory == Source.IsDirectory && (Source.IsDirectory || item.Size == Source.Size);
     private static bool Available(FileCopyMoveAvailability value, FileCopyMoveOperation operation) => operation == FileCopyMoveOperation.Copy ? value.CanCopy : value.CanMove;
-    private static bool IsOrdinaryFile(FileItem item) => !item.IsDirectory && FileMutationViewModel.IsMutablePath(item.Path);
+    private static bool IsOrdinaryItem(FileItem item) => FileMutationViewModel.IsMutablePath(item.Path);
+    private bool IsSafeDestinationFolder(string path) => !Source.IsDirectory ||
+        (path != Source.Path && !path.StartsWith(Source.Path + "/", StringComparison.Ordinal));
     internal static bool IsDestination(string path) => FileMutationViewModel.IsMutablePath(path);
     private static bool IsFolderPath(string path) => path.Length == 0 || IsDestination(path);
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);

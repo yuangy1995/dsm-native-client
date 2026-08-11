@@ -53,6 +53,26 @@ public sealed class FileCopyMoveRepositoryContractTests
         Assert.False(api.ListTokens[3].CanBeCanceled);
     }
 
+    [Theory]
+    [InlineData(FileCopyMoveOperation.Copy)]
+    [InlineData(FileCopyMoveOperation.Move)]
+    public async Task SingleFolderUsesTypeBasedFrozenSourceAndIndependentReadback(
+        FileCopyMoveOperation operation)
+    {
+        var source = Folder("/share/source/album", "album", 10);
+        var target = Folder("/share/destination/album", "album", 11);
+        var api = new FakeApi(
+            Page(source), Page(),
+            operation == FileCopyMoveOperation.Copy ? Page(source) : Page(), Page(target));
+
+        var outcome = await Repository(api).CopyMoveAsync(Request(operation, isDirectory: true));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, outcome.Result.Status);
+        Assert.True(outcome.ConfirmedItem?.IsDirectory);
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(1, api.PermissionCount);
+    }
+
     [Fact]
     public async Task StrictPaginationFindsSourceAcrossPagesBeforeWriting()
     {
@@ -296,8 +316,11 @@ public sealed class FileCopyMoveRepositoryContractTests
         "NAS", "nas.example.invalid", null, "user");
     private static readonly DsmSession Session = new(Profile.Id, "synthetic", null, null);
 
-    private static FileCopyMoveRequest Request(FileCopyMoveOperation operation) => new(
-        new FileCopyMoveTarget(Profile.Id, "/share/source/item.txt", "item.txt", 7,
+    private static FileCopyMoveRequest Request(FileCopyMoveOperation operation,
+        bool isDirectory = false) => new(
+        new FileCopyMoveTarget(Profile.Id,
+            isDirectory ? "/share/source/album" : "/share/source/item.txt",
+            isDirectory ? "album" : "item.txt", isDirectory, isDirectory ? 0 : 7,
             DateTimeOffset.FromUnixTimeSeconds(10), true, true,
             false, false, false),
         "/share/destination", operation, true, false, false, false);
@@ -324,6 +347,16 @@ public sealed class FileCopyMoveRepositoryContractTests
     private static JsonObject File(string path, string name, long size, long modified) => new()
     {
         ["path"] = path, ["name"] = name, ["isdir"] = false, ["size"] = size,
+        ["additional"] = new JsonObject
+        {
+            ["time"] = new JsonObject { ["mtime"] = modified },
+            ["perm"] = new JsonObject { ["write"] = true },
+        },
+    };
+
+    private static JsonObject Folder(string path, string name, long modified) => new()
+    {
+        ["path"] = path, ["name"] = name, ["isdir"] = true, ["size"] = 0,
         ["additional"] = new JsonObject
         {
             ["time"] = new JsonObject { ["mtime"] = modified },

@@ -8,6 +8,8 @@ public sealed class FileCopyMoveViewModelTests
     private static readonly Guid ProfileId = Guid.Parse("77777777-7777-7777-7777-777777777777");
     private static readonly FileItem Source = new(
         "/share/source.txt", "source.txt", false, 42, DateTimeOffset.UnixEpoch, null, true, true);
+    private static readonly FileItem FolderSource = new(
+        "/share/source", "source", true, 0, DateTimeOffset.UnixEpoch, null, true, true);
 
     [Fact]
     public async Task ConfirmedSuccessRequiresExactArtifactAndSendsOnce()
@@ -109,10 +111,53 @@ public sealed class FileCopyMoveViewModelTests
             new StubRepository(Guid.NewGuid(), Outcome(MutationResultStatus.ConfirmedFailure)),
             new StubFolders(ProfileId), ProfileId, Source, FileCopyMoveOperation.Copy, 1,
             new FileCopyMoveReviewBlocker()));
-        Assert.Throws<ArgumentException>(() => new FileCopyMoveViewModel(
+        using var folder = new FileCopyMoveViewModel(
             new StubRepository(ProfileId, Outcome(MutationResultStatus.ConfirmedFailure)),
-            new StubFolders(ProfileId), ProfileId, Source with { IsDirectory = true },
-            FileCopyMoveOperation.Copy, 1, new FileCopyMoveReviewBlocker()));
+            new StubFolders(ProfileId), ProfileId, FolderSource,
+            FileCopyMoveOperation.Copy, 1, new FileCopyMoveReviewBlocker());
+        Assert.Equal(FolderSource, folder.Source);
+    }
+
+    [Fact]
+    public async Task FolderRejectsDescendantAndAcceptsExactDirectoryReadback()
+    {
+        var repository = new StubRepository(ProfileId, Outcome(MutationResultStatus.ConfirmedSuccess,
+            new FileItem("/share/target/source", "source", true, 0, null, null, true, true)));
+        using var model = new FileCopyMoveViewModel(repository, new StubFolders(ProfileId),
+            ProfileId, FolderSource, FileCopyMoveOperation.Copy, 1,
+            new FileCopyMoveReviewBlocker());
+
+        await model.LoadFoldersAsync("/share/source/child", destinationCanWrite: true);
+        Assert.False(model.CanSubmit);
+        await model.SubmitAsync();
+        Assert.Equal(0, repository.Count);
+
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true);
+        await model.SubmitAsync();
+
+        Assert.Equal(FileCopyMovePresentationState.ConfirmedSuccess, model.State);
+        Assert.True(repository.Request?.Target.IsDirectory);
+        Assert.Equal(1, repository.Count);
+    }
+
+    [Fact]
+    public async Task FolderPickerHidesSourceSubtree()
+    {
+        var folders = new ListingFolders(ProfileId,
+        [
+            new("/share/source", "source", true),
+            new("/share/source/child", "child", true),
+            new("/share/target", "target", true),
+        ]);
+        using var model = new FileCopyMoveViewModel(
+            new StubRepository(ProfileId, Outcome(MutationResultStatus.ConfirmedFailure)),
+            folders, ProfileId, FolderSource, FileCopyMoveOperation.Copy, 1,
+            new FileCopyMoveReviewBlocker());
+
+        await model.LoadFoldersAsync("/share", destinationCanWrite: true);
+
+        Assert.Equal(["/share/target"], model.Folders.Select(folder => folder.Path));
+        Assert.False(model.IsKnownWritableFolder("/share/source"));
     }
 
     private static FileCopyMoveViewModel Model(StubRepository repository,
@@ -138,6 +183,15 @@ public sealed class FileCopyMoveViewModelTests
         public bool IsReadOnlyPath(string path) => path.Split('/', StringSplitOptions.RemoveEmptyEntries)
             .Any(value => string.Equals(value, "#recycle", StringComparison.OrdinalIgnoreCase)) ||
             readOnly?.Any(root => path == root || path.StartsWith(root + "/", StringComparison.Ordinal)) == true;
+    }
+
+    private sealed class ListingFolders(Guid profileId, IReadOnlyList<FileCopyMoveFolder> folders)
+        : IFileCopyMoveFolderSource
+    {
+        public Guid ProfileId { get; } = profileId;
+        public Task<IReadOnlyList<FileCopyMoveFolder>> LoadFoldersAsync(string path,
+            CancellationToken cancellationToken) => Task.FromResult(folders);
+        public bool IsReadOnlyPath(string path) => false;
     }
 
     private sealed class StubRepository : IFileCopyMoveRepository

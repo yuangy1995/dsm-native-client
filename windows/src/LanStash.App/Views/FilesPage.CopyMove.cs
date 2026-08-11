@@ -30,7 +30,7 @@ public sealed partial class FilesPage
         _copyMoveRepository is { } repository && _copyMoveFolderSource is not null &&
         repository.ProfileId == _profileId &&
         (operation == FileCopyMoveOperation.Copy ? repository.Availability.CanCopy : repository.Availability.CanMove) &&
-        _viewModel.SelectedItem?.Item is { IsDirectory: false } item &&
+        _viewModel.SelectedItem?.Item is { } item &&
         FileCopyMoveViewModel.IsDestination(item.Path) &&
         (operation != FileCopyMoveOperation.Move || item.CanDelete);
 
@@ -60,8 +60,7 @@ public sealed partial class FilesPage
         async Task RenderAsync()
         {
             if (_copyMoveModel != model || _copyMoveDialog != dialog) return;
-            dialog.Title = localization.Get(operation == FileCopyMoveOperation.Copy
-                ? "FileCopyMove_Dialog_TitleCopy" : "FileCopyMove_Dialog_TitleMove");
+            dialog.Title = localization.Get(CopyMoveTitleKey(model.Source.IsDirectory, operation));
             dialog.CloseButtonText = localization.Get(model.State is
                 FileCopyMovePresentationState.ChoosingDestination or
                 FileCopyMovePresentationState.LoadingFolders or
@@ -148,7 +147,8 @@ public sealed partial class FilesPage
         var source = new TextBlock { Text = model.Source.Name, TextWrapping = TextWrapping.WrapWholeWords,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
         AutomationProperties.SetHeadingLevel(source, AutomationHeadingLevel.Level2);
-        AutomationProperties.SetName(source, localization.Get("FileCopyMove_Source_Label"));
+        AutomationProperties.SetName(source, localization.Get(model.Source.IsDirectory
+            ? "FileCopyMove_SourceFolder_Label" : "FileCopyMove_Source_Label"));
         panel.Children.Add(source);
 
         if (model.State is FileCopyMovePresentationState.ChoosingDestination or FileCopyMovePresentationState.LoadingFolders)
@@ -198,7 +198,7 @@ public sealed partial class FilesPage
         var message = new InfoBar { IsOpen = true, IsClosable = false,
             Severity = model.State == FileCopyMovePresentationState.ConfirmedSuccess ? InfoBarSeverity.Success :
                 model.State is FileCopyMovePresentationState.NeedsReview ? InfoBarSeverity.Warning : InfoBarSeverity.Error,
-            Message = localization.Get(CopyMoveMessageKey(model.State, model.Operation)) };
+            Message = localization.Get(CopyMoveMessageKey(model.State, model.Operation, model.Source.IsDirectory)) };
         AutomationProperties.SetName(message, localization.Get("FileCopyMove_A11y_Status"));
         AutomationProperties.SetLiveSetting(message, AutomationLiveSetting.Assertive);
         panel.Children.Add(message);
@@ -211,16 +211,27 @@ public sealed partial class FilesPage
         return (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(xaml);
     }
 
-    private static string CopyMoveMessageKey(FileCopyMovePresentationState state, FileCopyMoveOperation operation) => state switch
+    private static string CopyMoveTitleKey(bool isDirectory, FileCopyMoveOperation operation) =>
+        (isDirectory, operation) switch
+        {
+            (true, FileCopyMoveOperation.Copy) => "FileCopyMove_Dialog_TitleCopyFolder",
+            (true, FileCopyMoveOperation.Move) => "FileCopyMove_Dialog_TitleMoveFolder",
+            (false, FileCopyMoveOperation.Copy) => "FileCopyMove_Dialog_TitleCopy",
+            _ => "FileCopyMove_Dialog_TitleMove",
+        };
+
+    private static string CopyMoveMessageKey(FileCopyMovePresentationState state,
+        FileCopyMoveOperation operation, bool isDirectory) => state switch
     {
         FileCopyMovePresentationState.Submitting => operation == FileCopyMoveOperation.Copy ? "FileCopyMove_Status_Copying" : "FileCopyMove_Status_Moving",
+        FileCopyMovePresentationState.ConfirmedSuccess when isDirectory => operation == FileCopyMoveOperation.Copy ? "FileCopyMove_Status_SuccessCopyFolder" : "FileCopyMove_Status_SuccessMoveFolder",
         FileCopyMovePresentationState.ConfirmedSuccess => operation == FileCopyMoveOperation.Copy ? "FileCopyMove_Status_SuccessCopy" : "FileCopyMove_Status_SuccessMove",
         FileCopyMovePresentationState.NeedsReview => "FileCopyMove_Status_Unknown",
         FileCopyMovePresentationState.CancelledBeforeSubmission => "FileCopyMove_Status_Cancelled",
-        FileCopyMovePresentationState.Conflict => "FileCopyMove_Status_Conflict",
+        FileCopyMovePresentationState.Conflict => isDirectory ? "FileCopyMove_Status_ConflictFolder" : "FileCopyMove_Status_Conflict",
         FileCopyMovePresentationState.PermissionDenied => "FileCopyMove_Status_Permission",
-        FileCopyMovePresentationState.Unsupported => "FileCopyMove_Status_Unsupported",
-        _ => "FileCopyMove_Status_Error",
+        FileCopyMovePresentationState.Unsupported => isDirectory ? "FileCopyMove_Status_UnsupportedFolder" : "FileCopyMove_Status_Unsupported",
+        _ => isDirectory ? "FileCopyMove_Status_ErrorFolder" : "FileCopyMove_Status_Error",
     };
 
     private static bool SameCopyMoveItem(FileItem left, FileItem? right) => right is not null &&

@@ -15,6 +15,7 @@ public sealed record FileCopyMoveTarget(
     Guid ProfileId,
     string Path,
     string Name,
+    bool IsDirectory,
     long Size,
     DateTimeOffset? ModifiedAt,
     bool CanRead,

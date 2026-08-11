@@ -1102,12 +1102,15 @@
   <data name="PhotoImportUnsupportedMessage" xml:space="preserve"><value>此位置无法导入照片。请选择普通照片文件夹。</value></data>
   <data name="PhotoImportFailureMessage" xml:space="preserve"><value>无法开始或完成导入。请重新选择项目，并在“活动”中查看状态。</value></data>
   <data name="FileCopyMoveCopy.Label" xml:space="preserve"><value>复制</value></data>
-  <data name="FileCopyMoveCopy.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>复制所选文件</value></data>
+  <data name="FileCopyMoveCopy.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>复制所选项目</value></data>
   <data name="FileCopyMoveMove.Label" xml:space="preserve"><value>移动</value></data>
-  <data name="FileCopyMoveMove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>移动所选文件</value></data>
+  <data name="FileCopyMoveMove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>移动所选项目</value></data>
   <data name="FileCopyMove_Dialog_TitleCopy" xml:space="preserve"><value>复制文件</value></data>
   <data name="FileCopyMove_Dialog_TitleMove" xml:space="preserve"><value>移动文件</value></data>
+  <data name="FileCopyMove_Dialog_TitleCopyFolder" xml:space="preserve"><value>复制文件夹</value></data>
+  <data name="FileCopyMove_Dialog_TitleMoveFolder" xml:space="preserve"><value>移动文件夹</value></data>
   <data name="FileCopyMove_Source_Label" xml:space="preserve"><value>源文件</value></data>
+  <data name="FileCopyMove_SourceFolder_Label" xml:space="preserve"><value>源文件夹</value></data>
   <data name="FileCopyMove_Destination_Label" xml:space="preserve"><value>目标文件夹</value></data>
   <data name="FileCopyMove_Destination_Placeholder" xml:space="preserve"><value>选择文件夹</value></data>
   <data name="FileCopyMove_ChooseDestination_Button" xml:space="preserve"><value>选择文件夹</value></data>
@@ -1120,13 +1123,18 @@
   <data name="FileCopyMove_Status_Moving" xml:space="preserve"><value>正在移动…</value></data>
   <data name="FileCopyMove_Status_SuccessCopy" xml:space="preserve"><value>文件已复制。</value></data>
   <data name="FileCopyMove_Status_SuccessMove" xml:space="preserve"><value>文件已移动。</value></data>
+  <data name="FileCopyMove_Status_SuccessCopyFolder" xml:space="preserve"><value>文件夹已复制。</value></data>
+  <data name="FileCopyMove_Status_SuccessMoveFolder" xml:space="preserve"><value>文件夹已移动。</value></data>
   <data name="FileCopyMove_Status_Conflict" xml:space="preserve"><value>同名文件已存在，或文件已发生变化。请选择其他文件夹后重试。</value></data>
+  <data name="FileCopyMove_Status_ConflictFolder" xml:space="preserve"><value>同名文件夹已存在、源文件夹已发生变化，或目标位置位于源文件夹内。请选择其他文件夹后重试。</value></data>
   <data name="FileCopyMove_Status_Permission" xml:space="preserve"><value>你没有使用此位置的权限。请选择其他文件夹。</value></data>
   <data name="FileCopyMove_Status_Unknown" xml:space="preserve"><value>请求可能已被接受，但结果尚未确认。请先刷新，再决定是否重试。</value></data>
   <data name="FileCopyMove_Status_Unsupported" xml:space="preserve"><value>此文件或目标位置不能用于该操作。</value></data>
+  <data name="FileCopyMove_Status_UnsupportedFolder" xml:space="preserve"><value>此文件夹或目标位置不能用于该操作。</value></data>
   <data name="FileCopyMove_Status_Error" xml:space="preserve"><value>无法完成此操作。请检查文件和目标位置后重试。</value></data>
+  <data name="FileCopyMove_Status_ErrorFolder" xml:space="preserve"><value>无法完成此操作。请检查文件夹和目标位置后重试。</value></data>
   <data name="FileCopyMove_Status_Cancelled" xml:space="preserve"><value>操作已在发送前取消。</value></data>
-  <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>文件操作状态</value></data>
+  <data name="FileCopyMove_A11y_Status" xml:space="preserve"><value>文件或文件夹操作状态</value></data>
   <data name="FileCopyMove_A11y_DestinationTree" xml:space="preserve"><value>目标文件夹</value></data>
   <data name="FileRecycleMoveToRecycle.Label" xml:space="preserve"><value>移到回收站</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将所选文件移到回收站</value></data>

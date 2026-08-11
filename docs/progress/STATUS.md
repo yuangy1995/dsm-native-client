@@ -46,6 +46,8 @@ iPhone/iPad 与 Windows Chat 群成员只读列表已完成源码与云端构建
 
 Windows Chat 群公告只读切片已完成源码、本机与云端构建闭环：仅在未加密群聊且运行时 `SYNO.Chat.Post` 精确覆盖 v5、请求格式为 FORM 时显示公告入口，固定以 `Post.search`、`channel_id`、`offset=0`、`limit=100`、`has=["pin"]` 和置顶时间排序参数读取。WinUI 标题栏按钮、`Ctrl+Shift+N` 与原生 ContentDialog/ListView 覆盖加载、空内容、错误、重试/刷新和正常列表；结果只保留消息 ID、会话 ID、发送者、正文、发送时间和置顶时间，按 profile/会话驻留内存，切换会话、档案或关闭弹窗会取消旧读取并拒绝迟到结果。该切片不读取附件或头像，不持久化响应，不调用 `pin/unpin`，不开放公告管理、实时同步或 Apple 移动端服务端置顶。本机 .NET 10 已通过 Chat 聚焦 124/124、Release 全量 xUnit 975/975、本地化门禁和 XAML/RESW XML 解析；GitHub Windows Build run `31459279684` 通过 975/975 项 xUnit，WinUI x64/ARM64 均为 0 警告、0 错误，Repository Check run `31459279618` 已通过。本机 macOS 未运行 WinUI `XamlCompiler.exe`，不把云端结果写成本机应用构建通过。私有契约证据仍为 `observed/degraded`；真实 Chat Server 的空列表、权限、排序、附件型公告与撤销后刷新，以及真实 Windows/Narrator/高对比/100/150/200% 缩放/窄窗口/键盘/触控为 `PENDING_USER_VALIDATION`。
 
+Windows FILE-05 单文件夹同 NAS 复制/移动已完成源码、本机与云端构建闭环：复用公开 `SYNO.FileStation.CopyMove` v3 和既有普通本地挂载、权限、同名、一次提交、任务轮询及提交未知只回读不重放链路；WinUI 已允许选择单个普通本地文件夹，目标选择器排除源目录整棵子树，并按文件/文件夹显示双语标题、结果和 Narrator 文案。目录冻结源比较路径、名称、类型和修改时间，最终回读比较源/目标存在性与目录类型，不把 DSM 非稳定目录大小作为身份依据。本机 .NET 10 的 Files CopyMove 聚焦测试 42/42、Release 完整 xUnit 979/979、本地化检查、RESW/XAML XML 解析和 `git diff --check` 已通过；GitHub Windows Build run `31460563136` 通过 979/979 项 xUnit，WinUI x64/ARM64 均为 0 警告、0 错误，Repository Check run `31460563100` 已通过。批量、跨 NAS、覆盖、拖放、撤销和回收站目录操作仍关闭；真实 NAS 递归副作用及真实 Windows/Narrator/高对比/100/150/200% 缩放/窄窗口/键盘/触控为 `PENDING_USER_VALIDATION`。
+
 ### 第 2 波已合并（单一简体中文功能提交已全绿）
 
 - 基线：`641852b408ae24f8819e4a49cd70df4c8d9e5011`；功能对齐账本见[第 2 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)。
