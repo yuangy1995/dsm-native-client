@@ -270,6 +270,42 @@ public sealed class PhotosPageSourceContractTests
     }
 
     [Fact]
+    public void BatchRecycleUsesBoundedTypedSafetyChainInFoldersAndTimeline()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var batch = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.BatchRecycle.cs");
+        var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
+        var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
+
+        Assert.Contains("x:Name=\"PhotoMoveMultipleToRecycleButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoMoveSelectedToRecycleButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoCancelRecycleSelectionButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoRecycleBatchStatus\"", xaml);
+        Assert.Contains("PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple", batch);
+        Assert.Contains("FileRecycleBatchViewModel.MaximumItemCount", batch);
+        Assert.Contains("FileRecycleBatchSourceScope.CurrentFolder", batch);
+        Assert.Contains("FileRecycleBatchSourceScope.DescendantsOfRoot", batch);
+        Assert.Contains("new FileRecycleBatchViewModel(", batch);
+        Assert.Contains("PhotoBatchRecycleSourceIsCurrent(", batch);
+        Assert.Contains("_photoBatchRecycleDialog is not null", batch);
+        Assert.Contains("_photoBatchRecycleModel is not null", batch);
+        Assert.Contains("!_isPhotoPageActive", batch);
+        Assert.Contains("FileRecycleViewModel.FindRecycleLocation(", batch);
+        Assert.Contains("var submit = model.SubmitAsync();", batch);
+        Assert.Contains("summary.ConfirmedCount > 0", batch);
+        Assert.DoesNotContain("DeleteFilesAsync", batch);
+        Assert.DoesNotContain("DeleteFileAsync", batch);
+
+        Assert.Contains("x:Name=\"MoveMultipleToRecycleButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"MoveSelectedToRecycleButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"CancelRecycleSelectionButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"RecycleBatchStatus\"", timelineXaml);
+        Assert.Contains("TimelineGrid.SelectionMode = ListViewSelectionMode.Multiple", timeline);
+        Assert.Contains("HasSelectedRecycleItems", timeline);
+        Assert.Contains("ExitRecycleSelection", timeline);
+    }
+
+    [Fact]
     public void SinglePhotoMoveReusesFileCopyMoveSafetyChainAndRevalidatesSelection()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");

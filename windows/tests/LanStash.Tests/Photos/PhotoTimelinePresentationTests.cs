@@ -100,6 +100,25 @@ public sealed class PhotoTimelinePresentationTests
     }
 
     [Fact]
+    public void TimelineBatchRecycleUsesNativeBoundedMultipleSelectionAndAccessibleActions()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml"));
+        var source = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("x:Name=\"MoveMultipleToRecycleButton\"", xaml);
+        Assert.Contains("x:Name=\"MoveSelectedToRecycleButton\"", xaml);
+        Assert.Contains("x:Name=\"CancelRecycleSelectionButton\"", xaml);
+        Assert.Contains("TimelineGrid.SelectionMode = ListViewSelectionMode.Multiple", source);
+        Assert.Contains("FileRecycleBatchViewModel.MaximumItemCount", source);
+        Assert.Contains("FileRecycleBatchSelectionLimit", source);
+        Assert.Contains("PhotoRecycleBatchSelectionInvalid", source);
+        Assert.Contains("AutomationProperties.SetName(", source);
+        Assert.Contains("TimelineGrid.SelectionMode = ListViewSelectionMode.Single", source);
+        Assert.Contains("ExitRecycleSelection();", source);
+    }
+
+    [Fact]
     public void TimelineMoveCommandUsesSharedPageCallbackAndNativeScrollableToolbar()
     {
         var root = RepositoryRoot();

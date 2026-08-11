@@ -176,6 +176,20 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <AppBarButton
+                x:Uid="FileRecycleBatchMoveSelected"
+                x:Name="PhotoMoveSelectedToRecycleButton"
+                Click="MoveSelectedPhotosToRecycle_Click"
+                Icon="Delete"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
+                x:Uid="FileBrowserCancelDownloadSelection"
+                x:Name="PhotoCancelRecycleSelectionButton"
+                Click="CancelPhotoRecycleSelection_Click"
+                Icon="Cancel"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileRecycleRestore"
                 x:Name="PhotoRestoreFromRecycleButton"
                 Click="RestorePhotoFromRecycle_Click"
@@ -183,6 +197,12 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <CommandBar.SecondaryCommands>
+                <AppBarButton
+                    x:Uid="FileRecycleBatchMoveMultiple"
+                    x:Name="PhotoMoveMultipleToRecycleButton"
+                    Click="MoveMultiplePhotosToRecycle_Click"
+                    Icon="Delete"
+                    MinHeight="44" />
                 <AppBarButton
                     x:Uid="PhotoBrowserFilter"
                     x:Name="FilterButton"
@@ -228,6 +248,12 @@
                         MinHeight="44" />
                 </InfoBar.ActionButton>
             </InfoBar>
+            <InfoBar
+                x:Uid="FileRecycleBatchStatus"
+                x:Name="PhotoRecycleBatchStatus"
+                AutomationProperties.LiveSetting="Polite"
+                IsClosable="False"
+                IsOpen="False" />
         </StackPanel>
 
         <Grid x:Name="BrowserContentHost" Grid.Row="5">

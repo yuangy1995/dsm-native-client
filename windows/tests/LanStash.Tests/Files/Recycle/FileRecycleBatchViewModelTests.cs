@@ -72,6 +72,64 @@ public sealed class FileRecycleBatchViewModelTests
     }
 
     [Fact]
+    public void DescendantScopeAllowsMixedParentsAndSameNamesButStaysInsideRoot()
+    {
+        var first = File("same.jpg", "/share/source/2025");
+        var second = File("same.jpg", "/share/source/2026");
+
+        Assert.Equal(
+            FileRecycleBatchValidationStatus.Valid,
+            FileRecycleBatchViewModel.Validate(
+                ProfileId,
+                [first, second],
+                "/share/source",
+                FileLocationSource.Shares,
+                [RecycleLocation],
+                FileRecycleBatchSourceScope.DescendantsOfRoot));
+        Assert.Equal(
+            FileRecycleBatchValidationStatus.InvalidSource,
+            FileRecycleBatchViewModel.Validate(
+                ProfileId,
+                [File("outside.jpg", "/share/other")],
+                "/share/source",
+                FileLocationSource.Shares,
+                [RecycleLocation],
+                FileRecycleBatchSourceScope.DescendantsOfRoot));
+        Assert.Equal(
+            FileRecycleBatchValidationStatus.InvalidSource,
+            FileRecycleBatchViewModel.Validate(
+                ProfileId,
+                [File("prefix.jpg", "/share/source-copy")],
+                "/share/source",
+                FileLocationSource.Shares,
+                [RecycleLocation],
+                FileRecycleBatchSourceScope.DescendantsOfRoot));
+    }
+
+    [Fact]
+    public async Task DescendantScopeFreezesAndConfirmsEachRelativeRecycleDestination()
+    {
+        var repository = new StubRepository(
+            ProfileId,
+            (request, _) => Task.FromResult(SuccessPreservingRelativePath(request)));
+        using var model = new FileRecycleBatchViewModel(
+            repository,
+            ProfileId,
+            [File("first.jpg", "/share/source/2025"), File("second.jpg", "/share/source/2026")],
+            [RecycleLocation],
+            "/share/source",
+            FileRecycleBatchSourceScope.DescendantsOfRoot,
+            new FileRecycleReviewBlocker());
+
+        await model.SubmitAsync();
+
+        Assert.Equal(
+            ["/share/source/2025/first.jpg", "/share/source/2026/second.jpg"],
+            repository.Requests.Select(request => request.Target.Path));
+        Assert.Equal(new FileRecycleBatchSummary(2, 2, 0, 0, 0, 0), model.Summary);
+    }
+
+    [Fact]
     public async Task ConstructorFreezesLocationAndBuildsCompleteMoveTarget()
     {
         var locations = new List<FileRecycleLocation> { RecycleLocation };
@@ -444,6 +502,25 @@ public sealed class FileRecycleBatchViewModelTests
                 null,
                 true,
                 true));
+
+    private static FileRecycleOutcome SuccessPreservingRelativePath(MoveToRecycleRequest request)
+    {
+        var destination = request.RecycleLocation.RecyclePath +
+            request.Target.Path[request.RecycleLocation.SharePath.Length..];
+        return new(
+            Result(MutationResultStatus.ConfirmedSuccess),
+            request.Target.Path,
+            destination,
+            new FileItem(
+                destination,
+                request.Target.Name,
+                request.Target.IsDirectory,
+                request.Target.Size,
+                request.Target.ModifiedAt,
+                null,
+                true,
+                true));
+    }
 
     private static FileRecycleOutcome Outcome(
         MutationResultStatus status,

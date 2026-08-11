@@ -37,6 +37,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private bool _initialized;
     private bool _isSaving;
     private bool _updatingSpaces;
+    private bool _isPhotoPageActive;
     private bool _disposed;
 
     internal PhotosPage(
@@ -107,6 +108,7 @@ public sealed partial class PhotosPage : Page, IDisposable
                 MovePhotoAsync,
                 CanMovePhotoToRecycle,
                 MovePhotoToRecycleAsync,
+                MoveMultiplePhotosToRecycleAsync,
                 CanRestorePhotoItem,
                 RestorePhotoItemAsync);
         }
@@ -151,6 +153,7 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async void PhotosPage_Loaded(object sender, RoutedEventArgs e)
     {
+        _isPhotoPageActive = true;
         if (_initialized)
         {
             ActivatePhotoImportPage();
@@ -172,12 +175,15 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private void PhotosPage_Unloaded(object sender, RoutedEventArgs e)
     {
+        _isPhotoPageActive = false;
         CancelThumbnailRequests();
         _ = ClosePhotoViewerAsync();
         TimelineView.HideTimeline();
         DeactivatePhotoImport();
         ClosePhotoCopyMoveDialog();
         ClosePhotoRecycleDialog();
+        ClosePhotoBatchRecycleDialog();
+        ExitPhotoRecycleSelection();
         DeactivatePhotoRecycleLocations();
     }
 
@@ -192,6 +198,9 @@ public sealed partial class PhotosPage : Page, IDisposable
         {
             return;
         }
+
+        ExitPhotoRecycleSelection();
+        TimelineView.ExitRecycleSelection();
 
         if (TimelineMode.IsChecked == true)
         {
@@ -208,6 +217,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private async void FoldersMode_Click(object sender, RoutedEventArgs e)
     {
         await ClosePhotoViewerAsync();
+        TimelineView.ExitRecycleSelection();
         TimelineView.HideTimeline();
         TimelineView.ClearSelection();
         TimelineView.Visibility = Visibility.Collapsed;
@@ -220,6 +230,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private async void TimelineMode_Click(object sender, RoutedEventArgs e)
     {
         await ClosePhotoViewerAsync();
+        ExitPhotoRecycleSelection();
         _viewModel.SelectedItem = null;
         PhotoGrid.SelectedItem = null;
         CancelThumbnailRequests();
@@ -254,8 +265,11 @@ public sealed partial class PhotosPage : Page, IDisposable
     private async void LoadMore_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.LoadMoreAsync);
 
-    private void Photos_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+    private void Photos_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        HandlePhotoRecycleSelectionChanged(e);
         UpdateState();
+    }
 
     private void PhotoGrid_ContainerContentChanging(
         ListViewBase sender,
@@ -616,6 +630,7 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async Task RunLocationChangeAsync(Func<Task> action)
     {
+        ExitPhotoRecycleSelection();
         await ClosePhotoViewerAsync();
         CancelThumbnailRequests();
         await RunAsync(action);
@@ -675,6 +690,7 @@ public sealed partial class PhotosPage : Page, IDisposable
             : Visibility.Collapsed;
         LoadMoreError.IsOpen = _viewModel.HasLoadMoreError;
         UpdatePhotoImportState();
+        UpdatePhotoBatchRecycleControls();
     }
 
     private void UpdateSpacePicker()
@@ -775,6 +791,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         DisposePhotoViewer();
         ClosePhotoCopyMoveDialog();
         ClosePhotoRecycleDialog();
+        ClosePhotoBatchRecycleDialog();
         DisposePhotoRecycleLocations();
         CancelThumbnailRequests();
         _locationCancellation.Dispose();

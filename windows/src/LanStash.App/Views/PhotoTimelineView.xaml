@@ -27,6 +27,9 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="PhotoTimelineSearch" x:Name="SearchBox" MinHeight="44"
                      TextChanged="SearchBox_TextChanged" />
@@ -48,6 +51,12 @@
                     MinHeight="44" Click="Restore_Click" Visibility="Collapsed" />
             <Button x:Name="MoveToRecycleButton" Grid.Column="7"
                     MinHeight="44" Click="MoveToRecycle_Click" Visibility="Collapsed" />
+            <Button x:Name="MoveMultipleToRecycleButton" Grid.Column="8"
+                    MinHeight="44" Click="MoveMultipleToRecycle_Click" Visibility="Collapsed" />
+            <Button x:Name="MoveSelectedToRecycleButton" Grid.Column="9"
+                    MinHeight="44" Click="MoveSelectedToRecycle_Click" Visibility="Collapsed" />
+            <Button x:Name="CancelRecycleSelectionButton" Grid.Column="10"
+                    MinHeight="44" Click="CancelRecycleSelection_Click" Visibility="Collapsed" />
         </Grid>
         </ScrollViewer>
 
@@ -64,6 +73,8 @@
                      IsOpen="False" Severity="Warning" AutomationProperties.LiveSetting="Polite" />
             <InfoBar x:Uid="PhotoTimelineRefreshFailed" x:Name="RefreshFailedNotice" IsClosable="False"
                      IsOpen="False" Severity="Warning" AutomationProperties.LiveSetting="Polite" />
+            <InfoBar x:Uid="FileRecycleBatchStatus" x:Name="RecycleBatchStatus" IsClosable="False"
+                     IsOpen="False" AutomationProperties.LiveSetting="Polite" />
         </StackPanel>
 
         <Grid Grid.Row="2">

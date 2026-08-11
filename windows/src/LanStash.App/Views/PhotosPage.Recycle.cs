@@ -85,6 +85,8 @@ public sealed partial class PhotosPage
 
     private bool CanOpenPhotoRecycleDialog(PhotoItem item, FileRecycleOperation operation) =>
         _photoRecycleDialog is null &&
+        _photoBatchRecycleDialog is null &&
+        !_isSelectingPhotoRecycle &&
         _photoCopyMoveDialog is null &&
         !_isClosingPhotoRecycle &&
         CanPhotoRecycleItemCore(item, operation);
@@ -408,12 +410,12 @@ public sealed partial class PhotosPage
 
     private void UpdatePhotoRecycleControls()
     {
-        var canMove = CanMoveSelectedPhotoToRecycle();
+        var canMove = !_isSelectingPhotoRecycle && CanMoveSelectedPhotoToRecycle();
         PhotoMoveToRecycleButton.IsEnabled = canMove;
         PhotoMoveToRecycleButton.Visibility = canMove
             ? Visibility.Visible
             : Visibility.Collapsed;
-        var canRestore = CanRestoreSelectedPhoto();
+        var canRestore = !_isSelectingPhotoRecycle && CanRestoreSelectedPhoto();
         PhotoRestoreFromRecycleButton.IsEnabled = canRestore;
         PhotoRestoreFromRecycleButton.Visibility = canRestore
             ? Visibility.Visible
