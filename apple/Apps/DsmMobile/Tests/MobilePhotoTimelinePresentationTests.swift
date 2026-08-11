@@ -28,6 +28,20 @@ final class MobilePhotoTimelinePresentationTests: XCTestCase {
         XCTAssertFalse(model.contains("UserDefaults"))
     }
 
+    func test时间线照片仅向合格单项开放共享移动入口() throws {
+        let root = Self.repositoryRoot()
+        let photos = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/MobilePhotosView.swift")
+        let timeline = try String(contentsOfFile: root + "/apple/Apps/DsmMobile/Sources/Features/Photos/Timeline/MobilePhotoTimelineView.swift")
+
+        XCTAssertTrue(timeline.contains("onMove: canMove(item)"))
+        XCTAssertTrue(timeline.contains("!item.fileItem.isRecyclePath"))
+        XCTAssertTrue(timeline.contains("item.sizeBytes.map { $0 >= 0 } == true"))
+        XCTAssertTrue(timeline.contains("mobile.files.copy-move.move.action"))
+        XCTAssertTrue(photos.contains("if browseMode == .timeline"))
+        XCTAssertTrue(photos.contains("await timeline.refresh()"))
+        XCTAssertFalse(timeline.contains("copyMoveResult("))
+    }
+
     private static func repositoryRoot(filePath: String = #filePath) -> String {
         let marker = "/apple/Apps/DsmMobile/Tests/"
         guard let range = filePath.range(of: marker) else { return "" }

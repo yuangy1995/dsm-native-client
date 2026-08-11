@@ -13,6 +13,7 @@ struct MobilePhotoGrid: View {
     let onOpenPhoto: (PhotoLibraryItem) -> Void
     let onSaveCopy: (PhotoLibraryItem) -> Void
     let onShare: (PhotoLibraryItem) -> Void
+    let onMove: (PhotoLibraryItem) -> Void
     let onRestoreFromRecycle: (PhotoLibraryItem) -> Void
     let onLoadMore: () -> Void
 
@@ -39,6 +40,7 @@ struct MobilePhotoGrid: View {
                         onOpenPhoto: onOpenPhoto,
                         onSaveCopy: onSaveCopy,
                         onShare: onShare,
+                        onMove: canMove(item) ? onMove : nil,
                         onRestoreFromRecycle: canRestoreFromRecycle(item) ? onRestoreFromRecycle : nil
                     )
                 }
@@ -87,5 +89,11 @@ struct MobilePhotoGrid: View {
         !item.isFolder &&
             item.fileItem.isRecyclePath &&
             MobileFileRecycleActionModel.restoreDestinationPath(for: item.path) != nil
+    }
+
+    private func canMove(_ item: PhotoLibraryItem) -> Bool {
+        !item.isFolder &&
+            !item.fileItem.isRecyclePath &&
+            item.sizeBytes.map { $0 >= 0 } == true
     }
 }

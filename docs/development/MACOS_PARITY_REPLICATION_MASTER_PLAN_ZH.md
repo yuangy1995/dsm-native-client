@@ -197,6 +197,8 @@ Windows PHOTO-02 已在既有查看器语义上补齐系统级全屏、进入前
 Windows PHOTO-03 已补入文件夹网格与主动时间线的单项普通媒体移入回收站源码闭环：只消费已发现的同共享回收站入口，并复用 FILE-09 的权限预检、typed 结果、防重复、未知结果只回读和最终核对，不删除系统图库。本机聚焦 138/138、完整 xUnit 1165/1165 通过；GitHub Windows Build run `31516242228` 已通过 1165/1165 与 WinUI x64/ARM64 构建，Repository Check run `31516242282` 已通过。批量、永久删除、收藏写及真实 Windows/NAS 副作用不在本切片。
 
 Windows PHOTO-03 已继续补入单项普通媒体同 NAS 移动闭环：文件夹网格和主动时间线共用 FILE-05 CopyMove v3 与原生目标文件夹选择器，只允许一个普通图片或视频移到普通本地可写目标，不覆盖、不自动改名。提交前关闭预览并重新核对 profile、资料库、来源身份与删除权限、选择和版本；Repository 继续负责本地挂载、权限、冲突、一次提交、任务轮询和最终回读，提交未知只回读、不重放。本机聚焦 110/110、完整 xUnit 1168/1168、本地化与 XML 门禁通过；macOS 无法执行 Windows `XamlCompiler.exe`，不写成本机 WinUI 构建通过。GitHub Windows Build run `31519022162` 已通过 1168/1168 与 WinUI x64/ARM64 构建，Repository Check run `31519022189` 已通过。批量、复制、跨 NAS、撤销、后台恢复、系统图库移动和查看器独立写入口不在本切片；真实 NAS/Windows、Narrator、高对比、200% 缩放、窄窗口、键鼠与触控为 `PENDING_USER_VALIDATION`。
+
+Apple 移动 PHOTO-03 已补入同义的单项普通媒体同 NAS 移动源码闭环：iPhone/iPad Photos 文件夹网格和主动时间线复用 FILE-05 原生目标 Sheet 与共享 CopyMove 协调器，只允许已知大小、非回收站的一个图片或视频移到普通本地可写文件夹，固定无覆盖。profile、Repository 或页面上下文变化会撤销旧操作；共享链继续负责来源删除权限、目标权限、冲突、一次提交、提交未知只回读不重放和最终回读。本机模拟器双架构构建及聚焦 16/16 通过；Apple Build run `31521369954` 与 Repository Check run `31521369961` 已通过。复制、批量、跨 NAS、系统图库移动和自动备份不在本切片；真实 iPhone/iPad、真实 NAS、VoiceOver、最大动态文字、iPad 键盘/指针、弱网和取消为 `PENDING_USER_VALIDATION`。
 | NAS-01 · A/C | 系统概况、性能趋势、更新检查/发布说明、存储/硬盘/外接存储/ZRAM | Dashboard + 原生图表/数据表 | **核心**：系统、连接、容量与健康只读摘要；更新仅查看说明 | `NasAdministrationModel.swift` |
 | NAS-02 · A/C | 文件服务、终端、代理、接口、DDNS、区域时间、QuickConnect | 分类设置页、表单验证与写后回读 | **受限**：只读连接/配置摘要；所有设置写当前不做 | `NasAdministrationView.swift`、NAS Repository |
 | NAS-03 · A/C | 硬件/休眠、UPS、防火墙基础控制、电源操作 | 危险操作与普通设置空间分离 | **当前不做**：硬件、防火墙与电源写交给 Mac App 或 DSM Web | 同上、私有 API 记录 |

@@ -94,6 +94,30 @@ final class MobilePhotosPresentationTests: XCTestCase {
         XCTAssertFalse(source.contains("library.cancelAllWork()\n            resetPreviewPresentation()"))
     }
 
+    func test文件夹网格照片复用共享同Nas单项移动闭环() throws {
+        let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
+        let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
+        let cell = try sourceFile("Sources/Features/Photos/MobilePhotoCell.swift")
+
+        XCTAssertTrue(view.contains("@State private var copyMove = MobileFileCopyMoveModel()"))
+        XCTAssertTrue(view.contains("MobileFileCopyMoveView("))
+        XCTAssertTrue(view.contains("operation: .move"))
+        XCTAssertTrue(view.contains("source: .browser"))
+        XCTAssertTrue(view.contains("visibleItems: visiblePhotoSnapshot.map(\\.fileItem)"))
+        XCTAssertTrue(view.contains("readOnlyRoots: readOnlyMutationRoots"))
+        XCTAssertTrue(view.contains("copyMove.activate("))
+        XCTAssertTrue(view.contains("copyMove.deactivate()"))
+        XCTAssertTrue(view.contains("model.activeProfile?.id == success.profileID"))
+        XCTAssertTrue(view.contains("model.fileRepository?.profileID == success.profileID"))
+        XCTAssertTrue(view.contains("await library.reload()"))
+        XCTAssertFalse(view.contains("copyMoveResult("))
+
+        XCTAssertTrue(grid.contains("!item.isFolder"))
+        XCTAssertTrue(grid.contains("!item.fileItem.isRecyclePath"))
+        XCTAssertTrue(grid.contains("item.sizeBytes.map { $0 >= 0 } == true"))
+        XCTAssertTrue(cell.contains("mobile.files.copy-move.move.action"))
+    }
+
     func test触控VoiceOver动态文字与平台原生控件均有明确实现() throws {
         let view = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
         let grid = try sourceFile("Sources/Features/Photos/MobilePhotoGrid.swift")
@@ -140,6 +164,7 @@ final class MobilePhotosPresentationTests: XCTestCase {
             "mobile.photos.loading-more",
             "mobile.photos.action.save-copy",
             "mobile.photos.action.share",
+            "mobile.files.copy-move.move.action",
             "mobile.photos.item-actions",
             "mobile.photos.open-album",
             "mobile.photos.open-photo",

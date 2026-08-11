@@ -13,6 +13,7 @@ struct MobilePhotosView: View {
     @State private var timeline = MobilePhotoTimelineModel()
     @State private var viewer = MobilePhotoViewerModel()
     @State private var photoImport = MobilePhotoImportModel()
+    @State private var copyMove = MobileFileCopyMoveModel()
     @State private var recycleAction = MobileFileRecycleActionModel()
     @State private var showsPreviewInspector = false
     @State private var showsPreviewFullScreen = false
@@ -74,6 +75,15 @@ struct MobilePhotosView: View {
                 )
             }
         }
+        .sheet(isPresented: copyMovePresentationBinding) {
+            if let repository = model.fileRepository {
+                MobileFileCopyMoveView(
+                    copyMove: copyMove,
+                    repository: repository,
+                    didConfirm: copyMoveDidConfirm
+                )
+            }
+        }
         .alert(L10n.string("mobile.documents.error-title"), isPresented: documentFailureBinding) {
             Button(L10n.string("mobile.documents.dismiss")) {
                 model.documentTransferController.clearFailure()
@@ -106,6 +116,7 @@ struct MobilePhotosView: View {
             timeline.cancelAllWork()
             viewer.close()
             photoImport.cancelPreparation()
+            copyMove.deactivate()
             recycleAction.deactivate()
         }
     }
@@ -153,6 +164,7 @@ struct MobilePhotosView: View {
                     onOpenPhoto: openPhoto,
                     onSaveCopy: saveCopy,
                     onShare: share,
+                    onMove: beginMove,
                     onRestoreFromRecycle: beginRestoreFromRecycle
                 )
             } else {
@@ -187,6 +199,7 @@ struct MobilePhotosView: View {
                 onOpenPhoto: openPhoto,
                 onSaveCopy: saveCopy,
                 onShare: share,
+                onMove: beginMove,
                 onRestoreFromRecycle: beginRestoreFromRecycle,
                 onLoadMore: loadMore
             )
@@ -515,6 +528,10 @@ struct MobilePhotosView: View {
             profileID: model.activeProfile?.id,
             repository: model.fileRepository
         )
+        copyMove.activate(
+            profileID: model.activeProfile?.id,
+            repository: model.fileRepository
+        )
         if viewer.activate(
             profileID: model.activeProfile?.id,
             fileRepository: model.fileRepository
@@ -671,6 +688,53 @@ struct MobilePhotosView: View {
         )
     }
 
+    private func beginMove(_ item: PhotoLibraryItem) {
+        guard let item = canonicalPhotoItem(item),
+              canMove(item),
+              let repository = model.fileRepository,
+              let parentPath = Self.parentPath(of: item.path) else { return }
+        closePreview()
+        copyMove.begin(
+            operation: .move,
+            item: item.fileItem,
+            parentPath: parentPath,
+            source: .browser,
+            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
+            readOnlyRoots: readOnlyMutationRoots,
+            repository: repository
+        )
+    }
+
+    private func canMove(_ item: PhotoLibraryItem) -> Bool {
+        guard let item = canonicalPhotoItem(item),
+              let profileID = model.activeProfile?.id,
+              let parentPath = Self.parentPath(of: item.path) else { return false }
+        return MobileFileCopyMoveModel.canBegin(
+            item: item.fileItem,
+            parentPath: parentPath,
+            source: .browser,
+            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
+            readOnlyRoots: readOnlyMutationRoots,
+            profileID: profileID
+        )
+    }
+
+    private var readOnlyMutationRoots: [String] {
+        let locations = model.fileBrowserModel.locations.state
+        return locations.remote.folders.map(\.item.path) +
+            locations.recycle.locations.map(\.recyclePath)
+    }
+
+    private func copyMoveDidConfirm(_ success: MobileFileCopyMoveSuccess) async {
+        guard model.activeProfile?.id == success.profileID,
+              model.fileRepository?.profileID == success.profileID else { return }
+        if browseMode == .timeline {
+            await timeline.refresh()
+        } else {
+            await library.reload()
+        }
+    }
+
     private func recycleActionDidConfirm(_ success: MobileFileRecycleActionSuccess) async {
         if viewer.state.selectedItem?.path == success.sourcePath {
             closePreview()
@@ -749,6 +813,13 @@ struct MobilePhotosView: View {
         Binding(
             get: { recycleAction.isPresented },
             set: { if !$0 { recycleAction.dismiss() } }
+        )
+    }
+
+    private var copyMovePresentationBinding: Binding<Bool> {
+        Binding(
+            get: { copyMove.isPresented },
+            set: { if !$0 { copyMove.dismiss() } }
         )
     }
 

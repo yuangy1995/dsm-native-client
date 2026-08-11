@@ -361,6 +361,8 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 第 2 波已完成 PHOTO-03A 主动单项导入：只用 `PhotosPicker` 选择一项图片或视频，受控临时产物复用既有上传与 Activity，选择取消不改变页面，完成时重新核对 profile、repository、空间、根目录、模式与路径后才刷新。最终提交已通过 Apple Build；未新增 PhotoKit 整库权限、自动备份、私有 Foto 或平行上传实现；iCloud-only、iPad 真机与真实 NAS 上传仍为 `PENDING_USER_VALIDATION`。
 
+PHOTO-03 受限 NAS 管理继续完成单项普通媒体同 NAS 移动源码闭环：文件夹网格和主动时间线只对已知大小、非回收站的单个图片或视频开放“移动到…”，复用 FILE-05 的 `MobileFileCopyMoveModel`、原生目标 Sheet 与共享 CopyMove 协调器，不新增照片专用写契约。目标仍限普通本地可写文件夹，固定无覆盖；提交前后继续执行身份、来源删除权限、目标权限、冲突、一次提交、未知结果只回读不重放和最终回读。切换 profile、Repository 或离页会撤销旧上下文，成功后只刷新当前照片来源。本机 iPhone 17 Pro 模拟器双架构构建与 Photos/CopyMove 聚焦 16/16 已通过；Apple Build run `31521369954` 与 Repository Check run `31521369961` 已通过。复制、批量、跨 NAS、覆盖、自动改名、系统照片图库移动、查看器独立写入口和自动备份不在本切片；真实 iPhone/iPad、真实 NAS 副作用、VoiceOver、最大动态文字、iPad 键盘/指针、弱网和取消为 `PENDING_USER_VALIDATION`。
+
 ### M5-A：文字 Chat 核心
 
 - 会话/用户/消息/成员 typed 状态、首次单聊与非加密私人群聊。
