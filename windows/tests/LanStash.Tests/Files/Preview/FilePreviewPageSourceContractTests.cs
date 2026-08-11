@@ -123,6 +123,35 @@ public sealed class FilePreviewPageSourceContractTests
     }
 
     [Fact]
+    public void ImagePreviewHasDiscoverableLocalTransformControls()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml");
+        var pane = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml.cs");
+
+        foreach (var uid in new[]
+        {
+            "FilePreviewImageZoomOut",
+            "FilePreviewImageZoomIn",
+            "FilePreviewImageFit",
+            "FilePreviewImageRotateLeft",
+            "FilePreviewImageRotateRight",
+        })
+        {
+            Assert.Contains($"x:Uid=\"{uid}\"", xaml);
+        }
+        Assert.Contains("ViewChanged=\"ImageScroller_ViewChanged\"", xaml);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
+        Assert.Contains("Key=\"Number0\" Modifiers=\"Control\"", xaml);
+        Assert.Contains("Key=\"L\" Modifiers=\"Control\"", xaml);
+        Assert.Contains("Key=\"R\" Modifiers=\"Control\"", xaml);
+        Assert.Contains("ImageRotationTransform.Rotation = _imageRotation;", pane);
+        Assert.Contains("Math.Min(width / height, height / width)", pane);
+        Assert.Contains("ImageScroller.ChangeView(0, 0, 1, true);", pane);
+        Assert.Contains("ResetImageTransform();", pane);
+        Assert.DoesNotContain("Write", Slice(pane, "private void RotateImage", "private void ResetImageTransform"));
+    }
+
+    [Fact]
     public void ShellNeverFallsThroughFilesWhenPreviewInterfaceIsUnavailable()
     {
         var source = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");

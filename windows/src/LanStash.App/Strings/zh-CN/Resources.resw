@@ -834,6 +834,17 @@
   <data name="FilePreviewCancelledMessage" xml:space="preserve"><value>临时预览已清理，你可以重试。</value></data>
   <data name="FilePreviewTextAutomationName" xml:space="preserve"><value>{0} 的只读文本预览</value></data>
   <data name="FilePreviewImageAutomationName" xml:space="preserve"><value>{0} 的图片预览</value></data>
+  <data name="FilePreviewImageZoomOut.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>缩小图片</value></data>
+  <data name="FilePreviewImageZoomOut.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>缩小图片（Ctrl+减号）</value></data>
+  <data name="FilePreviewImageZoomIn.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>放大图片</value></data>
+  <data name="FilePreviewImageZoomIn.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>放大图片（Ctrl+加号）</value></data>
+  <data name="FilePreviewImageFit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>使图片适应查看区域</value></data>
+  <data name="FilePreviewImageFit.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>适应查看区域（Ctrl+0）</value></data>
+  <data name="FilePreviewImageRotateLeft.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>向左旋转</value></data>
+  <data name="FilePreviewImageRotateLeft.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>向左旋转（Ctrl+L）</value></data>
+  <data name="FilePreviewImageRotateRight.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>向右旋转</value></data>
+  <data name="FilePreviewImageRotateRight.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>向右旋转（Ctrl+R）</value></data>
+  <data name="FilePreviewImageTransformStatus" xml:space="preserve"><value>{0:N0}% · {1:N0}°</value></data>
   <data name="FilePreviewPdfAutomationName" xml:space="preserve"><value>{0} 的 PDF 预览，第 {1:N0} 页，共 {2:N0} 页</value></data>
   <data name="FilePreviewPdfPage" xml:space="preserve"><value>第 {0:N0} 页，共 {1:N0} 页</value></data>
   <data name="FilePreviewMediaAutomationName" xml:space="preserve"><value>{0} 的媒体预览</value></data>

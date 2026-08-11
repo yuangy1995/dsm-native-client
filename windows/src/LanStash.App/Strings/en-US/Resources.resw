@@ -834,6 +834,17 @@
   <data name="FilePreviewCancelledMessage" xml:space="preserve"><value>The temporary preview was removed. You can try again.</value></data>
   <data name="FilePreviewTextAutomationName" xml:space="preserve"><value>Read-only text preview for {0}</value></data>
   <data name="FilePreviewImageAutomationName" xml:space="preserve"><value>Image preview for {0}</value></data>
+  <data name="FilePreviewImageZoomOut.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Zoom out</value></data>
+  <data name="FilePreviewImageZoomOut.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Zoom out (Ctrl+Minus)</value></data>
+  <data name="FilePreviewImageZoomIn.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Zoom in</value></data>
+  <data name="FilePreviewImageZoomIn.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Zoom in (Ctrl+Plus)</value></data>
+  <data name="FilePreviewImageFit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Fit image to the viewer</value></data>
+  <data name="FilePreviewImageFit.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Fit image (Ctrl+0)</value></data>
+  <data name="FilePreviewImageRotateLeft.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Rotate left</value></data>
+  <data name="FilePreviewImageRotateLeft.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Rotate left (Ctrl+L)</value></data>
+  <data name="FilePreviewImageRotateRight.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Rotate right</value></data>
+  <data name="FilePreviewImageRotateRight.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Rotate right (Ctrl+R)</value></data>
+  <data name="FilePreviewImageTransformStatus" xml:space="preserve"><value>{0:N0}% · {1:N0}°</value></data>
   <data name="FilePreviewPdfAutomationName" xml:space="preserve"><value>PDF preview for {0}, page {1:N0} of {2:N0}</value></data>
   <data name="FilePreviewPdfPage" xml:space="preserve"><value>Page {0:N0} of {1:N0}</value></data>
   <data name="FilePreviewMediaAutomationName" xml:space="preserve"><value>Media preview for {0}</value></data>

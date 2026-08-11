@@ -248,6 +248,8 @@ FILE-07 分享链接管理增量已补齐：Windows Files 复用既有公开 Sha
 - HEIC/MOV/Live Photo 能力探测与可解释降级，EXIF 只展示白名单字段。
 - 上传、导出、分享、移动、删除和恢复复用 W2 传输/写操作。
 
+PHOTO-02 图片预览控制增量已完成源码、本机与云端构建闭环：共享 `FilePreviewPane` 仅在图片准备完成后显示原生紧凑命令栏，提供 25%～400% 放大/缩小、适应查看区域、向左/向右 90 度旋转，以及 `Ctrl+加号/减号/0/L/R` 键盘入口；缩放百分比和旋转角度使用当前 App 语言格式并作为 polite live region 更新。切换项目、关闭或失败会复位缩放、滚动位置和角度；所有变换只存在当前预览内存，不修改本地临时产物或 NAS 文件，不新增 NAS 请求，也不影响视频、PDF 或文本预览。本机 .NET 10 已通过 Preview/Photos 聚焦 27/27、Release 全量 xUnit 1003/1003、本地化门禁和 XAML/RESW XML 解析；macOS 无法运行 WinUI `XamlCompiler.exe`，不把本机 App 构建写成通过。GitHub Windows Build run `31470288572` 已通过 1003/1003 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31470288573` 已通过。真实 Windows、Narrator、高对比、100/150/200% 缩放、窄窗口、鼠标滚轮、触控板和触屏为 `PENDING_USER_VALIDATION`。
+
 语义要求：界面必须称为文件系统照片库；真正 Synology Photos 相册、人物、地点、标签等内部能力仍关闭。
 
 出口：大目录/大图库不在 UI 线程解码；缓存有上限；图片、视频、PDF、文本和不可支持格式均有状态测试。

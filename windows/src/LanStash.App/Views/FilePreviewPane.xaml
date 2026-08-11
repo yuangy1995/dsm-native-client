@@ -6,6 +6,11 @@
     <UserControl.KeyboardAccelerators>
         <KeyboardAccelerator Key="Escape" Invoked="CloseAccelerator_Invoked" />
         <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="CloseAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Add" Modifiers="Control" Invoked="ZoomInAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Subtract" Modifiers="Control" Invoked="ZoomOutAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Number0" Modifiers="Control" Invoked="FitImageAccelerator_Invoked" />
+        <KeyboardAccelerator Key="L" Modifiers="Control" Invoked="RotateLeftAccelerator_Invoked" />
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="RotateRightAccelerator_Invoked" />
     </UserControl.KeyboardAccelerators>
     <Grid
         x:Name="PreviewRoot"
@@ -165,19 +170,69 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <ScrollViewer
-                    x:Name="ImageScroller"
-                    HorizontalScrollBarVisibility="Auto"
-                    VerticalScrollBarVisibility="Auto"
-                    ZoomMode="Enabled"
-                    MinZoomFactor="0.25"
-                    MaxZoomFactor="4"
-                    Visibility="Collapsed">
-                    <Image
-                        x:Name="ImagePreview"
-                        Stretch="Uniform"
-                        AutomationProperties.Name="" />
-                </ScrollViewer>
+                <Grid x:Name="ImagePreviewSurface" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ScrollViewer
+                        x:Name="ImageScroller"
+                        HorizontalScrollBarVisibility="Auto"
+                        VerticalScrollBarVisibility="Auto"
+                        ZoomMode="Enabled"
+                        MinZoomFactor="0.25"
+                        MaxZoomFactor="4"
+                        ViewChanged="ImageScroller_ViewChanged">
+                        <Image
+                            x:Name="ImagePreview"
+                            RenderTransformOrigin="0.5,0.5"
+                            SizeChanged="ImagePreview_SizeChanged"
+                            Stretch="Uniform"
+                            AutomationProperties.Name="">
+                            <Image.RenderTransform>
+                                <CompositeTransform x:Name="ImageRotationTransform" />
+                            </Image.RenderTransform>
+                        </Image>
+                    </ScrollViewer>
+                    <CommandBar
+                        Grid.Row="1"
+                        HorizontalAlignment="Center"
+                        DefaultLabelPosition="Collapsed">
+                        <CommandBar.Content>
+                            <TextBlock
+                                x:Name="ImageTransformStatus"
+                                Margin="8,0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.LiveSetting="Polite" />
+                        </CommandBar.Content>
+                        <AppBarButton
+                            x:Uid="FilePreviewImageZoomOut"
+                            x:Name="ImageZoomOutButton"
+                            Click="ImageZoomOut_Click">
+                            <FontIcon Glyph="&#xE71F;" />
+                        </AppBarButton>
+                        <AppBarButton
+                            x:Uid="FilePreviewImageZoomIn"
+                            x:Name="ImageZoomInButton"
+                            Click="ImageZoomIn_Click">
+                            <FontIcon Glyph="&#xE8A3;" />
+                        </AppBarButton>
+                        <AppBarButton x:Uid="FilePreviewImageFit" Click="ImageFit_Click">
+                            <FontIcon Glyph="&#xE91B;" />
+                        </AppBarButton>
+                        <AppBarSeparator />
+                        <AppBarButton x:Uid="FilePreviewImageRotateLeft" Click="ImageRotateLeft_Click">
+                            <FontIcon Glyph="&#xE7AD;" />
+                        </AppBarButton>
+                        <AppBarButton x:Uid="FilePreviewImageRotateRight" Click="ImageRotateRight_Click">
+                            <FontIcon Glyph="&#xE7AD;" RenderTransformOrigin="0.5,0.5">
+                                <FontIcon.RenderTransform>
+                                    <ScaleTransform ScaleX="-1" />
+                                </FontIcon.RenderTransform>
+                            </FontIcon>
+                        </AppBarButton>
+                    </CommandBar>
+                </Grid>
 
                 <Grid x:Name="PdfPreview" Visibility="Collapsed">
                     <Grid.RowDefinitions>

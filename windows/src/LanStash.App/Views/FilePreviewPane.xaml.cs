@@ -25,6 +25,7 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
     private Task _presenterTask = Task.CompletedTask;
     private bool _isClosingPresenter;
     private bool _disposed;
+    private int _imageRotation;
 
     public FilePreviewPane() => InitializeComponent();
 
@@ -218,12 +219,13 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
             return;
         }
         ImagePreview.Source = bitmap;
+        ResetImageTransform();
         AutomationProperties.SetName(
             ImagePreview,
             LocalizationService.Current.Format(
                 "FilePreviewImageAutomationName",
                 snapshot.Item?.Name ?? string.Empty));
-        ImageScroller.Visibility = Visibility.Visible;
+        ImagePreviewSurface.Visibility = Visibility.Visible;
     }
 
     private async Task PresentPdfAsync(
@@ -316,7 +318,8 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         PdfPageImage.Source = null;
         PdfPreview.Visibility = Visibility.Collapsed;
         ImagePreview.Source = null;
-        ImageScroller.Visibility = Visibility.Collapsed;
+        ImagePreviewSurface.Visibility = Visibility.Collapsed;
+        ResetImageTransform();
         TextPreview.Text = string.Empty;
         TextScroller.Visibility = Visibility.Collapsed;
     }
@@ -363,6 +366,114 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
                 new FilePreviewSaveCopyRequestedEventArgs(
                     new FilePreviewSaveCopyTarget(profileId, item)));
         }
+    }
+
+    private void ImageZoomOut_Click(object sender, RoutedEventArgs e) => ChangeImageZoom(-0.25f);
+
+    private void ImageZoomIn_Click(object sender, RoutedEventArgs e) => ChangeImageZoom(0.25f);
+
+    private void ImageFit_Click(object sender, RoutedEventArgs e) => FitImage();
+
+    private void ImageRotateLeft_Click(object sender, RoutedEventArgs e) => RotateImage(-90);
+
+    private void ImageRotateRight_Click(object sender, RoutedEventArgs e) => RotateImage(90);
+
+    private void ZoomInAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args) =>
+        HandleImageAccelerator(args, () => ChangeImageZoom(0.25f));
+
+    private void ZoomOutAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args) =>
+        HandleImageAccelerator(args, () => ChangeImageZoom(-0.25f));
+
+    private void FitImageAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args) =>
+        HandleImageAccelerator(args, FitImage);
+
+    private void RotateLeftAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args) =>
+        HandleImageAccelerator(args, () => RotateImage(-90));
+
+    private void RotateRightAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args) =>
+        HandleImageAccelerator(args, () => RotateImage(90));
+
+    private void HandleImageAccelerator(
+        KeyboardAcceleratorInvokedEventArgs args,
+        Action action)
+    {
+        if (ImagePreviewSurface.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+        action();
+        args.Handled = true;
+    }
+
+    private void ChangeImageZoom(float delta)
+    {
+        var target = Math.Clamp(
+            ImageScroller.ZoomFactor + delta,
+            ImageScroller.MinZoomFactor,
+            ImageScroller.MaxZoomFactor);
+        ImageScroller.ChangeView(null, null, target, true);
+    }
+
+    private void FitImage()
+    {
+        ImageScroller.ChangeView(0, 0, 1, true);
+        UpdateImageTransformStatus();
+    }
+
+    private void RotateImage(int delta)
+    {
+        _imageRotation = ((_imageRotation + delta) % 360 + 360) % 360;
+        ImageRotationTransform.Rotation = _imageRotation;
+        UpdateImageRotationScale();
+        UpdateImageTransformStatus();
+    }
+
+    private void ResetImageTransform()
+    {
+        _imageRotation = 0;
+        ImageRotationTransform.Rotation = 0;
+        ImageRotationTransform.ScaleX = 1;
+        ImageRotationTransform.ScaleY = 1;
+        ImageScroller.ChangeView(0, 0, 1, true);
+        UpdateImageTransformStatus();
+    }
+
+    private void ImagePreview_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        UpdateImageRotationScale();
+
+    private void UpdateImageRotationScale()
+    {
+        var swapsAxes = _imageRotation is 90 or 270;
+        var width = ImagePreview.ActualWidth;
+        var height = ImagePreview.ActualHeight;
+        var scale = swapsAxes && width > 0 && height > 0
+            ? Math.Min(width / height, height / width)
+            : 1;
+        ImageRotationTransform.ScaleX = scale;
+        ImageRotationTransform.ScaleY = scale;
+    }
+
+    private void ImageScroller_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e) =>
+        UpdateImageTransformStatus();
+
+    private void UpdateImageTransformStatus()
+    {
+        ImageZoomOutButton.IsEnabled = ImageScroller.ZoomFactor > ImageScroller.MinZoomFactor;
+        ImageZoomInButton.IsEnabled = ImageScroller.ZoomFactor < ImageScroller.MaxZoomFactor;
+        ImageTransformStatus.Text = LocalizationService.Current.Format(
+            "FilePreviewImageTransformStatus",
+            Math.Round(ImageScroller.ZoomFactor * 100),
+            _imageRotation);
     }
 
     private void PreviousPdfPage_Click(object sender, RoutedEventArgs e)
