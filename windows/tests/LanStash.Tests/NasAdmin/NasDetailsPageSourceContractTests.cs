@@ -37,11 +37,15 @@ public sealed class NasDetailsPageSourceContractTests
         {
             "NasDetailsSectionSystem",
             "NasDetailsSectionStorage",
+            "NasDetailsSectionUpdate",
             "NasDetailsSectionPackages",
             "NasDetailsSectionTasks",
             "NasDetailsSectionLogs",
             "NasDetailsSectionConnections",
             "NasDetailsTruncated",
+            "NasDetailsUpdateAvailable",
+            "NasDetailsUpdateCurrent",
+            "NasDetailsUpdateReleaseNotes",
         })
         {
             Assert.Contains(allowed, combined);
@@ -64,6 +68,9 @@ public sealed class NasDetailsPageSourceContractTests
             "vol_path",
             "pool_path",
             "private-device",
+            "Upgrade.Server.download",
+            "Upgrade.Server.install",
+            "Upgrade.Server.upload",
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);

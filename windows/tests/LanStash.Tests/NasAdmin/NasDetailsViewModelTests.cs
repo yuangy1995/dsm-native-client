@@ -32,6 +32,9 @@ public sealed class NasDetailsViewModelTests
             new NasDetailsSection<NasStorageHealthSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasStorageHealthSummary("volume-1", NasStorageItemKind.Volume, 1, "normal", ResourceState.Healthy, 200, 100, "btrfs", IsEncrypted: true)]),
+            new NasDetailsSection<NasSystemUpdateSummary>(
+                NasDetailsSectionStatus.Available,
+                [new NasSystemUpdateSummary(true, "7.2", "7.2.1", "Reliability improvements")]),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", "Drive", "3.0", "running", ResourceState.Running)]),
@@ -52,6 +55,10 @@ public sealed class NasDetailsViewModelTests
         Assert.Contains(model.Rows, row => row.Id == "system-device");
         model.SelectSection(NasDetailsSectionKind.StorageHealth);
         Assert.Equal("volume-1", Assert.Single(model.Rows).Id);
+        model.SelectSection(NasDetailsSectionKind.SystemUpdate);
+        Assert.Equal(2, model.Rows.Count);
+        Assert.Contains(model.Rows, row => row.Id == "system-update" && row.Status.Contains("7.2.1"));
+        Assert.Contains(model.Rows, row => row.Id == "system-update-notes" && row.Detail == "Reliability improvements");
         model.SelectSection(NasDetailsSectionKind.Packages);
         Assert.Equal("Drive", Assert.Single(model.Rows).Title);
         model.SelectSection(NasDetailsSectionKind.ScheduledTasks);
@@ -78,6 +85,7 @@ public sealed class NasDetailsViewModelTests
             repository.ProfileId,
             EmptySystem(),
             EmptyStorage(),
+            EmptyUpdate(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 packages,
@@ -105,6 +113,31 @@ public sealed class NasDetailsViewModelTests
         Assert.Equal(NasDetailsContentState.Error, model.ContentState);
         model.SelectSection(NasDetailsSectionKind.Connections);
         Assert.Equal(NasDetailsContentState.Empty, model.ContentState);
+    }
+
+    [Fact]
+    public async Task MissingCurrentVersionDoesNotClaimSystemIsCurrent()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(new NasDetailsSnapshot(
+            repository.ProfileId,
+            EmptySystem(),
+            EmptyStorage(),
+            new NasDetailsSection<NasSystemUpdateSummary>(
+                NasDetailsSectionStatus.Available,
+                [new NasSystemUpdateSummary(false, null, null, null)]),
+            new NasDetailsSection<NasPackageSummary>(NasDetailsSectionStatus.Available, []),
+            new NasDetailsSection<NasScheduledTaskSummary>(NasDetailsSectionStatus.Available, []),
+            new NasDetailsSection<NasLogSummary>(NasDetailsSectionStatus.Available, []),
+            new NasDetailsSection<NasConnectionSummary>(NasDetailsSectionStatus.Available, [])));
+        using var model = new NasDetailsViewModel();
+
+        await model.ActivateAsync(repository);
+        model.SelectSection(NasDetailsSectionKind.SystemUpdate);
+
+        var row = Assert.Single(model.Rows);
+        Assert.Equal("Couldn’t determine update status", row.Title);
+        Assert.DoesNotContain("up to date", row.Title, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -158,6 +191,7 @@ public sealed class NasDetailsViewModelTests
             profileId,
             EmptySystem(),
             EmptyStorage(),
+            EmptyUpdate(),
             new NasDetailsSection<NasPackageSummary>(
                 NasDetailsSectionStatus.Available,
                 [new NasPackageSummary("pkg", packageName, "1.0", "running", ResourceState.Running)]),
@@ -175,6 +209,9 @@ public sealed class NasDetailsViewModelTests
         new(NasDetailsSectionStatus.Available, []);
 
     private static NasDetailsSection<NasStorageHealthSummary> EmptyStorage() =>
+        new(NasDetailsSectionStatus.Available, []);
+
+    private static NasDetailsSection<NasSystemUpdateSummary> EmptyUpdate() =>
         new(NasDetailsSectionStatus.Available, []);
 
     private static async Task WaitUntilAsync(Func<bool> predicate)
@@ -202,6 +239,7 @@ public sealed class NasDetailsViewModelTests
                 {
                     NasDetailsReadFeature.SystemOverview,
                     NasDetailsReadFeature.StorageHealth,
+                    NasDetailsReadFeature.SystemUpdate,
                     NasDetailsReadFeature.Packages,
                     NasDetailsReadFeature.ScheduledTasks,
                     NasDetailsReadFeature.Logs,

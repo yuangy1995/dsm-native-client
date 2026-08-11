@@ -75,6 +75,100 @@ public sealed class DsmApiClientFixedReadTests
         Assert.Equal(0, handler.SendCount);
     }
 
+    [Fact]
+    public async Task AllowsOnlyRecordedSystemUpdateCheckContract()
+    {
+        var handler = new RecordingHandler("{\"success\":true,\"data\":{\"update\":null}}");
+        var client = new DsmApiClient(new HttpClient(handler));
+
+        await client.CallReadJsonObjectAsync(
+            Profile,
+            Session,
+            new ApiCapability("SYNO.Core.Upgrade.Server", "entry.cgi", 1, 3, "FORM"),
+            3,
+            "check",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["user_reading"] = "true",
+                ["need_auto_smallupdate"] = "true",
+                ["need_promotion"] = "false",
+            });
+
+        Assert.Contains("method=check", handler.Body);
+        Assert.Contains("user_reading=true", handler.Body);
+        Assert.Contains("need_auto_smallupdate=true", handler.Body);
+        Assert.Contains("need_promotion=false", handler.Body);
+        Assert.Equal(1, handler.SendCount);
+    }
+
+    public static TheoryData<string, int, IReadOnlyDictionary<string, string>?> InvalidUpdateChecks =>
+        new()
+        {
+            {
+                "SYNO.Core.System",
+                3,
+                new Dictionary<string, string>
+                {
+                    ["user_reading"] = "true",
+                    ["need_auto_smallupdate"] = "true",
+                    ["need_promotion"] = "false",
+                }
+            },
+            {
+                "SYNO.Core.Upgrade.Server",
+                2,
+                new Dictionary<string, string>
+                {
+                    ["user_reading"] = "true",
+                    ["need_auto_smallupdate"] = "true",
+                    ["need_promotion"] = "false",
+                }
+            },
+            { "SYNO.Core.Upgrade.Server", 3, null },
+            {
+                "SYNO.Core.Upgrade.Server",
+                3,
+                new Dictionary<string, string>
+                {
+                    ["user_reading"] = "true",
+                    ["need_auto_smallupdate"] = "true",
+                    ["need_promotion"] = "true",
+                }
+            },
+            {
+                "SYNO.Core.Upgrade.Server",
+                3,
+                new Dictionary<string, string>
+                {
+                    ["user_reading"] = "true",
+                    ["need_auto_smallupdate"] = "true",
+                    ["need_promotion"] = "false",
+                    ["extra"] = "not-allowed",
+                }
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(InvalidUpdateChecks))]
+    public async Task RejectsAnyOtherUpdateCheckBeforeSending(
+        string apiName,
+        int version,
+        IReadOnlyDictionary<string, string>? parameters)
+    {
+        var handler = new RecordingHandler("{\"success\":true,\"data\":{}}");
+        var client = new DsmApiClient(new HttpClient(handler));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CallReadJsonObjectAsync(
+            Profile,
+            Session,
+            new ApiCapability(apiName, "entry.cgi", 1, 3, "FORM"),
+            version,
+            "check",
+            parameters));
+
+        Assert.Equal(0, handler.SendCount);
+    }
+
     [Theory]
     [InlineData("https://evil.invalid/entry.cgi")]
     [InlineData("//evil.invalid/entry.cgi")]

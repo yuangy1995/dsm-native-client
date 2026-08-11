@@ -243,6 +243,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             NasDetailsSectionKind.StorageHealth => ProjectSection(
                 snapshot.StorageHealth,
                 StorageRow),
+            NasDetailsSectionKind.SystemUpdate => ProjectUpdateSection(snapshot.SystemUpdate),
             NasDetailsSectionKind.Packages => ProjectSection(
                 snapshot.Packages,
                 PackageRow),
@@ -294,6 +295,10 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             NasDetailsSectionKind.StorageHealth,
             snapshot.StorageHealth.Status,
             snapshot.StorageHealth.Items.Count));
+        Sections.Add(SectionOption(
+            NasDetailsSectionKind.SystemUpdate,
+            snapshot.SystemUpdate.Status,
+            snapshot.SystemUpdate.Items.SelectMany(UpdateRows).Count()));
         Sections.Add(SectionOption(
             NasDetailsSectionKind.Packages,
             snapshot.Packages.Status,
@@ -347,6 +352,43 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             section.Status,
             section.Items.SelectMany(SystemRows).ToArray(),
             section.IsTruncated);
+
+    private static SectionProjection ProjectUpdateSection(
+        NasDetailsSection<NasSystemUpdateSummary> section) =>
+        new(
+            section.Status,
+            section.Items.SelectMany(UpdateRows).ToArray(),
+            section.IsTruncated);
+
+    private static IEnumerable<NasDetailsRow> UpdateRows(NasSystemUpdateSummary item)
+    {
+        var title = item.IsUpdateAvailable
+            ? L.Get("NasDetailsUpdateAvailable")
+            : item.CurrentVersion is not null
+                ? L.Get("NasDetailsUpdateCurrent")
+                : L.Get("NasDetailsUpdateStatusUnavailable");
+        var currentVersion = item.CurrentVersion is { } current
+            ? L.Format("NasDetailsUpdateCurrentVersion", current)
+            : L.Get("NasDetailsUpdateCurrentVersionUnavailable");
+        var latestVersion = item.IsUpdateAvailable && item.LatestVersion is { } latest
+            ? L.Format("NasDetailsUpdateLatestVersion", latest)
+            : L.Get("NasDetailsUpdateNoNewerVersion");
+        yield return Row(
+            "system-update",
+            title,
+            currentVersion,
+            latestVersion,
+            item.IsUpdateAvailable ? "\uE895" : "\uE73E");
+        if (item.ReleaseNotes is { } releaseNotes)
+        {
+            yield return Row(
+                "system-update-notes",
+                L.Get("NasDetailsUpdateReleaseNotes"),
+                releaseNotes,
+                string.Empty,
+                "\uE8A5");
+        }
+    }
 
     private static IEnumerable<NasDetailsRow> SystemRows(NasSystemHealthSummary item)
     {
@@ -530,6 +572,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     {
         NasDetailsSectionKind.SystemOverview => L.Get("NasDetailsSectionSystem"),
         NasDetailsSectionKind.StorageHealth => L.Get("NasDetailsSectionStorage"),
+        NasDetailsSectionKind.SystemUpdate => L.Get("NasDetailsSectionUpdate"),
         NasDetailsSectionKind.Packages => L.Get("NasDetailsSectionPackages"),
         NasDetailsSectionKind.ScheduledTasks => L.Get("NasDetailsSectionTasks"),
         NasDetailsSectionKind.Logs => L.Get("NasDetailsSectionLogs"),

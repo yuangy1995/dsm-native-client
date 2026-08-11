@@ -25,6 +25,7 @@ public enum NasDetailsReadFeature
 {
     SystemOverview,
     StorageHealth,
+    SystemUpdate,
     Packages,
     ScheduledTasks,
     Logs,
@@ -63,6 +64,12 @@ public sealed record NasStorageHealthSummary(
     double? TemperatureCelsius = null,
     bool IsSsd = false,
     bool IsEncrypted = false);
+
+public sealed record NasSystemUpdateSummary(
+    bool IsUpdateAvailable,
+    string? CurrentVersion,
+    string? LatestVersion,
+    string? ReleaseNotes);
 
 public enum NasDetailsAvailabilityStatus
 {
@@ -117,6 +124,7 @@ public sealed record NasDetailsSnapshot(
     Guid ProfileId,
     NasDetailsSection<NasSystemHealthSummary> SystemOverview,
     NasDetailsSection<NasStorageHealthSummary> StorageHealth,
+    NasDetailsSection<NasSystemUpdateSummary> SystemUpdate,
     NasDetailsSection<NasPackageSummary> Packages,
     NasDetailsSection<NasScheduledTaskSummary> ScheduledTasks,
     NasDetailsSection<NasLogSummary> Logs,

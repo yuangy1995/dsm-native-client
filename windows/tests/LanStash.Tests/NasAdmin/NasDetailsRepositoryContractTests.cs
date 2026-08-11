@@ -30,6 +30,9 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses["SYNO.Storage.CGI.Storage"] = Json("""
             {"storagePools":[{"id":"private-pool-id","raidType":"raid1","summary_status":"normal","size":{"used":100,"total":200},"disks":["private-device"]}],"volumes":[{"uuid":"private-volume-id","vol_path":"/private/path","fs_type":"btrfs","is_encrypted":true,"status":"normal","size":{"used":50,"total":100}}],"disks":[{"device":"private-device","serial":"drive-secret","vendor":"private-vendor","model":"private-model","size_total":400,"smart_status":"normal","temp":37,"isSsd":true,"status":"normal"}]}
             """);
+        api.Responses["SYNO.Core.Upgrade.Server"] = Json("""
+            {"update":{"version":" 7.2.1 ","release_note":" Reliability improvements ","download_url":"https://private.invalid/update","serial":"update-secret"},"promotion":{"version":"9.9"},"task_id":"private-task"}
+            """);
         api.Responses["SYNO.Core.Package"] = Json("""
             {"packages":[{"id":"pkg-drive","name":"Drive","version":"3.0","status":"running","description":"hidden"}]}
             """);
@@ -54,6 +57,11 @@ public sealed class NasDetailsRepositoryContractTests
         var storage = snapshot.StorageHealth.Items;
         Assert.Equal(3, storage.Count);
         Assert.Equal(new[] { "pool-1", "volume-1", "drive-1" }, storage.Select(item => item.Id));
+        var update = Assert.Single(snapshot.SystemUpdate.Items);
+        Assert.True(update.IsUpdateAvailable);
+        Assert.Equal("7.2", update.CurrentVersion);
+        Assert.Equal("7.2.1", update.LatestVersion);
+        Assert.Equal("Reliability improvements", update.ReleaseNotes);
         var safeProjection = snapshot.ToString();
         Assert.DoesNotContain("private-host", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("system-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
@@ -62,6 +70,9 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.DoesNotContain("drive-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("private-vendor", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("private-model", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private.invalid", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("private-task", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("update-secret", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Drive", Assert.Single(snapshot.Packages.Items).Name);
         Assert.Equal("Backup", Assert.Single(snapshot.ScheduledTasks.Items).Name);
         var log = Assert.Single(snapshot.Logs.Items);
@@ -77,12 +88,22 @@ public sealed class NasDetailsRepositoryContractTests
             {
                 "SYNO.Core.System:3:info",
                 "SYNO.Storage.CGI.Storage:1:load_info",
+                "SYNO.Core.Upgrade.Server:3:check",
                 "SYNO.Core.Package:2:list",
                 "SYNO.Core.TaskScheduler:3:list",
                 "SYNO.LogCenter.History:1:list",
                 "SYNO.Core.CurrentConnection:1:list",
             },
             api.Calls.Select(call => $"{call.ApiName}:{call.Version}:{call.Method}").ToArray());
+        var updateCall = api.Calls.Single(call => call.ApiName == "SYNO.Core.Upgrade.Server");
+        Assert.Equal(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["user_reading"] = "true",
+                ["need_auto_smallupdate"] = "true",
+                ["need_promotion"] = "false",
+            },
+            updateCall.Parameters);
     }
 
     [Fact]
@@ -100,10 +121,60 @@ public sealed class NasDetailsRepositoryContractTests
 
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemOverview.Status);
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.StorageHealth.Status);
+        Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemUpdate.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Packages.Status);
         Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.ScheduledTasks.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Logs.Status);
         Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Connections.Status);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{\"version\":\"7.2\",\"release_notes\":\"Same version\"}")]
+    public async Task MissingOrSameCandidateDoesNotInventAnAvailableUpdate(string updateJson)
+    {
+        var api = new FakeApiClient();
+        api.Responses["SYNO.Core.System"] = Json("""{"firmware_ver":"7.2"}""");
+        api.Responses["SYNO.Core.Upgrade.Server"] = Json($"{{\"update\":{updateJson},\"promotion\":{{\"version\":\"9.9\"}}}}");
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        var update = Assert.Single(snapshot.SystemUpdate.Items);
+        Assert.False(update.IsUpdateAvailable);
+        Assert.Equal("7.2", update.CurrentVersion);
+    }
+
+    [Fact]
+    public async Task ExplicitCandidateRemainsVisibleWhenSystemOverviewFails()
+    {
+        var api = new FakeApiClient();
+        api.Errors["SYNO.Core.System"] = new DsmException("failed", "retry");
+        api.Responses["SYNO.Core.Upgrade.Server"] = Json("""
+            {"update":{"version":"7.2.2","description":" New release "}}
+            """);
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.SystemOverview.Status);
+        var update = Assert.Single(snapshot.SystemUpdate.Items);
+        Assert.True(update.IsUpdateAvailable);
+        Assert.Null(update.CurrentVersion);
+        Assert.Equal("7.2.2", update.LatestVersion);
+        Assert.Equal("New release", update.ReleaseNotes);
+    }
+
+    [Fact]
+    public async Task UpdateCheckFailureDoesNotBlockOtherSectionsOrReportCurrent()
+    {
+        var api = new FakeApiClient();
+        api.Errors["SYNO.Core.Upgrade.Server"] = new DsmException("failed", "retry");
+
+        var snapshot = await Repository(api).LoadDetailsAsync();
+
+        Assert.Equal(NasDetailsSectionStatus.Failed, snapshot.SystemUpdate.Status);
+        Assert.Empty(snapshot.SystemUpdate.Items);
+        Assert.Equal(NasDetailsSectionStatus.Available, snapshot.SystemOverview.Status);
+        Assert.Equal(NasDetailsSectionStatus.Available, snapshot.Packages.Status);
     }
 
     [Fact]
@@ -146,6 +217,7 @@ public sealed class NasDetailsRepositoryContractTests
     {
         api.Responses.TryAdd("SYNO.Core.System", Json("""{"model":"DS-synthetic"}"""));
         api.Responses.TryAdd("SYNO.Storage.CGI.Storage", Json("""{"storagePools":[],"volumes":[],"disks":[]}"""));
+        api.Responses.TryAdd("SYNO.Core.Upgrade.Server", Json("""{"update":null}"""));
         api.Responses.TryAdd("SYNO.Core.Package", Json("""{"packages":[]}"""));
         api.Responses.TryAdd("SYNO.Core.TaskScheduler", Json("""{"tasks":[]}"""));
         api.Responses.TryAdd("SYNO.LogCenter.History", Json("""{"logs":[]}"""));
@@ -154,6 +226,7 @@ public sealed class NasDetailsRepositoryContractTests
         {
             ["SYNO.Core.System"] = Capability("SYNO.Core.System", max: 3),
             ["SYNO.Storage.CGI.Storage"] = Capability("SYNO.Storage.CGI.Storage", max: 1),
+            ["SYNO.Core.Upgrade.Server"] = Capability("SYNO.Core.Upgrade.Server", max: 3),
             ["SYNO.Core.Package"] = Capability("SYNO.Core.Package"),
             ["SYNO.Core.TaskScheduler"] = Capability("SYNO.Core.TaskScheduler", max: 4),
             ["SYNO.LogCenter.History"] = Capability("SYNO.LogCenter.History"),

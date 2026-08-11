@@ -76,6 +76,7 @@ macOS 检查结果会明确说明安装仍需在 DSM 中安排；按钮和图标
 - Apple Adapter：`DsmNasAdministrationRepository.checkSystemUpdate()`。
 - macOS：总览页提供检查按钮、忙碌禁用、可用更新/无更新/失败反馈和可选发布说明。
 - Android：总览页使用相同双请求契约，提供忙碌禁用、可用更新/无更新/失败重试、可选发布说明和 TalkBack 状态通知；能力不足时零请求降级。
+- Windows：NAS 详情页提供独立“系统更新”分区，复用系统概览当前版本并固定执行 v3 `check`；仅展示当前版本、候选版本和普通文字发布说明，失败不阻断其他分区。
 - iPhone、iPad、Android 与 Windows：安装链路均未迁移。
 - 请求不包含账号、地址、Cookie、SID、SynoToken 或真实响应 Fixture。
 

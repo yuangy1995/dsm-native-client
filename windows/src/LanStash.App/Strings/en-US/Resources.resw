@@ -76,6 +76,15 @@
   <data name="NasDetailsRowAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
   <data name="NasDetailsSectionSystem" xml:space="preserve"><value>System</value></data>
   <data name="NasDetailsSectionStorage" xml:space="preserve"><value>Storage</value></data>
+  <data name="NasDetailsSectionUpdate" xml:space="preserve"><value>Updates</value></data>
+  <data name="NasDetailsUpdateAvailable" xml:space="preserve"><value>Update available</value></data>
+  <data name="NasDetailsUpdateCurrent" xml:space="preserve"><value>DSM is up to date</value></data>
+  <data name="NasDetailsUpdateStatusUnavailable" xml:space="preserve"><value>Couldn’t determine update status</value></data>
+  <data name="NasDetailsUpdateCurrentVersion" xml:space="preserve"><value>Current version: {0}</value></data>
+  <data name="NasDetailsUpdateCurrentVersionUnavailable" xml:space="preserve"><value>Current version unavailable</value></data>
+  <data name="NasDetailsUpdateLatestVersion" xml:space="preserve"><value>Available version: {0}</value></data>
+  <data name="NasDetailsUpdateNoNewerVersion" xml:space="preserve"><value>No newer version reported</value></data>
+  <data name="NasDetailsUpdateReleaseNotes" xml:space="preserve"><value>What’s new</value></data>
   <data name="NasDetailsSystemDevice" xml:space="preserve"><value>Device</value></data>
   <data name="NasDetailsSystemVersionValue" xml:space="preserve"><value>DSM {0}</value></data>
   <data name="NasDetailsSystemUptime" xml:space="preserve"><value>Uptime</value></data>

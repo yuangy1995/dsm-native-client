@@ -25,6 +25,10 @@ public sealed partial class DsmRepository
             {
                 features.Add(NasDetailsReadFeature.StorageHealth);
             }
+            if (Supports("SYNO.Core.Upgrade.Server"))
+            {
+                features.Add(NasDetailsReadFeature.SystemUpdate);
+            }
             if (Supports("SYNO.Core.Package"))
             {
                 features.Add(NasDetailsReadFeature.Packages);
@@ -53,14 +57,70 @@ public sealed partial class DsmRepository
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var systemOverview = await LoadSystemOverviewSectionAsync(cancellationToken)
+            .ConfigureAwait(false);
         return new NasDetailsSnapshot(
             _profile.Id,
-            await LoadSystemOverviewSectionAsync(cancellationToken).ConfigureAwait(false),
+            systemOverview,
             await LoadStorageHealthSectionAsync(cancellationToken).ConfigureAwait(false),
+            await LoadSystemUpdateSectionAsync(systemOverview, cancellationToken).ConfigureAwait(false),
             await LoadPackagesSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadScheduledTasksSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadLogsSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadConnectionsSectionAsync(cancellationToken).ConfigureAwait(false));
+    }
+
+    private async Task<NasDetailsSection<NasSystemUpdateSummary>> LoadSystemUpdateSectionAsync(
+        NasDetailsSection<NasSystemHealthSummary> systemOverview,
+        CancellationToken cancellationToken)
+    {
+        if (!Supports("SYNO.Core.Upgrade.Server"))
+        {
+            return Unavailable<NasSystemUpdateSummary>("nas-details.update.unavailable");
+        }
+        try
+        {
+            var data = await _api.CallReadJsonObjectAsync(
+                _profile,
+                _session,
+                Required("SYNO.Core.Upgrade.Server"),
+                3,
+                "check",
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["user_reading"] = "true",
+                    ["need_auto_smallupdate"] = "true",
+                    ["need_promotion"] = "false",
+                },
+                cancellationToken).ConfigureAwait(false);
+            var update = data.Object("update");
+            var currentVersion = systemOverview.Items.FirstOrDefault()?.Version;
+            var latestVersion = update is null
+                ? null
+                : RequiredDisplayString(update, "version");
+            var releaseNotes = update is null
+                ? null
+                : RequiredDisplayString(update, "release_note")
+                    ?? RequiredDisplayString(update, "release_notes")
+                    ?? RequiredDisplayString(update, "whats_new")
+                    ?? RequiredDisplayString(update, "description");
+            return Available<NasSystemUpdateSummary>(
+            [
+                new(
+                    latestVersion is not null && latestVersion != currentVersion,
+                    currentVersion,
+                    latestVersion,
+                    releaseNotes),
+            ]);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return Failed<NasSystemUpdateSummary>("nas-details.update.failed");
+        }
     }
 
     private async Task<NasDetailsSection<NasSystemHealthSummary>> LoadSystemOverviewSectionAsync(

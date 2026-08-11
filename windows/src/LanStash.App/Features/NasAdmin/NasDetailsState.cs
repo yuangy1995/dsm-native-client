@@ -6,6 +6,7 @@ public enum NasDetailsSectionKind
 {
     SystemOverview,
     StorageHealth,
+    SystemUpdate,
     Packages,
     ScheduledTasks,
     Logs,

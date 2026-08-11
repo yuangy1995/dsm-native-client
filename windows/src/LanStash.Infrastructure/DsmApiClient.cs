@@ -205,7 +205,7 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(method);
         ArgumentException.ThrowIfNullOrWhiteSpace(capability.Name);
-        if (method is not ("get" or "list" or "list_share" or "info" or "load_info"))
+        if (method is not ("get" or "list" or "list_share" or "info" or "load_info" or "check"))
         {
             throw new ArgumentException("The fixed-version read method is not allowed.", nameof(method));
         }
@@ -213,6 +213,12 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         {
             throw new ArgumentException(
                 "The fixed-version overview method does not accept caller parameters.",
+                nameof(parameters));
+        }
+        if (method is "check" && !IsSystemUpdateCheck(capability, requiredVersion, parameters))
+        {
+            throw new ArgumentException(
+                "The fixed-version update check must match the recorded read-only contract.",
                 nameof(parameters));
         }
         ArgumentOutOfRangeException.ThrowIfLessThan(requiredVersion, 1);
@@ -330,6 +336,20 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             return envelope["data"] as JsonObject ?? throw InvalidReadEnvelope();
         }
     }
+
+    private static bool IsSystemUpdateCheck(
+        ApiCapability capability,
+        int requiredVersion,
+        IReadOnlyDictionary<string, string>? parameters) =>
+        string.Equals(capability.Name, "SYNO.Core.Upgrade.Server", StringComparison.Ordinal) &&
+        requiredVersion == 3 &&
+        parameters is { Count: 3 } &&
+        parameters.TryGetValue("user_reading", out var userReading) &&
+        userReading == "true" &&
+        parameters.TryGetValue("need_auto_smallupdate", out var smallUpdate) &&
+        smallUpdate == "true" &&
+        parameters.TryGetValue("need_promotion", out var promotion) &&
+        promotion == "false";
 
     public async Task<FilePermissionTransportResult> CheckFileMutationPermissionAsync(
         NasProfile profile, DsmSession session, ApiCapability capability,
