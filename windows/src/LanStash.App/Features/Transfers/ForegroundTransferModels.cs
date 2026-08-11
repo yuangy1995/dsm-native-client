@@ -77,3 +77,24 @@ internal sealed record ForegroundUploadBatchFinished(
 internal sealed record ForegroundUploadBatchStart(
     FileUploadBatchValidationStatus Status,
     int SelectedCount);
+
+internal enum FolderUploadBatchStartStatus
+{
+    Started,
+    Unsupported,
+    Busy,
+    NeedsReview,
+    SourceChanged,
+}
+
+internal sealed record FolderUploadBatchStart(
+    FolderUploadBatchStartStatus Status,
+    Guid? BatchId = null);
+
+internal sealed record FolderUploadBatchFinished(
+    Guid BatchId,
+    string ProfileId,
+    string FolderPath,
+    int DirectoryCount,
+    int FileCount,
+    FileUploadBatchSummary Summary);

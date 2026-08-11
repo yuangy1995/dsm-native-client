@@ -19,9 +19,9 @@ public sealed partial class FilesPage
         var deferral = e.GetDeferral();
         try
         {
-            var sourcePaths = await TryGetDroppedFilePathsAsync(e.DataView);
+            var upload = await TryGetDroppedUploadAsync(e.DataView);
             if (generation != Volatile.Read(ref _fileUploadDragGeneration) ||
-                !CanAcceptFileUploadDrop() || sourcePaths is null)
+                !CanAcceptFileUploadDrop() || upload is null)
             {
                 if (generation == Volatile.Read(ref _fileUploadDragGeneration))
                 {
@@ -58,12 +58,12 @@ public sealed partial class FilesPage
         var deferral = e.GetDeferral();
         try
         {
-            var sourcePaths = await TryGetDroppedFilePathsAsync(e.DataView);
+            var upload = await TryGetDroppedUploadAsync(e.DataView);
             if (generation != Volatile.Read(ref _fileUploadDropGeneration))
             {
                 return;
             }
-            if (!CanAcceptFileUploadDrop() || sourcePaths is null ||
+            if (!CanAcceptFileUploadDrop() || upload is null ||
                 !string.Equals(targetPath, _viewModel.CurrentPath, StringComparison.Ordinal))
             {
                 ShowFileUploadDropError("FileUploadDropInvalidMessage");
@@ -75,11 +75,18 @@ public sealed partial class FilesPage
             UpdateState();
             try
             {
-                var status = _transfers.StartUploadBatch(
-                    _profileId.ToString(),
-                    targetPath,
-                    sourcePaths);
-                ShowFileUploadBatchStart(status, sourcePaths.Count);
+                if (upload.FolderPath is { } folderPath)
+                {
+                    await UploadFolderFromPathAsync(targetPath, folderPath);
+                }
+                else
+                {
+                    var status = _transfers.StartUploadBatch(
+                        _profileId.ToString(),
+                        targetPath,
+                        upload.FilePaths!);
+                    ShowFileUploadBatchStart(status, upload.FilePaths!.Count);
+                }
             }
             catch (ObjectDisposedException)
             {
@@ -107,7 +114,7 @@ public sealed partial class FilesPage
         !IsReadOnlyLocation() &&
         !string.IsNullOrWhiteSpace(_viewModel.CurrentPath);
 
-    private static async Task<IReadOnlyList<string>?> TryGetDroppedFilePathsAsync(
+    private static async Task<DroppedUpload?> TryGetDroppedUploadAsync(
         DataPackageView dataView)
     {
         try
@@ -117,6 +124,12 @@ public sealed partial class FilesPage
                 return null;
             }
             var items = await dataView.GetStorageItemsAsync();
+            if (items.Count == 1 &&
+                items[0] is StorageFolder folder &&
+                !string.IsNullOrWhiteSpace(folder.Path))
+            {
+                return new DroppedUpload(null, folder.Path);
+            }
             if (items.Count == 0 || items.Count > BoundedFileUploadBatch.MaximumFileCount)
             {
                 return null;
@@ -131,7 +144,9 @@ public sealed partial class FilesPage
                 paths.Add(file.Path);
             }
             return BoundedFileUploadBatch.ValidatePaths(paths) ==
-                FileUploadBatchValidationStatus.Valid ? paths : null;
+                FileUploadBatchValidationStatus.Valid
+                ? new DroppedUpload(paths, null)
+                : null;
         }
         catch
         {
@@ -199,4 +214,8 @@ public sealed partial class FilesPage
         FileUploadDropOverlay.Visibility = Visibility.Collapsed;
         FileUploadDropStatus.IsOpen = false;
     }
+
+    private sealed record DroppedUpload(
+        IReadOnlyList<string>? FilePaths,
+        string? FolderPath);
 }

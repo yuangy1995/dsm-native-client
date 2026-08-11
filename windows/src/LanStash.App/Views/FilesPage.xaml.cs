@@ -121,6 +121,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
         _transfers.UploadFinished += Transfers_UploadFinished;
         _transfers.UploadBatchFinished += Transfers_UploadBatchFinished;
+        _transfers.FolderUploadBatchFinished += Transfers_FolderUploadBatchFinished;
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged += LocationsViewModel_PropertyChanged;
@@ -1152,6 +1153,12 @@ public sealed partial class FilesPage : Page, IDisposable
         UploadButton.Visibility = IsReadOnlyLocation()
             ? Visibility.Collapsed
             : Visibility.Visible;
+        UploadFolderButton.IsEnabled = CanUploadFolder();
+        UploadFolderButton.Visibility =
+            IsReadOnlyLocation() ||
+                _mutationRepository?.FileMutationAvailability.CanCreateFolder != true
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
 
@@ -1333,6 +1340,7 @@ public sealed partial class FilesPage : Page, IDisposable
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
         _transfers.UploadBatchFinished -= Transfers_UploadBatchFinished;
+        _transfers.FolderUploadBatchFinished -= Transfers_FolderUploadBatchFinished;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged -= LocationsViewModel_PropertyChanged;
         _previewViewModel.PropertyChanged -= PreviewViewModel_PropertyChanged;

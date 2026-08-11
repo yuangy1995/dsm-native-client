@@ -1,5 +1,6 @@
 using LanStash.App.Localization;
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Photos.Import;
 using LanStash.Domain;
 using Microsoft.UI;
@@ -19,6 +20,7 @@ internal interface IWindowsTransferOpenPicker
     Task<string?> PickSingleFilePathAsync(IReadOnlyList<string>? fileTypeFilters = null);
     Task<IReadOnlyList<string>?> PickMultipleFilePathsAsync(
         IReadOnlyList<string>? fileTypeFilters = null);
+    Task<string?> PickSingleFolderPathAsync();
 }
 
 internal sealed class WindowsTransferSavePicker(Func<Window?> windowProvider)
@@ -99,6 +101,21 @@ internal sealed class WindowsTransferOpenPicker(Func<Window?> windowProvider)
         var results = await picker.PickMultipleFilesAsync();
         return results?.Select(result => result.Path).ToArray();
     }
+
+    public async Task<string?> PickSingleFolderPathAsync()
+    {
+        var window = windowProvider();
+        if (window is null)
+        {
+            return null;
+        }
+
+        var windowId = Win32Interop.GetWindowIdFromWindow(
+            WindowNative.GetWindowHandle(window));
+        var picker = new FolderPicker(windowId);
+        var result = await picker.PickSingleFolderAsync();
+        return result?.Path;
+    }
 }
 
 internal sealed class WindowsTransferPickerService : IPhotoImportTransferService, IDisposable
@@ -120,6 +137,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
     private readonly List<RunningTransfer> _running = [];
     private readonly Dictionary<UploadTargetKey, Guid> _batchReservations = [];
     private readonly Dictionary<Guid, CancellationTokenSource> _batchCancellations = [];
+    private readonly Dictionary<UploadTargetKey, Guid> _folderBatchTargets = [];
     private bool _disposed;
 
     public WindowsTransferPickerService(
@@ -137,6 +155,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
 
     public event Action<ForegroundUploadFinished>? UploadFinished;
     public event Action<ForegroundUploadBatchFinished>? UploadBatchFinished;
+    public event Action<FolderUploadBatchFinished>? FolderUploadBatchFinished;
     public event Action<PhotoMediaUploadFinished>? MediaUploadFinished;
     public event Action<PhotoMediaUploadInterrupted>? MediaUploadInterrupted;
 
@@ -252,6 +271,107 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         return FileUploadBatchValidationStatus.Valid;
     }
 
+    public async Task<FolderUploadPlanResult?> PickFolderUploadPlanAsync()
+    {
+        var sourcePath = await _openPicker.PickSingleFolderPathAsync();
+        return sourcePath is null
+            ? null
+            : await Task.Run(() => BoundedFolderUploadPlan.Create(sourcePath));
+    }
+
+    public Task<FolderUploadPlanResult> PlanFolderUploadAsync(string sourcePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        return Task.Run(() => BoundedFolderUploadPlan.Create(sourcePath));
+    }
+
+    public FolderUploadBatchStart StartFolderUpload(
+        string profileId,
+        string folderPath,
+        FolderUploadPlan plan)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
+        ArgumentNullException.ThrowIfNull(plan);
+        if (!Guid.TryParse(profileId, out var parsedProfileId) ||
+            _repository is not IFileMutationRepository mutationRepository ||
+            mutationRepository.ProfileId != parsedProfileId ||
+            !mutationRepository.FileMutationAvailability.CanCreateFolder)
+        {
+            return new FolderUploadBatchStart(FolderUploadBatchStartStatus.Unsupported);
+        }
+        if (!BoundedFolderUploadPlan.IsCurrent(plan))
+        {
+            return new FolderUploadBatchStart(FolderUploadBatchStartStatus.SourceChanged);
+        }
+        if (plan.Directories.Any(directory =>
+                FileMutationReviewBlocker.Current.Find(
+                    parsedProfileId,
+                    FileMutationOperation.CreateFolder,
+                    RemoteParentForDirectory(
+                        folderPath,
+                        plan.RootName,
+                        directory.RelativePath)) is not null))
+        {
+            return new FolderUploadBatchStart(FolderUploadBatchStartStatus.NeedsReview);
+        }
+
+        var batchId = Guid.NewGuid();
+        var directoryTargets = plan.Directories
+            .Select(directory => CreateUploadTargetKey(
+                profileId,
+                RemoteParentForDirectory(
+                    folderPath,
+                    plan.RootName,
+                    directory.RelativePath),
+                directory.Name))
+            .ToArray();
+        var fileTargets = plan.Files
+            .Select(file => CreateUploadTargetKey(
+                profileId,
+                RemoteFolderForFile(folderPath, plan.RootName, file.RelativePath),
+                file.Name))
+            .ToArray();
+        CancellationTokenSource batchCancellation;
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (directoryTargets.Any(target =>
+                    _folderBatchTargets.ContainsKey(target) ||
+                    _batchReservations.ContainsKey(target) ||
+                    _running.Any(item => item.UploadTarget == target)) ||
+                fileTargets.Any(target =>
+                    _folderBatchTargets.ContainsKey(target) ||
+                    _batchReservations.ContainsKey(target) ||
+                    _running.Any(item => item.UploadTarget == target)))
+            {
+                return new FolderUploadBatchStart(FolderUploadBatchStartStatus.Busy);
+            }
+            foreach (var target in directoryTargets)
+            {
+                _folderBatchTargets.Add(target, batchId);
+            }
+            foreach (var target in fileTargets)
+            {
+                _batchReservations.Add(target, batchId);
+            }
+            batchCancellation = new CancellationTokenSource();
+            _batchCancellations.Add(batchId, batchCancellation);
+        }
+
+        _ = RunFolderUploadBatchAsync(
+            batchId,
+            parsedProfileId,
+            profileId,
+            folderPath,
+            plan,
+            mutationRepository,
+            directoryTargets,
+            fileTargets,
+            batchCancellation);
+        return new FolderUploadBatchStart(FolderUploadBatchStartStatus.Started, batchId);
+    }
+
     public async Task<bool> StartUploadAsync(
         string profileId,
         string folderPath,
@@ -357,7 +477,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         string sourcePath,
         bool requiresMediaExtension,
         Guid? requestedActivityId,
-        Guid? batchId)
+        Guid? batchId,
+        CancellationToken batchCancellationToken = default)
     {
         var source = new FileStream(
             sourcePath,
@@ -410,13 +531,16 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                 throw new ObjectDisposedException(nameof(WindowsTransferPickerService));
             }
             if (_running.Any(item => item.UploadTarget == uploadTarget) ||
+                (_folderBatchTargets.TryGetValue(uploadTarget, out var folderOwner) &&
+                    folderOwner != batchId) ||
                 (_batchReservations.TryGetValue(uploadTarget, out var reservationOwner) &&
                     reservationOwner != batchId))
             {
                 source.Dispose();
                 throw new InvalidOperationException("upload.target_busy");
             }
-            cancellation = new CancellationTokenSource();
+            cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                batchCancellationToken);
             running = new RunningTransfer(
                 requestedActivityId ?? Guid.NewGuid(),
                 profileId,
@@ -470,6 +594,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             running = _running.ToArray();
             _running.Clear();
             _batchReservations.Clear();
+            _folderBatchTargets.Clear();
             batchCancellations = _batchCancellations.Values.ToArray();
             _batchCancellations.Clear();
         }
@@ -629,7 +754,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                         sourcePath,
                         requiresMediaExtension: false,
                         requestedActivityId: null,
-                        batchId);
+                        batchId,
+                        batchCancellation.Token);
                     return await RunUploadAsync(prepared.Running, prepared.Request);
                 },
                 batchCancellation.Token);
@@ -660,6 +786,199 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             profileId,
             folderPath,
             summary));
+    }
+
+    public void CancelFolderUpload(Guid batchId)
+    {
+        CancellationTokenSource? cancellation;
+        lock (_sync)
+        {
+            _batchCancellations.TryGetValue(batchId, out cancellation);
+        }
+        try
+        {
+            cancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task RunFolderUploadBatchAsync(
+        Guid batchId,
+        Guid profileId,
+        string profileKey,
+        string folderPath,
+        FolderUploadPlan plan,
+        IFileMutationRepository mutationRepository,
+        IReadOnlyList<UploadTargetKey> directoryTargets,
+        IReadOnlyList<UploadTargetKey> fileTargets,
+        CancellationTokenSource batchCancellation)
+    {
+        await Task.Yield();
+        var token = batchCancellation.Token;
+        var summary = await BoundedFolderUploadBatch.RunAsync(
+            plan,
+            async (directory, cancellationToken) =>
+            {
+                FileUploadBatchAttempt attempt;
+                var parentPath = RemoteParentForDirectory(
+                    folderPath,
+                    plan.RootName,
+                    directory.RelativePath);
+                var proposedPath = $"{parentPath}/{directory.Name}";
+                try
+                {
+                    if (FileMutationReviewBlocker.Current.Find(
+                            profileId,
+                            FileMutationOperation.CreateFolder,
+                            parentPath) is not null)
+                    {
+                        attempt = new FileUploadBatchAttempt(
+                            FileUploadBatchAttemptStatus.NeedsReview,
+                            StopBatch: true);
+                    }
+                    else
+                    {
+                        var outcome = await mutationRepository.CreateFolderAsync(
+                            new CreateFolderRequest(
+                                profileId,
+                                parentPath,
+                                directory.Name),
+                            cancellationToken);
+                        attempt = ToFolderUploadAttempt(
+                            outcome,
+                            proposedPath,
+                            directory.Name);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    attempt = new FileUploadBatchAttempt(
+                        FileUploadBatchAttemptStatus.NeedsReview,
+                        StopBatch: true);
+                }
+                catch
+                {
+                    attempt = new FileUploadBatchAttempt(
+                        FileUploadBatchAttemptStatus.NeedsReview,
+                        StopBatch: true);
+                }
+                if (attempt.Status == FileUploadBatchAttemptStatus.NeedsReview)
+                {
+                    FileMutationReviewBlocker.Current.Block(new FileMutationReviewBlock(
+                        profileId,
+                        FileMutationOperation.CreateFolder,
+                        parentPath,
+                        proposedPath));
+                }
+                return attempt;
+            },
+            async (file, cancellationToken) =>
+            {
+                if (!BoundedFolderUploadPlan.IsCurrent(file))
+                {
+                    return new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.Failed);
+                }
+                try
+                {
+                    var prepared = PrepareUpload(
+                        profileKey,
+                        RemoteFolderForFile(folderPath, plan.RootName, file.RelativePath),
+                        file.SourcePath,
+                        requiresMediaExtension: false,
+                        requestedActivityId: null,
+                        batchId,
+                        cancellationToken);
+                    return await RunUploadAsync(prepared.Running, prepared.Request);
+                }
+                catch (OperationCanceledException)
+                {
+                    return new FileUploadBatchAttempt(
+                        FileUploadBatchAttemptStatus.Cancelled,
+                        StopBatch: true);
+                }
+                catch
+                {
+                    return new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.Failed);
+                }
+            },
+            token);
+        var shouldNotify = false;
+        lock (_sync)
+        {
+            foreach (var target in directoryTargets)
+            {
+                if (_folderBatchTargets.TryGetValue(target, out var owner) && owner == batchId)
+                {
+                    _folderBatchTargets.Remove(target);
+                }
+            }
+            foreach (var target in fileTargets)
+            {
+                if (_batchReservations.TryGetValue(target, out var owner) && owner == batchId)
+                {
+                    _batchReservations.Remove(target);
+                }
+            }
+            _batchCancellations.Remove(batchId);
+            shouldNotify = !_disposed;
+        }
+        batchCancellation.Dispose();
+
+        if (shouldNotify)
+        {
+            FolderUploadBatchFinished?.Invoke(new FolderUploadBatchFinished(
+                batchId,
+                profileKey,
+                folderPath,
+                plan.Directories.Count,
+                plan.Files.Count,
+                summary));
+        }
+    }
+
+    private static FileUploadBatchAttempt ToFolderUploadAttempt(
+        FileMutationOutcome outcome,
+        string proposedPath,
+        string name) =>
+        outcome.Result.Status == MutationResultStatus.ConfirmedSuccess &&
+            outcome.ConfirmedItem is { IsDirectory: true } item &&
+            string.Equals(item.Path, proposedPath, StringComparison.Ordinal) &&
+            string.Equals(item.Name, name, StringComparison.Ordinal)
+            ? new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.Confirmed)
+            : outcome.Result.Status switch
+        {
+            MutationResultStatus.ConfirmedSuccess or
+            MutationResultStatus.SubmittedButUnverified or
+                MutationResultStatus.CancellationRequestedAfterSubmission or
+                MutationResultStatus.PartialSuccess =>
+                new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.NeedsReview, StopBatch: true),
+            MutationResultStatus.CancelledBeforeSubmission =>
+                new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.Cancelled, StopBatch: true),
+            _ => new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.Failed, StopBatch: true),
+        };
+
+    private static string RemoteParentForDirectory(
+        string folderPath,
+        string rootName,
+        string relativePath)
+    {
+        var separator = relativePath.LastIndexOf('/');
+        return separator < 0
+            ? relativePath.Length == 0 ? folderPath : $"{folderPath}/{rootName}"
+            : $"{folderPath}/{rootName}/{relativePath[..separator]}";
+    }
+
+    private static string RemoteFolderForFile(
+        string folderPath,
+        string rootName,
+        string relativePath)
+    {
+        var separator = relativePath.LastIndexOf('/');
+        return separator < 0
+            ? $"{folderPath}/{rootName}"
+            : $"{folderPath}/{rootName}/{relativePath[..separator]}";
     }
 
     private void NotifyMediaUploadInterrupted(

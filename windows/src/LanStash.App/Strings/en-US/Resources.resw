@@ -423,6 +423,8 @@
   <data name="FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save a copy of the selected file</value></data>
   <data name="FileBrowserUpload.Label" xml:space="preserve"><value>Upload</value></data>
   <data name="FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Upload files to this folder</value></data>
+  <data name="FolderUpload.Label" xml:space="preserve"><value>Upload folder</value></data>
+  <data name="FolderUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Upload one folder to this folder</value></data>
   <data name="FileBrowserUploadNeedsReview.Title" xml:space="preserve"><value>Check the uploaded file</value></data>
   <data name="FileBrowserUploadNeedsReview.Message" xml:space="preserve"><value>The upload may have reached the NAS. Refresh this folder and check the file before uploading it again.</value></data>
   <data name="TransferOriginalFileType" xml:space="preserve"><value>Original file type</value></data>
@@ -453,17 +455,37 @@
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>Unable to start the upload</value></data>
   <data name="TransferUploadOpenErrorMessage" xml:space="preserve"><value>Choose the file again. If the problem continues, check that it is available on this device.</value></data>
   <data name="FileUploadDropTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>File upload drop target</value></data>
-  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>Drop up to 20 files to upload them to this folder</value></data>
-  <data name="FileUploadDropCaption" xml:space="preserve"><value>Upload these files</value></data>
+  <data name="FileUploadDropTargetMessage.Text" xml:space="preserve"><value>Drop up to 20 files or one small folder to upload here</value></data>
+  <data name="FileUploadDropCaption" xml:space="preserve"><value>Upload these items</value></data>
   <data name="FileUploadDropStatus.Title" xml:space="preserve"><value>File upload</value></data>
   <data name="FileUploadDropStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>File upload status</value></data>
-  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>Choose up to 20 files that are available on this device. Folders and online-only files can’t be uploaded.</value></data>
+  <data name="FileUploadDropInvalidMessage" xml:space="preserve"><value>Drop up to 20 local files, or drop one local folder by itself. Mixed selections, multiple folders, and online-only items can’t be uploaded.</value></data>
   <data name="FileUploadDropFailureMessage" xml:space="preserve"><value>The uploads couldn’t be started. Choose the files again or try dropping them once more.</value></data>
   <data name="FileUploadBatchStartedMessage" xml:space="preserve"><value>Files added to the upload queue: {0}. Track or cancel each file in Activity.</value></data>
   <data name="FileUploadBatchTooManyMessage" xml:space="preserve"><value>Choose no more than 20 files at a time.</value></data>
   <data name="FileUploadBatchDuplicateMessage" xml:space="preserve"><value>Two or more selected files have the same name. Choose only one file for each name.</value></data>
   <data name="FileUploadBatchBusyMessage" xml:space="preserve"><value>One of these file names is already being uploaded to this folder. Wait for it to finish, then try again.</value></data>
   <data name="FileUploadBatchSummaryMessage" xml:space="preserve"><value>Selected: {0}. Uploaded: {1}. Check on NAS: {2}. Failed: {3}. Cancelled: {4}. Not started: {5}.</value></data>
+  <data name="FolderUploadConfirmTitle" xml:space="preserve"><value>Upload this folder?</value></data>
+  <data name="FolderUploadConfirmAction" xml:space="preserve"><value>Upload folder</value></data>
+  <data name="FolderUploadConfirmMessage" xml:space="preserve"><value>“{0}” will create {2} folders and upload {1} files in the current NAS folder.</value></data>
+  <data name="FolderUploadPartialNotice" xml:space="preserve"><value>If the upload is cancelled or fails, folders and files already confirmed on the NAS will remain.</value></data>
+  <data name="FolderUploadStartedMessage" xml:space="preserve"><value>Folder upload started: {0} files and {1} folders. File transfers also appear in Activity.</value></data>
+  <data name="FolderUploadCancellingMessage" xml:space="preserve"><value>Stopping the folder upload. The current item may still need to be checked on the NAS.</value></data>
+  <data name="FolderUploadCancelAutomationName" xml:space="preserve"><value>Stop folder upload</value></data>
+  <data name="FolderUploadSummaryMessage" xml:space="preserve"><value>Planned: {0} folders and {1} files. Confirmed: {2}. Check on NAS: {3}. Failed: {4}. Cancelled: {5}. Not started: {6}.</value></data>
+  <data name="FolderUploadSourceUnavailableMessage" xml:space="preserve"><value>This folder can’t be read completely. Check that every item is available on this device, then choose it again.</value></data>
+  <data name="FolderUploadTooManyFilesMessage" xml:space="preserve"><value>This folder contains more than 20 files. Choose a smaller folder.</value></data>
+  <data name="FolderUploadTooManyDirectoriesMessage" xml:space="preserve"><value>This folder contains more than 20 folders. Choose a smaller folder.</value></data>
+  <data name="FolderUploadTooDeepMessage" xml:space="preserve"><value>This folder is more than 8 levels deep. Choose a shallower folder.</value></data>
+  <data name="FolderUploadReparsePointMessage" xml:space="preserve"><value>This folder contains a link or redirected folder and can’t be uploaded safely.</value></data>
+  <data name="FolderUploadInvalidNameMessage" xml:space="preserve"><value>One of the item names can’t be used on the NAS. Rename it and try again.</value></data>
+  <data name="FolderUploadDuplicateMessage" xml:space="preserve"><value>This folder contains names that differ only by letter case. Rename one of them and try again.</value></data>
+  <data name="FolderUploadTargetChangedMessage" xml:space="preserve"><value>The destination folder changed. Open the intended NAS folder and choose the local folder again.</value></data>
+  <data name="FolderUploadUnsupportedMessage" xml:space="preserve"><value>This NAS or account can’t create the folders needed for this upload.</value></data>
+  <data name="FolderUploadBusyMessage" xml:space="preserve"><value>A folder or file with this target is already being uploaded. Wait for it to finish, then try again.</value></data>
+  <data name="FolderUploadNeedsReviewMessage" xml:space="preserve"><value>A folder creation still needs to be checked on the NAS. This session won’t submit the folder again; check what remains, then upload any missing items separately.</value></data>
+  <data name="FolderUploadSourceChangedMessage" xml:space="preserve"><value>The local folder changed after it was checked. Choose it again to upload the latest contents.</value></data>
   <data name="PhotoBrowserTitle.Text" xml:space="preserve"><value>File-system photo library</value></data>
   <data name="PhotoBrowserDescription.Text" xml:space="preserve"><value>Browse photo and video folders from this NAS, preview items, and save a copy to your PC.</value></data>
   <data name="PhotoBrowserSpace.Header" xml:space="preserve"><value>Photo space</value></data>

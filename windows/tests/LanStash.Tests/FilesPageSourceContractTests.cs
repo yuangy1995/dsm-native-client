@@ -27,7 +27,7 @@ public sealed class FilesPageSourceContractTests
     }
 
     [Fact]
-    public void DesktopDropAcceptsBoundedLocalFilesAndReusesUploadActivityLane()
+    public void DesktopDropAcceptsBoundedLocalFilesOrOneFolderAndReusesUploadActivityLane()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
         var drop = ReadRepositoryFile(
@@ -40,6 +40,8 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
         Assert.Contains("ThemeResource", xaml);
         Assert.Contains("StandardDataFormats.StorageItems", drop);
+        Assert.Contains("items[0] is StorageFolder folder", drop);
+        Assert.Contains("UploadFolderFromPathAsync(targetPath, folderPath)", drop);
         Assert.Contains("items.Count > BoundedFileUploadBatch.MaximumFileCount", drop);
         Assert.Contains("item is not StorageFile", drop);
         Assert.Contains("string.IsNullOrWhiteSpace(file.Path)", drop);
@@ -54,6 +56,32 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("BoundedFileUploadBatch.ValidatePaths(paths)", drop);
         Assert.DoesNotContain("UploadFileAsync", drop);
         Assert.DoesNotContain("overwrite", drop, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FolderUploadRequiresConfirmationSupportsCancellationAndRefreshesOnce()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
+        var folderUpload = ReadRepositoryFile(
+            "windows/src/LanStash.App/Views/FilesPage.FolderUpload.cs");
+
+        Assert.Contains("x:Name=\"UploadFolderButton\"", xaml);
+        Assert.Contains("x:Uid=\"FolderUpload\"", xaml);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
+        Assert.Contains("new ContentDialog", folderUpload);
+        Assert.Contains("FolderUploadPartialNotice", folderUpload);
+        Assert.Contains("dialog.ShowAsync()", folderUpload);
+        Assert.Contains("_transfers.StartFolderUpload(", folderUpload);
+        Assert.Contains("_transfers.CancelFolderUpload(batchId)", folderUpload);
+        Assert.Contains("_folderUploadBatchId is null", folderUpload);
+        Assert.Contains("if (_folderUploadBatchId is not null)", folderUpload);
+        Assert.Contains("_folderUploadBatchId = null;", folderUpload);
+        Assert.Contains("UpdateState();", folderUpload);
+        Assert.Contains("AutomationProperties.SetName(cancel", folderUpload);
+        Assert.Contains("UploadNeedsReview.IsOpen", folderUpload);
+        Assert.Equal(1, CountOccurrences(folderUpload, "await RunAsync(_viewModel.RefreshAsync)"));
+        Assert.DoesNotContain("UploadFileAsync", folderUpload);
+        Assert.DoesNotContain("CreateFolderAsync", folderUpload);
     }
 
     [Fact]
@@ -139,6 +167,7 @@ public sealed class FilesPageSourceContractTests
     [InlineData("FileBrowserRefresh")]
     [InlineData("FileBrowserDownload")]
     [InlineData("FileBrowserUpload")]
+    [InlineData("FolderUpload")]
     [InlineData("FileBrowserSort")]
     [InlineData("FileBrowserSortName")]
     [InlineData("FileBrowserSortModified")]

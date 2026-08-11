@@ -20,6 +20,23 @@ public sealed class WindowsUploadPickerSourceContractTests
     }
 
     [Fact]
+    public void FolderPickerUsesCurrentWindowAndBuildsThePlanBeforeAnyNasWrite()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+
+        Assert.Contains("new FolderPicker(windowId)", source);
+        Assert.Contains("PickSingleFolderAsync()", source);
+        var pick = SliceMethod(
+            source,
+            "public async Task<FolderUploadPlanResult?> PickFolderUploadPlanAsync",
+            "public Task<FolderUploadPlanResult> PlanFolderUploadAsync");
+        Assert.Contains("BoundedFolderUploadPlan.Create(sourcePath)", pick);
+        Assert.DoesNotContain("CreateFolderAsync", pick);
+        Assert.DoesNotContain("UploadFileAsync", pick);
+    }
+
+    [Fact]
     public void PickerCancellationPrecedesStreamActivityAndRepositoryWrite()
     {
         var source = ReadRepositoryFile(
@@ -152,6 +169,70 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Contains("UploadBatchFinished?.Invoke(new ForegroundUploadBatchFinished(", source);
         Assert.Contains("shouldNotify = !_disposed", source);
         Assert.DoesNotContain("sourcePaths,\n            summary", source);
+    }
+
+    [Fact]
+    public void FolderUploadCreatesParentsFirstThenUploadsStrictlyWithoutOverwrite()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+        var execute = SliceMethod(
+            source,
+            "private async Task RunFolderUploadBatchAsync",
+            "private static FileUploadBatchAttempt ToFolderUploadAttempt");
+
+        var create = execute.IndexOf("mutationRepository.CreateFolderAsync(", StringComparison.Ordinal);
+        var upload = execute.IndexOf("await RunUploadAsync(prepared.Running, prepared.Request)", StringComparison.Ordinal);
+        Assert.True(create >= 0 && upload > create);
+        Assert.Contains("BoundedFolderUploadBatch.RunAsync(", execute);
+        Assert.Contains("BoundedFolderUploadPlan.IsCurrent(file)", execute);
+        Assert.Contains("RemoteFolderForFile(folderPath, plan.RootName, file.RelativePath)", execute);
+        Assert.Contains("FileMutationReviewBlocker.Current.Block", execute);
+        Assert.Contains("FolderUploadBatchFinished?.Invoke", execute);
+        Assert.Contains("await Task.Yield()", execute);
+        Assert.Contains("token", execute);
+        Assert.DoesNotContain("overwrite: true", execute);
+        Assert.DoesNotContain("Retry", execute);
+        Assert.DoesNotContain("Rollback", execute);
+
+        var start = SliceMethod(
+            source,
+            "public FolderUploadBatchStart StartFolderUpload",
+            "public async Task<bool> StartUploadAsync");
+        Assert.Contains("var directoryTargets = plan.Directories", start);
+        Assert.Contains("directoryTargets.Any(target =>", start);
+        Assert.Contains("_folderBatchTargets.ContainsKey(target)", start);
+        Assert.Contains("_folderBatchTargets.Add(target, batchId)", start);
+        Assert.Contains("_batchReservations.Add(target, batchId)", start);
+        Assert.Contains("plan.Directories.Any(directory =>", start);
+        Assert.Contains("FileMutationReviewBlocker.Current.Find", start);
+
+        var prepare = SliceMethod(
+            source,
+            "private PreparedUpload PrepareUpload",
+            "public void Cancel");
+        Assert.Contains("_folderBatchTargets.TryGetValue(uploadTarget", prepare);
+        Assert.Contains("folderOwner != batchId", prepare);
+    }
+
+    [Fact]
+    public void FolderCreationRequiresExactTypedConfirmationAndUnknownResultStopsTheBatch()
+    {
+        var source = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
+        var mapping = SliceMethod(
+            source,
+            "private static FileUploadBatchAttempt ToFolderUploadAttempt",
+            "private static string RemoteParentForDirectory");
+
+        Assert.Contains("MutationResultStatus.ConfirmedSuccess", mapping);
+        Assert.Contains("ConfirmedItem is { IsDirectory: true }", mapping);
+        Assert.Contains("string.Equals(item.Path, proposedPath, StringComparison.Ordinal)", mapping);
+        Assert.Contains("string.Equals(item.Name, name, StringComparison.Ordinal)", mapping);
+        Assert.Contains("MutationResultStatus.SubmittedButUnverified", mapping);
+        Assert.Contains("MutationResultStatus.CancellationRequestedAfterSubmission", mapping);
+        Assert.Contains("FileUploadBatchAttemptStatus.NeedsReview, StopBatch: true", mapping);
+        Assert.Contains("MutationResultStatus.CancelledBeforeSubmission", mapping);
     }
 
     [Fact]

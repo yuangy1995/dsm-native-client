@@ -133,6 +133,12 @@
                 </AppBarButton.KeyboardAccelerators>
             </AppBarButton>
             <AppBarButton
+                x:Uid="FolderUpload"
+                x:Name="UploadFolderButton"
+                Click="UploadFolder_Click"
+                Icon="FolderOpen"
+                MinHeight="44" />
+            <AppBarButton
                 x:Uid="FileBrowserDownload"
                 x:Name="DownloadButton"
                 Click="Download_Click"

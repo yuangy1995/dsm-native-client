@@ -23,6 +23,7 @@
     <Compile Include="..\LanStash.App\Features\Settings\**\*.cs" Link="Features\Settings\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Transfers\ForegroundTransfer*.cs" Link="Features\Transfers\%(Filename)%(Extension)" />
     <Compile Include="..\LanStash.App\Features\Transfers\BoundedFileUploadBatch.cs" Link="Features\Transfers\BoundedFileUploadBatch.cs" />
+    <Compile Include="..\LanStash.App\Features\Transfers\BoundedFolderUploadPlan.cs" Link="Features\Transfers\BoundedFolderUploadPlan.cs" />
     <Compile Include="..\LanStash.App\Features\Transfers\SafeFileDownloadService.cs" Link="Features\Transfers\SafeFileDownloadService.cs" />
     <Compile Include="..\LanStash.App\Features\Transfers\WindowsTransactionalDownloadDestination.cs" Link="Features\Transfers\WindowsTransactionalDownloadDestination.cs" />
     <Compile Include="..\LanStash.App\Features\VirtualMachines\**\*.cs" Link="Features\VirtualMachines\%(RecursiveDir)%(Filename)%(Extension)" />
