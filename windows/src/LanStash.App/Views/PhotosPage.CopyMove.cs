@@ -53,7 +53,10 @@ public sealed partial class PhotosPage
 
     private bool CanMovePhoto(PhotoItem item) =>
         _photoCopyMoveDialog is null &&
+        _photoBatchCopyMoveDialog is null &&
         _photoRecycleDialog is null &&
+        _photoBatchRecycleDialog is null &&
+        !IsSelectingPhotoBatch &&
         !_isClosingPhotoCopyMove &&
         CanMovePhotoCore(item);
 

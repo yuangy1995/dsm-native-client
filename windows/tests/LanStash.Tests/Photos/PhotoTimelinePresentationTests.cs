@@ -119,6 +119,26 @@ public sealed class PhotoTimelinePresentationTests
     }
 
     [Fact]
+    public void TimelineBatchMoveSharesTheNativeSelectionSessionAndAccessibleToolbar()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml"));
+        var source = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("x:Uid=\"FileCopyMoveMoveMultiple\"", xaml);
+        Assert.Contains("x:Uid=\"FileCopyMoveMoveSelected\"", xaml);
+        Assert.Contains("Click=\"MoveMultiple_Click\"", xaml);
+        Assert.Contains("Click=\"MoveSelectedItems_Click\"", xaml);
+        Assert.Contains("Func<IReadOnlyList<PhotoItem>, Task>? _moveMultiple", source);
+        Assert.Contains("EnterBatchSelection(PhotoBatchSelectionOperation.Move)", source);
+        Assert.Contains("EnterBatchSelection(PhotoBatchSelectionOperation.Recycle)", source);
+        Assert.Contains("TimelineGrid.SelectionMode = ListViewSelectionMode.Multiple", source);
+        Assert.Contains("TimelineGrid.SelectionMode = ListViewSelectionMode.Single", source);
+        Assert.Contains("FileCopyMoveBatchSelectionLimit", source);
+        Assert.Contains("PhotoMoveBatchSelectionInvalid", source);
+    }
+
+    [Fact]
     public void TimelineMoveCommandUsesSharedPageCallbackAndNativeScrollableToolbar()
     {
         var root = RepositoryRoot();

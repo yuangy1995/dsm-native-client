@@ -106,6 +106,7 @@ public sealed partial class PhotosPage : Page, IDisposable
                 OpenTimelineViewerAsync,
                 CanMovePhoto,
                 MovePhotoAsync,
+                MoveMultiplePhotosAsync,
                 CanMovePhotoToRecycle,
                 MovePhotoToRecycleAsync,
                 MoveMultiplePhotosToRecycleAsync,
@@ -181,9 +182,10 @@ public sealed partial class PhotosPage : Page, IDisposable
         TimelineView.HideTimeline();
         DeactivatePhotoImport();
         ClosePhotoCopyMoveDialog();
+        ClosePhotoBatchCopyMoveDialog();
         ClosePhotoRecycleDialog();
         ClosePhotoBatchRecycleDialog();
-        ExitPhotoRecycleSelection();
+        ExitPhotoBatchSelection();
         DeactivatePhotoRecycleLocations();
     }
 
@@ -199,7 +201,7 @@ public sealed partial class PhotosPage : Page, IDisposable
             return;
         }
 
-        ExitPhotoRecycleSelection();
+        ExitPhotoBatchSelection();
         TimelineView.ExitRecycleSelection();
 
         if (TimelineMode.IsChecked == true)
@@ -230,7 +232,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private async void TimelineMode_Click(object sender, RoutedEventArgs e)
     {
         await ClosePhotoViewerAsync();
-        ExitPhotoRecycleSelection();
+        ExitPhotoBatchSelection();
         _viewModel.SelectedItem = null;
         PhotoGrid.SelectedItem = null;
         CancelThumbnailRequests();
@@ -267,7 +269,7 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private void Photos_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        HandlePhotoRecycleSelectionChanged(e);
+        HandlePhotoBatchSelectionChanged(e);
         UpdateState();
     }
 
@@ -316,7 +318,8 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async void Photos_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (sender is not GridView grid || e.OriginalSource is not DependencyObject source)
+        if (IsSelectingPhotoBatch || sender is not GridView grid ||
+            e.OriginalSource is not DependencyObject source)
         {
             return;
         }
@@ -357,7 +360,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (_viewModel.SelectedItem is not { } entry)
+        if (IsSelectingPhotoBatch || _viewModel.SelectedItem is not { } entry)
         {
             return;
         }
@@ -401,6 +404,11 @@ public sealed partial class PhotosPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (IsSelectingPhotoBatch)
+        {
+            return;
+        }
+
         if (CurrentPhotoViewerItem() is { } viewerItem)
         {
             args.Handled = true;
@@ -630,7 +638,7 @@ public sealed partial class PhotosPage : Page, IDisposable
 
     private async Task RunLocationChangeAsync(Func<Task> action)
     {
-        ExitPhotoRecycleSelection();
+        ExitPhotoBatchSelection();
         await ClosePhotoViewerAsync();
         CancelThumbnailRequests();
         await RunAsync(action);
@@ -690,7 +698,7 @@ public sealed partial class PhotosPage : Page, IDisposable
             : Visibility.Collapsed;
         LoadMoreError.IsOpen = _viewModel.HasLoadMoreError;
         UpdatePhotoImportState();
-        UpdatePhotoBatchRecycleControls();
+        UpdatePhotoBatchControls();
     }
 
     private void UpdateSpacePicker()
@@ -790,6 +798,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         DisposePhotoImport();
         DisposePhotoViewer();
         ClosePhotoCopyMoveDialog();
+        ClosePhotoBatchCopyMoveDialog();
         ClosePhotoRecycleDialog();
         ClosePhotoBatchRecycleDialog();
         DisposePhotoRecycleLocations();

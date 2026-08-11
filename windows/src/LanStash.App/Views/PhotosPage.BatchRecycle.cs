@@ -1,4 +1,5 @@
 using LanStash.App.Features.Files.Locations;
+using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Photos;
 using LanStash.App.Localization;
@@ -8,63 +9,85 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace LanStash.App.Views;
 
+internal enum PhotoBatchSelectionOperation
+{
+    None,
+    Move,
+    Recycle,
+}
+
 public sealed partial class PhotosPage
 {
     private FileRecycleBatchViewModel? _photoBatchRecycleModel;
     private ContentDialog? _photoBatchRecycleDialog;
     private bool _isClosingPhotoBatchRecycle;
-    private bool _isSelectingPhotoRecycle;
-    private bool _isSynchronizingPhotoRecycleSelection;
+    private PhotoBatchSelectionOperation _photoBatchSelectionOperation;
+    private bool _isSynchronizingPhotoBatchSelection;
+
+    private bool IsSelectingPhotoBatch =>
+        _photoBatchSelectionOperation != PhotoBatchSelectionOperation.None;
 
     private async void MoveMultiplePhotosToRecycle_Click(object sender, RoutedEventArgs e)
     {
         await ClosePhotoViewerAsync();
-        EnterPhotoRecycleSelection();
+        EnterPhotoBatchSelection(PhotoBatchSelectionOperation.Recycle);
     }
 
     private async void MoveSelectedPhotosToRecycle_Click(object sender, RoutedEventArgs e) =>
-        await ShowPhotoBatchRecycleAsync(SelectedFolderPhotosForRecycle(), timelineMode: false);
+        await ShowPhotoBatchRecycleAsync(SelectedFolderPhotos(), timelineMode: false);
 
-    private void CancelPhotoRecycleSelection_Click(object sender, RoutedEventArgs e) =>
-        ExitPhotoRecycleSelection();
+    private void CancelPhotoBatchSelection_Click(object sender, RoutedEventArgs e) =>
+        ExitPhotoBatchSelection();
 
-    private void EnterPhotoRecycleSelection()
+    private void EnterPhotoBatchSelection(PhotoBatchSelectionOperation operation)
     {
-        if (!CanEnterPhotoRecycleSelection())
+        if (!CanEnterPhotoBatchSelection(operation))
         {
             return;
         }
 
         var selected = _viewModel.SelectedItem;
-        _isSynchronizingPhotoRecycleSelection = true;
+        _isSynchronizingPhotoBatchSelection = true;
         PhotoGrid.SelectedItems.Clear();
         PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple;
-        if (selected is not null && CanSelectPhotoForBatchRecycle(selected.Item))
+        if (selected is not null && CanSelectPhotoForBatch(selected.Item, operation))
         {
             PhotoGrid.SelectedItems.Add(selected);
         }
-        _isSynchronizingPhotoRecycleSelection = false;
-        _isSelectingPhotoRecycle = true;
+        _isSynchronizingPhotoBatchSelection = false;
+        _photoBatchSelectionOperation = operation;
         ShowPhotoBatchSelectionMessage(
-            "FileRecycleBatchSelectionCount",
+            SelectionCountResource(operation),
             InfoBarSeverity.Informational,
             PhotoGrid.SelectedItems.Count);
         UpdateState();
     }
 
-    private bool CanEnterPhotoRecycleSelection() =>
-        !_disposed && !_viewModel.IsLoading && !_isSelectingPhotoRecycle &&
+    private bool CanEnterPhotoBatchSelection(PhotoBatchSelectionOperation operation) =>
+        operation != PhotoBatchSelectionOperation.None &&
+        !_disposed && !_viewModel.IsLoading && !IsSelectingPhotoBatch &&
+        _photoCopyMoveDialog is null && _photoBatchCopyMoveDialog is null &&
         _photoRecycleDialog is null && _photoBatchRecycleDialog is null &&
+        !_isClosingPhotoCopyMove && !_isClosingPhotoBatchCopyMove &&
         !_isClosingPhotoRecycle && !_isClosingPhotoBatchRecycle &&
         TimelineMode.IsChecked != true &&
-        _viewModel.Items.Any(entry => CanSelectPhotoForBatchRecycle(entry.Item));
+        _viewModel.Items.Any(entry => CanSelectPhotoForBatch(entry.Item, operation));
+
+    private bool CanSelectPhotoForBatch(
+        PhotoItem item,
+        PhotoBatchSelectionOperation operation) => operation switch
+        {
+            PhotoBatchSelectionOperation.Move => CanMovePhotoCore(item),
+            PhotoBatchSelectionOperation.Recycle => CanSelectPhotoForBatchRecycle(item),
+            _ => false,
+        };
 
     private bool CanSelectPhotoForBatchRecycle(PhotoItem item) =>
         CanPhotoRecycleItemCore(item, FileRecycleOperation.MoveToRecycle);
 
-    private void HandlePhotoRecycleSelectionChanged(SelectionChangedEventArgs args)
+    private void HandlePhotoBatchSelectionChanged(SelectionChangedEventArgs args)
     {
-        if (!_isSelectingPhotoRecycle || _isSynchronizingPhotoRecycleSelection)
+        if (!IsSelectingPhotoBatch || _isSynchronizingPhotoBatchSelection)
         {
             return;
         }
@@ -73,28 +96,28 @@ public sealed partial class PhotosPage
         var rejectedForLimit = false;
         foreach (var added in args.AddedItems.OfType<PhotoBrowserEntry>())
         {
-            if (!CanSelectPhotoForBatchRecycle(added.Item) ||
-                PhotoGrid.SelectedItems.Count > FileRecycleBatchViewModel.MaximumItemCount)
+            if (!CanSelectPhotoForBatch(added.Item, _photoBatchSelectionOperation) ||
+                PhotoGrid.SelectedItems.Count > FileCopyMoveBatchViewModel.MaximumItemCount)
             {
                 rejectedForLimit |= PhotoGrid.SelectedItems.Count >
-                    FileRecycleBatchViewModel.MaximumItemCount;
-                _isSynchronizingPhotoRecycleSelection = true;
+                    FileCopyMoveBatchViewModel.MaximumItemCount;
+                _isSynchronizingPhotoBatchSelection = true;
                 PhotoGrid.SelectedItems.Remove(added);
-                _isSynchronizingPhotoRecycleSelection = false;
+                _isSynchronizingPhotoBatchSelection = false;
                 rejected = true;
             }
         }
         ShowPhotoBatchSelectionMessage(
             rejected
                 ? rejectedForLimit
-                    ? "FileRecycleBatchSelectionLimit"
-                    : "PhotoRecycleBatchSelectionInvalid"
-                : "FileRecycleBatchSelectionCount",
+                    ? SelectionLimitResource(_photoBatchSelectionOperation)
+                    : SelectionInvalidResource(_photoBatchSelectionOperation)
+                : SelectionCountResource(_photoBatchSelectionOperation),
             rejected ? InfoBarSeverity.Warning : InfoBarSeverity.Informational,
             rejected ? null : PhotoGrid.SelectedItems.Count);
     }
 
-    private IReadOnlyList<PhotoItem> SelectedFolderPhotosForRecycle() =>
+    private IReadOnlyList<PhotoItem> SelectedFolderPhotos() =>
         PhotoGrid.SelectedItems
             .OfType<PhotoBrowserEntry>()
             .Select(entry => entry.Item)
@@ -254,11 +277,11 @@ public sealed partial class PhotosPage
         var summary = model.Summary;
         if (timelineMode)
         {
-            TimelineView.ExitRecycleSelection();
+            TimelineView.ExitBatchSelection();
         }
         else
         {
-            ExitPhotoRecycleSelection(closeStatus: false);
+            ExitPhotoBatchSelection(closeStatus: false);
         }
         if (!completed || _disposed || !_isPhotoPageActive)
         {
@@ -294,8 +317,12 @@ public sealed partial class PhotosPage
             _viewModel.SelectedSpace?.Id != sourceSpace.Id ||
             timelineMode != (TimelineMode.IsChecked == true) ||
             !timelineMode && !string.Equals(_viewModel.CurrentPath, sourceRoot, StringComparison.Ordinal) ||
-            timelineMode && !TimelineView.HasSelectedRecycleItems(items) ||
-            !timelineMode && !FolderSelectionMatches(items))
+            timelineMode && !TimelineView.HasSelectedBatchItems(
+                items,
+                PhotoBatchSelectionOperation.Recycle) ||
+            !timelineMode &&
+                (_photoBatchSelectionOperation != PhotoBatchSelectionOperation.Recycle ||
+                    !FolderSelectionMatches(items)))
         {
             return false;
         }
@@ -324,22 +351,22 @@ public sealed partial class PhotosPage
 
     private bool FolderSelectionMatches(IReadOnlyList<PhotoItem> items)
     {
-        var selected = SelectedFolderPhotosForRecycle();
-        return _isSelectingPhotoRecycle && selected.Count == items.Count &&
+        var selected = SelectedFolderPhotos();
+        return selected.Count == items.Count &&
             selected.All(item => items.Any(candidate => SamePhotoItem(candidate, item)));
     }
 
-    private void ExitPhotoRecycleSelection(bool closeStatus = true)
+    private void ExitPhotoBatchSelection(bool closeStatus = true)
     {
-        if (!_isSelectingPhotoRecycle)
+        if (!IsSelectingPhotoBatch)
         {
             return;
         }
-        _isSynchronizingPhotoRecycleSelection = true;
+        _isSynchronizingPhotoBatchSelection = true;
         PhotoGrid.SelectedItems.Clear();
         PhotoGrid.SelectionMode = ListViewSelectionMode.Single;
-        _isSynchronizingPhotoRecycleSelection = false;
-        _isSelectingPhotoRecycle = false;
+        _isSynchronizingPhotoBatchSelection = false;
+        _photoBatchSelectionOperation = PhotoBatchSelectionOperation.None;
         if (closeStatus)
         {
             PhotoRecycleBatchStatus.IsOpen = false;
@@ -378,22 +405,34 @@ public sealed partial class PhotosPage
         PhotoRecycleBatchStatus.IsOpen = true;
     }
 
-    private void UpdatePhotoBatchRecycleControls()
+    private void UpdatePhotoBatchControls()
     {
-        var canEnter = CanEnterPhotoRecycleSelection();
-        PhotoMoveMultipleToRecycleButton.Visibility = _isSelectingPhotoRecycle
+        var selectingMove = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Move;
+        var selectingRecycle = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Recycle;
+        PhotoMoveMultipleButton.Visibility = IsSelectingPhotoBatch
             ? Visibility.Collapsed
             : Visibility.Visible;
-        PhotoMoveMultipleToRecycleButton.IsEnabled = canEnter;
-        PhotoMoveSelectedToRecycleButton.Visibility = _isSelectingPhotoRecycle
+        PhotoMoveMultipleButton.IsEnabled = CanEnterPhotoBatchSelection(
+            PhotoBatchSelectionOperation.Move);
+        PhotoMoveMultipleToRecycleButton.Visibility = IsSelectingPhotoBatch
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        PhotoMoveMultipleToRecycleButton.IsEnabled = CanEnterPhotoBatchSelection(
+            PhotoBatchSelectionOperation.Recycle);
+        PhotoMoveSelectedButton.Visibility = selectingMove
             ? Visibility.Visible
             : Visibility.Collapsed;
+        PhotoMoveSelectedToRecycleButton.Visibility = selectingRecycle
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        PhotoMoveSelectedButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
+            FileCopyMoveBatchViewModel.MaximumItemCount && _photoBatchCopyMoveDialog is null;
         PhotoMoveSelectedToRecycleButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
             FileRecycleBatchViewModel.MaximumItemCount;
-        PhotoCancelRecycleSelectionButton.Visibility = _isSelectingPhotoRecycle
+        PhotoCancelRecycleSelectionButton.Visibility = IsSelectingPhotoBatch
             ? Visibility.Visible
             : Visibility.Collapsed;
-        if (_isSelectingPhotoRecycle)
+        if (IsSelectingPhotoBatch)
         {
             BackButton.IsEnabled = false;
             UpButton.IsEnabled = false;
@@ -408,6 +447,21 @@ public sealed partial class PhotosPage
             ImportButton.IsEnabled = false;
         }
     }
+
+    private static string SelectionCountResource(PhotoBatchSelectionOperation operation) =>
+        operation == PhotoBatchSelectionOperation.Move
+            ? "FileCopyMoveBatchSelectionCount"
+            : "FileRecycleBatchSelectionCount";
+
+    private static string SelectionLimitResource(PhotoBatchSelectionOperation operation) =>
+        operation == PhotoBatchSelectionOperation.Move
+            ? "FileCopyMoveBatchSelectionLimit"
+            : "FileRecycleBatchSelectionLimit";
+
+    private static string SelectionInvalidResource(PhotoBatchSelectionOperation operation) =>
+        operation == PhotoBatchSelectionOperation.Move
+            ? "PhotoMoveBatchSelectionInvalid"
+            : "PhotoRecycleBatchSelectionInvalid";
 
     private void ClosePhotoBatchRecycleDialog()
     {

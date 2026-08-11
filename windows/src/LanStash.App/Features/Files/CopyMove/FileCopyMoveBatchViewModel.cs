@@ -25,6 +25,12 @@ public enum FileCopyMoveBatchValidationStatus
     PermissionDenied,
 }
 
+public enum FileCopyMoveBatchSourceScope
+{
+    CurrentFolder,
+    DescendantsOfRoot,
+}
+
 public sealed record FileCopyMoveBatchSummary(
     int SelectedCount,
     int ConfirmedCount,
@@ -62,15 +68,37 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         IReadOnlyList<FileItem> sources,
         FileCopyMoveOperation operation,
         FileCopyMoveReviewBlocker blocker)
+        : this(
+            repository,
+            folders,
+            profileId,
+            sources,
+            operation,
+            SourceRootForCurrentFolder(sources),
+            FileCopyMoveBatchSourceScope.CurrentFolder,
+            blocker)
+    {
+    }
+
+    public FileCopyMoveBatchViewModel(
+        IFileCopyMoveRepository repository,
+        IFileCopyMoveFolderSource folders,
+        Guid profileId,
+        IReadOnlyList<FileItem> sources,
+        FileCopyMoveOperation operation,
+        string sourceRoot,
+        FileCopyMoveBatchSourceScope sourceScope,
+        FileCopyMoveReviewBlocker blocker)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(folders);
         ArgumentNullException.ThrowIfNull(sources);
+        ArgumentNullException.ThrowIfNull(sourceRoot);
         if (repository.ProfileId != profileId || folders.ProfileId != profileId)
         {
             throw new ArgumentException("file.copy-move.batch.profile-mismatch");
         }
-        var validation = Validate(sources, operation);
+        var validation = Validate(sources, operation, sourceRoot, sourceScope);
         if (validation != FileCopyMoveBatchValidationStatus.Valid)
         {
             throw new ArgumentException($"file.copy-move.batch.{validation}", nameof(sources));
@@ -81,6 +109,8 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         _profileId = profileId;
         _sources = sources.ToArray();
         Operation = operation;
+        SourceRoot = sourceRoot;
+        SourceScope = sourceScope;
         _blocker = blocker ?? throw new ArgumentNullException(nameof(blocker));
         _summary = new(_sources.Count, 0, 0, 0, 0, _sources.Count);
         _state = Available(repository.Availability, operation)
@@ -90,6 +120,8 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<FileItem> Sources => _sources;
     public FileCopyMoveOperation Operation { get; }
+    public string SourceRoot { get; }
+    public FileCopyMoveBatchSourceScope SourceScope { get; }
     public string DestinationPath
     {
         get => _destinationPath;
@@ -146,9 +178,21 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
 
     public static FileCopyMoveBatchValidationStatus Validate(
         IReadOnlyList<FileItem> sources,
-        FileCopyMoveOperation operation)
+        FileCopyMoveOperation operation) =>
+        Validate(
+            sources,
+            operation,
+            SourceRootForCurrentFolder(sources),
+            FileCopyMoveBatchSourceScope.CurrentFolder);
+
+    public static FileCopyMoveBatchValidationStatus Validate(
+        IReadOnlyList<FileItem> sources,
+        FileCopyMoveOperation operation,
+        string sourceRoot,
+        FileCopyMoveBatchSourceScope sourceScope)
     {
         ArgumentNullException.ThrowIfNull(sources);
+        ArgumentNullException.ThrowIfNull(sourceRoot);
         if (sources.Count == 0)
         {
             return FileCopyMoveBatchValidationStatus.Empty;
@@ -158,6 +202,14 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
             return FileCopyMoveBatchValidationStatus.TooMany;
         }
         if (operation is not FileCopyMoveOperation.Copy and not FileCopyMoveOperation.Move)
+        {
+            return FileCopyMoveBatchValidationStatus.InvalidSource;
+        }
+        if (!IsCanonicalFolder(sourceRoot) ||
+            (sourceScope == FileCopyMoveBatchSourceScope.DescendantsOfRoot &&
+                sourceRoot.Length == 0) ||
+            sourceScope is not (FileCopyMoveBatchSourceScope.CurrentFolder or
+                FileCopyMoveBatchSourceScope.DescendantsOfRoot))
         {
             return FileCopyMoveBatchValidationStatus.InvalidSource;
         }
@@ -193,8 +245,21 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
                 }
             }
         }
-        if (sources.Select(source => MutationParent(source.Path))
-            .Distinct(StringComparer.Ordinal).Count() != 1)
+        if (sourceScope == FileCopyMoveBatchSourceScope.CurrentFolder &&
+            sources.Select(source => MutationParent(source.Path))
+                .Distinct(StringComparer.Ordinal).Count() != 1)
+        {
+            return FileCopyMoveBatchValidationStatus.InvalidSource;
+        }
+        if (sources.Any(source => sourceScope switch
+            {
+                FileCopyMoveBatchSourceScope.CurrentFolder =>
+                    !string.Equals(
+                        MutationParent(source.Path), sourceRoot, StringComparison.Ordinal),
+                FileCopyMoveBatchSourceScope.DescendantsOfRoot =>
+                    !IsStrictDescendant(sourceRoot, source.Path),
+                _ => true,
+            }))
         {
             return FileCopyMoveBatchValidationStatus.InvalidSource;
         }
@@ -503,6 +568,17 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         var separator = path.LastIndexOf('/');
         return separator <= 0 ? string.Empty : path[..separator];
     }
+
+    private static string SourceRootForCurrentFolder(IReadOnlyList<FileItem>? sources) =>
+        sources is { Count: > 0 } ? MutationParent(sources[0].Path) : string.Empty;
+
+    private static bool IsCanonicalFolder(string path) =>
+        path.Length == 0 || FileMutationViewModel.IsCanonicalAbsolutePath(path);
+
+    private static bool IsStrictDescendant(string root, string path) =>
+        root.Length == 0
+            ? path.StartsWith("/", StringComparison.Ordinal)
+            : path.StartsWith(root + "/", StringComparison.Ordinal);
 
     private static bool IsFolderPath(string path) =>
         path.Length == 0 || FileCopyMoveViewModel.IsDestination(path);

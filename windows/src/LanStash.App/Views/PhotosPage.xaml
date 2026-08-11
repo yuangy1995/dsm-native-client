@@ -169,6 +169,13 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <AppBarButton
+                x:Uid="FileCopyMoveMoveSelected"
+                x:Name="PhotoMoveSelectedButton"
+                Click="MoveSelectedPhotos_Click"
+                Icon="MoveToFolder"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileRecycleMoveToRecycle"
                 x:Name="PhotoMoveToRecycleButton"
                 Click="MovePhotoToRecycle_Click"
@@ -185,7 +192,7 @@
             <AppBarButton
                 x:Uid="FileBrowserCancelDownloadSelection"
                 x:Name="PhotoCancelRecycleSelectionButton"
-                Click="CancelPhotoRecycleSelection_Click"
+                Click="CancelPhotoBatchSelection_Click"
                 Icon="Cancel"
                 MinHeight="44"
                 Visibility="Collapsed" />
@@ -197,6 +204,12 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <CommandBar.SecondaryCommands>
+                <AppBarButton
+                    x:Uid="FileCopyMoveMoveMultiple"
+                    x:Name="PhotoMoveMultipleButton"
+                    Click="MoveMultiplePhotos_Click"
+                    Icon="MoveToFolder"
+                    MinHeight="44" />
                 <AppBarButton
                     x:Uid="FileRecycleBatchMoveMultiple"
                     x:Name="PhotoMoveMultipleToRecycleButton"

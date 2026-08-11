@@ -232,7 +232,7 @@ public sealed partial class FilesPage
         }
     }
 
-    private static FrameworkElement BuildBatchCopyMoveContent(
+    internal static FrameworkElement BuildBatchCopyMoveContent(
         FileCopyMoveBatchViewModel model,
         LocalizationService localization,
         Func<Task> render)
@@ -400,7 +400,7 @@ public sealed partial class FilesPage
         FileCopyMoveBatchStatus.IsOpen = true;
     }
 
-    private static string FormatBatchCopyMoveSummary(
+    internal static string FormatBatchCopyMoveSummary(
         LocalizationService localization,
         FileCopyMoveBatchSummary summary,
         FileCopyMoveOperation operation) => localization.Format(

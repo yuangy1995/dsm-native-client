@@ -306,6 +306,47 @@ public sealed class PhotosPageSourceContractTests
     }
 
     [Fact]
+    public void BatchMoveUsesOneBoundedSelectionSessionAndRevalidatesFolderAndTimelineSources()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var page = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
+        var selection = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.BatchRecycle.cs");
+        var move = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.BatchMove.cs");
+        var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
+        var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
+
+        Assert.Contains("x:Name=\"PhotoMoveMultipleButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoMoveSelectedButton\"", xaml);
+        Assert.Contains("PhotoBatchSelectionOperation", selection);
+        Assert.Contains("PhotoBatchSelectionOperation.Move", selection);
+        Assert.Contains("PhotoBatchSelectionOperation.Recycle", selection);
+        Assert.Contains("PhotoGrid.SelectionMode = ListViewSelectionMode.Multiple", selection);
+        Assert.Contains("FileCopyMoveBatchViewModel.MaximumItemCount", selection);
+
+        Assert.Contains("new FileCopyMoveBatchViewModel(", move);
+        Assert.Contains("FileCopyMoveBatchSourceScope.CurrentFolder", move);
+        Assert.Contains("FileCopyMoveBatchSourceScope.DescendantsOfRoot", move);
+        Assert.Contains("PhotoBatchMoveSourceIsCurrent(", move);
+        Assert.Contains("_photoBatchCopyMoveDialog is not null", move);
+        Assert.Contains("_photoBatchCopyMoveModel is not null", move);
+        Assert.Contains("await ClosePhotoViewerAsync(restoreBrowserFocus: false);", move);
+        Assert.Contains("var submit = model.SubmitAsync();", move);
+        Assert.Contains("dialog.Closing += (sender, args)", move);
+        Assert.Contains("summary.ConfirmedCount > 0", move);
+        Assert.DoesNotContain("overwrite", move, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DeleteFilesAsync", move);
+
+        Assert.Contains("MoveMultiplePhotosAsync", page);
+        Assert.Contains("ClosePhotoBatchCopyMoveDialog();", page);
+        Assert.Contains("if (IsSelectingPhotoBatch", page);
+        Assert.Contains("x:Name=\"MoveMultipleButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"MoveSelectedItemsButton\"", timelineXaml);
+        Assert.Contains("HasSelectedBatchItems", timeline);
+        Assert.Contains("_batchSelectionOperation", timeline);
+        Assert.Contains("FileCopyMoveBatchViewModel.MaximumItemCount", timeline);
+    }
+
+    [Fact]
     public void SinglePhotoMoveReusesFileCopyMoveSafetyChainAndRevalidatesSelection()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");

@@ -42,6 +42,84 @@ public sealed class FileCopyMoveBatchViewModelTests
     }
 
     [Fact]
+    public void DescendantScopeAllowsMixedParentsInsideCanonicalRoot()
+    {
+        FileItem[] sources =
+        [
+            File("first.jpg", "/share/photos/2025"),
+            File("second.jpg", "/share/photos/2026"),
+        ];
+
+        Assert.Equal(
+            FileCopyMoveBatchValidationStatus.Valid,
+            FileCopyMoveBatchViewModel.Validate(
+                sources,
+                FileCopyMoveOperation.Move,
+                "/share/photos",
+                FileCopyMoveBatchSourceScope.DescendantsOfRoot));
+
+        using var model = new FileCopyMoveBatchViewModel(
+            new StubRepository(ProfileId),
+            new StubFolders(ProfileId),
+            ProfileId,
+            sources,
+            FileCopyMoveOperation.Move,
+            "/share/photos",
+            FileCopyMoveBatchSourceScope.DescendantsOfRoot,
+            new FileCopyMoveReviewBlocker());
+
+        Assert.Equal("/share/photos", model.SourceRoot);
+        Assert.Equal(FileCopyMoveBatchSourceScope.DescendantsOfRoot, model.SourceScope);
+    }
+
+    [Theory]
+    [InlineData("/share/photos", "/share/photos")]
+    [InlineData("/share/photos-copy/image.jpg", "/share/photos")]
+    [InlineData("/share/photos/2025/image.jpg", "/share/photos/")]
+    [InlineData("/share/photos/2025/image.jpg", "/share/./photos")]
+    [InlineData("/share/photos/2025/image.jpg", "")]
+    public void DescendantScopeRejectsRootPrefixAndNonCanonicalRoot(
+        string sourcePath,
+        string sourceRoot)
+    {
+        var name = sourcePath[(sourcePath.LastIndexOf('/') + 1)..];
+
+        Assert.Equal(
+            FileCopyMoveBatchValidationStatus.InvalidSource,
+            FileCopyMoveBatchViewModel.Validate(
+                [File(name) with { Path = sourcePath }],
+                FileCopyMoveOperation.Copy,
+                sourceRoot,
+                FileCopyMoveBatchSourceScope.DescendantsOfRoot));
+    }
+
+    [Fact]
+    public void DescendantScopeKeepsDestinationConflictAndSourceSafetyChecks()
+    {
+        Assert.Equal(
+            FileCopyMoveBatchValidationStatus.Duplicate,
+            FileCopyMoveBatchViewModel.Validate(
+                [File("same.jpg", "/share/photos/2025"), File("SAME.JPG", "/share/photos/2026")],
+                FileCopyMoveOperation.Move,
+                "/share/photos",
+                FileCopyMoveBatchSourceScope.DescendantsOfRoot));
+        Assert.Equal(
+            FileCopyMoveBatchValidationStatus.InvalidSource,
+            FileCopyMoveBatchViewModel.Validate(
+                [File("unknown.jpg", "/share/photos/2025") with { Size = -1 }],
+                FileCopyMoveOperation.Move,
+                "/share/photos",
+                FileCopyMoveBatchSourceScope.DescendantsOfRoot));
+        Assert.Equal(
+            FileCopyMoveBatchValidationStatus.PermissionDenied,
+            FileCopyMoveBatchViewModel.Validate(
+                [File("locked.jpg", "/share/photos/2025") with { CanDelete = false }],
+                FileCopyMoveOperation.Move,
+                "/share/photos",
+                FileCopyMoveBatchSourceScope.DescendantsOfRoot));
+    }
+
+    [Fact]
     public async Task DestinationPickerExcludesSourcesDescendantsAndCurrentParent()
     {
         var source = Folder("parent");
@@ -54,6 +132,9 @@ public sealed class FileCopyMoveBatchViewModelTests
         ]);
         using var model = Model(new StubRepository(ProfileId), folders, [source]);
 
+        Assert.Equal("/share/source", model.SourceRoot);
+        Assert.Equal(FileCopyMoveBatchSourceScope.CurrentFolder, model.SourceScope);
+
         await model.LoadFoldersAsync("/share", destinationCanWrite: true);
 
         Assert.Equal(["/share/target"], model.Folders.Select(folder => folder.Path));
@@ -61,6 +142,61 @@ public sealed class FileCopyMoveBatchViewModelTests
         Assert.False(model.CanSubmit);
         await model.LoadFoldersAsync("/share/target", destinationCanWrite: true);
         Assert.True(model.CanSubmit);
+    }
+
+    [Fact]
+    public async Task DescendantScopeStillExcludesEverySourceParent()
+    {
+        FileItem[] sources =
+        [
+            File("first.jpg", "/share/photos/2025"),
+            File("second.jpg", "/share/photos/2026"),
+        ];
+        using var model = new FileCopyMoveBatchViewModel(
+            new StubRepository(ProfileId),
+            new StubFolders(ProfileId),
+            ProfileId,
+            sources,
+            FileCopyMoveOperation.Move,
+            "/share/photos",
+            FileCopyMoveBatchSourceScope.DescendantsOfRoot,
+            new FileCopyMoveReviewBlocker());
+
+        await model.LoadFoldersAsync("/share/photos/2025", destinationCanWrite: true);
+        Assert.False(model.CanSubmit);
+        await model.LoadFoldersAsync("/share/photos/2026", destinationCanWrite: true);
+        Assert.False(model.CanSubmit);
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true);
+        Assert.True(model.CanSubmit);
+    }
+
+    [Fact]
+    public async Task DescendantScopePreservesEverySourcePathAndOneFrozenDestination()
+    {
+        FileItem[] sources =
+        [
+            File("first.jpg", "/share/photos/2025"),
+            File("second.jpg", "/share/photos/2026"),
+        ];
+        var repository = new StubRepository(ProfileId);
+        using var model = new FileCopyMoveBatchViewModel(
+            repository,
+            new StubFolders(ProfileId),
+            ProfileId,
+            sources,
+            FileCopyMoveOperation.Move,
+            "/share/photos",
+            FileCopyMoveBatchSourceScope.DescendantsOfRoot,
+            new FileCopyMoveReviewBlocker());
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true);
+
+        await model.SubmitAsync();
+
+        Assert.Equal(2, repository.Requests.Count);
+        Assert.Equal(sources.Select(source => source.Path),
+            repository.Requests.Select(request => request.Target.Path));
+        Assert.All(repository.Requests, request =>
+            Assert.Equal("/share/target", request.DestinationDirectoryPath));
     }
 
     [Fact]
