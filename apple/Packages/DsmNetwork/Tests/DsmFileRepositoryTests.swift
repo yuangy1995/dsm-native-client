@@ -3345,6 +3345,153 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(summary.volumeCount, 2)
     }
 
+    func test容量忽略远程挂载但本地卷缺失或畸形容量会失败() async throws {
+        let invalidLocalShares = [
+            #"{"name":"home","path":"/home","isdir":true,"additional":{"real_path":"/volume1/home"}}"#,
+            #"{"name":"home","path":"/home","isdir":true,"additional":{"mount_point_type":"normal","volume_status":{"totalspace":1000,"freespace":250}}}"#,
+            #"{"name":"home","path":"/home","isdir":true,"additional":{"mount_point_type":"shared_folder","real_path":"/not-a-local-volume/home","volume_status":{"totalspace":1000,"freespace":250}}}"#,
+            #"{"name":"home","path":"/home","isdir":true,"additional":{"real_path":"/volume1/home","volume_status":{"totalspace":"bad","freespace":250}}}"#,
+            #"{"name":"home","path":"/home","isdir":true,"additional":{"real_path":"/volume1/home","volume_status":{"totalspace":1000,"freespace":1001}}}"#,
+        ]
+        for share in invalidLocalShares {
+            let transport = MockHTTPTransport(responses: [
+                response(#"{"success":true,"data":{"shares":[\#(share)]}}"#)
+            ])
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+                ]),
+                transport: transport
+            )
+
+            do {
+                _ = try await repository.storageSpaceSummary()
+                XCTFail("本地卷容量不完整时不应发布汇总")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+                XCTAssertFalse(error.isRetryable)
+            }
+        }
+
+        let remoteTransport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"shares":[{"name":"home","path":"/home","isdir":true,"additional":{"real_path":"/volume1/home","mount_point_type":"normal","volume_status":{"totalspace":1000,"freespace":250}}},{"name":"remote","path":"/remote","isdir":true,"additional":{"real_path":"/volume2/remote","mount_point_type":"cifs"}}]}}"#)
+        ])
+        let remoteRepository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: remoteTransport
+        )
+
+        let loadedRemoteSummary = try await remoteRepository.storageSpaceSummary()
+        let summary = try XCTUnwrap(loadedRemoteSummary)
+        XCTAssertEqual(summary.totalBytes, 1_000)
+        XCTAssertEqual(summary.remainingBytes, 250)
+        XCTAssertEqual(summary.volumeCount, 1)
+    }
+
+    func test容量拒绝同卷冲突和整数溢出() async throws {
+        let invalidBodies = [
+            #"{"success":true,"data":{"shares":[{"name":"home","path":"/home","isdir":true,"additional":{"real_path":"/volume1/home","volume_status":{"totalspace":1000,"freespace":250}}},{"name":"projects","path":"/projects","isdir":true,"additional":{"real_path":"/volume1/projects","volume_status":{"totalspace":1000,"freespace":300}}}]}}"#,
+            #"{"success":true,"data":{"shares":[{"name":"home","path":"/home","isdir":true,"additional":{"real_path":"/volume1/home","volume_status":{"totalspace":9223372036854775807,"freespace":0}}},{"name":"archive","path":"/archive","isdir":true,"additional":{"real_path":"/volume2/archive","volume_status":{"totalspace":1,"freespace":0}}}]}}"#,
+        ]
+        for body in invalidBodies {
+            let transport = MockHTTPTransport(responses: [response(body)])
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+                ]),
+                transport: transport
+            )
+
+            do {
+                _ = try await repository.storageSpaceSummary()
+                XCTFail("冲突或溢出的容量不应发布汇总")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+                XCTAssertFalse(error.isRetryable)
+            }
+        }
+    }
+
+    func test容量分页完整时汇总全部可见卷() async throws {
+        let firstPageShares = (0..<500).map { index in
+            #"{"name":"share-\#(index)","path":"/share-\#(index)","isdir":true,"additional":{"real_path":"/volume1/share-\#(index)","volume_status":{"totalspace":1000,"freespace":250}}}"#
+        }.joined(separator: ",")
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":501,"shares":[\#(firstPageShares)]}}"#),
+            response(#"{"success":true,"data":{"offset":500,"total":501,"shares":[{"name":"archive","path":"/archive","isdir":true,"additional":{"real_path":"/volume2/archive","volume_status":{"totalspace":2000,"freespace":800}}}]}}"#),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: transport
+        )
+
+        let loadedSummary = try await repository.storageSpaceSummary()
+        let summary = try XCTUnwrap(loadedSummary)
+        XCTAssertEqual(summary.totalBytes, 3_000)
+        XCTAssertEqual(summary.remainingBytes, 1_050)
+        XCTAssertEqual(summary.volumeCount, 2)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.compactMap { requestParameter("offset", in: $0) }, ["0", "500"])
+        XCTAssertTrue(requests.allSatisfy { requestParameter("limit", in: $0) == "500" })
+        XCTAssertTrue(requests.allSatisfy { requestParameter("method", in: $0) == "list_share" })
+    }
+
+    func test容量拒绝畸形分页和无总数满页() async throws {
+        let fullPageShares = (0..<500).map { index in
+            #"{"name":"share-\#(index)","path":"/share-\#(index)","isdir":true,"additional":{"real_path":"/volume1/share-\#(index)","volume_status":{"totalspace":1000,"freespace":250}}}"#
+        }.joined(separator: ",")
+        let invalidBodies = [
+            #"{"success":true,"data":{"offset":"bad","total":0,"shares":[]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":"bad","shares":[]}}"#,
+            #"{"success":true,"data":{"offset":1,"total":1,"shares":[]}}"#,
+            #"{"success":true,"data":{"offset":0,"total":10001,"shares":[]}}"#,
+            #"{"success":true,"data":{"shares":[\#(fullPageShares)]}}"#,
+        ]
+        for body in invalidBodies {
+            let transport = MockHTTPTransport(responses: [response(body)])
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+                ]),
+                transport: transport
+            )
+
+            do {
+                _ = try await repository.storageSpaceSummary()
+                XCTFail("畸形或不完整分页不应发布容量")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+                XCTAssertFalse(error.isRetryable)
+            }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, 1)
+        }
+
+        let driftingTransport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"offset":0,"total":501,"shares":[\#(fullPageShares)]}}"#),
+            response(#"{"success":true,"data":{"offset":500,"total":502,"shares":[{"name":"archive","path":"/archive","isdir":true,"additional":{"real_path":"/volume2/archive","volume_status":{"totalspace":2000,"freespace":800}}}]}}"#),
+        ])
+        let driftingRepository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]),
+            transport: driftingTransport
+        )
+        do {
+            _ = try await driftingRepository.storageSpaceSummary()
+            XCTFail("分页总数漂移不应发布容量")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+            XCTAssertFalse(error.isRetryable)
+        }
+        let driftingRequests = await driftingTransport.recordedRequests()
+        XCTAssertEqual(driftingRequests.count, 2)
+    }
+
     func test远程挂载创建后复查结果且密码不进入URL() async throws {
         let transport = MockHTTPTransport(responses: [
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),

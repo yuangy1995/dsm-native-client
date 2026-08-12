@@ -43,6 +43,10 @@ struct MobileFileBrowserProfileState: Equatable, Sendable {
     var loadMoreFailed = false
     var visibleKey: MobileFileBrowserCacheKey?
     var caches: [MobileFileBrowserCacheKey: MobileFileBrowserPageCache] = [:]
+    var storageSummary: StorageSpaceSummary?
+    var isStorageLoading = false
+    var hasLoadedStorage = false
+    var storageRefreshFailed = false
 
     var currentPath: String { location.path }
     var pathHistory: [String] { location.history }

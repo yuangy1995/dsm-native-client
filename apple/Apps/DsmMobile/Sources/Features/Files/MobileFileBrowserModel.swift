@@ -8,6 +8,11 @@ protocol MobileFileBrowsing: AnyObject, Sendable {
     func listShares(offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage
     func listFolder(path: String, offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage
     func search(folderPath: String, query: String) async throws -> [FileItem]
+    func storageSpaceSummary() async throws -> StorageSpaceSummary?
+}
+
+extension MobileFileBrowsing {
+    func storageSpaceSummary() async throws -> StorageSpaceSummary? { nil }
 }
 
 extension DsmFileRepository: MobileFileBrowsing {}
@@ -32,7 +37,9 @@ final class MobileFileBrowserModel {
     @ObservationIgnored private var repositoryIdentity: ObjectIdentifier?
     @ObservationIgnored private var requestTask: Task<Void, Never>?
     @ObservationIgnored private var locationRequestTask: Task<Bool, Never>?
+    @ObservationIgnored private var storageRequestTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    @ObservationIgnored private var storageGeneration = 0
     @ObservationIgnored private var pendingLocationNavigation: PendingLocationNavigation?
 
     init(
@@ -53,15 +60,26 @@ final class MobileFileBrowserModel {
     }
 
     func activate(profileID: UUID?, repository: (any MobileFileBrowsing)?) async {
+        let nextRepositoryIdentity = repository.map { ObjectIdentifier($0) }
+        let preservesStorage = activeProfileID == profileID && repositoryIdentity == nextRepositoryIdentity
+        cancelStorageRequest()
         cancelRequest()
         activeProfileID = profileID
-        repositoryIdentity = repository.map { ObjectIdentifier($0) }
+        repositoryIdentity = nextRepositoryIdentity
         guard let profileID, let repository, repository.profileID == profileID else {
             repositoryIdentity = nil
             return
         }
         if profiles[profileID] == nil {
             profiles[profileID] = MobileFileBrowserProfileState()
+        }
+        if !preservesStorage {
+            updateActive {
+                $0.storageSummary = nil
+                $0.isStorageLoading = false
+                $0.hasLoadedStorage = false
+                $0.storageRefreshFailed = false
+            }
         }
     }
 
@@ -102,6 +120,61 @@ final class MobileFileBrowserModel {
     func refresh(repository: any MobileFileBrowsing) async {
         guard isActive(repository) else { return }
         await replaceContent(repository: repository, forceNetwork: true)
+    }
+
+    func refreshStorage(repository: any MobileFileBrowsing) async {
+        guard isActive(repository), state.currentPath.isEmpty else { return }
+        guard storageRequestTask == nil else {
+            await storageRequestTask?.value
+            return
+        }
+        storageGeneration &+= 1
+        let requestGeneration = storageGeneration
+        let profileID = repository.profileID
+        let identity = ObjectIdentifier(repository)
+        updateActive {
+            $0.isStorageLoading = true
+            $0.storageRefreshFailed = false
+        }
+        let task = Task { [weak self] in
+            do {
+                let summary = try await repository.storageSpaceSummary()
+                try Task.checkCancellation()
+                guard self?.isCurrentStorageRequest(
+                    profileID: profileID,
+                    repositoryIdentity: identity,
+                    generation: requestGeneration
+                ) == true else { return }
+                self?.updateActive {
+                    $0.storageSummary = summary
+                    $0.isStorageLoading = false
+                    $0.hasLoadedStorage = true
+                    $0.storageRefreshFailed = false
+                }
+            } catch is CancellationError {
+                self?.finishStorageCancellation(
+                    profileID: profileID,
+                    repositoryIdentity: identity,
+                    generation: requestGeneration
+                )
+            } catch {
+                guard self?.isCurrentStorageRequest(
+                    profileID: profileID,
+                    repositoryIdentity: identity,
+                    generation: requestGeneration
+                ) == true else { return }
+                self?.updateActive {
+                    $0.isStorageLoading = false
+                    $0.hasLoadedStorage = true
+                    $0.storageRefreshFailed = $0.storageSummary != nil
+                }
+            }
+        }
+        storageRequestTask = task
+        await task.value
+        if storageGeneration == requestGeneration {
+            storageRequestTask = nil
+        }
     }
 
     /// 只在原 profile、repository 与父目录仍然有效时刷新；该父目录的旧查询缓存一并失效。
@@ -180,6 +253,7 @@ final class MobileFileBrowserModel {
 
     func openDirectory(_ item: FileItem, repository: any MobileFileBrowsing) async {
         guard item.isDirectory, isActive(repository) else { return }
+        cancelStorageRequest()
         let source: MobileFileLocationSource = item.isRecyclePath
             ? .recycle
             : (state.location.source == .remote || state.location.source == .recycle
@@ -211,6 +285,7 @@ final class MobileFileBrowserModel {
               (source == .shares && path.isEmpty || Self.isCanonicalAbsoluteLocationPath(path)) else {
             return false
         }
+        if !path.isEmpty { cancelStorageRequest() }
         let profileID = repository.profileID
         let identity = ObjectIdentifier(repository)
         let baseline = state
@@ -273,6 +348,9 @@ final class MobileFileBrowserModel {
         }
         restoreCachedPageIfPresent()
         await replaceContent(repository: repository, forceNetwork: false)
+        if state.currentPath.isEmpty, !state.hasLoadedStorage {
+            await refreshStorage(repository: repository)
+        }
     }
 
     func goUp(repository: any MobileFileBrowsing) async {
@@ -287,6 +365,9 @@ final class MobileFileBrowserModel {
         }
         restoreCachedPageIfPresent()
         await replaceContent(repository: repository, forceNetwork: false)
+        if state.currentPath.isEmpty, !state.hasLoadedStorage {
+            await refreshStorage(repository: repository)
+        }
     }
 
     func loadMore(repository: any MobileFileBrowsing) async {
@@ -347,6 +428,37 @@ final class MobileFileBrowserModel {
         locationRequestTask?.cancel()
         locationRequestTask = nil
         generation &+= 1
+    }
+
+    func cancelStorageRequest() {
+        storageRequestTask?.cancel()
+        storageRequestTask = nil
+        storageGeneration &+= 1
+        updateActive { $0.isStorageLoading = false }
+    }
+
+    private func isCurrentStorageRequest(
+        profileID: UUID,
+        repositoryIdentity identity: ObjectIdentifier,
+        generation requestGeneration: Int
+    ) -> Bool {
+        activeProfileID == profileID &&
+            repositoryIdentity == identity &&
+            storageGeneration == requestGeneration &&
+            state.currentPath.isEmpty
+    }
+
+    private func finishStorageCancellation(
+        profileID: UUID,
+        repositoryIdentity identity: ObjectIdentifier,
+        generation requestGeneration: Int
+    ) {
+        guard isCurrentStorageRequest(
+            profileID: profileID,
+            repositoryIdentity: identity,
+            generation: requestGeneration
+        ) else { return }
+        updateActive { $0.isStorageLoading = false }
     }
 
     func cancelLocationRequest() {

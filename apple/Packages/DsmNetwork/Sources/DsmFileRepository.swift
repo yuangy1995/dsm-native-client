@@ -6,6 +6,8 @@ import DsmLocalization
 private struct FileListPayload: Decodable, Sendable {
     let offset: Int?
     let total: Int?
+    let containsOffset: Bool
+    let containsTotal: Bool
     let files: [FilePayload]?
     let shares: [FilePayload]?
     let folders: [FilePayload]?
@@ -16,6 +18,8 @@ private struct FileListPayload: Decodable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        containsOffset = container.contains(.offset)
+        containsTotal = container.contains(.total)
         offset = Self.decodeInteger(from: container, key: .offset)
         total = Self.decodeInteger(from: container, key: .total)
         files = try container.decodeIfPresent([FilePayload].self, forKey: .files)
@@ -4631,7 +4635,9 @@ public actor DsmFileRepository: FileRepository {
         do {
             var volumes: [String: (total: Int64, remaining: Int64)] = [:]
             let pageSize = 500
+            let maximumShareCount = 10_000
             var offset = 0
+            var expectedTotal: Int?
             while true {
                 let payload = try await client.call(
                     path: capability.path,
@@ -4644,20 +4650,60 @@ public actor DsmFileRepository: FileRepository {
                     as: FileListPayload.self
                 )
                 let shares = payload.shares ?? []
+                guard shares.count <= pageSize,
+                      !payload.containsOffset || payload.offset != nil,
+                      !payload.containsTotal || payload.total != nil,
+                      (payload.offset ?? offset) == offset else {
+                    throw Self.invalidStorageSpaceResponse()
+                }
+                if let total = payload.total {
+                    guard total >= 0,
+                          total <= maximumShareCount,
+                          offset <= total,
+                          shares.count <= total - offset,
+                          expectedTotal == nil || expectedTotal == total else {
+                        throw Self.invalidStorageSpaceResponse()
+                    }
+                    expectedTotal = total
+                } else {
+                    guard expectedTotal == nil, shares.count < pageSize else {
+                        throw Self.invalidStorageSpaceResponse()
+                    }
+                }
+                if shares.isEmpty, let expectedTotal, offset < expectedTotal {
+                    throw Self.invalidStorageSpaceResponse()
+                }
                 for share in shares {
+                    let mountType = share.additional?.mountPointType?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                    if let mountType, !mountType.isEmpty,
+                       mountType != "normal", mountType != "shared_folder" {
+                        continue
+                    }
+                    guard let key = Self.volumeIdentity(realPath: share.additional?.realPath) else {
+                        throw Self.invalidStorageSpaceResponse()
+                    }
                     guard let status = share.additional?.volumeStatus,
                           let total = status.totalBytes,
                           let remaining = status.remainingBytes,
                           total > 0,
                           remaining >= 0,
-                          let key = Self.volumeIdentity(realPath: share.additional?.realPath) else {
-                        continue
+                          remaining <= total else {
+                        throw Self.invalidStorageSpaceResponse()
                     }
-                    volumes[key] = (total, min(remaining, total))
+                    let capacity = (total: total, remaining: remaining)
+                    if let existing = volumes[key], existing != capacity {
+                        throw Self.invalidStorageSpaceResponse()
+                    }
+                    volumes[key] = capacity
                 }
                 offset += shares.count
-                let totalShares = payload.total ?? offset
-                if shares.isEmpty || shares.count < pageSize || offset >= totalShares { break }
+                if let expectedTotal {
+                    if offset == expectedTotal { break }
+                } else {
+                    break
+                }
             }
             guard !volumes.isEmpty else { return nil }
 
@@ -5575,6 +5621,14 @@ public actor DsmFileRepository: FileRepository {
             category: .invalidResponse,
             isRetryable: false,
             safeUserMessage: L10n.string("shared.7aa519aeec359f04")
+        )
+    }
+
+    private static func invalidStorageSpaceResponse() -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: false,
+            safeUserMessage: L10n.string("shared.fbb16df36e02d491")
         )
     }
 

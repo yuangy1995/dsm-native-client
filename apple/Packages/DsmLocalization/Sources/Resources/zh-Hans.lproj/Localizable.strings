@@ -3598,3 +3598,12 @@
 "mobile.chat.create.authentication" = "登录已过期。请重新登录，然后核对会话是否已经创建。";
 "mobile.chat.create.unsupported" = "此 NAS 或 Chat Server 版本不提供这类会话。";
 "mobile.chat.create.failed" = "无法创建会话。请检查所选用户和 NAS 连接，然后重试。";
+"mobile.files.storage.title" = "当前账号可见空间";
+"mobile.files.storage.loading" = "正在加载存储空间…";
+"mobile.files.storage.unavailable" = "暂时无法获取存储空间，你仍可继续浏览文件。";
+"mobile.files.storage.refresh-failed" = "无法加载最新存储空间，当前显示上次结果。";
+"mobile.files.storage.used" = "已用";
+"mobile.files.storage.remaining" = "可用";
+"mobile.files.storage.total" = "总量";
+"mobile.files.storage.volumes" = "%lld 个可见存储空间";
+"mobile.files.storage.accessibility" = "当前账号可见空间：已用 %@，可用 %@，总量 %@，共 %lld 个存储空间。";

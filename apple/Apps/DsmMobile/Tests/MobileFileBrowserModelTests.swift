@@ -4,25 +4,36 @@ import Foundation
 import XCTest
 
 private actor FileBrowserRepositoryStub: MobileFileBrowsing {
+    private enum StorageResult {
+        case value(StorageSpaceSummary?)
+        case failure
+    }
+
     nonisolated let profileID: UUID
     private var pages: [FilePage]
     private var pageDelays: [UInt64]
     private var searchResults: [String: (UInt64, [FileItem])]
     private var optionPages: [FileListOptions: (UInt64, FilePage)]
+    private var storageResults: [(UInt64, StorageResult)]
     private(set) var pageCalls: [(String, Int, Int, FileListOptions)] = []
+    private(set) var storageCallCount = 0
 
     init(
         profileID: UUID,
         pages: [FilePage] = [],
         pageDelays: [UInt64] = [],
         searchResults: [String: (UInt64, [FileItem])] = [:],
-        optionPages: [FileListOptions: (UInt64, FilePage)] = [:]
+        optionPages: [FileListOptions: (UInt64, FilePage)] = [:],
+        storageSummaries: [(UInt64, StorageSpaceSummary?)] = [],
+        storageFailures: Int = 0
     ) {
         self.profileID = profileID
         self.pages = pages
         self.pageDelays = pageDelays
         self.searchResults = searchResults
         self.optionPages = optionPages
+        self.storageResults = storageSummaries.map { ($0.0, .value($0.1)) }
+        self.storageResults.append(contentsOf: Array(repeating: (0, .failure), count: storageFailures))
     }
 
     func listShares(offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage {
@@ -39,6 +50,17 @@ private actor FileBrowserRepositoryStub: MobileFileBrowsing {
             try? await Task.sleep(nanoseconds: response.0)
         }
         return response.1
+    }
+
+    func storageSpaceSummary() async throws -> StorageSpaceSummary? {
+        storageCallCount += 1
+        guard !storageResults.isEmpty else { return nil }
+        let result = storageResults.removeFirst()
+        if result.0 > 0 { try? await Task.sleep(nanoseconds: result.0) }
+        switch result.1 {
+        case let .value(summary): return summary
+        case .failure: throw StubError.storageFailure
+        }
     }
 
     func calls() -> [(String, Int, Int, FileListOptions)] { pageCalls }
@@ -62,11 +84,203 @@ private actor FileBrowserRepositoryStub: MobileFileBrowsing {
         return pages.removeFirst()
     }
 
-    private enum StubError: Error { case noPage }
+    private enum StubError: Error { case noPage, storageFailure }
 }
 
 @MainActor
 final class MobileFileBrowserModelTests: XCTestCase {
+    func test共享根容量独立加载且不改变文件内容状态() async {
+        let profileID = UUID()
+        let root = item(profileID, "home", "/home", kind: .directory)
+        let summary = StorageSpaceSummary(totalBytes: 1_000, remainingBytes: 250, volumeCount: 2)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            pages: [page(path: "", items: [root], offset: 0, total: 1, hasMore: false)],
+            storageSummaries: [(0, summary)]
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        async let files: Void = model.refresh(repository: repository)
+        async let storage: Void = model.refreshStorage(repository: repository)
+        _ = await (files, storage)
+
+        XCTAssertEqual(model.state.page.items, [root])
+        XCTAssertEqual(model.state.pageState, .content)
+        XCTAssertEqual(model.state.storageSummary, summary)
+        XCTAssertTrue(model.state.hasLoadedStorage)
+        XCTAssertFalse(model.state.storageRefreshFailed)
+    }
+
+    func test共享根文件刷新不会取消并发容量读取() async {
+        let profileID = UUID()
+        let root = item(profileID, "home", "/home", kind: .directory)
+        let summary = StorageSpaceSummary(totalBytes: 5_000, remainingBytes: 2_000, volumeCount: 1)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            pages: [page(path: "", items: [root], offset: 0, total: 1, hasMore: false)],
+            pageDelays: [25_000_000],
+            storageSummaries: [(75_000_000, summary)]
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        async let storage: Void = model.refreshStorage(repository: repository)
+        async let files: Void = model.refresh(repository: repository)
+        _ = await (storage, files)
+
+        XCTAssertEqual(model.state.page.items, [root])
+        XCTAssertEqual(model.state.storageSummary, summary)
+        XCTAssertFalse(model.state.isStorageLoading)
+    }
+
+    func test重复容量刷新等待同一请求且只调用一次() async {
+        let profileID = UUID()
+        let summary = StorageSpaceSummary(totalBytes: 6_000, remainingBytes: 3_000, volumeCount: 1)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            storageSummaries: [(75_000_000, summary)]
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        async let first: Void = model.refreshStorage(repository: repository)
+        async let second: Void = model.refreshStorage(repository: repository)
+        _ = await (first, second)
+
+        let storageCallCount = await repository.storageCallCount
+        XCTAssertEqual(storageCallCount, 1)
+        XCTAssertEqual(model.state.storageSummary, summary)
+    }
+
+    func test首次容量读取中进入目录再返回根会重新读取() async {
+        let profileID = UUID()
+        let folder = item(profileID, "docs", "/docs", kind: .directory)
+        let summary = StorageSpaceSummary(totalBytes: 7_000, remainingBytes: 2_000, volumeCount: 1)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            pages: [
+                page(path: "", items: [folder], offset: 0, total: 1, hasMore: false),
+                page(path: "/docs", items: [], offset: 0, total: 0, hasMore: false)
+            ],
+            storageSummaries: [(150_000_000, summary), (0, summary)]
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        await model.refresh(repository: repository)
+        let firstStorage = Task { await model.refreshStorage(repository: repository) }
+        await Task.yield()
+        await model.openDirectory(folder, repository: repository)
+        await firstStorage.value
+        await model.goBack(repository: repository)
+
+        let storageCallCount = await repository.storageCallCount
+        XCTAssertEqual(storageCallCount, 2)
+        XCTAssertEqual(model.state.storageSummary, summary)
+        XCTAssertTrue(model.state.hasLoadedStorage)
+    }
+
+    func test容量首次失败不遮蔽已加载文件() async {
+        let profileID = UUID()
+        let root = item(profileID, "home", "/home", kind: .directory)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            pages: [page(path: "", items: [root], offset: 0, total: 1, hasMore: false)],
+            storageFailures: 1
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        await model.refresh(repository: repository)
+        await model.refreshStorage(repository: repository)
+
+        XCTAssertEqual(model.state.page.items, [root])
+        XCTAssertEqual(model.state.pageState, .content)
+        XCTAssertNil(model.state.storageSummary)
+        XCTAssertTrue(model.state.hasLoadedStorage)
+        XCTAssertFalse(model.state.storageRefreshFailed)
+    }
+
+    func test容量刷新失败保留上次结果() async {
+        let profileID = UUID()
+        let summary = StorageSpaceSummary(totalBytes: 2_000, remainingBytes: 500, volumeCount: 1)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            storageSummaries: [(0, summary)],
+            storageFailures: 1
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        await model.refreshStorage(repository: repository)
+        await model.refreshStorage(repository: repository)
+
+        XCTAssertEqual(model.state.storageSummary, summary)
+        XCTAssertTrue(model.state.storageRefreshFailed)
+        XCTAssertFalse(model.state.isStorageLoading)
+    }
+
+    func test切换NAS后拒绝迟到容量并清除旧值() async {
+        let oldProfileID = UUID()
+        let newProfileID = UUID()
+        let stale = StorageSpaceSummary(totalBytes: 3_000, remainingBytes: 1_000, volumeCount: 1)
+        let oldRepository = FileBrowserRepositoryStub(
+            profileID: oldProfileID,
+            storageSummaries: [(150_000_000, stale)]
+        )
+        let newRepository = FileBrowserRepositoryStub(profileID: newProfileID)
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: oldProfileID, repository: oldRepository)
+        let oldTask = Task { await model.refreshStorage(repository: oldRepository) }
+        await Task.yield()
+        await model.activate(profileID: newProfileID, repository: newRepository)
+        await oldTask.value
+
+        XCTAssertEqual(model.activeProfileID, newProfileID)
+        XCTAssertNil(model.state.storageSummary)
+        XCTAssertFalse(model.state.hasLoadedStorage)
+    }
+
+    func test非共享根不读取容量() async {
+        let profileID = UUID()
+        let folder = item(profileID, "docs", "/docs", kind: .directory)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            pages: [
+                page(path: "", items: [folder], offset: 0, total: 1, hasMore: false),
+                page(path: "/docs", items: [], offset: 0, total: 0, hasMore: false)
+            ]
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        await model.refresh(repository: repository)
+        await model.openDirectory(folder, repository: repository)
+        await model.refreshStorage(repository: repository)
+
+        let storageCallCount = await repository.storageCallCount
+        XCTAssertEqual(storageCallCount, 0)
+    }
+
+    func test同一Repository重新激活保留已加载容量() async {
+        let profileID = UUID()
+        let summary = StorageSpaceSummary(totalBytes: 4_000, remainingBytes: 1_000, volumeCount: 2)
+        let repository = FileBrowserRepositoryStub(
+            profileID: profileID,
+            storageSummaries: [(0, summary)]
+        )
+        let model = MobileFileBrowserModel()
+
+        await model.activate(profileID: profileID, repository: repository)
+        await model.refreshStorage(repository: repository)
+        await model.activate(profileID: profileID, repository: repository)
+
+        XCTAssertEqual(model.state.storageSummary, summary)
+        XCTAssertTrue(model.state.hasLoadedStorage)
+    }
+
     func test分页使用服务端偏移并按完整路径去重() async {
         let profileID = UUID()
         let first = item(profileID, "a", "/share/a")

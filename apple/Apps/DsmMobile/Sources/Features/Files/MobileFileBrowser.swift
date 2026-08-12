@@ -143,8 +143,14 @@ struct MobileFileBrowser: View {
             guard let profileID, let repository else { return }
             model.fileShareLinkModel.activate(profileID: profileID, repository: repository)
             await locations.loadIfNeeded(repository: repository)
-            if browser.state.visibleKey == nil {
+            if browser.state.visibleKey == nil && !browser.state.hasLoadedStorage {
+                async let files: Void = browser.refresh(repository: repository)
+                async let storage: Void = browser.refreshStorage(repository: repository)
+                _ = await (files, storage)
+            } else if browser.state.visibleKey == nil {
                 await browser.refresh(repository: repository)
+            } else if !browser.state.hasLoadedStorage && browser.state.currentPath.isEmpty {
+                await browser.refreshStorage(repository: repository)
             }
         }
         .onChange(of: model.activeProfile?.id) { _, _ in
@@ -163,6 +169,7 @@ struct MobileFileBrowser: View {
         }
         .onDisappear {
             browser.cancelRequest()
+            browser.cancelStorageRequest()
             locations.cancelRequest()
             mutation.deactivate()
             copyMove.deactivate()
@@ -222,6 +229,11 @@ struct MobileFileBrowser: View {
     private var fileCollection: some View {
         if state.layout == .grid {
             ScrollView {
+                if state.currentPath.isEmpty {
+                    storageSummaryView
+                        .padding(.horizontal)
+                        .padding(.top, 12)
+                }
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: horizontalSizeClass == .regular ? 150 : 120), spacing: 12)],
                     spacing: 12
@@ -235,6 +247,10 @@ struct MobileFileBrowser: View {
             }
         } else {
             List {
+                if state.currentPath.isEmpty {
+                    storageSummaryView
+                        .listRowSeparator(.hidden)
+                }
                 ForEach(state.page.items) { item in
                     listItem(item)
                 }
@@ -242,6 +258,88 @@ struct MobileFileBrowser: View {
             }
             .listStyle(.plain)
         }
+    }
+
+    private var storageSummaryView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(L10n.string("mobile.files.storage.title"), systemImage: "internaldrive")
+                .font(.headline)
+            if let summary = state.storageSummary {
+                ProgressView(value: summary.usedFraction)
+                    .accessibilityHidden(true)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        storageValue("mobile.files.storage.used", bytes: summary.usedBytes)
+                        storageValue("mobile.files.storage.remaining", bytes: summary.remainingBytes)
+                        storageValue("mobile.files.storage.total", bytes: summary.totalBytes)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        storageValue("mobile.files.storage.used", bytes: summary.usedBytes)
+                        storageValue("mobile.files.storage.remaining", bytes: summary.remainingBytes)
+                        storageValue("mobile.files.storage.total", bytes: summary.totalBytes)
+                    }
+                }
+                Text(L10n.string("mobile.files.storage.volumes", Int64(summary.volumeCount)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if state.storageRefreshFailed {
+                    Label(
+                        L10n.string("mobile.files.storage.refresh-failed"),
+                        systemImage: "exclamationmark.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            } else if state.isStorageLoading || !state.hasLoadedStorage {
+                ProgressView(L10n.string("mobile.files.storage.loading"))
+                    .frame(minHeight: 44)
+            } else {
+                Label(
+                    L10n.string("mobile.files.storage.unavailable"),
+                    systemImage: "exclamationmark.circle"
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(minHeight: 44)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(storageAccessibilityLabel)
+    }
+
+    private func storageValue(_ key: String, bytes: Int64) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(L10n.string(key))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(formattedBytes(bytes))
+                .font(.body.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var storageAccessibilityLabel: String {
+        guard let summary = state.storageSummary else {
+            return L10n.string(
+                state.isStorageLoading || !state.hasLoadedStorage
+                    ? "mobile.files.storage.loading"
+                    : "mobile.files.storage.unavailable"
+            )
+        }
+        let summaryLabel = L10n.string(
+            "mobile.files.storage.accessibility",
+            formattedBytes(summary.usedBytes),
+            formattedBytes(summary.remainingBytes),
+            formattedBytes(summary.totalBytes),
+            Int64(summary.volumeCount)
+        )
+        guard state.storageRefreshFailed else { return summaryLabel }
+        return "\(summaryLabel) \(L10n.string("mobile.files.storage.refresh-failed"))"
+    }
+
+    private func formattedBytes(_ bytes: Int64) -> String {
+        bytes.formatted(.byteCount(style: .file).locale(L10n.locale))
     }
 
     private func listItem(_ item: FileItem) -> some View {
@@ -678,7 +776,9 @@ struct MobileFileBrowser: View {
 
     private func refreshNow() async {
         guard let repository = model.fileRepository else { return }
-        await browser.refresh(repository: repository)
+        async let files: Void = browser.refresh(repository: repository)
+        async let storage: Void = browser.refreshStorage(repository: repository)
+        _ = await (files, storage)
     }
 
     private func refreshLocations() async {
@@ -692,7 +792,11 @@ struct MobileFileBrowser: View {
     ) async -> Bool {
         guard let repository = model.fileRepository else { return false }
         prepareForLocationChange()
-        return await browser.openLocation(path: path, source: source, repository: repository)
+        let opened = await browser.openLocation(path: path, source: source, repository: repository)
+        if opened, path.isEmpty, !browser.state.hasLoadedStorage {
+            await browser.refreshStorage(repository: repository)
+        }
+        return opened
     }
 
     private func prepareForLocationChange() {

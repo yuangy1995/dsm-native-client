@@ -3598,3 +3598,12 @@
 "mobile.chat.create.authentication" = "Your login has expired. Sign in again, then check whether the conversation was created.";
 "mobile.chat.create.unsupported" = "This NAS or Chat Server version doesn’t offer this conversation type.";
 "mobile.chat.create.failed" = "The conversation couldn’t be created. Check the selected people and your NAS connection, then try again.";
+"mobile.files.storage.title" = "Storage Visible to This Account";
+"mobile.files.storage.loading" = "Loading storage space…";
+"mobile.files.storage.unavailable" = "Storage space isn’t available. You can still browse your files.";
+"mobile.files.storage.refresh-failed" = "The latest storage space couldn’t be loaded. Showing the previous values.";
+"mobile.files.storage.used" = "Used";
+"mobile.files.storage.remaining" = "Available";
+"mobile.files.storage.total" = "Total";
+"mobile.files.storage.volumes" = "%lld visible storage spaces";
+"mobile.files.storage.accessibility" = "Storage visible to this account: %@ used, %@ available, %@ total, %lld storage spaces.";

@@ -311,6 +311,8 @@ Chat 模块按[Synology Chat 原生聊天功能开发计划](../development/NATI
 
 ## 下一步
 
+iPhone/iPad FILE-01 当前账号可见存储已完成源码、本机与云端闭环：Files 共享根复用公开 `list_share` 容量契约，展示总量、已用、可用、比例和可见存储空间数；文件与容量独立并发刷新，首次失败不阻断浏览，刷新失败保留旧值，切换 NAS、离开共享根或页面会拒绝迟到结果。共享解析只在分页完整、本地卷容量有效且同卷数据一致时发布，远程挂载忽略，冲突、缺失、畸形和溢出不发布部分结果。不展示卷名、真实路径或管理员存储信息，不新增写操作、后台轮询或新 API。最终聚焦移动测试 34/34、DsmMobile 全量 460/460、共享包 699 项（2 项跳过）、本地化与契约门禁及通用模拟器构建已通过；功能分支 Apple Build run `31569016908` 已通过共享包测试、iPhone/iPad 通用构建和 macOS 打包，Repository Check run `31569017056` 已通过。真实 iPhone/iPad、VoiceOver、最大动态文字和真实 NAS 为 `PENDING_USER_VALIDATION`。
+
 1. **ACT-01 统一活动中心前台刷新增量** 已完成 Windows Download Station 与 File Station BackgroundTask 云端门禁：Activity 可见且窗口前台时立即读取并每 5 秒分别刷新两类 NAS 前 100 项任务，支持共同手动刷新、独立失败保留、能力门、离页停止和迟到结果隔离；File Station 只读取四类公开 v3 白名单任务，结束只提示核对，不新增危险写、后台常驻、Statistic、清理或自动重试。本机 57/57 聚焦与 1286/1286 Release xUnit 通过；功能分支 GitHub Windows Build run `31566775587` 已通过 1286/1286 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31566775481` 已通过。真实 NAS、Windows 与无障碍验收继续后置。
 2. **CHAT-01/02/03 前台消息主流程**：Apple Mobile 前台 Socket.IO 与轮询降级、Apple/Windows 单附件均已完成既有云端门禁；Windows 前台回读已通过云端门禁；iPhone/iPad 本地已读与可解释未读已完成源码、56/56 聚焦测试和 DsmMobile 全量 433/433，Apple Build run `31533388602` 与 Repository Check run `31533388647` 已通过。下一步以脱敏专用环境验收真实 Chat Server、未读字段、系统选择器、前后台/托盘切换和 iPad/Windows 无障碍与弱网边界；服务器已读写、Windows Socket.IO、后台即时消息和通知继续关闭。
 3. **NAS-02/NAS-04 有界只读详情**：iPhone/iPad 已完成四分区只读详情；Windows 已完成 typed 契约、专用 WinUI 页面、分区独立失败、50 项截断和隐私白名单，并通过 GitHub Windows/Repository 门禁。下一步只保留脱敏专用 NAS 的真实字段/权限验收，以及 Narrator、键盘、高对比和窗口缩放验收；不接断开连接、套件生命周期、任务执行或设置写。

@@ -85,6 +85,21 @@ final class MobileFileBrowserPresentationTests: XCTestCase {
         }
     }
 
+    func test共享根容量使用系统进度与动态布局并合并无障碍摘要() throws {
+        let source = try sourceFile("Sources/Features/Files/MobileFileBrowser.swift")
+        XCTAssertTrue(source.contains("state.currentPath.isEmpty"))
+        XCTAssertTrue(source.contains("storageSummaryView"))
+        XCTAssertTrue(source.contains("ProgressView(value: summary.usedFraction)"))
+        XCTAssertTrue(source.contains("ViewThatFits(in: .horizontal)"))
+        XCTAssertTrue(source.contains(".accessibilityElement(children: .combine)"))
+        XCTAssertTrue(source.contains("mobile.files.storage.accessibility"))
+        XCTAssertTrue(source.contains("mobile.files.storage.refresh-failed"))
+        XCTAssertTrue(source.contains(".fixedSize(horizontal: false, vertical: true)"))
+        XCTAssertFalse(source.contains(".minimumScaleFactor(0.75)"))
+        XCTAssertFalse(source.contains("realPath"))
+        XCTAssertFalse(source.contains("volumeIdentity"))
+    }
+
     private func sourceFile(_ relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let appRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
