@@ -18,6 +18,7 @@ public sealed partial class FilesPage
         Move,
         Recycle,
         Restore,
+        Compress,
     }
 
     private readonly HashSet<string> _batchSelection = new(StringComparer.Ordinal);
@@ -36,6 +37,8 @@ public sealed partial class FilesPage
             FileBatchSelectionOperation.Restore;
     private bool _isSelectingRestore =>
         _batchSelectionOperation == FileBatchSelectionOperation.Restore;
+    private bool _isSelectingArchiveCompression =>
+        _batchSelectionOperation == FileBatchSelectionOperation.Compress;
     private bool _isSelectingItems => _batchSelectionOperation is not null;
 
     private async void DownloadMultiple_Click(object sender, RoutedEventArgs e)
@@ -77,6 +80,7 @@ public sealed partial class FilesPage
     {
         CloseBatchCopyMoveDialog();
         CloseBatchRecycleDialog();
+        CloseArchiveCompressionDialog();
         if (!_isSelectingItems)
         {
             return;
@@ -92,6 +96,7 @@ public sealed partial class FilesPage
         FileDownloadBatchStatus.IsOpen = false;
         FileCopyMoveBatchStatus.IsOpen = false;
         FileRecycleBatchStatus.IsOpen = false;
+        FileArchiveCompressionStatus.IsOpen = false;
         UpdateState();
     }
 
@@ -114,6 +119,8 @@ public sealed partial class FilesPage
         {
             var rejectsItem = _isSelectingDownloads
                 ? added.IsDirectory
+                : _isSelectingArchiveCompression
+                    ? !CanSelectForArchiveCompression(added.Item)
                 : _isSelectingRecycle
                     ? _isSelectingRestore
                         ? !CanSelectForBatchRestore(added.Item)
@@ -139,6 +146,10 @@ public sealed partial class FilesPage
             ShowBatchSelectionMessage(
                 _isSelectingDownloads
                     ? "FileDownloadBatchSelectionLimitMessage"
+                    : _isSelectingArchiveCompression
+                        ? rejectedForLimit
+                            ? "FileArchiveCompressionSelectionLimit"
+                            : "FileArchiveCompressionSelectionInvalid"
                     : _isSelectingRecycle
                         ? rejectedForLimit
                             ? _isSelectingRestore
@@ -290,6 +301,10 @@ public sealed partial class FilesPage
             : Visibility.Collapsed;
         RestoreSelectedItemsButton.IsEnabled = _batchSelection.Count is > 0 and <=
             FileRecycleBatchViewModel.MaximumItemCount;
+        CreateArchiveSelectedButton.Visibility = _isSelectingArchiveCompression
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CreateArchiveSelectedButton.IsEnabled = _batchSelection.Count is > 0 and <= 20;
         CancelDownloadSelectionButton.Visibility = _isSelectingItems
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -305,6 +320,7 @@ public sealed partial class FilesPage
             MoveMultipleToRecycleButton.IsEnabled = false;
             RestoreMultipleItemsButton.IsEnabled = false;
             RestoreFromRecycleButton.IsEnabled = false;
+            CreateArchiveButton.IsEnabled = false;
             UploadButton.IsEnabled = false;
             UploadFolderButton.IsEnabled = false;
             DownloadButton.IsEnabled = false;
@@ -339,6 +355,8 @@ public sealed partial class FilesPage
         ShowBatchSelectionMessage(
             _isSelectingDownloads
                 ? "FileDownloadBatchSelectionCountMessage"
+                : _isSelectingArchiveCompression
+                    ? "FileArchiveCompressionSelectionCount"
                 : _isSelectingRecycle
                     ? _isSelectingRestore
                         ? "FileRestoreBatchSelectionCount"
@@ -359,6 +377,15 @@ public sealed partial class FilesPage
                 ? LocalizationService.Current.Get(resourceKey)
                 : LocalizationService.Current.Format(resourceKey, argument);
             FileRecycleBatchStatus.IsOpen = true;
+            return;
+        }
+        if (_isSelectingArchiveCompression)
+        {
+            FileArchiveCompressionStatus.Severity = severity;
+            FileArchiveCompressionStatus.Message = argument is null
+                ? LocalizationService.Current.Get(resourceKey)
+                : LocalizationService.Current.Format(resourceKey, argument);
+            FileArchiveCompressionStatus.IsOpen = true;
             return;
         }
         if (_isSelectingCopyMove)

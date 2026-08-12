@@ -717,6 +717,224 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
             FileRecycleTaskTransportStatus.Running);
     }
 
+    public async Task<FileArchiveCompressionStartTransportResult> StartFileArchiveCompressionAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        IReadOnlyList<string> sourcePaths,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Compress", 3) ||
+            sourcePaths is null || sourcePaths.Count is < 1 or > 20 ||
+            sourcePaths.Any(path => !ValidMutationPath(path, allowSharedRoot: false)) ||
+            !ValidMutationPath(destinationPath, allowSharedRoot: false))
+        {
+            return new(FileMutationTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported,
+                DiagnosticTag: "file.archive-compression.unsupported");
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new(FileMutationTransportStatus.CancelledBeforeSubmission,
+                DiagnosticTag: "file.archive-compression.cancelled-before-submit");
+        }
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "3",
+            ["method"] = "start",
+            ["path"] = JsonSerializer.Serialize(sourcePaths),
+            ["dest_file_path"] = destinationPath,
+            ["format"] = "zip",
+            ["level"] = "moderate",
+            ["mode"] = "add",
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.archive-compression.cancelled-after-submit");
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.archive-compression.network-unverified");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: response.StatusCode switch
+                    {
+                        HttpStatusCode.Unauthorized => MutationErrorCategory.Authentication,
+                        HttpStatusCode.Forbidden => MutationErrorCategory.Permission,
+                        _ => MutationErrorCategory.Server,
+                    },
+                    DiagnosticTag: "file.archive-compression.http-unverified");
+            }
+            try
+            {
+                var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!TryGetNativeBoolean(envelope, "success", out var success))
+                    throw new JsonException();
+                if (!success)
+                {
+                    var code = MutationErrorCode(envelope);
+                    return new(FileMutationTransportStatus.ConfirmedFailure,
+                        ErrorCategory: MutationCategory(code),
+                        DiagnosticTag: "file.archive-compression.dsm-failure");
+                }
+                if (envelope["data"] is not JsonObject data ||
+                    data["taskid"] is not JsonValue taskNode ||
+                    !taskNode.TryGetValue<string>(out var taskId) ||
+                    !ValidArchiveCompressionTaskId(taskId))
+                    throw new JsonException();
+                return new(FileMutationTransportStatus.ResponseReceived, taskId);
+            }
+            catch (OperationCanceledException)
+            {
+                return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.archive-compression.cancelled-after-submit");
+            }
+            catch (Exception error) when (error is JsonException or IOException or HttpRequestException)
+            {
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "file.archive-compression.response-unverified");
+            }
+        }
+    }
+
+    public async Task<FileArchiveCompressionTaskTransportResult>
+        ReadFileArchiveCompressionStatusAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            string taskId,
+            CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Compress", 3) || !ValidArchiveCompressionTaskId(taskId))
+        {
+            return new(FileArchiveCompressionTaskTransportStatus.Unsupported,
+                MutationErrorCategory.Unsupported,
+                "file.archive-compression.status-unsupported");
+        }
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "3",
+            ["method"] = "status",
+            ["taskid"] = taskId,
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        using var response = await _http.SendAsync(request,
+            HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new DsmException(UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                UserText.Key("WinShared79c4d60046afa3ff"), (int)response.StatusCode,
+                response.StatusCode == HttpStatusCode.Unauthorized);
+        var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+            .ConfigureAwait(false);
+        if (!TryGetNativeBoolean(envelope, "success", out var success))
+            throw InvalidReadEnvelope();
+        if (!success)
+        {
+            var code = MutationErrorCode(envelope);
+            if (code is 106 or 107 or 119 or 401)
+                throw new DsmException(UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                    UserText.Key("WinShared79c4d60046afa3ff"), code, true);
+            return new(FileArchiveCompressionTaskTransportStatus.ConfirmedFailure,
+                MutationCategory(code), "file.archive-compression.status-failure");
+        }
+        if (envelope["data"] is not JsonObject data ||
+            !TryGetNativeBoolean(data, "finished", out var finished))
+            throw InvalidReadEnvelope();
+        return new(finished ? FileArchiveCompressionTaskTransportStatus.Finished :
+            FileArchiveCompressionTaskTransportStatus.Running);
+    }
+
+    public async Task<FileArchiveCompressionStopTransportResult> StopFileArchiveCompressionAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Compress", 3) || !ValidArchiveCompressionTaskId(taskId))
+        {
+            return new(FileMutationTransportStatus.Unsupported,
+                MutationErrorCategory.Unsupported,
+                "file.archive-compression.stop-unsupported");
+        }
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "3",
+            ["method"] = "stop",
+            ["taskid"] = taskId,
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        try
+        {
+            using var response = await _http.SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    response.StatusCode == HttpStatusCode.Unauthorized
+                        ? MutationErrorCategory.Authentication
+                        : MutationErrorCategory.Network,
+                    "file.archive-compression.stop-unverified");
+            var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+                .ConfigureAwait(false);
+            if (!TryGetNativeBoolean(envelope, "success", out var success))
+                throw new JsonException();
+            if (success)
+                return new(FileMutationTransportStatus.ResponseReceived);
+            var code = MutationErrorCode(envelope);
+            return new(FileMutationTransportStatus.ConfirmedFailure,
+                MutationCategory(code), "file.archive-compression.stop-failure");
+        }
+        catch (OperationCanceledException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network, "file.archive-compression.stop-unverified");
+        }
+        catch (Exception error) when (error is JsonException or IOException or HttpRequestException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network, "file.archive-compression.stop-unverified");
+        }
+    }
+
     private static async Task<JsonObject> ReadMutationEnvelopeAsync(
         HttpResponseMessage response, CancellationToken cancellationToken)
     {
@@ -742,6 +960,13 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
     private static bool ValidCopyMoveTaskId(string? taskId) =>
         !string.IsNullOrWhiteSpace(taskId) && taskId == taskId.Trim() &&
         taskId.Length <= 256 && taskId.IndexOfAny(['\r', '\n', '\0']) < 0;
+
+    private static bool ValidArchiveCompressionTaskId(string? taskId) =>
+        !string.IsNullOrWhiteSpace(taskId) && taskId == taskId.Trim() &&
+        taskId.Length <= 256 && taskId.All(character =>
+            character is >= 'a' and <= 'z' or
+                >= 'A' and <= 'Z' or
+                >= '0' and <= '9' or '_' or '-' or '.');
 
     private static void ValidateOptionalNonNegativeInt64(JsonObject data, string key)
     {

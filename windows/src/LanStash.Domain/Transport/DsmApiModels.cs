@@ -244,6 +244,40 @@ public interface IDsmApiClient
             MutationErrorCategory.Unsupported,
             "file.recycle.status-unsupported"));
 
+    Task<FileArchiveCompressionStartTransportResult> StartFileArchiveCompressionAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        IReadOnlyList<string> sourcePaths,
+        string destinationPath,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileArchiveCompressionStartTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "file.archive-compression.unsupported"));
+
+    Task<FileArchiveCompressionTaskTransportResult> ReadFileArchiveCompressionStatusAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileArchiveCompressionTaskTransportResult(
+            FileArchiveCompressionTaskTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.archive-compression.status-unsupported"));
+
+    Task<FileArchiveCompressionStopTransportResult> StopFileArchiveCompressionAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileArchiveCompressionStopTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.archive-compression.stop-unsupported"));
+
     Task<DsmBinaryResponse> ReadBinaryAsync(
         NasProfile profile,
         DsmSession session,

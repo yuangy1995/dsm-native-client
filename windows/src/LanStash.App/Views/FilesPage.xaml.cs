@@ -23,6 +23,7 @@ public sealed partial class FilesPage : Page, IDisposable
     private readonly FilePreviewViewModel _previewViewModel;
     private readonly IFilePreviewRepository _previewRepository;
     private readonly IFileShareLinkRepository? _shareRepository;
+    private readonly IFileArchiveCompressionRepository? _archiveCompressionRepository;
     private readonly Guid _profileId;
     private readonly WindowsTransferPickerService _transfers;
     private readonly WindowsClipboard _clipboard = new();
@@ -52,7 +53,8 @@ public sealed partial class FilesPage : Page, IDisposable
         FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
         IFileRecycleRepository? recycleRepository = null,
-        FileRecycleReviewBlocker? recycleReviewBlocker = null)
+        FileRecycleReviewBlocker? recycleReviewBlocker = null,
+        IFileArchiveCompressionRepository? archiveCompressionRepository = null)
         : this(
             new FileBrowserViewModel(new RepositoryFileBrowserDataSource(repository)),
             previewRepository,
@@ -68,7 +70,8 @@ public sealed partial class FilesPage : Page, IDisposable
             copyMoveFolderSource ?? CreateCopyMoveFolderSource(
                 profileId, repository, locationsRepository ?? repository as IFileLocationsRepository),
             recycleRepository ?? repository as IFileRecycleRepository,
-            recycleReviewBlocker)
+            recycleReviewBlocker,
+            archiveCompressionRepository ?? repository as IFileArchiveCompressionRepository)
     {
     }
 
@@ -86,7 +89,8 @@ public sealed partial class FilesPage : Page, IDisposable
         FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
         IFileRecycleRepository? recycleRepository = null,
-        FileRecycleReviewBlocker? recycleReviewBlocker = null)
+        FileRecycleReviewBlocker? recycleReviewBlocker = null,
+        IFileArchiveCompressionRepository? archiveCompressionRepository = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -112,6 +116,9 @@ public sealed partial class FilesPage : Page, IDisposable
             ? recycleRepository
             : null;
         _recycleReviewBlocker = recycleReviewBlocker ?? FileRecycleReviewBlocker.Current;
+        _archiveCompressionRepository = archiveCompressionRepository?.ProfileId == _profileId
+            ? archiveCompressionRepository
+            : null;
         _transfers = transfers;
         _systemShare = new WindowsSystemShare(
             () => (Application.Current as App)?.MainWindow);
@@ -1218,6 +1225,7 @@ public sealed partial class FilesPage : Page, IDisposable
         UpdateBatchDownloadControls();
         UpdateBatchCopyMoveControls();
         UpdateBatchRecycleControls();
+        UpdateArchiveCompressionControls();
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
 
@@ -1376,6 +1384,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseCopyMoveDialog();
         CloseBatchCopyMoveDialog();
         CloseBatchRecycleDialog();
+        CloseArchiveCompressionDialog();
         CloseRecycleDialog();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
@@ -1399,6 +1408,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseCopyMoveDialog();
         CloseBatchCopyMoveDialog();
         CloseBatchRecycleDialog();
+        CloseArchiveCompressionDialog();
         CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;

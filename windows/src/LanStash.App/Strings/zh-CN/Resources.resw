@@ -1483,4 +1483,30 @@
   <data name="PhotoRecycleLocationsFailureMessage" xml:space="preserve"><value>无法检查回收站。请重试后再移动照片或视频。</value></data>
   <data name="PhotoRecycleLocationsRetry" xml:space="preserve"><value>重试</value></data>
   <data name="PhotoRecycleLocationsRetryAutomationName" xml:space="preserve"><value>重新检查回收站</value></data>
+  <data name="FileArchiveCompressionCreate.Label" xml:space="preserve"><value>创建 ZIP</value></data>
+  <data name="FileArchiveCompressionCreate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择文件和文件夹创建 ZIP 压缩包</value></data>
+  <data name="FileArchiveCompressionSelected.Label" xml:space="preserve"><value>创建 ZIP</value></data>
+  <data name="FileArchiveCompressionSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>用所选项目创建 ZIP 压缩包</value></data>
+  <data name="FileArchiveCompressionStatus.Title" xml:space="preserve"><value>ZIP 压缩包</value></data>
+  <data name="FileArchiveCompressionSelectionCount" xml:space="preserve"><value>已选择 {0} 项。可从当前文件夹选择最多 20 项。</value></data>
+  <data name="FileArchiveCompressionSelectionLimit" xml:space="preserve"><value>一个 ZIP 压缩包最多可加入 20 项。</value></data>
+  <data name="FileArchiveCompressionSelectionInvalid" xml:space="preserve"><value>请选择当前 NAS 文件夹中的普通文件或文件夹。</value></data>
+  <data name="FileArchiveCompressionTitle" xml:space="preserve"><value>创建 ZIP 压缩包</value></data>
+  <data name="FileArchiveCompressionNameLabel" xml:space="preserve"><value>压缩包名称</value></data>
+  <data name="FileArchiveCompressionNameAutomationName" xml:space="preserve"><value>ZIP 压缩包名称</value></data>
+  <data name="FileArchiveCompressionDefaultName" xml:space="preserve"><value>压缩包</value></data>
+  <data name="FileArchiveCompressionConfirmMessage" xml:space="preserve"><value>在当前文件夹中把所选 {0} 项创建为一个 ZIP 压缩包。不会替换已有文件。</value></data>
+  <data name="FileArchiveCompressionFormatNote" xml:space="preserve"><value>使用 ZIP 格式、标准压缩且不设置密码。</value></data>
+  <data name="FileArchiveCompressionCreateAction" xml:space="preserve"><value>创建</value></data>
+  <data name="FileArchiveCompressionNameInvalid" xml:space="preserve"><value>请输入不含斜杠或控制字符的有效压缩包名称。</value></data>
+  <data name="FileArchiveCompressionSourceChanged" xml:space="preserve"><value>所选项目已发生变化。请关闭此窗口、刷新文件夹后重新选择。</value></data>
+  <data name="FileArchiveCompressionWorking" xml:space="preserve"><value>正在 NAS 上创建 ZIP 压缩包。你可以取消本次请求。</value></data>
+  <data name="FileArchiveCompressionProgressAutomationName" xml:space="preserve"><value>正在创建 ZIP 压缩包</value></data>
+  <data name="FileArchiveCompressionSuccess" xml:space="preserve"><value>ZIP 压缩包已创建。</value></data>
+  <data name="FileArchiveCompressionCancelled" xml:space="preserve"><value>未创建压缩包。</value></data>
+  <data name="FileArchiveCompressionPermissionDenied" xml:space="preserve"><value>你没有在此文件夹中创建压缩包的权限。</value></data>
+  <data name="FileArchiveCompressionUnsupported" xml:space="preserve"><value>此 NAS 无法从当前文件夹创建 ZIP 压缩包。</value></data>
+  <data name="FileArchiveCompressionNeedsReview" xml:space="preserve"><value>无法确认最终结果。请刷新当前文件夹并检查 ZIP 压缩包，确认后再重试。</value></data>
+  <data name="FileArchiveCompressionFailed" xml:space="preserve"><value>无法创建 ZIP 压缩包。请刷新文件夹后重试。</value></data>
+  <data name="FileArchiveCompressionAuthenticationError" xml:space="preserve"><value>登录已过期。请重新登录，并在重试前检查当前文件夹。</value></data>
 </root>

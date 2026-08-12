@@ -196,6 +196,13 @@
                 MinHeight="48"
                 Visibility="Collapsed" />
             <AppBarButton
+                x:Uid="FileArchiveCompressionSelected"
+                x:Name="CreateArchiveSelectedButton"
+                Click="CreateArchiveSelected_Click"
+                Icon="Accept"
+                MinHeight="48"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileBrowserCancelDownloadSelection"
                 x:Name="CancelDownloadSelectionButton"
                 Click="CancelDownloadSelection_Click"
@@ -246,6 +253,15 @@
                     Click="RestoreMultipleItems_Click"
                     Icon="Undo"
                     MinHeight="48" />
+                <AppBarButton
+                    x:Uid="FileArchiveCompressionCreate"
+                    x:Name="CreateArchiveButton"
+                    Click="CreateArchive_Click"
+                    MinHeight="48">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE8B7;" />
+                    </AppBarButton.Icon>
+                </AppBarButton>
                 <AppBarButton
                     x:Uid="FileShareLinkManage"
                     x:Name="ManageShareLinksButton"
@@ -564,6 +580,13 @@
                 <InfoBar
                     x:Uid="FileRecycleBatchStatus"
                     x:Name="FileRecycleBatchStatus"
+                    IsClosable="True"
+                    IsOpen="False"
+                    AutomationProperties.LiveSetting="Polite"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="FileArchiveCompressionStatus"
+                    x:Name="FileArchiveCompressionStatus"
                     IsClosable="True"
                     IsOpen="False"
                     AutomationProperties.LiveSetting="Polite"
