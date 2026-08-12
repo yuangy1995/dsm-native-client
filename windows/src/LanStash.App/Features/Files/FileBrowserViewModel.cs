@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using LanStash.App.Localization;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
 
@@ -29,6 +31,9 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     private FileBrowserContentState _contentState = FileBrowserContentState.Loading;
     private FileBrowserLayout _layout = FileBrowserLayout.List;
     private FileBrowserEntry? _selectedItem;
+    private StorageSpaceSummary? _storageSpace;
+    private bool _isLoadingStorageSpace;
+    private bool _hasLoadedStorageSpace;
     private bool _disposed;
 
     public event Action<string>? LocationCommitted;
@@ -116,6 +121,53 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _isLoading, value);
     }
 
+    public StorageSpaceSummary? StorageSpace
+    {
+        get => _storageSpace;
+        private set
+        {
+            if (SetProperty(ref _storageSpace, value))
+            {
+                RaiseStorageSpaceProperties();
+            }
+        }
+    }
+
+    public bool IsLoadingStorageSpace
+    {
+        get => _isLoadingStorageSpace;
+        private set
+        {
+            if (SetProperty(ref _isLoadingStorageSpace, value))
+            {
+                RaiseStorageSpaceProperties();
+            }
+        }
+    }
+
+    public bool HasStorageSpace => StorageSpace is not null;
+    public bool IsStorageSpaceUnavailable =>
+        _hasLoadedStorageSpace && !IsLoadingStorageSpace && StorageSpace is null;
+    public double StorageUsedPercent => (StorageSpace?.UsedFraction ?? 0) * 100;
+    public string StorageUsageText => StorageSpace is { } summary
+        ? LocalizationService.Current.Format(
+            "FileBrowserStorageUsage",
+            FormatBytes(summary.UsedBytes),
+            FormatBytes(summary.TotalBytes))
+        : string.Empty;
+    public string StorageRemainingText => StorageSpace is { } summary
+        ? LocalizationService.Current.Format(
+            "FileBrowserStorageRemaining",
+            FormatBytes(summary.RemainingBytes))
+        : string.Empty;
+    public string StorageScopeText => StorageSpace is { } summary
+        ? LocalizationService.Current.Format(
+            summary.VolumeCount == 1
+                ? "FileBrowserStorageScopeOne"
+                : "FileBrowserStorageScopeMany",
+            summary.VolumeCount)
+        : string.Empty;
+
     public bool IsLoadingMore
     {
         get => _isLoadingMore;
@@ -165,6 +217,11 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         _requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var generation = Interlocked.Increment(ref _generation);
         var token = _requestCancellation.Token;
+        var loadsStorageSpace = string.IsNullOrWhiteSpace(normalized);
+        if (loadsStorageSpace)
+        {
+            IsLoadingStorageSpace = true;
+        }
         try
         {
             var page = await _dataSource.LoadPageAsync(
@@ -193,6 +250,12 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
             RebuildBreadcrumbs();
             SaveCurrentPage();
             ApplyQuickFilter();
+            if (loadsStorageSpace)
+            {
+                StorageSpace = page.StorageSpace;
+                _hasLoadedStorageSpace = true;
+                RaisePropertyChanged(nameof(IsStorageSpaceUnavailable));
+            }
             RaisePropertyChanged(nameof(CanGoBack));
             RaisePropertyChanged(nameof(CanGoUp));
             RaisePropertyChanged(nameof(CanChooseNonNameSort));
@@ -210,7 +273,19 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         }
         catch (Exception error) when (error is DsmException or IOException or InvalidOperationException)
         {
+            if (loadsStorageSpace && generation == Volatile.Read(ref _generation))
+            {
+                _hasLoadedStorageSpace = true;
+                RaisePropertyChanged(nameof(IsStorageSpaceUnavailable));
+            }
             return false;
+        }
+        finally
+        {
+            if (loadsStorageSpace && generation == Volatile.Read(ref _generation))
+            {
+                IsLoadingStorageSpace = false;
+            }
         }
     }
 
@@ -430,6 +505,11 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     {
         var key = CurrentRequestKey;
         var request = BeginRequest();
+        var loadsStorageSpace = string.IsNullOrWhiteSpace(key.Path);
+        if (loadsStorageSpace)
+        {
+            IsLoadingStorageSpace = true;
+        }
         IsLoading = true;
         IsLoadingMore = false;
         HasLoadMoreError = false;
@@ -452,6 +532,12 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
             _nextOffset = 0;
             _total = 0;
             AppendPage(page, requestedOffset: 0);
+            if (loadsStorageSpace)
+            {
+                StorageSpace = page.StorageSpace;
+                _hasLoadedStorageSpace = true;
+                RaisePropertyChanged(nameof(IsStorageSpaceUnavailable));
+            }
             SaveCurrentPage();
             ApplyQuickFilter(selectedPath);
         }
@@ -467,6 +553,11 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
                 _nextOffset = 0;
                 _total = 0;
                 ContentState = FileBrowserContentState.Error;
+                if (loadsStorageSpace)
+                {
+                    _hasLoadedStorageSpace = true;
+                    RaisePropertyChanged(nameof(IsStorageSpaceUnavailable));
+                }
             }
         }
         finally
@@ -474,6 +565,10 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
             if (IsCurrent(request.Generation, key))
             {
                 IsLoading = false;
+                if (loadsStorageSpace)
+                {
+                    IsLoadingStorageSpace = false;
+                }
                 RaisePropertyChanged(nameof(CanLoadMore));
             }
         }
@@ -594,6 +689,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         _requestCancellation = null;
         IsLoading = false;
         IsLoadingMore = false;
+        IsLoadingStorageSpace = false;
     }
 
     private bool IsCurrent(long generation, FileBrowserRequestKey key) =>
@@ -659,6 +755,39 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+
+    private void RaiseStorageSpaceProperties()
+    {
+        RaisePropertyChanged(nameof(HasStorageSpace));
+        RaisePropertyChanged(nameof(IsStorageSpaceUnavailable));
+        RaisePropertyChanged(nameof(StorageUsedPercent));
+        RaisePropertyChanged(nameof(StorageUsageText));
+        RaisePropertyChanged(nameof(StorageRemainingText));
+        RaisePropertyChanged(nameof(StorageScopeText));
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] unitKeys =
+        [
+            "NasDetailsByteUnitB",
+            "NasDetailsByteUnitKB",
+            "NasDetailsByteUnitMB",
+            "NasDetailsByteUnitGB",
+            "NasDetailsByteUnitTB",
+        ];
+        var scaled = (double)Math.Max(0, bytes);
+        var unit = 0;
+        while (scaled >= 1024 && unit < unitKeys.Length - 1)
+        {
+            scaled /= 1024;
+            unit++;
+        }
+        var format = unit == 0 ? "N0" : scaled >= 10 ? "N1" : "N2";
+        return LocalizationService.Current.Format(
+            unitKeys[unit],
+            scaled.ToString(format, CultureInfo.CurrentCulture));
+    }
 
     public void Dispose()
     {

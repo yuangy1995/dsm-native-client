@@ -267,6 +267,33 @@ public sealed class FilesPageSourceContractTests
     }
 
     [Fact]
+    public void StorageCapacityUsesNativeAccessibleResponsiveStates()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
+        var codeBehind = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
+        var english = ReadRepositoryFile(
+            "windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = ReadRepositoryFile(
+            "windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+
+        Assert.Contains("x:Name=\"StorageLoadingState\"", xaml);
+        Assert.Contains("x:Name=\"StorageAvailableState\"", xaml);
+        Assert.Contains("x:Name=\"StorageUnavailableState\"", xaml);
+        Assert.Contains("x:Uid=\"FileBrowserStorageProgress\"", xaml);
+        Assert.Contains("TextWrapping=\"Wrap\"", xaml);
+        Assert.Contains("ThemeResource TextFillColorSecondaryBrush", xaml);
+        Assert.DoesNotContain("Foreground=\"#", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("_viewModel.IsLoadingStorageSpace", codeBehind);
+        Assert.Contains("_viewModel.HasStorageSpace", codeBehind);
+        Assert.Contains("_viewModel.IsStorageSpaceUnavailable", codeBehind);
+
+        const string automationKey =
+            "FileBrowserStorageProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name";
+        Assert.Contains($"name=\"{automationKey}\"", english);
+        Assert.Contains($"name=\"{automationKey}\"", chinese);
+    }
+
+    [Fact]
     public void SortAndTypeUseNativeCheckedMenusAndSharedRootAvailability()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");

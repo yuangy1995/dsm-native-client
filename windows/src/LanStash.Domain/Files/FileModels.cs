@@ -13,7 +13,30 @@ public sealed record FileItem(
 public sealed record FilePage(
     IReadOnlyList<FileItem> Items,
     int Total,
-    int Offset);
+    int Offset,
+    StorageSpaceSummary? StorageSpace = null);
+
+/// <summary>
+/// 当前账号通过 File Station 可见的存储空间汇总，不代表管理员看到的物理硬盘容量。
+/// </summary>
+public sealed record StorageSpaceSummary
+{
+    public StorageSpaceSummary(long totalBytes, long remainingBytes, int volumeCount)
+    {
+        TotalBytes = Math.Max(totalBytes, 0);
+        RemainingBytes = Math.Clamp(remainingBytes, 0, TotalBytes);
+        VolumeCount = Math.Max(volumeCount, 0);
+    }
+
+    public long TotalBytes { get; }
+    public long RemainingBytes { get; }
+    public int VolumeCount { get; }
+    public long UsedBytes => Math.Max(TotalBytes - RemainingBytes, 0);
+
+    public double UsedFraction => TotalBytes > 0
+        ? Math.Clamp((double)UsedBytes / TotalBytes, 0, 1)
+        : 0;
+}
 
 public enum FileListSortField
 {

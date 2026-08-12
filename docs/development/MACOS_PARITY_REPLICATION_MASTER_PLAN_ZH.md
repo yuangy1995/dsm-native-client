@@ -168,7 +168,7 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 | FND-03 · A | 自签名证书指纹复核、按 NAS 绑定、证书变化阻断 | Windows 原生证书对话与 Credential Locker 分离 | **核心**：触控友好安全核对；技术指纹置于次级详情 | `LoginView.swift`、安全基线 |
 | FND-04 · A/C | 模块能力发现、不可用提示、内部 API 按环境关闭 | 页面说明原因和可恢复动作，不静默隐藏 | **核心**：只对当前移动范围保持可发现并解释不可用原因 | `ApiCapability.swift`、私有 API 兼容矩阵 |
 | NAV-01 · A | 侧栏分组、详情区、模块返回后保持目录/筛选/历史 | `NavigationView` + 模块专用页 + BackStack；窗口缩放不丢状态 | **核心**：iPhone 五入口 Tab/Stack；iPad 自适应 SplitView；单窗口状态恢复 | `WorkspaceSection`、`WorkspaceNavigationTests.swift` |
-| FILE-01 · A | 共享目录、文件夹分页、列表/图标、排序/分组、面包屑、搜索 | 列表/网格切换、BreadcrumbBar、键盘搜索、多选 | **核心**：层级浏览、分页、排序/筛选、搜索与状态恢复 | `WorkspaceView.swift`、`DsmFileRepository.swift` |
+| FILE-01 · A | 共享目录、文件夹分页、列表/图标、排序/分组、面包屑、搜索、当前账号可见容量 | 列表/网格切换、BreadcrumbBar、键盘搜索、多选；Windows Files 已从现有公开共享根响应提取总量/已用/剩余/卷数，失败不阻断浏览且不新增请求 | **核心**：层级浏览、分页、排序/筛选、搜索与状态恢复；移动端容量 UI 仍待实现 | `WorkspaceView.swift`、`DsmFileRepository.swift` |
 | FILE-02 · A/C | 收藏、最近位置、回收站、远程位置、分享链接入口；公开 VirtualFolder 只读浏览与内部挂载管理分开 | 左侧位置集合与上下文菜单；内部创建/修改/断开在未知环境关闭 | **受限**：收藏/最近/回收站和分享入口；远程挂载管理当前不做 | `WorkspaceModel.swift`、`file-station-remote-mount` |
 | FILE-03 · A | 新建文件夹/空文件、重命名、详情、文件夹统计和 MD5 | 命令栏、F2、属性面板、触控菜单 | **受限**：新建文件夹、重命名和详情；空文件、递归统计与 MD5 当前不做 | `WorkspaceModel.swift`、`FilePropertiesView` |
 | FILE-04 · A/B | 系统选择器上传、覆盖确认、文件/文件夹/批量下载、取消，以及有恢复元数据时的继续/重试；上传重启发送，已知大小普通下载才用严格 Range 分片继续 | FileOpenPicker/FolderPicker/FileSavePicker；Files 已接 1～20 个文件及一个最多 20 文件、20 目录、8 层的小文件夹有界前台上传，并接 1～20 个普通文件的显式多选、目标文件夹无覆盖预检与严格串行事务下载；单文件夹可用公开 Download v2 生成 ZIP 流，经事务暂存和 ZIP 中央目录结构校验后保存；后台传输和系统通知仍后置 | **核心**：用户选择的单文件导入、导出、分享、取消；文件夹/大批量与常驻后台当前不做 | `WorkspaceModel.swift`、`DsmFileRepository.swift` |

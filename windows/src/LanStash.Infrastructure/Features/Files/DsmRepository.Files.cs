@@ -63,7 +63,11 @@ public sealed partial class DsmRepository
             method,
             parameters,
             cancellationToken).ConfigureAwait(false);
-        return ParseFilePage(data, method == "list" ? "files" : "shares");
+        return ParseFilePage(
+            data,
+            method == "list" ? "files" : "shares",
+            offset,
+            Math.Min(limit, 500));
     }
 
     private static string SortFieldValue(FileListSortField field) => field switch

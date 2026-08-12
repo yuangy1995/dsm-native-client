@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using LanStash.App.Features.Files;
 using LanStash.Domain;
 using LanStash.Infrastructure;
 
@@ -70,6 +71,198 @@ public sealed class FileListOptionsContractTests
         Assert.Equal(expectedDirection, request.Parameters["sort_direction"]);
         Assert.DoesNotContain("folder_path", request.Parameters.Keys);
         Assert.DoesNotContain("filetype", request.Parameters.Keys);
+    }
+
+    [Fact]
+    public async Task ProductionBrowserReadsCompleteSharedRootWithinExistingRequest()
+    {
+        var api = new FileListApiClient(EmptyPage("shares"));
+        var source = new RepositoryFileBrowserDataSource(CreateRepository(api));
+
+        await source.LoadPageAsync(
+            string.Empty,
+            0,
+            100,
+            FileListOptions.Default,
+            CancellationToken.None);
+
+        var request = Assert.Single(api.Requests);
+        Assert.Equal("list_share", request.Method);
+        Assert.Equal("500", request.Parameters["limit"]);
+    }
+
+    [Fact]
+    public async Task SharedRootAggregatesCapacityByVisibleVolumeWithoutExposingIdentity()
+    {
+        var response = new JsonObject
+        {
+            ["offset"] = 0,
+            ["total"] = 3,
+            ["shares"] = new JsonArray
+            {
+                Share("home", "/home", "/volume1/homes/tester", "1000", "250"),
+                Share("projects", "/projects", "/volume1/projects", 1000, 250,
+                    totalKey: "total_space", remainingKey: "free_space"),
+                Share("archive", "/archive", "/volume2/archive", 2000, 800,
+                    totalKey: "total", remainingKey: "available"),
+            },
+        };
+        var repository = CreateRepository(new FileListApiClient(response));
+
+        var page = await repository.ListFilesAsync(string.Empty, 0, 500);
+        var summary = Assert.IsType<StorageSpaceSummary>(page.StorageSpace);
+
+        Assert.Equal(3000, summary.TotalBytes);
+        Assert.Equal(1050, summary.RemainingBytes);
+        Assert.Equal(1950, summary.UsedBytes);
+        Assert.Equal(2, summary.VolumeCount);
+        Assert.Equal(0.65, summary.UsedFraction, precision: 10);
+        Assert.DoesNotContain("volume1", summary.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("tester", summary.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task IncompleteOrInvalidSharedRootDoesNotPublishPartialCapacity()
+    {
+        var incomplete = new JsonObject
+        {
+            ["offset"] = 0,
+            ["total"] = 2,
+            ["shares"] = new JsonArray
+            {
+                Share("home", "/home", "/volume1/home", 1000, 250),
+            },
+        };
+        var invalid = new JsonObject
+        {
+            ["offset"] = 0,
+            ["total"] = 1,
+            ["shares"] = new JsonArray
+            {
+                Share("remote", "/remote", "/remote/server", 1000, 250),
+            },
+        };
+        var repository = CreateRepository(new FileListApiClient(incomplete, invalid));
+
+        var incompletePage = await repository.ListFilesAsync(string.Empty, 0, 1);
+        var invalidPage = await repository.ListFilesAsync(string.Empty, 0, 1);
+
+        Assert.Null(incompletePage.StorageSpace);
+        Assert.Null(invalidPage.StorageSpace);
+    }
+
+    [Fact]
+    public async Task MalformedLocalVolumeOrConflictingDuplicateDoesNotPublishPartialCapacity()
+    {
+        var malformed = new JsonObject
+        {
+            ["offset"] = 0,
+            ["total"] = 2,
+            ["shares"] = new JsonArray
+            {
+                Share("home", "/home", "/volume1/home", 1000, 250),
+                Share("archive", "/archive", "/volume2/archive", "invalid", 800),
+            },
+        };
+        var conflicting = new JsonObject
+        {
+            ["offset"] = 0,
+            ["total"] = 2,
+            ["shares"] = new JsonArray
+            {
+                Share("home", "/home", "/volume1/home", 1000, 250),
+                Share("projects", "/projects", "/volume1/projects", 2000, 500),
+            },
+        };
+        var repository = CreateRepository(new FileListApiClient(malformed, conflicting));
+
+        Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 500)).StorageSpace);
+        Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 500)).StorageSpace);
+    }
+
+    [Theory]
+    [InlineData("offset", "invalid")]
+    [InlineData("offset", "-1")]
+    [InlineData("total", "invalid")]
+    [InlineData("total", "-1")]
+    public async Task InvalidPagingMetadataDoesNotPublishCapacity(string key, string value)
+    {
+        var response = new JsonObject
+        {
+            ["offset"] = 0,
+            ["total"] = 1,
+            ["shares"] = new JsonArray
+            {
+                Share("home", "/home", "/volume1/home", 1000, 250),
+            },
+        };
+        response[key] = value;
+        var repository = CreateRepository(new FileListApiClient(response));
+
+        var page = await repository.ListFilesAsync(string.Empty, 0, 500);
+
+        Assert.Null(page.StorageSpace);
+    }
+
+    [Fact]
+    public async Task MissingTotalAtFullPageLimitAndAggregateOverflowDoNotPublishCapacity()
+    {
+        var fullPage = new JsonObject
+        {
+            ["offset"] = 0,
+            ["shares"] = new JsonArray(
+                Enumerable.Range(0, 500)
+                    .Select(index => (JsonNode?)Share(
+                        $"share-{index}",
+                        $"/share-{index}",
+                        $"/volume{index + 1}/share",
+                        1000,
+                        250))
+                    .ToArray()),
+        };
+        var overflow = new JsonObject
+        {
+            ["offset"] = 0,
+            ["total"] = 2,
+            ["shares"] = new JsonArray
+            {
+                Share("first", "/first", "/volume1/first", long.MaxValue, 0),
+                Share("second", "/second", "/volume2/second", 1, 0),
+            },
+        };
+        var repository = CreateRepository(new FileListApiClient(fullPage, overflow));
+
+        Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 500)).StorageSpace);
+        Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 500)).StorageSpace);
+    }
+
+    [Fact]
+    public async Task MissingPagingMetadataCannotHideAFullSmallPageOrNonzeroOffset()
+    {
+        var smallFullPage = new JsonObject
+        {
+            ["shares"] = new JsonArray(
+                Enumerable.Range(0, 100)
+                    .Select(index => (JsonNode?)Share(
+                        $"share-{index}",
+                        $"/share-{index}",
+                        $"/volume{index + 1}/share",
+                        1000,
+                        250))
+                    .ToArray()),
+        };
+        var nonzeroPage = new JsonObject
+        {
+            ["total"] = 1,
+            ["shares"] = new JsonArray
+            {
+                Share("home", "/home", "/volume1/home", 1000, 250),
+            },
+        };
+        var repository = CreateRepository(new FileListApiClient(smallFullPage, nonzeroPage));
+
+        Assert.Null((await repository.ListFilesAsync(string.Empty, 0, 100)).StorageSpace);
+        Assert.Null((await repository.ListFilesAsync(string.Empty, 100, 100)).StorageSpace);
     }
 
     [Fact]
@@ -174,6 +367,29 @@ public sealed class FileListOptionsContractTests
         ["offset"] = 0,
         ["total"] = 0,
         [root] = new JsonArray(),
+    };
+
+    private static JsonObject Share(
+        string name,
+        string path,
+        string realPath,
+        object total,
+        object remaining,
+        string totalKey = "totalspace",
+        string remainingKey = "freespace") => new()
+    {
+        ["name"] = name,
+        ["path"] = path,
+        ["isdir"] = true,
+        ["additional"] = new JsonObject
+        {
+            ["real_path"] = realPath,
+            ["volume_status"] = new JsonObject
+            {
+                [totalKey] = JsonValue.Create(total),
+                [remainingKey] = JsonValue.Create(remaining),
+            },
+        },
     };
 
     private sealed record Request(

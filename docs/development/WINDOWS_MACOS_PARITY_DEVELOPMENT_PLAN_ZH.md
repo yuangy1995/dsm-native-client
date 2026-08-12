@@ -227,6 +227,8 @@ W0 基线、账本与 ZIP/安装器决策门
 
 出口：核心文件工作流达到总控账本范围；用 fake/合成 fixture 自动覆盖 profile 隔离、超时、权限结果、部分成功、提交未知和禁止重放，UI 五态完整。真实多 NAS、弱网、服务端权限和副作用列入第 9 节用户验证，不用 mock 冒充环境结论。
 
+FILE-01 当前账号可见容量增量已进入 Windows Files 主流程：不新增 API 或请求，生产数据源只把首次公开 `SYNO.FileStation.List.list_share` v2 的读取上限从 100 提升到既有 500 项安全边界，并复用请求中已有的 `volume_status`。Repository 仅在共享根响应完整时，以 `real_path` 第一段识别并去重本地卷，随后立即丢弃卷标识和真实路径；领域/UI 只接收总量、剩余、已用比例和卷数。字符串/数字三组公开字段别名均受白名单约束；缺失、畸形、远程路径、不完整分页或整数溢出不会发布部分总量，只使容量区显示暂不可用，文件加载与已成功容量保持独立。WinUI 使用原生 ProgressBar、系统主题资源、可换行文本和双语 Narrator 名称；刷新共享根会同步更新容量，刷新失败保留上次成功容量。管理员物理硬盘容量、存储健康、全 NAS 分析、轮询和写操作不属于本切片。本机聚焦测试 82/82、Release 全量 xUnit 1262/1262、本地化、XML、请求/Fixture 契约与差异检查已通过；首次整套运行的既有 Preview 时序测试失败后原样单项和整套重跑通过，未修改 Preview 源码。功能分支 Windows Build `31564702058` 已通过 1262/1262 与 WinUI x64/ARM64 构建，Repository Check `31564702054` 已通过；真实 NAS/Windows 与辅助功能仍为 `PENDING_USER_VALIDATION`。
+
 第 1 波已完成 W2 中 FILE-03 的单项新建文件夹/重命名：固定公开 CreateFolder/Rename v2 与 CheckPermission v3，完整严格列表预检、源/目标互斥、一次提交、独立回读、session review blocker、remote/recycle/`#recycle` 三层零写门和 WinUI 原生表单。该结果不包含复制移动、删除、恢复或批量写；云端 Windows 构建已随第 1 波通过，真实 NAS 行为和 Windows 设备交互仍为后置验证。
 
 第 2 波已完成 W2 中 FILE-05 的单文件同 NAS 复制/移动：固定 CopyMove v3、普通本地共享根写前门、完整源/目标预检、无覆盖、一次提交、任务轮询、独立回读和跨页面 review blocker；WinUI 使用独立 partial 与 ViewModel 选择目标目录。最终提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 的 Windows Build 已通过 815/815 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；目录、批量、跨 NAS、覆盖、删除和恢复仍关闭，真实 NAS 与 Windows 设备交互继续后置验收。

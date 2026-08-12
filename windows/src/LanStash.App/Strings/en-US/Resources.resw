@@ -369,6 +369,14 @@
   <data name="CloudDriveLaunchAtLoginEnabled" xml:space="preserve"><value>LanStash will start after you sign in to Windows.</value></data>
   <data name="CloudDriveLaunchAtLoginDisabled" xml:space="preserve"><value>Online-only files remain unavailable until you open LanStash.</value></data>
   <data name="FileBrowserTitle.Text" xml:space="preserve"><value>Files</value></data>
+  <data name="FileBrowserStorageTitle.Text" xml:space="preserve"><value>Storage space</value></data>
+  <data name="FileBrowserStorageLoading.Text" xml:space="preserve"><value>Reading storage space…</value></data>
+  <data name="FileBrowserStorageProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Used storage space</value></data>
+  <data name="FileBrowserStorageUnavailable.Text" xml:space="preserve"><value>Storage space is unavailable. File browsing is still available.</value></data>
+  <data name="FileBrowserStorageUsage" xml:space="preserve"><value>{0} used of {1}</value></data>
+  <data name="FileBrowserStorageRemaining" xml:space="preserve"><value>{0} available</value></data>
+  <data name="FileBrowserStorageScopeOne" xml:space="preserve"><value>{0} storage space visible to this account</value></data>
+  <data name="FileBrowserStorageScopeMany" xml:space="preserve"><value>{0} storage spaces visible to this account</value></data>
   <data name="FileBrowserBreadcrumbs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Folder path</value></data>
   <data name="FileBrowserFilter.PlaceholderText" xml:space="preserve"><value>Filter loaded items</value></data>
   <data name="FileBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Filter loaded items</value></data>

@@ -1167,6 +1167,15 @@ public sealed partial class FilesPage : Page, IDisposable
         FilteredEmptyState.Visibility = _viewModel.IsFilteredEmpty ? Visibility.Visible : Visibility.Collapsed;
         ErrorState.Visibility = _viewModel.HasError ? Visibility.Visible : Visibility.Collapsed;
         ContentState.Visibility = _viewModel.HasContent ? Visibility.Visible : Visibility.Collapsed;
+        StorageLoadingState.Visibility = _viewModel.IsLoadingStorageSpace
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StorageAvailableState.Visibility = _viewModel.HasStorageSpace
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        StorageUnavailableState.Visibility = _viewModel.IsStorageSpaceUnavailable
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         FileList.Visibility = _viewModel.HasContent && _viewModel.IsListLayout
             ? Visibility.Visible

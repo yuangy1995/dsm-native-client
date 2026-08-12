@@ -107,6 +107,121 @@ public sealed class FileBrowserViewModelTests
     }
 
     [Fact]
+    public async Task SharedRootPublishesVisibleStorageAndKeepsItAcrossFolders()
+    {
+        var source = new FakeFileBrowserDataSource();
+        source.Enqueue(new FilePage(
+            [Directory("/homes", "homes")],
+            1,
+            0,
+            new StorageSpaceSummary(4000, 1000, 2)));
+        source.Enqueue(Page(0, 1, File("/homes/readme.txt", "readme.txt")));
+        using var model = new FileBrowserViewModel(source);
+
+        await model.InitializeAsync();
+
+        Assert.True(model.HasStorageSpace);
+        Assert.False(model.IsLoadingStorageSpace);
+        Assert.False(model.IsStorageSpaceUnavailable);
+        Assert.Equal(75, model.StorageUsedPercent);
+
+        await model.OpenAsync(model.Items.Single());
+
+        Assert.Equal(4000, model.StorageSpace?.TotalBytes);
+        Assert.Equal(2, model.StorageSpace?.VolumeCount);
+    }
+
+    [Fact]
+    public async Task MissingStorageIsIndependentFromFileBrowserContent()
+    {
+        var source = new FakeFileBrowserDataSource();
+        source.Enqueue(Page(0, 1, Directory("/homes", "homes")));
+        using var model = new FileBrowserViewModel(source);
+
+        await model.InitializeAsync();
+
+        Assert.Equal(FileBrowserContentState.Content, model.ContentState);
+        Assert.False(model.HasStorageSpace);
+        Assert.True(model.IsStorageSpaceUnavailable);
+    }
+
+    [Fact]
+    public async Task FailedRootRefreshPreservesLastVisibleStorage()
+    {
+        var source = new FakeFileBrowserDataSource();
+        var summary = new StorageSpaceSummary(4000, 1000, 2);
+        source.Enqueue(new FilePage([Directory("/homes", "homes")], 1, 0, summary));
+        source.Enqueue(new IOException("synthetic"));
+        using var model = new FileBrowserViewModel(source);
+
+        await model.InitializeAsync();
+        await model.RefreshAsync();
+
+        Assert.Equal(summary, model.StorageSpace);
+        Assert.False(model.IsLoadingStorageSpace);
+        Assert.False(model.IsStorageSpaceUnavailable);
+        Assert.Equal(FileBrowserContentState.Error, model.ContentState);
+    }
+
+    [Fact]
+    public async Task OpeningSharedRootFromLocationsRefreshesVisibleStorage()
+    {
+        var source = new FakeFileBrowserDataSource();
+        source.Enqueue(new FilePage(
+            [Directory("/homes", "homes")],
+            1,
+            0,
+            new StorageSpaceSummary(4000, 1000, 1)));
+        source.Enqueue(Page(0, 1, File("/homes/readme.txt", "readme.txt")));
+        source.Enqueue(new FilePage(
+            [Directory("/homes", "homes")],
+            1,
+            0,
+            new StorageSpaceSummary(8000, 3000, 2)));
+        using var model = new FileBrowserViewModel(source);
+
+        await model.InitializeAsync();
+        await model.OpenAsync(model.Items.Single());
+        var opened = await model.OpenLocationAsync(string.Empty);
+
+        Assert.True(opened);
+        Assert.Equal(8000, model.StorageSpace?.TotalBytes);
+        Assert.Equal(2, model.StorageSpace?.VolumeCount);
+        Assert.False(model.IsLoadingStorageSpace);
+    }
+
+    [Fact]
+    public async Task NavigationRejectsLateStorageRefreshResult()
+    {
+        var source = new ControlledFileBrowserDataSource();
+        using var model = new FileBrowserViewModel(source);
+        var initial = model.InitializeAsync();
+        source.CompleteAt(0, new FilePage(
+            [Directory("/homes", "homes")],
+            1,
+            0,
+            new StorageSpaceSummary(4000, 1000, 1)));
+        await initial;
+
+        var refresh = model.RefreshAsync();
+        await source.WaitForRequestCountAsync(2);
+        var navigation = model.OpenAsync(model.Items.Single());
+        await source.WaitForRequestCountAsync(3);
+        source.CompleteAt(2, Page(0, 1, File("/homes/readme.txt", "readme.txt")));
+        await navigation;
+        source.CompleteAt(1, new FilePage(
+            [Directory("/stale", "stale")],
+            1,
+            0,
+            new StorageSpaceSummary(9000, 100, 3)));
+        await refresh;
+
+        Assert.Equal("/homes", model.CurrentPath);
+        Assert.Equal(4000, model.StorageSpace?.TotalBytes);
+        Assert.False(model.IsLoadingStorageSpace);
+    }
+
+    [Fact]
     public async Task LoadMoreFailureKeepsExistingContentAndCanRetrySameOffset()
     {
         var source = new FakeFileBrowserDataSource();

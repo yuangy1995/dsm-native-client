@@ -369,6 +369,14 @@
   <data name="CloudDriveLaunchAtLoginEnabled" xml:space="preserve"><value>登录 Windows 后将自动启动岚仓。</value></data>
   <data name="CloudDriveLaunchAtLoginDisabled" xml:space="preserve"><value>打开岚仓之前，仅在线文件将暂时不可用。</value></data>
   <data name="FileBrowserTitle.Text" xml:space="preserve"><value>文件</value></data>
+  <data name="FileBrowserStorageTitle.Text" xml:space="preserve"><value>存储空间</value></data>
+  <data name="FileBrowserStorageLoading.Text" xml:space="preserve"><value>正在读取存储空间…</value></data>
+  <data name="FileBrowserStorageProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>已用存储空间</value></data>
+  <data name="FileBrowserStorageUnavailable.Text" xml:space="preserve"><value>暂时无法读取存储空间，仍可继续浏览文件。</value></data>
+  <data name="FileBrowserStorageUsage" xml:space="preserve"><value>已用 {0}，共 {1}</value></data>
+  <data name="FileBrowserStorageRemaining" xml:space="preserve"><value>可用 {0}</value></data>
+  <data name="FileBrowserStorageScopeOne" xml:space="preserve"><value>当前账号可见 {0} 个存储空间</value></data>
+  <data name="FileBrowserStorageScopeMany" xml:space="preserve"><value>当前账号可见 {0} 个存储空间</value></data>
   <data name="FileBrowserBreadcrumbs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件夹路径</value></data>
   <data name="FileBrowserFilter.PlaceholderText" xml:space="preserve"><value>筛选已加载项目</value></data>
   <data name="FileBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>筛选已加载项目</value></data>

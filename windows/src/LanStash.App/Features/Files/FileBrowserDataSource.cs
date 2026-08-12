@@ -14,11 +14,18 @@ public interface IFileBrowserDataSource
 
 public sealed class RepositoryFileBrowserDataSource(IDsmRepository repository) : IFileBrowserDataSource
 {
+    internal const int SharedRootPageSize = 500;
+
     public Task<FilePage> LoadPageAsync(
         string path,
         int offset,
         int limit,
         FileListOptions options,
         CancellationToken cancellationToken) =>
-        repository.ListFilesAsync(path, offset, limit, options, cancellationToken);
+        repository.ListFilesAsync(
+            path,
+            offset,
+            string.IsNullOrWhiteSpace(path) ? Math.Max(limit, SharedRootPageSize) : limit,
+            options,
+            cancellationToken);
 }
