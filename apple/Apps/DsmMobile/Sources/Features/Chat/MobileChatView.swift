@@ -6,6 +6,8 @@ import SwiftUI
 struct MobileChatView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var presentsConversationCreator = false
+    @State private var createdCompactConversation: ChatConversation?
 
     var body: some View {
         Group {
@@ -14,6 +16,40 @@ struct MobileChatView: View {
             } else {
                 compactLayout
             }
+        }
+        .toolbar {
+            if model.chatModel.canCreateConversation {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        presentsConversationCreator = true
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(L10n.string("mobile.chat.create.action"))
+                    .accessibilityHint(L10n.string("mobile.chat.create.hint"))
+                }
+            }
+        }
+        .sheet(isPresented: $presentsConversationCreator) {
+            if let creator = model.chatModel.conversationCreator,
+               let sourceProfileID = model.chatModel.activeProfileID {
+                MobileChatConversationCreatorSheet(creator: creator) { conversation in
+                    let accepted = await model.chatModel.acceptCreatedConversation(
+                        conversation,
+                        sourceProfileID: sourceProfileID
+                    )
+                    if accepted, horizontalSizeClass != .regular {
+                        createdCompactConversation = conversation
+                    }
+                    return accepted
+                }
+            }
+        }
+        .navigationDestination(item: $createdCompactConversation) { conversation in
+            MobileChatMessagesView(chat: model.chatModel, conversation: conversation)
+                .navigationTitle(conversation.title)
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -203,6 +239,284 @@ struct MobileChatView: View {
             errorMessage: L10n.string("mobile.chat.error.message"),
             retryTitle: L10n.string("mobile.chat.action.retry")
         )
+    }
+}
+
+private struct MobileChatConversationCreatorSheet: View {
+    @Bindable var creator: MobileChatConversationCreator
+    let onCreated: @MainActor (ChatConversation) async -> Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var mode: Mode = .direct
+    @State private var groupTitle = ""
+    @State private var selectedUserIDs: Set<String> = []
+    @State private var userSearchText = ""
+
+    var body: some View {
+        NavigationStack {
+            content
+                .navigationTitle(L10n.string("mobile.chat.create.title"))
+                .navigationBarTitleDisplayMode(.inline)
+                .searchable(
+                    text: $userSearchText,
+                    prompt: L10n.string("mobile.chat.create.search.placeholder")
+                )
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(L10n.string("mobile.chat.create.close")) { dismiss() }
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(submitTitle) { Task { await submit() } }
+                            .disabled(!canSubmit)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                }
+        }
+        .interactiveDismissDisabled(creator.isSubmitting)
+        .task(id: creator.repositoryGeneration) {
+            restorePendingDraft()
+            if creator.pageState == .loading || creator.users.isEmpty {
+                await creator.loadUsers()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch creator.pageState {
+        case .loading:
+            ProgressView(L10n.string("mobile.chat.create.loading"))
+                .fillsAvailableContentArea()
+                .accessibilityElement(children: .combine)
+        case .empty:
+            ContentUnavailableView {
+                Label(
+                    L10n.string("mobile.chat.create.empty.title"),
+                    systemImage: "person.crop.circle.badge.questionmark"
+                )
+            } description: {
+                Text(L10n.string("mobile.chat.create.empty.message"))
+            } actions: {
+                retryButton
+            }
+            .fillsAvailableContentArea()
+        case .error:
+            ContentUnavailableView {
+                Label(
+                    L10n.string("mobile.chat.create.load-error.title"),
+                    systemImage: "wifi.exclamationmark"
+                )
+            } description: {
+                Text(L10n.string("mobile.chat.create.load-error.message"))
+            } actions: {
+                retryButton
+            }
+            .fillsAvailableContentArea()
+        case .content:
+            if filteredUsers.isEmpty && !normalizedSearchText.isEmpty {
+                ContentUnavailableView {
+                    Label(
+                        L10n.string("mobile.chat.create.filtered-empty.title"),
+                        systemImage: "person.crop.circle.badge.questionmark"
+                    )
+                } description: {
+                    Text(L10n.string("mobile.chat.create.filtered-empty.message"))
+                } actions: {
+                    Button(L10n.string("mobile.chat.create.clear-search")) {
+                        userSearchText = ""
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .frame(minWidth: 44, minHeight: 44)
+                }
+                .fillsAvailableContentArea()
+            } else {
+                creationForm
+            }
+        }
+    }
+
+    private var creationForm: some View {
+        Form {
+            Section(L10n.string("mobile.chat.create.type")) {
+                Picker(L10n.string("mobile.chat.create.type"), selection: $mode) {
+                    if creator.canCreateDirect {
+                        Text(L10n.string("mobile.chat.create.direct")).tag(Mode.direct)
+                    }
+                    if creator.canCreateGroup {
+                        Text(L10n.string("mobile.chat.create.group")).tag(Mode.group)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(creator.isSubmitting || creator.requiresReview)
+            }
+
+            if mode == .group {
+                Section(L10n.string("mobile.chat.create.group-name")) {
+                    TextField(
+                        L10n.string("mobile.chat.create.group-name.placeholder"),
+                        text: $groupTitle
+                    )
+                    .textInputAutocapitalization(.sentences)
+                    .disabled(creator.isSubmitting || creator.requiresReview)
+                }
+            }
+
+            Section(memberSectionTitle) {
+                ForEach(filteredUsers) { user in
+                    Button {
+                        toggleSelection(user.id)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.tint)
+                                .accessibilityHidden(true)
+                            Text(user.displayName)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if selectedUserIDs.contains(user.id) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.tint)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(creator.isSubmitting || creator.requiresReview)
+                    .accessibilityLabel(user.displayName)
+                    .accessibilityAddTraits(
+                        selectedUserIDs.contains(user.id) ? .isSelected : []
+                    )
+                }
+            }
+
+            if creator.requiresReview {
+                Section {
+                    Label(
+                        L10n.string("mobile.chat.create.review.message"),
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(.orange)
+                    .accessibilityElement(children: .combine)
+                } header: {
+                    Text(L10n.string("mobile.chat.create.review.title"))
+                }
+            } else if creator.errorCategory != nil {
+                Section {
+                    Label(errorMessage, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.red)
+                        .accessibilityElement(children: .combine)
+                }
+            }
+        }
+        .onChange(of: mode) { _, _ in
+            guard !creator.requiresReview else { return }
+            selectedUserIDs.removeAll()
+        }
+    }
+
+    private var retryButton: some View {
+        Button(L10n.string("mobile.chat.create.retry")) {
+            Task { await creator.loadUsers() }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .frame(minWidth: 44, minHeight: 44)
+    }
+
+    private var normalizedSearchText: String {
+        userSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredUsers: [ChatUser] {
+        guard !normalizedSearchText.isEmpty else { return creator.users }
+        return creator.users.filter {
+            $0.displayName.localizedStandardContains(normalizedSearchText)
+        }
+    }
+
+    private var canSubmit: Bool {
+        guard creator.pageState == .content, !creator.isSubmitting else { return false }
+        if creator.requiresReview { return true }
+        return mode == .direct
+            ? selectedUserIDs.count == 1
+            : !groupTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && selectedUserIDs.count >= 2
+    }
+
+    private var submitTitle: String {
+        L10n.string(
+            creator.requiresReview
+                ? "mobile.chat.create.review.action"
+                : "mobile.chat.create.submit"
+        )
+    }
+
+    private var memberSectionTitle: String {
+        L10n.string(
+            mode == .direct
+                ? "mobile.chat.create.direct-member"
+                : "mobile.chat.create.group-members"
+        )
+    }
+
+    private var errorMessage: String {
+        switch creator.errorCategory {
+        case .permissionDenied:
+            return L10n.string("mobile.chat.create.permission")
+        case .authenticationRequired:
+            return L10n.string("mobile.chat.create.authentication")
+        case .apiUnavailable, .versionUnsupported:
+            return L10n.string("mobile.chat.create.unsupported")
+        default:
+            return L10n.string("mobile.chat.create.failed")
+        }
+    }
+
+    private func toggleSelection(_ userID: String) {
+        if mode == .direct {
+            selectedUserIDs = [userID]
+        } else if selectedUserIDs.contains(userID) {
+            selectedUserIDs.remove(userID)
+        } else {
+            selectedUserIDs.insert(userID)
+        }
+    }
+
+    private func restorePendingDraft() {
+        guard creator.requiresReview else {
+            if !creator.canCreateDirect, creator.canCreateGroup { mode = .group }
+            return
+        }
+        mode = creator.pendingIsGroup ? .group : .direct
+        groupTitle = creator.pendingGroupTitle ?? ""
+        selectedUserIDs = Set(
+            creator.pendingIsGroup
+                ? creator.pendingGroupMemberIDs
+                : creator.pendingDirectUserID.map { [$0] } ?? []
+        )
+    }
+
+    private func submit() async {
+        let outcome = mode == .direct
+            ? await creator.openDirectConversation(userID: selectedUserIDs.first ?? "")
+            : await creator.createGroup(
+                title: groupTitle,
+                memberIDs: Array(selectedUserIDs)
+            )
+        guard outcome?.result.status == .confirmedSuccess,
+              let conversation = outcome?.confirmedConversation else { return }
+        if await onCreated(conversation) {
+            dismiss()
+        }
+    }
+
+    private enum Mode: Hashable {
+        case direct
+        case group
     }
 }
 

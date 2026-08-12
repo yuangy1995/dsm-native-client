@@ -41,11 +41,45 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("mobile.chat.attachment.read-only"))
         XCTAssertTrue(source.contains("mobile.chat.conversation.accessibility.encrypted"))
         for forbidden in [
-            "TextEditor(", "openDirectConversation(", "createGroup(",
+            "TextEditor(",
             "downloadAttachment(", "startRealtime(", "contextMenu", "onHover", "doubleClick"
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
+    }
+
+    func test首次单聊和私人群聊使用原生表单并按尺寸类打开新会话() throws {
+        let source = try chatViewSources()
+        let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
+        let creator = try sourceFile(
+            "Sources/Features/Chat/MobileChatConversationCreator.swift"
+        )
+        let repository = try sourceFile(
+            "Sources/Features/Chat/MobileReadOnlyChatRepository.swift"
+        )
+
+        XCTAssertTrue(source.contains("MobileChatConversationCreatorSheet"))
+        XCTAssertTrue(source.contains("square.and.pencil"))
+        XCTAssertTrue(source.contains(".pickerStyle(.segmented)"))
+        XCTAssertTrue(source.contains("TextField("))
+        XCTAssertTrue(source.contains("ForEach(filteredUsers)"))
+        XCTAssertTrue(source.contains("mobile.chat.create.filtered-empty.title"))
+        XCTAssertTrue(source.contains("mobile.chat.create.clear-search"))
+        XCTAssertTrue(source.contains("selectedUserIDs.count >= 2"))
+        XCTAssertTrue(source.contains("creator.requiresReview"))
+        XCTAssertTrue(source.contains("mobile.chat.create.review.action"))
+        XCTAssertTrue(source.contains(".interactiveDismissDisabled(creator.isSubmitting)"))
+        XCTAssertTrue(source.contains(".navigationDestination(item: $createdCompactConversation)"))
+        XCTAssertTrue(source.contains("horizontalSizeClass != .regular"))
+        XCTAssertTrue(model.contains("sourceProfileID: UUID"))
+        XCTAssertTrue(source.contains("sourceProfileID: sourceProfileID"))
+        XCTAssertTrue(creator.contains("openDirectConversationResult"))
+        XCTAssertTrue(creator.contains("createGroupResult"))
+        XCTAssertTrue(creator.contains("pendingDraft"))
+        XCTAssertTrue(repository.contains(".directConversation"))
+        XCTAssertTrue(repository.contains(".groupConversation"))
+        XCTAssertFalse(source.contains(".font(.system(size:"))
+        XCTAssertFalse(source.contains("withAnimation"))
     }
 
     func test文字发送Composer使用原生输入反馈和无障碍标签() throws {

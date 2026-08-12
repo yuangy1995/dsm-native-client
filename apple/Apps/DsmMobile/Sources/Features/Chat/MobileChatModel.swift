@@ -9,6 +9,7 @@ final class MobileChatModel {
 
     private(set) var activeProfileID: UUID?
     private(set) var profiles: [UUID: MobileChatProfileState] = [:]
+    private(set) var conversationCreators: [UUID: MobileChatConversationCreator] = [:]
 
     @ObservationIgnored private var repositories: [UUID: any ChatRepository] = [:]
     @ObservationIgnored private var conversationTask: Task<Void, Never>?
@@ -74,6 +75,15 @@ final class MobileChatModel {
         return profiles[activeProfileID] ?? MobileChatProfileState()
     }
 
+    var conversationCreator: MobileChatConversationCreator? {
+        guard let activeProfileID else { return nil }
+        return conversationCreators[activeProfileID]
+    }
+
+    var canCreateConversation: Bool {
+        conversationCreator?.canCreateDirect == true || conversationCreator?.canCreateGroup == true
+    }
+
     var canSelectAttachment: Bool {
         attachmentModel.canSelectAttachment
     }
@@ -117,7 +127,21 @@ final class MobileChatModel {
         }
 
         activeProfileID = profileID
-        repositories[profileID] = MobileReadOnlyChatRepository(base: repository)
+        let mobileRepository = MobileReadOnlyChatRepository(base: repository)
+        repositories[profileID] = mobileRepository
+        if let creator = conversationCreators[profileID] {
+            creator.rebind(
+                repository: mobileRepository,
+                availability: profiles[profileID]?.availability
+                    ?? ChatAvailability(status: .requiresValidation)
+            )
+        } else {
+            conversationCreators[profileID] = MobileChatConversationCreator(
+                repository: mobileRepository,
+                availability: profiles[profileID]?.availability
+                    ?? ChatAvailability(status: .requiresValidation)
+            )
+        }
         if profiles[profileID] == nil {
             var profile = MobileChatProfileState()
             profile.pinnedConversationIDs = Self.normalizedPinnedConversationIDs(
@@ -148,6 +172,7 @@ final class MobileChatModel {
         }
         repositories[profileID] = nil
         profiles[profileID] = nil
+        conversationCreators[profileID] = nil
     }
 
     /// 删除配置档时清除对应的本地置顶偏好；普通退出只清内存态，保留本机偏好。
@@ -232,6 +257,7 @@ final class MobileChatModel {
                 return
             }
             self?.updateActive { $0.availability = availability }
+            self?.conversationCreators[profileID]?.updateAvailability(availability)
             guard availability.status == .available else {
                 self?.finishUnavailable(profileID: profileID, generation: requestGeneration)
                 return
@@ -308,6 +334,28 @@ final class MobileChatModel {
             repository: repository,
             preservesContent: false
         )
+    }
+
+    func acceptCreatedConversation(
+        _ conversation: ChatConversation,
+        sourceProfileID: UUID
+    ) async -> Bool {
+        guard activeProfileID == sourceProfileID, !conversation.isEncrypted else { return false }
+        updateActive { profile in
+            profile.conversations = Self.normalizedConversations(
+                profile.conversations
+                    .filter { $0.id != conversation.id }
+                    + [conversation],
+                pinnedConversationIDs: profile.pinnedConversationIDs
+            )
+            Self.applyConversationFilter(to: &profile)
+            profile.conversationPageState = .content
+            profile.conversationErrorCategory = nil
+        }
+        guard activeProfileID == sourceProfileID else { return false }
+        await selectConversation(conversation)
+        return activeProfileID == sourceProfileID
+            && state.selectedConversationID == conversation.id
     }
 
     func loadConversationMembers(forceRefresh: Bool = false) async {

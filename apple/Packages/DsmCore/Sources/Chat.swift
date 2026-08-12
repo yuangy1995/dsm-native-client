@@ -414,6 +414,22 @@ public struct ChatMessageSendOutcome: Equatable, Sendable {
     }
 }
 
+public struct ChatConversationCreateOutcome: Equatable, Sendable {
+    public let result: MutationResult
+    public let clientRequestID: UUID
+    public let confirmedConversation: ChatConversation?
+
+    public init(
+        result: MutationResult,
+        clientRequestID: UUID,
+        confirmedConversation: ChatConversation?
+    ) {
+        self.result = result
+        self.clientRequestID = clientRequestID
+        self.confirmedConversation = confirmedConversation
+    }
+}
+
 public struct ChatPollDraft: Equatable, Sendable {
     public let clientRequestID: UUID
     public let conversationID: String
@@ -475,7 +491,12 @@ public protocol ChatRepository: Sendable {
         userID: String,
         clientRequestID: UUID
     ) async throws -> ChatConversation
+    func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID
+    ) async throws -> ChatConversationCreateOutcome
     func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation
+    func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome
     func sendMessage(
         _ draft: ChatMessageDraft,
         progress: @escaping FileTransferProgress
@@ -549,6 +570,41 @@ public protocol ChatRepository: Sendable {
 }
 
 public extension ChatRepository {
+    func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID
+    ) async throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "chatDirectConversationCreate",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.direct-create.unsupported"
+            ),
+            clientRequestID: clientRequestID,
+            confirmedConversation: nil
+        )
+    }
+
+    func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "chatGroupCreate",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.group-create.unsupported"
+            ),
+            clientRequestID: draft.clientRequestID,
+            confirmedConversation: nil
+        )
+    }
+
     func sendMessage(_ draft: ChatMessageDraft) async throws -> ChatMessage {
         try await sendMessage(draft, progress: { _, _ in })
     }

@@ -9,6 +9,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     func availability() async -> ChatAvailability {
         let value = await base.availability()
         let mobileScope: Set<ChatFeature> = [
+            .directConversation,
+            .groupConversation,
             .textMessage,
             .imageAttachment,
             .videoAttachment,
@@ -55,11 +57,58 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         userID: String,
         clientRequestID: UUID
     ) async throws -> ChatConversation {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let outcome = try await openDirectConversationResult(
+            userID: userID,
+            clientRequestID: clientRequestID
+        )
+        guard outcome.result.status == .confirmedSuccess,
+              let conversation = outcome.confirmedConversation else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return conversation
     }
 
     func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let outcome = try await createGroupResult(draft)
+        guard outcome.result.status == .confirmedSuccess,
+              let conversation = outcome.confirmedConversation else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        return conversation
+    }
+
+    func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID
+    ) async throws -> ChatConversationCreateOutcome {
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.directConversation) else {
+            return try unsupportedConversationCreate(
+                operation: "chatDirectConversationCreate",
+                clientRequestID: clientRequestID
+            )
+        }
+        return try await base.openDirectConversationResult(
+            userID: userID,
+            clientRequestID: clientRequestID
+        )
+    }
+
+    func createGroupResult(
+        _ draft: ChatGroupDraft
+    ) async throws -> ChatConversationCreateOutcome {
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.groupConversation),
+              value.supportedFeatures.contains(.groupMembers),
+              !draft.isEncrypted else {
+            return try unsupportedConversationCreate(
+                operation: "chatGroupCreate",
+                clientRequestID: draft.clientRequestID
+            )
+        }
+        return try await base.createGroupResult(draft)
     }
 
     func sendMessage(
@@ -253,6 +302,25 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
 
     func createPoll(_ draft: ChatPollDraft) async throws -> ChatMessage {
         throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    private func unsupportedConversationCreate(
+        operation: String,
+        clientRequestID: UUID
+    ) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.conversation-create.unsupported"
+            ),
+            clientRequestID: clientRequestID,
+            confirmedConversation: nil
+        )
     }
 }
 

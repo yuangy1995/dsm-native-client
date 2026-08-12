@@ -273,6 +273,7 @@ final class DsmChatRepositoryTests: XCTestCase {
         let createdChannels = response(#"{"success":true,"data":{"channels":[{"channel_id":"27","type":"anonymous","members":["1","2"],"member_count":2}]}}"#)
         let transport = MockHTTPTransport(responses: [
             users,
+            users,
             emptyChannels,
             response(#"{"success":true,"data":{"channel_id":"27"}}"#),
             users,
@@ -287,14 +288,282 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(first, second)
         XCTAssertEqual(first.id, "27")
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 5)
-        let fields = try decodeForm(requests[2].httpBody)
+        XCTAssertEqual(requests.count, 6)
+        let fields = try decodeForm(requests[3].httpBody)
         XCTAssertEqual(fields["api"], DsmAPIName.chatChannelAnonymous)
         XCTAssertEqual(fields["version"], "2")
         XCTAssertEqual(fields["method"], "initiate")
         XCTAssertEqual(fields["user_ids"], #"["2"]"#)
         XCTAssertEqual(fields["encrypted"], "false")
         XCTAssertEqual(fields["channel_key_encs"], "[]")
+    }
+
+    func test首次单聊明确权限拒绝返回Typed结果且同请求不重发() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"}]}}"#)
+        let transport = MockHTTPTransport(responses: [
+            users,
+            users,
+            response(#"{"success":true,"data":{"channels":[]}}"#),
+            response(#"{"success":false,"error":{"code":105}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let requestID = UUID()
+
+        let first = try await repository.openDirectConversationResult(
+            userID: "2",
+            clientRequestID: requestID
+        )
+        let second = try await repository.openDirectConversationResult(
+            userID: "2",
+            clientRequestID: requestID
+        )
+
+        XCTAssertEqual(first.result.status, .permissionDenied)
+        XCTAssertEqual(first.result.errorCategory, .permission)
+        XCTAssertEqual(second, first)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 4)
+    }
+
+    func test首次单聊明确拒绝区分认证不支持和普通失败() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"}]}}"#)
+        let cases: [(Int, MutationResultStatus, MutationErrorCategory)] = [
+            (106, .confirmedFailure, .authentication),
+            (102, .unsupported, .unsupported),
+            (1300, .confirmedFailure, .server)
+        ]
+        for (code, status, category) in cases {
+            let transport = MockHTTPTransport(responses: [
+                users,
+                users,
+                response(#"{"success":true,"data":{"channels":[]}}"#),
+                response("{\"success\":false,\"error\":{\"code\":\(code)}}")
+            ])
+            let repository = try makeRepository(transport: transport)
+
+            let outcome = try await repository.openDirectConversationResult(
+                userID: "2",
+                clientRequestID: UUID()
+            )
+
+            XCTAssertEqual(outcome.result.status, status)
+            XCTAssertEqual(outcome.result.errorCategory, category)
+        }
+    }
+
+    func test首次单聊传输未知后同请求只回读且草稿不匹配() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"},{"user_id":"3"}]}}"#)
+        let transport = MockHTTPTransport(steps: [
+            .response(users),
+            .response(users),
+            .response(response(#"{"success":true,"data":{"channels":[]}}"#)),
+            .urlError(.networkConnectionLost),
+            .response(users),
+            .response(response(#"{"success":true,"data":{"channels":[{"channel_id":"27","type":"anonymous","members":["1","2"]}]}}"#))
+        ])
+        let repository = try makeRepository(transport: transport)
+        let requestID = UUID()
+
+        let first = try await repository.openDirectConversationResult(userID: "2", clientRequestID: requestID)
+        let mismatch = try await repository.openDirectConversationResult(userID: "3", clientRequestID: requestID)
+        let confirmed = try await repository.openDirectConversationResult(userID: "2", clientRequestID: requestID)
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
+        XCTAssertEqual(mismatch.result.errorCategory, .validation)
+        XCTAssertEqual(confirmed.result.status, .confirmedSuccess)
+        let methods = try await transport.recordedRequests().map { try decodeForm($0.httpBody)["method"] }
+        XCTAssertEqual(methods.filter { $0 == "initiate" }.count, 1)
+    }
+
+    func test私人群聊固定契约并通过Member接口确认完整成员() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"},{"user_id":"3"}]}}"#)
+        let transport = MockHTTPTransport(responses: [
+            users,
+            users,
+            response(#"{"success":true,"data":{"channels":[]}}"#),
+            response(#"{"success":true,"data":{"channel_id":"42"}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true}"#),
+            users,
+            response(#"{"success":true,"data":{"channels":[{"channel_id":"42","type":"private","name":"项目群","member_count":3}]}}"#),
+            response(#"{"success":true,"data":{"user_ids":[1,2,3]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatGroupDraft(title: "项目群", memberIDs: ["2", "3"], isEncrypted: false)
+
+        let outcome = try await repository.createGroupResult(draft)
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.confirmedConversation?.id, "42")
+        let requests = await transport.recordedRequests()
+        let create = try decodeForm(requests[3].httpBody)
+        XCTAssertEqual(create["api"], DsmAPIName.chatChannelNamed)
+        XCTAssertEqual(create["version"], "1")
+        XCTAssertEqual(create["method"], "create")
+        XCTAssertEqual(create["type"], "private")
+        let invite = try decodeForm(requests[5].httpBody)
+        XCTAssertEqual(invite["method"], "invite")
+        XCTAssertEqual(invite["user_ids"], #"["2","3"]"#)
+        let memberRead = try decodeForm(requests[8].httpBody)
+        XCTAssertEqual(memberRead["api"], DsmAPIName.chatChannelMember)
+        XCTAssertEqual(memberRead["method"], "get")
+    }
+
+    func test私人群聊各写入阶段未知后同请求都不会重放() async throws {
+        for unknownStage in 0...2 {
+            let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"},{"user_id":"3"}]}}"#)
+            var steps: [MockHTTPTransport.Step] = [
+                .response(users),
+                .response(users),
+                .response(response(#"{"success":true,"data":{"channels":[]}}"#))
+            ]
+            let writes: [MockHTTPTransport.Step] = [
+                .response(response(#"{"success":true,"data":{"channel_id":"42"}}"#)),
+                .response(response(#"{"success":true}"#)),
+                .response(response(#"{"success":true}"#))
+            ]
+            for index in 0...unknownStage {
+                steps.append(index == unknownStage ? .urlError(.networkConnectionLost) : writes[index])
+            }
+            steps.append(contentsOf: [
+                .response(users),
+                .response(response(#"{"success":true,"data":{"channels":[{"channel_id":"42","type":"private","name":"项目群"}]}}"#)),
+                .response(response(#"{"success":true,"data":{"user_ids":[1,2,3]}}"#))
+            ])
+            let transport = MockHTTPTransport(steps: steps)
+            let repository = try makeRepository(transport: transport)
+            let draft = try ChatGroupDraft(title: "项目群", memberIDs: ["2", "3"], isEncrypted: false)
+
+            let first = try await repository.createGroupResult(draft)
+            let second = try await repository.createGroupResult(draft)
+
+            XCTAssertEqual(first.result.status, .submittedButUnverified)
+            XCTAssertEqual(second.result.status, .confirmedSuccess)
+            let methods = try await transport.recordedRequests().compactMap {
+                try decodeForm($0.httpBody)["method"]
+            }
+            XCTAssertEqual(methods.filter { ["create", "join", "invite"].contains($0) }.count, unknownStage + 1)
+        }
+    }
+
+    func test私人群聊Pending绑定完整草稿且明确邀请拒绝只回读() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"},{"user_id":"3"},{"user_id":"4"}]}}"#)
+        let transport = MockHTTPTransport(responses: [
+            users,
+            users,
+            response(#"{"success":true,"data":{"channels":[]}}"#),
+            response(#"{"success":true,"data":{"channel_id":"42"}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":false,"error":{"code":105}}"#),
+            users,
+            response(#"{"success":true,"data":{"channels":[{"channel_id":"42","type":"private","name":"项目群"}]}}"#),
+            response(#"{"success":true,"data":{"user_ids":[1,2,3]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let requestID = UUID()
+        let draft = try ChatGroupDraft(clientRequestID: requestID, title: "项目群", memberIDs: ["2", "3"], isEncrypted: false)
+        let changed = try ChatGroupDraft(clientRequestID: requestID, title: "另一个群", memberIDs: ["2", "4"], isEncrypted: false)
+
+        let rejected = try await repository.createGroupResult(draft)
+        let mismatch = try await repository.createGroupResult(changed)
+        let confirmed = try await repository.createGroupResult(draft)
+
+        XCTAssertEqual(rejected.result.status, .submittedButUnverified)
+        XCTAssertEqual(rejected.result.errorCategory, .permission)
+        XCTAssertTrue(rejected.result.requiresRefresh)
+        XCTAssertEqual(mismatch.result.errorCategory, .validation)
+        XCTAssertEqual(confirmed.result.status, .confirmedSuccess)
+        let methods = try await transport.recordedRequests().compactMap { try decodeForm($0.httpBody)["method"] }
+        XCTAssertEqual(methods.filter { $0 == "invite" }.count, 1)
+    }
+
+    func test私人群聊Create明确拒绝为终态且同请求不重发() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"},{"user_id":"3"}]}}"#)
+        let transport = MockHTTPTransport(responses: [
+            users,
+            users,
+            response(#"{"success":true,"data":{"channels":[]}}"#),
+            response(#"{"success":false,"error":{"code":105}}"#)
+        ])
+        let repository = try makeRepository(transport: transport)
+        let draft = try ChatGroupDraft(title: "项目群", memberIDs: ["2", "3"], isEncrypted: false)
+
+        let first = try await repository.createGroupResult(draft)
+        let second = try await repository.createGroupResult(draft)
+
+        XCTAssertEqual(first.result.status, .permissionDenied)
+        XCTAssertEqual(second, first)
+        let methods = try await transport.recordedRequests().compactMap { try decodeForm($0.httpBody)["method"] }
+        XCTAssertEqual(methods.filter { $0 == "create" }.count, 1)
+    }
+
+    func test会话创建拒绝当前用户和停用用户且不发送写请求() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2","is_disabled":true}]}}"#)
+        let transport = MockHTTPTransport(responses: [users, users])
+        let repository = try makeRepository(transport: transport)
+
+        let current = try await repository.openDirectConversationResult(userID: "1", clientRequestID: UUID())
+        let disabled = try await repository.openDirectConversationResult(userID: "2", clientRequestID: UUID())
+
+        XCTAssertEqual(current.result.errorCategory, .validation)
+        XCTAssertEqual(disabled.result.errorCategory, .validation)
+        let methods = try await transport.recordedRequests().compactMap { try decodeForm($0.httpBody)["method"] }
+        XCTAssertEqual(methods, ["list", "list"])
+    }
+
+    func test会话创建能力门要求固定版本Member和FORM() async throws {
+        let oldAnonymous = try makeRepository(
+            transport: MockHTTPTransport(responses: []),
+            chatAnonymousVersion: 1
+        )
+        let missingMember = try makeRepository(
+            transport: MockHTTPTransport(responses: []),
+            includesChatMemberCapability: false
+        )
+        let jsonCapabilities = try makeRepository(
+            transport: MockHTTPTransport(responses: []),
+            chatRequestFormat: .json
+        )
+
+        let oldAnonymousAvailability = await oldAnonymous.availability()
+        let missingMemberAvailability = await missingMember.availability()
+        let jsonAvailability = await jsonCapabilities.availability()
+
+        XCTAssertFalse(oldAnonymousAvailability.supportedFeatures.contains(.directConversation))
+        XCTAssertFalse(missingMemberAvailability.supportedFeatures.contains(.groupConversation))
+        XCTAssertFalse(jsonAvailability.supportedFeatures.contains(.directConversation))
+        XCTAssertFalse(jsonAvailability.supportedFeatures.contains(.groupConversation))
+    }
+
+    func test会话创建许可等待期间取消不会发起第二个请求() async throws {
+        let transport = MockHTTPTransport(steps: [.waitUntilCancelled])
+        let repository = try makeRepository(transport: transport)
+        let first = Task {
+            try await repository.openDirectConversationResult(
+                userID: "2",
+                clientRequestID: UUID()
+            )
+        }
+        for _ in 0..<100 {
+            if await transport.recordedRequests().count == 1 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let second = Task {
+            try await repository.openDirectConversationResult(
+                userID: "3",
+                clientRequestID: UUID()
+            )
+        }
+
+        second.cancel()
+        first.cancel()
+        let firstOutcome = try await first.value
+        let secondOutcome = try await second.value
+        let requestCount = await transport.recordedRequests().count
+
+        XCTAssertEqual(firstOutcome.result.status, .cancelledBeforeSubmission)
+        XCTAssertEqual(secondOutcome.result.status, .cancelledBeforeSubmission)
+        XCTAssertEqual(requestCount, 1)
     }
 
     func test创建投票使用已确认契约并对同一请求去重() async throws {
@@ -961,13 +1230,15 @@ final class DsmChatRepositoryTests: XCTestCase {
     private func makeRepository(
         transport: MockHTTPTransport,
         includesAvatarCapability: Bool = false,
-        chatPostVersion: Int = 8
+        chatPostVersion: Int = 8,
+        chatAnonymousVersion: Int = 2,
+        includesChatMemberCapability: Bool = true,
+        chatRequestFormat: DsmRequestFormat = .form
     ) throws -> DsmChatRepository {
         var names = [
             DsmAPIName.chatChannel: 5,
             DsmAPIName.chatChannelNamed: 1,
-            DsmAPIName.chatChannelAnonymous: 2,
-            DsmAPIName.chatChannelMember: 1,
+            DsmAPIName.chatChannelAnonymous: chatAnonymousVersion,
             DsmAPIName.chatUser: 3,
             DsmAPIName.chatPost: chatPostVersion,
             DsmAPIName.chatPostFile: 2,
@@ -975,6 +1246,9 @@ final class DsmChatRepositoryTests: XCTestCase {
             DsmAPIName.chatPostVote: 1,
             DsmAPIName.chatPostSchedule: 1
         ]
+        if includesChatMemberCapability {
+            names[DsmAPIName.chatChannelMember] = 1
+        }
         if includesAvatarCapability {
             names[DsmAPIName.chatUserAvatar] = 1
         }
@@ -984,7 +1258,7 @@ final class DsmChatRepositoryTests: XCTestCase {
                 path: "entry.cgi",
                 minVersion: 1,
                 maxVersion: version,
-                requestFormat: .form,
+                requestFormat: chatRequestFormat,
                 selectedVersion: version
             ))
         }))

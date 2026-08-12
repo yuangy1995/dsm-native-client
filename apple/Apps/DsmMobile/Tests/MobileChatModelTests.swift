@@ -156,7 +156,7 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(availability.status, .available)
         XCTAssertEqual(
             availability.supportedFeatures,
-            [.textMessage, .groupMembers, .pinnedMessages]
+            [.textMessage, .groupConversation, .groupMembers, .pinnedMessages]
         )
         let events = await repository.realtimeEvents()
         var iterator = events.makeAsyncIterator()
@@ -1583,6 +1583,230 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertTrue(store.loadPinnedConversationIDs(profileID: profileID).isEmpty)
     }
 
+    func test会话创建候选排除当前和停用用户并稳定排序() async {
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(
+                status: .available,
+                supportedFeatures: [.directConversation]
+            ),
+            conversations: [],
+            users: [
+                ChatUser(id: "disabled", displayName: "停用", isDisabled: true),
+                ChatUser(id: "current", displayName: "当前", isCurrentUser: true),
+                ChatUser(id: "z", displayName: "周末"),
+                ChatUser(id: "a", displayName: "阿明")
+            ]
+        )
+        let creator = MobileChatConversationCreator(
+            repository: repository,
+            availability: await repository.availability()
+        )
+
+        await creator.loadUsers()
+
+        XCTAssertEqual(creator.pageState, .content)
+        XCTAssertEqual(creator.users.map(\.id), ["a", "z"])
+    }
+
+    func test单聊提交未知后按同一请求回读且不丢失目标() async throws {
+        let conversation = Self.conversation(id: "direct", title: "成员", kind: .direct)
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(
+                status: .available,
+                supportedFeatures: [.directConversation]
+            ),
+            conversations: [],
+            directCreateOutcomes: [
+                try Self.conversationCreateOutcome(status: .submittedButUnverified),
+                try Self.conversationCreateOutcome(
+                    status: .confirmedSuccess,
+                    conversation: conversation
+                )
+            ]
+        )
+        let creator = MobileChatConversationCreator(
+            repository: repository,
+            availability: await repository.availability()
+        )
+
+        let first = await creator.openDirectConversation(userID: "member")
+        let second = await creator.openDirectConversation(userID: "member")
+        let requests = await repository.directCreateRequests()
+
+        XCTAssertEqual(first?.result.status, .submittedButUnverified)
+        XCTAssertTrue(creator.requiresReview == false)
+        XCTAssertEqual(second?.confirmedConversation, conversation)
+        XCTAssertEqual(requests.map(\.userID), ["member", "member"])
+        XCTAssertEqual(requests.first?.clientRequestID, requests.last?.clientRequestID)
+    }
+
+    func test群聊提交未知后保留完整草稿并按原请求回读() async throws {
+        let conversation = Self.conversation(id: "group", title: "项目组")
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(
+                status: .available,
+                supportedFeatures: [.groupConversation, .groupMembers]
+            ),
+            conversations: [],
+            groupCreateOutcomes: [
+                try Self.conversationCreateOutcome(status: .submittedButUnverified),
+                try Self.conversationCreateOutcome(
+                    status: .confirmedSuccess,
+                    conversation: conversation
+                )
+            ]
+        )
+        let creator = MobileChatConversationCreator(
+            repository: repository,
+            availability: await repository.availability()
+        )
+
+        let first = await creator.createGroup(title: " 项目组 ", memberIDs: ["b", "a"])
+        XCTAssertEqual(first?.result.status, .submittedButUnverified)
+        XCTAssertTrue(creator.requiresReview)
+        XCTAssertEqual(creator.pendingGroupTitle, "项目组")
+        XCTAssertEqual(creator.pendingGroupMemberIDs, ["a", "b"])
+
+        let second = await creator.createGroup(title: "项目组", memberIDs: ["a", "b"])
+        let drafts = await repository.groupCreateDrafts()
+
+        XCTAssertEqual(second?.confirmedConversation, conversation)
+        XCTAssertEqual(drafts.count, 2)
+        XCTAssertEqual(drafts.first?.clientRequestID, drafts.last?.clientRequestID)
+        XCTAssertEqual(drafts.first?.memberIDs, drafts.last?.memberIDs)
+        XCTAssertFalse(creator.requiresReview)
+    }
+
+    func test待核对会话重绑Repository后只读取且不重放创建() async throws {
+        let availability = ChatAvailability(
+            status: .available,
+            supportedFeatures: [.directConversation]
+        )
+        let oldRepository = ChatRepositoryStub(
+            availability: availability,
+            conversations: [],
+            directCreateOutcomes: [
+                try Self.conversationCreateOutcome(status: .submittedButUnverified)
+            ]
+        )
+        let confirmed = Self.conversation(id: "direct", title: "成员", kind: .direct)
+        let newRepository = ChatRepositoryStub(
+            availability: availability,
+            conversations: [
+                ChatConversation(
+                    id: confirmed.id,
+                    kind: .direct,
+                    title: confirmed.title,
+                    memberIDs: ["member"],
+                    unreadCount: 0,
+                    isEncrypted: false
+                )
+            ]
+        )
+        let creator = MobileChatConversationCreator(
+            repository: oldRepository,
+            availability: availability
+        )
+
+        _ = await creator.openDirectConversation(userID: "member")
+        creator.rebind(repository: newRepository, availability: availability)
+        let outcome = await creator.openDirectConversation(userID: "member")
+        let createRequests = await newRepository.directCreateRequests()
+        let conversationRequests = await newRepository.conversationRequestCount()
+
+        XCTAssertEqual(outcome?.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome?.confirmedConversation?.id, confirmed.id)
+        XCTAssertTrue(createRequests.isEmpty)
+        XCTAssertEqual(conversationRequests, 1)
+    }
+
+    func test提交进行中重绑会在结束后切换并只读核对() async throws {
+        let availability = ChatAvailability(
+            status: .available,
+            supportedFeatures: [.directConversation]
+        )
+        let oldRepository = ChatRepositoryStub(
+            availability: availability,
+            conversations: [],
+            directCreateOutcomes: [
+                try Self.conversationCreateOutcome(status: .submittedButUnverified)
+            ],
+            blocksDirectCreate: true
+        )
+        let newRepository = ChatRepositoryStub(
+            availability: availability,
+            conversations: [
+                ChatConversation(
+                    id: "direct",
+                    kind: .direct,
+                    title: "成员",
+                    memberIDs: ["member"],
+                    unreadCount: 0,
+                    isEncrypted: false
+                )
+            ]
+        )
+        let creator = MobileChatConversationCreator(
+            repository: oldRepository,
+            availability: availability
+        )
+        let first = Task { await creator.openDirectConversation(userID: "member") }
+        await oldRepository.waitUntilDirectCreateBlocked()
+
+        creator.rebind(repository: newRepository, availability: availability)
+        await oldRepository.releaseDirectCreate()
+        let firstOutcome = await first.value
+        let confirmed = await creator.openDirectConversation(userID: "member")
+        let newCreateRequests = await newRepository.directCreateRequests()
+
+        XCTAssertEqual(firstOutcome?.result.status, .submittedButUnverified)
+        XCTAssertEqual(confirmed?.result.status, .confirmedSuccess)
+        XCTAssertTrue(newCreateRequests.isEmpty)
+    }
+
+    func test旧Profile创建结果不会写入当前Profile() async {
+        let profileA = UUID()
+        let profileB = UUID()
+        let model = MobileChatModel()
+        await model.activate(profileID: profileA, repository: ChatRepositoryStub(conversations: []))
+        await model.activate(profileID: profileB, repository: ChatRepositoryStub(conversations: []))
+        let conversation = Self.conversation(id: "late", title: "迟到会话", kind: .direct)
+
+        let accepted = await model.acceptCreatedConversation(
+            conversation,
+            sourceProfileID: profileA
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertFalse(model.state.conversations.contains { $0.id == conversation.id })
+        XCTAssertNil(model.state.selectedConversationID)
+    }
+
+    private static func conversationCreateOutcome(
+        status: MutationResultStatus,
+        conversation: ChatConversation? = nil
+    ) throws -> ChatConversationCreateOutcome {
+        let confirmed = status == .confirmedSuccess
+        return ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: status,
+                operation: "chatConversationCreate",
+                submitted: true,
+                requiresRefresh: !confirmed,
+                counts: MutationResultCounts(
+                    succeeded: confirmed ? 1 : 0,
+                    failed: 0,
+                    unknown: confirmed ? 0 : 1
+                ),
+                diagnosticTag: confirmed
+                    ? "chat.conversation-create.confirmed"
+                    : "chat.conversation-create.unverified"
+            ),
+            clientRequestID: UUID(),
+            confirmedConversation: conversation
+        )
+    }
+
     private func assertReadOnlyFailure<T>(
         _ operation: () async throws -> T,
         file: StaticString = #filePath,
@@ -1692,6 +1916,14 @@ private actor ChatRepositoryStub: ChatRepository {
     private var memberFailureValues: [String: AppError]
     private var announcementValues: [String: [ChatMessage]]
     private var announcementFailureValues: [String: AppError]
+    private var userValues: [ChatUser]
+    private var directCreateOutcomeValues: [ChatConversationCreateOutcome]
+    private var groupCreateOutcomeValues: [ChatConversationCreateOutcome]
+    private var directCreateRequestValues: [(userID: String, clientRequestID: UUID)] = []
+    private var groupCreateDraftValues: [ChatGroupDraft] = []
+    private var blocksDirectCreate: Bool
+    private var directCreateContinuation: CheckedContinuation<Void, Never>?
+    private var directCreateBlockedWaiters: [CheckedContinuation<Void, Never>] = []
     private var sentDraftValues: [ChatMessageDraft] = []
     private var conversationRequests = 0
     private var messageRequestValues: [ChatMessageRequest] = []
@@ -1727,6 +1959,10 @@ private actor ChatRepositoryStub: ChatRepository {
         memberFailures: [String: AppError] = [:],
         announcements: [String: [ChatMessage]] = [:],
         announcementFailures: [String: AppError] = [:],
+        users: [ChatUser] = [],
+        directCreateOutcomes: [ChatConversationCreateOutcome] = [],
+        groupCreateOutcomes: [ChatConversationCreateOutcome] = [],
+        blocksDirectCreate: Bool = false,
         blockedConversationList: Bool = false,
         blockedMessageRequests: Set<ChatMessageRequest> = [],
         blockedMemberRequests: Set<String> = [],
@@ -1742,6 +1978,10 @@ private actor ChatRepositoryStub: ChatRepository {
         memberFailureValues = memberFailures
         announcementValues = announcements
         announcementFailureValues = announcementFailures
+        userValues = users
+        directCreateOutcomeValues = directCreateOutcomes
+        groupCreateOutcomeValues = groupCreateOutcomes
+        self.blocksDirectCreate = blocksDirectCreate
         blocksConversationList = blockedConversationList
         self.blockedMessageRequests = blockedMessageRequests
         self.blockedMemberRequests = blockedMemberRequests
@@ -1750,7 +1990,7 @@ private actor ChatRepositoryStub: ChatRepository {
 
     func availability() async -> ChatAvailability { availabilityValue }
 
-    func listUsers() async throws -> [ChatUser] { [] }
+    func listUsers() async throws -> [ChatUser] { userValues }
 
     func listConversations() async throws -> [ChatConversation] {
         conversationRequests += 1
@@ -1880,9 +2120,78 @@ private actor ChatRepositoryStub: ChatRepository {
         throw MobileReadOnlyChatRepositoryError.operationUnavailable
     }
 
+    func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID
+    ) async throws -> ChatConversationCreateOutcome {
+        directCreateRequestValues.append((userID, clientRequestID))
+        if blocksDirectCreate {
+            directCreateBlockedWaiters.forEach { $0.resume() }
+            directCreateBlockedWaiters.removeAll()
+            await withCheckedContinuation { directCreateContinuation = $0 }
+        }
+        guard !directCreateOutcomeValues.isEmpty else {
+            return try unsupportedConversationOutcome(clientRequestID: clientRequestID)
+        }
+        let outcome = directCreateOutcomeValues.removeFirst()
+        return ChatConversationCreateOutcome(
+            result: outcome.result,
+            clientRequestID: clientRequestID,
+            confirmedConversation: outcome.confirmedConversation
+        )
+    }
+
     func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation {
         rejectedBaseCalls += 1
         throw MobileReadOnlyChatRepositoryError.operationUnavailable
+    }
+
+    func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome {
+        groupCreateDraftValues.append(draft)
+        guard !groupCreateOutcomeValues.isEmpty else {
+            return try unsupportedConversationOutcome(clientRequestID: draft.clientRequestID)
+        }
+        let outcome = groupCreateOutcomeValues.removeFirst()
+        return ChatConversationCreateOutcome(
+            result: outcome.result,
+            clientRequestID: draft.clientRequestID,
+            confirmedConversation: outcome.confirmedConversation
+        )
+    }
+
+    func directCreateRequests() -> [(userID: String, clientRequestID: UUID)] {
+        directCreateRequestValues
+    }
+
+    func waitUntilDirectCreateBlocked() async {
+        guard directCreateContinuation == nil else { return }
+        await withCheckedContinuation { directCreateBlockedWaiters.append($0) }
+    }
+
+    func releaseDirectCreate() {
+        blocksDirectCreate = false
+        directCreateContinuation?.resume()
+        directCreateContinuation = nil
+    }
+
+    func groupCreateDrafts() -> [ChatGroupDraft] { groupCreateDraftValues }
+
+    private func unsupportedConversationOutcome(
+        clientRequestID: UUID
+    ) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: "chatConversationCreate",
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: "chat.conversation-create.unsupported"
+            ),
+            clientRequestID: clientRequestID,
+            confirmedConversation: nil
+        )
     }
 
     func sendMessage(

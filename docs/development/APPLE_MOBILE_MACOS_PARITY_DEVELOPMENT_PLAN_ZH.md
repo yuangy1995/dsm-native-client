@@ -383,6 +383,8 @@ CHAT-02 前台实时与轮询降级已形成源码、本机模拟器与云端构
 
 CHAT-01 本地已读切片已完成源码与聚焦自动化：`MobileChatProfileState` 按 profile/会话仅在内存保存实际成功读取消息的最大 `sentAt`，`MobileChatMessagesView` 明确登记详情可见生命周期；只有当前未加密会话详情可见且最新页读取成功才清零。会话列表刷新以 `lastActivityAt <= readThrough` 压制旧未读反弹，更晚活动恢复服务端未读；返回 iPhone 列表后即使前台同步成功也不会代替用户清零。读取失败/取消、加密会话、历史分页和缺少可靠时间边界不改变未读；消失会话和 profile 清理会删除基线。本切片不持久化已读、不新增文案、NAS 请求或服务器已读写。本机模型与展示聚焦 56/56、DsmMobile 全量 433/433 通过，GitHub Apple Build run `31533388602` 通过共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、iPhone/iPad 通用构建和 macOS 打包，Repository Check run `31533388647` 已通过；真实 iPhone/iPad、Chat Server 未读字段、VoiceOver、最大动态文字、键盘和分屏为 `PENDING_USER_VALIDATION`。
 
+CHAT-01～02 首次单聊与非加密私人群聊创建已完成源码主流程：移动端以工具栏和带搜索/筛选空态的原生 Sheet/Form 提供单选联系人或群名加至少两位成员的入口，成功后按 iPhone 导航栈或 iPad 双栏进入新会话。共享 Repository 固定 `Channel.Anonymous.initiate` v2、`Channel.Named.create/join/invite` v1 和 `Channel.Member.get` v1，并以精确 FORM 能力、创建前用户/会话重读、当前/停用用户过滤、群成员独立回读和进程内串行保护写链。typed outcome 区分确认成功、明确失败、提交未知和取消边界；未知结果保留原请求与完整草稿，后续只回读，不重放已执行阶段，群 ID 产生后的加入/邀请失败也不误判为终态失败。重连和在途重绑会在当前提交结束后换绑 Repository，待核对草稿只读取会话/成员，联系人读取以代次拒绝旧结果，迟到成功按来源 profile 拒绝跨连接写入。本机 Apple 共享包 695 项 XCTest（2 跳过）+ 10 项 Swift Testing、共享 Chat 聚焦 51/51、移动 Chat 聚焦 63/63、DsmMobile 全量 442/442、双语资源门禁、通用模拟器构建和 macOS 共享回归构建已通过；云端结果不得预支。真实 iPhone/iPad、三账号真实 Chat Server、权限/弱网、VoiceOver、最大动态文字、键盘/触控和 iPad 分屏为 `PENDING_USER_VALIDATION`。
+
 ### M5-B：单附件与少量消息动作（受限）
 
 - 接入 Photos/Files 单附件选择、上传进度/取消/失败恢复、保存和图片预览。

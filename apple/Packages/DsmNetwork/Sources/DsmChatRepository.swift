@@ -18,6 +18,14 @@ public actor DsmChatRepository: ChatRepository {
     private var pendingAttachmentSends: [UUID: PendingChatAttachmentSendReview] = [:]
     private var completedDirectConversations: [UUID: ChatConversation] = [:]
     private var completedGroups: [UUID: ChatConversation] = [:]
+    private var directConversationDrafts: [UUID: String] = [:]
+    private var groupConversationDrafts: [UUID: ChatGroupDraft] = [:]
+    private var pendingDirectConversations: [UUID: PendingDirectConversationCreate] = [:]
+    private var pendingGroupConversations: [UUID: PendingGroupConversationCreate] = [:]
+    private var terminalDirectConversationOutcomes: [UUID: ChatConversationCreateOutcome] = [:]
+    private var terminalGroupConversationOutcomes: [UUID: ChatConversationCreateOutcome] = [:]
+    private var isCreatingConversation = false
+    private var conversationCreateWaiters: [CheckedContinuation<Void, Never>] = []
     private var completedReminders: [UUID: ChatReminder] = [:]
     private var completedReminderDeletions: Set<UUID> = []
     private var completedScheduledMessages: [UUID: ChatScheduledMessage] = [:]
@@ -80,16 +88,15 @@ public actor DsmChatRepository: ChatRepository {
 
     public func availability() async -> ChatAvailability {
         guard hasCapability(DsmAPIName.chatChannel),
-              hasCapability(DsmAPIName.chatUser),
-              hasCapability(DsmAPIName.chatPost) else {
+              hasCapability(DsmAPIName.chatUser) else {
             return ChatAvailability(status: .unavailable)
         }
-        var features: Set<ChatFeature> = [
-            .directConversation,
-            .deleteOwnMessage,
-            .closeConversation
-        ]
-        if hasCapability(DsmAPIName.chatChannelNamed) {
+        var features: Set<ChatFeature> = [.deleteOwnMessage, .closeConversation]
+        if supportsFormCapability(DsmAPIName.chatChannelAnonymous, version: 2) {
+            features.insert(.directConversation)
+        }
+        if supportsFormCapability(DsmAPIName.chatChannelNamed, version: 1),
+           supportsFormCapability(DsmAPIName.chatChannelMember, version: 1) {
             features.insert(.groupConversation)
         }
         if hasCapability(DsmAPIName.chatPostReminder) {
@@ -326,77 +333,270 @@ public actor DsmChatRepository: ChatRepository {
         userID: String,
         clientRequestID: UUID
     ) async throws -> ChatConversation {
-        if let completed = completedDirectConversations[clientRequestID] { return completed }
-        let normalizedID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedID.isEmpty else { throw ChatContractError.emptyUserID }
-        let conversations = try await listConversations()
-        if let existing = conversations.first(where: {
-            $0.kind == .direct && $0.memberIDs.contains(normalizedID)
-        }) {
-            completedDirectConversations[clientRequestID] = existing
-            return existing
-        }
-
-        // 内部 API：契约来自当前 Chat Server 官方网页客户端。
-        // 创建前先查重、创建后再读取会话复查，避免重复点击产生多个会话。
-        _ = try await call(
-            DsmAPIName.chatChannelAnonymous,
-            method: "initiate",
-            parameters: [
-                "user_ids": .stringArray([normalizedID]),
-                "encrypted": .boolean(false),
-                "channel_key_encs": .string("[]")
-            ]
+        let outcome = try await openDirectConversationResult(
+            userID: userID,
+            clientRequestID: clientRequestID
         )
-        guard let verified = try await listConversations().first(where: {
-            $0.kind == .direct && $0.memberIDs.contains(normalizedID)
-        }) else {
-            throw AppError(
-                category: .partialFailure,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.34b76b919bd5bf65")
+        return try confirmedConversation(from: outcome)
+    }
+
+    public func openDirectConversationResult(
+        userID: String,
+        clientRequestID: UUID
+    ) async throws -> ChatConversationCreateOutcome {
+        await acquireConversationCreatePermit()
+        defer { releaseConversationCreatePermit() }
+        if Task.isCancelled {
+            return try conversationCreateCancelledBeforeSubmission(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID
             )
         }
-        completedDirectConversations[clientRequestID] = verified
-        return verified
+        let normalizedID = userID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedID.isEmpty else {
+            return try conversationCreateFailure(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID,
+                category: .validation,
+                tag: "chat.direct-create.invalid-user"
+            )
+        }
+        guard directConversationDrafts[clientRequestID].map({ $0 == normalizedID }) ?? true else {
+            return try conversationCreateFailure(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID,
+                category: .validation,
+                tag: "chat.direct-create.draft-mismatch"
+            )
+        }
+        directConversationDrafts[clientRequestID] = normalizedID
+        if let terminal = terminalDirectConversationOutcomes[clientRequestID] { return terminal }
+        if let completed = completedDirectConversations[clientRequestID] {
+            return try conversationCreateSuccess(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID,
+                conversation: completed
+            )
+        }
+        if let pending = pendingDirectConversations[clientRequestID] {
+            return try await finishPendingDirectConversation(pending)
+        }
+        guard supportsFormCapability(DsmAPIName.chatChannelAnonymous, version: 2) else {
+            return try conversationCreateUnsupported(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID,
+                tag: "chat.direct-create.unsupported"
+            )
+        }
+
+        let users: [ChatUser]
+        do {
+            users = try await listUsers(loadAvatars: false)
+        } catch {
+            if isCancellationError(error) {
+                return try conversationCreateCancelledBeforeSubmission(
+                    operation: "chatDirectConversationCreate",
+                    requestID: clientRequestID
+                )
+            }
+            throw error
+        }
+        guard users.contains(where: { $0.id == normalizedID && !$0.isDisabled && $0.isCurrentUser != true }) else {
+            return try conversationCreateFailure(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID,
+                category: .validation,
+                tag: "chat.direct-create.user-unavailable"
+            )
+        }
+        let conversations: [ChatConversation]
+        do {
+            conversations = try await listConversations()
+        } catch {
+            if isCancellationError(error) {
+                return try conversationCreateCancelledBeforeSubmission(
+                    operation: "chatDirectConversationCreate",
+                    requestID: clientRequestID
+                )
+            }
+            throw error
+        }
+        if let existing = directConversation(in: conversations, userID: normalizedID) {
+            completedDirectConversations[clientRequestID] = existing
+            return try conversationCreateSuccess(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID,
+                conversation: existing
+            )
+        }
+
+        pendingDirectConversations[clientRequestID] = PendingDirectConversationCreate(
+            requestID: clientRequestID,
+            userID: normalizedID
+        )
+        do {
+            _ = try await callRaw(
+                DsmAPIName.chatChannelAnonymous,
+                method: "initiate",
+                parameters: [
+                    "user_ids": .stringArray([normalizedID]),
+                    "encrypted": .boolean(false),
+                    "channel_key_encs": .string("[]")
+                ],
+                version: 2
+            )
+            return try await finishPendingDirectConversation(
+                PendingDirectConversationCreate(requestID: clientRequestID, userID: normalizedID)
+            )
+        } catch let error as DsmNetworkError {
+            if isExplicitWriteRejection(error) {
+                pendingDirectConversations[clientRequestID] = nil
+                let outcome = try conversationCreateRejection(
+                    error,
+                    operation: "chatDirectConversationCreate",
+                    requestID: clientRequestID,
+                    candidate: nil,
+                    tagPrefix: "chat.direct-create"
+                )
+                terminalDirectConversationOutcomes[clientRequestID] = outcome
+                return outcome
+            }
+            return try conversationCreateUnknown(
+                operation: "chatDirectConversationCreate",
+                requestID: clientRequestID,
+                cancelled: isCancellation(error),
+                candidate: nil,
+                tag: "chat.direct-create.submit-unknown"
+            )
+        }
     }
 
     public func createGroup(_ draft: ChatGroupDraft) async throws -> ChatConversation {
-        if let completed = completedGroups[draft.clientRequestID] { return completed }
-        guard !draft.isEncrypted else {
-            throw unsupported(L10n.string("shared.deb89bcb1602a4de"))
+        let outcome = try await createGroupResult(draft)
+        return try confirmedConversation(from: outcome)
+    }
+
+    public func createGroupResult(_ draft: ChatGroupDraft) async throws -> ChatConversationCreateOutcome {
+        await acquireConversationCreatePermit()
+        defer { releaseConversationCreatePermit() }
+        if Task.isCancelled {
+            return try conversationCreateCancelledBeforeSubmission(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID
+            )
         }
-        let named = try requireCapability(DsmAPIName.chatChannelNamed)
-        let existing = try await listConversations().first {
-            $0.kind == .group && $0.title == draft.title
-                && Set(draft.memberIDs).isSubset(of: Set($0.memberIDs))
+        guard groupConversationDrafts[draft.clientRequestID].map({ $0 == draft }) ?? true else {
+            return try conversationCreateFailure(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID,
+                category: .validation,
+                tag: "chat.group-create.draft-mismatch"
+            )
+        }
+        groupConversationDrafts[draft.clientRequestID] = draft
+        if let terminal = terminalGroupConversationOutcomes[draft.clientRequestID] { return terminal }
+        if let completed = completedGroups[draft.clientRequestID] {
+            return try conversationCreateSuccess(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID,
+                conversation: completed
+            )
+        }
+        if let pending = pendingGroupConversations[draft.clientRequestID] {
+            return try await finishPendingGroupConversation(pending)
+        }
+        guard !draft.isEncrypted else {
+            return try conversationCreateUnsupported(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID,
+                tag: "chat.group-create.encryption-unsupported"
+            )
+        }
+        guard supportsFormCapability(DsmAPIName.chatChannelNamed, version: 1),
+              supportsFormCapability(DsmAPIName.chatChannelMember, version: 1) else {
+            return try conversationCreateUnsupported(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID,
+                tag: "chat.group-create.unsupported"
+            )
+        }
+
+        let users: [ChatUser]
+        do {
+            users = try await listUsers(loadAvatars: false)
+        } catch {
+            if isCancellationError(error) {
+                return try conversationCreateCancelledBeforeSubmission(
+                    operation: "chatGroupCreate",
+                    requestID: draft.clientRequestID
+                )
+            }
+            throw error
+        }
+        let selectableIDs = Set(users.filter { !$0.isDisabled && $0.isCurrentUser != true }.map(\.id))
+        guard Set(draft.memberIDs).isSubset(of: selectableIDs) else {
+            return try conversationCreateFailure(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID,
+                category: .validation,
+                tag: "chat.group-create.member-unavailable"
+            )
+        }
+        let conversations: [ChatConversation]
+        let existing: ChatConversation?
+        do {
+            conversations = try await listConversations()
+            existing = try await matchingGroup(in: conversations, draft: draft)
+        } catch {
+            if isCancellationError(error) {
+                return try conversationCreateCancelledBeforeSubmission(
+                    operation: "chatGroupCreate",
+                    requestID: draft.clientRequestID
+                )
+            }
+            throw error
         }
         if let existing {
             completedGroups[draft.clientRequestID] = existing
-            return existing
+            return try conversationCreateSuccess(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID,
+                conversation: existing
+            )
         }
 
+        let named = try requireCapability(DsmAPIName.chatChannelNamed)
+        var pending = PendingGroupConversationCreate(draft: draft, candidateID: nil)
+        pendingGroupConversations[draft.clientRequestID] = pending
         do {
             let created = try await client.call(
                 path: named.path,
                 api: named.name,
-                version: try selectedVersion(named),
+                version: try selectedVersion(named, requiring: 1),
                 method: "create",
-                requestFormat: named.requestFormat,
+                requestFormat: .form,
                 parameters: ["name": .string(draft.title), "type": .string("private")],
                 credential: credential,
                 as: ChatJSON.self
             )
             guard let channelID = created.objectValue?.firstString(for: ["channel_id", "id"]) else {
-                throw invalidChatResponse()
+                return try conversationCreateUnknown(
+                    operation: "chatGroupCreate",
+                    requestID: draft.clientRequestID,
+                    cancelled: false,
+                    candidate: nil,
+                    tag: "chat.group-create.missing-candidate"
+                )
             }
+            pending = PendingGroupConversationCreate(draft: draft, candidateID: channelID)
+            pendingGroupConversations[draft.clientRequestID] = pending
             do {
                 try await client.callVoid(
                     path: named.path,
                     api: named.name,
-                    version: try selectedVersion(named),
+                    version: 1,
                     method: "join",
-                    requestFormat: named.requestFormat,
+                    requestFormat: .form,
                     parameters: ["channel_id": .string(channelID)],
                     credential: credential
                 )
@@ -404,37 +604,371 @@ public actor DsmChatRepository: ChatRepository {
                 if case .api(let code, _) = error, code == 117 {
                     // 117 表示创建者已经在群聊中，可继续邀请成员。
                 } else {
-                    throw error
+                    return try groupStageFailure(error, pending: pending, stage: "join")
                 }
             }
-            try await client.callVoid(
-                path: named.path,
-                api: named.name,
-                version: try selectedVersion(named),
-                method: "invite",
-                requestFormat: named.requestFormat,
-                parameters: [
-                    "channel_id": .string(channelID),
-                    "user_ids": .stringArray(draft.memberIDs),
-                    "channel_key_encs": .string("[]")
-                ],
-                credential: credential
+            do {
+                try await client.callVoid(
+                    path: named.path,
+                    api: named.name,
+                    version: 1,
+                    method: "invite",
+                    requestFormat: .form,
+                    parameters: [
+                        "channel_id": .string(channelID),
+                        "user_ids": .stringArray(draft.memberIDs),
+                        "channel_key_encs": .string("[]")
+                    ],
+                    credential: credential
+                )
+            } catch let error as DsmNetworkError {
+                return try groupStageFailure(error, pending: pending, stage: "invite")
+            }
+            return try await finishPendingGroupConversation(pending)
+        } catch let error as DsmNetworkError {
+            if isExplicitWriteRejection(error) {
+                pendingGroupConversations[draft.clientRequestID] = nil
+                let outcome = try conversationCreateRejection(
+                    error,
+                    operation: "chatGroupCreate",
+                    requestID: draft.clientRequestID,
+                    candidate: nil,
+                    tagPrefix: "chat.group-create"
+                )
+                terminalGroupConversationOutcomes[draft.clientRequestID] = outcome
+                return outcome
+            }
+            return try conversationCreateUnknown(
+                operation: "chatGroupCreate",
+                requestID: draft.clientRequestID,
+                cancelled: isCancellation(error),
+                candidate: nil,
+                tag: "chat.group-create.submit-unknown"
             )
-            guard let verified = try await listConversations().first(where: { $0.id == channelID }),
-                  Set(draft.memberIDs).isSubset(of: Set(verified.memberIDs)) else {
-                throw AppError(
-                    category: .partialFailure,
-                    isRetryable: false,
-                    safeUserMessage: L10n.string("shared.f975fe7c14e442cf")
+        }
+    }
+
+    private func finishPendingDirectConversation(
+        _ pending: PendingDirectConversationCreate
+    ) async throws -> ChatConversationCreateOutcome {
+        do {
+            let conversations = try await listConversations()
+            guard let confirmed = directConversation(in: conversations, userID: pending.userID) else {
+                return try conversationCreateUnknown(
+                    operation: "chatDirectConversationCreate",
+                    requestID: pending.requestID,
+                    cancelled: false,
+                    candidate: nil,
+                    tag: "chat.direct-create.readback-pending"
                 )
             }
-            completedGroups[draft.clientRequestID] = verified
-            return verified
-        } catch let error as AppError {
-            throw error
-        } catch let error as DsmNetworkError {
-            throw mapChatError(error)
+            let requestID = pending.requestID
+            pendingDirectConversations[requestID] = nil
+            completedDirectConversations[requestID] = confirmed
+            return try conversationCreateSuccess(
+                operation: "chatDirectConversationCreate",
+                requestID: requestID,
+                conversation: confirmed
+            )
+        } catch {
+            return try conversationCreateUnknown(
+                operation: "chatDirectConversationCreate",
+                requestID: pending.requestID,
+                cancelled: isCancellationError(error),
+                candidate: nil,
+                tag: "chat.direct-create.readback-failed"
+            )
         }
+    }
+
+    private func acquireConversationCreatePermit() async {
+        guard isCreatingConversation else {
+            isCreatingConversation = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            conversationCreateWaiters.append(continuation)
+        }
+    }
+
+    private func releaseConversationCreatePermit() {
+        guard !conversationCreateWaiters.isEmpty else {
+            isCreatingConversation = false
+            return
+        }
+        conversationCreateWaiters.removeFirst().resume()
+    }
+
+    private func finishPendingGroupConversation(
+        _ pending: PendingGroupConversationCreate
+    ) async throws -> ChatConversationCreateOutcome {
+        do {
+            let conversations = try await listConversations()
+            let candidates = conversations.filter { conversation in
+                conversation.kind == .group
+                    && (pending.candidateID.map { conversation.id == $0 }
+                        ?? (conversation.title == pending.draft.title))
+            }
+            for candidate in candidates {
+                let members = try await listConversationMembers(conversationID: candidate.id)
+                if Set(pending.draft.memberIDs).isSubset(of: Set(members.map(\.id))) {
+                    pendingGroupConversations[pending.draft.clientRequestID] = nil
+                    completedGroups[pending.draft.clientRequestID] = candidate
+                    return try conversationCreateSuccess(
+                        operation: "chatGroupCreate",
+                        requestID: pending.draft.clientRequestID,
+                        conversation: candidate
+                    )
+                }
+            }
+            return try conversationCreateUnknown(
+                operation: "chatGroupCreate",
+                requestID: pending.draft.clientRequestID,
+                cancelled: false,
+                candidate: nil,
+                tag: "chat.group-create.readback-pending"
+            )
+        } catch {
+            return try conversationCreateUnknown(
+                operation: "chatGroupCreate",
+                requestID: pending.draft.clientRequestID,
+                cancelled: isCancellationError(error),
+                candidate: nil,
+                tag: "chat.group-create.readback-failed"
+            )
+        }
+    }
+
+    private func matchingGroup(
+        in conversations: [ChatConversation],
+        draft: ChatGroupDraft
+    ) async throws -> ChatConversation? {
+        for conversation in conversations where conversation.kind == .group && conversation.title == draft.title {
+            let members = try await listConversationMembers(conversationID: conversation.id)
+            if Set(draft.memberIDs).isSubset(of: Set(members.map(\.id))) {
+                return conversation
+            }
+        }
+        return nil
+    }
+
+    private func directConversation(
+        in conversations: [ChatConversation],
+        userID: String
+    ) -> ChatConversation? {
+        conversations.first { $0.kind == .direct && $0.memberIDs.contains(userID) }
+    }
+
+    private func groupStageFailure(
+        _ error: DsmNetworkError,
+        pending: PendingGroupConversationCreate,
+        stage: String
+    ) throws -> ChatConversationCreateOutcome {
+        if isExplicitWriteRejection(error) {
+            return try conversationCreateUnknown(
+                operation: "chatGroupCreate",
+                requestID: pending.draft.clientRequestID,
+                cancelled: false,
+                candidate: nil,
+                errorCategory: mutationErrorCategory(for: error),
+                tag: "chat.group-create.\(stage)-rejected-pending"
+            )
+        }
+        return try conversationCreateUnknown(
+            operation: "chatGroupCreate",
+            requestID: pending.draft.clientRequestID,
+            cancelled: isCancellation(error),
+            candidate: nil,
+            tag: "chat.group-create.\(stage)-unknown"
+        )
+    }
+
+    private func conversationCreateSuccess(
+        operation: String,
+        requestID: UUID,
+        conversation: ChatConversation
+    ) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .confirmedSuccess,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 1, failed: 0, unknown: 0),
+                diagnosticTag: "chat.conversation-create.confirmed"
+            ),
+            clientRequestID: requestID,
+            confirmedConversation: conversation
+        )
+    }
+
+    private func conversationCreateFailure(
+        operation: String,
+        requestID: UUID,
+        category: MutationErrorCategory,
+        tag: String
+    ) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .confirmedFailure,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: category,
+                diagnosticTag: tag
+            ),
+            clientRequestID: requestID,
+            confirmedConversation: nil
+        )
+    }
+
+    private func conversationCreateUnsupported(
+        operation: String,
+        requestID: UUID,
+        tag: String
+    ) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .unsupported,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: .unsupported,
+                diagnosticTag: tag
+            ),
+            clientRequestID: requestID,
+            confirmedConversation: nil
+        )
+    }
+
+    private func conversationCreateCancelledBeforeSubmission(
+        operation: String,
+        requestID: UUID
+    ) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: .cancelledBeforeSubmission,
+                operation: operation,
+                submitted: false,
+                requiresRefresh: false,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 0),
+                diagnosticTag: "chat.conversation-create.cancelled-before-submit"
+            ),
+            clientRequestID: requestID,
+            confirmedConversation: nil
+        )
+    }
+
+    private func conversationCreateUnknown(
+        operation: String,
+        requestID: UUID,
+        cancelled: Bool,
+        candidate: ChatConversation?,
+        errorCategory: MutationErrorCategory? = nil,
+        tag: String
+    ) throws -> ChatConversationCreateOutcome {
+        ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: cancelled ? .cancellationRequestedAfterSubmission : .submittedButUnverified,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: true,
+                counts: MutationResultCounts(succeeded: 0, failed: 0, unknown: 1),
+                errorCategory: errorCategory ?? (cancelled ? .network : .unknown),
+                diagnosticTag: tag
+            ),
+            clientRequestID: requestID,
+            confirmedConversation: candidate
+        )
+    }
+
+    private func conversationCreateRejection(
+        _ error: DsmNetworkError,
+        operation: String,
+        requestID: UUID,
+        candidate: ChatConversation?,
+        requiresRefresh: Bool = false,
+        tagPrefix: String
+    ) throws -> ChatConversationCreateOutcome {
+        let category = mutationErrorCategory(for: error)
+        let status: MutationResultStatus
+        switch category {
+        case .permission:
+            status = .permissionDenied
+        case .unsupported:
+            status = .unsupported
+        default:
+            status = .confirmedFailure
+        }
+        return ChatConversationCreateOutcome(
+            result: try MutationResult(
+                status: status,
+                operation: operation,
+                submitted: true,
+                requiresRefresh: requiresRefresh || candidate != nil,
+                counts: MutationResultCounts(succeeded: 0, failed: 1, unknown: 0),
+                errorCategory: category,
+                diagnosticTag: "\(tagPrefix).rejected"
+            ),
+            clientRequestID: requestID,
+            confirmedConversation: candidate
+        )
+    }
+
+    private func mutationErrorCategory(for error: DsmNetworkError) -> MutationErrorCategory {
+        switch mapChatError(error).category {
+        case .permissionDenied:
+            .permission
+        case .authenticationRequired, .otpRequired:
+            .authentication
+        case .apiUnavailable, .versionUnsupported:
+            .unsupported
+        default:
+            .server
+        }
+    }
+
+    private func confirmedConversation(
+        from outcome: ChatConversationCreateOutcome
+    ) throws -> ChatConversation {
+        if outcome.result.status == .confirmedSuccess,
+           let conversation = outcome.confirmedConversation {
+            return conversation
+        }
+        let category: AppErrorCategory
+        switch outcome.result.errorCategory {
+        case .authentication: category = .authenticationRequired
+        case .permission: category = .permissionDenied
+        case .unsupported: category = .apiUnavailable
+        case .validation: category = .invalidResponse
+        default: category = .partialFailure
+        }
+        throw AppError(
+            category: category,
+            isRetryable: outcome.result.requiresRefresh,
+            safeUserMessage: L10n.string("shared.34b76b919bd5bf65")
+        )
+    }
+
+    private func isExplicitWriteRejection(_ error: DsmNetworkError) -> Bool {
+        switch error {
+        case .api:
+            true
+        case .invalidRequest, .httpStatus, .responseTooLarge, .invalidResponse, .transport, .cancelled:
+            false
+        }
+    }
+
+    private func isCancellation(_ error: DsmNetworkError) -> Bool {
+        if case .cancelled = error { return true }
+        return false
+    }
+
+    private func isCancellationError(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        return (error as? AppError)?.category == .cancelled
     }
 
     public func sendMessage(
@@ -1792,6 +2326,25 @@ public actor DsmChatRepository: ChatRepository {
         }
     }
 
+    private func callRaw(
+        _ name: String,
+        method: String,
+        parameters: [String: DsmParameterValue],
+        version: Int
+    ) async throws -> ChatJSON {
+        let capability = try requireCapability(name)
+        return try await client.call(
+            path: capability.path,
+            api: capability.name,
+            version: try selectedVersion(capability, requiring: version),
+            method: method,
+            requestFormat: .form,
+            parameters: parameters,
+            credential: credential,
+            as: ChatJSON.self
+        )
+    }
+
     /// 调用只返回成功状态、不携带 `data` 的 Chat 写操作。
     ///
     /// Chat Server 的删除消息、关闭会话等内部接口在成功时通常只返回
@@ -2234,6 +2787,15 @@ public actor DsmChatRepository: ChatRepository {
         return capability.minVersion <= version && capability.maxVersion >= version
     }
 
+    private func supportsFormCapability(_ name: String, version: Int) -> Bool {
+        guard let capability = capabilities[name], capability.requestFormat == .form else {
+            return false
+        }
+        return capability.selectedVersion != nil
+            && capability.minVersion <= version
+            && capability.maxVersion >= version
+    }
+
     private var supportsAttachmentUpload: Bool {
         guard let capability = capabilities[DsmAPIName.chatPost] else { return false }
         return capability.minVersion <= 5 && capability.maxVersion >= 5
@@ -2345,6 +2907,16 @@ public actor DsmChatRepository: ChatRepository {
             safeUserMessage: L10n.string("shared.cee51e4469010a94")
         )
     }
+}
+
+private struct PendingDirectConversationCreate: Equatable, Sendable {
+    let requestID: UUID
+    let userID: String
+}
+
+private struct PendingGroupConversationCreate: Equatable, Sendable {
+    let draft: ChatGroupDraft
+    let candidateID: String?
 }
 
 private struct PendingChatMessageSendReview: Sendable {
