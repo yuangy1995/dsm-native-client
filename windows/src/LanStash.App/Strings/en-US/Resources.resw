@@ -999,6 +999,37 @@
   <data name="FilePreviewPdfAutomationName" xml:space="preserve"><value>PDF preview for {0}, page {1:N0} of {2:N0}</value></data>
   <data name="FilePreviewPdfPage" xml:space="preserve"><value>Page {0:N0} of {1:N0}</value></data>
   <data name="FilePreviewMediaAutomationName" xml:space="preserve"><value>Media preview for {0}</value></data>
+  <data name="FileTextEdit_EditButton.Content" xml:space="preserve"><value>Edit</value></data>
+  <data name="FileTextEdit_EditButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Edit this text file</value></data>
+  <data name="FileTextEdit_SaveButton.Content" xml:space="preserve"><value>Save</value></data>
+  <data name="FileTextEdit_SaveButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Save changes to the NAS</value></data>
+  <data name="FileTextEdit_CancelButton.Content" xml:space="preserve"><value>Cancel</value></data>
+  <data name="FileTextEdit_CancelButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Cancel editing</value></data>
+  <data name="FileTextEdit_FormatButton.Content" xml:space="preserve"><value>Format</value></data>
+  <data name="FileTextEdit_FormatButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Format this file</value></data>
+  <data name="FileTextEdit_DismissStatus.Content" xml:space="preserve"><value>Dismiss</value></data>
+  <data name="FileTextEdit_Saving" xml:space="preserve"><value>Saving…</value></data>
+  <data name="FileTextEdit_SavedMessage" xml:space="preserve"><value>File saved</value></data>
+  <data name="FileTextEdit_SaveFailedMessage" xml:space="preserve"><value>Save didn’t confirm. Check the folder and connection.</value></data>
+  <data name="FileTextEdit_NeedsReviewTitle" xml:space="preserve"><value>Check the file before trying again</value></data>
+  <data name="FileTextEdit_NeedsReviewMessage" xml:space="preserve"><value>The request may have reached the NAS, but the saved content could not be confirmed. Refresh and check the file before making another save.</value></data>
+  <data name="FileTextEdit_SaveConfirmTitle" xml:space="preserve"><value>Replace this text file?</value></data>
+  <data name="FileTextEdit_SaveConfirmMessage" xml:space="preserve"><value>This replaces the current file on the NAS after checking that it has not changed since you opened it.</value></data>
+  <data name="FileTextEdit_SaveConfirmAction" xml:space="preserve"><value>Replace file</value></data>
+  <data name="FileTextEdit_UnsavedTitle" xml:space="preserve"><value>Unsaved changes</value></data>
+  <data name="FileTextEdit_UnsavedMessage" xml:space="preserve"><value>Discard changes to this file?</value></data>
+  <data name="FileTextEdit_Discard" xml:space="preserve"><value>Discard</value></data>
+  <data name="FileTextEdit_KeepEditing" xml:space="preserve"><value>Keep editing</value></data>
+  <data name="FileTextEdit_TooLargeMessage" xml:space="preserve"><value>Files larger than 5 MiB can’t be edited here</value></data>
+  <data name="FileTextEdit_EncodingError" xml:space="preserve"><value>Couldn’t read the file encoding</value></data>
+  <data name="FileTextEdit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Text editor</value></data>
+  <data name="FileBrowserSearchInProgress.Text" xml:space="preserve"><value>Searching this folder and its subfolders…</value></data>
+  <data name="FileBrowserSearchRetry.Content" xml:space="preserve"><value>Try again</value></data>
+  <data name="FileBrowserSearchRetry.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Try the file search again</value></data>
+  <data name="FileBrowserSearchErrorTitle" xml:space="preserve"><value>Couldn’t finish the search</value></data>
+  <data name="FileBrowserSearchErrorMessage" xml:space="preserve"><value>Check the NAS connection, then try this search again.</value></data>
+  <data name="FileBrowserSearchTruncatedTitle" xml:space="preserve"><value>Only the first results are shown</value></data>
+  <data name="FileBrowserSearchTruncatedMessage" xml:space="preserve"><value>Showing the first {0:N0} matches. Narrow the search to find more specific files.</value></data>
   <data name="Settings.PageTitle.Text" xml:space="preserve"><value>Settings</value></data>
   <data name="Settings.PageDescription.Text" xml:space="preserve"><value>Choose how this app looks, which optional modules appear, and how local reusable data is managed.</value></data>
   <data name="Settings.LanguageSectionTitle.Text" xml:space="preserve"><value>Language</value></data>
@@ -1604,4 +1635,94 @@
   <data name="FileDirectorySizeFileCount" xml:space="preserve"><value>Files: {0:N0}</value></data>
   <data name="FileDirectorySizeFolderCount" xml:space="preserve"><value>Folders: {0:N0}</value></data>
   <data name="FileDirectorySizeStatusAutomationName" xml:space="preserve"><value>Folder size calculation status</value></data>
+  <data name="FileBrowserUploadOverwrite.Label" xml:space="preserve"><value>Replace existing files</value></data>
+  <data name="FileBrowserUploadOverwrite.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Replace files that already exist in this folder. Turn on to overwrite when names match.</value></data>
+  <data name="FileMoveUndoMessage.Text" xml:space="preserve"><value>Moved {0} item(s) to {1}</value></data>
+  <data name="FileMoveUndoButton.Text" xml:space="preserve"><value>Undo</value></data>
+  <data name="FileMoveUndoStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Drag-move completed. Select Undo to move the items back.</value></data>
+  <data name="FileLocationsRemoteCreate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Create remote mount</value></data>
+  <data name="FileLocationsRemoteEdit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Edit remote mount</value></data>
+  <data name="FileLocationsRemoteDelete.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Delete remote mount</value></data>
+  <data name="FileLocationsRemoteCreateTitle" xml:space="preserve"><value>Create remote mount</value></data>
+  <data name="FileLocationsRemoteCreateAction" xml:space="preserve"><value>Create</value></data>
+  <data name="FileLocationsRemoteEditTitle" xml:space="preserve"><value>Edit remote mount</value></data>
+  <data name="FileLocationsRemoteEditAction" xml:space="preserve"><value>Save</value></data>
+  <data name="FileLocationsRemoteDeleteTitle" xml:space="preserve"><value>Delete remote mount</value></data>
+  <data name="FileLocationsRemoteDeleteMessage" xml:space="preserve"><value>Remove the remote mount at "{0}"? Files on the remote server will not be deleted.</value></data>
+  <data name="FileLocationsRemoteOperationFailedTitle" xml:space="preserve"><value>Remote mount operation failed</value></data>
+  <data name="FileLocationsRemoteOperationFailed" xml:space="preserve"><value>The operation could not be completed. Check the connection and try again.</value></data>
+  <data name="FileLocationsRemoteInvalidDraft" xml:space="preserve"><value>Please fill in all required fields correctly before submitting.</value></data>
+  <data name="FileLocationsRemoteFieldServer" xml:space="preserve"><value>Server</value></data>
+  <data name="FileLocationsRemoteFieldRemotePath" xml:space="preserve"><value>Remote path</value></data>
+  <data name="FileLocationsRemoteFieldMountPoint" xml:space="preserve"><value>Mount point</value></data>
+  <data name="FileLocationsRemoteFieldUsername" xml:space="preserve"><value>Username</value></data>
+  <data name="FileLocationsRemoteFieldUsernameOptional" xml:space="preserve"><value>Optional</value></data>
+  <data name="FileLocationsRemoteFieldPassword" xml:space="preserve"><value>Password</value></data>
+  <data name="FileLocationsRemoteFieldPasswordOptional" xml:space="preserve"><value>Optional; only used for this request</value></data>
+  <data name="FileLocationsRemoteFieldDomain" xml:space="preserve"><value>Domain</value></data>
+  <data name="FileLocationsRemoteFieldDomainOptional" xml:space="preserve"><value>Optional</value></data>
+  <data name="FileLocationsRemoteFieldReadOnly" xml:space="preserve"><value>Read-only mount</value></data>
+  <data name="FileLocationsRemoteFieldProtocol" xml:space="preserve"><value>Protocol</value></data>
+  <data name="FileLocationsRemoteProtocolCifs" xml:space="preserve"><value>CIFS (SMB)</value></data>
+  <data name="FileLocationsRemoteProtocolNfs" xml:space="preserve"><value>NFS</value></data>
+  <data name="FileLocationsRemoteProtocolIso" xml:space="preserve"><value>ISO</value></data>
+  <data name="FileBrowserSearchSubfolders.Header" xml:space="preserve"><value>Search subfolders</value></data>
+  <data name="FileBrowserSearchSubfolders.OffContent" xml:space="preserve"><value>Filter only loaded items</value></data>
+  <data name="FileBrowserSearchSubfolders.OnContent" xml:space="preserve"><value>Search all subfolders on the NAS</value></data>
+  <data name="FileBrowserSearching" xml:space="preserve"><value>Searching...</value></data>
+  <data name="FileBrowserSearchTruncated.Title" xml:space="preserve"><value>Search reached the result limit</value></data>
+  <data name="FileBrowserSearchTruncated.Message" xml:space="preserve"><value>Only the first 2000 results are shown. Refine your search to find specific items.</value></data>
+  <data name="FileBrowserSearchUnsupported" xml:space="preserve"><value>Search is not available on this NAS.</value></data>
+  <data name="CrossNasCopyAction.Label" xml:space="preserve"><value>Copy to another NAS…</value></data>
+  <data name="CrossNasCopyAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Copy to another NAS</value></data>
+  <data name="CrossNasMoveAction.Label" xml:space="preserve"><value>Move to another NAS…</value></data>
+  <data name="CrossNasMoveAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move to another NAS</value></data>
+  <data name="CrossNasSelectTarget" xml:space="preserve"><value>Select destination NAS</value></data>
+  <data name="CrossNasSelectedTarget" xml:space="preserve"><value>Destination NAS</value></data>
+  <data name="CrossNasSourceFile" xml:space="preserve"><value>Source file</value></data>
+  <data name="CrossNasSourceFolder" xml:space="preserve"><value>Source folder</value></data>
+  <data name="CrossNasProgress" xml:space="preserve"><value>Transferring {0} of {1} bytes</value></data>
+  <data name="CrossNasProgressIndeterminate" xml:space="preserve"><value>Transferring…</value></data>
+  <data name="CrossNasCompleted" xml:space="preserve"><value>Transfer completed</value></data>
+  <data name="CrossNasFailed" xml:space="preserve"><value>Transfer didn't finish</value></data>
+  <data name="CrossNasUnsupported" xml:space="preserve"><value>Cross-NAS transfer is not supported on these connections</value></data>
+  <data name="CrossNasCopyFileTitle" xml:space="preserve"><value>Copy file to another NAS</value></data>
+  <data name="CrossNasCopyFolderTitle" xml:space="preserve"><value>Copy folder to another NAS</value></data>
+  <data name="CrossNasMoveFileTitle" xml:space="preserve"><value>Move file to another NAS</value></data>
+  <data name="CrossNasMoveFolderTitle" xml:space="preserve"><value>Move folder to another NAS</value></data>
+  <data name="CrossNasSubmitButton" xml:space="preserve"><value>Transfer</value></data>
+  <data name="FileCopyMove_Up_Button" xml:space="preserve"><value>Up</value></data>
+  <data name="NasDetailsReadWrite.Title" xml:space="preserve"><value>Read and write view</value></data>
+  <data name="NasDetailsReadWrite.Message" xml:space="preserve"><value>Editing controls are available when the NAS supports the relevant write operations.</value></data>
+  <data name="NasSettingsLoadError" xml:space="preserve"><value>The settings could not be loaded. Check the connection and try again.</value></data>
+  <data name="NasSettingsSaveError" xml:space="preserve"><value>The change could not be saved. Check the connection and try again.</value></data>
+  <data name="NasSettingsDeleteError" xml:space="preserve"><value>The item could not be deleted. Check the connection and try again.</value></data>
+  <data name="NasSettingsDdnsTitle" xml:space="preserve"><value>DDNS settings</value></data>
+  <data name="NasSettingsDdnsAdd" xml:space="preserve"><value>Add DDNS record</value></data>
+  <data name="NasSettingsDdnsEdit" xml:space="preserve"><value>Edit DDNS record</value></data>
+  <data name="NasSettingsDdnsDeleteTitle" xml:space="preserve"><value>Delete DDNS record</value></data>
+  <data name="NasSettingsDdnsNone" xml:space="preserve"><value>No DDNS records configured. Add one to keep your NAS reachable when its public IP changes.</value></data>
+  <data name="NasSettingsDdnsHostname" xml:space="preserve"><value>Hostname (e.g. mynas.synology.me)</value></data>
+  <data name="NasSettingsDdnsUsername" xml:space="preserve"><value>Username</value></data>
+  <data name="NasSettingsDdnsPassword" xml:space="preserve"><value>Password</value></data>
+  <data name="NasSettingsDdnsEnabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="NasSettingsDdnsTest" xml:space="preserve"><value>Test</value></data>
+  <data name="NasSettingsDdnsTestSuccess" xml:space="preserve"><value>The DDNS record was verified successfully.</value></data>
+  <data name="NasSettingsDdnsTestFailed" xml:space="preserve"><value>The DDNS test was not successful. Check the provider and credentials.</value></data>
+  <data name="NasSettingsDdnsValidationError" xml:space="preserve"><value>Please fill in all required fields (Provider, Hostname, Username, and Password).</value></data>
+  <data name="NasSettingsPowerTitle" xml:space="preserve"><value>Power actions</value></data>
+  <data name="NasSettingsShutdownLabel" xml:space="preserve"><value>Shut down</value></data>
+  <data name="NasSettingsRebootLabel" xml:space="preserve"><value>Restart</value></data>
+  <data name="NasSettingsShutdownConfirmation" xml:space="preserve"><value>Shut down this NAS? The NAS will become unreachable and all services will stop.</value></data>
+  <data name="NasSettingsRebootConfirmation" xml:space="preserve"><value>Restart this NAS? The NAS will become temporarily unreachable.</value></data>
+  <data name="NasSettingsShutdownSubmitted" xml:space="preserve"><value>The shutdown was submitted. The NAS may be unreachable. Refresh to check.</value></data>
+  <data name="NasSettingsRebootSubmitted" xml:space="preserve"><value>The restart was submitted. The NAS should be reachable again shortly.</value></data>
+  <data name="NasSettingsFileServiceTitle" xml:space="preserve"><value>File service settings</value></data>
+  <data name="NasSettingsTerminalTitle" xml:space="preserve"><value>Terminal settings</value></data>
+  <data name="NasSettingsProxyTitle" xml:space="preserve"><value>Proxy settings</value></data>
+  <data name="NasSettingsNetworkTitle" xml:space="preserve"><value>Network settings</value></data>
+  <data name="NasSettingsRegionTitle" xml:space="preserve"><value>Region and time settings</value></data>
+  <data name="NasSettingsSecurityTitle" xml:space="preserve"><value>Security settings</value></data>
+  <data name="NasSettingsHardwareTitle" xml:space="preserve"><value>Hardware and power settings</value></data>
+  <data name="ActionEdit" xml:space="preserve"><value>Edit</value></data>
 </root>

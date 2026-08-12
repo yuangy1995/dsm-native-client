@@ -103,7 +103,7 @@ public sealed class NasDetailsPageSourceContractTests
         Assert.Contains("private NasDetailsPage? _nasDetails;", shell);
         Assert.Contains("private INasDetailsRepository? _nasDetailsRepository;", shell);
         Assert.Contains("module == AppModule.NasSettings", shell);
-        Assert.Contains("new NasDetailsPage(nasRepository)", shell);
+        Assert.Contains("new NasDetailsPage(", shell);
         Assert.Contains("new UnavailableNasDetailsRepository", shell);
         Assert.Contains("!ReferenceEquals(_nasDetailsRepository, nasRepository)", shell);
         Assert.Contains("CloseNasDetailsPage();", shell);

@@ -196,3 +196,101 @@ public sealed record ChatAttachmentContentReadResult(
     bool DestinationWasCleared,
     MutationErrorCategory? ErrorCategory = null,
     string? DiagnosticTag = null);
+
+// ── 提醒 ──
+
+public sealed record ChatReminder(
+    string MessageId,
+    string ConversationId,
+    DateTimeOffset RemindAt);
+
+public sealed record ChatReminderSetOutcome(
+    MutationResult Result,
+    string MessageId,
+    string ConversationId,
+    Guid ClientRequestId,
+    ChatReminder? ConfirmedReminder);
+
+// ── 定时消息 ──
+
+public sealed record ChatScheduledMessage(
+    string Id,
+    string ConversationId,
+    string Text,
+    DateTimeOffset SendAt);
+
+public sealed record ChatScheduledMessageCreateOutcome(
+    MutationResult Result,
+    Guid ClientRequestId,
+    ChatScheduledMessage? ConfirmedMessage);
+
+public sealed record ChatScheduledMessageDraft(
+    string ConversationId,
+    string Text,
+    DateTimeOffset SendAt,
+    Guid ClientRequestId)
+{
+    public bool IsValid => !string.IsNullOrWhiteSpace(ConversationId) &&
+                           !string.IsNullOrWhiteSpace(Text) &&
+                           SendAt > DateTimeOffset.UtcNow;
+}
+
+// ── 投票 ──
+
+public sealed record ChatPollOption(
+    string Id,
+    string Text,
+    int VoteCount,
+    bool? IsSelectedByCurrentUser);
+
+public sealed record ChatPoll(
+    string Id,
+    string Question,
+    bool AllowsMultipleSelection,
+    bool IsAnonymous,
+    DateTimeOffset? ClosesAt,
+    bool IsClosed,
+    IReadOnlyList<ChatPollOption> Options);
+
+public sealed record ChatPollDraft(
+    string ConversationId,
+    string Question,
+    IReadOnlyList<string> Options,
+    bool AllowsMultipleSelection,
+    bool IsAnonymous,
+    Guid ClientRequestId)
+{
+    public bool IsValid => !string.IsNullOrWhiteSpace(ConversationId) &&
+                           !string.IsNullOrWhiteSpace(Question) &&
+                           Question.Length <= 256 &&
+                           Options.Count >= 2 &&
+                           Options.Count <= 10 &&
+                           Options.All(opt => !string.IsNullOrWhiteSpace(opt) && opt.Length <= 128) &&
+                           Options.Distinct(StringComparer.OrdinalIgnoreCase).Count() == Options.Count;
+}
+
+public sealed record ChatPollCreateOutcome(
+    MutationResult Result,
+    Guid ClientRequestId,
+    ChatMessage? ConfirmedMessage);
+
+// ── 消息转发 ──
+
+public sealed record ChatForwardRequest(
+    string MessageId,
+    string SourceConversationId,
+    IReadOnlyList<string> TargetConversationIds,
+    Guid ClientRequestId);
+
+// ── 消息删除 ──
+
+public sealed record ChatDeleteMessageRequest(
+    string MessageId,
+    string ConversationId,
+    Guid ClientRequestId);
+
+// ── 会话关闭 ──
+
+public sealed record ChatCloseConversationRequest(
+    string ConversationId,
+    Guid ClientRequestId);

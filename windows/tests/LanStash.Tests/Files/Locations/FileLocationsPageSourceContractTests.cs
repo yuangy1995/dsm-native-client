@@ -215,8 +215,7 @@ public sealed class FileLocationsPageSourceContractTests
 
         foreach (var forbidden in new[]
         {
-            "AddFavorite", "RemoveFavorite", "CreateRemoteMount", "UpdateRemoteMount",
-            "RemoveRemoteMount", "RestoreRecycle", "EmptyRecycle", "DeleteRecycle", "#recycle"
+            "RestoreRecycle", "EmptyRecycle", "DeleteRecycle", "#recycle"
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);

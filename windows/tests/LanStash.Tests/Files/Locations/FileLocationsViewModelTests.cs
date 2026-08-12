@@ -7,6 +7,75 @@ namespace LanStash.Tests.Files.Locations;
 public sealed class FileLocationsViewModelTests
 {
     [Fact]
+    public async Task SuccessfulRemoteMountMutationReadsBackWithIndependentCancellation()
+    {
+        var profile = Guid.NewGuid();
+        using var browser = new FileBrowserViewModel(new ImmediateSource());
+        using var model = new FileLocationsViewModel();
+        using var callerCancellation = new CancellationTokenSource();
+        var repository = new MutationRepository(
+            profile,
+            MutationResultStatus.ConfirmedSuccess,
+            Snapshot(profile, "after"))
+        {
+            OnMutation = callerCancellation.Cancel,
+        };
+        model.Activate(profile, repository, browser);
+
+        var result = await model.CreateRemoteMountAsync(ValidDraft(), callerCancellation.Token);
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Status);
+        Assert.Equal(1, repository.CreateCount);
+        Assert.Equal(1, repository.LoadCount);
+        Assert.Equal("after", Assert.Single(model.Favorites.Items).Name);
+        Assert.NotEqual(callerCancellation.Token, Assert.Single(repository.LoadTokens));
+    }
+
+    [Fact]
+    public async Task PostSubmissionCancellationReadsBackOnceAndNeverReplays()
+    {
+        var profile = Guid.NewGuid();
+        using var browser = new FileBrowserViewModel(new ImmediateSource());
+        using var model = new FileLocationsViewModel();
+        using var callerCancellation = new CancellationTokenSource();
+        var repository = new MutationRepository(
+            profile,
+            MutationResultStatus.CancellationRequestedAfterSubmission,
+            Snapshot(profile, "after"))
+        {
+            OnMutation = callerCancellation.Cancel,
+        };
+        model.Activate(profile, repository, browser);
+
+        var result = await model.UpdateRemoteMountAsync(ValidDraft());
+
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, result.Status);
+        Assert.Equal(0, repository.CreateCount);
+        Assert.Equal(1, repository.UpdateCount);
+        Assert.Equal(1, repository.LoadCount);
+        Assert.Equal("after", Assert.Single(model.Favorites.Items).Name);
+    }
+
+    [Fact]
+    public void RemoteMountManagementRequiresActiveMatchingProfile()
+    {
+        var profile = Guid.NewGuid();
+        using var browser = new FileBrowserViewModel(new ImmediateSource());
+        using var model = new FileLocationsViewModel();
+        var repository = new MutationRepository(profile, MutationResultStatus.ConfirmedSuccess);
+        model.Activate(profile, repository, browser);
+
+        Assert.True(model.AllowsRemoteMountManagement);
+        model.Deactivate();
+        Assert.False(model.AllowsRemoteMountManagement);
+
+        model.Activate(profile, repository, browser);
+        model.BeginEditRemoteMount(new FileRemoteLocation(
+            Guid.NewGuid(), "cifs:/foreign", "foreign", "/foreign", FileRemoteProtocol.Cifs, false));
+        Assert.False(model.IsEditingRemoteMount);
+    }
+
+    [Fact]
     public async Task LateProfileResultCannotReplaceActiveRepositoryStateAndOldRequestIsCancelled()
     {
         var profileA = Guid.NewGuid();
@@ -400,6 +469,87 @@ public sealed class FileLocationsViewModelTests
             FileLocationCompletion.Complete,
             FileLocationSectionStatus.Available));
 
+    private static RemoteMountDraft ValidDraft() => new(
+        "server.local", "/volume1/share", "/remote-mount",
+        username: null, password: null, domain: null,
+        readOnly: false, FileRemoteProtocol.Cifs);
+
+    private sealed class MutationRepository(
+        Guid profileId,
+        MutationResultStatus mutationStatus,
+        params FileLocationsSnapshot[] snapshots) : IFileLocationsRepository
+    {
+        private readonly Queue<FileLocationsSnapshot> _snapshots = new(snapshots);
+        public Guid ProfileId { get; } = profileId;
+        public FileLocationsAvailability Availability { get; } = new(true, true, true);
+        public bool CanWriteFavorites => false;
+        public bool AllowsRemoteMountManagement => true;
+        public int LoadCount { get; private set; }
+        public int CreateCount { get; private set; }
+        public int UpdateCount { get; private set; }
+        public List<CancellationToken> LoadTokens { get; } = [];
+        public Action? OnMutation { get; init; }
+
+        public Task<FileLocationsSnapshot> LoadSnapshotAsync(CancellationToken cancellationToken = default)
+        {
+            LoadCount++;
+            LoadTokens.Add(cancellationToken);
+            return Task.FromResult(_snapshots.Count > 0 ? _snapshots.Dequeue() : Snapshot(ProfileId, "empty"));
+        }
+
+        public Task<MutationResult> AddFavoriteAsync(string path, string? name = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Unsupported("addFavorite"));
+
+        public Task<MutationResult> RemoveFavoriteAsync(string path, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Unsupported("removeFavorite"));
+
+        public Task<MutationResult> CreateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default)
+        {
+            CreateCount++;
+            OnMutation?.Invoke();
+            return Task.FromResult(Result("createRemoteMount"));
+        }
+
+        public Task<MutationResult> UpdateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default)
+        {
+            UpdateCount++;
+            OnMutation?.Invoke();
+            return Task.FromResult(Result("updateRemoteMount"));
+        }
+
+        public Task<MutationResult> DeleteRemoteMountAsync(string mountPoint, CancellationToken cancellationToken = default)
+        {
+            OnMutation?.Invoke();
+            return Task.FromResult(Result("deleteRemoteMount"));
+        }
+
+        private MutationResult Result(string operation)
+        {
+            var unknown = mutationStatus is MutationResultStatus.SubmittedButUnverified or
+                MutationResultStatus.CancellationRequestedAfterSubmission;
+            return new(
+                1,
+                mutationStatus,
+                operation,
+                submitted: mutationStatus is not MutationResultStatus.CancelledBeforeSubmission and
+                    not MutationResultStatus.Unsupported,
+                requiresRefresh: mutationStatus == MutationResultStatus.ConfirmedSuccess || unknown,
+                new MutationResultCounts(
+                    mutationStatus == MutationResultStatus.ConfirmedSuccess ? 1 : 0,
+                    mutationStatus is MutationResultStatus.ConfirmedFailure or MutationResultStatus.PermissionDenied ? 1 : 0,
+                    unknown ? 1 : 0));
+        }
+
+        private static MutationResult Unsupported(string operation) => new(
+            1,
+            MutationResultStatus.Unsupported,
+            operation,
+            submitted: false,
+            requiresRefresh: false,
+            new MutationResultCounts(0, 1, 0),
+            MutationErrorCategory.Unsupported);
+    }
+
     private sealed class ControlledRepository(Guid profileId) : IFileLocationsRepository
     {
         private readonly TaskCompletionSource<FileLocationsSnapshot> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -412,6 +562,13 @@ public sealed class FileLocationsViewModelTests
             return _completion.Task;
         }
         public void Complete(FileLocationsSnapshot snapshot) => _completion.TrySetResult(snapshot);
+        public bool CanWriteFavorites => false;
+        public bool AllowsRemoteMountManagement => false;
+        public Task<MutationResult> AddFavoriteAsync(string path, string? name = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> RemoveFavoriteAsync(string path, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> CreateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> UpdateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> DeleteRemoteMountAsync(string mountPoint, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class QueueRepository(Guid profileId, params FileLocationsSnapshot[] snapshots) : IFileLocationsRepository
@@ -421,6 +578,13 @@ public sealed class FileLocationsViewModelTests
         public FileLocationsAvailability Availability { get; } = new(true, true, true);
         public Task<FileLocationsSnapshot> LoadSnapshotAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(_snapshots.Dequeue());
+        public bool CanWriteFavorites => false;
+        public bool AllowsRemoteMountManagement => false;
+        public Task<MutationResult> AddFavoriteAsync(string path, string? name = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> RemoveFavoriteAsync(string path, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> CreateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> UpdateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> DeleteRemoteMountAsync(string mountPoint, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class ThrowingRepository(Guid profileId, Exception error) : IFileLocationsRepository
@@ -429,6 +593,13 @@ public sealed class FileLocationsViewModelTests
         public FileLocationsAvailability Availability { get; } = new(true, true, true);
         public Task<FileLocationsSnapshot> LoadSnapshotAsync(CancellationToken cancellationToken = default) =>
             Task.FromException<FileLocationsSnapshot>(error);
+        public bool CanWriteFavorites => false;
+        public bool AllowsRemoteMountManagement => false;
+        public Task<MutationResult> AddFavoriteAsync(string path, string? name = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> RemoveFavoriteAsync(string path, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> CreateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> UpdateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> DeleteRemoteMountAsync(string mountPoint, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class QueueThenThrowRepository(Guid profileId, FileLocationsSnapshot snapshot, Exception error) : IFileLocationsRepository
@@ -440,6 +611,13 @@ public sealed class FileLocationsViewModelTests
             Interlocked.Increment(ref _calls) == 1
                 ? Task.FromResult(snapshot)
                 : Task.FromException<FileLocationsSnapshot>(error);
+        public bool CanWriteFavorites => false;
+        public bool AllowsRemoteMountManagement => false;
+        public Task<MutationResult> AddFavoriteAsync(string path, string? name = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> RemoveFavoriteAsync(string path, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> CreateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> UpdateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> DeleteRemoteMountAsync(string mountPoint, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class CancellingRepository(Guid profileId) : IFileLocationsRepository
@@ -451,6 +629,13 @@ public sealed class FileLocationsViewModelTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             throw new InvalidOperationException();
         }
+        public bool CanWriteFavorites => false;
+        public bool AllowsRemoteMountManagement => false;
+        public Task<MutationResult> AddFavoriteAsync(string path, string? name = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> RemoveFavoriteAsync(string path, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> CreateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> UpdateRemoteMountAsync(RemoteMountDraft draft, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<MutationResult> DeleteRemoteMountAsync(string mountPoint, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class ImmediateSource : IFileBrowserDataSource

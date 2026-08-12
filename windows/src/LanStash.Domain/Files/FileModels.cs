@@ -72,3 +72,19 @@ public readonly record struct FileListOptions(
             TypeFilter = FileListTypeFilter.All,
         };
 }
+
+/// <summary>
+/// 通过 File Station 搜索 API 异步搜索文件的请求。
+/// </summary>
+public sealed record FileSearchRequest(
+    string FolderPath,
+    string Query,
+    bool Recursive);
+
+/// <summary>
+/// 包含文件项和分页元数据的异步搜索结果。
+/// </summary>
+public sealed record FileSearchResult(
+    IReadOnlyList<FileItem> Items,
+    int TotalCount,
+    bool IsTruncated);

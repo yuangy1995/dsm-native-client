@@ -161,12 +161,71 @@
                             IsClosable="False"
                             IsOpen="False"
                             Severity="Informational" />
+                        <!-- Read-only text preview (viewing mode). -->
+                        <StackPanel
+                            x:Name="TextEditButtonBar"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="8"
+                            Visibility="Collapsed">
+                            <Button
+                                x:Uid="FileTextEdit_EditButton"
+                                x:Name="TextEditButton"
+                                Click="TextEdit_Click"
+                                MinHeight="44" />
+                        </StackPanel>
                         <TextBlock
                             x:Name="TextPreview"
                             AutomationProperties.Name=""
                             FontFamily="Consolas"
                             IsTextSelectionEnabled="True"
                             TextWrapping="NoWrap" />
+                        <!-- Editable text box (edit mode). -->
+                        <TextBox
+                            x:Name="TextEditBox"
+                            AcceptsReturn="True"
+                            AutomationProperties.Name=""
+                            FontFamily="Consolas"
+                            HorizontalAlignment="Stretch"
+                            MinHeight="200"
+                            ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            TextWrapping="NoWrap"
+                            Visibility="Collapsed" />
+                        <!-- Edit mode toolbar. -->
+                        <StackPanel
+                            x:Name="TextEditToolbar"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="8"
+                            Visibility="Collapsed">
+                            <Button
+                                x:Uid="FileTextEdit_FormatButton"
+                                x:Name="TextEditFormatButton"
+                                Click="TextEditFormat_Click"
+                                MinHeight="44" />
+                            <Button
+                                x:Uid="FileTextEdit_CancelButton"
+                                x:Name="TextEditCancelButton"
+                                Click="TextEditCancel_Click"
+                                MinHeight="44" />
+                            <Button
+                                x:Uid="FileTextEdit_SaveButton"
+                                x:Name="TextEditSaveButton"
+                                Click="TextEditSave_Click"
+                                MinHeight="44" />
+                        </StackPanel>
+                        <!-- Save status indicator. -->
+                        <InfoBar
+                            x:Name="TextEditSaveStatus"
+                            IsClosable="True"
+                            IsOpen="False"
+                            Severity="Informational"
+                            Visibility="Collapsed">
+                            <InfoBar.ActionButton>
+                                <Button x:Uid="FileTextEdit_DismissStatus" Click="TextEditDismissStatus_Click" />
+                            </InfoBar.ActionButton>
+                        </InfoBar>
                     </StackPanel>
                 </ScrollViewer>
 

@@ -630,6 +630,30 @@ public sealed class FilePreviewViewModelTests
             }
             Assert.True(Requests.Count >= count);
         }
+
+        public FileTextEditAvailability GetTextEditAvailability() => new(
+            CanEdit: false,
+            CanFormat: false,
+            SupportedExtensions: Array.Empty<string>());
+
+        public Task<string> DownloadTextContentAsync(
+            string path,
+            long maxBytes,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<MutationResult> SaveTextContentAsync(
+            string path,
+            string content,
+            string originalContent,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<string> FormatTextContentAsync(
+            string text,
+            TextFormatKind kind,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class ArtifactStoreStub : IFilePreviewArtifactStore

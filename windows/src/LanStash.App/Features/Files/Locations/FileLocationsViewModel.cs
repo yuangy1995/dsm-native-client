@@ -32,6 +32,129 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
     private string? _suppressedPath;
     private bool _disposed;
 
+    // 只有当前活动 profile 的 repository 才能暴露远程挂载管理入口。
+    public bool AllowsRemoteMountManagement =>
+        _profileId is { } profileId &&
+        _repository is { } repository &&
+        repository.ProfileId == profileId &&
+        repository.AllowsRemoteMountManagement;
+    public bool IsCreatingRemoteMount { get; private set; }
+    public bool IsEditingRemoteMount { get; private set; }
+    public FileRemoteLocation? EditingRemoteLocation { get; private set; }
+
+    public async Task<MutationResult> AddFavoriteAsync(string path, string? name = null,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var (repository, profileId) = RequireActiveRepository();
+        if (!repository.CanWriteFavorites)
+        {
+            return UnsupportedMutation("addFavorite");
+        }
+        var result = await repository.AddFavoriteAsync(path, name, cancellationToken);
+        await RefreshAfterMutationAsync(repository, profileId, result);
+        return result;
+    }
+
+    public async Task<MutationResult> RemoveFavoriteAsync(string path,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var (repository, profileId) = RequireActiveRepository();
+        if (!repository.CanWriteFavorites)
+        {
+            return UnsupportedMutation("removeFavorite");
+        }
+        var result = await repository.RemoveFavoriteAsync(path, cancellationToken);
+        await RefreshAfterMutationAsync(repository, profileId, result);
+        return result;
+    }
+
+    public async Task<MutationResult> CreateRemoteMountAsync(RemoteMountDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var (repository, profileId) = RequireActiveRepository();
+        if (!AllowsRemoteMountManagement)
+        {
+            return UnsupportedMutation("createRemoteMount");
+        }
+        IsCreatingRemoteMount = true;
+        RaisePropertyChanged(nameof(IsCreatingRemoteMount));
+        try
+        {
+            var result = await repository.CreateRemoteMountAsync(draft, cancellationToken);
+            await RefreshAfterMutationAsync(repository, profileId, result);
+            return result;
+        }
+        finally
+        {
+            IsCreatingRemoteMount = false;
+            RaisePropertyChanged(nameof(IsCreatingRemoteMount));
+        }
+    }
+
+    public async Task<MutationResult> UpdateRemoteMountAsync(RemoteMountDraft draft,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var (repository, profileId) = RequireActiveRepository();
+        if (!AllowsRemoteMountManagement)
+        {
+            return UnsupportedMutation("updateRemoteMount");
+        }
+        IsEditingRemoteMount = true;
+        RaisePropertyChanged(nameof(IsEditingRemoteMount));
+        try
+        {
+            var result = await repository.UpdateRemoteMountAsync(draft, cancellationToken);
+            await RefreshAfterMutationAsync(repository, profileId, result);
+            return result;
+        }
+        finally
+        {
+            IsEditingRemoteMount = false;
+            EditingRemoteLocation = null;
+            RaisePropertyChanged(nameof(IsEditingRemoteMount));
+            RaisePropertyChanged(nameof(EditingRemoteLocation));
+        }
+    }
+
+    public async Task<MutationResult> DeleteRemoteMountAsync(string mountPoint,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var (repository, profileId) = RequireActiveRepository();
+        if (!AllowsRemoteMountManagement)
+        {
+            return UnsupportedMutation("deleteRemoteMount");
+        }
+        var result = await repository.DeleteRemoteMountAsync(mountPoint, cancellationToken);
+        await RefreshAfterMutationAsync(repository, profileId, result);
+        return result;
+    }
+
+    public void BeginEditRemoteMount(FileRemoteLocation location)
+    {
+        ThrowIfDisposed();
+        if (!AllowsRemoteMountManagement || _profileId != location.ProfileId)
+        {
+            return;
+        }
+        EditingRemoteLocation = location;
+        IsEditingRemoteMount = true;
+        RaisePropertyChanged(nameof(EditingRemoteLocation));
+        RaisePropertyChanged(nameof(IsEditingRemoteMount));
+    }
+
+    public void CancelEditRemoteMount()
+    {
+        EditingRemoteLocation = null;
+        IsEditingRemoteMount = false;
+        RaisePropertyChanged(nameof(EditingRemoteLocation));
+        RaisePropertyChanged(nameof(IsEditingRemoteMount));
+    }
+
     public FileLocationSectionState<FileFavoriteLocation> Favorites { get; private set; } = Idle<FileFavoriteLocation>();
     public FileLocationSectionState<FileRecycleLocation> Recycle { get; private set; } = Idle<FileRecycleLocation>();
     public FileLocationSectionState<FileRemoteLocation> Remote { get; private set; } = Idle<FileRemoteLocation>();
@@ -58,6 +181,7 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(ProfileId));
         RaisePropertyChanged(nameof(Availability));
         RaisePropertyChanged(nameof(IsActive));
+        RaisePropertyChanged(nameof(AllowsRemoteMountManagement));
     }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
@@ -184,6 +308,7 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(ProfileId));
         RaisePropertyChanged(nameof(Availability));
         RaisePropertyChanged(nameof(IsActive));
+        RaisePropertyChanged(nameof(AllowsRemoteMountManagement));
     }
 
     public void PurgeProfile(Guid profileId)
@@ -297,6 +422,51 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
 
     private bool IsCurrent(Guid profileId, IFileLocationsRepository repository, long generation) =>
         _profileId == profileId && ReferenceEquals(_repository, repository) && generation == Volatile.Read(ref _generation);
+
+    private (IFileLocationsRepository Repository, Guid ProfileId) RequireActiveRepository()
+    {
+        if (_repository is not { } repository || _profileId is not { } profileId ||
+            repository.ProfileId != profileId)
+        {
+            throw new InvalidOperationException("Locations are not active.");
+        }
+        return (repository, profileId);
+    }
+
+    private async Task RefreshAfterMutationAsync(
+        IFileLocationsRepository repository,
+        Guid profileId,
+        MutationResult result)
+    {
+        if (result.Status != MutationResultStatus.ConfirmedSuccess && !result.RequiresRefresh ||
+            !IsCurrentProfile(profileId, repository))
+        {
+            return;
+        }
+
+        try
+        {
+            // 提交后取消或网络未知只能用独立回读确认，不能把写请求再次发送。
+            await RefreshAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException) when (!IsCurrentProfile(profileId, repository))
+        {
+        }
+    }
+
+    private bool IsCurrentProfile(Guid profileId, IFileLocationsRepository repository) =>
+        _profileId == profileId && ReferenceEquals(_repository, repository) && repository.ProfileId == profileId;
+
+    private static MutationResult UnsupportedMutation(string operation) =>
+        new(
+            1,
+            MutationResultStatus.Unsupported,
+            operation,
+            submitted: false,
+            requiresRefresh: false,
+            new MutationResultCounts(0, 1, 0),
+            MutationErrorCategory.Unsupported,
+            diagnosticTag: "file.locations.write.unsupported");
 
     private static void ValidateSnapshotProfile(FileLocationsSnapshot snapshot, Guid profileId)
     {

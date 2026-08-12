@@ -999,6 +999,37 @@
   <data name="FilePreviewPdfAutomationName" xml:space="preserve"><value>{0} 的 PDF 预览，第 {1:N0} 页，共 {2:N0} 页</value></data>
   <data name="FilePreviewPdfPage" xml:space="preserve"><value>第 {0:N0} 页，共 {1:N0} 页</value></data>
   <data name="FilePreviewMediaAutomationName" xml:space="preserve"><value>{0} 的媒体预览</value></data>
+  <data name="FileTextEdit_EditButton.Content" xml:space="preserve"><value>编辑</value></data>
+  <data name="FileTextEdit_EditButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>编辑此文本文件</value></data>
+  <data name="FileTextEdit_SaveButton.Content" xml:space="preserve"><value>保存</value></data>
+  <data name="FileTextEdit_SaveButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将更改保存到 NAS</value></data>
+  <data name="FileTextEdit_CancelButton.Content" xml:space="preserve"><value>取消</value></data>
+  <data name="FileTextEdit_CancelButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>取消编辑</value></data>
+  <data name="FileTextEdit_FormatButton.Content" xml:space="preserve"><value>格式化</value></data>
+  <data name="FileTextEdit_FormatButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>格式化此文件</value></data>
+  <data name="FileTextEdit_DismissStatus.Content" xml:space="preserve"><value>关闭</value></data>
+  <data name="FileTextEdit_Saving" xml:space="preserve"><value>正在保存…</value></data>
+  <data name="FileTextEdit_SavedMessage" xml:space="preserve"><value>文件已保存</value></data>
+  <data name="FileTextEdit_SaveFailedMessage" xml:space="preserve"><value>保存未能确认，请检查文件夹和连接</value></data>
+  <data name="FileTextEdit_NeedsReviewTitle" xml:space="preserve"><value>再次尝试前请先核对文件</value></data>
+  <data name="FileTextEdit_NeedsReviewMessage" xml:space="preserve"><value>请求可能已到达 NAS，但无法确认保存后的内容。请刷新并核对文件，再进行下一次保存。</value></data>
+  <data name="FileTextEdit_SaveConfirmTitle" xml:space="preserve"><value>替换此文本文件？</value></data>
+  <data name="FileTextEdit_SaveConfirmMessage" xml:space="preserve"><value>确认文件自打开后没有变化，再替换 NAS 上的当前文件。</value></data>
+  <data name="FileTextEdit_SaveConfirmAction" xml:space="preserve"><value>替换文件</value></data>
+  <data name="FileTextEdit_UnsavedTitle" xml:space="preserve"><value>未保存的更改</value></data>
+  <data name="FileTextEdit_UnsavedMessage" xml:space="preserve"><value>放弃对此文件的更改？</value></data>
+  <data name="FileTextEdit_Discard" xml:space="preserve"><value>放弃</value></data>
+  <data name="FileTextEdit_KeepEditing" xml:space="preserve"><value>继续编辑</value></data>
+  <data name="FileTextEdit_TooLargeMessage" xml:space="preserve"><value>超过 5 MiB 的文件不能在此编辑</value></data>
+  <data name="FileTextEdit_EncodingError" xml:space="preserve"><value>无法读取文件编码</value></data>
+  <data name="FileTextEdit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文本编辑器</value></data>
+  <data name="FileBrowserSearchInProgress.Text" xml:space="preserve"><value>正在搜索此文件夹及其子文件夹…</value></data>
+  <data name="FileBrowserSearchRetry.Content" xml:space="preserve"><value>重试</value></data>
+  <data name="FileBrowserSearchRetry.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>重新搜索文件</value></data>
+  <data name="FileBrowserSearchErrorTitle" xml:space="preserve"><value>无法完成搜索</value></data>
+  <data name="FileBrowserSearchErrorMessage" xml:space="preserve"><value>请检查 NAS 连接，然后重新搜索。</value></data>
+  <data name="FileBrowserSearchTruncatedTitle" xml:space="preserve"><value>仅显示前一部分结果</value></data>
+  <data name="FileBrowserSearchTruncatedMessage" xml:space="preserve"><value>正在显示前 {0:N0} 个匹配项。请缩小搜索范围以查找更具体的文件。</value></data>
   <data name="Settings.PageTitle.Text" xml:space="preserve"><value>设置</value></data>
   <data name="Settings.PageDescription.Text" xml:space="preserve"><value>选择应用外观、可选模块显示方式，以及本机可再生数据的管理方式。</value></data>
   <data name="Settings.LanguageSectionTitle.Text" xml:space="preserve"><value>语言</value></data>
@@ -1604,4 +1635,94 @@
   <data name="FileDirectorySizeFileCount" xml:space="preserve"><value>文件：{0:N0}</value></data>
   <data name="FileDirectorySizeFolderCount" xml:space="preserve"><value>文件夹：{0:N0}</value></data>
   <data name="FileDirectorySizeStatusAutomationName" xml:space="preserve"><value>文件夹大小计算状态</value></data>
+  <data name="FileBrowserUploadOverwrite.Label" xml:space="preserve"><value>覆盖已有文件</value></data>
+  <data name="FileBrowserUploadOverwrite.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>覆盖此文件夹中已存在的同名文件。开启后上传时将替换已有文件。</value></data>
+  <data name="FileMoveUndoMessage.Text" xml:space="preserve"><value>已将 {0} 个项目移动到 {1}</value></data>
+  <data name="FileMoveUndoButton.Text" xml:space="preserve"><value>撤销</value></data>
+  <data name="FileMoveUndoStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>拖放移动已完成。选择"撤销"可将项目移回原位置。</value></data>
+  <data name="FileLocationsRemoteCreate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>创建远程挂载</value></data>
+  <data name="FileLocationsRemoteEdit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>编辑远程挂载</value></data>
+  <data name="FileLocationsRemoteDelete.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>删除远程挂载</value></data>
+  <data name="FileLocationsRemoteCreateTitle" xml:space="preserve"><value>创建远程挂载</value></data>
+  <data name="FileLocationsRemoteCreateAction" xml:space="preserve"><value>创建</value></data>
+  <data name="FileLocationsRemoteEditTitle" xml:space="preserve"><value>编辑远程挂载</value></data>
+  <data name="FileLocationsRemoteEditAction" xml:space="preserve"><value>保存</value></data>
+  <data name="FileLocationsRemoteDeleteTitle" xml:space="preserve"><value>删除远程挂载</value></data>
+  <data name="FileLocationsRemoteDeleteMessage" xml:space="preserve"><value>移除 "{0}" 的远程挂载？不会删除远程服务器上的文件。</value></data>
+  <data name="FileLocationsRemoteOperationFailedTitle" xml:space="preserve"><value>远程挂载操作失败</value></data>
+  <data name="FileLocationsRemoteOperationFailed" xml:space="preserve"><value>操作未能完成。请检查连接后重试。</value></data>
+  <data name="FileLocationsRemoteInvalidDraft" xml:space="preserve"><value>请正确填写所有必填字段后再提交。</value></data>
+  <data name="FileLocationsRemoteFieldServer" xml:space="preserve"><value>服务器</value></data>
+  <data name="FileLocationsRemoteFieldRemotePath" xml:space="preserve"><value>远程路径</value></data>
+  <data name="FileLocationsRemoteFieldMountPoint" xml:space="preserve"><value>挂载点</value></data>
+  <data name="FileLocationsRemoteFieldUsername" xml:space="preserve"><value>用户名</value></data>
+  <data name="FileLocationsRemoteFieldUsernameOptional" xml:space="preserve"><value>可选</value></data>
+  <data name="FileLocationsRemoteFieldPassword" xml:space="preserve"><value>密码</value></data>
+  <data name="FileLocationsRemoteFieldPasswordOptional" xml:space="preserve"><value>可选，仅用于本次请求</value></data>
+  <data name="FileLocationsRemoteFieldDomain" xml:space="preserve"><value>域</value></data>
+  <data name="FileLocationsRemoteFieldDomainOptional" xml:space="preserve"><value>可选</value></data>
+  <data name="FileLocationsRemoteFieldReadOnly" xml:space="preserve"><value>只读挂载</value></data>
+  <data name="FileLocationsRemoteFieldProtocol" xml:space="preserve"><value>协议</value></data>
+  <data name="FileLocationsRemoteProtocolCifs" xml:space="preserve"><value>CIFS (SMB)</value></data>
+  <data name="FileLocationsRemoteProtocolNfs" xml:space="preserve"><value>NFS</value></data>
+  <data name="FileLocationsRemoteProtocolIso" xml:space="preserve"><value>ISO</value></data>
+  <data name="FileBrowserSearchSubfolders.Header" xml:space="preserve"><value>搜索子文件夹</value></data>
+  <data name="FileBrowserSearchSubfolders.OffContent" xml:space="preserve"><value>仅筛选已加载项目</value></data>
+  <data name="FileBrowserSearchSubfolders.OnContent" xml:space="preserve"><value>在 NAS 上搜索所有子文件夹</value></data>
+  <data name="FileBrowserSearching" xml:space="preserve"><value>正在搜索...</value></data>
+  <data name="FileBrowserSearchTruncated.Title" xml:space="preserve"><value>搜索结果已达上限</value></data>
+  <data name="FileBrowserSearchTruncated.Message" xml:space="preserve"><value>仅显示前 2000 条结果。请细化搜索条件以查找特定项目。</value></data>
+  <data name="FileBrowserSearchUnsupported" xml:space="preserve"><value>当前 NAS 不支持搜索功能。</value></data>
+  <data name="CrossNasCopyAction.Label" xml:space="preserve"><value>复制到另一台 NAS…</value></data>
+  <data name="CrossNasCopyAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>复制到另一台 NAS</value></data>
+  <data name="CrossNasMoveAction.Label" xml:space="preserve"><value>移动到另一台 NAS…</value></data>
+  <data name="CrossNasMoveAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>移动到另一台 NAS</value></data>
+  <data name="CrossNasSelectTarget" xml:space="preserve"><value>选择目标 NAS</value></data>
+  <data name="CrossNasSelectedTarget" xml:space="preserve"><value>目标 NAS</value></data>
+  <data name="CrossNasSourceFile" xml:space="preserve"><value>源文件</value></data>
+  <data name="CrossNasSourceFolder" xml:space="preserve"><value>源文件夹</value></data>
+  <data name="CrossNasProgress" xml:space="preserve"><value>正在传输 {0} / {1} 字节</value></data>
+  <data name="CrossNasProgressIndeterminate" xml:space="preserve"><value>正在传输…</value></data>
+  <data name="CrossNasCompleted" xml:space="preserve"><value>传输完成</value></data>
+  <data name="CrossNasFailed" xml:space="preserve"><value>传输未完成</value></data>
+  <data name="CrossNasUnsupported" xml:space="preserve"><value>这些连接不支持跨 NAS 传输</value></data>
+  <data name="CrossNasCopyFileTitle" xml:space="preserve"><value>复制文件到另一台 NAS</value></data>
+  <data name="CrossNasCopyFolderTitle" xml:space="preserve"><value>复制文件夹到另一台 NAS</value></data>
+  <data name="CrossNasMoveFileTitle" xml:space="preserve"><value>移动文件到另一台 NAS</value></data>
+  <data name="CrossNasMoveFolderTitle" xml:space="preserve"><value>移动文件夹到另一台 NAS</value></data>
+  <data name="CrossNasSubmitButton" xml:space="preserve"><value>传输</value></data>
+  <data name="FileCopyMove_Up_Button" xml:space="preserve"><value>上一级</value></data>
+  <data name="NasDetailsReadWrite.Title" xml:space="preserve"><value>读写视图</value></data>
+  <data name="NasDetailsReadWrite.Message" xml:space="preserve"><value>当 NAS 支持相关写入操作时，可以使用编辑控件。</value></data>
+  <data name="NasSettingsLoadError" xml:space="preserve"><value>无法加载设置。请检查连接后重试。</value></data>
+  <data name="NasSettingsSaveError" xml:space="preserve"><value>无法保存更改。请检查连接后重试。</value></data>
+  <data name="NasSettingsDeleteError" xml:space="preserve"><value>无法删除该项目。请检查连接后重试。</value></data>
+  <data name="NasSettingsDdnsTitle" xml:space="preserve"><value>DDNS 设置</value></data>
+  <data name="NasSettingsDdnsAdd" xml:space="preserve"><value>添加 DDNS 记录</value></data>
+  <data name="NasSettingsDdnsEdit" xml:space="preserve"><value>编辑 DDNS 记录</value></data>
+  <data name="NasSettingsDdnsDeleteTitle" xml:space="preserve"><value>删除 DDNS 记录</value></data>
+  <data name="NasSettingsDdnsNone" xml:space="preserve"><value>没有配置 DDNS 记录。添加一个以确保您的 NAS 在公共 IP 变动时仍可访问。</value></data>
+  <data name="NasSettingsDdnsHostname" xml:space="preserve"><value>主机名（例如 mynas.synology.me）</value></data>
+  <data name="NasSettingsDdnsUsername" xml:space="preserve"><value>用户名</value></data>
+  <data name="NasSettingsDdnsPassword" xml:space="preserve"><value>密码</value></data>
+  <data name="NasSettingsDdnsEnabled" xml:space="preserve"><value>已启用</value></data>
+  <data name="NasSettingsDdnsTest" xml:space="preserve"><value>测试</value></data>
+  <data name="NasSettingsDdnsTestSuccess" xml:space="preserve"><value>DDNS 记录验证成功。</value></data>
+  <data name="NasSettingsDdnsTestFailed" xml:space="preserve"><value>DDNS 测试未成功。请检查服务商和凭据。</value></data>
+  <data name="NasSettingsDdnsValidationError" xml:space="preserve"><value>请填写所有必填字段（服务商、主机名、用户名和密码）。</value></data>
+  <data name="NasSettingsPowerTitle" xml:space="preserve"><value>电源操作</value></data>
+  <data name="NasSettingsShutdownLabel" xml:space="preserve"><value>关机</value></data>
+  <data name="NasSettingsRebootLabel" xml:space="preserve"><value>重新启动</value></data>
+  <data name="NasSettingsShutdownConfirmation" xml:space="preserve"><value>关闭此 NAS？NAS 将不可访问，所有服务将停止。</value></data>
+  <data name="NasSettingsRebootConfirmation" xml:space="preserve"><value>重新启动此 NAS？NAS 将暂时不可访问。</value></data>
+  <data name="NasSettingsShutdownSubmitted" xml:space="preserve"><value>关机请求已提交。NAS 可能已不可访问。请刷新确认。</value></data>
+  <data name="NasSettingsRebootSubmitted" xml:space="preserve"><value>重启请求已提交。NAS 应很快恢复可访问状态。</value></data>
+  <data name="NasSettingsFileServiceTitle" xml:space="preserve"><value>文件服务设置</value></data>
+  <data name="NasSettingsTerminalTitle" xml:space="preserve"><value>终端设置</value></data>
+  <data name="NasSettingsProxyTitle" xml:space="preserve"><value>代理设置</value></data>
+  <data name="NasSettingsNetworkTitle" xml:space="preserve"><value>网络设置</value></data>
+  <data name="NasSettingsRegionTitle" xml:space="preserve"><value>区域与时间设置</value></data>
+  <data name="NasSettingsSecurityTitle" xml:space="preserve"><value>安全设置</value></data>
+  <data name="NasSettingsHardwareTitle" xml:space="preserve"><value>硬件与电源设置</value></data>
+  <data name="ActionEdit" xml:space="preserve"><value>编辑</value></data>
 </root>

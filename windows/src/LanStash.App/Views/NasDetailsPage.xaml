@@ -47,10 +47,20 @@
 
         <InfoBar
             x:Uid="NasDetailsReadOnly"
+            x:Name="ReadOnlyInfoBar"
             Grid.Row="1"
             IsClosable="False"
             IsOpen="True"
             Severity="Informational" />
+
+        <InfoBar
+            x:Uid="NasDetailsReadWrite"
+            x:Name="ReadWriteInfoBar"
+            Grid.Row="1"
+            IsClosable="False"
+            IsOpen="False"
+            Severity="Informational"
+            Visibility="Collapsed" />
 
         <InfoBar
             x:Uid="NasDetailsRefreshError"

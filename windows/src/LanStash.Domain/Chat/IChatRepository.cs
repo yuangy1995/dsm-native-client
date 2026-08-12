@@ -89,4 +89,113 @@ public interface IChatRepository
                 diagnosticTag: "chat.conversation-create.unsupported"),
             clientRequestId,
             ConfirmedConversation: null);
+
+    // ── 消息删除 ──
+
+    Task<MutationResult> DeleteOwnMessageAsync(
+        ChatDeleteMessageRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new MutationResult(
+            1, MutationResultStatus.Unsupported, "deleteOwnMessage",
+            submitted: false, requiresRefresh: false,
+            new MutationResultCounts(0, 1, 0),
+            MutationErrorCategory.Unsupported,
+            diagnosticTag: "chat.deleteOwnMessage"));
+
+    // ── 会话关闭 ──
+
+    Task<MutationResult> CloseConversationAsync(
+        ChatCloseConversationRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new MutationResult(
+            1, MutationResultStatus.Unsupported, "closeConversation",
+            submitted: false, requiresRefresh: false,
+            new MutationResultCounts(0, 1, 0),
+            MutationErrorCategory.Unsupported,
+            diagnosticTag: "chat.closeConversation"));
+
+    // ── 提醒 ──
+
+    Task<ChatReminderSetOutcome> SetReminderAsync(
+        string messageId,
+        string conversationId,
+        DateTimeOffset remindAt,
+        Guid clientRequestId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ChatReminderSetOutcome(
+            new MutationResult(1, MutationResultStatus.Unsupported, "setReminder",
+                submitted: false, requiresRefresh: false,
+                new MutationResultCounts(0, 1, 0), MutationErrorCategory.Unsupported,
+                diagnosticTag: "chat.setReminder.unsupported"),
+            messageId, conversationId, clientRequestId, ConfirmedReminder: null));
+
+    Task<IReadOnlyList<ChatReminder>> ListRemindersAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ChatReminder>>([]);
+
+    Task<MutationResult> DeleteReminderAsync(
+        string messageId,
+        string conversationId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new MutationResult(
+            1, MutationResultStatus.Unsupported, "deleteReminder",
+            submitted: false, requiresRefresh: false,
+            new MutationResultCounts(0, 1, 0),
+            MutationErrorCategory.Unsupported,
+            diagnosticTag: "chat.deleteReminder"));
+
+    // ── 定时消息 ──
+
+    Task<ChatScheduledMessageCreateOutcome> CreateScheduledMessageAsync(
+        ChatScheduledMessageDraft draft,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ChatScheduledMessageCreateOutcome(
+            new MutationResult(1, MutationResultStatus.Unsupported, "createScheduledMessage",
+                submitted: false, requiresRefresh: false,
+                new MutationResultCounts(0, 1, 0), MutationErrorCategory.Unsupported,
+                diagnosticTag: "chat.createScheduledMessage.unsupported"),
+            draft.ClientRequestId, ConfirmedMessage: null));
+
+    Task<IReadOnlyList<ChatScheduledMessage>> ListScheduledMessagesAsync(
+        string conversationId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ChatScheduledMessage>>([]);
+
+    Task<MutationResult> DeleteScheduledMessageAsync(
+        string scheduledId,
+        string conversationId,
+        Guid clientRequestId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new MutationResult(
+            1, MutationResultStatus.Unsupported, "deleteScheduledMessage",
+            submitted: false, requiresRefresh: false,
+            new MutationResultCounts(0, 1, 0),
+            MutationErrorCategory.Unsupported,
+            diagnosticTag: "chat.deleteScheduledMessage"));
+
+    // ── 投票 ──
+
+    Task<ChatPollCreateOutcome> CreatePollAsync(
+        ChatPollDraft draft,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ChatPollCreateOutcome(
+            new MutationResult(1, MutationResultStatus.Unsupported, "createPoll",
+                submitted: false, requiresRefresh: false,
+                new MutationResultCounts(0, 1, 0), MutationErrorCategory.Unsupported,
+                diagnosticTag: "chat.createPoll.unsupported"),
+            draft.ClientRequestId, ConfirmedMessage: null));
+
+    // ── 消息转发 ──
+
+    Task<MutationResult> ForwardMessageAsync(
+        ChatForwardRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new MutationResult(
+            1, MutationResultStatus.Unsupported, "forwardMessage",
+            submitted: false, requiresRefresh: false,
+            new MutationResultCounts(0, 1, 0),
+            MutationErrorCategory.Unsupported,
+            diagnosticTag: "chat.forwardMessage"));
 }

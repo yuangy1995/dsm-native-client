@@ -10,6 +10,7 @@ using LanStash.App.Features.NasAdmin;
 using LanStash.App.Features.Transfers;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
+using LanStash.Infrastructure;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -308,6 +309,7 @@ public sealed partial class ShellPage : Page
                     FileMutationReviewBlocker.Current,
                     recycleRepository: recycleRepository,
                     recycleReviewBlocker: FileRecycleReviewBlocker.Current);
+                WireCrossNasDependencies(_files, profile.Id);
                 _filesProfileId = profile.Id;
                 ContentFrame.Content = _files;
                 return;
@@ -517,7 +519,8 @@ public sealed partial class ShellPage : Page
                     !ReferenceEquals(_nasDetailsRepository, nasRepository))
                 {
                     _nasDetails?.Dispose();
-                    _nasDetails = new NasDetailsPage(nasRepository);
+                    var settingsRepository = nasRepository as INasSettingsRepository;
+                    _nasDetails = new NasDetailsPage(nasRepository, settingsRepository);
                     _nasDetailsProfileId = nasProfile.Id;
                     _nasDetailsRepository = nasRepository;
                 }
@@ -667,6 +670,26 @@ public sealed partial class ShellPage : Page
         }
     }
 
+    private void WireCrossNasDependencies(FilesPage page, Guid currentProfileId)
+    {
+        var otherProfiles = _app.Profiles
+            .Where(p => p.Id != currentProfileId)
+            .ToArray();
+        if (otherProfiles.Length == 0) return;
+
+        page.SetCrossNasDependencies(
+            otherProfiles,
+            targetProfileId =>
+            {
+                var targetRepo = DsmRepository.CrossNasRepositoryResolver?.Invoke(targetProfileId);
+                if (targetRepo is null) return null!;
+                return new RepositoryFileCopyMoveFolderSource(
+                    targetProfileId,
+                    new RepositoryFileBrowserDataSource(targetRepo),
+                    targetRepo as IFileLocationsRepository);
+            });
+    }
+
     private sealed class UnavailableNasDetailsRepository(Guid profileId)
         : INasDetailsRepository
     {
@@ -770,6 +793,30 @@ public sealed partial class ShellPage : Page
         : IFilePreviewRepository
     {
         public Guid ProfileId { get; } = profileId;
+
+        public FileTextEditAvailability GetTextEditAvailability() => new(
+            CanEdit: false,
+            CanFormat: false,
+            SupportedExtensions: Array.Empty<string>());
+
+        public Task<string> DownloadTextContentAsync(
+            string path,
+            long maxBytes,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<MutationResult> SaveTextContentAsync(
+            string path,
+            string content,
+            string originalContent,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<string> FormatTextContentAsync(
+            string text,
+            TextFormatKind kind,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
         public Task<FileRangeReadResult> ReadFileRangeResultAsync(
             string remotePath,

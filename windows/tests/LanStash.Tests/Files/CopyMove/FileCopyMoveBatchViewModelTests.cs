@@ -451,6 +451,7 @@ public sealed class FileCopyMoveBatchViewModelTests
 
         public Guid ProfileId { get; }
         public FileCopyMoveAvailability Availability { get; } = new(true, true, 3);
+        public CrossNasCopyMoveAvailability CrossNasAvailability => new(false, false);
         public List<FileCopyMoveRequest> Requests { get; } = [];
         public int MaximumConcurrency { get; private set; }
         public TaskCompletionSource FirstCall { get; } = new(
@@ -473,5 +474,8 @@ public sealed class FileCopyMoveBatchViewModelTests
                 Interlocked.Decrement(ref _concurrency);
             }
         }
+
+        public Task<CrossNasCopyMoveOutcome> CrossNasCopyMoveAsync(CrossNasCopyMoveRequest request, IProgress<long>? progress = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<CrossNasCopyMoveOutcome>(new NotSupportedException());
     }
 }

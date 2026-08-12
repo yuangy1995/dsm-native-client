@@ -28,12 +28,43 @@
                     ItemsSource="{Binding Breadcrumbs}"
                     ItemClicked="PathBreadcrumbs_ItemClicked" />
             </StackPanel>
-            <AutoSuggestBox
-                x:Uid="FileBrowserFilter"
-                x:Name="FilterBox"
-                Grid.Column="1"
-                QueryIcon="Find"
-                TextChanged="FilterBox_TextChanged" />
+            <StackPanel Grid.Column="1" Spacing="6">
+                <AutoSuggestBox
+                    x:Uid="FileBrowserFilter"
+                    x:Name="FilterBox"
+                    QueryIcon="Find"
+                    TextChanged="FilterBox_TextChanged" />
+                <ToggleSwitch
+                    x:Uid="FileBrowserSearchSubfolders"
+                    x:Name="SearchSubfoldersToggle"
+                    Toggled="SearchSubfolders_Toggled"
+                    IsOn="False"
+                    Visibility="Collapsed" />
+                <StackPanel
+                    x:Name="SearchProgressState"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Visibility="Collapsed">
+                    <ProgressRing Width="18" Height="18" IsActive="True" />
+                    <TextBlock
+                        x:Uid="FileBrowserSearchInProgress"
+                        VerticalAlignment="Center"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+                <InfoBar
+                    x:Name="SearchStatus"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Visibility="Collapsed">
+                    <InfoBar.ActionButton>
+                        <Button
+                            x:Uid="FileBrowserSearchRetry"
+                            Click="SearchRetry_Click"
+                            MinHeight="44" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+            </StackPanel>
         </Grid>
 
         <Grid Grid.Row="1">
@@ -177,6 +208,11 @@
                 x:Name="UploadFolderButton"
                 Click="UploadFolder_Click"
                 Icon="FolderOpen"
+                MinHeight="44" />
+            <AppBarToggleButton
+                x:Uid="FileBrowserUploadOverwrite"
+                x:Name="UploadOverwriteToggle"
+                Icon="Replace"
                 MinHeight="44" />
             <AppBarButton
                 x:Uid="FileBrowserDownload"
@@ -334,6 +370,25 @@
                             Invoked="DirectorySizeAccelerator_Invoked" />
                     </AppBarButton.KeyboardAccelerators>
                 </AppBarButton>
+                <AppBarSeparator />
+                <AppBarButton
+                    x:Uid="CrossNasCopyAction"
+                    x:Name="CrossNasCopyButton"
+                    Click="CrossNasCopy_Click"
+                    MinHeight="44">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE8C8;" />
+                    </AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton
+                    x:Uid="CrossNasMoveAction"
+                    x:Name="CrossNasMoveButton"
+                    Click="CrossNasMove_Click"
+                    MinHeight="44">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE8C9;" />
+                    </AppBarButton.Icon>
+                </AppBarButton>
                 <AppBarButton
                     x:Uid="FileBrowserSort"
                     x:Name="SortButton"
@@ -457,6 +512,11 @@
                 <ListView
                     x:Uid="FileBrowserList"
                     x:Name="FileList"
+                    AllowDrop="True"
+                    CanDragItems="True"
+                    DragItemsStarting="FileList_DragItemsStarting"
+                    DragOver="FileList_DragOver"
+                    Drop="FileList_Drop"
                     DoubleTapped="Files_DoubleTapped"
                     ItemsSource="{Binding Items}"
                     SelectionChanged="Files_SelectionChanged"
@@ -491,6 +551,11 @@
                 <GridView
                     x:Uid="FileBrowserGrid"
                     x:Name="FileGrid"
+                    AllowDrop="True"
+                    CanDragItems="True"
+                    DragItemsStarting="FileList_DragItemsStarting"
+                    DragOver="FileList_DragOver"
+                    Drop="FileList_Drop"
                     DoubleTapped="Files_DoubleTapped"
                     ItemsSource="{Binding Items}"
                     SelectionChanged="Files_SelectionChanged"
@@ -657,6 +722,13 @@
                     IsOpen="False"
                     AutomationProperties.LiveSetting="Polite"
                     Severity="Informational" />
+                <InfoBar
+                    x:Uid="FileMoveUndoStatus"
+                    x:Name="FileMoveUndoStatus"
+                    IsClosable="True"
+                    IsOpen="False"
+                    AutomationProperties.LiveSetting="Assertive"
+                    Severity="Success" />
             </StackPanel>
             </Grid>
 

@@ -201,9 +201,12 @@ public sealed class FileCopyMoveViewModelTests
         public StubRepository(Guid profileId, Task<FileCopyMoveOutcome> outcome) { ProfileId = profileId; _outcome = outcome; }
         public Guid ProfileId { get; }
         public FileCopyMoveAvailability Availability { get; } = new(true, true, 3);
+        public CrossNasCopyMoveAvailability CrossNasAvailability => new(false, false);
         public int Count { get; private set; }
         public FileCopyMoveRequest? Request { get; private set; }
         public Task<FileCopyMoveOutcome> CopyMoveAsync(FileCopyMoveRequest request, CancellationToken cancellationToken = default)
         { Count++; Request = request; return _outcome; }
+        public Task<CrossNasCopyMoveOutcome> CrossNasCopyMoveAsync(CrossNasCopyMoveRequest request, IProgress<long>? progress = null, CancellationToken cancellationToken = default) =>
+            Task.FromException<CrossNasCopyMoveOutcome>(new NotSupportedException());
     }
 }

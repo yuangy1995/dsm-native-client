@@ -286,7 +286,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
 
     public async Task<ForegroundUploadBatchStart> PickAndStartUploadBatchAsync(
         string profileId,
-        string folderPath)
+        string folderPath,
+        bool overwrite = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
@@ -294,14 +295,15 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         return sourcePaths is null
             ? new ForegroundUploadBatchStart(FileUploadBatchValidationStatus.Empty, 0)
             : new ForegroundUploadBatchStart(
-                StartUploadBatch(profileId, folderPath, sourcePaths),
+                StartUploadBatch(profileId, folderPath, sourcePaths, overwrite),
                 sourcePaths.Count);
     }
 
     public FileUploadBatchValidationStatus StartUploadBatch(
         string profileId,
         string folderPath,
-        IReadOnlyList<string> sourcePaths)
+        IReadOnlyList<string> sourcePaths,
+        bool overwrite = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
@@ -342,7 +344,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
             folderPath,
             paths,
             targets,
-            batchCancellation);
+            batchCancellation,
+            overwrite);
         return FileUploadBatchValidationStatus.Valid;
     }
 
@@ -553,7 +556,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         bool requiresMediaExtension,
         Guid? requestedActivityId,
         Guid? batchId,
-        CancellationToken batchCancellationToken = default)
+        CancellationToken batchCancellationToken = default,
+        bool overwrite = false)
     {
         var source = new FileStream(
             sourcePath,
@@ -587,7 +591,7 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                 length,
                 folderPath,
                 fileName,
-                overwrite: false);
+                overwrite);
         }
         catch
         {
@@ -882,7 +886,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
         string folderPath,
         IReadOnlyList<string> sourcePaths,
         IReadOnlyList<UploadTargetKey> targets,
-        CancellationTokenSource batchCancellation)
+        CancellationTokenSource batchCancellation,
+        bool overwrite = false)
     {
         FileUploadBatchSummary summary;
         var shouldNotify = false;
@@ -899,7 +904,8 @@ internal sealed class WindowsTransferPickerService : IPhotoImportTransferService
                         requiresMediaExtension: false,
                         requestedActivityId: null,
                         batchId,
-                        batchCancellation.Token);
+                        batchCancellation.Token,
+                        overwrite);
                     return await RunUploadAsync(prepared.Running, prepared.Request);
                 },
                 batchCancellation.Token);

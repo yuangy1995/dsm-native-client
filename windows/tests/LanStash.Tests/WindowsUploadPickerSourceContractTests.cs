@@ -65,7 +65,7 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Contains("FileOptions.Asynchronous | FileOptions.SequentialScan", source);
         Assert.Contains("length = source.Length;", source);
         Assert.Contains("Path.GetFileName(sourcePath)", source);
-        Assert.Contains("overwrite: false", source);
+        Assert.Contains("bool overwrite = false", source);
         Assert.Equal(1, CountOccurrences(source, "_repository.UploadFileAsync("));
         Assert.Contains("upload.Content.Dispose();", source);
         Assert.Contains("PickMultipleFilesAsync", source);
@@ -109,7 +109,7 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Equal(1, CountOccurrences(source, "new FileStream("));
         Assert.Equal(1, CountOccurrences(source, "new FileUploadRequest("));
         Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(prepared.Running, prepared.Request)"));
-        Assert.Contains("overwrite: false", source);
+        Assert.Contains("bool overwrite = false", source);
         Assert.Contains("UploadTarget: uploadTarget", source);
         Assert.Contains("CreateUploadTargetKey(profileId, folderPath, fileName)", source);
         Assert.Contains("item.UploadTarget == uploadTarget", source);
@@ -135,7 +135,7 @@ public sealed class WindowsUploadPickerSourceContractTests
         Assert.Equal(1, CountOccurrences(source, "new FileStream("));
         Assert.Equal(1, CountOccurrences(source, "new FileUploadRequest("));
         Assert.Equal(1, CountOccurrences(source, "_ = RunUploadAsync(prepared.Running, prepared.Request)"));
-        Assert.Contains("overwrite: false", source);
+        Assert.Contains("bool overwrite = false", source);
     }
 
     [Fact]

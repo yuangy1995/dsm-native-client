@@ -1,9 +1,20 @@
 using LanStash.App.Features.Files.Locations;
+using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Data;
 
 namespace LanStash.App.Views;
+
+public sealed class FileLocationsBooleanToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        value is true ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
+        throw new NotSupportedException();
+}
 
 public sealed partial class FileLocationsView : UserControl, IDisposable
 {
@@ -15,6 +26,7 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
     private bool _disposed;
 
     public event EventHandler? LocationOpened;
+    public event EventHandler? RemoteMountNeedsRefresh;
 
     public FileLocationsView()
     {
@@ -29,6 +41,7 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         Detach();
         _viewModel = viewModel;
+        DataContext = viewModel;
         _openLocation = openLocation;
         _refresh = refresh;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -137,6 +150,239 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
         }
     }
 
+    private async void RemoteCreate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { } model || !model.AllowsRemoteMountManagement) return;
+        var dialog = new ContentDialog
+        {
+            Title = LocalizationService.Current.Get("FileLocationsRemoteCreateTitle"),
+            PrimaryButtonText = LocalizationService.Current.Get("FileLocationsRemoteCreateAction"),
+            CloseButtonText = LocalizationService.Current.Get("ActionCancel"),
+            XamlRoot = XamlRoot,
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        var panel = BuildRemoteMountForm(dialog, out var serverBox, out var remotePathBox,
+            out var mountPointBox, out var usernameBox, out var passwordBox,
+            out var domainBox, out var readOnlyToggle, out var protocolCombo);
+        dialog.Content = panel;
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        var draft = new RemoteMountDraft(
+            serverBox.Text, remotePathBox.Text, mountPointBox.Text,
+            string.IsNullOrWhiteSpace(usernameBox.Text) ? null : usernameBox.Text,
+            string.IsNullOrWhiteSpace(passwordBox.Password) ? null : passwordBox.Password,
+            string.IsNullOrWhiteSpace(domainBox.Text) ? null : domainBox.Text,
+            readOnlyToggle.IsOn,
+            (FileRemoteProtocol)(protocolCombo.SelectedIndex >= 0 ? protocolCombo.SelectedIndex : 0));
+
+        if (!draft.IsValidForSubmission)
+        {
+            await ShowRemoteMountErrorAsync("FileLocationsRemoteInvalidDraft");
+            return;
+        }
+
+        try
+        {
+            var mutation = await model.CreateRemoteMountAsync(draft);
+            if (mutation.Status != MutationResultStatus.ConfirmedSuccess)
+            {
+                await ShowRemoteMountErrorAsync("FileLocationsRemoteOperationFailed");
+            }
+            else
+            {
+                RemoteMountNeedsRefresh?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async void RemoteEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { } model || !model.AllowsRemoteMountManagement) return;
+        if ((sender as FrameworkElement)?.DataContext is not FileRemoteLocation location) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = LocalizationService.Current.Get("FileLocationsRemoteEditTitle"),
+            PrimaryButtonText = LocalizationService.Current.Get("FileLocationsRemoteEditAction"),
+            CloseButtonText = LocalizationService.Current.Get("ActionCancel"),
+            XamlRoot = XamlRoot,
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        var panel = BuildRemoteMountForm(dialog, out var serverBox, out var remotePathBox,
+            out var mountPointBox, out var usernameBox, out var passwordBox,
+            out var domainBox, out var readOnlyToggle, out var protocolCombo);
+
+        // 使用当前位置数据预填表单。
+        mountPointBox.Text = location.Path;
+        mountPointBox.IsEnabled = false; // mount point is immutable for edits
+        readOnlyToggle.IsOn = location.IsReadOnly;
+        protocolCombo.SelectedIndex = (int)location.Protocol;
+
+        dialog.Content = panel;
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        var draft = new RemoteMountDraft(
+            serverBox.Text, remotePathBox.Text, location.Path,
+            string.IsNullOrWhiteSpace(usernameBox.Text) ? null : usernameBox.Text,
+            string.IsNullOrWhiteSpace(passwordBox.Password) ? null : passwordBox.Password,
+            string.IsNullOrWhiteSpace(domainBox.Text) ? null : domainBox.Text,
+            readOnlyToggle.IsOn,
+            (FileRemoteProtocol)(protocolCombo.SelectedIndex >= 0 ? protocolCombo.SelectedIndex : 0),
+            existingMountPoint: location.Path);
+
+        if (!draft.IsValidForSubmission)
+        {
+            await ShowRemoteMountErrorAsync("FileLocationsRemoteInvalidDraft");
+            return;
+        }
+
+        try
+        {
+            var mutation = await model.UpdateRemoteMountAsync(draft);
+            if (mutation.Status != MutationResultStatus.ConfirmedSuccess)
+            {
+                await ShowRemoteMountErrorAsync("FileLocationsRemoteOperationFailed");
+            }
+            else
+            {
+                RemoteMountNeedsRefresh?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async void RemoteDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { } model || !model.AllowsRemoteMountManagement) return;
+        if ((sender as FrameworkElement)?.DataContext is not FileRemoteLocation location) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = LocalizationService.Current.Get("FileLocationsRemoteDeleteTitle"),
+            Content = string.Format(
+                LocalizationService.Current.Get("FileLocationsRemoteDeleteMessage"),
+                location.Path),
+            PrimaryButtonText = LocalizationService.Current.Get("ActionDeleteText"),
+            CloseButtonText = LocalizationService.Current.Get("ActionCancel"),
+            XamlRoot = XamlRoot,
+            DefaultButton = ContentDialogButton.Close,
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        try
+        {
+            var mutation = await model.DeleteRemoteMountAsync(location.Path);
+            if (mutation.Status != MutationResultStatus.ConfirmedSuccess)
+            {
+                await ShowRemoteMountErrorAsync("FileLocationsRemoteOperationFailed");
+            }
+            else
+            {
+                RemoteMountNeedsRefresh?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private static StackPanel BuildRemoteMountForm(
+        ContentDialog dialog,
+        out TextBox serverBox,
+        out TextBox remotePathBox,
+        out TextBox mountPointBox,
+        out TextBox usernameBox,
+        out PasswordBox passwordBox,
+        out TextBox domainBox,
+        out ToggleSwitch readOnlyToggle,
+        out ComboBox protocolCombo)
+    {
+        var panel = new StackPanel { Spacing = 12 };
+
+        serverBox = new TextBox
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldServer"),
+            PlaceholderText = "server.local",
+        };
+        panel.Children.Add(serverBox);
+
+        remotePathBox = new TextBox
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldRemotePath"),
+            PlaceholderText = "/volume1/share",
+        };
+        panel.Children.Add(remotePathBox);
+
+        mountPointBox = new TextBox
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldMountPoint"),
+            PlaceholderText = "/remote-mount",
+        };
+        panel.Children.Add(mountPointBox);
+
+        usernameBox = new TextBox
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldUsername"),
+            PlaceholderText = LocalizationService.Current.Get("FileLocationsRemoteFieldUsernameOptional"),
+        };
+        panel.Children.Add(usernameBox);
+
+        passwordBox = new PasswordBox
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldPassword"),
+            PlaceholderText = LocalizationService.Current.Get("FileLocationsRemoteFieldPasswordOptional"),
+        };
+        panel.Children.Add(passwordBox);
+
+        domainBox = new TextBox
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldDomain"),
+            PlaceholderText = LocalizationService.Current.Get("FileLocationsRemoteFieldDomainOptional"),
+        };
+        panel.Children.Add(domainBox);
+
+        readOnlyToggle = new ToggleSwitch
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldReadOnly"),
+            IsOn = false,
+        };
+        panel.Children.Add(readOnlyToggle);
+
+        protocolCombo = new ComboBox
+        {
+            Header = LocalizationService.Current.Get("FileLocationsRemoteFieldProtocol"),
+            Items =
+            {
+                LocalizationService.Current.Get("FileLocationsRemoteProtocolCifs"),
+                LocalizationService.Current.Get("FileLocationsRemoteProtocolNfs"),
+                LocalizationService.Current.Get("FileLocationsRemoteProtocolIso"),
+            },
+            SelectedIndex = 0,
+        };
+        panel.Children.Add(protocolCombo);
+
+        return panel;
+    }
+
+    private async Task ShowRemoteMountErrorAsync(string key)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = LocalizationService.Current.Get("FileLocationsRemoteOperationFailedTitle"),
+            Content = LocalizationService.Current.Get(key),
+            CloseButtonText = LocalizationService.Current.Get("ActionAcknowledge"),
+            XamlRoot = XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
+
     private async Task OpenAsync(string path, FileLocationSource source)
     {
         if (_openLocation is null || _openCancellation is not null)
@@ -227,6 +473,9 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
             RemotePartial,
             RemoteTruncated);
 
+        RemoteCreateButton.Visibility = model.AllowsRemoteMountManagement
+            ? Visibility.Visible : Visibility.Collapsed;
+
         RecentItems.ItemsSource = model.RecentLocations;
         RecentEmpty.Visibility = model.RecentLocations.Count == 0
             ? Visibility.Visible : Visibility.Collapsed;
@@ -279,6 +528,7 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
         {
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         }
+        DataContext = null;
         _viewModel = null;
         _openLocation = null;
         _refresh = null;

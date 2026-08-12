@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
 
@@ -7,7 +8,7 @@ public sealed partial class DsmRepository(
     NasProfile profile,
     DsmSession session,
     IDsmApiClient api,
-    IReadOnlyDictionary<string, ApiCapability> capabilities) : IDsmRepository, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IFileBackgroundTaskRepository, IDirectorySizeRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository
+    IReadOnlyDictionary<string, ApiCapability> capabilities) : IDsmRepository, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IFileBackgroundTaskRepository, IDirectorySizeRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository, INasSettingsRepository, IFileSearchRepository
 {
     private readonly NasProfile _profile = profile;
     private readonly DsmSession _session = session;
@@ -170,6 +171,34 @@ public sealed partial class DsmRepository(
 
 public sealed partial class DsmRepository
 {
+    private static readonly ConcurrentDictionary<Guid, DsmRepository> _activeRepositories = new();
+
+    public static Func<Guid, DsmRepository?> CrossNasRepositoryResolver { get; private set; } = _ => null;
+
+    static DsmRepository()
+    {
+        CrossNasRepositoryResolver = id => _activeRepositories.TryGetValue(id, out var repo) ? repo : null;
+    }
+
+    public static void RegisterRepository(Guid profileId, DsmRepository repository)
+    {
+        if (profileId != repository.ProfileId)
+            throw new ArgumentException("repository.profile-mismatch", nameof(profileId));
+        _activeRepositories[profileId] = repository;
+    }
+
+    public static void UnregisterRepository(Guid profileId, DsmRepository? repository = null)
+    {
+        if (repository is null)
+        {
+            _activeRepositories.TryRemove(profileId, out _);
+            return;
+        }
+
+        ((ICollection<KeyValuePair<Guid, DsmRepository>>)_activeRepositories)
+            .Remove(new KeyValuePair<Guid, DsmRepository>(profileId, repository));
+    }
+
     private static IReadOnlyList<ResourceItem> ParseResources(
         JsonObject data,
         params string[] roots)

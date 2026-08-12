@@ -18,6 +18,7 @@ namespace LanStash.App.Views;
 public sealed partial class FilePreviewPane : UserControl, IDisposable
 {
     private FilePreviewViewModel? _viewModel;
+    private FileTextEditViewModel? _textEditViewModel;
     private MediaSource? _mediaSource;
     private MediaPlayer? _mediaPlayer;
     private FilePreviewViewModel? _mediaViewModel;
@@ -37,6 +38,7 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
     public event EventHandler<FilePreviewKeyboardCloseRequestedEventArgs>? KeyboardCloseRequested;
     public event EventHandler? RetryRequested;
     public event EventHandler<FilePreviewSaveCopyRequestedEventArgs>? SaveCopyRequested;
+    public event EventHandler? UnsavedDiscardRequested;
 
     public void Attach(FilePreviewViewModel viewModel)
     {
@@ -53,6 +55,25 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         UpdateState();
     }
+
+    public void AttachTextEdit(FileTextEditViewModel viewModel)
+    {
+        ArgumentNullException.ThrowIfNull(viewModel);
+        if (ReferenceEquals(_textEditViewModel, viewModel))
+        {
+            return;
+        }
+        if (_textEditViewModel is not null)
+        {
+            _textEditViewModel.PropertyChanged -= TextEditViewModel_PropertyChanged;
+        }
+        _textEditViewModel = viewModel;
+        _textEditViewModel.PropertyChanged += TextEditViewModel_PropertyChanged;
+        UpdateTextEditState();
+    }
+
+    public bool HasUnsavedTextEdits =>
+        _textEditViewModel?.HasUnsavedChanges ?? false;
 
     public void FocusHeading() => BackButton.Focus(FocusState.Programmatic);
 
@@ -430,6 +451,207 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         }
     }
 
+    private void TextEditViewModel_PropertyChanged(
+        object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(UpdateTextEditState);
+    }
+
+    private void UpdateTextEditState()
+    {
+        if (_disposed || _textEditViewModel is null)
+        {
+            return;
+        }
+
+        var vm = _textEditViewModel;
+        var isEditing = vm.IsEditing;
+        var isViewing = vm.IsViewing;
+        var canEdit = vm.CanEdit;
+        var canFormat = vm.CanFormat;
+
+        // 查看模式显示只读文本和编辑按钮。
+        TextEditButtonBar.Visibility = isViewing && canEdit
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        // 编辑模式显示文本框和工具栏。
+        TextEditBox.Visibility = isEditing
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TextEditToolbar.Visibility = isEditing
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        TextEditFormatButton.IsEnabled = canFormat;
+
+        // 编辑时隐藏只读预览，否则显示只读预览。
+        TextPreview.Visibility = isEditing
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        // 同步文本内容。
+        if (isEditing)
+        {
+            TextEditBox.Text = vm.EditableText;
+            TextEditBox.Focus(FocusState.Programmatic);
+        }
+        else
+        {
+            if (_viewModel?.Snapshot is { Text: { } text })
+            {
+                TextPreview.Text = text;
+            }
+        }
+
+        // 仅在内容实际变化时启用保存按钮。
+        TextEditSaveButton.IsEnabled = vm.CanSubmitSave;
+
+        // 更新保存状态。
+        var localization = LocalizationService.Current;
+        if (vm.IsSaveCompleted)
+        {
+            TextEditSaveStatus.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Success;
+            TextEditSaveStatus.Title = localization.Get("FileTextEdit_SavedMessage");
+            TextEditSaveStatus.Message = string.Empty;
+            TextEditSaveStatus.IsOpen = true;
+            TextEditSaveStatus.Visibility = Visibility.Visible;
+        }
+        else if (vm.IsSaveFailed)
+        {
+            TextEditSaveStatus.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Error;
+            TextEditSaveStatus.Title = localization.Get("FileTextEdit_SaveFailedMessage");
+            TextEditSaveStatus.Message = string.Empty;
+            TextEditSaveStatus.IsOpen = true;
+            TextEditSaveStatus.Visibility = Visibility.Visible;
+        }
+        else if (vm.IsSaveNeedsReview)
+        {
+            TextEditSaveStatus.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Warning;
+            TextEditSaveStatus.Title = localization.Get("FileTextEdit_NeedsReviewTitle");
+            TextEditSaveStatus.Message = localization.Get("FileTextEdit_NeedsReviewMessage");
+            TextEditSaveStatus.IsOpen = true;
+            TextEditSaveStatus.Visibility = Visibility.Visible;
+        }
+        else if (vm.IsSavingIndicator)
+        {
+            TextEditSaveStatus.Severity = Microsoft.UI.Xaml.Controls.InfoBarSeverity.Informational;
+            TextEditSaveStatus.Title = localization.Get("FileTextEdit_Saving");
+            TextEditSaveStatus.Message = string.Empty;
+            TextEditSaveStatus.IsOpen = true;
+            TextEditSaveStatus.Visibility = Visibility.Visible;
+        }
+        else if (vm.IsViewing)
+        {
+            TextEditSaveStatus.IsOpen = false;
+            TextEditSaveStatus.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private async void TextEdit_Click(object sender, RoutedEventArgs e)
+    {
+        if (_textEditViewModel is null || _disposed)
+        {
+            return;
+        }
+
+        TextEditButton.IsEnabled = false;
+        try
+        {
+            var entered = await _textEditViewModel.EnterEditModeAsync();
+            if (!entered)
+            {
+                TextEditButton.IsEnabled = true;
+            }
+        }
+        catch
+        {
+            TextEditButton.IsEnabled = true;
+        }
+    }
+
+    private async void TextEditSave_Click(object sender, RoutedEventArgs e)
+    {
+        if (_textEditViewModel is null || _disposed)
+        {
+            return;
+        }
+
+        TextEditSaveButton.IsEnabled = false;
+        try
+        {
+            var localization = LocalizationService.Current;
+            var confirmation = new ContentDialog
+            {
+                Title = localization.Get("FileTextEdit_SaveConfirmTitle"),
+                Content = localization.Get("FileTextEdit_SaveConfirmMessage"),
+                PrimaryButtonText = localization.Get("FileTextEdit_SaveConfirmAction"),
+                CloseButtonText = localization.Get("ActionCancel"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+            await _textEditViewModel.SaveAsync();
+        }
+        finally
+        {
+            if (_textEditViewModel.IsEditing)
+            {
+                TextEditSaveButton.IsEnabled = _textEditViewModel.CanSubmitSave;
+            }
+        }
+    }
+
+    private void TextEditCancel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_textEditViewModel is null || _disposed)
+        {
+            return;
+        }
+
+        if (_textEditViewModel.HasUnsavedChanges)
+        {
+            UnsavedDiscardRequested?.Invoke(this, EventArgs.Empty);
+        }
+        else
+        {
+            _textEditViewModel.CancelEdit();
+        }
+    }
+
+    public void ConfirmDiscardTextEdits()
+    {
+        _textEditViewModel?.CancelEdit();
+    }
+
+    private async void TextEditFormat_Click(object sender, RoutedEventArgs e)
+    {
+        if (_textEditViewModel is null || _disposed)
+        {
+            return;
+        }
+
+        TextEditFormatButton.IsEnabled = false;
+        try
+        {
+            await _textEditViewModel.FormatAsync();
+        }
+        finally
+        {
+            TextEditFormatButton.IsEnabled = _textEditViewModel.CanFormat &&
+                _textEditViewModel.IsEditing;
+        }
+    }
+
+    private void TextEditDismissStatus_Click(object sender, RoutedEventArgs e)
+    {
+        TextEditSaveStatus.IsOpen = false;
+        TextEditSaveStatus.Visibility = Visibility.Collapsed;
+    }
+
     private void ImageZoomOut_Click(object sender, RoutedEventArgs e) => ChangeImageZoom(-0.25f);
 
     private void ImageZoomIn_Click(object sender, RoutedEventArgs e) => ChangeImageZoom(0.25f);
@@ -638,6 +860,10 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         if (_viewModel is not null)
         {
             _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        }
+        if (_textEditViewModel is not null)
+        {
+            _textEditViewModel.PropertyChanged -= TextEditViewModel_PropertyChanged;
         }
         Interlocked.Increment(ref _renderGeneration);
         _presenterCancellation?.Cancel();

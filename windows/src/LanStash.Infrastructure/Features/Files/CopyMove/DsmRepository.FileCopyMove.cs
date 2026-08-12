@@ -19,6 +19,8 @@ public sealed partial class DsmRepository
 
     FileCopyMoveAvailability IFileCopyMoveRepository.Availability => FileCopyMoveAvailability;
 
+    CrossNasCopyMoveAvailability IFileCopyMoveRepository.CrossNasAvailability => CrossNasAvailability;
+
     private bool CopyMoveCapabilityAvailable =>
         MutationCapability("SYNO.FileStation.CopyMove", 3) &&
         MutationCapability("SYNO.FileStation.CheckPermission", 3) &&

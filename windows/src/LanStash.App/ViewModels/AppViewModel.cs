@@ -283,6 +283,7 @@ public sealed partial class AppViewModel : ObservableObject
                 Password = string.Empty;
                 PasswordLoaded?.Invoke(this, string.Empty);
             }
+            DsmRepository.RegisterRepository(connection.Profile.Id, repository);
             CompleteConnection(
                 input.Profile,
                 connection.Profile,
@@ -395,6 +396,7 @@ public sealed partial class AppViewModel : ObservableObject
             _connectionAttempts.ThrowIfNotCurrent(attempt);
             await TryActivateDesktopDrivesAsync(profile.Id, repository).ConfigureAwait(true);
             _connectionAttempts.ThrowIfNotCurrent(attempt);
+            DsmRepository.RegisterRepository(connection.Profile.Id, repository);
             CompleteConnection(
                 profile,
                 connection.Profile,
@@ -539,6 +541,8 @@ public sealed partial class AppViewModel : ObservableObject
         if (profile is not null)
         {
             StopDesktopDriveRecovery();
+            DsmRepository.UnregisterRepository(
+                profile.Id, Repository as DsmRepository);
             _cloudDrives.DisconnectProfile(profile.Id);
             if (Session is not null)
             {
@@ -851,6 +855,10 @@ public sealed partial class AppViewModel : ObservableObject
     {
         CancelConnection();
         StopDesktopDriveRecovery();
+        if (ActiveProfile is { } profile && Repository is DsmRepository repository)
+        {
+            DsmRepository.UnregisterRepository(profile.Id, repository);
+        }
         foreach (var cancellation in _desktopDriveTasks.Values)
         {
             cancellation.Cancel();
@@ -869,6 +877,12 @@ public sealed partial class AppViewModel : ObservableObject
         CertificateConnectionContext connectionContext,
         bool startDesktopDriveRecovery)
     {
+        if (ActiveProfile is { } previousProfile &&
+            Repository is DsmRepository previousRepository &&
+            previousProfile.Id != profile.Id)
+        {
+            DsmRepository.UnregisterRepository(previousProfile.Id, previousRepository);
+        }
         _activeHttpClient?.Dispose();
         _activeHttpClient = connectionContext.TakeOwnership();
         _api = connectionContext.Api;
@@ -895,6 +909,8 @@ public sealed partial class AppViewModel : ObservableObject
         StopDesktopDriveRecovery();
         if (ActiveProfile is { } profile)
         {
+            DsmRepository.UnregisterRepository(
+                profile.Id, Repository as DsmRepository);
             foreach (var mapping in _cloudDrives.Mappings
                          .Where(item => item.ProfileId == profile.Id))
             {

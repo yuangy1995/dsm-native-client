@@ -14,6 +14,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace LanStash.App.Views;
 
@@ -21,6 +22,7 @@ public sealed partial class FilesPage : Page, IDisposable
 {
     private readonly FileBrowserViewModel _viewModel;
     private readonly FilePreviewViewModel _previewViewModel;
+    private readonly FileTextEditViewModel _textEditViewModel;
     private readonly IFilePreviewRepository _previewRepository;
     private readonly IFileShareLinkRepository? _shareRepository;
     private readonly IFileArchiveCompressionRepository? _archiveCompressionRepository;
@@ -37,6 +39,10 @@ public sealed partial class FilesPage : Page, IDisposable
     private bool _initialized;
     private bool _isChoosingUpload;
     private bool _selectionNeedsScroll;
+    private DragMoveUndo? _dragMoveUndo;
+    private CancellationTokenSource? _dragMoveUndoCts;
+    private readonly IFileSearchRepository? _searchRepository;
+    private CancellationTokenSource? _searchCancellation;
     private bool? _locationsAreWide;
     private bool _disposed;
 
@@ -102,6 +108,7 @@ public sealed partial class FilesPage : Page, IDisposable
         InitializeComponent();
         _viewModel = viewModel;
         _previewViewModel = new FilePreviewViewModel();
+        _textEditViewModel = new FileTextEditViewModel();
         _previewRepository = previewRepository;
         _profileId = Guid.Parse(profileId);
         _shareRepository = shareRepository?.ProfileId == _profileId
@@ -132,6 +139,11 @@ public sealed partial class FilesPage : Page, IDisposable
         _archiveExtractionRepository = archiveExtractionRepository?.ProfileId == _profileId
             ? archiveExtractionRepository
             : null;
+        _searchRepository = (previewRepository as IFileSearchRepository)?.ProfileId == _profileId
+            ? (previewRepository as IFileSearchRepository)
+            : null;
+        SearchSubfoldersToggle.Visibility = _searchRepository?.IsSearchAvailable == true
+            ? Visibility.Visible : Visibility.Collapsed;
         _transfers = transfers;
         _systemShare = new WindowsSystemShare(
             () => (Application.Current as App)?.MainWindow);
@@ -148,9 +160,11 @@ public sealed partial class FilesPage : Page, IDisposable
         _locationsViewModel.PropertyChanged += LocationsViewModel_PropertyChanged;
         _previewViewModel.PropertyChanged += PreviewViewModel_PropertyChanged;
         PreviewPane.Attach(_previewViewModel);
+        PreviewPane.AttachTextEdit(_textEditViewModel);
         PreviewPane.CloseRequested += PreviewPane_CloseRequested;
         PreviewPane.RetryRequested += PreviewPane_RetryRequested;
         PreviewPane.SaveCopyRequested += PreviewPane_SaveCopyRequested;
+        PreviewPane.UnsavedDiscardRequested += PreviewPane_UnsavedDiscardRequested;
         LocationsPane.Attach(_locationsViewModel, OpenLocationAsync, RefreshLocationsAsync);
         LocationsPane.LocationOpened += LocationsPane_LocationOpened;
         Loaded += FilesPage_Loaded;
@@ -310,11 +324,92 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void FilterBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
         {
-            ExitDownloadSelectionMode();
+            return;
+        }
+        ExitDownloadSelectionMode();
+        if (SearchSubfoldersToggle.IsOn && _searchRepository is not null)
+        {
+            _ = PerformAsyncSearchAsync(sender.Text);
+        }
+        else
+        {
             _viewModel.SetFilter(sender.Text);
             UpdateState();
+        }
+    }
+
+    private void SearchSubfolders_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!SearchSubfoldersToggle.IsOn)
+        {
+            _viewModel.SetFilter(FilterBox.Text);
+            UpdateState();
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(FilterBox.Text) && _searchRepository is not null)
+        {
+            _ = PerformAsyncSearchAsync(FilterBox.Text);
+        }
+    }
+
+    private async Task PerformAsyncSearchAsync(string query)
+    {
+        _searchCancellation?.Cancel();
+        _searchCancellation?.Dispose();
+        _searchCancellation = new CancellationTokenSource();
+        var token = _searchCancellation.Token;
+
+        if (_searchRepository is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            _viewModel.SetFilter(query);
+            UpdateState();
+            return;
+        }
+
+        _viewModel.BeginAsyncSearch();
+        UpdateState();
+
+        try
+        {
+            var currentPath = _viewModel.CurrentPath ?? string.Empty;
+            var request = new FileSearchRequest(currentPath, query, Recursive: true);
+            var result = await _searchRepository.SearchAsync(request, token);
+
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _viewModel.SetAsyncSearchResults(result.Items, result.TotalCount, result.IsTruncated);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _viewModel.SetAsyncSearchError();
+            }
+        }
+        finally
+        {
+            UpdateState();
+        }
+    }
+
+    private async void SearchRetry_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(FilterBox.Text))
+        {
+            await PerformAsyncSearchAsync(FilterBox.Text);
         }
     }
 
@@ -575,9 +670,11 @@ public sealed partial class FilesPage : Page, IDisposable
         UpdateState();
         try
         {
+            var overwrite = UploadOverwriteToggle.IsChecked == true;
             var start = await _transfers.PickAndStartUploadBatchAsync(
                 _profileId.ToString(),
-                folderPath);
+                folderPath,
+                overwrite);
             ShowFileUploadBatchStart(start.Status, start.SelectedCount);
         }
         catch (ObjectDisposedException)
@@ -1251,8 +1348,40 @@ public sealed partial class FilesPage : Page, IDisposable
         UpdateBatchRecycleControls();
         UpdateArchiveCompressionControls();
         UpdateArchiveExtractionControls();
+        var canCrossNasCopy = CanCrossNasCopyMove();
+        CrossNasCopyButton.IsEnabled = canCrossNasCopy;
+        CrossNasCopyButton.Visibility = canCrossNasCopy
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CrossNasMoveButton.IsEnabled = false;
+        CrossNasMoveButton.Visibility = Visibility.Collapsed;
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
+        SearchProgressState.Visibility = _viewModel.IsSearching
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SearchStatus.IsOpen = _viewModel.HasSearchError ||
+            _viewModel.HasSearchTruncationNotice;
+        SearchStatus.Visibility = SearchStatus.IsOpen
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SearchStatus.Severity = _viewModel.HasSearchError
+            ? InfoBarSeverity.Error
+            : InfoBarSeverity.Warning;
+        SearchStatus.Title = _viewModel.HasSearchError
+            ? LocalizationService.Current.Get("FileBrowserSearchErrorTitle")
+            : LocalizationService.Current.Get("FileBrowserSearchTruncatedTitle");
+        SearchStatus.Message = _viewModel.HasSearchError
+            ? LocalizationService.Current.Get("FileBrowserSearchErrorMessage")
+            : LocalizationService.Current.Format(
+                "FileBrowserSearchTruncatedMessage",
+                _viewModel.SearchResultCount);
+        if (SearchStatus.ActionButton is Button searchRetry)
+        {
+            searchRetry.Visibility = _viewModel.HasSearchError
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
 
         if (_selectionNeedsScroll)
         {
@@ -1284,8 +1413,18 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async Task OpenPreviewAsync(FileBrowserEntry entry)
     {
+        if (PreviewPane.HasUnsavedTextEdits)
+        {
+            var discard = await ShowUnsavedDiscardDialogAsync();
+            if (!discard)
+            {
+                return;
+            }
+            PreviewPane.ConfirmDiscardTextEdits();
+        }
         await PreviewPane.CloseAsync();
         await _previewViewModel.OpenAsync(_previewRepository, _profileId, entry.Item);
+        _textEditViewModel.Attach(_previewRepository, entry.Item);
         PreviewPane.SetSaveCopyEnabled(
             _previewViewModel.TryGetSaveCopyTarget(entry.Item, out _));
         UpdatePreviewLayout();
@@ -1297,6 +1436,15 @@ public sealed partial class FilesPage : Page, IDisposable
         if (!_previewViewModel.IsOpen)
         {
             return;
+        }
+        if (PreviewPane.HasUnsavedTextEdits)
+        {
+            var discard = await ShowUnsavedDiscardDialogAsync();
+            if (!discard)
+            {
+                return;
+            }
+            PreviewPane.ConfirmDiscardTextEdits();
         }
         await PreviewPane.CloseAsync();
         await _previewViewModel.CloseAsync();
@@ -1316,8 +1464,38 @@ public sealed partial class FilesPage : Page, IDisposable
         }
     }
 
+    private async Task<bool> ShowUnsavedDiscardDialogAsync()
+    {
+        var localization = LocalizationService.Current;
+        var dialog = new ContentDialog
+        {
+            Title = localization.Get("FileTextEdit_UnsavedTitle"),
+            Content = localization.Get("FileTextEdit_UnsavedMessage"),
+            PrimaryButtonText = localization.Get("FileTextEdit_Discard"),
+            CloseButtonText = localization.Get("FileTextEdit_KeepEditing"),
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
+    }
+
     private async void PreviewPane_CloseRequested(object? sender, EventArgs e) =>
         await ClosePreviewAsync();
+
+    private void PreviewPane_UnsavedDiscardRequested(object? sender, EventArgs e)
+    {
+        _ = ShowUnsavedDiscardDialogAndMaybeDiscardAsync();
+    }
+
+    private async Task ShowUnsavedDiscardDialogAndMaybeDiscardAsync()
+    {
+        var discard = await ShowUnsavedDiscardDialogAsync();
+        if (discard)
+        {
+            PreviewPane.ConfirmDiscardTextEdits();
+        }
+    }
 
     private async void PreviewPane_RetryRequested(object? sender, EventArgs e)
     {
@@ -1482,5 +1660,197 @@ public sealed partial class FilesPage : Page, IDisposable
         _isClosingShareLink = true;
         dialog.Hide();
     }
+
+    private void FileList_DragItemsStarting(object sender, DragItemsStartingEventArgs args)
+    {
+        if (IsReadOnlyLocation() || _copyMoveRepository is null)
+        {
+            args.Cancel = true;
+            return;
+        }
+        var entries = args.Items
+            .OfType<FileBrowserEntry>()
+            .Where(e => FileCopyMoveViewModel.IsDestination(e.Path))
+            .ToArray();
+        if (entries.Length == 0)
+        {
+            args.Cancel = true;
+            return;
+        }
+        var paths = string.Join("\n", entries.Select(e => e.Path));
+        args.Data.SetText(paths);
+        args.Data.RequestedOperation = DataPackageOperation.Move;
+    }
+
+    private void FileList_DragOver(object sender, DragEventArgs args)
+    {
+        if (IsReadOnlyLocation() || _copyMoveRepository is null ||
+            !args.DataView.Contains(StandardDataFormats.Text))
+        {
+            args.AcceptedOperation = DataPackageOperation.None;
+            return;
+        }
+        var target = FindDropTargetFolder(args);
+        args.AcceptedOperation = target is not null
+            ? DataPackageOperation.Move
+            : DataPackageOperation.None;
+    }
+
+    private async void FileList_Drop(object sender, DragEventArgs args)
+    {
+        if (IsReadOnlyLocation() || _copyMoveRepository is null) return;
+
+        var target = FindDropTargetFolder(args);
+        if (target is null) return;
+
+        var paths = await args.DataView.GetTextAsync();
+        if (string.IsNullOrWhiteSpace(paths)) return;
+
+        var sourcePaths = paths.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var sources = _viewModel.Items
+            .Where(e => sourcePaths.Contains(e.Path))
+            .Select(e => e.Item)
+            .Where(item => item.CanDelete && FileCopyMoveViewModel.IsDestination(item.Path))
+            .ToArray();
+        if (sources.Length == 0) return;
+
+        if (FileCopyMoveBatchViewModel.Validate(sources, FileCopyMoveOperation.Move) !=
+            FileCopyMoveBatchValidationStatus.Valid) return;
+
+        var sourceFolder = MutationParent(sources[0].Path);
+        if (string.Equals(sourceFolder, target, StringComparison.Ordinal)) return;
+
+        var batch = new FileCopyMoveBatchViewModel(
+            _copyMoveRepository,
+            _copyMoveFolderSource!,
+            _profileId,
+            sources,
+            FileCopyMoveOperation.Move,
+            _copyMoveReviewBlocker!);
+        await batch.LoadFoldersAsync(target, destinationCanWrite: true);
+        if (!batch.CanSubmit) return;
+
+        await batch.SubmitAsync();
+        if (batch.State != FileCopyMoveBatchState.Completed) return;
+        if (batch.Summary.ConfirmedCount <= 0) return;
+
+        await ClosePreviewAsync();
+        await RunAsync(_viewModel.RefreshAsync);
+        UpdateState();
+        ShowDragMoveUndo(sources, sourceFolder, target);
+    }
+
+    private string? FindDropTargetFolder(DragEventArgs args)
+    {
+        var list = VisibleFilesControl();
+        if (list is null) return null;
+
+        var position = args.GetPosition(list);
+        var element = list.ContainerFromIndex(0) as UIElement;
+        var container = list.ContainerFromIndex(-1);
+        // 从当前位置沿可视树向上查找容器元素。
+        foreach (var item in _viewModel.Items)
+        {
+            if (!item.Item.IsDirectory) continue;
+            var itemContainer = list.ContainerFromItem(item) as UIElement;
+            if (itemContainer is null) continue;
+            var bounds = itemContainer.TransformToVisual(list).TransformBounds(
+                new Windows.Foundation.Rect(
+                    0,
+                    0,
+                    itemContainer.RenderSize.Width,
+                    itemContainer.RenderSize.Height));
+            if (bounds.Contains(position))
+            {
+                return item.Path;
+            }
+        }
+        return null;
+    }
+
+    private void ShowDragMoveUndo(IReadOnlyList<FileItem> sources, string sourceFolder, string destinationFolder)
+    {
+        _dragMoveUndoCts?.Cancel();
+        _dragMoveUndoCts?.Dispose();
+        _dragMoveUndoCts = new CancellationTokenSource();
+
+        var undo = new DragMoveUndo(
+            Guid.NewGuid(),
+            sources,
+            sourceFolder,
+            destinationFolder,
+            DateTime.UtcNow.AddSeconds(10));
+        _dragMoveUndo = undo;
+
+        var localization = LocalizationService.Current;
+        FileMoveUndoStatus.Message = localization.Format(
+            "FileMoveUndoMessage", sources.Count, destinationFolder);
+        var undoButton = new Button
+        {
+            Content = localization.Get("FileMoveUndoButton.Text"),
+            MinHeight = 44,
+        };
+        undoButton.Click += async (_, _) => await UndoDragMoveAsync(undo);
+        FileMoveUndoStatus.ActionButton = undoButton;
+        FileMoveUndoStatus.Severity = InfoBarSeverity.Success;
+        FileMoveUndoStatus.IsOpen = true;
+
+        _ = DismissUndoAfterDelay(undo, _dragMoveUndoCts.Token);
+    }
+
+    private async Task DismissUndoAfterDelay(DragMoveUndo undo, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(10_000, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        if (!cancellationToken.IsCancellationRequested &&
+            ReferenceEquals(_dragMoveUndo, undo))
+        {
+            _dragMoveUndo = null;
+            FileMoveUndoStatus.IsOpen = false;
+        }
+    }
+
+    private async Task UndoDragMoveAsync(DragMoveUndo undo)
+    {
+        _dragMoveUndoCts?.Cancel();
+        _dragMoveUndo = null;
+        FileMoveUndoStatus.IsOpen = false;
+
+        if (_copyMoveRepository is null || _copyMoveFolderSource is null ||
+            _copyMoveReviewBlocker is null || _disposed) return;
+
+        var batch = new FileCopyMoveBatchViewModel(
+            _copyMoveRepository,
+            _copyMoveFolderSource,
+            _profileId,
+            undo.Items.ToArray(),
+            FileCopyMoveOperation.Move,
+            _copyMoveReviewBlocker);
+        await batch.LoadFoldersAsync(undo.SourceFolder, destinationCanWrite: true);
+        if (!batch.CanSubmit) return;
+
+        await batch.SubmitAsync();
+        await RunAsync(_viewModel.RefreshAsync);
+        UpdateState();
+    }
+
+    private static string MutationParent(string path)
+    {
+        var separator = path.LastIndexOf('/');
+        return separator <= 0 ? string.Empty : path[..separator];
+    }
+
+    private sealed record DragMoveUndo(
+        Guid Id,
+        IReadOnlyList<FileItem> Items,
+        string SourceFolder,
+        string DestinationFolder,
+        DateTime ExpiresAt);
 
 }

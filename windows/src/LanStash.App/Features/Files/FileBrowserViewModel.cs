@@ -393,11 +393,83 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         }
     }
 
+    private bool _isSearching;
+    private bool _searchTruncated;
+    private bool _hasSearchError;
+    private int _searchResultCount;
+
+    public bool IsSearching => _isSearching;
+    public bool HasSearchTruncationNotice => _searchTruncated;
+    public bool HasSearchError => _hasSearchError;
+    public int SearchResultCount => _searchResultCount;
+
     public void SetFilter(string? value)
     {
         ThrowIfDisposed();
         FilterText = value?.Trim() ?? string.Empty;
+        _isSearching = false;
+        _searchTruncated = false;
+        _hasSearchError = false;
+        _searchResultCount = 0;
+        RaisePropertyChanged(nameof(IsSearching));
+        RaisePropertyChanged(nameof(HasSearchTruncationNotice));
+        RaisePropertyChanged(nameof(HasSearchError));
+        RaisePropertyChanged(nameof(SearchResultCount));
         ApplyQuickFilter();
+    }
+
+    public void BeginAsyncSearch()
+    {
+        ThrowIfDisposed();
+        _isSearching = true;
+        _searchTruncated = false;
+        _hasSearchError = false;
+        _searchResultCount = 0;
+        RaisePropertyChanged(nameof(IsSearching));
+        RaisePropertyChanged(nameof(HasSearchTruncationNotice));
+        RaisePropertyChanged(nameof(HasSearchError));
+        RaisePropertyChanged(nameof(SearchResultCount));
+    }
+
+    public void SetAsyncSearchResults(
+        IReadOnlyList<FileItem> items,
+        int totalCount,
+        bool isTruncated)
+    {
+        ThrowIfDisposed();
+        _searchTruncated = isTruncated;
+        _searchResultCount = totalCount;
+        _isSearching = false;
+        _hasSearchError = false;
+        RaisePropertyChanged(nameof(IsSearching));
+        RaisePropertyChanged(nameof(HasSearchTruncationNotice));
+        RaisePropertyChanged(nameof(HasSearchError));
+        RaisePropertyChanged(nameof(SearchResultCount));
+
+        Items.Clear();
+        if (items.Count == 0)
+        {
+            ContentState = FileBrowserContentState.FilteredEmpty;
+            return;
+        }
+        foreach (var item in items)
+        {
+            Items.Add(new FileBrowserEntry(item));
+        }
+        ContentState = FileBrowserContentState.Content;
+    }
+
+    public void SetAsyncSearchError()
+    {
+        ThrowIfDisposed();
+        _isSearching = false;
+        _searchTruncated = false;
+        _hasSearchError = true;
+        _searchResultCount = 0;
+        RaisePropertyChanged(nameof(IsSearching));
+        RaisePropertyChanged(nameof(HasSearchTruncationNotice));
+        RaisePropertyChanged(nameof(HasSearchError));
+        RaisePropertyChanged(nameof(SearchResultCount));
     }
 
     public Task SetSortFieldAsync(FileListSortField value)
