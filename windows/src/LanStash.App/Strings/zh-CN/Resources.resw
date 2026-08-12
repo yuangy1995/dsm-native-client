@@ -444,28 +444,50 @@
   <data name="TransferOriginalFileType" xml:space="preserve"><value>原始文件类型</value></data>
   <data name="TransferArchiveFileType" xml:space="preserve"><value>ZIP 压缩包</value></data>
   <data name="TransferActivityTitle.Text" xml:space="preserve"><value>活动</value></data>
-  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>当前窗口打开期间，会在这里显示当前 NAS 的 App 传输和 NAS 下载任务。</value></data>
-  <data name="TransferActivityRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新 NAS 下载任务</value></data>
+  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>当前窗口打开期间，会在这里显示当前 NAS 的 App 传输、NAS 下载和 NAS 文件操作。</value></data>
+  <data name="TransferActivityRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新 NAS 活动</value></data>
   <data name="TransferActivityRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
-  <data name="TransferActivityRefreshProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在刷新 NAS 下载任务</value></data>
-  <data name="TransferActivityRefreshError.Title" xml:space="preserve"><value>无法刷新 NAS 任务</value></data>
-  <data name="TransferActivityRefreshError.Message" xml:space="preserve"><value>仍会显示上次读取的 NAS 任务和 App 传输。请检查连接后重试。</value></data>
-  <data name="TransferActivityTruncated.Title" xml:space="preserve"><value>仅显示前 100 个 NAS 任务</value></data>
-  <data name="TransferActivityTruncated.Message" xml:space="preserve"><value>请打开 Download Station 查找列表以外的任务。</value></data>
+  <data name="TransferActivityRefreshProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在刷新 NAS 活动</value></data>
+  <data name="TransferActivityDownloadRefreshError.Title" xml:space="preserve"><value>无法刷新 NAS 下载任务</value></data>
+  <data name="TransferActivityDownloadRefreshError.Message" xml:space="preserve"><value>仍会显示上次读取的下载任务。请检查连接后重试。</value></data>
+  <data name="TransferActivityDownloadRefreshErrorPrevious" xml:space="preserve"><value>仍会显示上次读取的下载任务。请检查连接后重试。</value></data>
+  <data name="TransferActivityDownloadRefreshErrorInitial" xml:space="preserve"><value>尚未读取到下载任务。请检查连接后重试。</value></data>
+  <data name="TransferActivityFileRefreshError.Title" xml:space="preserve"><value>无法刷新 NAS 文件操作</value></data>
+  <data name="TransferActivityFileRefreshError.Message" xml:space="preserve"><value>仍会显示上次读取的文件操作。请检查连接后重试。</value></data>
+  <data name="TransferActivityFileRefreshErrorPrevious" xml:space="preserve"><value>仍会显示上次读取的文件操作。请检查连接后重试。</value></data>
+  <data name="TransferActivityFileRefreshErrorInitial" xml:space="preserve"><value>尚未读取到文件操作。请检查连接后重试。</value></data>
+  <data name="TransferActivityDownloadTruncated.Title" xml:space="preserve"><value>仅显示前 100 个 NAS 下载任务</value></data>
+  <data name="TransferActivityDownloadTruncated.Message" xml:space="preserve"><value>请打开 Download Station 查找列表以外的任务。</value></data>
+  <data name="TransferActivityFileTruncated.Title" xml:space="preserve"><value>仅显示前 100 个 NAS 文件操作</value></data>
+  <data name="TransferActivityFileTruncated.Message" xml:space="preserve"><value>请打开 File Station 查找列表以外的操作。</value></data>
+  <data name="TransferActivityDownloadUnavailable.Title" xml:space="preserve"><value>无法读取 NAS 下载任务</value></data>
+  <data name="TransferActivityDownloadUnavailable.Message" xml:space="preserve"><value>App 传输和 NAS 文件操作仍会显示在这里。这台 NAS 当前不提供 Download Station 任务。</value></data>
+  <data name="TransferActivityFileUnavailable.Title" xml:space="preserve"><value>无法读取 NAS 文件操作</value></data>
+  <data name="TransferActivityFileUnavailable.Message" xml:space="preserve"><value>App 传输和 NAS 下载仍会显示在这里。这台 NAS 当前不提供 File Station 活动。</value></data>
   <data name="TransferActivityNasUnavailable.Title" xml:space="preserve"><value>无法刷新 NAS 任务</value></data>
-  <data name="TransferActivityNasUnavailable.Message" xml:space="preserve"><value>App 传输仍会显示在这里。连接安装了 Download Station 的 NAS 后即可显示其任务。</value></data>
+  <data name="TransferActivityNasUnavailable.Message" xml:space="preserve"><value>App 传输仍会显示在这里。连接支持 File Station 或 Download Station 活动的 NAS 后即可显示任务。</value></data>
   <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输活动</value></data>
   <data name="TransferActivityProgressBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输进度</value></data>
   <data name="TransferActivityCancel.Content" xml:space="preserve"><value>取消</value></data>
   <data name="TransferActivityCancelAutomationName" xml:space="preserve"><value>取消 {0} 的传输</value></data>
   <data name="TransferActivityEmptyTitle.Text" xml:space="preserve"><value>暂无传输活动</value></data>
-  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>下载、上传和 Download Station 任务会显示在这里。</value></data>
+  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>下载、上传和 NAS 文件操作会显示在这里。</value></data>
   <data name="TransferActivityProgress" xml:space="preserve"><value>已下载 {0:N0} / {1:N0} 字节</value></data>
   <data name="TransferActivityUploadProgress" xml:space="preserve"><value>已上传 {0:N0} / {1:N0} 字节</value></data>
   <data name="TransferActivitySourceApp" xml:space="preserve"><value>App 传输</value></data>
   <data name="TransferActivitySourceNas" xml:space="preserve"><value>NAS 下载任务</value></data>
+  <data name="TransferActivitySourceFileStation" xml:space="preserve"><value>NAS 文件操作</value></data>
   <data name="TransferActivityDirectionDownload" xml:space="preserve"><value>从 NAS 下载</value></data>
   <data name="TransferActivityDirectionUpload" xml:space="preserve"><value>上传到 NAS</value></data>
+  <data name="TransferActivityDirectionNasOperation" xml:space="preserve"><value>在 NAS 上运行</value></data>
+  <data name="TransferActivityFileTask" xml:space="preserve"><value>文件操作</value></data>
+  <data name="TransferActivityFileCopyMove" xml:space="preserve"><value>复制或移动</value></data>
+  <data name="TransferActivityFileDelete" xml:space="preserve"><value>移入回收站或删除</value></data>
+  <data name="TransferActivityFileCompress" xml:space="preserve"><value>压缩文件</value></data>
+  <data name="TransferActivityFileExtract" xml:space="preserve"><value>解压缩</value></data>
+  <data name="TransferActivityFileRunning" xml:space="preserve"><value>正在处理</value></data>
+  <data name="TransferActivityFileProgress" xml:space="preserve"><value>已处理 {0:P0}</value></data>
+  <data name="TransferActivityFileEndedNeedsReview" xml:space="preserve"><value>任务已结束。重复操作前，请刷新“文件”并核对结果。</value></data>
   <data name="TransferActivityPaused" xml:space="preserve"><value>已暂停</value></data>
   <data name="TransferActivityCompleted" xml:space="preserve"><value>已保存</value></data>
   <data name="TransferActivityUploadCompleted" xml:space="preserve"><value>已上传</value></data>

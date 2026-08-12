@@ -10,8 +10,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -52,37 +50,68 @@
             </Button>
         </Grid>
 
-        <InfoBar
-            x:Uid="TransferActivityRefreshError"
-            x:Name="RefreshErrorNotice"
+        <ScrollViewer
             Grid.Row="1"
-            AutomationProperties.LiveSetting="Polite"
-            IsClosable="False"
-            IsOpen="False"
-            Severity="Warning" />
-
-        <InfoBar
-            x:Uid="TransferActivityTruncated"
-            x:Name="TruncatedNotice"
-            Grid.Row="2"
-            AutomationProperties.LiveSetting="Polite"
-            IsClosable="False"
-            IsOpen="False"
-            Severity="Informational" />
-
-        <InfoBar
-            x:Uid="TransferActivityNasUnavailable"
-            x:Name="NasUnavailableNotice"
-            Grid.Row="3"
-            AutomationProperties.LiveSetting="Polite"
-            IsClosable="False"
-            IsOpen="False"
-            Severity="Informational" />
+            MaxHeight="240"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="8">
+                <InfoBar
+                    x:Uid="TransferActivityDownloadRefreshError"
+                    x:Name="DownloadRefreshErrorNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Warning" />
+                <InfoBar
+                    x:Uid="TransferActivityFileRefreshError"
+                    x:Name="FileRefreshErrorNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Warning" />
+                <InfoBar
+                    x:Uid="TransferActivityDownloadTruncated"
+                    x:Name="DownloadTruncatedNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="TransferActivityFileTruncated"
+                    x:Name="FileTruncatedNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="TransferActivityDownloadUnavailable"
+                    x:Name="DownloadUnavailableNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="TransferActivityFileUnavailable"
+                    x:Name="FileUnavailableNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Informational" />
+                <InfoBar
+                    x:Uid="TransferActivityNasUnavailable"
+                    x:Name="NasUnavailableNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Informational" />
+            </StackPanel>
+        </ScrollViewer>
 
         <ListView
             x:Uid="TransferActivityList"
             x:Name="ActivityList"
-            Grid.Row="4"
+            Grid.Row="2"
             SelectionMode="None">
             <ListView.ItemTemplate>
                 <DataTemplate>
@@ -92,19 +121,25 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel Spacing="6">
-                            <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock
+                                FontWeight="SemiBold"
+                                Text="{Binding DisplayName}"
+                                TextWrapping="Wrap" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="{Binding SourceText}" />
+                                Text="{Binding SourceText}"
+                                TextWrapping="Wrap" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="{Binding DirectionText}" />
+                                Text="{Binding DirectionText}"
+                                TextWrapping="Wrap" />
                             <ProgressBar
                                 x:Uid="TransferActivityProgressBar"
                                 Height="4"
                                 IsIndeterminate="{Binding IsIndeterminate}"
                                 Maximum="{Binding Maximum}"
-                                Value="{Binding Value}" />
+                                Value="{Binding Value}"
+                                Visibility="{Binding ProgressVisibility}" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 Text="{Binding StatusText}"
@@ -125,7 +160,7 @@
 
         <StackPanel
             x:Name="EmptyState"
-            Grid.Row="4"
+            Grid.Row="2"
             MaxWidth="420"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"

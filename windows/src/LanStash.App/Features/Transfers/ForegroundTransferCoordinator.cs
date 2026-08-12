@@ -302,6 +302,62 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
         }
     }
 
+    public void SyncFileStationTasks(
+        Guid profileId,
+        IReadOnlyList<FileBackgroundTaskSummary> tasks)
+    {
+        ArgumentNullException.ThrowIfNull(tasks);
+        var profileKey = profileId.ToString();
+        const string sourcePrefix = "file:";
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var activities = GetOrCreateActivities(profileKey);
+            var uniqueTasks = tasks
+                .GroupBy(task => task.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToArray();
+            var incomingKeys = uniqueTasks
+                .Select(task => sourcePrefix + task.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var existingByKey = activities
+                .Where(activity => activity.Source == ForegroundTransferSource.NasFileStation &&
+                    activity.SourceIdentifier is not null &&
+                    activity.SourceIdentifier.StartsWith(sourcePrefix, StringComparison.Ordinal))
+                .ToDictionary(
+                    activity => activity.SourceIdentifier!,
+                    activity => activity,
+                    StringComparer.Ordinal);
+            activities.RemoveAll(activity =>
+                activity.Source == ForegroundTransferSource.NasFileStation &&
+                activity.SourceIdentifier is not null &&
+                activity.SourceIdentifier.StartsWith(sourcePrefix, StringComparison.Ordinal) &&
+                !incomingKeys.Contains(activity.SourceIdentifier));
+
+            foreach (var task in uniqueTasks)
+            {
+                var sourceIdentifier = sourcePrefix + task.Id;
+                var existing = existingByKey.GetValueOrDefault(sourceIdentifier);
+                var updated = CreateFileStationActivity(
+                    profileKey,
+                    task,
+                    existing?.Id ?? Guid.NewGuid(),
+                    sourceIdentifier);
+                if (existing is null)
+                {
+                    activities.Add(updated);
+                    continue;
+                }
+
+                var index = activities.FindIndex(activity => activity.Id == existing.Id);
+                if (index >= 0)
+                {
+                    activities[index] = updated;
+                }
+            }
+        }
+    }
+
     private List<ForegroundTransferActivity> GetOrCreateActivities(string profileId)
     {
         if (!_activities.TryGetValue(profileId, out var activities))
@@ -428,6 +484,52 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
             totalBytes,
             StateForDownloadTask(task.State),
             task.Error);
+    }
+
+    private static ForegroundTransferActivity CreateFileStationActivity(
+        string profileId,
+        FileBackgroundTaskSummary task,
+        Guid id,
+        string sourceIdentifier)
+    {
+        var totalBytes = Math.Max(0, task.TotalBytes ?? 0);
+        var processedBytes = Math.Max(0, task.ProcessedBytes ?? 0);
+        if (totalBytes > 0)
+        {
+            processedBytes = Math.Min(processedBytes, totalBytes);
+        }
+        var progress = task.Progress;
+        if (progress is null && totalBytes > 0 && task.ProcessedBytes is not null)
+        {
+            progress = Math.Clamp((double)processedBytes / totalBytes, 0, 1);
+        }
+        else if (progress is null &&
+            task.TotalItemCount is > 0 &&
+            task.ProcessedItemCount is not null)
+        {
+            progress = Math.Clamp(
+                (double)Math.Max(0, task.ProcessedItemCount.Value) /
+                    task.TotalItemCount.Value,
+                0,
+                1);
+        }
+
+        return new ForegroundTransferActivity(
+            id,
+            profileId,
+            ForegroundTransferSource.NasFileStation,
+            sourceIdentifier,
+            string.Empty,
+            task.Kind.ToString(),
+            ForegroundTransferDirection.NasOperation,
+            processedBytes,
+            totalBytes,
+            task.State == FileBackgroundTaskState.Finished
+                ? ForegroundTransferState.EndedNeedsReview
+                : ForegroundTransferState.Running,
+            null,
+            task.Kind,
+            progress);
     }
 
     private static ForegroundTransferState StateForDownloadTask(DownloadTaskState state) =>

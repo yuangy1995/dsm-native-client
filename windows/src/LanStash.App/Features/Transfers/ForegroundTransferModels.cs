@@ -6,12 +6,14 @@ internal enum ForegroundTransferDirection
 {
     Download,
     Upload,
+    NasOperation,
 }
 
 internal enum ForegroundTransferSource
 {
     App,
     Nas,
+    NasFileStation,
 }
 
 internal enum ForegroundTransferState
@@ -22,6 +24,7 @@ internal enum ForegroundTransferState
     Cancelled,
     CancelledBeforeSubmission,
     ResultNeedsReview,
+    EndedNeedsReview,
     Failed,
 }
 
@@ -40,7 +43,9 @@ internal sealed record ForegroundTransferActivity(
     long BytesTransferred,
     long TotalBytes,
     ForegroundTransferState State,
-    string? FailureMessage);
+    string? FailureMessage,
+    FileBackgroundTaskKind? FileTaskKind = null,
+    double? ProgressFraction = null);
 
 internal sealed record ForegroundDownloadRequest(
     string ProfileId,

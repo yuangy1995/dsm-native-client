@@ -322,11 +322,18 @@ public sealed partial class ShellPage : Page
                     activityRepository = new UnavailableDownloadStationRepository(
                         activityProfile.Id);
                 }
+                var fileActivityRepository = _app.Repository as IFileBackgroundTaskRepository;
+                if (fileActivityRepository?.ProfileId != activityProfile.Id)
+                {
+                    fileActivityRepository = new UnavailableFileBackgroundTaskRepository(
+                        activityProfile.Id);
+                }
                 _activity ??= new TransferActivityPage(
                     _transfers,
                     activityPicker,
                     activityProfile.Id.ToString(),
-                    activityRepository);
+                    activityRepository,
+                    fileActivityRepository);
                 await _activity.SetWindowVisibleAsync(_isWindowVisible);
                 ContentFrame.Content = _activity;
                 return;

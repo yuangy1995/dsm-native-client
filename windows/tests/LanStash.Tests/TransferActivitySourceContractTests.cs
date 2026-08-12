@@ -28,27 +28,43 @@ public sealed class TransferActivitySourceContractTests
         Assert.Contains("ForegroundTransferState.Cancelled", source);
         Assert.Contains("ForegroundTransferState.CancelledBeforeSubmission", source);
         Assert.Contains("ForegroundTransferState.ResultNeedsReview", source);
+        Assert.Contains("ForegroundTransferState.EndedNeedsReview", source);
         Assert.Contains("ForegroundTransferState.Failed", source);
         Assert.Contains("ForegroundTransferDirection.Upload", source);
         Assert.Contains("TransferActivitySourceNas", source);
+        Assert.Contains("TransferActivitySourceFileStation", source);
+        Assert.Contains("TransferActivityFileEndedNeedsReview", source);
         Assert.Contains("activity.Source == ForegroundTransferSource.App", source);
         Assert.Contains("_coordinator.GetActivities(_profileId)", source);
         Assert.Contains("_timer.Start();", source);
         Assert.Contains("_timer.Stop();", source);
         Assert.Contains("_isLoaded && _isWindowVisible", source);
-        Assert.Contains("await _nasRefresher.StartAsync();", source);
-        Assert.Contains("await _nasRefresher.StopAsync();", source);
+        Assert.Contains("_downloadRefresher.StartAsync()", source);
+        Assert.Contains("_fileRefresher.StartAsync()", source);
+        Assert.Contains("_downloadRefresher.StopAsync()", source);
+        Assert.Contains("_fileRefresher.StopAsync()", source);
         Assert.Contains("await _lifecycleGate.WaitAsync();", source);
         Assert.Contains("await shell.SetWindowVisibleAsync(false);", window);
         Assert.Contains("await shell.SetWindowVisibleAsync(true);", window);
-        Assert.Contains("await _nasRefresher.RefreshAsync();", source);
+        Assert.Contains("_downloadRefresher.RefreshAsync()", source);
+        Assert.Contains("_fileRefresher.RefreshAsync()", source);
         Assert.Contains("RefreshButton.IsEnabled", source);
-        Assert.Contains("RefreshErrorNotice.IsOpen", source);
-        Assert.Contains("TruncatedNotice.IsOpen", source);
+        Assert.Contains("DownloadRefreshErrorNotice.IsOpen", source);
+        Assert.Contains("FileRefreshErrorNotice.IsOpen", source);
+        Assert.Contains("DownloadTruncatedNotice.IsOpen", source);
+        Assert.Contains("FileTruncatedNotice.IsOpen", source);
+        Assert.Contains("DownloadUnavailableNotice.IsOpen", source);
+        Assert.Contains("FileUnavailableNotice.IsOpen", source);
+        Assert.Contains("downloadState.HasSnapshot", source);
+        Assert.Contains("fileState.HasSnapshot", source);
+        Assert.Contains("TransferActivityDownloadRefreshErrorInitial", source);
+        Assert.Contains("TransferActivityFileRefreshErrorInitial", source);
         Assert.Contains("NasUnavailableNotice.IsOpen", source);
         Assert.Contains("<KeyboardAccelerator Key=\"F5\"", xaml);
         Assert.Contains("x:Name=\"RefreshButton\"", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
+        Assert.Contains("Text=\"{Binding DisplayName}\"", xaml);
+        Assert.DoesNotContain("TextTrimming=\"CharacterEllipsis\"", xaml);
     }
 
     [Fact]
@@ -61,6 +77,7 @@ public sealed class TransferActivitySourceContractTests
 
         Assert.DoesNotContain("RemotePath}", xaml);
         Assert.DoesNotContain("FailureMessage", source);
+        Assert.DoesNotContain("SourceIdentifier}", xaml);
         Assert.DoesNotContain("API", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("TransferActivityFailed", source);
     }
@@ -77,6 +94,7 @@ public sealed class TransferActivitySourceContractTests
         Assert.Contains("_files ??= new FilesPage(", shell);
         Assert.Contains("_activity ??= new TransferActivityPage(", shell);
         Assert.Contains("_app.Repository as IDownloadStationRepository", shell);
+        Assert.Contains("_app.Repository as IFileBackgroundTaskRepository", shell);
         Assert.Contains("await _activity.DisposeAsync();", shell);
         Assert.Contains("new DownloadStationPage(downloadRepository, _transfers)", shell);
         Assert.Contains("_transferPicker?.Dispose();", shell);

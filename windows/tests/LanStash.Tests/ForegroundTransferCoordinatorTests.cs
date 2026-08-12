@@ -502,6 +502,82 @@ public sealed class ForegroundTransferCoordinatorTests
         Assert.Equal(ForegroundTransferState.Running, activity.State);
     }
 
+    [Fact]
+    public void FileStationSyncIsIndependentAndFinishedOnlyNeedsReview()
+    {
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profileId = Guid.NewGuid();
+        coordinator.ActivateProfile(profileId.ToString());
+        coordinator.SyncDownloadStationTasks(
+            profileId,
+            [DownloadTask("download", "download.iso", DownloadTaskState.Downloading)]);
+
+        coordinator.SyncFileStationTasks(
+            profileId,
+            [
+                FileTask("copy", FileBackgroundTaskKind.CopyOrMove, FileBackgroundTaskState.Active),
+                FileTask("extract", FileBackgroundTaskKind.Extract, FileBackgroundTaskState.Finished),
+            ]);
+        coordinator.SyncFileStationTasks(
+            profileId,
+            [FileTask("extract", FileBackgroundTaskKind.Extract, FileBackgroundTaskState.Finished)]);
+
+        var activities = coordinator.GetActivities(profileId.ToString());
+        Assert.Equal(2, activities.Count);
+        Assert.Contains(activities, activity =>
+            activity.Source == ForegroundTransferSource.Nas &&
+            activity.DisplayName == "download.iso");
+        var fileActivity = Assert.Single(
+            activities,
+            activity => activity.Source == ForegroundTransferSource.NasFileStation);
+        Assert.Equal(FileBackgroundTaskKind.Extract, fileActivity.FileTaskKind);
+        Assert.Equal(ForegroundTransferState.EndedNeedsReview, fileActivity.State);
+        Assert.NotEqual(ForegroundTransferState.Completed, fileActivity.State);
+    }
+
+    [Fact]
+    public void RepeatedFileStationSyncKeepsStableActivityIdAndProgress()
+    {
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profileId = Guid.NewGuid();
+        coordinator.ActivateProfile(profileId.ToString());
+        coordinator.SyncFileStationTasks(
+            profileId,
+            [FileTask("copy", FileBackgroundTaskKind.CopyOrMove, FileBackgroundTaskState.Active)]);
+        var first = Assert.Single(coordinator.GetActivities(profileId.ToString()));
+
+        coordinator.SyncFileStationTasks(
+            profileId,
+            [FileTask("copy", FileBackgroundTaskKind.CopyOrMove, FileBackgroundTaskState.Active, 0.75)]);
+
+        var updated = Assert.Single(coordinator.GetActivities(profileId.ToString()));
+        Assert.Equal(first.Id, updated.Id);
+        Assert.Equal(0.75, updated.ProgressFraction);
+        Assert.Equal(ForegroundTransferDirection.NasOperation, updated.Direction);
+    }
+
+    [Theory]
+    [InlineData((int)FileBackgroundTaskKind.CopyOrMove)]
+    [InlineData((int)FileBackgroundTaskKind.Delete)]
+    public void FileStationUsesTrustedCountersWhenProgressIsMissing(int rawKind)
+    {
+        using var coordinator = new ForegroundTransferCoordinator();
+        var profileId = Guid.NewGuid();
+        var kind = (FileBackgroundTaskKind)rawKind;
+        coordinator.ActivateProfile(profileId.ToString());
+        var task = kind == FileBackgroundTaskKind.CopyOrMove
+            ? new FileBackgroundTaskSummary(
+                "copy", kind, FileBackgroundTaskState.Active, null, null,
+                null, null, 25, 100)
+            : new FileBackgroundTaskSummary(
+                "delete", kind, FileBackgroundTaskState.Active, null, null,
+                2, 8, null, null);
+
+        coordinator.SyncFileStationTasks(profileId, [task]);
+
+        Assert.Equal(0.25, Assert.Single(coordinator.GetActivities(profileId.ToString())).ProgressFraction);
+    }
+
     private static MutationResult UploadResult(MutationResultStatus status)
     {
         var (submitted, refresh, succeeded, failed, unknown) = status switch
@@ -519,6 +595,22 @@ public sealed class ForegroundTransferCoordinatorTests
             refresh,
             new MutationResultCounts(succeeded, failed, unknown));
     }
+
+    private static FileBackgroundTaskSummary FileTask(
+        string id,
+        FileBackgroundTaskKind kind,
+        FileBackgroundTaskState state,
+        double? progress = 0.5) =>
+        new(
+            id,
+            kind,
+            state,
+            progress,
+            null,
+            null,
+            null,
+            kind == FileBackgroundTaskKind.CopyOrMove ? 50 : null,
+            kind == FileBackgroundTaskKind.CopyOrMove ? 100 : null);
 
     private static ForegroundDownloadRequest Request(string profileId, long totalBytes) =>
         new(profileId, "/file.bin", "file.bin", totalBytes);

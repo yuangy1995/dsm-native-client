@@ -444,28 +444,50 @@
   <data name="TransferOriginalFileType" xml:space="preserve"><value>Original file type</value></data>
   <data name="TransferArchiveFileType" xml:space="preserve"><value>ZIP archive</value></data>
   <data name="TransferActivityTitle.Text" xml:space="preserve"><value>Activity</value></data>
-  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>App transfers and NAS download tasks from the current NAS stay here while this window is open.</value></data>
-  <data name="TransferActivityRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh NAS download tasks</value></data>
+  <data name="TransferActivityDescription.Text" xml:space="preserve"><value>App transfers, NAS downloads, and NAS file operations from the current NAS stay here while this window is open.</value></data>
+  <data name="TransferActivityRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh NAS activity</value></data>
   <data name="TransferActivityRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
-  <data name="TransferActivityRefreshProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refreshing NAS download tasks</value></data>
-  <data name="TransferActivityRefreshError.Title" xml:space="preserve"><value>NAS tasks couldn’t be refreshed</value></data>
-  <data name="TransferActivityRefreshError.Message" xml:space="preserve"><value>The last available NAS tasks and app transfers are still shown. Check the connection, then try again.</value></data>
-  <data name="TransferActivityTruncated.Title" xml:space="preserve"><value>Showing the first 100 NAS tasks</value></data>
-  <data name="TransferActivityTruncated.Message" xml:space="preserve"><value>Open Download Station to find tasks outside this list.</value></data>
+  <data name="TransferActivityRefreshProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refreshing NAS activity</value></data>
+  <data name="TransferActivityDownloadRefreshError.Title" xml:space="preserve"><value>NAS download tasks couldn’t be refreshed</value></data>
+  <data name="TransferActivityDownloadRefreshError.Message" xml:space="preserve"><value>The last available download tasks are still shown. Check the connection, then try again.</value></data>
+  <data name="TransferActivityDownloadRefreshErrorPrevious" xml:space="preserve"><value>The last available download tasks are still shown. Check the connection, then try again.</value></data>
+  <data name="TransferActivityDownloadRefreshErrorInitial" xml:space="preserve"><value>No download tasks have been read yet. Check the connection, then try again.</value></data>
+  <data name="TransferActivityFileRefreshError.Title" xml:space="preserve"><value>NAS file operations couldn’t be refreshed</value></data>
+  <data name="TransferActivityFileRefreshError.Message" xml:space="preserve"><value>The last available file operations are still shown. Check the connection, then try again.</value></data>
+  <data name="TransferActivityFileRefreshErrorPrevious" xml:space="preserve"><value>The last available file operations are still shown. Check the connection, then try again.</value></data>
+  <data name="TransferActivityFileRefreshErrorInitial" xml:space="preserve"><value>No file operations have been read yet. Check the connection, then try again.</value></data>
+  <data name="TransferActivityDownloadTruncated.Title" xml:space="preserve"><value>Showing the first 100 NAS download tasks</value></data>
+  <data name="TransferActivityDownloadTruncated.Message" xml:space="preserve"><value>Open Download Station to find tasks outside this list.</value></data>
+  <data name="TransferActivityFileTruncated.Title" xml:space="preserve"><value>Showing the first 100 NAS file operations</value></data>
+  <data name="TransferActivityFileTruncated.Message" xml:space="preserve"><value>Open File Station to find operations outside this list.</value></data>
+  <data name="TransferActivityDownloadUnavailable.Title" xml:space="preserve"><value>NAS download tasks are unavailable</value></data>
+  <data name="TransferActivityDownloadUnavailable.Message" xml:space="preserve"><value>App transfers and NAS file operations will still appear here. Download Station tasks aren’t available on this NAS.</value></data>
+  <data name="TransferActivityFileUnavailable.Title" xml:space="preserve"><value>NAS file operations are unavailable</value></data>
+  <data name="TransferActivityFileUnavailable.Message" xml:space="preserve"><value>App transfers and NAS downloads will still appear here. File Station activity isn’t available on this NAS.</value></data>
   <data name="TransferActivityNasUnavailable.Title" xml:space="preserve"><value>NAS task refresh is unavailable</value></data>
-  <data name="TransferActivityNasUnavailable.Message" xml:space="preserve"><value>App transfers will still appear here. Connect to a NAS with Download Station to include its tasks.</value></data>
+  <data name="TransferActivityNasUnavailable.Message" xml:space="preserve"><value>App transfers will still appear here. Connect to a NAS that supports File Station or Download Station activity.</value></data>
   <data name="TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Transfer activity</value></data>
   <data name="TransferActivityProgressBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Transfer progress</value></data>
   <data name="TransferActivityCancel.Content" xml:space="preserve"><value>Cancel</value></data>
   <data name="TransferActivityCancelAutomationName" xml:space="preserve"><value>Cancel transfer for {0}</value></data>
   <data name="TransferActivityEmptyTitle.Text" xml:space="preserve"><value>No transfer activity</value></data>
-  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>Downloads, uploads, and Download Station tasks will appear here.</value></data>
+  <data name="TransferActivityEmptyMessage.Text" xml:space="preserve"><value>Downloads, uploads, and NAS file operations will appear here.</value></data>
   <data name="TransferActivityProgress" xml:space="preserve"><value>{0:N0} of {1:N0} bytes</value></data>
   <data name="TransferActivityUploadProgress" xml:space="preserve"><value>{0:N0} of {1:N0} bytes uploaded</value></data>
   <data name="TransferActivitySourceApp" xml:space="preserve"><value>App transfer</value></data>
   <data name="TransferActivitySourceNas" xml:space="preserve"><value>NAS download task</value></data>
+  <data name="TransferActivitySourceFileStation" xml:space="preserve"><value>NAS file operation</value></data>
   <data name="TransferActivityDirectionDownload" xml:space="preserve"><value>Download from NAS</value></data>
   <data name="TransferActivityDirectionUpload" xml:space="preserve"><value>Upload to NAS</value></data>
+  <data name="TransferActivityDirectionNasOperation" xml:space="preserve"><value>Runs on the NAS</value></data>
+  <data name="TransferActivityFileTask" xml:space="preserve"><value>File operation</value></data>
+  <data name="TransferActivityFileCopyMove" xml:space="preserve"><value>Copy or move</value></data>
+  <data name="TransferActivityFileDelete" xml:space="preserve"><value>Move to recycle bin or delete</value></data>
+  <data name="TransferActivityFileCompress" xml:space="preserve"><value>Compress files</value></data>
+  <data name="TransferActivityFileExtract" xml:space="preserve"><value>Extract archive</value></data>
+  <data name="TransferActivityFileRunning" xml:space="preserve"><value>In progress</value></data>
+  <data name="TransferActivityFileProgress" xml:space="preserve"><value>{0:P0} processed</value></data>
+  <data name="TransferActivityFileEndedNeedsReview" xml:space="preserve"><value>Ended. Refresh Files and check the result before repeating the operation.</value></data>
   <data name="TransferActivityPaused" xml:space="preserve"><value>Paused</value></data>
   <data name="TransferActivityCompleted" xml:space="preserve"><value>Saved</value></data>
   <data name="TransferActivityUploadCompleted" xml:space="preserve"><value>Uploaded</value></data>

@@ -7,7 +7,7 @@ public sealed partial class DsmRepository(
     NasProfile profile,
     DsmSession session,
     IDsmApiClient api,
-    IReadOnlyDictionary<string, ApiCapability> capabilities) : IDsmRepository, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository
+    IReadOnlyDictionary<string, ApiCapability> capabilities) : IDsmRepository, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IFileBackgroundTaskRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository
 {
     private readonly NasProfile _profile = profile;
     private readonly DsmSession _session = session;
