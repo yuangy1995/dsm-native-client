@@ -1509,6 +1509,24 @@
   <data name="FileArchiveCompressionNeedsReview" xml:space="preserve"><value>The final result could not be confirmed. Refresh this folder and check for the ZIP archive before trying again.</value></data>
   <data name="FileArchiveCompressionFailed" xml:space="preserve"><value>The ZIP archive could not be created. Refresh the folder and try again.</value></data>
   <data name="FileArchiveCompressionAuthenticationError" xml:space="preserve"><value>Your login has expired. Sign in again, then check this folder before trying again.</value></data>
+  <data name="FileArchiveExtractionExtract.Label" xml:space="preserve"><value>Extract here</value></data>
+  <data name="FileArchiveExtractionExtract.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Extract the selected archive into the current folder</value></data>
+  <data name="FileArchiveExtractionTitle" xml:space="preserve"><value>Extract archive</value></data>
+  <data name="FileArchiveExtractionAction" xml:space="preserve"><value>Extract</value></data>
+  <data name="FileArchiveExtractionConfirmMessage" xml:space="preserve"><value>Extract “{0}” into the current folder?</value></data>
+  <data name="FileArchiveExtractionNoOverwriteNote" xml:space="preserve"><value>Existing files and folders will not be replaced. Password-protected archives are not supported in this version.</value></data>
+  <data name="FileArchiveExtractionProgressAutomationName" xml:space="preserve"><value>Extracting archive</value></data>
+  <data name="FileArchiveExtractionWorking" xml:space="preserve"><value>Extracting the archive on the NAS. You can cancel this request.</value></data>
+  <data name="FileArchiveExtractionSourceChanged" xml:space="preserve"><value>The selected archive or current folder changed. Close this window, refresh the folder, and select the archive again.</value></data>
+  <data name="FileArchiveExtractionSuccess" xml:space="preserve"><value>The archive was extracted into the current folder.</value></data>
+  <data name="FileArchiveExtractionCancelled" xml:space="preserve"><value>Extraction did not start.</value></data>
+  <data name="FileArchiveExtractionPermissionDenied" xml:space="preserve"><value>You do not have permission to extract files into this folder.</value></data>
+  <data name="FileArchiveExtractionUnsupported" xml:space="preserve"><value>This NAS cannot extract the selected archive into this folder.</value></data>
+  <data name="FileArchiveExtractionNeedsReview" xml:space="preserve"><value>The final result could not be confirmed. Refresh and check this folder before trying to extract the archive again.</value></data>
+  <data name="FileArchiveExtractionPartialNeedsReview" xml:space="preserve"><value>{0} items were extracted. Check the other {1} items in this folder before trying again.</value></data>
+  <data name="FileArchiveExtractionPartialFailed" xml:space="preserve"><value>{0} items were extracted, and {1} items could not be extracted. Refresh and check this folder before trying again.</value></data>
+  <data name="FileArchiveExtractionFailed" xml:space="preserve"><value>The archive could not be extracted. Refresh the folder, check for existing items, and try again.</value></data>
+  <data name="FileArchiveExtractionAuthenticationError" xml:space="preserve"><value>Your login has expired. Sign in again, then check this folder before trying again.</value></data>
   <data name="ChatCreateAction" xml:space="preserve"><value>New conversation</value></data>
   <data name="ChatCreateDialogTitle" xml:space="preserve"><value>New conversation</value></data>
   <data name="ChatCreatePrimaryAction" xml:space="preserve"><value>Create</value></data>

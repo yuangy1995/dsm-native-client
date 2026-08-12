@@ -321,6 +321,7 @@ public sealed partial class FilesPage
             RestoreMultipleItemsButton.IsEnabled = false;
             RestoreFromRecycleButton.IsEnabled = false;
             CreateArchiveButton.IsEnabled = false;
+            ExtractArchiveButton.IsEnabled = false;
             UploadButton.IsEnabled = false;
             UploadFolderButton.IsEnabled = false;
             DownloadButton.IsEnabled = false;

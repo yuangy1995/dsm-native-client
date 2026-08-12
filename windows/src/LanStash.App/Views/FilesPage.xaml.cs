@@ -24,6 +24,7 @@ public sealed partial class FilesPage : Page, IDisposable
     private readonly IFilePreviewRepository _previewRepository;
     private readonly IFileShareLinkRepository? _shareRepository;
     private readonly IFileArchiveCompressionRepository? _archiveCompressionRepository;
+    private readonly IFileArchiveExtractionRepository? _archiveExtractionRepository;
     private readonly Guid _profileId;
     private readonly WindowsTransferPickerService _transfers;
     private readonly WindowsClipboard _clipboard = new();
@@ -54,7 +55,8 @@ public sealed partial class FilesPage : Page, IDisposable
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
-        IFileArchiveCompressionRepository? archiveCompressionRepository = null)
+        IFileArchiveCompressionRepository? archiveCompressionRepository = null,
+        IFileArchiveExtractionRepository? archiveExtractionRepository = null)
         : this(
             new FileBrowserViewModel(new RepositoryFileBrowserDataSource(repository)),
             previewRepository,
@@ -71,7 +73,8 @@ public sealed partial class FilesPage : Page, IDisposable
                 profileId, repository, locationsRepository ?? repository as IFileLocationsRepository),
             recycleRepository ?? repository as IFileRecycleRepository,
             recycleReviewBlocker,
-            archiveCompressionRepository ?? repository as IFileArchiveCompressionRepository)
+            archiveCompressionRepository ?? repository as IFileArchiveCompressionRepository,
+            archiveExtractionRepository ?? repository as IFileArchiveExtractionRepository)
     {
     }
 
@@ -90,7 +93,8 @@ public sealed partial class FilesPage : Page, IDisposable
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
-        IFileArchiveCompressionRepository? archiveCompressionRepository = null)
+        IFileArchiveCompressionRepository? archiveCompressionRepository = null,
+        IFileArchiveExtractionRepository? archiveExtractionRepository = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -118,6 +122,9 @@ public sealed partial class FilesPage : Page, IDisposable
         _recycleReviewBlocker = recycleReviewBlocker ?? FileRecycleReviewBlocker.Current;
         _archiveCompressionRepository = archiveCompressionRepository?.ProfileId == _profileId
             ? archiveCompressionRepository
+            : null;
+        _archiveExtractionRepository = archiveExtractionRepository?.ProfileId == _profileId
+            ? archiveExtractionRepository
             : null;
         _transfers = transfers;
         _systemShare = new WindowsSystemShare(
@@ -244,6 +251,7 @@ public sealed partial class FilesPage : Page, IDisposable
             CloseMutationDialog();
             CloseCopyMoveDialog();
             CloseRecycleDialog();
+            CloseArchiveExtractionDialog();
             await ClosePreviewAsync();
             if (_disposed || !_locationsViewModel.IsActive)
             {
@@ -1226,6 +1234,7 @@ public sealed partial class FilesPage : Page, IDisposable
         UpdateBatchCopyMoveControls();
         UpdateBatchRecycleControls();
         UpdateArchiveCompressionControls();
+        UpdateArchiveExtractionControls();
         LocationsButton.IsEnabled = _locationsViewModel.IsActive;
         FilterBox.IsEnabled = !_viewModel.IsLoading;
 
@@ -1385,6 +1394,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseBatchCopyMoveDialog();
         CloseBatchRecycleDialog();
         CloseArchiveCompressionDialog();
+        CloseArchiveExtractionDialog();
         CloseRecycleDialog();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
@@ -1409,6 +1419,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseBatchCopyMoveDialog();
         CloseBatchRecycleDialog();
         CloseArchiveCompressionDialog();
+        CloseArchiveExtractionDialog();
         CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;

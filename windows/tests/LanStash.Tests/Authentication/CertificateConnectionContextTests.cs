@@ -39,7 +39,7 @@ public sealed class CertificateConnectionContextTests
             "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentContent.cs");
         var quickConnect = Read("windows/src/LanStash.Infrastructure/DsmQuickConnectResolver.cs");
 
-        Assert.Equal(16, Count(api, "_http.SendAsync("));
+        Assert.Equal(20, Count(api, "_http.SendAsync("));
         Assert.Equal(9, Count(api, "SetNasConnectionContext(request, profile);"));
         Assert.Equal(1, Count(chatAttachmentUpload, "_http.SendAsync("));
         Assert.Equal(1, Count(chatAttachmentUpload, "SetNasConnectionContext(request, profile);"));

@@ -935,6 +935,287 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         }
     }
 
+    public async Task<IReadOnlyList<FileArchiveExtractionListedItem>>
+        ListFileArchiveExtractionItemsAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            string sourcePath,
+            CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Extract", 2) ||
+            !ValidMutationPath(sourcePath, allowSharedRoot: false))
+            throw new NotSupportedException("file.archive-extraction.list-unsupported");
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "2",
+            ["method"] = "list",
+            ["file_path"] = sourcePath,
+            ["item_id"] = "-1",
+            ["offset"] = "0",
+            ["limit"] = "200",
+            ["sort_by"] = "name",
+            ["sort_direction"] = "asc",
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        using var response = await _http.SendAsync(request,
+            HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new DsmException(UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                UserText.Key("WinShared79c4d60046afa3ff"), (int)response.StatusCode,
+                response.StatusCode == HttpStatusCode.Unauthorized);
+        var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+            .ConfigureAwait(false);
+        if (!TryGetNativeBoolean(envelope, "success", out var success))
+            throw InvalidReadEnvelope();
+        if (!success)
+            throw ArchiveExtractionFailure(MutationErrorCode(envelope));
+        if (envelope["data"] is not JsonObject data || data["items"] is not JsonArray items)
+            throw InvalidReadEnvelope();
+
+        var result = new List<FileArchiveExtractionListedItem>(items.Count);
+        foreach (var node in items)
+        {
+            if (node is not JsonObject item || item["name"] is not JsonValue nameNode ||
+                !nameNode.TryGetValue<string>(out var name) ||
+                !TryGetNativeBoolean(item, "is_dir", out var isDirectory))
+                throw InvalidReadEnvelope();
+            result.Add(new FileArchiveExtractionListedItem(name, isDirectory));
+        }
+        return result;
+    }
+
+    public async Task<FileArchiveExtractionStartTransportResult>
+        StartFileArchiveExtractionAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            string sourcePath,
+            string destinationFolder,
+            CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Extract", 2) ||
+            !ValidMutationPath(sourcePath, allowSharedRoot: false) ||
+            !ValidMutationPath(destinationFolder, allowSharedRoot: false))
+        {
+            return new(FileMutationTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported,
+                DiagnosticTag: "file.archive-extraction.unsupported");
+        }
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new(FileMutationTransportStatus.CancelledBeforeSubmission,
+                DiagnosticTag: "file.archive-extraction.cancelled-before-submit");
+        }
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "2",
+            ["method"] = "start",
+            ["file_path"] = sourcePath,
+            ["dest_folder_path"] = destinationFolder,
+            ["overwrite"] = "false",
+            ["keep_dir"] = "true",
+            ["create_subfolder"] = "false",
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.archive-extraction.cancelled-after-submit");
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                ErrorCategory: MutationErrorCategory.Network,
+                DiagnosticTag: "file.archive-extraction.network-unverified");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: response.StatusCode switch
+                    {
+                        HttpStatusCode.Unauthorized => MutationErrorCategory.Authentication,
+                        HttpStatusCode.Forbidden => MutationErrorCategory.Permission,
+                        _ => MutationErrorCategory.Server,
+                    },
+                    DiagnosticTag: "file.archive-extraction.http-unverified");
+            }
+            try
+            {
+                var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!TryGetNativeBoolean(envelope, "success", out var success))
+                    throw new JsonException();
+                if (!success)
+                {
+                    var code = MutationErrorCode(envelope);
+                    return new(FileMutationTransportStatus.ConfirmedFailure,
+                        ErrorCategory: MutationCategory(code),
+                        DiagnosticTag: "file.archive-extraction.dsm-failure");
+                }
+                if (envelope["data"] is not JsonObject data ||
+                    data["taskid"] is not JsonValue taskNode ||
+                    !taskNode.TryGetValue<string>(out var taskId) ||
+                    !ValidArchiveCompressionTaskId(taskId))
+                    throw new JsonException();
+                return new(FileMutationTransportStatus.ResponseReceived, taskId);
+            }
+            catch (OperationCanceledException)
+            {
+                return new(FileMutationTransportStatus.CancellationRequestedAfterSubmission,
+                    ErrorCategory: MutationErrorCategory.Network,
+                    DiagnosticTag: "file.archive-extraction.cancelled-after-submit");
+            }
+            catch (Exception error) when (error is JsonException or IOException or HttpRequestException)
+            {
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    ErrorCategory: MutationErrorCategory.Server,
+                    DiagnosticTag: "file.archive-extraction.response-unverified");
+            }
+        }
+    }
+
+    public async Task<FileArchiveExtractionTaskTransportResult>
+        ReadFileArchiveExtractionStatusAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            string taskId,
+            CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Extract", 2) || !ValidArchiveCompressionTaskId(taskId))
+        {
+            return new(FileArchiveExtractionTaskTransportStatus.Unsupported,
+                MutationErrorCategory.Unsupported,
+                "file.archive-extraction.status-unsupported");
+        }
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "2",
+            ["method"] = "status",
+            ["taskid"] = taskId,
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        using var response = await _http.SendAsync(request,
+            HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+            throw new DsmException(UserText.Key("WinSharedf91eef8a1cf7b01c"),
+                UserText.Key("WinShared79c4d60046afa3ff"), (int)response.StatusCode,
+                response.StatusCode == HttpStatusCode.Unauthorized);
+        var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+            .ConfigureAwait(false);
+        if (!TryGetNativeBoolean(envelope, "success", out var success))
+            throw InvalidReadEnvelope();
+        if (!success)
+        {
+            var code = MutationErrorCode(envelope);
+            if (code is 106 or 107 or 119 or 401)
+                throw ArchiveExtractionFailure(code);
+            return new(FileArchiveExtractionTaskTransportStatus.ConfirmedFailure,
+                MutationCategory(code), "file.archive-extraction.status-failure");
+        }
+        if (envelope["data"] is not JsonObject data ||
+            !TryGetNativeBoolean(data, "finished", out var finished))
+            throw InvalidReadEnvelope();
+        return new(finished ? FileArchiveExtractionTaskTransportStatus.Finished :
+            FileArchiveExtractionTaskTransportStatus.Running);
+    }
+
+    public async Task<FileArchiveExtractionStopTransportResult>
+        StopFileArchiveExtractionAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            string taskId,
+            CancellationToken cancellationToken = default)
+    {
+        if (!ValidMutationCapability(profile, session, capability,
+                "SYNO.FileStation.Extract", 2) || !ValidArchiveCompressionTaskId(taskId))
+        {
+            return new(FileMutationTransportStatus.Unsupported,
+                MutationErrorCategory.Unsupported,
+                "file.archive-extraction.stop-unsupported");
+        }
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["api"] = capability.Name,
+            ["version"] = "2",
+            ["method"] = "stop",
+            ["taskid"] = taskId,
+            ["_sid"] = session.Sid,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            ResolveSafeApiUri(profile, capability.Path))
+        { Content = new FormUrlEncodedContent(values) };
+        AddMutationRequestHeaders(request, profile, session);
+        try
+        {
+            using var response = await _http.SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return new(FileMutationTransportStatus.SubmittedButUnverified,
+                    response.StatusCode == HttpStatusCode.Unauthorized
+                        ? MutationErrorCategory.Authentication
+                        : MutationErrorCategory.Network,
+                    "file.archive-extraction.stop-unverified");
+            var envelope = await ReadMutationEnvelopeAsync(response, cancellationToken)
+                .ConfigureAwait(false);
+            if (!TryGetNativeBoolean(envelope, "success", out var success))
+                throw new JsonException();
+            if (success)
+                return new(FileMutationTransportStatus.ResponseReceived);
+            var code = MutationErrorCode(envelope);
+            return new(FileMutationTransportStatus.ConfirmedFailure,
+                MutationCategory(code), "file.archive-extraction.stop-failure");
+        }
+        catch (OperationCanceledException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network, "file.archive-extraction.stop-unverified");
+        }
+        catch (Exception error) when (error is JsonException or IOException or HttpRequestException)
+        {
+            return new(FileMutationTransportStatus.SubmittedButUnverified,
+                MutationErrorCategory.Network, "file.archive-extraction.stop-unverified");
+        }
+    }
+
+    private static DsmException ArchiveExtractionFailure(int? code) => new(
+        UserText.Key("WinSharedf91eef8a1cf7b01c"),
+        UserText.Key("WinShared79c4d60046afa3ff"),
+        code,
+        code is 106 or 107 or 119 or 401);
+
     private static async Task<JsonObject> ReadMutationEnvelopeAsync(
         HttpResponseMessage response, CancellationToken cancellationToken)
     {

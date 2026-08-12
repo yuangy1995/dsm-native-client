@@ -1509,6 +1509,24 @@
   <data name="FileArchiveCompressionNeedsReview" xml:space="preserve"><value>无法确认最终结果。请刷新当前文件夹并检查 ZIP 压缩包，确认后再重试。</value></data>
   <data name="FileArchiveCompressionFailed" xml:space="preserve"><value>无法创建 ZIP 压缩包。请刷新文件夹后重试。</value></data>
   <data name="FileArchiveCompressionAuthenticationError" xml:space="preserve"><value>登录已过期。请重新登录，并在重试前检查当前文件夹。</value></data>
+  <data name="FileArchiveExtractionExtract.Label" xml:space="preserve"><value>解压到此处</value></data>
+  <data name="FileArchiveExtractionExtract.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将所选压缩包解压到当前文件夹</value></data>
+  <data name="FileArchiveExtractionTitle" xml:space="preserve"><value>解压压缩包</value></data>
+  <data name="FileArchiveExtractionAction" xml:space="preserve"><value>解压</value></data>
+  <data name="FileArchiveExtractionConfirmMessage" xml:space="preserve"><value>将“{0}”解压到当前文件夹吗？</value></data>
+  <data name="FileArchiveExtractionNoOverwriteNote" xml:space="preserve"><value>不会替换已有文件或文件夹。此版本暂不支持带密码的压缩包。</value></data>
+  <data name="FileArchiveExtractionProgressAutomationName" xml:space="preserve"><value>正在解压压缩包</value></data>
+  <data name="FileArchiveExtractionWorking" xml:space="preserve"><value>正在 NAS 上解压压缩包。你可以取消这次请求。</value></data>
+  <data name="FileArchiveExtractionSourceChanged" xml:space="preserve"><value>所选压缩包或当前文件夹已经变化。请关闭窗口、刷新文件夹后重新选择。</value></data>
+  <data name="FileArchiveExtractionSuccess" xml:space="preserve"><value>压缩包已解压到当前文件夹。</value></data>
+  <data name="FileArchiveExtractionCancelled" xml:space="preserve"><value>尚未开始解压。</value></data>
+  <data name="FileArchiveExtractionPermissionDenied" xml:space="preserve"><value>你没有在这个文件夹中解压文件的权限。</value></data>
+  <data name="FileArchiveExtractionUnsupported" xml:space="preserve"><value>这台 NAS 无法把所选压缩包解压到这个文件夹。</value></data>
+  <data name="FileArchiveExtractionNeedsReview" xml:space="preserve"><value>无法确认最终结果。请刷新并检查当前文件夹，确认前不要再次解压。</value></data>
+  <data name="FileArchiveExtractionPartialNeedsReview" xml:space="preserve"><value>已解压 {0} 项。请先检查当前文件夹中的另外 {1} 项，再决定是否重试。</value></data>
+  <data name="FileArchiveExtractionPartialFailed" xml:space="preserve"><value>已解压 {0} 项，另有 {1} 项无法解压。请刷新并检查当前文件夹后再重试。</value></data>
+  <data name="FileArchiveExtractionFailed" xml:space="preserve"><value>无法解压压缩包。请刷新文件夹、检查是否已有同名项目，然后重试。</value></data>
+  <data name="FileArchiveExtractionAuthenticationError" xml:space="preserve"><value>登录已过期。请重新登录，并先检查这个文件夹再重试。</value></data>
   <data name="ChatCreateAction" xml:space="preserve"><value>新建会话</value></data>
   <data name="ChatCreateDialogTitle" xml:space="preserve"><value>新建会话</value></data>
   <data name="ChatCreatePrimaryAction" xml:space="preserve"><value>创建</value></data>

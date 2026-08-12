@@ -278,6 +278,51 @@ public interface IDsmApiClient
             MutationErrorCategory.Unsupported,
             "file.archive-compression.stop-unsupported"));
 
+    Task<IReadOnlyList<FileArchiveExtractionListedItem>>
+        ListFileArchiveExtractionItemsAsync(
+            NasProfile profile,
+            DsmSession session,
+            ApiCapability capability,
+            string sourcePath,
+            CancellationToken cancellationToken = default) =>
+        Task.FromException<IReadOnlyList<FileArchiveExtractionListedItem>>(
+            new NotSupportedException(
+                "The API client does not implement archive extraction listing."));
+
+    Task<FileArchiveExtractionStartTransportResult> StartFileArchiveExtractionAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string sourcePath,
+        string destinationFolder,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileArchiveExtractionStartTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported,
+            DiagnosticTag: "file.archive-extraction.unsupported"));
+
+    Task<FileArchiveExtractionTaskTransportResult> ReadFileArchiveExtractionStatusAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileArchiveExtractionTaskTransportResult(
+            FileArchiveExtractionTaskTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.archive-extraction.status-unsupported"));
+
+    Task<FileArchiveExtractionStopTransportResult> StopFileArchiveExtractionAsync(
+        NasProfile profile,
+        DsmSession session,
+        ApiCapability capability,
+        string taskId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FileArchiveExtractionStopTransportResult(
+            FileMutationTransportStatus.Unsupported,
+            MutationErrorCategory.Unsupported,
+            "file.archive-extraction.stop-unsupported"));
+
     Task<DsmBinaryResponse> ReadBinaryAsync(
         NasProfile profile,
         DsmSession session,

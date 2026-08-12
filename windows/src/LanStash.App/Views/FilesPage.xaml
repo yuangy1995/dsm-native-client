@@ -263,6 +263,19 @@
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton
+                    x:Uid="FileArchiveExtractionExtract"
+                    x:Name="ExtractArchiveButton"
+                    Click="ExtractArchive_Click"
+                    Icon="OpenFile"
+                    MinHeight="48">
+                    <AppBarButton.KeyboardAccelerators>
+                        <KeyboardAccelerator
+                            Key="E"
+                            Modifiers="Control,Shift"
+                            Invoked="ExtractArchiveAccelerator_Invoked" />
+                    </AppBarButton.KeyboardAccelerators>
+                </AppBarButton>
+                <AppBarButton
                     x:Uid="FileShareLinkManage"
                     x:Name="ManageShareLinksButton"
                     Click="ManageShareLinks_Click"

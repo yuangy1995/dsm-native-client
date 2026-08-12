@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
@@ -11,8 +10,9 @@ public sealed partial class DsmRepository
     private const int FileArchiveCompressionPollLimit = 8;
     private const int FileArchiveCompressionPageSize = 100;
     private const int FileArchiveCompressionItemLimit = 5000;
-    private static readonly ConditionalWeakTable<IDsmApiClient, FileArchiveCompressionApiState>
-        FileArchiveCompressionApiStates = new();
+    private static readonly object FileArchiveMutationStatesSync = new();
+    private static readonly Dictionary<Guid, FileArchiveMutationApiState>
+        FileArchiveMutationStates = [];
 
     public FileArchiveCompressionAvailability FileArchiveCompressionAvailability =>
         new(
@@ -494,13 +494,20 @@ public sealed partial class DsmRepository
     private FileArchiveCompressionReservation ReserveArchiveCompression(
         FileArchiveCompressionReview review)
     {
-        var state = FileArchiveCompressionApiStates.GetValue(_api, _ => new());
+        var state = ArchiveMutationStateForProfile(ProfileId);
         lock (state.Sync)
         {
-            if (review.Request.ProfileId != ProfileId ||
-                state.ActivePaths.Overlaps(review.ReservedPaths))
-                return new(false, null);
             state.Reviews.TryGetValue(review.Key, out var pending);
+            var unresolvedPaths = state.Reviews
+                .Where(item => item.Key != review.Key)
+                .SelectMany(item => item.Value.ReservedPaths)
+                .Concat(state.ExtractionReviews.Values
+                    .SelectMany(item => item.ReservedPaths))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (review.Request.ProfileId != ProfileId ||
+                HasArchivePathConflict(state.ActivePaths, review.ReservedPaths) ||
+                HasArchivePathConflict(unresolvedPaths, review.ReservedPaths))
+                return new(false, null);
             foreach (var path in review.ReservedPaths)
                 state.ActivePaths.Add(path);
             return new(true, pending);
@@ -509,7 +516,7 @@ public sealed partial class DsmRepository
 
     private void ReleaseArchiveCompression(IReadOnlySet<string> paths)
     {
-        var state = FileArchiveCompressionApiStates.GetValue(_api, _ => new());
+        var state = ArchiveMutationStateForProfile(ProfileId);
         lock (state.Sync)
         foreach (var path in paths)
             state.ActivePaths.Remove(path);
@@ -517,14 +524,14 @@ public sealed partial class DsmRepository
 
     private void StoreArchiveReview(FileArchiveCompressionReview review)
     {
-        var state = FileArchiveCompressionApiStates.GetValue(_api, _ => new());
+        var state = ArchiveMutationStateForProfile(ProfileId);
         lock (state.Sync)
             state.Reviews[review.Key] = review;
     }
 
     private void RemoveArchiveReview(FileArchiveCompressionReview review)
     {
-        var state = FileArchiveCompressionApiStates.GetValue(_api, _ => new());
+        var state = ArchiveMutationStateForProfile(ProfileId);
         lock (state.Sync)
             state.Reviews.Remove(review.Key);
     }
@@ -598,7 +605,7 @@ public sealed partial class DsmRepository
 
     private static bool ValidArchiveItemName(string value) =>
         !string.IsNullOrWhiteSpace(value) && value == value.Trim() && value is not ("." or "..") &&
-        value.IndexOfAny(['/', '\\', '\r', '\n', '\0']) < 0;
+        value.IndexOfAny(['/', '\\']) < 0 && !value.Any(char.IsControl);
 
     private static bool ValidArchiveObjectPath(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.StartsWith('/') && value != "/" &&
@@ -657,11 +664,34 @@ public sealed partial class DsmRepository
         UserText.Key("WinShared79c4d60046afa3ff"),
         authenticationFailure: true);
 
-    private sealed class FileArchiveCompressionApiState
+    private static FileArchiveMutationApiState ArchiveMutationStateForProfile(Guid profileId)
+    {
+        lock (FileArchiveMutationStatesSync)
+        {
+            if (!FileArchiveMutationStates.TryGetValue(profileId, out var state))
+            {
+                state = new FileArchiveMutationApiState();
+                FileArchiveMutationStates[profileId] = state;
+            }
+            return state;
+        }
+    }
+
+    private static bool HasArchivePathConflict(
+        IReadOnlySet<string> activePaths,
+        IReadOnlySet<string> requestedPaths) =>
+        activePaths.Any(active => requestedPaths.Any(requested =>
+            active.Equals(requested, StringComparison.OrdinalIgnoreCase) ||
+            active.StartsWith(requested + "/", StringComparison.OrdinalIgnoreCase) ||
+            requested.StartsWith(active + "/", StringComparison.OrdinalIgnoreCase)));
+
+    private sealed class FileArchiveMutationApiState
     {
         public object Sync { get; } = new();
-        public HashSet<string> ActivePaths { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> ActivePaths { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, FileArchiveCompressionReview> Reviews { get; } =
+            new(StringComparer.Ordinal);
+        public Dictionary<string, FileArchiveExtractionReview> ExtractionReviews { get; } =
             new(StringComparer.Ordinal);
     }
 
