@@ -11,6 +11,23 @@ enum MobileTransferDirection: String, CaseIterable, Sendable {
     case download
 }
 
+enum MobileActivityOperation: String, CaseIterable, Equatable, Sendable {
+    case appUpload = "app.upload"
+    case appDownload = "app.download"
+    case downloadStation = "download-station"
+    case fileCopyMove = "file.copy-move"
+    case fileDelete = "file.delete"
+    case fileCompress = "file.compress"
+    case fileExtract = "file.extract"
+
+    var isFileStationTask: Bool {
+        switch self {
+        case .fileCopyMove, .fileDelete, .fileCompress, .fileExtract: true
+        case .appUpload, .appDownload, .downloadStation: false
+        }
+    }
+}
+
 enum MobileTransferStatus: String, CaseIterable, Sendable {
     case queued
     case preparing
@@ -80,12 +97,42 @@ enum MobileActivityPresentationState: Equatable, Sendable {
 struct MobileTransferProgress: Equatable, Sendable {
     var completedBytes: Int64
     var totalBytes: Int64?
+    var completedItems: Int?
+    var totalItems: Int?
+    var reportedFraction: Double?
+
+    init(
+        completedBytes: Int64,
+        totalBytes: Int64?,
+        completedItems: Int? = nil,
+        totalItems: Int? = nil,
+        reportedFraction: Double? = nil
+    ) {
+        self.completedBytes = completedBytes
+        self.totalBytes = totalBytes
+        self.completedItems = completedItems
+        self.totalItems = totalItems
+        self.reportedFraction = reportedFraction
+    }
 
     static let zero = MobileTransferProgress(completedBytes: 0, totalBytes: nil)
 
     var fraction: Double? {
-        guard let totalBytes, totalBytes > 0 else { return nil }
-        return min(1, max(0, Double(completedBytes) / Double(totalBytes)))
+        if let totalBytes,
+           totalBytes > 0,
+           completedBytes > 0 || (completedItems == nil && reportedFraction == nil) {
+            return min(1, max(0, Double(completedBytes) / Double(totalBytes)))
+        }
+        if let completedItems, let totalItems, totalItems > 0 {
+            return min(1, max(0, Double(completedItems) / Double(totalItems)))
+        }
+        if let reportedFraction {
+            return min(1, max(0, reportedFraction))
+        }
+        if let totalBytes, totalBytes > 0 {
+            return 0
+        }
+        return nil
     }
 }
 
@@ -95,7 +142,7 @@ struct MobileActivityTask: Identifiable, Equatable, Sendable {
     let profileID: UUID
     let source: MobileActivitySource
     let sourceIdentifier: String?
-    let direction: MobileTransferDirection
+    let operation: MobileActivityOperation
     let stableTarget: String
     var progress: MobileTransferProgress
     var status: MobileTransferStatus
@@ -117,11 +164,13 @@ struct MobileActivityTask: Identifiable, Equatable, Sendable {
     var canRetryFromBeginning: Bool {
         guard source == .app else { return false }
         guard retryPolicy == .restartFromBeginning else { return false }
-        switch direction {
-        case .upload:
+        switch operation {
+        case .appUpload:
             return status == .cancelledBeforeSubmission
-        case .download:
+        case .appDownload:
             return status == .failed || status == .cancelled || status == .cancelledBeforeSubmission
+        case .downloadStation, .fileCopyMove, .fileDelete, .fileCompress, .fileExtract:
+            return false
         }
     }
 }
@@ -156,6 +205,13 @@ enum MobileTransferRequest: Equatable, Sendable {
         switch self {
         case .upload: .upload
         case .download: .download
+        }
+    }
+
+    var activityOperation: MobileActivityOperation {
+        switch self {
+        case .upload: .appUpload
+        case .download: .appDownload
         }
     }
 

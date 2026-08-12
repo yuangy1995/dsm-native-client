@@ -5,10 +5,19 @@ struct MobileActivityView: View {
     @Bindable var model: MobileAppModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var tasks: [MobileActivityTask] = []
     @State private var filter = MobileActivityFilter.all
     @State private var isLoading = true
     @State private var hasError = false
+    @State private var fileActivityModel: MobileFileActivityModel
+
+    init(model: MobileAppModel) {
+        self.model = model
+        _fileActivityModel = State(
+            initialValue: MobileFileActivityModel(coordinator: model.transferCoordinator)
+        )
+    }
 
     private var visibleTasks: [MobileActivityTask] {
         tasks.filter(filter.includes)
@@ -21,6 +30,14 @@ struct MobileActivityView: View {
             allTasks: tasks,
             visibleTasks: visibleTasks,
             filter: filter
+        )
+    }
+
+    private var activityContext: MobileActivityContext {
+        MobileActivityContext(
+            profileID: model.activeProfile?.id,
+            repository: model.fileRepository.map(ObjectIdentifier.init),
+            scenePhase: scenePhase
         )
     }
 
@@ -65,7 +82,7 @@ struct MobileActivityView: View {
                     Text(L10n.string("mobile.activity.error-message"))
                 } actions: {
                     Button(L10n.string("background-tasks.retry")) {
-                        Task { await refresh() }
+                        Task { await refreshFileActivity() }
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -82,8 +99,15 @@ struct MobileActivityView: View {
             }
         }
         .animation(reduceMotion ? nil : MobileMotion.stateTransition, value: state)
-        .task(id: model.activeProfile?.id) {
+        .task(id: activityContext) {
+            guard scenePhase == .active else {
+                fileActivityModel.cancelRefresh()
+                return
+            }
             await observeCurrentProfile()
+        }
+        .onDisappear {
+            fileActivityModel.cancelRefresh()
         }
     }
 
@@ -104,11 +128,62 @@ struct MobileActivityView: View {
 
     private var taskList: some View {
         List {
+            fileActivityNotices
             taskSection(source: .app)
             taskSection(source: .nas)
         }
         .listStyle(.insetGrouped)
         .fillsAvailableContentArea(alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var fileActivityNotices: some View {
+        if fileActivityModel.isLoading {
+            Section {
+                HStack(spacing: MobileSpacing.controlGap) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.string("mobile.activity.nas-loading"))
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        if fileActivityModel.error != nil {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: MobileSpacing.compact) {
+                        Text(L10n.string("mobile.activity.nas-error-title"))
+                            .font(.headline)
+                        Text(L10n.string("mobile.activity.nas-error-message"))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+                Button(L10n.string("background-tasks.retry")) {
+                    Task { await refreshFileActivity() }
+                }
+                .frame(minHeight: MobileMetrics.minimumTouchTarget)
+            }
+        }
+        if fileActivityModel.isTruncated {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: MobileSpacing.compact) {
+                        Text(L10n.string("mobile.activity.nas-truncated-title"))
+                            .font(.headline)
+                        Text(L10n.string("mobile.activity.nas-truncated-message"))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "list.bullet.rectangle")
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
     }
 
     @ViewBuilder
@@ -133,12 +208,27 @@ struct MobileActivityView: View {
     private func observeCurrentProfile() async {
         isLoading = true
         hasError = false
+        await fileActivityModel.activate(
+            profileID: model.activeProfile?.id,
+            repository: model.fileRepository
+        )
         await refresh()
+        var localRefreshes = 0
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
             await refresh()
+            localRefreshes += 1
+            if localRefreshes == 120 {
+                localRefreshes = 0
+                await refreshFileActivity()
+            }
         }
+    }
+
+    private func refreshFileActivity() async {
+        await fileActivityModel.refresh()
+        await refresh()
     }
 
     private func refresh() async {
@@ -150,7 +240,7 @@ struct MobileActivityView: View {
         }
         tasks = await model.transferCoordinator.tasks(profileID: profileID)
         isLoading = false
-        hasError = false
+        hasError = fileActivityModel.error != nil && tasks.isEmpty
     }
 
     private func cancel(_ id: UUID) {
@@ -171,6 +261,12 @@ struct MobileActivityView: View {
             await refresh()
         }
     }
+}
+
+private struct MobileActivityContext: Hashable {
+    let profileID: UUID?
+    let repository: ObjectIdentifier?
+    let scenePhase: ScenePhase
 }
 
 private struct MobileActivityTaskRow: View {
@@ -194,7 +290,9 @@ private struct MobileActivityTaskRow: View {
             progress
             if task.status == .resultNeedsReview {
                 Label(
-                    L10n.string("mobile.activity.review-message"),
+                    task.operation.isFileStationTask
+                        ? L10n.string("mobile.activity.file-finished-message")
+                        : L10n.string("mobile.activity.review-message"),
                     systemImage: "exclamationmark.magnifyingglass"
                 )
                 .font(.callout)
@@ -212,12 +310,14 @@ private struct MobileActivityTaskRow: View {
                 Text(task.displayName)
                     .font(.headline)
                     .lineLimit(2)
-                Text(task.direction.title)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if !task.operation.isFileStationTask {
+                    Text(task.operation.title)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
         } icon: {
-            Image(systemName: task.direction.systemImage)
+            Image(systemName: task.operation.systemImage)
                 .foregroundStyle(.tint)
                 .frame(width: 28)
         }
@@ -239,31 +339,56 @@ private struct MobileActivityTaskRow: View {
             VStack(alignment: .leading, spacing: MobileSpacing.compact) {
                 if let fraction = task.progress.fraction {
                     ProgressView(value: fraction)
-                    Text(
-                        L10n.string(
-                            "mobile.activity.bytes-progress",
-                            task.progress.completedBytes.formatted(.byteCount(style: .file)),
-                            (task.progress.totalBytes ?? 0).formatted(.byteCount(style: .file))
-                        )
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    progressLabel
                 } else {
                     ProgressView()
                         .controlSize(.small)
-                    if task.progress.completedBytes > 0 {
-                        Text(
-                            L10n.string(
-                                "mobile.activity.bytes-processed",
-                                task.progress.completedBytes.formatted(.byteCount(style: .file))
-                            )
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
+                    progressLabel
                 }
             }
             .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private var progressLabel: some View {
+        if let totalBytes = task.progress.totalBytes, totalBytes > 0 {
+            Text(
+                L10n.string(
+                    task.operation.isFileStationTask
+                        ? "mobile.activity.bytes-work-progress"
+                        : "mobile.activity.bytes-progress",
+                    task.progress.completedBytes.formatted(.byteCount(style: .file)),
+                    totalBytes.formatted(.byteCount(style: .file))
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if task.progress.completedBytes > 0 {
+            Text(
+                L10n.string(
+                    task.operation.isFileStationTask
+                        ? "mobile.activity.bytes-work-processed"
+                        : "mobile.activity.bytes-processed",
+                    task.progress.completedBytes.formatted(.byteCount(style: .file))
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if let totalItems = task.progress.totalItems, totalItems > 0 {
+            Text(
+                L10n.string(
+                    "mobile.activity.items-progress",
+                    Int64(task.progress.completedItems ?? 0),
+                    Int64(totalItems)
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if let completedItems = task.progress.completedItems, completedItems > 0 {
+            Text(L10n.string("mobile.activity.items-processed", Int64(completedItems)))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -305,18 +430,27 @@ private extension MobileActivitySource {
     }
 }
 
-private extension MobileTransferDirection {
+private extension MobileActivityOperation {
     var title: String {
         switch self {
-        case .upload: L10n.string("mobile.activity.direction-upload")
-        case .download: L10n.string("mobile.activity.direction-download")
+        case .appUpload: L10n.string("mobile.activity.direction-upload")
+        case .appDownload: L10n.string("mobile.activity.direction-download")
+        case .downloadStation: L10n.string("mobile.activity.operation-download-station")
+        case .fileCopyMove: L10n.string("mobile.activity.operation-file-copy-move")
+        case .fileDelete: L10n.string("mobile.activity.operation-file-delete")
+        case .fileCompress: L10n.string("mobile.activity.operation-file-compress")
+        case .fileExtract: L10n.string("mobile.activity.operation-file-extract")
         }
     }
 
     var systemImage: String {
         switch self {
-        case .upload: "arrow.up.circle"
-        case .download: "arrow.down.circle"
+        case .appUpload: "arrow.up.circle"
+        case .appDownload, .downloadStation: "arrow.down.circle"
+        case .fileCopyMove: "doc.on.doc"
+        case .fileDelete: "trash"
+        case .fileCompress: "archivebox"
+        case .fileExtract: "archivebox.fill"
         }
     }
 }
@@ -376,6 +510,9 @@ private extension MobileTransferStatus {
 
 private extension MobileActivityTask {
     var displayName: String {
+        if operation.isFileStationTask {
+            return operation.title
+        }
         let name = (stableTarget as NSString).lastPathComponent
         return name.isEmpty ? stableTarget : name
     }

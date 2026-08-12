@@ -8,6 +8,7 @@ actor MobileTransferCoordinator {
     private var requestsByID: [UUID: MobileTransferRequest] = [:]
     private var executionsByID: [UUID: Task<Void, Never>] = [:]
     private var executionGenerationsByID: [UUID: UUID] = [:]
+    private var fileStationObservationTokensByProfile: [UUID: UUID] = [:]
 
     init(mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator()) {
         self.mutationCoordinator = mutationCoordinator
@@ -26,7 +27,7 @@ actor MobileTransferCoordinator {
 
     func registerNasTask(
         profileID: UUID,
-        direction: MobileTransferDirection,
+        operation: MobileActivityOperation,
         stableTarget: String,
         progress: MobileTransferProgress,
         status: MobileTransferStatus
@@ -38,7 +39,7 @@ actor MobileTransferCoordinator {
             profileID: profileID,
             source: .nas,
             sourceIdentifier: nil,
-            direction: direction,
+            operation: operation,
             stableTarget: stableTarget,
             progress: progress,
             status: status,
@@ -90,6 +91,68 @@ actor MobileTransferCoordinator {
                 profileID: profileID,
                 sourceIdentifier: sourceIdentifier,
                 task: downloadTask
+            )
+        }
+    }
+
+    func beginFileStationObservation(profileID: UUID, token: UUID) {
+        fileStationObservationTokensByProfile[profileID] = token
+    }
+
+    func endFileStationObservation(profileID: UUID, token: UUID) {
+        guard fileStationObservationTokensByProfile[profileID] == token else { return }
+        fileStationObservationTokensByProfile.removeValue(forKey: profileID)
+    }
+
+    func syncFileStationTasks(
+        profileID: UUID,
+        observationToken: UUID,
+        tasks: [FileBackgroundTaskSummary]
+    ) {
+        guard fileStationObservationTokensByProfile[profileID] == observationToken else { return }
+        let sourcePrefix = "file-background:"
+        let uniqueTasks = tasks.reduce(into: [String: FileBackgroundTaskSummary]()) { result, task in
+            if result[task.id] == nil {
+                result[task.id] = task
+            }
+        }
+        let incomingKeys = Set(uniqueTasks.keys.map { sourcePrefix + $0 })
+        let existingByKey = Dictionary(
+            tasksByID.compactMap { id, task -> (String, UUID)? in
+                guard task.profileID == profileID,
+                      task.source == .nas,
+                      let sourceIdentifier = task.sourceIdentifier,
+                      sourceIdentifier.hasPrefix(sourcePrefix) else {
+                    return nil
+                }
+                return (sourceIdentifier, id)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let outdatedIDs = tasksByID.compactMap { id, task -> UUID? in
+            guard task.profileID == profileID,
+                  task.source == .nas,
+                  task.sourceIdentifier?.hasPrefix(sourcePrefix) == true,
+                  !incomingKeys.contains(task.sourceIdentifier ?? "") else {
+                return nil
+            }
+            return id
+        }
+        for id in outdatedIDs {
+            tasksByID.removeValue(forKey: id)
+        }
+
+        for task in uniqueTasks.values {
+            let sourceIdentifier = sourcePrefix + task.id
+            let id = existingByKey[sourceIdentifier] ?? UUID()
+            let createdAt = task.createdAt ?? tasksByID[id]?.createdAt ?? Date()
+            tasksByID[id] = Self.activityTask(
+                id: id,
+                createdAt: createdAt,
+                profileID: profileID,
+                sourceIdentifier: sourceIdentifier,
+                task: task
             )
         }
     }
@@ -190,7 +253,7 @@ actor MobileTransferCoordinator {
             profileID: request.profileID,
             source: .app,
             sourceIdentifier: nil,
-            direction: request.direction,
+            operation: request.activityOperation,
             stableTarget: request.stableTarget,
             progress: .zero,
             status: .queued,
@@ -421,7 +484,7 @@ actor MobileTransferCoordinator {
             profileID: profileID,
             source: .nas,
             sourceIdentifier: sourceIdentifier,
-            direction: .download,
+            operation: .downloadStation,
             stableTarget: task.title,
             progress: MobileTransferProgress(
                 completedBytes: max(0, completedBytes),
@@ -431,6 +494,40 @@ actor MobileTransferCoordinator {
             retryPolicy: .none,
             mutationResult: nil,
             failureCategory: task.errorDescription == nil ? nil : .unknown
+        )
+    }
+
+    private static func activityTask(
+        id: UUID,
+        createdAt: Date,
+        profileID: UUID,
+        sourceIdentifier: String,
+        task: FileBackgroundTaskSummary
+    ) -> MobileActivityTask {
+        let operation: MobileActivityOperation = switch task.kind {
+        case .copyOrMove: .fileCopyMove
+        case .delete: .fileDelete
+        case .compress: .fileCompress
+        case .extract: .fileExtract
+        }
+        return MobileActivityTask(
+            id: id,
+            createdAt: createdAt,
+            profileID: profileID,
+            source: .nas,
+            sourceIdentifier: sourceIdentifier,
+            operation: operation,
+            stableTarget: operation.rawValue,
+            progress: MobileTransferProgress(
+                completedBytes: max(0, task.processedBytes ?? 0),
+                totalBytes: task.totalBytes.map { max(0, $0) },
+                completedItems: task.processedItemCount.map { max(0, $0) },
+                totalItems: task.totalItemCount.map { max(0, $0) },
+                reportedFraction: task.progress
+            ),
+            status: task.state == .active ? .running : .resultNeedsReview,
+            retryPolicy: .none,
+            mutationResult: nil
         )
     }
 

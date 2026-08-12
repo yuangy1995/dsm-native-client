@@ -17,6 +17,10 @@
 
 截至 2026-08-12 当前源码口径，跨端原生客户端总体开发约 **74%**：Android 当前移动端开发目标已冻结为 100% 且进入设备验收；iPhone/iPad 主流程、Chat 单附件、Download/BTSearch/ACT-01 与 NAS-02/NAS-04 受限只读详情已形成源码和自动化闭环，仍缺真实 NAS、iPad/真机和部分无障碍验收；Windows Files/Photos/Chat/Download/Activity 与 NAS-02/NAS-04 只读详情已通过云端门禁，其中 NAS 详情切片通过 933/933 项 Windows xUnit，WinUI x64 与 ARM64 均为 0 警告、0 错误。Windows PHOTO-02 已补入文件夹/时间线媒体打开、右侧预览、前后切换、基础文件元数据、图片尺寸展示和保存副本；基础查看器提交 `4e1272e` 已通过 GitHub `Repository Check` run `31398565746` 与 `Windows Build` run `31398566274`。本地媒体元数据白名单切片已补入拍摄时间、相机品牌/型号和基础视频时长，且不新增 NAS 请求；GitHub `Windows Build` run `31410536634` 通过 943/943 项 xUnit 与 WinUI x64/ARM64 构建，`Repository Check` run `31410536680` 通过。剩余工作主要集中在真实 NAS/Narrator/键盘/高对比/窗口缩放验收、Apple 移动端真实设备/真实 NAS 验收、NAS/Chat/Download 高风险能力的版本化契约确认，以及发布签名、安装/卸载和无障碍矩阵。
 
+Apple Mobile ACT-01 前台主动刷新增量已完成源码与聚焦自动化：Activity 可见且 App 处于前台时，使用既有公开 `SYNO.FileStation.BackgroundTask.list` v3 立即读取并每 30 秒刷新前 100 项 File Station 复制/移动、删除、压缩和解压任务；进度只使用字节、项目数和公开进度字段，不展示路径、参数或任务 ID。读取失败保留上次 NAS 快照与 App 传输，超过 100 项明确提示截断，离页、切换 profile/Repository 或 App 进入后台即取消刷新并拒绝迟到结果。File Station 结束态仅显示“需核对结果”，不冒充成功；不新增 NAS 请求，不调用 `clear_finished`，不提供停止、清理或重试写操作。本机 iPhone 模拟器 Activity 聚焦测试 12/12 通过；GitHub Apple Build 与 Repository Check 待功能分支提交后验证。真实 iPhone/iPad、真实 NAS 字段、VoiceOver、最大动态文字、iPad 键盘/指针和弱网为 `PENDING_USER_VALIDATION`。系统后台常驻、通知与跨重启恢复仍未实现。
+
+独立审查后又收紧了离页取消、新旧 Repository 观察代次隔离、缺省字节组合的进度回退和 VoiceOver 重复标题；最终 Activity 聚焦测试 14/14、DsmMobile 全量 450/450 通过。GitHub Apple Build run `31562039103` 已通过共享包测试、iPhone/iPad 通用应用构建、macOS 打包和产物上传，Repository Check run `31562039118` 已通过。
+
 | 项目 | 状态 | 说明 |
 | --- | --- | --- |
 | 单仓库与文档 | 已完成 | 契约、架构、安全、兼容和平台目录已经建立 |

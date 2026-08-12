@@ -397,7 +397,8 @@ CHAT-01～02 首次单聊与非加密私人群聊创建已完成源码主流程�
 
 - 已提供单任务列表/筛选/详情、URL/magnet 与任务文件创建、目标目录选择、暂停、继续和只移除任务；删除已下载数据仍关闭。
 - 官方 BTSearch v1 的提供方/类别、七类排序、有界结果、取消/清理、零提供方状态与单结果创建已完成源码闭环；真实 NAS、iPad/Windows 交互按专项 PUV 验收。
-- ACT-01 首片已把 Download Station 当前已加载任务快照接入 Activity 的独立 NAS 来源：页面加载或任务变更后同步投影，NAS 项显示进行中、暂停、成功和失败状态，但不显示取消或从头重试；Activity 主动刷新 NAS、系统通知、后台常驻和跨重启恢复继续后置。
+- ACT-01 已在 Download Station 当前已加载快照之外补齐 File Station 前台主动刷新：Activity 可见且 App 处于前台时，立即通过既有公开 `SYNO.FileStation.BackgroundTask.list` v3 读取前 100 项复制/移动、删除、压缩和解压任务，每 30 秒严格单飞刷新；超限明确提示截断，失败保留旧 NAS 快照与 App 传输，离页、profile/Repository 切换或 App 进入后台会取消读取并隔离迟到结果。展示层不暴露路径、参数或任务 ID，结束态只提示核对而不冒充成功；NAS 项不提供取消、清理或重试，`clear_finished` 保持关闭。系统通知、后台常驻和跨重启恢复继续后置。本机 Activity 聚焦测试 12/12 通过，真实 iPhone/iPad、真实 NAS 字段与无障碍为 `PENDING_USER_VALIDATION`。
+- 独立审查后已补齐离页取消、同 profile 新旧 Repository 观察代次隔离、缺省字节组合的进度回退和 VoiceOver 重复标题修正；最终 Activity 聚焦 14/14、DsmMobile 全量 450/450 通过。GitHub Apple Build run `31562039103` 已通过共享包测试、iPhone/iPad 通用应用构建、macOS 打包和产物上传，Repository Check run `31562039118` 已通过。
 - 当前不做批量命令、删除已下载数据、RSS、文件优先级、BT 协议高级设置和设置写；交给 Mac App 或 DSM Web。
 
 出口：每项写操作按能力和版本 gate；创建、暂停、继续和只移除任务分别具备稳定目标、防重复与回读测试，提交未知不重放。BTSearch 的临时搜索任务只做一次独立 best-effort 清理，清理失败不覆盖原始结果。
