@@ -410,7 +410,7 @@ public sealed class FileRecycleViewModel : ObservableObject, IDisposable
         return destination;
     }
 
-    private static bool TryRestoreDestination(string sourcePath, out string destination)
+    internal static bool TryRestoreDestination(string sourcePath, out string destination)
     {
         destination = string.Empty;
         if (!IsCanonicalAbsolutePath(sourcePath))

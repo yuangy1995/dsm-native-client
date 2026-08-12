@@ -17,6 +17,7 @@ internal enum PhotoBatchSelectionOperation
     Copy,
     Move,
     Recycle,
+    Restore,
 }
 
 public sealed partial class PhotosPage
@@ -37,7 +38,22 @@ public sealed partial class PhotosPage
     }
 
     private async void MoveSelectedPhotosToRecycle_Click(object sender, RoutedEventArgs e) =>
-        await ShowPhotoBatchRecycleAsync(SelectedFolderPhotos(), timelineMode: false);
+        await ShowPhotoBatchRecycleAsync(
+            SelectedFolderPhotos(),
+            timelineMode: false,
+            FileRecycleOperation.MoveToRecycle);
+
+    private async void RestoreMultiplePhotos_Click(object sender, RoutedEventArgs e)
+    {
+        await ClosePhotoViewerAsync();
+        EnterPhotoBatchSelection(PhotoBatchSelectionOperation.Restore);
+    }
+
+    private async void RestoreSelectedPhotos_Click(object sender, RoutedEventArgs e) =>
+        await ShowPhotoBatchRecycleAsync(
+            SelectedFolderPhotos(),
+            timelineMode: false,
+            FileRecycleOperation.Restore);
 
     private void CancelPhotoBatchSelection_Click(object sender, RoutedEventArgs e) =>
         ExitPhotoBatchSelection();
@@ -85,6 +101,9 @@ public sealed partial class PhotosPage
             PhotoBatchSelectionOperation.Copy => CanCopyPhotoCore(item),
             PhotoBatchSelectionOperation.Move => CanMovePhotoCore(item),
             PhotoBatchSelectionOperation.Recycle => CanSelectPhotoForBatchRecycle(item),
+            PhotoBatchSelectionOperation.Restore => CanPhotoRecycleItemCore(
+                item,
+                FileRecycleOperation.Restore),
             _ => false,
         };
 
@@ -130,11 +149,21 @@ public sealed partial class PhotosPage
             .ToArray();
 
     private Task MoveMultiplePhotosToRecycleAsync(IReadOnlyList<PhotoItem> items) =>
-        ShowPhotoBatchRecycleAsync(items, timelineMode: true);
+        ShowPhotoBatchRecycleAsync(
+            items,
+            timelineMode: true,
+            FileRecycleOperation.MoveToRecycle);
+
+    private Task RestoreMultiplePhotosAsync(IReadOnlyList<PhotoItem> items) =>
+        ShowPhotoBatchRecycleAsync(
+            items,
+            timelineMode: true,
+            FileRecycleOperation.Restore);
 
     private async Task ShowPhotoBatchRecycleAsync(
         IReadOnlyList<PhotoItem> items,
-        bool timelineMode)
+        bool timelineMode,
+        FileRecycleOperation operation)
     {
         if (_disposed || !_isPhotoPageActive ||
             _photoBatchRecycleDialog is not null ||
@@ -143,7 +172,11 @@ public sealed partial class PhotosPage
             _photoRecycleRepository is not { } repository ||
             _viewModel.SelectedSpace is not { } sourceSpace ||
             timelineMode != (TimelineMode.IsChecked == true) ||
-            items.Select(ToRecycleFileItem).Any(item => item is null))
+            items.Select(ToRecycleFileItem).Any(item => item is null) ||
+            operation == FileRecycleOperation.MoveToRecycle &&
+                !repository.Availability.CanMoveToRecycle ||
+            operation == FileRecycleOperation.Restore &&
+                !repository.Availability.CanRestore)
         {
             return;
         }
@@ -153,24 +186,33 @@ public sealed partial class PhotosPage
         var sourceScope = timelineMode
             ? FileRecycleBatchSourceScope.DescendantsOfRoot
             : FileRecycleBatchSourceScope.CurrentFolder;
-        var recycleLocations = _photoRecycleLocations.ToArray();
+        var recycleLocations = operation == FileRecycleOperation.MoveToRecycle
+            ? _photoRecycleLocations.ToArray()
+            : [];
+        var locationSource = operation == FileRecycleOperation.Restore
+            ? FileLocationSource.Recycle
+            : FileLocationSource.Shares;
         if (!PhotoBatchRecycleSourceIsCurrent(
                 repository,
                 sourceSpace,
                 sourceRoot,
                 items,
                 recycleLocations,
-                timelineMode) ||
+                timelineMode,
+                operation) ||
             FileRecycleBatchViewModel.Validate(
                 _dataSource.ProfileId,
                 sources,
                 sourceRoot,
-                FileLocationSource.Shares,
+                locationSource,
                 recycleLocations,
-                sourceScope) != FileRecycleBatchValidationStatus.Valid)
+                sourceScope,
+                operation) != FileRecycleBatchValidationStatus.Valid)
         {
             ShowPhotoBatchSelectionMessage(
-                "PhotoRecycleBatchSelectionInvalid",
+                operation == FileRecycleOperation.Restore
+                    ? "PhotoRestoreBatchSelectionInvalid"
+                    : "PhotoRecycleBatchSelectionInvalid",
                 InfoBarSeverity.Error,
                 timelineMode: timelineMode);
             return;
@@ -183,6 +225,8 @@ public sealed partial class PhotosPage
             recycleLocations,
             sourceRoot,
             sourceScope,
+            operation,
+            locationSource,
             _photoRecycleReviewBlocker);
         var dialog = new ContentDialog
         {
@@ -199,13 +243,17 @@ public sealed partial class PhotosPage
             {
                 return;
             }
-            dialog.Title = localization.Get("FileRecycleBatchTitle");
+            dialog.Title = localization.Get(operation == FileRecycleOperation.Restore
+                ? "FileRestoreBatchTitle"
+                : "FileRecycleBatchTitle");
             dialog.CloseButtonText = localization.Get(model.State is
                 FileRecycleBatchState.Confirming or FileRecycleBatchState.Submitting
                     ? "FileRecycleCancelAction"
                     : "FileRecycleCloseAction");
             dialog.PrimaryButtonText = model.State == FileRecycleBatchState.Confirming
-                ? localization.Format("FileRecycleBatchMoveAction", sources.Length)
+                ? localization.Format(operation == FileRecycleOperation.Restore
+                    ? "FileRestoreBatchAction"
+                    : "FileRecycleBatchMoveAction", sources.Length)
                 : string.Empty;
             dialog.IsPrimaryButtonEnabled = model.CanSubmit;
             dialog.DefaultButton = model.CanSubmit
@@ -214,7 +262,9 @@ public sealed partial class PhotosPage
             dialog.Content = FileRecycleBatchDialogContent.Build(
                 model,
                 localization,
-                "PhotoRecycleBatchConfirmMessage");
+                operation == FileRecycleOperation.Restore
+                    ? "PhotoRestoreBatchConfirmMessage"
+                    : "PhotoRecycleBatchConfirmMessage");
             await Task.CompletedTask;
         }
 
@@ -227,10 +277,13 @@ public sealed partial class PhotosPage
                     sourceRoot,
                     items,
                     recycleLocations,
-                    timelineMode))
+                    timelineMode,
+                    operation))
             {
                 ShowPhotoBatchSelectionMessage(
-                    "PhotoRecycleBatchSourceChanged",
+                    operation == FileRecycleOperation.Restore
+                        ? "PhotoRestoreBatchSourceChanged"
+                        : "PhotoRecycleBatchSourceChanged",
                     InfoBarSeverity.Error,
                     timelineMode: timelineMode);
                 return;
@@ -302,11 +355,11 @@ public sealed partial class PhotosPage
         }
         if (timelineMode)
         {
-            TimelineView.ShowRecycleBatchSummary(summary);
+            TimelineView.ShowRecycleBatchSummary(summary, operation);
         }
         else
         {
-            ShowPhotoBatchSummary(summary);
+            ShowPhotoBatchSummary(summary, operation);
         }
         UpdateState();
     }
@@ -317,7 +370,8 @@ public sealed partial class PhotosPage
         string sourceRoot,
         IReadOnlyList<PhotoItem> items,
         IReadOnlyList<FileRecycleLocation> recycleLocations,
-        bool timelineMode)
+        bool timelineMode,
+        FileRecycleOperation operation)
     {
         if (_disposed || repository.ProfileId != _dataSource.ProfileId ||
             _viewModel.SelectedSpace?.Id != sourceSpace.Id ||
@@ -325,9 +379,14 @@ public sealed partial class PhotosPage
             !timelineMode && !string.Equals(_viewModel.CurrentPath, sourceRoot, StringComparison.Ordinal) ||
             timelineMode && !TimelineView.HasSelectedBatchItems(
                 items,
-                PhotoBatchSelectionOperation.Recycle) ||
+                operation == FileRecycleOperation.Restore
+                    ? PhotoBatchSelectionOperation.Restore
+                    : PhotoBatchSelectionOperation.Recycle) ||
             !timelineMode &&
-                (_photoBatchSelectionOperation != PhotoBatchSelectionOperation.Recycle ||
+                (_photoBatchSelectionOperation !=
+                    (operation == FileRecycleOperation.Restore
+                        ? PhotoBatchSelectionOperation.Restore
+                        : PhotoBatchSelectionOperation.Recycle) ||
                     !FolderSelectionMatches(items)))
         {
             return false;
@@ -335,21 +394,27 @@ public sealed partial class PhotosPage
 
         foreach (var item in items)
         {
-            if (!CanSelectPhotoForBatchRecycle(item))
+            if (!(operation == FileRecycleOperation.Restore
+                    ? CanPhotoRecycleItemCore(item, FileRecycleOperation.Restore)
+                    : CanSelectPhotoForBatchRecycle(item)))
             {
                 return false;
             }
-            var frozenLocation = FileRecycleViewModel.FindRecycleLocation(
-                _dataSource.ProfileId,
-                item.Path,
-                recycleLocations);
-            var currentLocation = FileRecycleViewModel.FindRecycleLocation(
-                _dataSource.ProfileId,
-                item.Path,
-                _photoRecycleLocations);
-            if (frozenLocation is null || currentLocation is null || frozenLocation != currentLocation)
+            if (operation == FileRecycleOperation.MoveToRecycle)
             {
-                return false;
+                var frozenLocation = FileRecycleViewModel.FindRecycleLocation(
+                    _dataSource.ProfileId,
+                    item.Path,
+                    recycleLocations);
+                var currentLocation = FileRecycleViewModel.FindRecycleLocation(
+                    _dataSource.ProfileId,
+                    item.Path,
+                    _photoRecycleLocations);
+                if (frozenLocation is null || currentLocation is null ||
+                    frozenLocation != currentLocation)
+                {
+                    return false;
+                }
             }
         }
         return true;
@@ -398,7 +463,9 @@ public sealed partial class PhotosPage
         PhotoRecycleBatchStatus.IsOpen = true;
     }
 
-    private void ShowPhotoBatchSummary(FileRecycleBatchSummary summary)
+    private void ShowPhotoBatchSummary(
+        FileRecycleBatchSummary summary,
+        FileRecycleOperation operation)
     {
         PhotoRecycleBatchStatus.Severity = summary.NeedsReviewCount > 0 ||
             summary.FailedCount > 0 || summary.CancelledCount > 0 ||
@@ -407,7 +474,8 @@ public sealed partial class PhotosPage
             : InfoBarSeverity.Success;
         PhotoRecycleBatchStatus.Message = FileRecycleBatchDialogContent.FormatSummary(
             LocalizationService.Current,
-            summary);
+            summary,
+            operation);
         PhotoRecycleBatchStatus.IsOpen = true;
     }
 
@@ -417,6 +485,7 @@ public sealed partial class PhotosPage
         var selectingMove = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Move;
         var selectingCopy = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Copy;
         var selectingRecycle = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Recycle;
+        var selectingRestore = _photoBatchSelectionOperation == PhotoBatchSelectionOperation.Restore;
         PhotoSaveMultipleButton.Visibility = IsSelectingPhotoBatch
             ? Visibility.Collapsed
             : Visibility.Visible;
@@ -442,6 +511,11 @@ public sealed partial class PhotosPage
             : Visibility.Visible;
         PhotoMoveMultipleToRecycleButton.IsEnabled = CanEnterPhotoBatchSelection(
             PhotoBatchSelectionOperation.Recycle);
+        PhotoRestoreMultipleButton.Visibility = IsSelectingPhotoBatch
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        PhotoRestoreMultipleButton.IsEnabled = CanEnterPhotoBatchSelection(
+            PhotoBatchSelectionOperation.Restore);
         PhotoMoveSelectedButton.Visibility = selectingMove
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -451,10 +525,15 @@ public sealed partial class PhotosPage
         PhotoMoveSelectedToRecycleButton.Visibility = selectingRecycle
             ? Visibility.Visible
             : Visibility.Collapsed;
+        PhotoRestoreSelectedButton.Visibility = selectingRestore
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         PhotoMoveSelectedButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
             FileCopyMoveBatchViewModel.MaximumItemCount && _photoBatchCopyMoveDialog is null;
         PhotoCopySelectedButton.IsEnabled = PhotoMoveSelectedButton.IsEnabled;
         PhotoMoveSelectedToRecycleButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
+            FileRecycleBatchViewModel.MaximumItemCount;
+        PhotoRestoreSelectedButton.IsEnabled = PhotoGrid.SelectedItems.Count is > 0 and <=
             FileRecycleBatchViewModel.MaximumItemCount;
         PhotoCancelRecycleSelectionButton.Visibility = IsSelectingPhotoBatch
             ? Visibility.Visible
@@ -479,6 +558,7 @@ public sealed partial class PhotosPage
         operation switch
         {
             PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionCountMessage",
+            PhotoBatchSelectionOperation.Restore => "FileRestoreBatchSelectionCount",
             PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
                 "FileCopyMoveBatchSelectionCount",
             _ => "FileRecycleBatchSelectionCount",
@@ -488,6 +568,7 @@ public sealed partial class PhotosPage
         operation switch
         {
             PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionLimitMessage",
+            PhotoBatchSelectionOperation.Restore => "FileRestoreBatchSelectionLimit",
             PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
                 "FileCopyMoveBatchSelectionLimit",
             _ => "FileRecycleBatchSelectionLimit",
@@ -497,6 +578,7 @@ public sealed partial class PhotosPage
         operation switch
         {
             PhotoBatchSelectionOperation.Save => "PhotoSaveBatchSelectionInvalid",
+            PhotoBatchSelectionOperation.Restore => "PhotoRestoreBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Copy => "PhotoCopyBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Move => "PhotoMoveBatchSelectionInvalid",
             _ => "PhotoRecycleBatchSelectionInvalid",

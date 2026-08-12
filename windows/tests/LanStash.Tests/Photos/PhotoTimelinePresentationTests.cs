@@ -132,10 +132,12 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("Func<IReadOnlyList<PhotoItem>, Task>? _moveMultiple", source);
         Assert.Contains("EnterBatchSelection(PhotoBatchSelectionOperation.Move)", source);
         Assert.Contains("EnterBatchSelection(PhotoBatchSelectionOperation.Recycle)", source);
+        Assert.Contains("EnterBatchSelection(PhotoBatchSelectionOperation.Restore)", source);
         Assert.Contains("TimelineGrid.SelectionMode = ListViewSelectionMode.Multiple", source);
         Assert.Contains("TimelineGrid.SelectionMode = ListViewSelectionMode.Single", source);
         Assert.Contains("FileCopyMoveBatchSelectionLimit", source);
         Assert.Contains("PhotoMoveBatchSelectionInvalid", source);
+        Assert.Contains("PhotoRestoreBatchSelectionInvalid", source);
     }
 
     [Fact]

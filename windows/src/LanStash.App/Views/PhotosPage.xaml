@@ -204,6 +204,13 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <AppBarButton
+                x:Uid="FileRestoreBatchSelected"
+                x:Name="PhotoRestoreSelectedButton"
+                Click="RestoreSelectedPhotos_Click"
+                Icon="Undo"
+                MinHeight="44"
+                Visibility="Collapsed" />
+            <AppBarButton
                 x:Uid="FileBrowserCancelDownloadSelection"
                 x:Name="PhotoCancelRecycleSelectionButton"
                 Click="CancelPhotoBatchSelection_Click"
@@ -241,6 +248,12 @@
                     x:Name="PhotoMoveMultipleToRecycleButton"
                     Click="MoveMultiplePhotosToRecycle_Click"
                     Icon="Delete"
+                    MinHeight="44" />
+                <AppBarButton
+                    x:Uid="FileRestoreBatchMultiple"
+                    x:Name="PhotoRestoreMultipleButton"
+                    Click="RestoreMultiplePhotos_Click"
+                    Icon="Undo"
                     MinHeight="44" />
                 <AppBarButton
                     x:Uid="PhotoBrowserFilter"

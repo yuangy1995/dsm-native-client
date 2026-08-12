@@ -107,6 +107,107 @@ public sealed class FileRecycleBatchViewModelTests
     }
 
     [Fact]
+    public void RestoreValidationRequiresRecycleSourcesAndUniqueDestinations()
+    {
+        var first = File("first.jpg", "/share/#recycle/album");
+        var second = File("second.jpg", "/share/#recycle/album");
+
+        Assert.Equal(
+            FileRecycleBatchValidationStatus.Valid,
+            FileRecycleBatchViewModel.Validate(
+                ProfileId,
+                [first, second],
+                "/share/#recycle/album",
+                FileLocationSource.Recycle,
+                [],
+                FileRecycleBatchSourceScope.CurrentFolder,
+                FileRecycleOperation.Restore));
+        Assert.Equal(
+            FileRecycleBatchValidationStatus.InvalidSource,
+            FileRecycleBatchViewModel.Validate(
+                ProfileId,
+                [File("outside.jpg")],
+                "/share/source",
+                FileLocationSource.Recycle,
+                [],
+                FileRecycleBatchSourceScope.CurrentFolder,
+                FileRecycleOperation.Restore));
+        Assert.Equal(
+            FileRecycleBatchValidationStatus.Duplicate,
+            FileRecycleBatchViewModel.Validate(
+                ProfileId,
+                [
+                    File("same.jpg", "/share/#recycle/Album"),
+                    File("SAME.JPG", "/share/#recycle/album"),
+                ],
+                "/share/#recycle",
+                FileLocationSource.Recycle,
+                [],
+                FileRecycleBatchSourceScope.DescendantsOfRoot,
+                FileRecycleOperation.Restore));
+    }
+
+    [Fact]
+    public async Task RestoreIsStrictlySerialAndBuildsRecycleTargets()
+    {
+        var firstCompletion = new TaskCompletionSource<FileRecycleOutcome>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new StubRepository(
+            ProfileId,
+            restoreOutcome: (request, _) =>
+                request.Target.Name == "first.jpg"
+                    ? firstCompletion.Task
+                    : Task.FromResult(RestoreSuccess(request)),
+            availability: new FileRecycleAvailability(true, true, 2, 3));
+        using var model = RestoreModel(repository, [
+            File("first.jpg", "/share/#recycle/album"),
+            File("second.jpg", "/share/#recycle/album"),
+        ]);
+
+        var submit = model.SubmitAsync();
+        await repository.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var first = Assert.Single(repository.RestoreRequests);
+        Assert.True(first.Target.IsRecycle);
+        Assert.Equal("/share/#recycle/album/first.jpg", first.Target.Path);
+        firstCompletion.SetResult(RestoreSuccess(first));
+        await submit;
+
+        Assert.Equal(2, repository.RestoreRequests.Count);
+        Assert.Empty(repository.Requests);
+        Assert.Equal(1, repository.MaximumConcurrency);
+        Assert.Equal(FileRecycleOperation.Restore, model.Operation);
+        Assert.Equal(new FileRecycleBatchSummary(2, 2, 0, 0, 0, 0), model.Summary);
+    }
+
+    [Fact]
+    public async Task UnknownRestoreStopsRemainderAndBlocksRestoreReplay()
+    {
+        var blocker = new FileRecycleReviewBlocker();
+        var first = File("first.jpg", "/share/#recycle/album");
+        var repository = new StubRepository(
+            ProfileId,
+            restoreOutcome: (request, _) => Task.FromResult(new FileRecycleOutcome(
+                Result(MutationResultStatus.SubmittedButUnverified),
+                request.Target.Path,
+                "/share/album/first.jpg")),
+            availability: new FileRecycleAvailability(true, true, 2, 3));
+        using var model = RestoreModel(repository, [
+            first,
+            File("second.jpg", "/share/#recycle/album"),
+        ], blocker);
+
+        await model.SubmitAsync();
+
+        Assert.Single(repository.RestoreRequests);
+        Assert.Equal(new FileRecycleBatchSummary(2, 0, 1, 0, 0, 1), model.Summary);
+        Assert.NotNull(blocker.Find(
+            ProfileId,
+            FileRecycleOperation.Restore,
+            first.Path,
+            "/share/album/first.jpg"));
+    }
+
+    [Fact]
     public async Task DescendantScopeFreezesAndConfirmsEachRelativeRecycleDestination()
     {
         var repository = new StubRepository(
@@ -456,6 +557,21 @@ public sealed class FileRecycleBatchViewModelTests
             locations ?? [RecycleLocation],
             blocker ?? new FileRecycleReviewBlocker());
 
+    private static FileRecycleBatchViewModel RestoreModel(
+        StubRepository repository,
+        IReadOnlyList<FileItem> sources,
+        FileRecycleReviewBlocker? blocker = null) =>
+        new(
+            repository,
+            ProfileId,
+            sources,
+            [],
+            "/share/#recycle/album",
+            FileRecycleBatchSourceScope.CurrentFolder,
+            FileRecycleOperation.Restore,
+            FileLocationSource.Recycle,
+            blocker ?? new FileRecycleReviewBlocker());
+
     private static FileItem File(
         string name,
         string parent = "/share/source") =>
@@ -522,6 +638,24 @@ public sealed class FileRecycleBatchViewModelTests
                 true));
     }
 
+    private static FileRecycleOutcome RestoreSuccess(RestoreFromRecycleRequest request)
+    {
+        FileRecycleViewModel.TryRestoreDestination(request.Target.Path, out var destination);
+        return new(
+            Result(MutationResultStatus.ConfirmedSuccess),
+            request.Target.Path,
+            destination,
+            new FileItem(
+                destination,
+                request.Target.Name,
+                request.Target.IsDirectory,
+                request.Target.Size,
+                request.Target.ModifiedAt,
+                null,
+                true,
+                true));
+    }
+
     private static FileRecycleOutcome Outcome(
         MutationResultStatus status,
         MoveToRecycleRequest request) =>
@@ -555,21 +689,25 @@ public sealed class FileRecycleBatchViewModelTests
     private sealed class StubRepository : IFileRecycleRepository
     {
         private readonly Func<MoveToRecycleRequest, CancellationToken, Task<FileRecycleOutcome>> _outcome;
+        private readonly Func<RestoreFromRecycleRequest, CancellationToken, Task<FileRecycleOutcome>> _restoreOutcome;
         private int _concurrency;
 
         public StubRepository(
             Guid profileId,
             Func<MoveToRecycleRequest, CancellationToken, Task<FileRecycleOutcome>>? outcome = null,
+            Func<RestoreFromRecycleRequest, CancellationToken, Task<FileRecycleOutcome>>? restoreOutcome = null,
             FileRecycleAvailability? availability = null)
         {
             ProfileId = profileId;
             _outcome = outcome ?? ((request, _) => Task.FromResult(Success(request)));
+            _restoreOutcome = restoreOutcome ?? ((request, _) => Task.FromResult(RestoreSuccess(request)));
             Availability = availability ?? new FileRecycleAvailability(true, false, 2, 3);
         }
 
         public Guid ProfileId { get; }
         public FileRecycleAvailability Availability { get; }
         public List<MoveToRecycleRequest> Requests { get; } = [];
+        public List<RestoreFromRecycleRequest> RestoreRequests { get; } = [];
         public int MaximumConcurrency { get; private set; }
         public TaskCompletionSource FirstCall { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -595,6 +733,24 @@ public sealed class FileRecycleBatchViewModelTests
         public Task<FileRecycleOutcome> RestoreFromRecycleAsync(
             RestoreFromRecycleRequest request,
             CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            TrackRestoreAsync(request, cancellationToken);
+
+        private async Task<FileRecycleOutcome> TrackRestoreAsync(
+            RestoreFromRecycleRequest request,
+            CancellationToken cancellationToken)
+        {
+            RestoreRequests.Add(request);
+            FirstCall.TrySetResult();
+            var concurrency = Interlocked.Increment(ref _concurrency);
+            MaximumConcurrency = Math.Max(MaximumConcurrency, concurrency);
+            try
+            {
+                return await _restoreOutcome(request, cancellationToken);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _concurrency);
+            }
+        }
     }
 }

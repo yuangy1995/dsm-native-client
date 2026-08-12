@@ -47,6 +47,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
     private readonly IFileRecycleRepository _repository;
     private readonly FileRecycleReviewBlocker _blocker;
     private readonly Guid _profileId;
+    private readonly FileRecycleOperation _operation;
     private readonly IReadOnlyList<FileItem> _sources;
     private readonly IReadOnlyList<BatchEntry> _entries;
     private CancellationTokenSource? _request;
@@ -72,6 +73,8 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
             recycleLocations,
             SourceRootForCurrentFolder(sources),
             FileRecycleBatchSourceScope.CurrentFolder,
+            FileRecycleOperation.MoveToRecycle,
+            FileLocationSource.Browser,
             blocker)
     {
     }
@@ -83,6 +86,29 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         IReadOnlyList<FileRecycleLocation> recycleLocations,
         string sourceRoot,
         FileRecycleBatchSourceScope sourceScope,
+        FileRecycleReviewBlocker blocker)
+        : this(
+            repository,
+            profileId,
+            sources,
+            recycleLocations,
+            sourceRoot,
+            sourceScope,
+            FileRecycleOperation.MoveToRecycle,
+            FileLocationSource.Browser,
+            blocker)
+    {
+    }
+
+    public FileRecycleBatchViewModel(
+        IFileRecycleRepository repository,
+        Guid profileId,
+        IReadOnlyList<FileItem> sources,
+        IReadOnlyList<FileRecycleLocation> recycleLocations,
+        string sourceRoot,
+        FileRecycleBatchSourceScope sourceScope,
+        FileRecycleOperation operation,
+        FileLocationSource source,
         FileRecycleReviewBlocker blocker)
     {
         ArgumentNullException.ThrowIfNull(repository);
@@ -98,9 +124,10 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
             profileId,
             sources,
             sourceRoot,
-            FileLocationSource.Browser,
+            source,
             recycleLocations,
-            sourceScope);
+            sourceScope,
+            operation);
         if (validation != FileRecycleBatchValidationStatus.Valid)
         {
             throw new ArgumentException($"file.recycle.batch.{validation}", nameof(sources));
@@ -109,28 +136,34 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         _repository = repository;
         _blocker = blocker;
         _profileId = profileId;
+        _operation = operation;
         _sources = sources.ToArray();
         _entries = _sources
             .Select(source =>
             {
-                var location = FileRecycleViewModel.FindRecycleLocation(
-                    profileId, source.Path, recycleLocations) ??
-                    throw new ArgumentException(
-                        "file.recycle.batch.missing-recycle-location", nameof(recycleLocations));
-                var frozenLocation = location with { };
+                var location = operation == FileRecycleOperation.MoveToRecycle
+                    ? FileRecycleViewModel.FindRecycleLocation(
+                        profileId, source.Path, recycleLocations) ??
+                        throw new ArgumentException(
+                            "file.recycle.batch.missing-recycle-location", nameof(recycleLocations))
+                    : null;
+                var frozenLocation = location is null ? null : location with { };
                 return new BatchEntry(
                     source,
                     frozenLocation,
-                    MoveDestinationPath(source.Path, frozenLocation));
+                    operation == FileRecycleOperation.MoveToRecycle
+                        ? MoveDestinationPath(source.Path, frozenLocation!)
+                        : RestoreDestinationPath(source.Path));
             })
             .ToArray();
         _summary = new(_sources.Count, 0, 0, 0, 0, _sources.Count);
-        _state = repository.Availability.CanMoveToRecycle
+        _state = IsAvailable(repository.Availability, operation)
             ? FileRecycleBatchState.Confirming
             : FileRecycleBatchState.Unsupported;
     }
 
     public IReadOnlyList<FileItem> Sources => _sources;
+    public FileRecycleOperation Operation => _operation;
 
     public FileRecycleBatchState State
     {
@@ -147,7 +180,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
     public bool CanSubmit =>
         State == FileRecycleBatchState.Confirming &&
         _repository.ProfileId == _profileId &&
-        _repository.Availability.CanMoveToRecycle;
+        IsAvailable(_repository.Availability, _operation);
 
     public int ProcessedCount
     {
@@ -173,7 +206,8 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
             currentPath,
             source,
             recycleLocations,
-            FileRecycleBatchSourceScope.CurrentFolder);
+            FileRecycleBatchSourceScope.CurrentFolder,
+            FileRecycleOperation.MoveToRecycle);
 
     public static FileRecycleBatchValidationStatus Validate(
         Guid profileId,
@@ -181,7 +215,24 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         string sourceRoot,
         FileLocationSource source,
         IReadOnlyList<FileRecycleLocation> recycleLocations,
-        FileRecycleBatchSourceScope sourceScope)
+        FileRecycleBatchSourceScope sourceScope) =>
+        Validate(
+            profileId,
+            sources,
+            sourceRoot,
+            source,
+            recycleLocations,
+            sourceScope,
+            FileRecycleOperation.MoveToRecycle);
+
+    public static FileRecycleBatchValidationStatus Validate(
+        Guid profileId,
+        IReadOnlyList<FileItem> sources,
+        string sourceRoot,
+        FileLocationSource source,
+        IReadOnlyList<FileRecycleLocation> recycleLocations,
+        FileRecycleBatchSourceScope sourceScope,
+        FileRecycleOperation operation)
     {
         ArgumentNullException.ThrowIfNull(sources);
         ArgumentNullException.ThrowIfNull(sourceRoot);
@@ -194,12 +245,11 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         {
             return FileRecycleBatchValidationStatus.TooMany;
         }
-        if (profileId == Guid.Empty ||
-            source is FileLocationSource.Remote or FileLocationSource.Recycle ||
-            source is not (FileLocationSource.Shares or
-                FileLocationSource.Favorite or
-                FileLocationSource.Recent or
-                FileLocationSource.Browser))
+        var sourceIsValid = operation == FileRecycleOperation.MoveToRecycle
+            ? source is FileLocationSource.Shares or FileLocationSource.Favorite or
+                FileLocationSource.Recent or FileLocationSource.Browser
+            : source == FileLocationSource.Recycle;
+        if (profileId == Guid.Empty || !sourceIsValid)
         {
             return FileRecycleBatchValidationStatus.InvalidSource;
         }
@@ -207,7 +257,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         {
             return FileRecycleBatchValidationStatus.InvalidSource;
         }
-        if (sources.Any(item => !IsOrdinaryItem(item)))
+        if (sources.Any(item => !IsOrdinaryItem(item, operation)))
         {
             return FileRecycleBatchValidationStatus.InvalidSource;
         }
@@ -218,6 +268,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         if (sources.Select(item => item.Path)
                 .Distinct(StringComparer.Ordinal)
                 .Count() != sources.Count ||
+            operation == FileRecycleOperation.MoveToRecycle &&
             sourceScope == FileRecycleBatchSourceScope.CurrentFolder &&
             sources.Select(item => item.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -247,17 +298,40 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         {
             return FileRecycleBatchValidationStatus.InvalidSource;
         }
-        if (sources.Any(item =>
-                FileRecycleViewModel.FindRecycleLocation(
-                    profileId, item.Path, recycleLocations) is null))
+        if (operation == FileRecycleOperation.MoveToRecycle)
         {
-            return FileRecycleBatchValidationStatus.MissingRecycleLocation;
+            if (sources.Any(item =>
+                    FileRecycleViewModel.FindRecycleLocation(
+                        profileId, item.Path, recycleLocations) is null))
+            {
+                return FileRecycleBatchValidationStatus.MissingRecycleLocation;
+            }
+            if (sources.Any(item =>
+                    !FileRecycleViewModel.CanMoveToRecycle(
+                        profileId, item, Parent(item.Path), source, recycleLocations)))
+            {
+                return FileRecycleBatchValidationStatus.InvalidSource;
+            }
         }
-        if (sources.Any(item =>
-                !FileRecycleViewModel.CanMoveToRecycle(
-                    profileId, item, Parent(item.Path), source, recycleLocations)))
+        else
         {
-            return FileRecycleBatchValidationStatus.InvalidSource;
+            var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in sources)
+            {
+                if (!FileRecycleViewModel.CanRestore(
+                        profileId,
+                        item,
+                        Parent(item.Path),
+                        FileLocationSource.Recycle) ||
+                    !FileRecycleViewModel.TryRestoreDestination(item.Path, out var destination))
+                {
+                    return FileRecycleBatchValidationStatus.InvalidSource;
+                }
+                if (!destinations.Add(destination))
+                {
+                    return FileRecycleBatchValidationStatus.Duplicate;
+                }
+            }
         }
         return FileRecycleBatchValidationStatus.Valid;
     }
@@ -292,7 +366,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
                 var entry = _entries[index];
                 if (_blocker.Find(
                         _profileId,
-                        FileRecycleOperation.MoveToRecycle,
+                        _operation,
                         entry.Source.Path,
                         entry.DestinationPath) is not null)
                 {
@@ -314,8 +388,11 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
                 }
 
                 Volatile.Write(ref _activeSubmitted, 1);
-                var outcome = await _repository.MoveToRecycleAsync(
-                    BuildRequest(entry), cancellation.Token);
+                var outcome = _operation == FileRecycleOperation.MoveToRecycle
+                    ? await _repository.MoveToRecycleAsync(
+                        BuildMoveRequest(entry), cancellation.Token)
+                    : await _repository.RestoreFromRecycleAsync(
+                        BuildRestoreRequest(entry), cancellation.Token);
                 if (!IsCurrent(generation))
                 {
                     return;
@@ -434,7 +511,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
             ? Parent(sources[0].Path)
             : "\0";
 
-    private MoveToRecycleRequest BuildRequest(BatchEntry entry) => new(
+    private MoveToRecycleRequest BuildMoveRequest(BatchEntry entry) => new(
         new FileRecycleTarget(
             _profileId,
             entry.Source.Path,
@@ -448,8 +525,22 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
             IsVirtual: false,
             IsRecycle: false),
         new FileRecycleLocationTarget(
-            entry.Location.SharePath,
+            entry.Location!.SharePath,
             entry.Location.RecyclePath));
+
+    private RestoreFromRecycleRequest BuildRestoreRequest(BatchEntry entry) => new(
+        new FileRecycleTarget(
+            _profileId,
+            entry.Source.Path,
+            entry.Source.Name,
+            entry.Source.IsDirectory,
+            entry.Source.Size,
+            entry.Source.ModifiedAt,
+            CanRead: true,
+            entry.Source.CanDelete,
+            IsRemote: false,
+            IsVirtual: false,
+            IsRecycle: true));
 
     private BatchItemResult Classify(FileRecycleOutcome outcome, BatchEntry entry)
     {
@@ -484,12 +575,15 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         string.Equals(item.Path, entry.DestinationPath, StringComparison.Ordinal) &&
         string.Equals(item.Name, entry.Source.Name, StringComparison.Ordinal) &&
         item.IsDirectory == entry.Source.IsDirectory &&
-        (entry.Source.IsDirectory || item.Size == entry.Source.Size);
+        (entry.Source.IsDirectory || item.Size == entry.Source.Size) &&
+        (_operation == FileRecycleOperation.MoveToRecycle
+            ? HasRecycleSegment(item.Path)
+            : !HasRecycleSegment(item.Path));
 
     private void BlockReview(BatchEntry entry) =>
         _blocker.Block(new(
             _profileId,
-            FileRecycleOperation.MoveToRecycle,
+            _operation,
             entry.Source.Path,
             entry.DestinationPath));
 
@@ -545,8 +639,12 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         return false;
     }
 
-    private static bool IsOrdinaryItem(FileItem item) =>
-        FileMutationViewModel.IsMutablePath(item.Path) &&
+    private static bool IsOrdinaryItem(
+        FileItem item,
+        FileRecycleOperation operation) =>
+        (operation == FileRecycleOperation.MoveToRecycle
+            ? FileMutationViewModel.IsMutablePath(item.Path)
+            : FileRecycleViewModel.IsCanonicalAbsolutePath(item.Path)) &&
         !string.IsNullOrWhiteSpace(item.Name) &&
         item.Path.EndsWith("/" + item.Name, StringComparison.Ordinal) &&
         item.Size >= 0;
@@ -567,6 +665,25 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
             : location.RecyclePath + "/" + suffix;
     }
 
+    private static string RestoreDestinationPath(string sourcePath) =>
+        FileRecycleViewModel.TryRestoreDestination(sourcePath, out var destination)
+            ? destination
+            : throw new ArgumentException("file.recycle.batch.invalid-restore-source", nameof(sourcePath));
+
+    private static bool HasRecycleSegment(string path) =>
+        path.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => string.Equals(
+                segment,
+                "#recycle",
+                StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsAvailable(
+        FileRecycleAvailability availability,
+        FileRecycleOperation operation) =>
+        operation == FileRecycleOperation.MoveToRecycle
+            ? availability.CanMoveToRecycle
+            : availability.CanRestore;
+
     private static string Parent(string path)
     {
         var separator = path.LastIndexOf('/');
@@ -577,7 +694,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
 
     private sealed record BatchEntry(
         FileItem Source,
-        FileRecycleLocation Location,
+        FileRecycleLocation? Location,
         string DestinationPath);
 
     private enum BatchItemResult

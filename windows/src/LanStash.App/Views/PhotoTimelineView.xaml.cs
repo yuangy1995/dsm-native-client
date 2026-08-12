@@ -37,6 +37,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private Func<IReadOnlyList<PhotoItem>, Task>? _moveMultipleToRecycle;
     private Func<PhotoItem, bool>? _canRestore;
     private Func<PhotoItem, Task>? _restore;
+    private Func<IReadOnlyList<PhotoItem>, Task>? _restoreMultiple;
     private CancellationTokenSource _thumbnailCancellation = new();
     private bool _syncingControls;
     private bool _syncingBatchSelection;
@@ -68,7 +69,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         Func<PhotoItem, Task>? moveToRecycle = null,
         Func<IReadOnlyList<PhotoItem>, Task>? moveMultipleToRecycle = null,
         Func<PhotoItem, bool>? canRestore = null,
-        Func<PhotoItem, Task>? restore = null)
+        Func<PhotoItem, Task>? restore = null,
+        Func<IReadOnlyList<PhotoItem>, Task>? restoreMultiple = null)
     {
         _source = source;
         _thumbnails = thumbnails;
@@ -86,6 +88,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         _moveMultipleToRecycle = moveMultipleToRecycle;
         _canRestore = canRestore;
         _restore = restore;
+        _restoreMultiple = restoreMultiple;
     }
 
     internal async Task ShowAsync(PhotoSpace space)
@@ -203,7 +206,9 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
 
     internal void ExitRecycleSelection() => ExitBatchSelection();
 
-    internal void ShowRecycleBatchSummary(FileRecycleBatchSummary summary)
+    internal void ShowRecycleBatchSummary(
+        FileRecycleBatchSummary summary,
+        FileRecycleOperation operation = FileRecycleOperation.MoveToRecycle)
     {
         RecycleBatchStatus.Severity = summary.NeedsReviewCount > 0 ||
             summary.FailedCount > 0 || summary.CancelledCount > 0 ||
@@ -212,7 +217,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             : InfoBarSeverity.Success;
         RecycleBatchStatus.Message = FileRecycleBatchDialogContent.FormatSummary(
             LocalizationService.Current,
-            summary);
+            summary,
+            operation);
         RecycleBatchStatus.IsOpen = true;
     }
 
@@ -328,6 +334,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     }
     private void MoveMultipleToRecycle_Click(object sender, RoutedEventArgs e)
         => EnterBatchSelection(PhotoBatchSelectionOperation.Recycle);
+    private void RestoreMultiple_Click(object sender, RoutedEventArgs e)
+        => EnterBatchSelection(PhotoBatchSelectionOperation.Restore);
 
     private void EnterBatchSelection(PhotoBatchSelectionOperation operation)
     {
@@ -361,6 +369,16 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             _moveMultipleToRecycle is not null)
         {
             await _moveMultipleToRecycle(items);
+        }
+    }
+    private async void RestoreSelectedItems_Click(object sender, RoutedEventArgs e)
+    {
+        var items = SelectedBatchItems();
+        if (_batchSelectionOperation == PhotoBatchSelectionOperation.Restore &&
+            items.Count is > 0 and <= FileRecycleBatchViewModel.MaximumItemCount &&
+            _restoreMultiple is not null)
+        {
+            await _restoreMultiple(items);
         }
     }
     private void CancelBatchSelection_Click(object sender, RoutedEventArgs e) => ExitBatchSelection();
@@ -439,11 +457,15 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         var hasRecycleBatchCandidates = _viewModel.Phase != PhotoTimelinePhase.Scanning &&
             _viewModel.Groups.SelectMany(group => group.Items)
                 .Any(entry => _canMoveToRecycle?.Invoke(entry.Item) == true);
+        var hasRestoreBatchCandidates = _viewModel.Phase != PhotoTimelinePhase.Scanning &&
+            _viewModel.Groups.SelectMany(group => group.Items)
+                .Any(entry => _canRestore?.Invoke(entry.Item) == true);
         var localization = LocalizationService.Current;
         var isSelectingSave = _batchSelectionOperation == PhotoBatchSelectionOperation.Save;
         var isSelectingMove = _batchSelectionOperation == PhotoBatchSelectionOperation.Move;
         var isSelectingCopy = _batchSelectionOperation == PhotoBatchSelectionOperation.Copy;
         var isSelectingRecycle = _batchSelectionOperation == PhotoBatchSelectionOperation.Recycle;
+        var isSelectingRestore = _batchSelectionOperation == PhotoBatchSelectionOperation.Restore;
         var isSelectingBatch = _batchSelectionOperation != PhotoBatchSelectionOperation.None;
         SaveMultipleButton.Visibility = !isSelectingBatch && hasSaveBatchCandidates
             ? Visibility.Visible
@@ -492,6 +514,15 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             ? Visibility.Visible
             : Visibility.Collapsed;
         MoveSelectedToRecycleButton.IsEnabled = TimelineGrid.SelectedItems.Count is > 0 and <=
+            FileRecycleBatchViewModel.MaximumItemCount;
+        RestoreMultipleButton.Visibility = !isSelectingBatch && hasRestoreBatchCandidates
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        RestoreMultipleButton.IsEnabled = !isSelectingBatch && hasRestoreBatchCandidates;
+        RestoreSelectedItemsButton.Visibility = isSelectingRestore
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        RestoreSelectedItemsButton.IsEnabled = TimelineGrid.SelectedItems.Count is > 0 and <=
             FileRecycleBatchViewModel.MaximumItemCount;
         CancelRecycleSelectionButton.Visibility = isSelectingBatch
             ? Visibility.Visible
@@ -582,6 +613,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             PhotoBatchSelectionOperation.Copy => _canCopy?.Invoke(item) == true,
             PhotoBatchSelectionOperation.Move => _canMove?.Invoke(item) == true,
             PhotoBatchSelectionOperation.Recycle => _canMoveToRecycle?.Invoke(item) == true,
+            PhotoBatchSelectionOperation.Restore => _canRestore?.Invoke(item) == true,
             _ => false,
         };
 
@@ -589,6 +621,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         operation switch
         {
             PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionCountMessage",
+            PhotoBatchSelectionOperation.Restore => "FileRestoreBatchSelectionCount",
             PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
                 "FileCopyMoveBatchSelectionCount",
             _ => "FileRecycleBatchSelectionCount",
@@ -598,6 +631,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         operation switch
         {
             PhotoBatchSelectionOperation.Save => "FileDownloadBatchSelectionLimitMessage",
+            PhotoBatchSelectionOperation.Restore => "FileRestoreBatchSelectionLimit",
             PhotoBatchSelectionOperation.Copy or PhotoBatchSelectionOperation.Move =>
                 "FileCopyMoveBatchSelectionLimit",
             _ => "FileRecycleBatchSelectionLimit",
@@ -609,6 +643,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
             PhotoBatchSelectionOperation.Save => "PhotoSaveBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Copy => "PhotoCopyBatchSelectionInvalid",
             PhotoBatchSelectionOperation.Move => "PhotoMoveBatchSelectionInvalid",
+            PhotoBatchSelectionOperation.Restore => "PhotoRestoreBatchSelectionInvalid",
             _ => "PhotoRecycleBatchSelectionInvalid",
         };
 

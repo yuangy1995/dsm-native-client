@@ -115,7 +115,8 @@ public sealed partial class PhotosPage : Page, IDisposable
                 MovePhotoToRecycleAsync,
                 MoveMultiplePhotosToRecycleAsync,
                 CanRestorePhotoItem,
-                RestorePhotoItemAsync);
+                RestorePhotoItemAsync,
+                RestoreMultiplePhotosAsync);
         }
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;

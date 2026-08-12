@@ -53,7 +53,7 @@ public sealed class FileRecyclePageSourceContractTests
     }
 
     [Fact]
-    public void BatchRecycleUsesBoundedNativeSelectionAndOneConfirmation()
+    public void BatchRecycleAndRestoreUseBoundedNativeSelectionAndOneConfirmation()
     {
         var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
         var selection = Read("windows/src/LanStash.App/Views/FilesPage.BatchDownload.cs");
@@ -64,16 +64,21 @@ public sealed class FileRecyclePageSourceContractTests
         Assert.Contains("x:Name=\"MoveMultipleToRecycleButton\"", xaml);
         Assert.Contains("x:Name=\"MoveSelectedToRecycleButton\"", xaml);
         Assert.Contains("x:Name=\"FileRecycleBatchStatus\"", xaml);
+        Assert.Contains("x:Name=\"RestoreMultipleItemsButton\"", xaml);
+        Assert.Contains("x:Name=\"RestoreSelectedItemsButton\"", xaml);
         Assert.Contains("FileBatchSelectionOperation.Recycle", selection);
+        Assert.Contains("FileBatchSelectionOperation.Restore", selection);
         Assert.Contains("FileRecycleBatchViewModel.MaximumItemCount", selection);
         Assert.Contains("ContentDialog", partial);
-        Assert.Contains("FileRecycleBatchDialogContent.Build(model, localization)", partial);
+        Assert.Contains("FileRecycleBatchDialogContent.Build(", partial);
+        Assert.Contains("FileRecycleOperation.Restore", partial);
         Assert.Contains("FileRecycleBatchConfirmMessage", dialog);
         Assert.Contains("ProgressBar", dialog);
         Assert.Contains("AutomationLiveSetting.Assertive", dialog);
         Assert.Contains("FileRecycleReviewBlocker", model);
         Assert.DoesNotContain("Task.WhenAll", model);
-        Assert.DoesNotContain("RestoreFromRecycleAsync", model);
+        Assert.Contains("RestoreFromRecycleAsync", model);
+        Assert.Contains("FileRecycleViewModel.TryRestoreDestination", model);
         Assert.DoesNotContain("DeleteFile", model);
         Assert.DoesNotContain("overwrite", partial, StringComparison.OrdinalIgnoreCase);
     }

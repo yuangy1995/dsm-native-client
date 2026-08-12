@@ -50,12 +50,16 @@ internal static class FileRecycleBatchDialogContent
             };
             AutomationProperties.SetName(
                 progress,
-                localization.Get("FileRecycleBatchProgressAutomationName"));
+                localization.Get(model.Operation == FileRecycleOperation.Restore
+                    ? "FileRestoreBatchProgressAutomationName"
+                    : "FileRecycleBatchProgressAutomationName"));
             panel.Children.Add(progress);
             var status = new TextBlock
             {
                 Text = localization.Format(
-                    "FileRecycleBatchWorking",
+                    model.Operation == FileRecycleOperation.Restore
+                        ? "FileRestoreBatchWorking"
+                        : "FileRecycleBatchWorking",
                     Math.Min(model.ProcessedCount + 1, model.Sources.Count),
                     model.Sources.Count),
                 TextWrapping = TextWrapping.WrapWholeWords,
@@ -75,12 +79,16 @@ internal static class FileRecycleBatchDialogContent
                 ? InfoBarSeverity.Success
                 : InfoBarSeverity.Warning,
             Message = model.State == FileRecycleBatchState.Completed
-                ? FormatSummary(localization, model.Summary)
-                : localization.Get("FileRecycleBatchUnsupported"),
+                ? FormatSummary(localization, model.Summary, model.Operation)
+                : localization.Get(model.Operation == FileRecycleOperation.Restore
+                    ? "FileRestoreBatchUnsupported"
+                    : "FileRecycleBatchUnsupported"),
         };
         AutomationProperties.SetName(
             message,
-            localization.Get("FileRecycleBatchStatusAutomationName"));
+            localization.Get(model.Operation == FileRecycleOperation.Restore
+                ? "FileRestoreBatchStatusAutomationName"
+                : "FileRecycleBatchStatusAutomationName"));
         AutomationProperties.SetLiveSetting(message, AutomationLiveSetting.Assertive);
         panel.Children.Add(message);
         return panel;
@@ -88,9 +96,12 @@ internal static class FileRecycleBatchDialogContent
 
     public static string FormatSummary(
         LocalizationService localization,
-        FileRecycleBatchSummary summary) =>
+        FileRecycleBatchSummary summary,
+        FileRecycleOperation operation = FileRecycleOperation.MoveToRecycle) =>
         localization.Format(
-            "FileRecycleBatchSummary",
+            operation == FileRecycleOperation.Restore
+                ? "FileRestoreBatchSummary"
+                : "FileRecycleBatchSummary",
             summary.SelectedCount,
             summary.ConfirmedCount,
             summary.NeedsReviewCount,

@@ -1344,7 +1344,26 @@
   <data name="FileRecycleBatchStatusAutomationName" xml:space="preserve"><value>多项回收站操作状态</value></data>
   <data name="FileRecycleBatchUnsupported" xml:space="preserve"><value>无法将这些项目移到回收站。请刷新文件夹并核对选择。</value></data>
   <data name="FileRecycleBatchSummary" xml:space="preserve"><value>已选 {0} 项，已移动 {1} 项，待核对 {2} 项，失败 {3} 项，已取消 {4} 项，未开始 {5} 项。</value></data>
+  <data name="FileRestoreBatchMultiple.Label" xml:space="preserve"><value>恢复多个项目</value></data>
+  <data name="FileRestoreBatchMultiple.Content" xml:space="preserve"><value>恢复多个项目</value></data>
+  <data name="FileRestoreBatchMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择要恢复的多个回收站项目</value></data>
+  <data name="FileRestoreBatchSelected.Label" xml:space="preserve"><value>恢复所选项目</value></data>
+  <data name="FileRestoreBatchSelected.Content" xml:space="preserve"><value>恢复所选项目</value></data>
+  <data name="FileRestoreBatchSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>恢复所选回收站项目</value></data>
+  <data name="FileRestoreBatchSelectionCount" xml:space="preserve"><value>已选择恢复：{0} 个项目</value></data>
+  <data name="FileRestoreBatchSelectionLimit" xml:space="preserve"><value>一次最多恢复 20 个项目。</value></data>
+  <data name="FileRestoreBatchSelectionInvalid" xml:space="preserve"><value>请从当前回收站文件夹选择可恢复的普通项目。</value></data>
+  <data name="FileRestoreBatchSourceChanged" xml:space="preserve"><value>回收站文件夹或所选项目已变化。请核对选择后重试。</value></data>
+  <data name="FileRestoreBatchTitle" xml:space="preserve"><value>恢复项目</value></data>
+  <data name="FileRestoreBatchAction" xml:space="preserve"><value>恢复 {0} 个项目</value></data>
+  <data name="FileRestoreBatchConfirmMessage" xml:space="preserve"><value>所选项目及所选文件夹中的内容将恢复到 NAS 上的原始位置，不会替换已有项目。</value></data>
+  <data name="FileRestoreBatchWorking" xml:space="preserve"><value>正在恢复第 {0}/{1} 个项目…</value></data>
+  <data name="FileRestoreBatchProgressAutomationName" xml:space="preserve"><value>恢复进度</value></data>
+  <data name="FileRestoreBatchStatusAutomationName" xml:space="preserve"><value>批量恢复状态</value></data>
+  <data name="FileRestoreBatchUnsupported" xml:space="preserve"><value>无法恢复这些项目。请刷新回收站文件夹并重新核对选择。</value></data>
+  <data name="FileRestoreBatchSummary" xml:space="preserve"><value>已选 {0} 项，已恢复 {1} 项，待核对 {2} 项，失败 {3} 项，已取消 {4} 项，未开始 {5} 项。</value></data>
   <data name="PhotoRecycleBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 张可移到回收站的照片或视频。</value></data>
+  <data name="PhotoRestoreBatchSelectionInvalid" xml:space="preserve"><value>请从当前回收站选择最多 20 张可恢复的照片或视频。</value></data>
   <data name="PhotoMoveBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 个不同的照片或视频；同名项目不能一起移动。</value></data>
   <data name="PhotoCopyBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 个不同的照片或视频；同名项目不能一起复制。</value></data>
   <data name="PhotoSaveBatchSelectionInvalid" xml:space="preserve"><value>请从当前照片空间选择最多 20 个不同的照片或视频；同名项目不能一起保存。</value></data>
@@ -1360,7 +1379,9 @@
   <data name="PhotoBatchStatus.Title" xml:space="preserve"><value>照片操作</value></data>
   <data name="PhotoMoveBatchSourceChanged" xml:space="preserve"><value>照片空间或所选项目已变化。请核对选择后重试。</value></data>
   <data name="PhotoRecycleBatchSourceChanged" xml:space="preserve"><value>照片空间或所选项目已变化。请核对选择后重试。</value></data>
+  <data name="PhotoRestoreBatchSourceChanged" xml:space="preserve"><value>回收站或所选照片已变化。请核对选择后重试。</value></data>
   <data name="PhotoRecycleBatchConfirmMessage" xml:space="preserve"><value>所选照片和视频将移到 NAS 回收站，不会被永久删除。</value></data>
+  <data name="PhotoRestoreBatchConfirmMessage" xml:space="preserve"><value>所选照片和视频将恢复到 NAS 上的原始位置，不会替换已有项目。</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>将所选项目移到回收站</value></data>
   <data name="FileRecycleRestore.Label" xml:space="preserve"><value>恢复</value></data>
   <data name="FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>从回收站恢复所选项目</value></data>

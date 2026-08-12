@@ -1344,7 +1344,26 @@
   <data name="FileRecycleBatchStatusAutomationName" xml:space="preserve"><value>Multiple recycle bin action status</value></data>
   <data name="FileRecycleBatchUnsupported" xml:space="preserve"><value>These items can’t be moved to the recycle bin. Refresh the folder and review your selection.</value></data>
   <data name="FileRecycleBatchSummary" xml:space="preserve"><value>Selected: {0}. Moved: {1}. Check: {2}. Failed: {3}. Cancelled: {4}. Not started: {5}.</value></data>
+  <data name="FileRestoreBatchMultiple.Label" xml:space="preserve"><value>Restore multiple</value></data>
+  <data name="FileRestoreBatchMultiple.Content" xml:space="preserve"><value>Restore multiple</value></data>
+  <data name="FileRestoreBatchMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Select multiple recycle bin items to restore</value></data>
+  <data name="FileRestoreBatchSelected.Label" xml:space="preserve"><value>Restore selected</value></data>
+  <data name="FileRestoreBatchSelected.Content" xml:space="preserve"><value>Restore selected</value></data>
+  <data name="FileRestoreBatchSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Restore the selected recycle bin items</value></data>
+  <data name="FileRestoreBatchSelectionCount" xml:space="preserve"><value>{0} items selected for restore</value></data>
+  <data name="FileRestoreBatchSelectionLimit" xml:space="preserve"><value>You can restore up to 20 items at a time.</value></data>
+  <data name="FileRestoreBatchSelectionInvalid" xml:space="preserve"><value>Select ordinary items from this recycle bin folder that can be restored.</value></data>
+  <data name="FileRestoreBatchSourceChanged" xml:space="preserve"><value>The recycle bin folder or selected items changed. Review your selection and try again.</value></data>
+  <data name="FileRestoreBatchTitle" xml:space="preserve"><value>Restore items</value></data>
+  <data name="FileRestoreBatchAction" xml:space="preserve"><value>Restore {0} items</value></data>
+  <data name="FileRestoreBatchConfirmMessage" xml:space="preserve"><value>This restores the selected items, including the contents of selected folders, to their original NAS locations. Existing items are not replaced.</value></data>
+  <data name="FileRestoreBatchWorking" xml:space="preserve"><value>Restoring item {0} of {1}…</value></data>
+  <data name="FileRestoreBatchProgressAutomationName" xml:space="preserve"><value>Restore progress</value></data>
+  <data name="FileRestoreBatchStatusAutomationName" xml:space="preserve"><value>Multiple restore status</value></data>
+  <data name="FileRestoreBatchUnsupported" xml:space="preserve"><value>These items can’t be restored. Refresh the recycle bin folder and review your selection.</value></data>
+  <data name="FileRestoreBatchSummary" xml:space="preserve"><value>Selected: {0}. Restored: {1}. Check: {2}. Failed: {3}. Cancelled: {4}. Not started: {5}.</value></data>
   <data name="PhotoRecycleBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 photos or videos from the current photo space that can be moved to the recycle bin.</value></data>
+  <data name="PhotoRestoreBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 photos or videos from the current recycle bin that can be restored.</value></data>
   <data name="PhotoMoveBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 distinct photos or videos from the current photo space. Items with the same name cannot be moved together.</value></data>
   <data name="PhotoCopyBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 distinct photos or videos from the current photo space. Items with the same name cannot be copied together.</value></data>
   <data name="PhotoSaveBatchSelectionInvalid" xml:space="preserve"><value>Select up to 20 distinct photos or videos from the current photo space. Items with the same name cannot be saved together.</value></data>
@@ -1360,7 +1379,9 @@
   <data name="PhotoBatchStatus.Title" xml:space="preserve"><value>Photo actions</value></data>
   <data name="PhotoMoveBatchSourceChanged" xml:space="preserve"><value>The photo space or selected items changed. Review your selection and try again.</value></data>
   <data name="PhotoRecycleBatchSourceChanged" xml:space="preserve"><value>The photo space or selected items changed. Review your selection and try again.</value></data>
+  <data name="PhotoRestoreBatchSourceChanged" xml:space="preserve"><value>The recycle bin or selected photos changed. Review your selection and try again.</value></data>
   <data name="PhotoRecycleBatchConfirmMessage" xml:space="preserve"><value>This moves the selected photos and videos to the NAS recycle bin. It does not permanently delete them.</value></data>
+  <data name="PhotoRestoreBatchConfirmMessage" xml:space="preserve"><value>This restores the selected photos and videos to their original NAS locations. Existing items are not replaced.</value></data>
   <data name="FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Move the selected item to the recycle bin</value></data>
   <data name="FileRecycleRestore.Label" xml:space="preserve"><value>Restore</value></data>
   <data name="FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Restore the selected item from the recycle bin</value></data>

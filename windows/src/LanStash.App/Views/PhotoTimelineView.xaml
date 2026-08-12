@@ -36,6 +36,8 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="PhotoTimelineSearch" x:Name="SearchBox" MinHeight="44"
                      TextChanged="SearchBox_TextChanged" />
@@ -73,7 +75,11 @@
                     MinHeight="44" Click="MoveMultipleToRecycle_Click" Visibility="Collapsed" />
             <Button x:Name="MoveSelectedToRecycleButton" Grid.Column="15"
                     MinHeight="44" Click="MoveSelectedToRecycle_Click" Visibility="Collapsed" />
-            <Button x:Name="CancelRecycleSelectionButton" Grid.Column="16"
+            <Button x:Uid="FileRestoreBatchMultiple" x:Name="RestoreMultipleButton" Grid.Column="16"
+                    MinHeight="44" Click="RestoreMultiple_Click" Visibility="Collapsed" />
+            <Button x:Uid="FileRestoreBatchSelected" x:Name="RestoreSelectedItemsButton" Grid.Column="17"
+                    MinHeight="44" Click="RestoreSelectedItems_Click" Visibility="Collapsed" />
+            <Button x:Name="CancelRecycleSelectionButton" Grid.Column="18"
                     MinHeight="44" Click="CancelBatchSelection_Click" Visibility="Collapsed" />
         </Grid>
         </ScrollViewer>

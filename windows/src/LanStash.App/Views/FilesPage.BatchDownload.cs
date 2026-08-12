@@ -17,6 +17,7 @@ public sealed partial class FilesPage
         Copy,
         Move,
         Recycle,
+        Restore,
     }
 
     private readonly HashSet<string> _batchSelection = new(StringComparer.Ordinal);
@@ -31,7 +32,10 @@ public sealed partial class FilesPage
         _batchSelectionOperation is FileBatchSelectionOperation.Copy or
             FileBatchSelectionOperation.Move;
     private bool _isSelectingRecycle =>
-        _batchSelectionOperation == FileBatchSelectionOperation.Recycle;
+        _batchSelectionOperation is FileBatchSelectionOperation.Recycle or
+            FileBatchSelectionOperation.Restore;
+    private bool _isSelectingRestore =>
+        _batchSelectionOperation == FileBatchSelectionOperation.Restore;
     private bool _isSelectingItems => _batchSelectionOperation is not null;
 
     private async void DownloadMultiple_Click(object sender, RoutedEventArgs e)
@@ -111,7 +115,9 @@ public sealed partial class FilesPage
             var rejectsItem = _isSelectingDownloads
                 ? added.IsDirectory
                 : _isSelectingRecycle
-                    ? !CanSelectForBatchRecycle(added.Item)
+                    ? _isSelectingRestore
+                        ? !CanSelectForBatchRestore(added.Item)
+                        : !CanSelectForBatchRecycle(added.Item)
                     : !FileCopyMoveViewModel.IsDestination(added.Path) ||
                         (_batchSelectionOperation == FileBatchSelectionOperation.Move &&
                             !added.Item.CanDelete);
@@ -135,8 +141,12 @@ public sealed partial class FilesPage
                     ? "FileDownloadBatchSelectionLimitMessage"
                     : _isSelectingRecycle
                         ? rejectedForLimit
-                            ? "FileRecycleBatchSelectionLimit"
-                            : "FileRecycleBatchSelectionInvalid"
+                            ? _isSelectingRestore
+                                ? "FileRestoreBatchSelectionLimit"
+                                : "FileRecycleBatchSelectionLimit"
+                            : _isSelectingRestore
+                                ? "FileRestoreBatchSelectionInvalid"
+                                : "FileRecycleBatchSelectionInvalid"
                         : rejectedForLimit
                             ? "FileCopyMoveBatchSelectionLimit"
                             : "FileCopyMoveBatchSelectionInvalid",
@@ -270,9 +280,15 @@ public sealed partial class FilesPage
         DownloadSelectedFilesButton.IsEnabled = _batchSelection.Count is > 0 and <= BoundedFileDownloadBatch.MaximumFileCount;
         DownloadSelectedFilesButton.IsEnabled &= !_isChoosingDownloadTarget;
         MoveSelectedToRecycleButton.Visibility = _isSelectingRecycle
+            && !_isSelectingRestore
             ? Visibility.Visible
             : Visibility.Collapsed;
         MoveSelectedToRecycleButton.IsEnabled = _batchSelection.Count is > 0 and <=
+            FileRecycleBatchViewModel.MaximumItemCount;
+        RestoreSelectedItemsButton.Visibility = _isSelectingRestore
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        RestoreSelectedItemsButton.IsEnabled = _batchSelection.Count is > 0 and <=
             FileRecycleBatchViewModel.MaximumItemCount;
         CancelDownloadSelectionButton.Visibility = _isSelectingItems
             ? Visibility.Visible
@@ -287,6 +303,7 @@ public sealed partial class FilesPage
             MoveFileButton.IsEnabled = false;
             MoveToRecycleButton.IsEnabled = false;
             MoveMultipleToRecycleButton.IsEnabled = false;
+            RestoreMultipleItemsButton.IsEnabled = false;
             RestoreFromRecycleButton.IsEnabled = false;
             UploadButton.IsEnabled = false;
             UploadFolderButton.IsEnabled = false;
@@ -323,7 +340,9 @@ public sealed partial class FilesPage
             _isSelectingDownloads
                 ? "FileDownloadBatchSelectionCountMessage"
                 : _isSelectingRecycle
-                    ? "FileRecycleBatchSelectionCount"
+                    ? _isSelectingRestore
+                        ? "FileRestoreBatchSelectionCount"
+                        : "FileRecycleBatchSelectionCount"
                     : "FileCopyMoveBatchSelectionCount",
             InfoBarSeverity.Informational,
             _batchSelection.Count);
