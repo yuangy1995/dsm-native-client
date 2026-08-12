@@ -55,6 +55,7 @@ public sealed partial class FilesPage : Page, IDisposable
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
+        IDirectorySizeRepository? directorySizeRepository = null,
         IFileArchiveCompressionRepository? archiveCompressionRepository = null,
         IFileArchiveExtractionRepository? archiveExtractionRepository = null)
         : this(
@@ -73,6 +74,7 @@ public sealed partial class FilesPage : Page, IDisposable
                 profileId, repository, locationsRepository ?? repository as IFileLocationsRepository),
             recycleRepository ?? repository as IFileRecycleRepository,
             recycleReviewBlocker,
+            directorySizeRepository ?? repository as IDirectorySizeRepository,
             archiveCompressionRepository ?? repository as IFileArchiveCompressionRepository,
             archiveExtractionRepository ?? repository as IFileArchiveExtractionRepository)
     {
@@ -93,6 +95,7 @@ public sealed partial class FilesPage : Page, IDisposable
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
         IFileRecycleRepository? recycleRepository = null,
         FileRecycleReviewBlocker? recycleReviewBlocker = null,
+        IDirectorySizeRepository? directorySizeRepository = null,
         IFileArchiveCompressionRepository? archiveCompressionRepository = null,
         IFileArchiveExtractionRepository? archiveExtractionRepository = null)
     {
@@ -120,6 +123,9 @@ public sealed partial class FilesPage : Page, IDisposable
             ? recycleRepository
             : null;
         _recycleReviewBlocker = recycleReviewBlocker ?? FileRecycleReviewBlocker.Current;
+        _directorySizeRepository = directorySizeRepository?.ProfileId == _profileId
+            ? directorySizeRepository
+            : null;
         _archiveCompressionRepository = archiveCompressionRepository?.ProfileId == _profileId
             ? archiveCompressionRepository
             : null;
@@ -1225,6 +1231,7 @@ public sealed partial class FilesPage : Page, IDisposable
             _shareManagementDialog is null &&
             _shareLinkDialog is null &&
             !_isClosingShareLink;
+        DirectorySizeButton.IsEnabled = CanShowDirectorySize();
         UploadButton.IsEnabled =
             !_viewModel.IsLoading &&
             !_isChoosingUpload &&
@@ -1405,6 +1412,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseArchiveCompressionDialog();
         CloseArchiveExtractionDialog();
         CloseRecycleDialog();
+        await CloseDirectorySizeDialogAsync();
         await PreviewPane.CloseAsync();
         if (_previewViewModel.IsOpen)
         {
@@ -1420,6 +1428,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
 
         _disposed = true;
+        CloseDirectorySizeDialog();
         DeactivateFileUploadDrop();
         CloseShareManagementDialog();
         CloseShareLinkDialog();

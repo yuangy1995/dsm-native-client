@@ -1586,4 +1586,22 @@
   <data name="ChatCreateCancelledMessage" xml:space="preserve"><value>尚未发送创建请求，可以重试。</value></data>
   <data name="ChatCreateFailedTitle" xml:space="preserve"><value>无法创建会话</value></data>
   <data name="ChatCreateFailedMessage" xml:space="preserve"><value>请检查所选用户和 NAS 连接，然后重试。</value></data>
+  <data name="FileDirectorySizeAction.Label" xml:space="preserve"><value>属性</value></data>
+  <data name="FileDirectorySizeAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>显示所选文件夹的属性</value></data>
+  <data name="FileDirectorySizeTitle" xml:space="preserve"><value>文件夹属性</value></data>
+  <data name="FileDirectorySizeClose" xml:space="preserve"><value>关闭</value></data>
+  <data name="FileDirectorySizeModified" xml:space="preserve"><value>修改时间：{0}</value></data>
+  <data name="FileDirectorySizeCalculate" xml:space="preserve"><value>计算大小</value></data>
+  <data name="FileDirectorySizeRecalculate" xml:space="preserve"><value>重新计算</value></data>
+  <data name="FileDirectorySizeCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="FileDirectorySizeReady" xml:space="preserve"><value>选择“计算大小”后，将统计此文件夹中的内容。</value></data>
+  <data name="FileDirectorySizeCalculating" xml:space="preserve"><value>正在 NAS 上计算文件夹大小…</value></data>
+  <data name="FileDirectorySizeAvailable" xml:space="preserve"><value>文件夹大小已计算完成。</value></data>
+  <data name="FileDirectorySizeCancelled" xml:space="preserve"><value>已取消计算。你可以重新计算。</value></data>
+  <data name="FileDirectorySizeUnavailable" xml:space="preserve"><value>此 NAS 无法在这里计算文件夹大小。</value></data>
+  <data name="FileDirectorySizeFailure" xml:space="preserve"><value>暂时无法计算文件夹大小。请检查 NAS 连接后重试。</value></data>
+  <data name="FileDirectorySizeTotal" xml:space="preserve"><value>大小：{0}</value></data>
+  <data name="FileDirectorySizeFileCount" xml:space="preserve"><value>文件：{0:N0}</value></data>
+  <data name="FileDirectorySizeFolderCount" xml:space="preserve"><value>文件夹：{0:N0}</value></data>
+  <data name="FileDirectorySizeStatusAutomationName" xml:space="preserve"><value>文件夹大小计算状态</value></data>
 </root>

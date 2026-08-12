@@ -145,13 +145,14 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("Key=\"Left\"", xaml);
         Assert.Contains("Modifiers=\"Menu\"", xaml);
         Assert.Contains("BackAccelerator_Invoked", xaml);
-        Assert.Equal(2, CountOccurrences(xaml, "Key=\"Enter\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Key=\"Enter\""));
         Assert.Contains("Key=\"S\"", xaml);
         Assert.Contains("Modifiers=\"Control\"", xaml);
         Assert.Contains("DownloadAccelerator_Invoked", xaml);
         Assert.Contains("Key=\"U\"", xaml);
         Assert.Contains("UploadAccelerator_Invoked", xaml);
         Assert.Contains("OpenSelectedAccelerator_Invoked", xaml);
+        Assert.Contains("DirectorySizeAccelerator_Invoked", xaml);
         Assert.Equal(2, CountOccurrences(xaml, "DoubleTapped=\"Files_DoubleTapped\""));
         Assert.DoesNotContain("IsItemClickEnabled=\"True\"", xaml);
         Assert.Contains("args.Handled = true;", codeBehind);

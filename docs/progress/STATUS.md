@@ -329,6 +329,12 @@ iPhone/iPad FILE-01 当前账号可见存储已完成源码、本机与云端闭
 - 回收站恢复仍需按共享目录配置和 DSM build 验证。
 - 正式分发方式、签名与商店/安装包发布流程尚未确定；仓库源码许可证已明确为 Apache-2.0。
 
+## Windows DirSize v2 增量
+
+Windows Files 已补入文件夹属性与官方 DirSize v2 源码闭环：只对所选文件夹开放原生“属性”对话框和 `Alt+Enter`，用户显式选择计算、取消或重新计算。Repository 固定单次 `start`、30 次有界 `status` 轮询和独立尽力 `stop`；能力缺失与非法路径零请求，同 profile/规范路径防重复，完成结果只保留字节数、文件数和文件夹数，路径、任务 ID 和服务端附加字段不进入领域结果、用户文案或持久化。失败不阻断 Files 浏览，未知启动结果不自动重放。
+
+本机关闭 PRI 生成后 DirSize 聚焦 29/29、Release 全量 xUnit 1315/1315、本地化、请求/Fixture 契约、XAML/RESW XML 与差异检查通过；WinUI x64/ARM64 和 Repository Check 尚待本切片 GitHub CI。真实 Windows/NAS、普通账号、超大目录、远程挂载、取消时序、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
+
 ## 状态定义
 
 ```text

@@ -1586,4 +1586,22 @@
   <data name="ChatCreateCancelledMessage" xml:space="preserve"><value>No creation request was sent. You can try again.</value></data>
   <data name="ChatCreateFailedTitle" xml:space="preserve"><value>Couldn’t create the conversation</value></data>
   <data name="ChatCreateFailedMessage" xml:space="preserve"><value>Check the selected people and your NAS connection, then try again.</value></data>
+  <data name="FileDirectorySizeAction.Label" xml:space="preserve"><value>Properties</value></data>
+  <data name="FileDirectorySizeAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show properties for the selected folder</value></data>
+  <data name="FileDirectorySizeTitle" xml:space="preserve"><value>Folder properties</value></data>
+  <data name="FileDirectorySizeClose" xml:space="preserve"><value>Close</value></data>
+  <data name="FileDirectorySizeModified" xml:space="preserve"><value>Modified: {0}</value></data>
+  <data name="FileDirectorySizeCalculate" xml:space="preserve"><value>Calculate size</value></data>
+  <data name="FileDirectorySizeRecalculate" xml:space="preserve"><value>Calculate again</value></data>
+  <data name="FileDirectorySizeCancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="FileDirectorySizeReady" xml:space="preserve"><value>Choose Calculate size to count the contents of this folder.</value></data>
+  <data name="FileDirectorySizeCalculating" xml:space="preserve"><value>Calculating the folder size on the NAS…</value></data>
+  <data name="FileDirectorySizeAvailable" xml:space="preserve"><value>The folder size is ready.</value></data>
+  <data name="FileDirectorySizeCancelled" xml:space="preserve"><value>The calculation was cancelled. You can calculate it again.</value></data>
+  <data name="FileDirectorySizeUnavailable" xml:space="preserve"><value>This NAS cannot calculate folder sizes here.</value></data>
+  <data name="FileDirectorySizeFailure" xml:space="preserve"><value>The folder size is temporarily unavailable. Check the NAS connection, then try again.</value></data>
+  <data name="FileDirectorySizeTotal" xml:space="preserve"><value>Size: {0}</value></data>
+  <data name="FileDirectorySizeFileCount" xml:space="preserve"><value>Files: {0:N0}</value></data>
+  <data name="FileDirectorySizeFolderCount" xml:space="preserve"><value>Folders: {0:N0}</value></data>
+  <data name="FileDirectorySizeStatusAutomationName" xml:space="preserve"><value>Folder size calculation status</value></data>
 </root>

@@ -322,6 +322,19 @@
                     Icon="Link"
                     MinHeight="44" />
                 <AppBarButton
+                    x:Uid="FileDirectorySizeAction"
+                    x:Name="DirectorySizeButton"
+                    Click="DirectorySize_Click"
+                    Icon="Folder"
+                    MinHeight="44">
+                    <AppBarButton.KeyboardAccelerators>
+                        <KeyboardAccelerator
+                            Key="Enter"
+                            Modifiers="Menu"
+                            Invoked="DirectorySizeAccelerator_Invoked" />
+                    </AppBarButton.KeyboardAccelerators>
+                </AppBarButton>
+                <AppBarButton
                     x:Uid="FileBrowserSort"
                     x:Name="SortButton"
                     Icon="Sort"

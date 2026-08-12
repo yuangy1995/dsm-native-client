@@ -364,6 +364,10 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configura
 
 如果任务未完成需要交接，除根 `AGENTS.md` 规定内容外，还必须指出当前功能 ID、功能闭环边界、账本状态、已冻结接口、待用户后测清单、下一 owner 的允许文件和不能触碰的用户改动。
 
+### Windows FILE-01 DirSize v2 增量
+
+Windows 已补入官方 DirSize v2 文件夹属性源码闭环：原生“属性”命令和 `Alt+Enter` 只对文件夹开放，计算必须由用户显式触发，并支持取消与重新计算。Repository 固定单次 `start`、30 次有界 `status` 轮询、同 profile/规范路径防重复及独立尽力 `stop`；结果仅含大小、文件数和文件夹数，路径与任务 ID 不进入领域、UI 或持久化。能力缺失与非法路径零请求，错误不阻断浏览。本机聚焦 29/29、Release xUnit 1315/1315、本地化、契约、XML 与差异检查通过；WinUI 双架构和 Repository Check 等待 GitHub CI，真实 Windows/NAS 与辅助功能后置。
+
 ## 13. 参考资料
 
 - [总体架构](../architecture/ARCHITECTURE.md)
