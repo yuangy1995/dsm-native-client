@@ -500,7 +500,7 @@ Windows Files 异步递归搜索已完成源码主流程：固定 `start/poll/li
 
 白名单文本编辑仅对 UTF 文本主流程开放，编码后大小不得超过 5 MiB，并且必须先取得服务端强内容版本。编辑时保留原始字节长度、强版本和 SHA；保存前独立重读并核验原内容，用户通过原生确认后只上传一次，提交后不复用页面取消令牌，独立下载目标内容并核对 SHA。提交状态不明、提交后取消或回读失败时不自动重放，并阻止同一草稿再次保存；无法取得强版本时编辑入口不可用。格式整理仍只作用于本地草稿，不改变上述提交边界。
 
-本机 Release xUnit 1434/1434 通过，0 失败、0 跳过。本波次尚未运行 Windows WinUI x64/ARM64 构建和 GitHub `Windows Build` / `Repository Check`，不得预写云端通过。真实 NAS 的强版本与回读行为、真实 Windows、Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
+本机 Release xUnit 1434/1434 通过，0 失败、0 跳过。功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建。真实 NAS 的强版本与回读行为、真实 Windows、Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
 
 本波次非目标继续关闭：收藏写与远程挂载创建/修改/删除缺少可靠 typed 提交边界；跨 NAS 复制/移动缺少第二 NAS 独立认证会话；NAS 设置、DDNS、电源写与 Chat 提醒、定时消息、投票、转发等高级写缺少真实版本化契约验收。这些实现路径不得作为已交付用户能力，现有只读收藏、远程位置和 NAS 详情保持原范围。
 

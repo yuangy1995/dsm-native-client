@@ -372,7 +372,7 @@ Windows 已补入官方 DirSize v2 文件夹属性源码闭环：原生“属性
 
 本波次完成两个不依赖真实设备的 Windows Files 源码闭环。异步递归搜索固定使用 `start/poll/list/stop` 生命周期，结果上限为 2,000 项，WinUI 已提供进行中、失败重试和截断状态；至多 5 MiB 的白名单文本仅在服务端提供强内容版本时开放编辑，保存前重新读取并核验版本、长度与内容摘要，用户明确确认后只上传一次，提交后使用独立读取核对 SHA。上传后取消、断线或响应不明均进入待核对状态，不自动重放并阻止再次保存；无强版本时入口保持不可用。
 
-本机 Release xUnit 1434/1434 通过且 0 跳过。当前尚未运行本波次 Windows WinUI x64/ARM64 构建和 GitHub CI，因此只记录源码与自动化闭环，不提升为 `BUILD_VERIFIED`。收藏与远程挂载写缺少可靠 typed 提交边界，跨 NAS 写缺少安全的第二 NAS 独立会话，NAS 设置/DDNS/电源写及 Chat 高级写缺少真实版本化契约验收，以上入口均继续关闭且不得作为对齐完成项；既有只读能力照旧。真实 NAS、真实 Windows、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
+本机 Release xUnit 1434/1434 通过且 0 跳过。功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建，本切片提升为 `BUILD_VERIFIED`。收藏与远程挂载写缺少可靠 typed 提交边界，跨 NAS 写缺少安全的第二 NAS 独立会话，NAS 设置/DDNS/电源写及 Chat 高级写缺少真实版本化契约验收，以上入口均继续关闭且不得作为对齐完成项；既有只读能力照旧。真实 NAS、真实 Windows、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
 
 ## 13. 参考资料
 
