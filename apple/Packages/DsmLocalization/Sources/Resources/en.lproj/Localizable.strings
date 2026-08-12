@@ -245,7 +245,7 @@
 "shared.106655f64c87e191" = "The network card list has changed. Please refresh the security settings and try again.";
 "shared.119cf0fb55dbb178" = "This NAS does not currently support this feature.";
 "shared.13594aba892f3da9" = "The message is still displayed in the announcement, please refresh and try again.";
-"shared.138cb3321aeec22f" = "Unable to save login status on this Mac.";
+"shared.138cb3321aeec22f" = "Unable to securely save login status on this device.";
 "shared.13d2195deb6baac7" = "The message to be deleted was not found, please refresh and try again.";
 "shared.147071af9b1ef6c0" = "This address is not recognized. You can paste the full address from your browser, or enter the IP, domain name, and QuickConnect ID.";
 "shared.14f852b3c59ec0c8" = "Please select a .torrent, .nzb, or .txt file containing the download URL.";

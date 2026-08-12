@@ -247,7 +247,7 @@
 "shared.106655f64c87e191" = "网卡列表已经变化，请刷新安全设置后重试。";
 "shared.119cf0fb55dbb178" = "这台 NAS 暂不支持此功能。";
 "shared.13594aba892f3da9" = "消息仍显示在公告中，请刷新后重试。";
-"shared.138cb3321aeec22f" = "无法在这台 Mac 上保存登录状态。";
+"shared.138cb3321aeec22f" = "无法在此设备上安全保存登录状态。";
 "shared.13d2195deb6baac7" = "没有找到要删除的消息，请刷新后重试。";
 "shared.147071af9b1ef6c0" = "无法识别这个地址。你可以粘贴浏览器中的完整地址，或输入 IP、域名和 QuickConnect ID。";
 "shared.14f852b3c59ec0c8" = "请选择 .torrent、.nzb 或包含下载网址的 .txt 文件。";

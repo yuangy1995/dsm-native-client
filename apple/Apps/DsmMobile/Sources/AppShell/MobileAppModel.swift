@@ -123,8 +123,8 @@ final class MobileAppModel {
 
     init(
         defaults: UserDefaults = .standard,
-        sessionStore: any SessionSecureStoring = KeychainSessionStore(),
-        passwordStore: any PasswordSecureStoring = KeychainPasswordStore(),
+        sessionStore: any SessionSecureStoring = MobileSecureStoreDefaults.sessionStore(),
+        passwordStore: any PasswordSecureStoring = MobileSecureStoreDefaults.passwordStore(),
         authRepository: (any AuthRepository)? = nil,
         quickConnectResolver: any QuickConnectResolving = DsmQuickConnectResolver(),
         mutationCoordinator: MobileMutationCoordinator = MobileMutationCoordinator()
@@ -153,5 +153,23 @@ final class MobileAppModel {
             applyProfile(profile)
             Task { await loadSavedPassword(for: profile, attemptsAutoLogin: true) }
         }
+    }
+}
+
+enum MobileSecureStoreDefaults {
+    static func sessionStore() -> any SessionSecureStoring {
+#if targetEnvironment(simulator)
+        LocalFileSecureStore()
+#else
+        KeychainSessionStore()
+#endif
+    }
+
+    static func passwordStore() -> any PasswordSecureStoring {
+#if targetEnvironment(simulator)
+        LocalFileSecureStore()
+#else
+        KeychainPasswordStore()
+#endif
     }
 }
