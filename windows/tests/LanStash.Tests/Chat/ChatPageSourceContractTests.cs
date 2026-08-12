@@ -51,7 +51,7 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void PageHasTextSingleAttachmentAndForegroundRefreshWithoutSocketOrConversationActions()
+    public void PageHasTextSingleAttachmentConversationCreationAndForegroundRefreshWithoutSocket()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
@@ -62,7 +62,8 @@ public sealed class ChatPageSourceContractTests
             "windows/src/LanStash.App/Features/Chat/ChatAttachmentComposerViewModel.cs");
         var foreground = Read(
             "windows/src/LanStash.App/Features/Chat/ChatForegroundRefresher.cs");
-        var combined = xaml + source + send + attachments + composer + attachmentComposer + foreground;
+        var create = Read("windows/src/LanStash.App/Views/ChatPage.CreateConversation.cs");
+        var combined = xaml + source + send + attachments + composer + attachmentComposer + foreground + create;
 
         Assert.Contains("x:Name=\"ComposerPanel\"", xaml);
         Assert.Contains("x:Name=\"ComposerInput\"", xaml);
@@ -90,9 +91,79 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("await _refreshConversations()", foreground);
         Assert.Contains("await _refreshMessages()", foreground);
         Assert.Contains("viewModel.CancelForegroundRefreshes", source);
-        Assert.DoesNotContain("CreateConversation", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CreateConversationButton", xaml);
+        Assert.Contains("ChatConversationCreatorViewModel", source);
+        Assert.Contains("CreatePrivateGroupAsync", create);
+        Assert.Contains("CreateDirectAsync", create);
         Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Realtime", combined, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ConversationCreationUsesNativeAccessibleDialogAndBilingualResources()
+    {
+        var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var source = Read("windows/src/LanStash.App/Views/ChatPage.CreateConversation.cs");
+        var dialog = Read("windows/src/LanStash.App/Views/ChatCreateConversationDialogContent.xaml");
+        var dialogSource = Read(
+            "windows/src/LanStash.App/Views/ChatCreateConversationDialogContent.xaml.cs");
+        var model = Read(
+            "windows/src/LanStash.App/Features/Chat/ChatConversationCreatorViewModel.cs");
+        var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = Read("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+
+        Assert.Contains("Key=\"C\" Modifiers=\"Control,Shift\"", page);
+        Assert.Contains("ContentDialog", source);
+        Assert.Contains("GetDeferral()", source);
+        Assert.Contains("DefaultButton = ContentDialogButton.Primary", source);
+        Assert.Contains("AcceptCreatedConversationAsync", source);
+        Assert.Contains("ChatCreateConversationDialogContent", source);
+        Assert.Contains("SelectionMode=\"Single\"", dialog);
+        Assert.Contains("ListViewSelectionMode.Multiple", dialogSource);
+        Assert.Contains("MinHeight=\"44\"", dialog);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Assertive\"", dialog);
+        Assert.Contains("AutomationProperties.SetName", dialogSource);
+        Assert.Contains("ThemeResource TextFillColorSecondaryBrush", dialog);
+        Assert.DoesNotContain("Foreground=\"#", dialog, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Background=\"#", dialog, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RequiresReview", model);
+        Assert.Contains("_pendingRequestId", model);
+        Assert.Contains("PendingGroupMemberIds", model);
+        foreach (var key in new[]
+        {
+            "ChatCreateAction",
+            "ChatCreateDialogTitle",
+            "ChatCreatePrimaryAction",
+            "ChatCreateReviewAction",
+            "ChatCreateCloseAction",
+            "ChatCreateTypeLabel",
+            "ChatCreateDirectMode",
+            "ChatCreateGroupMode",
+            "ChatCreateGroupTitleLabel",
+            "ChatCreateDirectMemberLabel",
+            "ChatCreateGroupMembersLabel",
+            "ChatCreateUserListAutomationName",
+            "ChatCreateLoading",
+            "ChatCreateEmptyTitle",
+            "ChatCreateEmptyMessage",
+            "ChatCreateLoadErrorTitle",
+            "ChatCreateLoadErrorMessage",
+            "ChatCreateRetry",
+            "ChatCreateReviewTitle",
+            "ChatCreateReviewMessage",
+            "ChatCreatePermissionTitle",
+            "ChatCreatePermissionMessage",
+            "ChatCreateUnavailableTitle",
+            "ChatCreateUnavailableMessage",
+            "ChatCreateCancelledTitle",
+            "ChatCreateCancelledMessage",
+            "ChatCreateFailedTitle",
+            "ChatCreateFailedMessage",
+        })
+        {
+            Assert.Contains($"name=\"{key}\"", english);
+            Assert.Contains($"name=\"{key}\"", chinese);
+        }
     }
 
     [Fact]

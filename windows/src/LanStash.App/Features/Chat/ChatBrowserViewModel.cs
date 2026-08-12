@@ -279,6 +279,34 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
                 : Task.CompletedTask;
     }
 
+    public async Task AcceptCreatedConversationAsync(ChatConversation conversation)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(conversation);
+        var repository = RequireRepository();
+        var profile = RequireProfile();
+        if (ActiveProfileId != repository.ProfileId || conversation.IsEncrypted)
+        {
+            return;
+        }
+
+        profile.AllConversations = SortConversations(
+            profile.AllConversations
+                .Where(item => !string.Equals(item.Id, conversation.Id, StringComparison.Ordinal))
+                .Append(new ChatConversationItem(
+                    conversation,
+                    profile.PinnedConversationIds.Contains(
+                        conversation.Id,
+                        StringComparer.Ordinal))),
+            profile.PinnedConversationIds);
+        profile.Loaded = true;
+        SearchQuery = string.Empty;
+        ApplyConversationFilter();
+        var created = Conversations.FirstOrDefault(item =>
+            string.Equals(item.Id, conversation.Id, StringComparison.Ordinal));
+        await SelectConversationAsync(created);
+    }
+
     public async Task SelectConversationAsync(ChatConversationItem? item)
     {
         ThrowIfDisposed();

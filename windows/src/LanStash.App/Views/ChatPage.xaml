@@ -13,6 +13,7 @@
         <KeyboardAccelerator Key="M" Modifiers="Control,Shift" Invoked="MembersAccelerator_Invoked" />
         <KeyboardAccelerator Key="N" Modifiers="Control,Shift" Invoked="AnnouncementsAccelerator_Invoked" />
         <KeyboardAccelerator Key="P" Modifiers="Control,Shift" Invoked="TogglePinAccelerator_Invoked" />
+        <KeyboardAccelerator Key="C" Modifiers="Control,Shift" Invoked="CreateConversationAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid Padding="24,20,24,16" RowSpacing="12">
@@ -26,6 +27,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Spacing="4">
                 <TextBlock
@@ -38,9 +40,21 @@
                     TextWrapping="Wrap" />
             </StackPanel>
             <Button
+                x:Name="CreateConversationButton"
+                Grid.Column="1"
+                MinWidth="44"
+                MinHeight="44"
+                Margin="0,0,8,0"
+                Click="CreateConversation_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE710;" FontSize="16" />
+                    <TextBlock x:Name="CreateConversationButtonLabel" />
+                </StackPanel>
+            </Button>
+            <Button
                 x:Uid="ChatBrowserRefresh"
                 x:Name="RefreshButton"
-                Grid.Column="1"
+                Grid.Column="2"
                 MinHeight="44"
                 Click="Refresh_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">

@@ -561,7 +561,7 @@
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新会话</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
   <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>聊天功能受限</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>可在支持的会话中发送文字和一个附件。暂不支持新建会话或加密会话附件。</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>可新建单聊和私人群聊，并发送文字和一个附件。暂不支持加密会话。</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>无法刷新会话</value></data>
@@ -1509,4 +1509,33 @@
   <data name="FileArchiveCompressionNeedsReview" xml:space="preserve"><value>无法确认最终结果。请刷新当前文件夹并检查 ZIP 压缩包，确认后再重试。</value></data>
   <data name="FileArchiveCompressionFailed" xml:space="preserve"><value>无法创建 ZIP 压缩包。请刷新文件夹后重试。</value></data>
   <data name="FileArchiveCompressionAuthenticationError" xml:space="preserve"><value>登录已过期。请重新登录，并在重试前检查当前文件夹。</value></data>
+  <data name="ChatCreateAction" xml:space="preserve"><value>新建会话</value></data>
+  <data name="ChatCreateDialogTitle" xml:space="preserve"><value>新建会话</value></data>
+  <data name="ChatCreatePrimaryAction" xml:space="preserve"><value>创建</value></data>
+  <data name="ChatCreateReviewAction" xml:space="preserve"><value>核对结果</value></data>
+  <data name="ChatCreateCloseAction" xml:space="preserve"><value>关闭</value></data>
+  <data name="ChatCreateTypeLabel" xml:space="preserve"><value>会话类型</value></data>
+  <data name="ChatCreateDirectMode" xml:space="preserve"><value>一对一聊天</value></data>
+  <data name="ChatCreateGroupMode" xml:space="preserve"><value>私人群聊</value></data>
+  <data name="ChatCreateGroupTitleLabel" xml:space="preserve"><value>群聊名称</value></data>
+  <data name="ChatCreateGroupTitlePlaceholder" xml:space="preserve"><value>输入群聊名称</value></data>
+  <data name="ChatCreateDirectMemberLabel" xml:space="preserve"><value>选择一位用户</value></data>
+  <data name="ChatCreateGroupMembersLabel" xml:space="preserve"><value>至少选择两位用户</value></data>
+  <data name="ChatCreateUserListAutomationName" xml:space="preserve"><value>可选择的 Chat 用户</value></data>
+  <data name="ChatCreateLoading" xml:space="preserve"><value>正在加载用户…</value></data>
+  <data name="ChatCreateEmptyTitle" xml:space="preserve"><value>没有可选择的用户</value></data>
+  <data name="ChatCreateEmptyMessage" xml:space="preserve"><value>请让 NAS 管理员检查其他用户的 Chat 访问权限，然后重试。</value></data>
+  <data name="ChatCreateLoadErrorTitle" xml:space="preserve"><value>无法加载用户</value></data>
+  <data name="ChatCreateLoadErrorMessage" xml:space="preserve"><value>请检查与 NAS 的连接，然后重试。</value></data>
+  <data name="ChatCreateRetry" xml:space="preserve"><value>重试</value></data>
+  <data name="ChatCreateReviewTitle" xml:space="preserve"><value>请先核对结果再重试</value></data>
+  <data name="ChatCreateReviewMessage" xml:space="preserve"><value>NAS 可能已经创建此会话。请选择“核对结果”重新读取；不会重复发送创建请求。</value></data>
+  <data name="ChatCreatePermissionTitle" xml:space="preserve"><value>无法创建此会话</value></data>
+  <data name="ChatCreatePermissionMessage" xml:space="preserve"><value>请让 NAS 管理员检查你的 Chat 权限。</value></data>
+  <data name="ChatCreateUnavailableTitle" xml:space="preserve"><value>无法新建会话</value></data>
+  <data name="ChatCreateUnavailableMessage" xml:space="preserve"><value>此 NAS 或 Chat Server 版本不提供这类会话。</value></data>
+  <data name="ChatCreateCancelledTitle" xml:space="preserve"><value>已取消创建</value></data>
+  <data name="ChatCreateCancelledMessage" xml:space="preserve"><value>尚未发送创建请求，可以重试。</value></data>
+  <data name="ChatCreateFailedTitle" xml:space="preserve"><value>无法创建会话</value></data>
+  <data name="ChatCreateFailedMessage" xml:space="preserve"><value>请检查所选用户和 NAS 连接，然后重试。</value></data>
 </root>

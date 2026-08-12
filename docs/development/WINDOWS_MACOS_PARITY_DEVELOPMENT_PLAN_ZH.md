@@ -296,6 +296,8 @@ CH7 群公告只读切片已完成源码、本机与云端构建闭环：Domain 
 
 CH7 前台自动刷新切片已完成源码与聚焦自动化：`ChatPage` 仅在页面已加载且窗口可见时启动，首次进入沿用初始化读取，重新进入或从托盘恢复立即读取，此后每 30 秒严格单飞刷新会话，并在当前选择为未加密会话时顺序刷新消息。离页、窗口隐藏、切换 profile 或释放页面会取消会话与消息请求；代次门禁止旧会话阶段继续触发消息读取。失败保留已加载内容并沿用现有 InfoBar 与手动重试，不增加新文案。该切片复用现有只读端点，不接 Socket.IO、后台常驻、系统通知、服务器已读、成员/公告自动刷新或新 NAS 请求。本机 macOS 使用 .NET 10 且关闭 PRI 生成后 Chat 聚焦 63/63、Release 全量 xUnit 1178/1178 通过；GitHub Windows Build run `31531069884` 通过 1178/1178 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31531069860` 已通过。真实 Chat Server、窗口/托盘生命周期、Narrator、键盘、高对比、200% 缩放、窄窗口和触控为 `PENDING_USER_VALIDATION`。
 
+CH7 首次单聊与私人群聊创建切片已形成源码主流程。Windows 仅在运行时精确发现 `SYNO.Chat.Channel.Anonymous` v2，或同时发现 `SYNO.Chat.Channel.Named` v1 与 `SYNO.Chat.Channel.Member` v1 且为 FORM 时显示对应模式；首次单聊创建前按用户查重，私人群聊要求至少两位非当前、未停用用户和非空名称，并按“创建 → 加入 → 邀请 → 候选会话与独立成员回读”执行。Repository 对全部创建严格串行，同一请求只提交一次；提交后取消或结果未知均保留同一请求 ID、候选会话和选择基线，用户只能“核对结果”，不会自动重建群或重发邀请；明确的服务端拒绝返回 typed 失败并解除核对锁。WinUI 使用原生 ContentDialog、单选/多选列表、`Ctrl+Shift+C`、44px 控件、Narrator 名称和英中资源；成功后将已确认会话并入现有缓存并直接打开。公开频道、加密会话、移除成员、角色管理、服务端已读、Socket.IO 与后台通知不在本切片。本机已通过 Chat/Repository/UI 聚焦 110/110、Release 完整 xUnit 1219/1219、Infrastructure/Application C# 构建、24 份 XAML/RESW XML 解析和差异检查；GitHub Windows Build run `31554288412` 通过 1219/1219 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check run `31554288423` 已通过。真实 Chat Server 三账号、权限差异、弱网提交未知、Narrator、高对比、200% 缩放、窄窗口和触控为 `PENDING_USER_VALIDATION`。
+
 ### W3-B2：Chat 附件
 
 - 已在第 5 波按冻结的 `Post.create` v5 / `Post.File` v2 契约接入单附件上传/保存、按需图片缩略图和原生预览；不等待 W3-A 全部照片与格式验收。

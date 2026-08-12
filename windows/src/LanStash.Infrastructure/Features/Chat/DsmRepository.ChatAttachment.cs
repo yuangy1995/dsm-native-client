@@ -325,6 +325,14 @@ public sealed partial class DsmRepository
         {
             features.Add(ChatWriteFeature.AttachmentMessage);
         }
+        if (HasDirectConversationCreateContract)
+        {
+            features.Add(ChatWriteFeature.DirectConversation);
+        }
+        if (HasPrivateGroupCreateContract)
+        {
+            features.Add(ChatWriteFeature.PrivateGroup);
+        }
         return features;
     }
 

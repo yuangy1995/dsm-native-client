@@ -11,22 +11,39 @@ public sealed class ChatRepositoryContractTests
     [Fact]
     public void AvailabilityRequiresUserChannelAndPostTogether()
     {
-        var complete = CreateRepository(new RecordingApiClient(_ => new()), Capabilities());
+        var completeCapabilities = CapabilitiesWithMembers();
+        var complete = CreateRepository(new RecordingApiClient(_ => new()), completeCapabilities);
         var incomplete = CreateRepository(
             new RecordingApiClient(_ => new()),
             Capabilities().Where(pair => pair.Key != "SYNO.Chat.Post")
                 .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+        var invalidWriteCapabilities = CapabilitiesWithMembers();
+        invalidWriteCapabilities["SYNO.Chat.Channel.Anonymous"] =
+            new("SYNO.Chat.Channel.Anonymous", "entry.cgi", 1, 1, "FORM");
+        invalidWriteCapabilities["SYNO.Chat.Channel.Named"] =
+            new("SYNO.Chat.Channel.Named", "entry.cgi", 1, 1, "JSON");
+        var invalidWrites = CreateRepository(
+            new RecordingApiClient(_ => new()),
+            invalidWriteCapabilities);
 
         Assert.Equal(ChatAvailabilityStatus.Available, complete.Availability.Status);
-        Assert.Equal(6, complete.Availability.SupportedFeatures.Count);
+        Assert.Equal(7, complete.Availability.SupportedFeatures.Count);
         Assert.Contains(ChatReadFeature.PinnedMessages, complete.Availability.SupportedFeatures);
         Assert.Contains(ChatWriteFeature.TextMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(ChatWriteFeature.AttachmentMessage, complete.Availability.SupportedWriteFeatures);
+        Assert.Contains(ChatWriteFeature.DirectConversation, complete.Availability.SupportedWriteFeatures);
+        Assert.Contains(ChatWriteFeature.PrivateGroup, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(AppModule.Chat, complete.AvailableModules);
         Assert.Equal(ChatAvailabilityStatus.Unavailable, incomplete.Availability.Status);
         Assert.Empty(incomplete.Availability.SupportedFeatures);
         Assert.Empty(incomplete.Availability.SupportedWriteFeatures);
         Assert.DoesNotContain(AppModule.Chat, incomplete.AvailableModules);
+        Assert.DoesNotContain(
+            ChatWriteFeature.DirectConversation,
+            invalidWrites.Availability.SupportedWriteFeatures);
+        Assert.DoesNotContain(
+            ChatWriteFeature.PrivateGroup,
+            invalidWrites.Availability.SupportedWriteFeatures);
     }
 
     [Fact]
@@ -53,6 +70,9 @@ public sealed class ChatRepositoryContractTests
 
         Assert.Equal(ChatAvailabilityStatus.Available, withoutMembers.Availability.Status);
         Assert.DoesNotContain(ChatReadFeature.Members, withoutMembers.Availability.SupportedFeatures);
+        Assert.DoesNotContain(
+            ChatWriteFeature.PrivateGroup,
+            withoutMembers.Availability.SupportedWriteFeatures);
         Assert.Contains(ChatReadFeature.Members, exact.Availability.SupportedFeatures);
         Assert.Contains(ChatReadFeature.Members, overlapping.Availability.SupportedFeatures);
         Assert.DoesNotContain(ChatReadFeature.Members, unsupported.Availability.SupportedFeatures);
@@ -1078,6 +1098,207 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
+    public async Task DirectConversationUsesFixedAnonymousContractAndNeverReplaysTheSameRequest()
+    {
+        var channelReads = 0;
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => ++channelReads == 1
+                ? new JsonObject { ["channels"] = new JsonArray() }
+                : new JsonObject
+                {
+                    ["channels"] = new JsonArray(new JsonObject
+                    {
+                        ["channel_id"] = "direct-new",
+                        ["type"] = "anonymous",
+                        ["members"] = new JsonArray("u-1", "u-2"),
+                    }),
+                },
+            "SYNO.Chat.Channel.Anonymous" => new JsonObject { ["channel_id"] = "direct-new" },
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(api);
+        var request = new ChatDirectConversationRequest("u-2", Guid.NewGuid());
+
+        var first = await repository.OpenDirectConversationAsync(request);
+        var second = await repository.OpenDirectConversationAsync(request);
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, first.Result.Status);
+        Assert.Equal("direct-new", first.ConfirmedConversation?.Id);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, second.Result.Status);
+        var mutation = Assert.Single(
+            api.Requests,
+            value => value.ApiName == "SYNO.Chat.Channel.Anonymous");
+        AssertWire(mutation, "SYNO.Chat.Channel.Anonymous", "initiate", 2, 3);
+        Assert.Equal("[\"u-2\"]", mutation.Parameters["user_ids"]);
+        Assert.Equal("false", mutation.Parameters["encrypted"]);
+        Assert.Equal("[]", mutation.Parameters["channel_key_encs"]);
+    }
+
+    [Fact]
+    public async Task PrivateGroupCreatesJoinsInvitesAndConfirmsAllSelectedMembers()
+    {
+        var channelReads = 0;
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => GroupUsers(),
+            "SYNO.Chat.Channel" => ++channelReads == 1
+                ? new JsonObject { ["channels"] = new JsonArray() }
+                : new JsonObject
+                {
+                    ["channels"] = new JsonArray(new JsonObject
+                    {
+                        ["channel_id"] = "group-new",
+                        ["type"] = "private",
+                        ["name"] = "Project",
+                    }),
+                },
+            "SYNO.Chat.Channel.Named" when request.Method == "create" =>
+                new JsonObject { ["channel_id"] = "group-new" },
+            "SYNO.Chat.Channel.Named" => new JsonObject(),
+            "SYNO.Chat.Channel.Member" => new JsonObject
+            {
+                ["user_ids"] = new JsonArray("u-1", "u-2", "u-3"),
+                ["broken_user_ids"] = new JsonArray(),
+            },
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(api, CapabilitiesWithMembers());
+
+        var result = await repository.CreatePrivateGroupAsync(
+            new ChatPrivateGroupCreateRequest(
+                " Project ",
+                ["u-3", "u-2", "u-3"],
+                Guid.NewGuid()));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal("group-new", result.ConfirmedConversation?.Id);
+        var writes = api.Requests
+            .Where(value => value.ApiName == "SYNO.Chat.Channel.Named")
+            .ToArray();
+        Assert.Collection(
+            writes,
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Channel.Named", "create", 1, 2);
+                Assert.Equal("Project", request.Parameters["name"]);
+                Assert.Equal("private", request.Parameters["type"]);
+            },
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Channel.Named", "join", 1, 1);
+                Assert.Equal("group-new", request.Parameters["channel_id"]);
+            },
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Channel.Named", "invite", 1, 3);
+                Assert.Equal("[\"u-2\",\"u-3\"]", request.Parameters["user_ids"]);
+                Assert.Equal("[]", request.Parameters["channel_key_encs"]);
+            });
+    }
+
+    [Fact]
+    public async Task UnknownDirectConversationResultOnlyReadsBackAndNeverReplays()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => new JsonObject { ["channels"] = new JsonArray() },
+            "SYNO.Chat.Channel.Anonymous" => throw new HttpRequestException("failed"),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(api);
+        var request = new ChatDirectConversationRequest("u-2", Guid.NewGuid());
+
+        var first = await repository.OpenDirectConversationAsync(request);
+        var second = await repository.OpenDirectConversationAsync(request);
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
+        Assert.Single(api.Requests, value => value.ApiName == "SYNO.Chat.Channel.Anonymous");
+    }
+
+    [Fact]
+    public async Task PendingRequestIdCannotBeReusedForAnotherDirectConversationDraft()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => GroupUsers(),
+            "SYNO.Chat.Channel" => new JsonObject { ["channels"] = new JsonArray() },
+            "SYNO.Chat.Channel.Anonymous" => throw new HttpRequestException("failed"),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(api);
+        var requestId = Guid.NewGuid();
+
+        var first = await repository.OpenDirectConversationAsync(
+            new ChatDirectConversationRequest("u-2", requestId));
+        var mismatched = await repository.OpenDirectConversationAsync(
+            new ChatDirectConversationRequest("u-3", requestId));
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, mismatched.Result.Status);
+        Assert.Equal(MutationErrorCategory.Validation, mismatched.Result.ErrorCategory);
+        Assert.Single(api.Requests, value => value.ApiName == "SYNO.Chat.Channel.Anonymous");
+    }
+
+    [Fact]
+    public async Task ExplicitDirectConversationRejectionReturnsTypedFailureWithoutPendingReview()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => new JsonObject { ["channels"] = new JsonArray() },
+            "SYNO.Chat.Channel.Anonymous" =>
+                throw new DsmException("denied", "ask administrator", 105),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(api);
+
+        var outcome = await repository.OpenDirectConversationAsync(
+            new ChatDirectConversationRequest("u-2", Guid.NewGuid()));
+
+        Assert.Equal(MutationResultStatus.PermissionDenied, outcome.Result.Status);
+        Assert.True(outcome.Result.Submitted);
+        Assert.False(outcome.Result.RequiresRefresh);
+        Assert.Equal(MutationErrorCategory.Permission, outcome.Result.ErrorCategory);
+        Assert.Single(api.Requests, value => value.ApiName == "SYNO.Chat.Channel.Anonymous");
+    }
+
+    [Fact]
+    public async Task UnknownPrivateGroupResultOnlyReadsBackAndNeverReplaysAnyWriteStage()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => GroupUsers(),
+            "SYNO.Chat.Channel" => new JsonObject { ["channels"] = new JsonArray() },
+            "SYNO.Chat.Channel.Named" when request.Method == "create" =>
+                new JsonObject { ["channel_id"] = "group-pending" },
+            "SYNO.Chat.Channel.Named" when request.Method == "join" => new JsonObject(),
+            "SYNO.Chat.Channel.Named" when request.Method == "invite" =>
+                throw new DsmException("failed", "retry", 500),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(api, CapabilitiesWithMembers());
+        var request = new ChatPrivateGroupCreateRequest(
+            "Project",
+            ["u-2", "u-3"],
+            Guid.NewGuid());
+
+        var first = await repository.CreatePrivateGroupAsync(request);
+        var second = await repository.CreatePrivateGroupAsync(request);
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second.Result.Status);
+        Assert.Equal(
+            new[] { "create", "join", "invite" },
+            api.Requests
+                .Where(value => value.ApiName == "SYNO.Chat.Channel.Named")
+                .Select(value => value.Method));
+    }
+
+    [Fact]
     public async Task ForeignProfileSessionFailsBeforeTransport()
     {
         var api = new RecordingApiClient(_ => throw new InvalidOperationException());
@@ -1111,7 +1332,19 @@ public sealed class ChatRepositoryContractTests
         ["SYNO.Chat.User"] = new("SYNO.Chat.User", "entry.cgi", 1, 3, "FORM"),
         ["SYNO.Chat.Channel"] = new("SYNO.Chat.Channel", "entry.cgi", 1, 5, "FORM"),
         ["SYNO.Chat.Post"] = new("SYNO.Chat.Post", "entry.cgi", 1, 8, "FORM"),
+        ["SYNO.Chat.Channel.Anonymous"] =
+            new("SYNO.Chat.Channel.Anonymous", "entry.cgi", 1, 2, "FORM"),
+        ["SYNO.Chat.Channel.Named"] =
+            new("SYNO.Chat.Channel.Named", "entry.cgi", 1, 1, "FORM"),
     };
+
+    private static Dictionary<string, ApiCapability> CapabilitiesWithMembers()
+    {
+        var capabilities = Capabilities();
+        capabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 1, "FORM");
+        return capabilities;
+    }
 
     private static JsonObject Users() => new()
     {
@@ -1129,6 +1362,17 @@ public sealed class ChatRepositoryContractTests
                 ["nickname"] = "Other",
             }),
     };
+
+    private static JsonObject GroupUsers()
+    {
+        var users = Users();
+        Assert.IsType<JsonArray>(users["users"]).Add(new JsonObject
+        {
+            ["user_id"] = "u-3",
+            ["nickname"] = "Third",
+        });
+        return users;
+    }
 
     private static JsonObject Channels() => new()
     {

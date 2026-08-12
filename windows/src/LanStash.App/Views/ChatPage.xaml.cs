@@ -16,6 +16,7 @@ public sealed partial class ChatPage : Page, IDisposable
     private readonly ChatBrowserViewModel _viewModel;
     private readonly ChatTextComposerViewModel _composer;
     private readonly ChatAttachmentComposerViewModel _attachmentComposer;
+    private readonly ChatConversationCreatorViewModel _conversationCreator;
     private readonly ChatForegroundRefresher _foregroundRefresher;
     private readonly SemaphoreSlim _foregroundLifecycleGate = new(1, 1);
     private bool _initialized;
@@ -38,6 +39,8 @@ public sealed partial class ChatPage : Page, IDisposable
         _viewModel = viewModel;
         _composer = new(ChatTextSendReviewBlocker.Current);
         _attachmentComposer = new(ChatAttachmentSendReviewBlocker.Current);
+        _conversationCreator = new(repository);
+        ConfigureCreateConversationAction();
         _foregroundRefresher = new(
             viewModel.RefreshConversationsAsync,
             () => viewModel.SelectedConversation is { IsEncrypted: false },
@@ -241,6 +244,10 @@ public sealed partial class ChatPage : Page, IDisposable
 
         RefreshButton.IsEnabled = !_viewModel.IsLoadingConversations &&
             !_viewModel.IsUnavailable && !_viewModel.RequiresValidation;
+        var canCreateConversation =
+            _conversationCreator.CanCreateDirect || _conversationCreator.CanCreatePrivateGroup;
+        CreateConversationButton.Visibility = Visible(canCreateConversation);
+        CreateConversationButton.IsEnabled = canCreateConversation && !_conversationCreator.IsSubmitting;
         ConversationRefreshError.IsOpen = _viewModel.HasConversationError && _viewModel.HasContent;
         PinStorageError.IsOpen = _viewModel.HasPinStorageError && _viewModel.HasContent;
         ConversationTitle.Text = _viewModel.SelectedConversation?.Title ?? string.Empty;
@@ -343,8 +350,10 @@ public sealed partial class ChatPage : Page, IDisposable
         _attachmentComposer.PropertyChanged -= ViewModel_PropertyChanged;
         DisposeMembersDialog();
         DisposeAnnouncementsDialog();
+        DisposeCreateConversationDialog();
         CancelAttachmentRead();
         _attachmentComposer.Dispose();
+        _conversationCreator.Dispose();
         _composer.Dispose();
         _viewModel.Dispose();
     }

@@ -24,6 +24,8 @@ public enum ChatWriteFeature
 {
     TextMessage,
     AttachmentMessage,
+    DirectConversation,
+    PrivateGroup,
 }
 
 public sealed record ChatAvailability(
@@ -151,6 +153,20 @@ public sealed record ChatAttachmentSendOutcome(
     string ConversationId,
     Guid ClientRequestId,
     ChatMessage? ConfirmedMessage);
+
+public sealed record ChatDirectConversationRequest(
+    string UserId,
+    Guid ClientRequestId);
+
+public sealed record ChatPrivateGroupCreateRequest(
+    string Title,
+    IReadOnlyList<string> MemberIds,
+    Guid ClientRequestId);
+
+public sealed record ChatConversationCreateOutcome(
+    MutationResult Result,
+    Guid ClientRequestId,
+    ChatConversation? ConfirmedConversation);
 
 /// <summary>
 /// 受限图片缩略图。只用于前台预览，不包含服务器文件路径或本机保存位置。

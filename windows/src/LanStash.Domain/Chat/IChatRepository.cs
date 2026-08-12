@@ -41,6 +41,16 @@ public interface IChatRepository
         Task.FromException<ChatAttachmentSendOutcome>(
             new NotSupportedException("Chat attachment sending is not implemented by this repository."));
 
+    Task<ChatConversationCreateOutcome> OpenDirectConversationAsync(
+        ChatDirectConversationRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(ChatConversationCreateUnsupported(request.ClientRequestId, "chatDirectConversation"));
+
+    Task<ChatConversationCreateOutcome> CreatePrivateGroupAsync(
+        ChatPrivateGroupCreateRequest request,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(ChatConversationCreateUnsupported(request.ClientRequestId, "chatPrivateGroupCreate"));
+
     Task<ChatAttachmentThumbnail> ReadAttachmentThumbnailAsync(
         string messageId,
         ChatAttachment attachment,
@@ -64,4 +74,19 @@ public interface IChatRepository
             DestinationWasCleared: false,
             ErrorCategory: MutationErrorCategory.Unsupported,
             DiagnosticTag: "chat.attachment-save.unsupported"));
+
+    private static ChatConversationCreateOutcome ChatConversationCreateUnsupported(
+        Guid clientRequestId,
+        string operation) => new(
+            new MutationResult(
+                1,
+                MutationResultStatus.Unsupported,
+                operation,
+                submitted: false,
+                requiresRefresh: false,
+                new MutationResultCounts(0, 1, 0),
+                MutationErrorCategory.Unsupported,
+                diagnosticTag: "chat.conversation-create.unsupported"),
+            clientRequestId,
+            ConfirmedConversation: null);
 }

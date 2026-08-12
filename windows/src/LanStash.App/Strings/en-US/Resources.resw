@@ -561,7 +561,7 @@
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh conversations</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
   <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>Limited chat features</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>You can send text and one attachment in available conversations. New conversations and encrypted attachments aren’t available here.</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>You can start direct conversations and private groups, then send text and one attachment. Encrypted conversations aren’t available here.</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>Conversations couldn’t be refreshed</value></data>
@@ -1509,4 +1509,33 @@
   <data name="FileArchiveCompressionNeedsReview" xml:space="preserve"><value>The final result could not be confirmed. Refresh this folder and check for the ZIP archive before trying again.</value></data>
   <data name="FileArchiveCompressionFailed" xml:space="preserve"><value>The ZIP archive could not be created. Refresh the folder and try again.</value></data>
   <data name="FileArchiveCompressionAuthenticationError" xml:space="preserve"><value>Your login has expired. Sign in again, then check this folder before trying again.</value></data>
+  <data name="ChatCreateAction" xml:space="preserve"><value>New conversation</value></data>
+  <data name="ChatCreateDialogTitle" xml:space="preserve"><value>New conversation</value></data>
+  <data name="ChatCreatePrimaryAction" xml:space="preserve"><value>Create</value></data>
+  <data name="ChatCreateReviewAction" xml:space="preserve"><value>Check result</value></data>
+  <data name="ChatCreateCloseAction" xml:space="preserve"><value>Close</value></data>
+  <data name="ChatCreateTypeLabel" xml:space="preserve"><value>Conversation type</value></data>
+  <data name="ChatCreateDirectMode" xml:space="preserve"><value>Direct conversation</value></data>
+  <data name="ChatCreateGroupMode" xml:space="preserve"><value>Private group</value></data>
+  <data name="ChatCreateGroupTitleLabel" xml:space="preserve"><value>Group name</value></data>
+  <data name="ChatCreateGroupTitlePlaceholder" xml:space="preserve"><value>Enter a name for this group</value></data>
+  <data name="ChatCreateDirectMemberLabel" xml:space="preserve"><value>Choose one person</value></data>
+  <data name="ChatCreateGroupMembersLabel" xml:space="preserve"><value>Choose at least two people</value></data>
+  <data name="ChatCreateUserListAutomationName" xml:space="preserve"><value>Available Chat users</value></data>
+  <data name="ChatCreateLoading" xml:space="preserve"><value>Loading people…</value></data>
+  <data name="ChatCreateEmptyTitle" xml:space="preserve"><value>No people are available</value></data>
+  <data name="ChatCreateEmptyMessage" xml:space="preserve"><value>Ask the NAS administrator to check Chat access for other users, then try again.</value></data>
+  <data name="ChatCreateLoadErrorTitle" xml:space="preserve"><value>Couldn’t load people</value></data>
+  <data name="ChatCreateLoadErrorMessage" xml:space="preserve"><value>Check the connection to your NAS, then try again.</value></data>
+  <data name="ChatCreateRetry" xml:space="preserve"><value>Try again</value></data>
+  <data name="ChatCreateReviewTitle" xml:space="preserve"><value>Check the result before trying again</value></data>
+  <data name="ChatCreateReviewMessage" xml:space="preserve"><value>The NAS may have created this conversation. Choose “Check result” to read it again; the creation request won’t be sent twice.</value></data>
+  <data name="ChatCreatePermissionTitle" xml:space="preserve"><value>You can’t create this conversation</value></data>
+  <data name="ChatCreatePermissionMessage" xml:space="preserve"><value>Ask the NAS administrator to check your Chat permissions.</value></data>
+  <data name="ChatCreateUnavailableTitle" xml:space="preserve"><value>Conversation creation isn’t available</value></data>
+  <data name="ChatCreateUnavailableMessage" xml:space="preserve"><value>This NAS or Chat Server version doesn’t offer this conversation type.</value></data>
+  <data name="ChatCreateCancelledTitle" xml:space="preserve"><value>Creation cancelled</value></data>
+  <data name="ChatCreateCancelledMessage" xml:space="preserve"><value>No creation request was sent. You can try again.</value></data>
+  <data name="ChatCreateFailedTitle" xml:space="preserve"><value>Couldn’t create the conversation</value></data>
+  <data name="ChatCreateFailedMessage" xml:space="preserve"><value>Check the selected people and your NAS connection, then try again.</value></data>
 </root>
