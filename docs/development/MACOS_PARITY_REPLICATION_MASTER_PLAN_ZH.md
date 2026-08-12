@@ -214,6 +214,8 @@ Windows FILE-09 / PHOTO-03 已继续补入 1～20 项原位置批量恢复源码
 
 Apple 移动 PHOTO-03 已补入同义的单项普通媒体同 NAS 移动源码闭环：iPhone/iPad Photos 文件夹网格和主动时间线复用 FILE-05 原生目标 Sheet 与共享 CopyMove 协调器，只允许已知大小、非回收站的一个图片或视频移到普通本地可写文件夹，固定无覆盖。profile、Repository 或页面上下文变化会撤销旧操作；共享链继续负责来源删除权限、目标权限、冲突、一次提交、提交未知只回读不重放和最终回读。本机模拟器双架构构建及聚焦 16/16 通过；Apple Build run `31521369954` 与 Repository Check run `31521369961` 已通过。复制、批量、跨 NAS、系统图库移动和自动备份不在本切片；真实 iPhone/iPad、真实 NAS、VoiceOver、最大动态文字、iPad 键盘/指针、弱网和取消为 `PENDING_USER_VALIDATION`。
 
+Apple 移动 FILE-05 已继续补入同一当前目录 1～20 个普通本地文件的同 NAS 批量复制/移动源码闭环。列表和网格提供原生选择模式、20 项上限及可见复制/移动动作；一次选择普通本地可写目标后严格串行复用 CopyMove v3 typed 链，固定无覆盖。明确失败继续并记录原因；写前取消停止；未知、部分结果、异常或回读不一致停止余项，以稳定路径身份 blocker 禁止重放。完成页显示守恒计数与失败/取消文件，VoiceOver 可读选择状态和上限。本机聚焦 30/30、DsmMobile 全量 470/470、本地化和差异检查通过。目录、跨目录来源、跨 NAS、覆盖、自动改名、拖放、撤销与后台恢复保持关闭；真实设备、真实 NAS、VoiceOver、最大动态文字和 iPad 外接输入为 `PENDING_USER_VALIDATION`。
+
 Apple 移动 PHOTO-03 又补齐单项普通媒体移入回收站源码闭环：iPhone/iPad Photos 自行加载按 Repository 身份绑定的共享回收站白名单，重连先清空旧入口并重新发现；文件夹网格、主动时间线和查看器只向当前可见、已知大小、非远程且非回收站的一个图片或视频开放破坏性入口，发现失败零入口，查看器先关闭再进入 FILE-09 原生确认 Sheet。底层继续复用公开 Delete v2 与共享回收站协调器的身份/权限/冲突预检、路径互斥、一次提交、提交未知只回读不重放和最终回读；确认 Sheet 冻结 Repository 身份，成功刷新前必须精确匹配当前 profile 与 Repository，不新增照片专用请求。本机 Photos/Recycle/Locations 聚焦 43/43、DsmMobile 全量 429/429、共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、双架构模拟器构建、本地化与仓库门禁均已通过；GitHub Apple Build run `31527045156` 与 Repository Check run `31527045155` 已通过。批量、永久删除、系统照片图库删除和自动备份继续关闭；真实设备/NAS 及辅助功能为 `PENDING_USER_VALIDATION`。
 | NAS-01 · A/C | 系统概况、性能趋势、更新检查/发布说明、存储/硬盘/外接存储/ZRAM | Dashboard + 原生图表/数据表 | **核心**：系统、连接、容量与健康只读摘要；更新仅查看说明 | `NasAdministrationModel.swift` |
 | NAS-02 · A/C | 文件服务、终端、代理、接口、DDNS、区域时间、QuickConnect | 分类设置页、表单验证与写后回读 | **受限**：只读连接/配置摘要；所有设置写当前不做 | `NasAdministrationView.swift`、NAS Repository |

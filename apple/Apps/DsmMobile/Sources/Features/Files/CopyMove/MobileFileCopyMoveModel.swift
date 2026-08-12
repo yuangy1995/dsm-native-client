@@ -19,6 +19,7 @@ extension DsmFileRepository: MobileFileCopyMoving {}
 @Observable
 final class MobileFileCopyMoveModel {
     static let pageSize = 200
+    static let maximumBatchCount = 20
     private(set) var activeProfileID: UUID?
     private(set) var presentation: MobileFileCopyMovePresentation?
     @ObservationIgnored private var repositoryIdentity: ObjectIdentifier?
@@ -49,20 +50,44 @@ final class MobileFileCopyMoveModel {
         readOnlyRoots: [String],
         repository: any MobileFileCopyMoving
     ) {
+        begin(
+            operation: operation,
+            items: [item],
+            parentPath: parentPath,
+            source: source,
+            visibleItems: visibleItems,
+            readOnlyRoots: readOnlyRoots,
+            repository: repository
+        )
+    }
+
+    func begin(
+        operation: FileCopyMoveOperation,
+        items: [FileItem],
+        parentPath: String,
+        source: MobileFileLocationSource,
+        visibleItems: [FileItem],
+        readOnlyRoots: [String],
+        repository: any MobileFileCopyMoving
+    ) {
+        let frozenItems = Self.validatedBatch(
+            items: items,
+            parentPath: parentPath,
+            source: source,
+            visibleItems: visibleItems,
+            readOnlyRoots: readOnlyRoots,
+            profileID: repository.profileID
+        )
         guard isActive(repository),
-              Self.canBegin(
-                item: item,
-                parentPath: parentPath,
-                source: source,
-                visibleItems: visibleItems,
-                readOnlyRoots: readOnlyRoots,
-                profileID: repository.profileID
-              ) else { return }
+              requestTask == nil,
+              presentation?.phase != .submitting,
+              let first = frozenItems.first else { return }
         generation &+= 1
         presentation = MobileFileCopyMovePresentation(
             profileID: repository.profileID,
             operation: operation,
-            source: item,
+            source: first,
+            sources: frozenItems,
             sourceParentPath: parentPath,
             readOnlyRoots: readOnlyRoots
         )
@@ -174,58 +199,114 @@ final class MobileFileCopyMoveModel {
             setFeedback(.invalidDestination)
             return nil
         }
-        let key = MobileFileCopyMoveReviewKey(
-            profileID: snapshot.profileID,
-            operation: snapshot.operation,
-            source: snapshot.source,
-            destinationFolderPath: snapshot.destination.path
-        )
-        guard !blocker.contains(key) else {
-            enterReview(snapshot)
-            return nil
+        for (index, item) in snapshot.sources.enumerated() {
+            let key = reviewKey(for: item, snapshot: snapshot)
+            guard !blocker.contains(key) else {
+                snapshot.itemStates[index].status = .pendingReview
+                snapshot.currentItemIndex = index
+                enterReview(snapshot)
+                return nil
+            }
         }
 
         snapshot.phase = .submitting
         snapshot.feedback = nil
+        snapshot.currentItemIndex = 0
+        snapshot.itemStates[0].status = .submitting
         snapshot.completedBytes = 0
-        snapshot.totalBytes = snapshot.source.sizeBytes
+        snapshot.totalBytes = snapshot.sources[0].sizeBytes
         presentation = snapshot
         let requestGeneration = generation
         let identity = ObjectIdentifier(repository)
         let progressProfileID = snapshot.profileID
-        let request = FileCopyMoveRequest(
-            profileID: snapshot.profileID,
-            operation: snapshot.operation,
-            source: snapshot.source,
-            destinationFolderPath: snapshot.destination.path,
-            overwrite: false
-        )
-        let task = Task {
-            try await repository.copyMoveResult(request) { [weak self] completed, total in
-                Task { @MainActor [weak self] in
-                    self?.applyProgress(
-                        completed: completed,
-                        total: total,
-                        profileID: progressProfileID,
-                        identity: identity,
-                        generation: requestGeneration
-                    )
+        var confirmedItems: [FileItem] = []
+
+        for index in snapshot.sources.indices {
+            guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
+            let source = snapshot.sources[index]
+            snapshot.currentItemIndex = index
+            snapshot.itemStates[index].status = .submitting
+            snapshot.completedBytes = 0
+            snapshot.totalBytes = source.sizeBytes
+            snapshot.cancellationRequested = false
+            presentation = snapshot
+            let key = reviewKey(for: source, snapshot: snapshot)
+            let request = FileCopyMoveRequest(
+                profileID: snapshot.profileID,
+                operation: snapshot.operation,
+                source: source,
+                destinationFolderPath: snapshot.destination.path,
+                overwrite: false
+            )
+            let task = Task {
+                try await repository.copyMoveResult(request) { [weak self] completed, total in
+                    Task { @MainActor [weak self] in
+                        self?.applyProgress(
+                            completed: completed,
+                            total: total,
+                            profileID: progressProfileID,
+                            identity: identity,
+                            generation: requestGeneration
+                        )
+                    }
                 }
             }
+            requestTask = task
+            do {
+                let outcome = try await task.value
+                guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
+                requestTask = nil
+                switch classify(outcome, source: source, snapshot: snapshot) {
+                case .confirmed(let item):
+                    snapshot.itemStates[index].status = .confirmed
+                    snapshot.itemStates[index].confirmedItem = item
+                    confirmedItems.append(item)
+                case .failed(let feedback):
+                    snapshot.itemStates[index].status = .failed
+                    snapshot.itemStates[index].feedback = feedback
+                    snapshot.feedback = feedback
+                case .cancelled:
+                    snapshot.itemStates[index].status = .cancelled
+                    snapshot.cancellationRequested = false
+                    snapshot.phase = snapshot.isBatch ? .completed : .browsing
+                    presentation = snapshot
+                    return successSummary(for: snapshot, confirmedItems: confirmedItems)
+                case .pendingReview:
+                    snapshot.itemStates[index].status = .pendingReview
+                    blocker.insert(key)
+                    enterReview(snapshot)
+                    return successSummary(for: snapshot, confirmedItems: confirmedItems)
+                }
+            } catch {
+                guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
+                requestTask = nil
+                snapshot.itemStates[index].status = .pendingReview
+                blocker.insert(key)
+                enterReview(snapshot)
+                return successSummary(for: snapshot, confirmedItems: confirmedItems)
+            }
         }
-        requestTask = task
-        do {
-            let outcome = try await task.value
-            guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
-            requestTask = nil
-            return handle(outcome, snapshot: snapshot, reviewKey: key)
-        } catch {
-            guard isCurrent(snapshot.profileID, identity, requestGeneration) else { return nil }
-            requestTask = nil
-            blocker.insert(key)
-            enterReview(snapshot)
+
+        snapshot.currentItemIndex = nil
+        snapshot.cancellationRequested = false
+        if snapshot.isBatch {
+            snapshot.phase = .completed
+            presentation = snapshot
+            return successSummary(for: snapshot, confirmedItems: confirmedItems)
+        }
+        guard let item = confirmedItems.first else {
+            snapshot.phase = .browsing
+            presentation = snapshot
             return nil
         }
+        presentation = nil
+        return MobileFileCopyMoveSuccess(
+            profileID: snapshot.profileID,
+            operation: snapshot.operation,
+            sourceParentPath: snapshot.sourceParentPath,
+            destinationFolderPath: snapshot.destination.path,
+            item: item
+        )
     }
 
     func requestCancellation() {
@@ -277,6 +358,31 @@ final class MobileFileCopyMoveModel {
             !item.isRecyclePath &&
             !isRemote(item) &&
             !isReadOnlyPath(item.path, roots: readOnlyRoots)
+    }
+
+    private static func validatedBatch(
+        items: [FileItem],
+        parentPath: String,
+        source: MobileFileLocationSource,
+        visibleItems: [FileItem],
+        readOnlyRoots: [String],
+        profileID: UUID
+    ) -> [FileItem] {
+        guard (1...maximumBatchCount).contains(items.count) else { return [] }
+        var paths: Set<String> = []
+        let frozen = items.filter { paths.insert($0.path).inserted }
+        guard !frozen.isEmpty, frozen.count <= maximumBatchCount,
+              frozen.allSatisfy({
+                  canBegin(
+                      item: $0,
+                      parentPath: parentPath,
+                      source: source,
+                      visibleItems: visibleItems,
+                      readOnlyRoots: readOnlyRoots,
+                      profileID: profileID
+                  )
+              }) else { return [] }
+        return frozen
     }
 
     private func loadInitial(repository: any MobileFileCopyMoving) {
@@ -346,57 +452,86 @@ final class MobileFileCopyMoveModel {
         }
     }
 
-    private func handle(
+    private enum ClassifiedOutcome {
+        case confirmed(FileItem)
+        case failed(MobileFileCopyMoveFeedback)
+        case cancelled
+        case pendingReview
+    }
+
+    private func classify(
         _ outcome: FileCopyMoveOutcome,
-        snapshot: MobileFileCopyMovePresentation,
-        reviewKey: MobileFileCopyMoveReviewKey
-    ) -> MobileFileCopyMoveSuccess? {
+        source: FileItem,
+        snapshot: MobileFileCopyMovePresentation
+    ) -> ClassifiedOutcome {
         switch outcome.result.status {
         case .confirmedSuccess:
-            let expectedPath = snapshot.destination.path + "/" + snapshot.source.name
-            guard outcome.sourcePath == snapshot.source.path,
+            let expectedPath = snapshot.destination.path + "/" + source.name
+            guard outcome.result.operation == snapshot.operation.rawValue,
+                  outcome.result.submitted,
+                  !outcome.result.requiresRefresh,
+                  outcome.result.counts.succeeded == 1,
+                  outcome.result.counts.failed == 0,
+                  outcome.result.counts.unknown == 0,
+                  outcome.sourcePath == source.path,
                   outcome.destinationPath == expectedPath,
                   let item = outcome.item,
                   item.profileID == snapshot.profileID,
                   item.path == expectedPath,
-                  item.name == snapshot.source.name,
-                  item.kind == snapshot.source.kind,
+                  item.name == source.name,
+                  item.kind == source.kind,
                   item.kind == .file,
-                  item.sizeBytes == snapshot.source.sizeBytes,
+                  item.sizeBytes == source.sizeBytes,
                   !item.isRecyclePath,
                   !Self.isRemote(item) else {
-                blocker.insert(reviewKey)
-                enterReview(snapshot)
-                return nil
+                return .pendingReview
             }
-            presentation = nil
-            return MobileFileCopyMoveSuccess(
-                profileID: snapshot.profileID,
-                operation: snapshot.operation,
-                sourceParentPath: snapshot.sourceParentPath,
-                destinationFolderPath: snapshot.destination.path,
-                item: item
-            )
+            return .confirmed(item)
         case .cancelledBeforeSubmission:
-            var browsing = snapshot
-            browsing.phase = .browsing
-            browsing.feedback = nil
-            browsing.cancellationRequested = false
-            presentation = browsing
+            return .cancelled
         case .permissionDenied:
-            returnToBrowser(snapshot, feedback: .permission)
+            return .failed(.permission)
         case .unsupported:
-            returnToBrowser(snapshot, feedback: .unsupported)
+            return .failed(.unsupported)
         case .confirmedFailure:
-            returnToBrowser(
-                snapshot,
-                feedback: outcome.result.errorCategory == .permission ? .permission : .conflict
-            )
+            switch outcome.result.errorCategory {
+            case .permission:
+                return .failed(.permission)
+            case .conflict:
+                return .failed(.conflict)
+            default:
+                return .failed(.failed)
+            }
         case .submittedButUnverified, .cancellationRequestedAfterSubmission, .partialSuccess:
-            blocker.insert(reviewKey)
-            enterReview(snapshot)
+            return .pendingReview
         }
-        return nil
+    }
+
+    private func reviewKey(
+        for source: FileItem,
+        snapshot: MobileFileCopyMovePresentation
+    ) -> MobileFileCopyMoveReviewKey {
+        MobileFileCopyMoveReviewKey(
+            profileID: snapshot.profileID,
+            operation: snapshot.operation,
+            sourcePath: source.path,
+            destinationFolderPath: snapshot.destination.path
+        )
+    }
+
+    private func successSummary(
+        for snapshot: MobileFileCopyMovePresentation,
+        confirmedItems: [FileItem]
+    ) -> MobileFileCopyMoveSuccess? {
+        guard let first = confirmedItems.first else { return nil }
+        return MobileFileCopyMoveSuccess(
+            profileID: snapshot.profileID,
+            operation: snapshot.operation,
+            sourceParentPath: snapshot.sourceParentPath,
+            destinationFolderPath: snapshot.destination.path,
+            item: first,
+            confirmedItems: confirmedItems
+        )
     }
 
     private func applyProgress(
@@ -421,17 +556,6 @@ final class MobileFileCopyMoveModel {
         guard var current = presentation else { return }
         current.feedback = feedback
         presentation = current
-    }
-
-    private func returnToBrowser(
-        _ snapshot: MobileFileCopyMovePresentation,
-        feedback: MobileFileCopyMoveFeedback
-    ) {
-        var browsing = snapshot
-        browsing.phase = .browsing
-        browsing.feedback = feedback
-        browsing.cancellationRequested = false
-        presentation = browsing
     }
 
     private func enterReview(_ snapshot: MobileFileCopyMovePresentation) {

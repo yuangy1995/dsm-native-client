@@ -46,7 +46,8 @@ final class MobileFileLocationsPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("if !state.location.source.isReadOnlyLocation"))
         XCTAssertTrue(source.contains("beginShareLink(for: item)"))
         XCTAssertTrue(source.contains("guard !state.location.source.isReadOnlyLocation"))
-        XCTAssertTrue(source.contains("model.fileRepository == nil || state.location.source.isReadOnlyLocation"))
+        XCTAssertTrue(source.contains("model.fileRepository == nil ||"))
+        XCTAssertTrue(source.contains("state.location.source.isReadOnlyLocation ||"))
         XCTAssertTrue(source.contains("mobile.documents.save-copy"))
         XCTAssertTrue(source.contains("mobile.documents.share"))
     }

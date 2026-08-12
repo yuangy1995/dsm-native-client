@@ -100,6 +100,22 @@ final class MobileFileBrowserPresentationTests: XCTestCase {
         XCTAssertFalse(source.contains("volumeIdentity"))
     }
 
+    func test批量复制移动提供可见选择与双动作且继续复用同一模型() throws {
+        let source = try sourceFile("Sources/Features/Files/MobileFileBrowser.swift")
+        XCTAssertTrue(source.contains("isSelectingCopyMoveItems"))
+        XCTAssertTrue(source.contains("selectedCopyMovePaths"))
+        XCTAssertTrue(source.contains("batchCopyMoveBar"))
+        XCTAssertTrue(source.contains("mobile.files.batch-selection.count"))
+        XCTAssertTrue(source.contains("beginBatchCopyMove(.copy)"))
+        XCTAssertTrue(source.contains("beginBatchCopyMove(.move)"))
+        XCTAssertTrue(source.contains("MobileFileCopyMoveModel.maximumBatchCount"))
+        XCTAssertTrue(source.contains("copyMove.begin("))
+        XCTAssertTrue(source.contains(".accessibilityAddTraits("))
+        XCTAssertTrue(source.contains("mobile.files.batch-selection.limit-reached"))
+        XCTAssertTrue(source.contains("canSelectCopyMoveItem(item)"))
+        XCTAssertFalse(source.contains("repository.copyMoveResult("))
+    }
+
     private func sourceFile(_ relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let appRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()

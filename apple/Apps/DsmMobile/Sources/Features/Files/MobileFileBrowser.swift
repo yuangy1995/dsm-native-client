@@ -19,6 +19,8 @@ struct MobileFileBrowser: View {
     @State private var showsPreviewDetails = false
     @State private var showsLocations = false
     @State private var restoresPreviewInspectorAfterFullScreen = false
+    @State private var isSelectingCopyMoveItems = false
+    @State private var selectedCopyMovePaths: Set<String> = []
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var browser: MobileFileBrowserModel { model.fileBrowserModel }
@@ -56,6 +58,11 @@ struct MobileFileBrowser: View {
         .onSubmit(of: .search, submitSearch)
         .refreshable { await refreshNow() }
         .toolbar { browserToolbar }
+        .safeAreaInset(edge: .bottom) {
+            if isSelectingCopyMoveItems {
+                batchCopyMoveBar
+            }
+        }
         .fileImporter(
             isPresented: $isImportingFile,
             allowedContentTypes: [.data],
@@ -155,6 +162,7 @@ struct MobileFileBrowser: View {
         }
         .onChange(of: model.activeProfile?.id) { _, _ in
             resetPreviewPresentation()
+            endCopyMoveSelection()
         }
         .onChange(of: horizontalSizeClass) { _, sizeClass in
             adaptPreviewPresentation(to: sizeClass)
@@ -168,6 +176,7 @@ struct MobileFileBrowser: View {
             }
         }
         .onDisappear {
+            endCopyMoveSelection()
             browser.cancelRequest()
             browser.cancelStorageRequest()
             locations.cancelRequest()
@@ -344,8 +353,11 @@ struct MobileFileBrowser: View {
 
     private func listItem(_ item: FileItem) -> some View {
         HStack(spacing: 8) {
-            Button { primaryAction(for: item) } label: {
+            Button { fileItemPrimaryAction(item) } label: {
                 HStack(spacing: 14) {
+                    if isSelectingCopyMoveItems {
+                        selectionSymbol(item)
+                    }
                     fileSymbol(item)
                     fileDescription(item)
                     Spacer(minLength: 8)
@@ -360,16 +372,28 @@ struct MobileFileBrowser: View {
                 .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
-            .accessibilityHint(item.isDirectory ? L10n.string("mobile.files.open-folder-hint") : L10n.string("mobile.files.open-preview-hint"))
+            .disabled(isSelectingCopyMoveItems && !canSelectCopyMoveItem(item))
+            .accessibilityAddTraits(
+                isSelectingCopyMoveItems && selectedCopyMovePaths.contains(item.path)
+                    ? .isSelected
+                    : []
+            )
+            .accessibilityValue(copyMoveSelectionAccessibilityValue(item))
+            .accessibilityHint(fileItemAccessibilityHint(item))
 
-            itemMenu(item)
+            if !isSelectingCopyMoveItems {
+                itemMenu(item)
+            }
         }
     }
 
     private func gridItem(_ item: FileItem) -> some View {
         VStack(spacing: 0) {
-            Button { primaryAction(for: item) } label: {
+            Button { fileItemPrimaryAction(item) } label: {
                 VStack(spacing: 10) {
+                    if isSelectingCopyMoveItems {
+                        selectionSymbol(item)
+                    }
                     fileSymbol(item)
                         .font(.largeTitle)
                     Text(item.name)
@@ -384,11 +408,20 @@ struct MobileFileBrowser: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityHint(item.isDirectory ? L10n.string("mobile.files.open-folder-hint") : L10n.string("mobile.files.open-preview-hint"))
+            .disabled(isSelectingCopyMoveItems && !canSelectCopyMoveItem(item))
+            .accessibilityAddTraits(
+                isSelectingCopyMoveItems && selectedCopyMovePaths.contains(item.path)
+                    ? .isSelected
+                    : []
+            )
+            .accessibilityValue(copyMoveSelectionAccessibilityValue(item))
+            .accessibilityHint(fileItemAccessibilityHint(item))
 
-            Divider()
-            itemMenu(item)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            if !isSelectingCopyMoveItems {
+                Divider()
+                itemMenu(item)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
         }
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
@@ -541,26 +574,107 @@ struct MobileFileBrowser: View {
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            Button(action: toggleCopyMoveSelection) {
+                Image(systemName: isSelectingCopyMoveItems ? "xmark" : "checkmark.circle")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(!isSelectingCopyMoveItems && selectableCopyMoveItems.isEmpty)
+            .accessibilityLabel(
+                L10n.string(
+                    isSelectingCopyMoveItems
+                        ? "mobile.files.batch-selection.done"
+                        : "mobile.files.batch-selection.start"
+                )
+            )
             Button(action: beginCreateFolder) {
                 Image(systemName: "folder.badge.plus")
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .disabled(!canCreateFolder)
+            .disabled(!canCreateFolder || isSelectingCopyMoveItems)
             .accessibilityLabel(L10n.string("mobile.files.mutation.create.action"))
             sortAndFilterMenu
+                .disabled(isSelectingCopyMoveItems)
             Button(action: toggleLayout) {
                 Image(systemName: state.layout == .list ? "square.grid.2x2" : "list.bullet")
             }
             .accessibilityLabel(L10n.string(state.layout == .list ? "mobile.files.show-grid" : "mobile.files.show-list"))
             Button(action: refresh) { Image(systemName: "arrow.clockwise") }
-                .disabled(state.isRefreshing)
+                .disabled(state.isRefreshing || isSelectingCopyMoveItems)
                 .accessibilityLabel(L10n.string("ui.aee88743413144a2"))
             Button(action: beginUpload) {
                 Label(L10n.string("mobile.documents.upload"), systemImage: "square.and.arrow.up")
             }
-            .disabled(model.fileRepository == nil || state.location.source.isReadOnlyLocation)
+            .disabled(
+                model.fileRepository == nil ||
+                    state.location.source.isReadOnlyLocation ||
+                    isSelectingCopyMoveItems
+            )
         }
+    }
+
+    private var batchCopyMoveBar: some View {
+        ViewThatFits(in: .horizontal) {
+            batchCopyMoveBarContent(horizontal: true)
+            batchCopyMoveBarContent(horizontal: false)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func batchCopyMoveBarContent(horizontal: Bool) -> some View {
+        let content = Group {
+            Text(
+                L10n.string(
+                    "mobile.files.batch-selection.count",
+                    Int64(selectedCopyMoveItems.count),
+                    Int64(MobileFileCopyMoveModel.maximumBatchCount)
+                )
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                beginBatchCopyMove(.copy)
+            } label: {
+                Label(
+                    L10n.string("mobile.files.copy-move.copy.action"),
+                    systemImage: "doc.on.doc"
+                )
+            }
+            .disabled(selectedCopyMoveItems.isEmpty)
+            Button {
+                beginBatchCopyMove(.move)
+            } label: {
+                Label(
+                    L10n.string("mobile.files.copy-move.move.action"),
+                    systemImage: "folder"
+                )
+            }
+            .disabled(selectedCopyMoveItems.isEmpty)
+        }
+        if horizontal {
+            HStack(spacing: 12) { content }
+        } else {
+            VStack(alignment: .leading, spacing: 8) { content }
+        }
+    }
+
+    private func selectionSymbol(_ item: FileItem) -> some View {
+        Image(
+            systemName: selectedCopyMovePaths.contains(item.path)
+                ? "checkmark.circle.fill"
+                : "circle"
+        )
+        .foregroundStyle(canCopyMove(item) ? Color.accentColor : Color.secondary)
+        .frame(width: 32, height: 44)
+        .accessibilityHidden(true)
     }
 
     private var sortAndFilterMenu: some View {
@@ -912,6 +1026,92 @@ struct MobileFileBrowser: View {
             readOnlyRoots: readOnlyMutationRoots,
             repository: repository
         )
+    }
+
+    private var selectableCopyMoveItems: [FileItem] {
+        state.page.items.filter(canCopyMove)
+    }
+
+    private var selectedCopyMoveItems: [FileItem] {
+        selectableCopyMoveItems.filter { selectedCopyMovePaths.contains($0.path) }
+    }
+
+    private func fileItemPrimaryAction(_ item: FileItem) {
+        guard isSelectingCopyMoveItems else {
+            primaryAction(for: item)
+            return
+        }
+        guard canSelectCopyMoveItem(item) else { return }
+        if selectedCopyMovePaths.contains(item.path) {
+            selectedCopyMovePaths.remove(item.path)
+        } else if selectedCopyMovePaths.count < MobileFileCopyMoveModel.maximumBatchCount {
+            selectedCopyMovePaths.insert(item.path)
+        }
+    }
+
+    private func canSelectCopyMoveItem(_ item: FileItem) -> Bool {
+        canCopyMove(item) && (
+            selectedCopyMovePaths.contains(item.path) ||
+                selectedCopyMovePaths.count < MobileFileCopyMoveModel.maximumBatchCount
+        )
+    }
+
+    private func copyMoveSelectionAccessibilityValue(_ item: FileItem) -> String {
+        guard isSelectingCopyMoveItems else { return "" }
+        if selectedCopyMovePaths.contains(item.path) {
+            return L10n.string("mobile.files.batch-selection.selected")
+        }
+        if !canCopyMove(item) {
+            return L10n.string("mobile.files.batch-selection.unavailable")
+        }
+        if selectedCopyMovePaths.count >= MobileFileCopyMoveModel.maximumBatchCount {
+            return L10n.string("mobile.files.batch-selection.limit-reached")
+        }
+        return L10n.string("mobile.files.batch-selection.not-selected")
+    }
+
+    private func fileItemAccessibilityHint(_ item: FileItem) -> String {
+        if isSelectingCopyMoveItems {
+            guard canSelectCopyMoveItem(item) else { return "" }
+            return selectedCopyMovePaths.contains(item.path)
+                ? L10n.string("mobile.files.batch-selection.remove-hint")
+                : L10n.string("mobile.files.batch-selection.add-hint")
+        }
+        return item.isDirectory
+            ? L10n.string("mobile.files.open-folder-hint")
+            : L10n.string("mobile.files.open-preview-hint")
+    }
+
+    private func toggleCopyMoveSelection() {
+        if isSelectingCopyMoveItems {
+            endCopyMoveSelection()
+        } else {
+            selectedCopyMovePaths = []
+            isSelectingCopyMoveItems = true
+        }
+    }
+
+    private func endCopyMoveSelection() {
+        isSelectingCopyMoveItems = false
+        selectedCopyMovePaths = []
+    }
+
+    private func beginBatchCopyMove(_ operation: FileCopyMoveOperation) {
+        let items = selectedCopyMoveItems
+        guard !items.isEmpty, let repository = model.fileRepository else { return }
+        prepareForMutation()
+        copyMove.begin(
+            operation: operation,
+            items: items,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            readOnlyRoots: readOnlyMutationRoots,
+            repository: repository
+        )
+        if copyMove.isPresented {
+            endCopyMoveSelection()
+        }
     }
 
     private func prepareForMutation() {

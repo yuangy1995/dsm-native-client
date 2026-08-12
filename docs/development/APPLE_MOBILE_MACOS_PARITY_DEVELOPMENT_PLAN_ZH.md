@@ -349,6 +349,8 @@ M0 冻结产品范围、黄金测试、机械拆分
 
 第 2 波已实现 FILE-05 的首个受限闭环：单个普通本地文件、同 NAS 普通本地目标、`overwrite=false`，公开 CopyMove v3/FORM、源大小与修改时间冻结、源/目标互斥、一次提交、不可取消独立回读，以及提交未知跨页面 blocker。iPhone/iPad 使用原生目标选择 Sheet；目录、批量、跨 NAS、覆盖、remote/virtual/recycle/`#recycle` 均保持关闭。最新移动聚焦 45/45、共享 FILE-05 聚焦 103/103 通过；最终提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 的 Apple Build 已通过共享 Package、Swift Testing、iPhone/iPad 通用应用构建和 macOS 打包；真实 NAS 副作用与真机交互仍待验收。
 
+FILE-05 有界批次增量已把同一当前目录内 1～20 个普通本地文件纳入 iPhone/iPad 主流程。用户在列表或网格进入原生选择模式，只选择一次普通本地可写目标；模型冻结选择并严格串行复用现有 CopyMove v3 typed 结果链，固定 `overwrite=false`。明确失败继续，写前取消停止；提交未知、部分结果、异常和回读不一致停止余项，以 `profile + operation + sourcePath + destinationFolderPath` 稳定身份阻断重放。完成摘要保持确认、失败、待核对、取消和未开始计数守恒，并列出失败或取消项目及原因；选择状态、不可选和上限提供 VoiceOver 值。本机聚焦 30/30、DsmMobile 全量 470/470、本地化与差异检查通过。目录、跨目录来源、跨 NAS、覆盖、自动改名、并行、拖放、撤销和后台恢复仍关闭；真实设备、真实 NAS、VoiceOver、最大动态文字、窄屏、旋转与 iPad 外接输入为 `PENDING_USER_VALIDATION`。
+
 ### M4：Photos 精选闭环与主动导入
 
 - 使用共享 `PhotoLibraryRepository`，实现个人/共享空间、文件夹、前台可取消且有上限的用户主动时间线、分页、搜索和年/月定位；不在后台整库扫描。

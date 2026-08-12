@@ -12,7 +12,7 @@ private actor FileCopyMoveRepositoryStub: MobileFileCopyMoving {
 
     nonisolated let profileID: UUID
     private var pages: [String: FilePage]
-    private var reply: Reply?
+    private var replies: [Reply]
     private(set) var requests: [FileCopyMoveRequest] = []
     private(set) var listPaths: [String] = []
     private(set) var cancellationObserved = false
@@ -20,7 +20,13 @@ private actor FileCopyMoveRepositoryStub: MobileFileCopyMoving {
     init(profileID: UUID, pages: [String: FilePage], reply: Reply? = nil) {
         self.profileID = profileID
         self.pages = pages
-        self.reply = reply
+        replies = reply.map { [$0] } ?? []
+    }
+
+    init(profileID: UUID, pages: [String: FilePage], replies: [Reply]) {
+        self.profileID = profileID
+        self.pages = pages
+        self.replies = replies
     }
 
     func listShares(offset: Int, limit: Int, options: FileListOptions) async throws -> FilePage {
@@ -41,7 +47,8 @@ private actor FileCopyMoveRepositoryStub: MobileFileCopyMoving {
     ) async throws -> FileCopyMoveOutcome {
         requests.append(request)
         progress(5, 10)
-        guard let reply else { throw StubError.missingReply }
+        guard !replies.isEmpty else { throw StubError.missingReply }
+        let reply = replies.removeFirst()
         switch reply {
         case .outcome(let outcome): return outcome
         case .delayed(let outcome):
@@ -212,6 +219,26 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
         XCTAssertEqual(model.presentation?.destination.path, "/target")
     }
 
+    func test单项明确失败保持旧浏览态与反馈() async throws {
+        let profileID = UUID()
+        let source = item(profileID, "a.txt", "/source/a.txt", .file)
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            reply: .outcome(try outcome(.confirmedFailure, .move, source, "/target", nil))
+        )
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        await prepare(model, repository: repository, source: source, operation: .move)
+
+        let success = await model.submit(repository: repository)
+
+        XCTAssertNil(success)
+        XCTAssertEqual(model.presentation?.phase, .browsing)
+        XCTAssertEqual(model.presentation?.feedback, .failed)
+        XCTAssertEqual(model.presentation?.destination.path, "/target")
+    }
+
     func test异常与伪确认成功均保守进入review且不能再次提交() async throws {
         let profileID = UUID()
         let source = item(profileID, "a.txt", "/source/a.txt", .file, size: 10)
@@ -298,6 +325,304 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
         XCTAssertTrue(replacementRequests.isEmpty)
     }
 
+    func test批次入口冻结顺序去重并拒绝空批次超限与任一非法项() async {
+        let profileID = UUID()
+        let first = item(profileID, "a.txt", "/source/a.txt", .file, size: 1)
+        let second = item(profileID, "b.txt", "/source/b.txt", .file, size: 2)
+        let invalid = item(profileID, "folder", "/source/folder", .directory)
+        let repository = FileCopyMoveRepositoryStub(profileID: profileID, pages: pages(profileID))
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+
+        model.begin(
+            operation: .copy,
+            items: [second, first, second],
+            parentPath: "/source",
+            source: .browser,
+            visibleItems: [first, second, invalid],
+            readOnlyRoots: [],
+            repository: repository
+        )
+        XCTAssertEqual(model.presentation?.sources, [second, first])
+        XCTAssertEqual(model.presentation?.itemStates.map(\.status), [.notStarted, .notStarted])
+        XCTAssertEqual(model.presentation?.batchCounts.total, 2)
+        model.dismiss()
+
+        model.begin(
+            operation: .move,
+            items: [],
+            parentPath: "/source",
+            source: .browser,
+            visibleItems: [first],
+            readOnlyRoots: [],
+            repository: repository
+        )
+        XCTAssertNil(model.presentation)
+
+        let tooMany = (0...20).map { item(profileID, "\($0).txt", "/source/\($0).txt", .file) }
+        model.begin(
+            operation: .move,
+            items: tooMany,
+            parentPath: "/source",
+            source: .browser,
+            visibleItems: tooMany,
+            readOnlyRoots: [],
+            repository: repository
+        )
+        XCTAssertNil(model.presentation)
+
+        model.begin(
+            operation: .move,
+            items: [first, invalid],
+            parentPath: "/source",
+            source: .browser,
+            visibleItems: [first, invalid],
+            readOnlyRoots: [],
+            repository: repository
+        )
+        XCTAssertNil(model.presentation)
+    }
+
+    func test批次严格串行明确失败继续并返回全部确认刷新项() async throws {
+        let profileID = UUID()
+        let sources = [
+            item(profileID, "a.txt", "/source/a.txt", .file, size: 1),
+            item(profileID, "b.txt", "/source/b.txt", .file, size: 2),
+            item(profileID, "c.txt", "/source/c.txt", .file, size: 3),
+            item(profileID, "d.txt", "/source/d.txt", .file, size: 4),
+        ]
+        let confirmed = item(profileID, "b.txt", "/target/b.txt", .file, size: 2)
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            replies: [
+                .outcome(try outcome(.confirmedFailure, .copy, sources[0], "/target", nil)),
+                .outcome(try outcome(.confirmedSuccess, .copy, sources[1], "/target", confirmed)),
+                .outcome(try outcome(.permissionDenied, .copy, sources[2], "/target", nil)),
+                .outcome(try outcome(.unsupported, .copy, sources[3], "/target", nil)),
+            ]
+        )
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        await prepareBatch(model, repository: repository, sources: sources, operation: .copy)
+
+        let success = await model.submit(repository: repository)
+
+        XCTAssertEqual(success?.confirmedItems, [confirmed])
+        XCTAssertEqual(model.presentation?.phase, .completed)
+        XCTAssertEqual(model.presentation?.itemStates.map(\.status), [.failed, .confirmed, .failed, .failed])
+        XCTAssertEqual(
+            model.presentation?.batchCounts,
+            MobileFileCopyMoveBatchCounts(confirmed: 1, failed: 3, pendingReview: 0, cancelled: 0, notStarted: 0)
+        )
+        let requests = await repository.recordedRequests()
+        XCTAssertEqual(requests.map(\.source), sources)
+        XCTAssertTrue(requests.allSatisfy { !$0.overwrite && $0.destinationFolderPath == "/target" })
+    }
+
+    func test批次未知结果停止余项建立稳定目标blocker且绝不重放() async throws {
+        let profileID = UUID()
+        let sources = [
+            item(profileID, "a.txt", "/source/a.txt", .file, size: 1),
+            item(profileID, "b.txt", "/source/b.txt", .file, size: 2),
+            item(profileID, "c.txt", "/source/c.txt", .file, size: 3),
+        ]
+        let confirmed = item(profileID, "a.txt", "/target/a.txt", .file, size: 1)
+        let blocker = MobileFileCopyMoveReviewBlocker()
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            replies: [
+                .outcome(try outcome(.confirmedSuccess, .move, sources[0], "/target", confirmed)),
+                .outcome(try outcome(.submittedButUnverified, .move, sources[1], "/target", nil)),
+                .outcome(try outcome(.confirmedSuccess, .move, sources[2], "/target", nil)),
+            ]
+        )
+        let model = MobileFileCopyMoveModel(blocker: blocker)
+        model.activate(profileID: profileID, repository: repository)
+        await prepareBatch(model, repository: repository, sources: sources, operation: .move)
+
+        let success = await model.submit(repository: repository)
+        let replay = await model.submit(repository: repository)
+
+        XCTAssertEqual(success?.confirmedItems, [confirmed])
+        XCTAssertNil(replay)
+        XCTAssertEqual(model.presentation?.phase, .review)
+        XCTAssertEqual(model.presentation?.itemStates.map(\.status), [.confirmed, .pendingReview, .notStarted])
+        XCTAssertEqual(model.presentation?.batchCounts.total, sources.count)
+        let requests = await repository.recordedRequests()
+        XCTAssertEqual(requests.map(\.source), Array(sources.prefix(2)))
+
+        let blockedRepository = FileCopyMoveRepositoryStub(profileID: profileID, pages: pages(profileID))
+        let refreshedBlockedSource = item(
+            profileID,
+            "b.txt",
+            "/source/b.txt",
+            .file,
+            size: 200
+        )
+        let blockedModel = MobileFileCopyMoveModel(blocker: blocker)
+        blockedModel.activate(profileID: profileID, repository: blockedRepository)
+        await prepareBatch(
+            blockedModel,
+            repository: blockedRepository,
+            sources: [refreshedBlockedSource, sources[2]],
+            operation: .move
+        )
+        let blockedSuccess = await blockedModel.submit(repository: blockedRepository)
+        XCTAssertNil(blockedSuccess)
+        XCTAssertEqual(blockedModel.presentation?.phase, .review)
+        XCTAssertEqual(blockedModel.presentation?.itemStates.map(\.status), [.pendingReview, .notStarted])
+        let blockedRequests = await blockedRepository.recordedRequests()
+        XCTAssertTrue(blockedRequests.isEmpty)
+    }
+
+    func test批次所有提交后不确定状态均只进入review并停止余项() async throws {
+        for status in [
+            MutationResultStatus.submittedButUnverified,
+            .cancellationRequestedAfterSubmission,
+            .partialSuccess,
+        ] {
+            let profileID = UUID()
+            let sources = [
+                item(profileID, "a.txt", "/source/a.txt", .file),
+                item(profileID, "b.txt", "/source/b.txt", .file),
+            ]
+            let repository = FileCopyMoveRepositoryStub(
+                profileID: profileID,
+                pages: pages(profileID),
+                replies: [
+                    .outcome(try outcome(status, .copy, sources[0], "/target", nil)),
+                    .outcome(try outcome(.confirmedSuccess, .copy, sources[1], "/target", nil)),
+                ]
+            )
+            let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+            model.activate(profileID: profileID, repository: repository)
+            await prepareBatch(model, repository: repository, sources: sources, operation: .copy)
+
+            let success = await model.submit(repository: repository)
+
+            XCTAssertNil(success, "status: \(status)")
+            XCTAssertEqual(model.presentation?.phase, .review, "status: \(status)")
+            XCTAssertEqual(
+                model.presentation?.itemStates.map(\.status),
+                [.pendingReview, .notStarted],
+                "status: \(status)"
+            )
+            let requestCount = await repository.recordedRequests().count
+            XCTAssertEqual(requestCount, 1, "status: \(status)")
+        }
+    }
+
+    func test批次写前取消停止余项并保持结果守恒() async throws {
+        let profileID = UUID()
+        let sources = [
+            item(profileID, "a.txt", "/source/a.txt", .file),
+            item(profileID, "b.txt", "/source/b.txt", .file),
+            item(profileID, "c.txt", "/source/c.txt", .file),
+        ]
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            replies: [
+                .outcome(try outcome(.cancelledBeforeSubmission, .copy, sources[0], "/target", nil)),
+                .outcome(try outcome(.confirmedSuccess, .copy, sources[1], "/target", nil)),
+            ]
+        )
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        await prepareBatch(model, repository: repository, sources: sources, operation: .copy)
+
+        let success = await model.submit(repository: repository)
+        XCTAssertNil(success)
+        XCTAssertEqual(model.presentation?.phase, .completed)
+        XCTAssertEqual(model.presentation?.itemStates.map(\.status), [.cancelled, .notStarted, .notStarted])
+        XCTAssertEqual(
+            model.presentation?.batchCounts,
+            MobileFileCopyMoveBatchCounts(confirmed: 0, failed: 0, pendingReview: 0, cancelled: 1, notStarted: 2)
+        )
+        let requests = await repository.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+    }
+
+    func test批次全明确失败仍进入完成摘要且不返回刷新项() async throws {
+        let profileID = UUID()
+        let sources = [
+            item(profileID, "a.txt", "/source/a.txt", .file),
+            item(profileID, "b.txt", "/source/b.txt", .file),
+        ]
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            replies: [
+                .outcome(try outcome(.permissionDenied, .move, sources[0], "/target", nil)),
+                .outcome(try outcome(.confirmedFailure, .move, sources[1], "/target", nil)),
+            ]
+        )
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        await prepareBatch(model, repository: repository, sources: sources, operation: .move)
+
+        let success = await model.submit(repository: repository)
+
+        XCTAssertNil(success)
+        XCTAssertEqual(model.presentation?.phase, .completed)
+        XCTAssertEqual(
+            model.presentation?.batchCounts,
+            MobileFileCopyMoveBatchCounts(confirmed: 0, failed: 2, pendingReview: 0, cancelled: 0, notStarted: 0)
+        )
+        let requestCount = await repository.recordedRequests().count
+        XCTAssertEqual(requestCount, 2)
+    }
+
+    func test批次异常记待核对并停止且切换repository隔离迟到结果() async throws {
+        let profileID = UUID()
+        let sources = [
+            item(profileID, "a.txt", "/source/a.txt", .file),
+            item(profileID, "b.txt", "/source/b.txt", .file),
+        ]
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            replies: [.failure, .outcome(try outcome(.confirmedSuccess, .move, sources[1], "/target", nil))]
+        )
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        await prepareBatch(model, repository: repository, sources: sources, operation: .move)
+
+        let success = await model.submit(repository: repository)
+        XCTAssertNil(success)
+        XCTAssertEqual(model.presentation?.itemStates.map(\.status), [.pendingReview, .notStarted])
+        let failedRequestCount = await repository.recordedRequests().count
+        XCTAssertEqual(failedRequestCount, 1)
+
+        let delayed = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            reply: .delayed(try outcome(.confirmedSuccess, .copy, sources[0], "/target", item(profileID, "a.txt", "/target/a.txt", .file)))
+        )
+        let replacement = FileCopyMoveRepositoryStub(profileID: profileID, pages: pages(profileID))
+        let lateModel = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        lateModel.activate(profileID: profileID, repository: delayed)
+        await prepareBatch(lateModel, repository: delayed, sources: sources, operation: .copy)
+        let task = Task { await lateModel.submit(repository: delayed) }
+        await waitForRequest(delayed)
+        XCTAssertEqual(lateModel.presentation?.currentItemIndex, 0)
+        XCTAssertEqual(lateModel.presentation?.currentItemNumber, 1)
+        XCTAssertEqual(lateModel.presentation?.currentSource, sources[0])
+        XCTAssertEqual(lateModel.presentation?.completedBytes, 5)
+        XCTAssertEqual(lateModel.presentation?.totalBytes, 10)
+        lateModel.activate(profileID: profileID, repository: replacement)
+
+        let lateSuccess = await task.value
+        XCTAssertNil(lateSuccess)
+        XCTAssertNil(lateModel.presentation)
+        let delayedRequestCount = await delayed.recordedRequests().count
+        let cancellationObserved = await delayed.didObserveCancellation()
+        XCTAssertEqual(delayedRequestCount, 1)
+        XCTAssertTrue(cancellationObserved)
+    }
+
     private func prepare(
         _ model: MobileFileCopyMoveModel,
         repository: FileCopyMoveRepositoryStub,
@@ -310,6 +635,26 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
             parentPath: "/source",
             source: .browser,
             visibleItems: [source],
+            readOnlyRoots: [],
+            repository: repository
+        )
+        await waitForBrowser(model)
+        model.openFolder(item(repository.profileID, "target", "/target", .directory), repository: repository)
+        await waitForPath(model, "/target")
+    }
+
+    private func prepareBatch(
+        _ model: MobileFileCopyMoveModel,
+        repository: FileCopyMoveRepositoryStub,
+        sources: [FileItem],
+        operation: FileCopyMoveOperation
+    ) async {
+        model.begin(
+            operation: operation,
+            items: sources,
+            parentPath: "/source",
+            source: .browser,
+            visibleItems: sources,
             readOnlyRoots: [],
             repository: repository
         )
@@ -360,7 +705,8 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
         _ item: FileItem?
     ) throws -> FileCopyMoveOutcome {
         let submitted = ![.cancelledBeforeSubmission, .permissionDenied, .unsupported].contains(status)
-        let review = status == .submittedButUnverified || status == .cancellationRequestedAfterSubmission
+        let review = status == .submittedButUnverified || status == .cancellationRequestedAfterSubmission || status == .partialSuccess
+        let failed = status == .permissionDenied || status == .unsupported || status == .confirmedFailure
         return FileCopyMoveOutcome(
             result: try MutationResult(
                 status: status,
@@ -368,8 +714,8 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
                 submitted: submitted,
                 requiresRefresh: review,
                 counts: try MutationResultCounts(
-                    succeeded: status == .confirmedSuccess ? 1 : 0,
-                    failed: status == .permissionDenied || status == .unsupported ? 1 : 0,
+                    succeeded: status == .confirmedSuccess || status == .partialSuccess ? 1 : 0,
+                    failed: failed ? 1 : 0,
                     unknown: review ? 1 : 0
                 ),
                 diagnosticTag: "mobile-file-copy-move-test"

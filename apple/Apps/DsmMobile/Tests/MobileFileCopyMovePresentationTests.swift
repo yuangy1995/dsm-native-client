@@ -34,7 +34,7 @@ final class MobileFileCopyMovePresentationTests: XCTestCase {
         let browser = try sourceFile("Sources/Features/Files/MobileFileBrowser.swift")
         XCTAssertTrue(view.contains("mobile.files.copy-move.review.message"))
         XCTAssertTrue(view.contains("mobile.files.copy-move.review.dismiss"))
-        let review = try slice(view, from: "private var reviewView", to: "@ToolbarContentBuilder")
+        let review = try slice(view, from: "private func reviewView", to: "@ToolbarContentBuilder")
         XCTAssertFalse(review.contains("retry"))
         XCTAssertFalse(review.contains("submit"))
         XCTAssertTrue(browser.contains("mobile.documents.upload"))
@@ -50,6 +50,20 @@ final class MobileFileCopyMovePresentationTests: XCTestCase {
         XCTAssertTrue(model.contains("overwrite: false"))
         XCTAssertTrue(model.contains("ObjectIdentifier(repository)"))
         XCTAssertTrue(model.contains("MobileFileCopyMoveReviewBlocker"))
+    }
+
+    func test批次视图展示当前进度与守恒摘要且不提供重放动作() throws {
+        let view = try sourceFile("Sources/Features/Files/CopyMove/MobileFileCopyMoveView.swift")
+        XCTAssertTrue(view.contains("mobile.files.copy-move.batch.progress"))
+        XCTAssertTrue(view.contains("mobile.files.copy-move.batch.summary"))
+        XCTAssertTrue(view.contains("mobile.files.copy-move.batch.copy.title"))
+        XCTAssertTrue(view.contains("mobile.files.copy-move.batch.move.title"))
+        XCTAssertTrue(view.contains("batchIssues(presentation)"))
+        XCTAssertTrue(view.contains("mobile.files.copy-move.batch.issues.title"))
+        XCTAssertTrue(view.contains("batchCompletedWithoutIssues"))
+        let review = try slice(view, from: "private func reviewView", to: "@ToolbarContentBuilder")
+        XCTAssertFalse(review.contains("retry"))
+        XCTAssertFalse(review.contains("submit"))
     }
 
     private func sourceFile(_ relativePath: String) throws -> String {
