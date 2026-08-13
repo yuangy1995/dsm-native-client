@@ -368,7 +368,7 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configura
 
 ### Windows FILE-01 DirSize v2 增量
 
-Windows 已补入官方 DirSize v2 文件夹属性源码闭环：原生“属性”命令和 `Alt+Enter` 只对文件夹开放，计算必须由用户显式触发，并支持取消与重新计算。Repository 固定单次 `start`、30 次有界 `status` 轮询、同 profile/规范路径防重复及独立尽力 `stop`；结果仅含大小、文件数和文件夹数，路径与任务 ID 不进入领域、UI 或持久化。能力缺失与非法路径零请求，错误不阻断浏览。本机聚焦 29/29、Release xUnit 1315/1315、本地化、契约、XML 与差异检查通过；WinUI 双架构和 Repository Check 等待 GitHub CI，真实 Windows/NAS 与辅助功能后置。
+Windows 已补入官方 DirSize v2 文件夹属性源码闭环：原生“属性”命令和 `Alt+Enter` 只对文件夹开放，计算必须由用户显式触发，并支持取消与重新计算。Repository 固定单次 `start`、30 次有界 `status` 轮询、同 profile/规范路径防重复及独立尽力 `stop`；结果仅含大小、文件数和文件夹数，路径与任务 ID 不进入领域、UI 或持久化。能力缺失与非法路径零请求，错误不阻断浏览。本机聚焦 29/29、Release xUnit 1315/1315、本地化、契约、XML 与差异检查通过；功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建，真实 Windows/NAS 与辅助功能后置。
 
 ### Windows Files 搜索与安全文本编辑增量
 

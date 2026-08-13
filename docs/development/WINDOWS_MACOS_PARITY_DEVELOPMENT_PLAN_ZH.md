@@ -492,7 +492,7 @@ CI 后续应覆盖：
 
 Windows Files 已完成当前源码与本机自动化：对所选文件夹提供原生属性对话框和 `Alt+Enter`，用户显式计算、取消或重新计算，不在浏览时自动扫描。Repository 固定官方 v2 FORM，`start` 只发送一次，随后最多 30 次指数退避 `status`；取消、超时或轮询失败在已取得安全任务 ID 后使用独立短时令牌尽力 `stop`，服务端已声明完成后即使汇总无效也不再停止。能力缺失、非法路径零请求，同 profile/规范路径防重复；领域只保留字节数、文件数和文件夹数，不保存路径或任务 ID。
 
-本机关闭 PRI 生成后聚焦 29/29、Release 全量 xUnit 1315/1315、本地化、请求/Fixture 契约、XAML/RESW XML 与差异检查通过；WinUI x64/ARM64 构建与 Repository Check 等待本切片 CI。MD5、递归本地回退、批量统计、后台持久化和 VFS 不在本切片；真实 NAS/Windows 与辅助功能为 `PENDING_USER_VALIDATION`。
+本机关闭 PRI 生成后聚焦 29/29、Release 全量 xUnit 1315/1315、本地化、请求/Fixture 契约、XAML/RESW XML 与差异检查通过；功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建。MD5、递归本地回退、批量统计、后台持久化和 VFS 不在本切片；真实 NAS/Windows 与辅助功能为 `PENDING_USER_VALIDATION`。
 
 ### FILE-06/08 异步递归搜索与安全文本编辑增量
 
