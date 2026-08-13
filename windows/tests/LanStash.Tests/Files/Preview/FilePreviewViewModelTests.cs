@@ -11,6 +11,53 @@ namespace LanStash.Tests.Files.Preview;
 public sealed class FilePreviewViewModelTests
 {
     [Fact]
+    public async Task MD5PublishesOnlyForCurrentPreviewAndSwitchCancelsPreviousTask()
+    {
+        var profile = Guid.NewGuid();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new PreviewRepository(profile)
+        {
+            MD5Availability = new(true, 2),
+            MD5Handler = async (_, token) =>
+            {
+                started.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return "never";
+            },
+        };
+        using var model = new FilePreviewViewModel(new ArtifactStoreStub());
+        await model.OpenAsync(repository, profile, Item("first.txt", 0));
+
+        var calculation = model.CalculateMD5Async();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await model.OpenAsync(repository, profile, Item("second.txt", 0));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => calculation);
+        Assert.Null(model.MD5Digest);
+        Assert.False(model.IsCalculatingMD5);
+        Assert.True(model.CanCalculateMD5);
+    }
+
+    [Fact]
+    public async Task MD5ResultIsPublishedForMatchingRepositoryProfileAndPath()
+    {
+        var profile = Guid.NewGuid();
+        var repository = new PreviewRepository(profile)
+        {
+            MD5Availability = new(true, 2),
+            MD5Handler = (_, _) => Task.FromResult("0123456789abcdef0123456789abcdef"),
+        };
+        using var model = new FilePreviewViewModel(new ArtifactStoreStub());
+        await model.OpenAsync(repository, profile, Item("notes.txt", 0));
+
+        var digest = await model.CalculateMD5Async();
+
+        Assert.Equal("0123456789abcdef0123456789abcdef", digest);
+        Assert.Equal(digest, model.MD5Digest);
+        Assert.False(model.IsCalculatingMD5);
+    }
+
+    [Fact]
     public async Task UnknownUnsupportedAndEmptyNonTextUseZeroRequests()
     {
         var profile = Guid.NewGuid();
@@ -654,6 +701,15 @@ public sealed class FilePreviewViewModelTests
             TextFormatKind kind,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public FileMD5Availability MD5Availability { get; set; } = new(false);
+        public Func<string, CancellationToken, Task<string>> MD5Handler { get; set; } =
+            (_, _) => throw new NotSupportedException();
+
+        public Task<string> CalculateMD5Async(
+            string path,
+            CancellationToken cancellationToken = default) =>
+            MD5Handler(path, cancellationToken);
     }
 
     private sealed class ArtifactStoreStub : IFilePreviewArtifactStore

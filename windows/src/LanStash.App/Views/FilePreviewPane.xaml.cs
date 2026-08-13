@@ -87,7 +87,12 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(FilePreviewViewModel.Snapshot))
+        if (e.PropertyName is nameof(FilePreviewViewModel.Snapshot) or
+            nameof(FilePreviewViewModel.IsCalculatingMD5) or
+            nameof(FilePreviewViewModel.MD5Digest) or
+            nameof(FilePreviewViewModel.MD5Failure) or
+            nameof(FilePreviewViewModel.CanCalculateMD5) or
+            nameof(FilePreviewViewModel.IsMD5Available))
         {
             DispatcherQueue.TryEnqueue(UpdateState);
         }
@@ -101,6 +106,11 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
         }
         var snapshot = _viewModel.Snapshot;
         FileNameText.Text = snapshot.Item?.Name ?? string.Empty;
+        MD5Button.Visibility = _viewModel.IsMD5Available
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        MD5Button.IsEnabled = _viewModel.CanCalculateMD5;
+        MD5ResultText.Text = MD5StatusText(_viewModel);
         PreparingState.Visibility = snapshot.Phase == FilePreviewPhase.Preparing
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -437,6 +447,50 @@ public sealed partial class FilePreviewPane : UserControl, IDisposable
 
     private void Retry_Click(object sender, RoutedEventArgs e) =>
         RetryRequested?.Invoke(this, EventArgs.Empty);
+
+    private async void MD5_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || !_viewModel.CanCalculateMD5)
+        {
+            return;
+        }
+        MD5Button.IsEnabled = false;
+        try
+        {
+            await _viewModel.CalculateMD5Async();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            // ViewModel 会把领域失败映射为本地化状态，事件处理器不重复弹窗。
+        }
+        finally
+        {
+            MD5Button.IsEnabled = _viewModel.CanCalculateMD5;
+        }
+    }
+
+    private static string MD5StatusText(FilePreviewViewModel viewModel)
+    {
+        if (viewModel.IsCalculatingMD5)
+        {
+            return LocalizationService.Current.Get("FileMd5Calculating");
+        }
+        if (viewModel.MD5Digest is { } digest)
+        {
+            return digest;
+        }
+        return viewModel.MD5Failure switch
+        {
+            FileMD5Failure.Timeout => LocalizationService.Current.Get("FileMd5TimedOut"),
+            FileMD5Failure.AlreadyRunning =>
+                LocalizationService.Current.Get("FileMd5AlreadyRunning"),
+            null => string.Empty,
+            _ => LocalizationService.Current.Get("FileMd5Failed"),
+        };
+    }
 
     private void SaveCopy_Click(object sender, RoutedEventArgs e)
     {

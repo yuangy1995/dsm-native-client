@@ -127,6 +127,21 @@ Download Station 已完成常用单任务流程、只读“当前活动”速率
 | Hyper Backup / Active Backup / Synology Office | 未开始 | 计划 | 计划 | 计划 | 计划 |
 | 后台上传/下载与离线任务恢复 | 未开始 | 未开始 | 未开始 | Android 已使用不含凭据的加密任务状态、WorkManager 联网约束和隐私通知处理普通上传与下载；普通文件下载支持安全暂停/继续和严格 Range 续传，上传只允许用户明确从头重试，进程重建可恢复保存会话下的任务监控。App 发起的压缩/解压按提交阶段、opaque task ID、目标基线、预期输出和结果加密保存；只有完整已提交证据才恢复已有任务的只读轮询，缺失证据不重发。官方 BackgroundTask 保存脱敏快照并与实时刷新明确区分。独立切换 NAS 按 profile 隔离以上状态并阻止未确认任务的不安全切换。设备重启、Doze、低电量、不同文档提供程序和真实 NAS 响应仍待验收 | 未开始 |
 
+### 2026-08-13 Windows MD5 与本地 Emoji 增量
+
+Windows File Station 扩展新增单文件 MD5 源码闭环：只在官方
+`SYNO.FileStation.MD5` v2 FORM 能力存在时显示入口，固定单次
+`start(file_path)`、有界 `status` 轮询和取消后的尽力 `stop`；每个 profile
+同时最多一个任务，预览关闭、文件或 NAS 改变时取消并拒绝迟到结果。Chat composer
+新增纯本地 Emoji 选择器，仅修改当前草稿和选区，不调用 Chat API。两项本机
+Release xUnit 1452/1452、本地化与 XML 门禁已通过；GitHub Windows Build run
+`31665344416` 已通过同一组 xUnit 与 WinUI x64/ARM64 构建，Repository Check run
+`31665344401` 已通过。
+
+审查期间发现的 Download 设置、Container/VMM 写、noVNC、Chat 提醒/定时/投票/转发、
+统一存储分析和传输通知原型均未达到现有契约、安全或准确性门，因此没有进入矩阵完成
+范围；这些入口继续按各自既有“关闭”状态处理。
+
 ## Synology Chat 规划
 
 Apple 移动端 Chat 以文字会话、分页、草稿、发送失败恢复和前台实时为核心；单附件与少量常用消息动作为受限；提醒、定时消息、投票、服务端置顶、语音和加密不作为当前交付。下表中的 `CH7 计划` 或“复用 Apple 契约”只表示可复用能力库存，不代表 Apple 移动端全量实现。

@@ -12,9 +12,14 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
     private readonly IFilePreviewArtifactStore _artifacts;
     private readonly IFilePreviewMetadataReader _metadataReader;
     private CancellationTokenSource? _operationCancellation;
+    private CancellationTokenSource? _md5Cancellation;
     private IFilePreviewRepository? _activeRepository;
+    private IFilePreviewRepository? _md5Repository;
     private long _generation;
     private FilePreviewSnapshot _snapshot = new();
+    private bool _isCalculatingMD5;
+    private string? _md5Digest;
+    private FileMD5Failure? _md5Failure;
     private bool _disposed;
 
     public FilePreviewViewModel()
@@ -55,6 +60,86 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
     public bool IsReady => Snapshot.Phase == FilePreviewPhase.Ready;
     public bool HasFailed => Snapshot.Phase == FilePreviewPhase.Failed;
 
+    public bool IsCalculatingMD5
+    {
+        get => _isCalculatingMD5;
+        private set => SetProperty(ref _isCalculatingMD5, value);
+    }
+
+    public string? MD5Digest
+    {
+        get => _md5Digest;
+        private set
+        {
+            if (SetProperty(ref _md5Digest, value))
+            {
+                RaisePropertyChanged(nameof(CanCalculateMD5));
+            }
+        }
+    }
+
+    public FileMD5Failure? MD5Failure
+    {
+        get => _md5Failure;
+        private set => SetProperty(ref _md5Failure, value);
+    }
+
+    public bool CanCalculateMD5 =>
+        !_disposed &&
+        !_isCalculatingMD5 &&
+        Snapshot.Item is { IsDirectory: false } &&
+        _md5Repository?.MD5Availability.IsAvailable == true;
+
+    public bool IsMD5Available =>
+        !_disposed &&
+        Snapshot.Item is { IsDirectory: false } &&
+        _md5Repository?.MD5Availability.IsAvailable == true;
+
+    public async Task<string> CalculateMD5Async(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (!CanCalculateMD5 ||
+            _md5Repository is not { } repository ||
+            Snapshot is not { ProfileId: { } profileId, Item: { IsDirectory: false } item })
+        {
+            throw new InvalidOperationException("MD5 calculation is unavailable.");
+        }
+        var generation = Volatile.Read(ref _generation);
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _md5Cancellation = cancellation;
+        MD5Failure = null;
+        IsCalculatingMD5 = true;
+        RaisePropertyChanged(nameof(CanCalculateMD5));
+        try
+        {
+            var digest = await repository.CalculateMD5Async(item.Path, cancellation.Token)
+                .ConfigureAwait(true);
+            if (IsCurrentMD5(repository, profileId, item.Path, generation, cancellation))
+            {
+                MD5Digest = digest;
+            }
+            return digest;
+        }
+        catch (FileMD5Exception exception)
+        {
+            if (IsCurrentMD5(repository, profileId, item.Path, generation, cancellation))
+            {
+                MD5Failure = exception.Failure;
+            }
+            throw;
+        }
+        finally
+        {
+            cancellation.Dispose();
+            if (ReferenceEquals(_md5Cancellation, cancellation))
+            {
+                _md5Cancellation = null;
+                IsCalculatingMD5 = false;
+                RaisePropertyChanged(nameof(CanCalculateMD5));
+            }
+        }
+    }
+
     public bool TryGetSaveCopyTarget(
         FileItem? currentSelection,
         out FilePreviewSaveCopyTarget? target)
@@ -90,6 +175,11 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
             Snapshot = Details(profileId, item, kind, FilePreviewUnavailableReason.Unsupported);
             return;
         }
+        _md5Repository = repository;
+        MD5Digest = null;
+        MD5Failure = null;
+        RaisePropertyChanged(nameof(IsMD5Available));
+        RaisePropertyChanged(nameof(CanCalculateMD5));
         if (kind == FilePreviewKind.Unsupported)
         {
             Snapshot = Details(profileId, item, kind, FilePreviewUnavailableReason.Unsupported);
@@ -397,10 +487,18 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
     private async Task StopCurrentAsync()
     {
         Interlocked.Increment(ref _generation);
+        _md5Cancellation?.Cancel();
+        _md5Cancellation = null;
+        IsCalculatingMD5 = false;
         _operationCancellation?.Cancel();
         _operationCancellation?.Dispose();
         _operationCancellation = null;
         _activeRepository = null;
+        _md5Repository = null;
+        MD5Digest = null;
+        MD5Failure = null;
+        RaisePropertyChanged(nameof(CanCalculateMD5));
+        RaisePropertyChanged(nameof(IsMD5Available));
 
         var artifact = Snapshot.Artifact;
         var media = Snapshot.Media;
@@ -424,6 +522,20 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
             reason,
             TotalBytes: item.Size >= 0 ? item.Size : null);
 
+    private bool IsCurrentMD5(
+        IFilePreviewRepository repository,
+        Guid profileId,
+        string path,
+        long generation,
+        CancellationTokenSource cancellation) =>
+        !_disposed &&
+        !cancellation.IsCancellationRequested &&
+        ReferenceEquals(_md5Cancellation, cancellation) &&
+        ReferenceEquals(_md5Repository, repository) &&
+        generation == Volatile.Read(ref _generation) &&
+        Snapshot.ProfileId == profileId &&
+        string.Equals(Snapshot.Item?.Path, path, StringComparison.Ordinal);
+
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     public void Dispose()
@@ -434,10 +546,13 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
         }
         _disposed = true;
         Interlocked.Increment(ref _generation);
+        _md5Cancellation?.Cancel();
+        _md5Cancellation = null;
         _operationCancellation?.Cancel();
         _operationCancellation?.Dispose();
         _operationCancellation = null;
         _activeRepository = null;
+        _md5Repository = null;
         Snapshot.Media?.Dispose();
         if (Snapshot.Artifact is { } artifact)
         {

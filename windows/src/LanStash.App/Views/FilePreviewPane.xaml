@@ -45,6 +45,27 @@
                     AutomationProperties.HeadingLevel="Level2"
                     FontWeight="SemiBold"
                     TextTrimming="CharacterEllipsis" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        x:Uid="FileMd5Calculate"
+                        x:Name="MD5Button"
+                        Click="MD5_Click"
+                        MinHeight="44"
+                        Visibility="Collapsed" />
+                    <TextBlock
+                        x:Uid="FileMd5Result"
+                        x:Name="MD5ResultText"
+                        Grid.Column="1"
+                        AutomationProperties.LiveSetting="Polite"
+                        IsTextSelectionEnabled="True"
+                        VerticalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+                </Grid>
             </StackPanel>
             <Button
                 x:Uid="FilePreviewClose"

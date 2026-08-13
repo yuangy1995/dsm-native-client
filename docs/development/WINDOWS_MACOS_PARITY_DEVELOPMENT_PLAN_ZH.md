@@ -504,6 +504,29 @@ Windows Files 异步递归搜索已完成源码主流程：固定 `start/poll/li
 
 本波次非目标继续关闭：收藏写与远程挂载创建/修改/删除缺少可靠 typed 提交边界；跨 NAS 复制/移动缺少第二 NAS 独立认证会话；NAS 设置、DDNS、电源写与 Chat 提醒、定时消息、投票、转发等高级写缺少真实版本化契约验收。这些实现路径不得作为已交付用户能力，现有只读收藏、远程位置和 NAS 详情保持原范围。
 
+### FILE-07 单文件 MD5 与 Chat 本地 Emoji 增量
+
+Windows Files 单文件预览已接入官方 `SYNO.FileStation.MD5` v2 的用户显式计算闭环：
+`start` 只发送规范绝对路径 `file_path`，随后最多 30 次有界退避轮询；取消、超时、
+切换文件、关闭预览或切换 profile 时拒绝迟到结果，并在取得安全任务 ID 后尽力调用一次
+`stop`。每个 profile 同时最多保留一个 MD5 任务，结果只允许 32 位十六进制摘要，
+路径和 task ID 不进入领域结果、界面、日志或持久化。Chat composer 同批新增纯本地
+Emoji 选择器，尊重光标和选区、选择后恢复键盘焦点，并提供双语 Narrator 名称；不新增
+Chat Server 请求，也不开放高级写。
+
+本机受影响聚焦测试 65/65、Release 全量 xUnit 1452/1452、本地化、XAML/RESW XML 和
+`git diff --check` 已通过。GitHub Windows Build run `31665344416` 已通过
+1452/1452 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31665344401`
+已通过。
+真实 NAS 的 MD5 v2 响应、取消与大文件耗时，以及真实 Windows 的 Narrator、高对比、
+200% 缩放、窄窗口、键鼠和触控为 `PENDING_USER_VALIDATION`。
+
+本次对 Claude Code 中断工作区的独立审查明确否决了不安全原型：Download 设置方法与
+参数不符合冻结公开契约；Container/VMM 写和 noVNC 缺少版本化行为验证并存在错误 API、
+假成功与 SID 外发风险；Chat 高级写缺少未知结果防重放；存储分析的分页、预算、独立
+失败与 MD5 确认不完整；通知正文和生命周期所有权不符合隐私与系统集成门。上述入口均
+恢复关闭，不删除原有只读/零写请求守卫。
+
 ## 11. 参考资料
 
 - [macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)

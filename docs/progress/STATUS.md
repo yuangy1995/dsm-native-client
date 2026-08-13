@@ -1,6 +1,6 @@
 # 当前开发进度
 
-> 最后更新：2026-08-12
+> 最后更新：2026-08-13
 > 当前里程碑：`五种设备形态的原生客户端对齐、分平台验收、CHAT-03 单附件与 NAS-02/NAS-04 受限只读详情`
 
 本文是功能完成情况、自动化结果、下一步和阻塞项的唯一事实来源。路线图、平台矩阵和专项计划不重复维护实时状态；发生冲突时以本文和同一源码版本的可复现验证结果为准。
@@ -14,6 +14,24 @@
 设备证据时，不得从源码、单元测试或无签名构建推断系统集成已经可用。
 
 ## 总体状态
+
+Windows 又完成两个低风险源码闭环：Files 单文件预览可由用户显式启动官方
+`SYNO.FileStation.MD5` v2 计算，固定发送 `file_path`，每个 profile 同时最多一个
+任务，取消、切换文件、关闭预览或切换 NAS 会拒绝迟到结果并尽力调用一次 `stop`；
+Chat composer 新增纯本地 Emoji 选择器，尊重当前选区且不新增 Chat Server 请求。两项
+均提供英语/简体中文资源、键盘焦点和 Narrator 源码门。本机 Release xUnit
+1452/1452、本地化、XAML/RESW XML 与 `git diff --check` 已通过；Windows x64/ARM64
+构建已由 GitHub Windows Build run `31665344416` 验证，1452/1452 项 xUnit 与
+WinUI x64/ARM64 均通过；Repository Check run `31665344401` 也已通过。真实 DSM
+的 MD5 任务字段、取消语义、
+大文件耗时，以及真实 Windows 的 Narrator、高对比、200% 缩放、窄窗口、键鼠和触控为
+`PENDING_USER_VALIDATION`。
+
+本轮同时审查并撤回 Claude Code 中断前生成的未完成原型：Download 设置使用了错误方法
+和参数形态；Container/VMM 写与 noVNC 存在未验证私有契约、错误 API、假成功及 SID
+外发风险；Chat 高级写缺少精确能力门和未知结果防重放；存储分析会把未分页、被截断的
+结果当作精确总量；系统通知会暴露文件名且生命周期所有权不完整。以上入口继续关闭，
+没有以删除安全断言或降低测试要求换取通过。
 
 截至 2026-08-12 当前源码口径，跨端原生客户端总体开发约 **74%**：Android 当前移动端开发目标已冻结为 100% 且进入设备验收；iPhone/iPad 主流程、Chat 单附件、Download/BTSearch/ACT-01 与 NAS-02/NAS-04 受限只读详情已形成源码和自动化闭环，仍缺真实 NAS、iPad/真机和部分无障碍验收；Windows Files/Photos/Chat/Download/Activity 与 NAS-02/NAS-04 只读详情已通过云端门禁，其中 NAS 详情切片通过 933/933 项 Windows xUnit，WinUI x64 与 ARM64 均为 0 警告、0 错误。Windows PHOTO-02 已补入文件夹/时间线媒体打开、右侧预览、前后切换、基础文件元数据、图片尺寸展示和保存副本；基础查看器提交 `4e1272e` 已通过 GitHub `Repository Check` run `31398565746` 与 `Windows Build` run `31398566274`。本地媒体元数据白名单切片已补入拍摄时间、相机品牌/型号和基础视频时长，且不新增 NAS 请求；GitHub `Windows Build` run `31410536634` 通过 943/943 项 xUnit 与 WinUI x64/ARM64 构建，`Repository Check` run `31410536680` 通过。剩余工作主要集中在真实 NAS/Narrator/键盘/高对比/窗口缩放验收、Apple 移动端真实设备/真实 NAS 验收、NAS/Chat/Download 高风险能力的版本化契约确认，以及发布签名、安装/卸载和无障碍矩阵。
 

@@ -3,6 +3,25 @@ namespace LanStash.Tests;
 public sealed class ChatPageSourceContractTests
 {
     [Fact]
+    public void EmojiPickerOnlyEditsLocalDraftAndKeepsKeyboardAccessibility()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var emoji = Read("windows/src/LanStash.App/Views/ChatPage.Emoji.cs");
+
+        Assert.Contains("x:Name=\"EmojiButton\"", xaml);
+        Assert.Contains("MinWidth=\"48\"", xaml);
+        Assert.Contains("MinHeight=\"48\"", xaml);
+        Assert.Contains("SelectionStart", emoji);
+        Assert.Contains("SelectionLength", emoji);
+        Assert.Contains("_composer.DraftText = insertion.Text", emoji);
+        Assert.Contains("AutomationProperties.SetName", emoji);
+        Assert.Contains("ComposerInput.Focus(FocusState.Keyboard)", emoji);
+        Assert.DoesNotContain("IChatRepository", emoji);
+        Assert.DoesNotContain("CreatePoll", emoji);
+        Assert.DoesNotContain("Scheduled", emoji);
+    }
+
+    [Fact]
     public void PageHasDedicatedReadOnlyFiveStateAdaptiveLayout()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
@@ -397,6 +416,7 @@ public sealed class ChatPageSourceContractTests
     [InlineData("ChatBrowserSendProgress")]
     [InlineData("ChatBrowserSendStatus")]
     [InlineData("ChatAttachmentChoose")]
+    [InlineData("ChatEmojiAction")]
     [InlineData("ChatAttachmentRemove")]
     [InlineData("ChatAttachmentCancel")]
     [InlineData("ChatAttachmentProgress")]

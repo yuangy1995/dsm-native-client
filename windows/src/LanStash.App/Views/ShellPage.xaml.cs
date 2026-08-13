@@ -826,6 +826,13 @@ public sealed partial class ShellPage : Page
             long? expectedTotalLength = null,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public FileMD5Availability MD5Availability => new(CanCalculate: false);
+
+        public Task<string> CalculateMD5Async(
+            string path,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class UnavailableVirtualMachineManagerRepository(Guid profileId)

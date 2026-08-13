@@ -3,6 +3,27 @@ namespace LanStash.Tests.Files.Preview;
 public sealed class FilePreviewPageSourceContractTests
 {
     [Fact]
+    public void MD5ActionIsCapabilityBoundAccessibleAndRejectsStaleResults()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml");
+        var pane = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml.cs");
+        var model = Read(
+            "windows/src/LanStash.App/Features/Files/Preview/FilePreviewViewModel.cs");
+
+        Assert.Contains("x:Uid=\"FileMd5Calculate\"", xaml);
+        Assert.Contains("MinHeight=\"44\"", xaml);
+        Assert.Contains("IsTextSelectionEnabled=\"True\"", xaml);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
+        Assert.Contains("IsMD5Available", pane);
+        Assert.Contains("OperationCanceledException", pane);
+        Assert.Contains("ReferenceEquals(_md5Repository, repository)", model);
+        Assert.Contains("generation == Volatile.Read(ref _generation)", model);
+        Assert.Contains("Snapshot.ProfileId == profileId", model);
+        Assert.Contains("Snapshot.Item?.Path", model);
+        Assert.Contains("_md5Cancellation?.Cancel()", model);
+    }
+
+    [Fact]
     public void PreviewUsesNativeReadOnlyPresentersAndNoWholeMediaArtifact()
     {
         var xaml = Read("windows/src/LanStash.App/Views/FilePreviewPane.xaml");

@@ -36,4 +36,16 @@ public interface IFilePreviewRepository : IFileRangeReader
         string text,
         TextFormatKind kind,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// File Station MD5 计算能力（只读）。在文件预览/属性中提供“计算 MD5”入口。
+    /// </summary>
+    FileMD5Availability MD5Availability { get; }
+
+    /// <summary>
+    /// 计算远端文件的 MD5，返回小写十六进制摘要字符串。
+    /// </summary>
+    Task<string> CalculateMD5Async(
+        string path,
+        CancellationToken cancellationToken = default);
 }

@@ -41,6 +41,7 @@ public sealed partial class ChatPage : Page, IDisposable
         _attachmentComposer = new(ChatAttachmentSendReviewBlocker.Current);
         _conversationCreator = new(repository);
         ConfigureCreateConversationAction();
+        ConfigureEmojiAction();
         _foregroundRefresher = new(
             viewModel.RefreshConversationsAsync,
             () => viewModel.SelectedConversation is { IsEncrypted: false },
@@ -279,6 +280,7 @@ public sealed partial class ChatPage : Page, IDisposable
             _viewModel.Messages.Count > 0);
         ConversationList.SelectedItem = _viewModel.SelectedConversation;
         UpdateSendState();
+        UpdateEmojiAction();
         UpdateAdaptiveLayout();
     }
 
@@ -351,6 +353,7 @@ public sealed partial class ChatPage : Page, IDisposable
         DisposeMembersDialog();
         DisposeAnnouncementsDialog();
         DisposeCreateConversationDialog();
+        DisposeEmojiFlyout();
         CancelAttachmentRead();
         _attachmentComposer.Dispose();
         _conversationCreator.Dispose();

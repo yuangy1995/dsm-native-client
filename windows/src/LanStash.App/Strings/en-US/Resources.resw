@@ -693,6 +693,9 @@
   <data name="ChatBrowserUnknownSender" xml:space="preserve"><value>Unknown sender</value></data>
   <data name="ChatAttachmentChoose.Content" xml:space="preserve"><value>Add attachment</value></data>
   <data name="ChatAttachmentChoose.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose one attachment</value></data>
+  <data name="ChatEmojiAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Choose emoji</value></data>
+  <data name="ChatEmojiActionName" xml:space="preserve"><value>Choose emoji</value></data>
+  <data name="ChatEmojiItemAutomationName" xml:space="preserve"><value>Insert emoji {0}</value></data>
   <data name="ChatAttachmentRemove.Content" xml:space="preserve"><value>Remove</value></data>
   <data name="ChatAttachmentRemove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Remove selected attachment</value></data>
   <data name="ChatAttachmentCancel.Content" xml:space="preserve"><value>Cancel</value></data>
@@ -953,6 +956,13 @@
   <data name="FilePreviewOpen.AutomationProperties.Name" xml:space="preserve"><value>Preview the selected file</value></data>
   <data name="FilePreviewBack.AutomationProperties.Name" xml:space="preserve"><value>Back to files</value></data>
   <data name="FilePreviewClose.AutomationProperties.Name" xml:space="preserve"><value>Close preview</value></data>
+  <data name="FileMd5Calculate.Content" xml:space="preserve"><value>Calculate MD5</value></data>
+  <data name="FileMd5Calculate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Calculate file MD5</value></data>
+  <data name="FileMd5Result.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>File MD5 result</value></data>
+  <data name="FileMd5Calculating" xml:space="preserve"><value>Calculating MD5...</value></data>
+  <data name="FileMd5TimedOut" xml:space="preserve"><value>Calculation timed out. Try again.</value></data>
+  <data name="FileMd5AlreadyRunning" xml:space="preserve"><value>Another MD5 calculation is already running for this NAS.</value></data>
+  <data name="FileMd5Failed" xml:space="preserve"><value>MD5 could not be calculated. Try again.</value></data>
   <data name="FilePreviewTitle.Text" xml:space="preserve"><value>Preview</value></data>
   <data name="FilePreviewReadOnly.Title" xml:space="preserve"><value>View only</value></data>
   <data name="FilePreviewReadOnly.Message" xml:space="preserve"><value>Previewing does not change the file on your NAS.</value></data>

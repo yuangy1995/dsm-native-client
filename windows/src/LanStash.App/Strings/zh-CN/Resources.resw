@@ -693,6 +693,9 @@
   <data name="ChatBrowserUnknownSender" xml:space="preserve"><value>未知发送者</value></data>
   <data name="ChatAttachmentChoose.Content" xml:space="preserve"><value>添加附件</value></data>
   <data name="ChatAttachmentChoose.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择一个附件</value></data>
+  <data name="ChatEmojiAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>选择表情</value></data>
+  <data name="ChatEmojiActionName" xml:space="preserve"><value>选择表情</value></data>
+  <data name="ChatEmojiItemAutomationName" xml:space="preserve"><value>插入表情 {0}</value></data>
   <data name="ChatAttachmentRemove.Content" xml:space="preserve"><value>移除</value></data>
   <data name="ChatAttachmentRemove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>移除已选附件</value></data>
   <data name="ChatAttachmentCancel.Content" xml:space="preserve"><value>取消</value></data>
@@ -953,6 +956,13 @@
   <data name="FilePreviewOpen.AutomationProperties.Name" xml:space="preserve"><value>预览所选文件</value></data>
   <data name="FilePreviewBack.AutomationProperties.Name" xml:space="preserve"><value>返回文件列表</value></data>
   <data name="FilePreviewClose.AutomationProperties.Name" xml:space="preserve"><value>关闭预览</value></data>
+  <data name="FileMd5Calculate.Content" xml:space="preserve"><value>计算 MD5</value></data>
+  <data name="FileMd5Calculate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>计算文件 MD5</value></data>
+  <data name="FileMd5Result.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>文件 MD5 结果</value></data>
+  <data name="FileMd5Calculating" xml:space="preserve"><value>正在计算 MD5...</value></data>
+  <data name="FileMd5TimedOut" xml:space="preserve"><value>计算超时，请重试。</value></data>
+  <data name="FileMd5AlreadyRunning" xml:space="preserve"><value>这台 NAS 已有一个 MD5 计算任务正在运行。</value></data>
+  <data name="FileMd5Failed" xml:space="preserve"><value>无法计算 MD5，请重试。</value></data>
   <data name="FilePreviewTitle.Text" xml:space="preserve"><value>预览</value></data>
   <data name="FilePreviewReadOnly.Title" xml:space="preserve"><value>仅查看</value></data>
   <data name="FilePreviewReadOnly.Message" xml:space="preserve"><value>预览不会更改 NAS 上的文件。</value></data>

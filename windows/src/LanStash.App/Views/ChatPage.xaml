@@ -489,15 +489,26 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock
                                         x:Uid="ChatBrowserComposerLabel"
                                         VerticalAlignment="Center"
                                         FontWeight="SemiBold" />
                                     <Button
+                                        x:Uid="ChatEmojiAction"
+                                        x:Name="EmojiButton"
+                                        Grid.Column="1"
+                                        MinWidth="48"
+                                        MinHeight="48"
+                                        Click="Emoji_Click"
+                                        Visibility="Collapsed">
+                                        <FontIcon Glyph="&#xE76E;" FontSize="16" />
+                                    </Button>
+                                    <Button
                                         x:Uid="ChatAttachmentChoose"
                                         x:Name="ChooseAttachmentButton"
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         MinWidth="48"
                                         MinHeight="48"
                                         Click="ChooseAttachment_Click" />
