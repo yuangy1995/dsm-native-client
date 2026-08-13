@@ -2981,7 +2981,7 @@
 "mobile.chat.unavailable.message" = "此 NAS 或账号无法使用 Synology Chat。";
 "mobile.chat.validation.title" = "暂时无法打开聊天";
 "mobile.chat.validation.message" = "当前无法安全打开聊天。请重新连接此 NAS 后再试。";
-"mobile.chat.read-only.notice" = "可新建单聊和私人群聊，并发送文字和一个附件。暂不支持加密会话。";
+"mobile.chat.read-only.notice" = "可新建单聊和私人群聊，发送文字和一个附件，并删除你自己发出的消息。暂不支持加密会话。";
 "mobile.chat.select.title" = "选择会话";
 "mobile.chat.select.message" = "请从侧边栏选择一个会话来阅读消息。";
 "mobile.chat.encrypted.label" = "加密会话";
@@ -3005,6 +3005,12 @@
 "mobile.chat.action.send" = "发送";
 "mobile.chat.sending" = "正在发送…";
 "mobile.chat.send.failed" = "无法确认消息是否已发送。再次发送前，请先核对此会话。";
+"mobile.chat.message.action.delete" = "删除";
+"mobile.chat.message.delete.confirm.title" = "删除这条消息？";
+"mobile.chat.message.delete.confirm.message" = "这会从 Synology Chat 中删除此消息，且无法撤销。";
+"mobile.chat.message.delete.confirm.cancel" = "取消";
+"mobile.chat.message.delete.progress" = "正在删除消息…";
+"mobile.chat.message.delete.failed" = "无法删除这条消息。请刷新此会话后再试。";
 "mobile.chat.send.review" = "请刷新并核对此会话，然后再发送相同消息。";
 "mobile.chat.attachment.action.cancel" = "取消";
 "mobile.chat.attachment.action.files" = "选择文件";

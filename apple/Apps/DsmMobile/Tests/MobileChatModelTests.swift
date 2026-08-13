@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class MobileChatModelTests: XCTestCase {
-    func test移动适配层开放纯文字群成员和群公告只读并继续拒绝高级能力() async throws {
+    func test移动适配层开放纯文字群成员群公告和本人消息删除并继续拒绝高级能力() async throws {
         let member = ChatUser(id: "member", displayName: "成员")
         let pinnedAt = Date(timeIntervalSince1970: 100)
         let announcement = ChatMessage(
@@ -26,6 +26,7 @@ final class MobileChatModelTests: XCTestCase {
                 status: .available,
                 supportedFeatures: [
                     .textMessage,
+                    .deleteOwnMessage,
                     .groupConversation,
                     .groupMembers,
                     .pinnedMessages
@@ -66,13 +67,13 @@ final class MobileChatModelTests: XCTestCase {
                 )
             )
         }
-        await assertReadOnlyFailure {
-            try await repository.deleteMessage(
-                conversationID: "conversation",
-                messageID: "message",
-                clientRequestID: UUID()
-            )
-        }
+        try await repository.deleteMessage(
+            conversationID: "conversation",
+            messageID: "message",
+            clientRequestID: UUID()
+        )
+        let deleteRequests = await base.deleteRequests()
+        XCTAssertEqual(deleteRequests.map(\.messageID), ["message"])
         await assertReadOnlyFailure {
             try await repository.closeConversation(
                 conversationID: "conversation",
@@ -156,7 +157,7 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertEqual(availability.status, .available)
         XCTAssertEqual(
             availability.supportedFeatures,
-            [.textMessage, .groupConversation, .groupMembers, .pinnedMessages]
+            [.textMessage, .groupConversation, .groupMembers, .pinnedMessages, .deleteOwnMessage]
         )
         let events = await repository.realtimeEvents()
         var iterator = events.makeAsyncIterator()
@@ -1044,6 +1045,87 @@ final class MobileChatModelTests: XCTestCase {
         XCTAssertFalse(model.state.selectedDraftRequiresReview)
     }
 
+    func test删除本人消息成功后从当前会话移除且不开放他人消息() async {
+        let conversation = Self.conversation(id: "c1", title: "家庭")
+        let own = Self.message(
+            id: "mine",
+            conversationID: conversation.id,
+            seconds: 10,
+            isFromCurrentUser: true
+        )
+        let other = Self.message(
+            id: "other",
+            conversationID: conversation.id,
+            seconds: 20,
+            isFromCurrentUser: false
+        )
+        let request = ChatMessageRequest(conversationID: conversation.id, cursor: nil)
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(status: .available, supportedFeatures: [.deleteOwnMessage]),
+            conversations: [conversation],
+            pages: [request: .init(messages: [own, other], previousCursor: nil, hasMoreBefore: false)]
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: UUID(), repository: repository)
+        await model.selectConversation(conversation)
+
+        XCTAssertTrue(model.canDeleteMessage(own))
+        XCTAssertFalse(model.canDeleteMessage(other))
+        await model.deleteMessage(other)
+        var deleteRequests = await repository.deleteRequests()
+        XCTAssertTrue(deleteRequests.isEmpty)
+
+        await model.deleteMessage(own)
+
+        XCTAssertNil(model.state.deletingMessageID)
+        XCTAssertNil(model.state.deleteMessageErrorCategory)
+        XCTAssertEqual(model.state.selectedMessages.messages.map(\.id), ["other"])
+        deleteRequests = await repository.deleteRequests()
+        XCTAssertEqual(deleteRequests, [ChatDeleteRequest(conversationID: conversation.id, messageID: own.id)])
+    }
+
+    func test删除提交后无法确认会阻止同一消息直到刷新() async {
+        let conversation = Self.conversation(id: "c1", title: "家庭")
+        let own = Self.message(
+            id: "mine",
+            conversationID: conversation.id,
+            seconds: 10,
+            isFromCurrentUser: true
+        )
+        let request = ChatMessageRequest(conversationID: conversation.id, cursor: nil)
+        let repository = ChatRepositoryStub(
+            availability: ChatAvailability(status: .available, supportedFeatures: [.deleteOwnMessage]),
+            conversations: [conversation],
+            pages: [request: .init(messages: [own], previousCursor: nil, hasMoreBefore: false)]
+        )
+        await repository.setDeleteFailure(
+            AppError(category: .partialFailure, isRetryable: true, safeUserMessage: "需要核对"),
+            messageID: own.id
+        )
+        let model = MobileChatModel()
+        await model.activate(profileID: UUID(), repository: repository)
+        await model.selectConversation(conversation)
+
+        await model.deleteMessage(own)
+        await model.deleteMessage(own)
+
+        XCTAssertNil(model.state.deletingMessageID)
+        XCTAssertEqual(model.state.deleteMessageErrorCategory, .partialFailure)
+        XCTAssertEqual(model.state.deleteMessageErrorID, own.id)
+        XCTAssertFalse(model.canDeleteMessage(own))
+        let deleteRequests = await repository.deleteRequests()
+        XCTAssertEqual(deleteRequests.count, 1)
+
+        await repository.setPage(
+            .init(messages: [own], previousCursor: nil, hasMoreBefore: false),
+            for: request
+        )
+        await model.refreshMessages()
+
+        XCTAssertTrue(model.canDeleteMessage(own))
+        XCTAssertNil(model.state.deleteMessageErrorCategory)
+    }
+
     func test加密会话可见但不会请求或缓存正文() async {
         let encrypted = Self.conversation(id: "secret", title: "加密会话", isEncrypted: true)
         let repository = ChatRepositoryStub(
@@ -1861,14 +1943,18 @@ final class MobileChatModelTests: XCTestCase {
         conversationID: String,
         seconds: TimeInterval,
         text: String = "正文",
+        isFromCurrentUser: Bool? = nil,
+        deliveryState: ChatMessageDeliveryState = .sent,
         pinnedAt: Date? = nil
     ) -> ChatMessage {
         ChatMessage(
             id: id,
             conversationID: conversationID,
             senderID: "sender",
+            isFromCurrentUser: isFromCurrentUser,
             sentAt: Date(timeIntervalSince1970: seconds),
             text: text,
+            deliveryState: deliveryState,
             pinnedAt: pinnedAt
         )
     }
@@ -1883,6 +1969,11 @@ final class MobileChatModelTests: XCTestCase {
 private struct ChatMessageRequest: Hashable, Sendable {
     let conversationID: String
     let cursor: String?
+}
+
+private struct ChatDeleteRequest: Hashable, Sendable {
+    let conversationID: String
+    let messageID: String
 }
 
 private final class InMemoryMobileChatConversationPinStore: MobileChatConversationPinStore {
@@ -1929,6 +2020,8 @@ private actor ChatRepositoryStub: ChatRepository {
     private var messageRequestValues: [ChatMessageRequest] = []
     private var memberRequestValues: [String] = []
     private var announcementRequestValues: [String] = []
+    private var deleteRequestValues: [ChatDeleteRequest] = []
+    private var deleteFailureValues: [String: AppError] = [:]
     private var rejectedBaseCalls = 0
     private var realtimeEventCalls = 0
     private var realtimeStartCalls = 0
@@ -2045,6 +2138,7 @@ private actor ChatRepositoryStub: ChatRepository {
     func messageRequests() -> [ChatMessageRequest] { messageRequestValues }
     func memberRequests() -> [String] { memberRequestValues }
     func announcementRequests() -> [String] { announcementRequestValues }
+    func deleteRequests() -> [ChatDeleteRequest] { deleteRequestValues }
     func sentDrafts() -> [ChatMessageDraft] { sentDraftValues }
     func nonReadCallCount() -> Int { rejectedBaseCalls }
     func realtimeCallCount() -> Int { realtimeEventCalls + realtimeStartCalls + realtimeStopCalls }
@@ -2263,7 +2357,14 @@ private actor ChatRepositoryStub: ChatRepository {
         conversationID: String,
         messageID: String,
         clientRequestID: UUID
-    ) async throws { rejectedBaseCalls += 1 }
+    ) async throws {
+        deleteRequestValues.append(ChatDeleteRequest(conversationID: conversationID, messageID: messageID))
+        if let failure = deleteFailureValues[messageID] { throw failure }
+    }
+
+    func setDeleteFailure(_ error: AppError, messageID: String) {
+        deleteFailureValues[messageID] = error
+    }
 
     func closeConversation(
         conversationID: String,

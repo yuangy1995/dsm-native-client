@@ -1044,6 +1044,7 @@ private struct MobileChatMembersSheet: View {
 private struct MobileChatMessageRow: View {
     @Bindable var chat: MobileChatModel
     let message: ChatMessage
+    @State private var confirmsDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1067,10 +1068,82 @@ private struct MobileChatMessageRow: View {
                     attachment: attachment
                 )
             }
+            deleteStatus
         }
         .padding(.vertical, 6)
         .frame(maxWidth: 680, minHeight: 44, alignment: .leading)
         .accessibilityElement(children: .combine)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            deleteActionButton
+        }
+        .contextMenu {
+            deleteActionButton
+        }
+        .modifier(MobileChatDeleteAccessibilityAction(isEnabled: chat.canDeleteMessage(message)) {
+            confirmsDelete = true
+        })
+        .confirmationDialog(
+            L10n.string("mobile.chat.message.delete.confirm.title"),
+            isPresented: $confirmsDelete,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.string("mobile.chat.message.action.delete"), role: .destructive) {
+                Task { await chat.deleteMessage(message) }
+            }
+            Button(L10n.string("mobile.chat.message.delete.confirm.cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.string("mobile.chat.message.delete.confirm.message"))
+        }
     }
 
+    @ViewBuilder
+    private var deleteActionButton: some View {
+        if chat.canDeleteMessage(message) {
+            Button(role: .destructive) {
+                confirmsDelete = true
+            } label: {
+                Label(
+                    L10n.string("mobile.chat.message.action.delete"),
+                    systemImage: "trash"
+                )
+            }
+        }
+    }
+
+    private struct MobileChatDeleteAccessibilityAction: ViewModifier {
+        let isEnabled: Bool
+        let action: () -> Void
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if isEnabled {
+                content.accessibilityAction(
+                    named: L10n.string("mobile.chat.message.action.delete"),
+                    action
+                )
+            } else {
+                content
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var deleteStatus: some View {
+        if chat.state.deletingMessageID == message.id {
+            Label(
+                L10n.string("mobile.chat.message.delete.progress"),
+                systemImage: "trash"
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        } else if chat.state.deleteMessageErrorID == message.id,
+                  chat.state.deleteMessageErrorCategory != nil {
+            Label(
+                L10n.string("mobile.chat.message.delete.failed"),
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.footnote)
+            .foregroundStyle(.orange)
+        }
+    }
 }

@@ -31,6 +31,7 @@ struct MobileChatProfileState: Equatable, Sendable {
     var isRefreshingAnnouncements = false
     var isLoadingMoreMessages = false
     var isSendingMessage = false
+    var deletingMessageID: String?
     var isPreparingAttachment = false
     var isSendingAttachment = false
     var attachmentProgressFraction: Double?
@@ -46,8 +47,11 @@ struct MobileChatProfileState: Equatable, Sendable {
     var memberErrorCategory: AppErrorCategory?
     var announcementErrorCategory: AppErrorCategory?
     var sendErrorCategory: AppErrorCategory?
+    var deleteMessageErrorCategory: AppErrorCategory?
+    var deleteMessageErrorID: String?
     var attachmentErrorCategory: AppErrorCategory?
     var remoteAttachmentErrorCategory: AppErrorCategory?
+    var deleteReviewBlockedMessageIDsByConversation: [String: Set<String>] = [:]
 
     var selectedConversation: ChatConversation? {
         guard let selectedConversationID else { return nil }
@@ -93,6 +97,7 @@ struct MobileChatProfileState: Equatable, Sendable {
         guard selectedConversation?.isEncrypted == false,
               availability.supportedFeatures.contains(.textMessage),
               !isSendingMessage,
+              deletingMessageID == nil,
               !isPreparingAttachment,
               !isSendingAttachment,
               !selectedDraftRequiresReview else {

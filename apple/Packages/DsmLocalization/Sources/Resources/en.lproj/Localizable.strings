@@ -2981,7 +2981,7 @@
 "mobile.chat.unavailable.message" = "Synology Chat isn’t available for this NAS or account.";
 "mobile.chat.validation.title" = "Chat Needs Attention";
 "mobile.chat.validation.message" = "Chat can’t be opened safely right now. Reconnect to this NAS, then try again.";
-"mobile.chat.read-only.notice" = "You can start direct conversations and private groups, then send text and one attachment. Encrypted conversations aren’t available.";
+"mobile.chat.read-only.notice" = "You can start direct conversations and private groups, send text and one attachment, and delete your own messages. Encrypted conversations aren’t available.";
 "mobile.chat.select.title" = "Select a Conversation";
 "mobile.chat.select.message" = "Choose a conversation from the sidebar to read its messages.";
 "mobile.chat.encrypted.label" = "Encrypted conversation";
@@ -3005,6 +3005,12 @@
 "mobile.chat.action.send" = "Send";
 "mobile.chat.sending" = "Sending…";
 "mobile.chat.send.failed" = "The message couldn’t be confirmed. Check the conversation before sending it again.";
+"mobile.chat.message.action.delete" = "Delete";
+"mobile.chat.message.delete.confirm.title" = "Delete message?";
+"mobile.chat.message.delete.confirm.message" = "This removes the message from Synology Chat. This can’t be undone.";
+"mobile.chat.message.delete.confirm.cancel" = "Cancel";
+"mobile.chat.message.delete.progress" = "Deleting message…";
+"mobile.chat.message.delete.failed" = "The message couldn’t be deleted. Refresh this conversation before trying again.";
 "mobile.chat.send.review" = "Refresh and check this conversation before sending the same message again.";
 "mobile.chat.attachment.action.cancel" = "Cancel";
 "mobile.chat.attachment.action.files" = "Choose File";

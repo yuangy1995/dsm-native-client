@@ -184,7 +184,7 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 | CHAT-01 · C | 会话、用户、首次单聊、私人群聊、成员与未读/置顶/本地已读 | 会话-消息-详情布局、通知入口 | **核心**：会话、成员、可解释未读；iPhone Stack、iPad 双栏 | `ChatWorkspaceModel.swift`、`DsmChatRepository.swift` |
 | CHAT-02 · C | 消息分页、草稿、发送/失败重试、实时 Socket.IO 与轮询降级 | 键盘发送、连接状态与可恢复错误 | **核心**：文字/Emoji、草稿、分页、失败恢复与前台实时；源码与模拟器闭环已完成 | `ChatWorkspaceModel.swift`、`DsmChatRealtimeClient.swift` |
 | CHAT-03 · C | 单附件上传/保存、缩略图、图片预览；提醒、定时消息与投票第一阶段 | 文件选择器、详情窗格、任务反馈 | **受限**：单附件选择、上传/保存与预览；提醒、定时和投票不作为当前完成条件 | `ChatWorkspaceView.swift`、Chat 请求 fixture |
-| CHAT-04 · C | 删除本人消息、关闭会话、消息转发、服务端消息置顶/取消置顶；语音发送和完整加密实现不存在 | 可发现的消息/会话菜单与结果回读 | **受限**：少量常用消息动作按端点开放；高级管理、语音和加密当前不做 | `ChatWorkspaceModel.swift`、`DsmChatRepository.swift` |
+| CHAT-04 · C | 删除本人消息、关闭会话、消息转发、服务端消息置顶/取消置顶；语音发送和完整加密实现不存在 | 可发现的消息/会话菜单与结果回读 | **受限**：iPhone/iPad 已开放本人消息删除；关闭会话、转发、服务端置顶、高级管理、语音和加密当前不做 | `ChatWorkspaceModel.swift`、`DsmChatRepository.swift` |
 | DS-01 · A/C | 下载任务列表、详情、进度/速度、网址或任务文件创建、目标目录 | 专用任务页、筛选与多选命令 | **受限**：列表/详情和单任务创建；不承接复杂批量任务 | `ServiceManagementModel.swift`、`ServiceManagementView.swift` |
 | DS-02 · A/C | 暂停/继续/开始/删除，删除数据分支；官方基础设置 | 批量命令、设置页、结果回读 | **受限**：单任务暂停/继续；删除数据、批量与高级设置当前不做 | 同上 |
 | CM-01 · C | 概览、容器、映像、网络、项目、事件 | 模块专用分页/详情、键盘与多选 | **受限**：只读健康与资源摘要；iPad 列表-详情，iPhone 分层导航 | `ContainerManagerPane`、服务管理 Repository |
@@ -192,6 +192,8 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 Windows CHAT-02 已补入前台轮询降级闭环：Chat 页面与窗口可见时立即刷新，并每 30 秒严格单飞回读会话和当前未加密会话消息；离页、隐藏、profile 切换或释放会取消并隔离迟到结果，失败保留旧内容。该能力复用既有只读契约，不新增 Socket.IO、后台常驻、通知或服务器已读；本机聚焦 63/63、Release 全量 xUnit 1178/1178 通过，Windows Build run `31531069884` 与 Repository Check run `31531069860` 已通过。真实设备/Chat Server/辅助功能仍待验证。
 
 Apple Mobile CHAT-01 已补齐本地已读与可解释未读：只在未加密消息详情可见且最新页成功读取后，以实际消息时间建立 profile/会话内存基线；同一活动的旧未读不反弹，更晚活动恢复显示。返回列表、失败/取消、加密会话或未知时间不清零，不新增服务器已读请求或持久化。本机模型与展示聚焦 56/56、DsmMobile 全量 433/433 通过，Apple Build run `31533388602` 与 Repository Check run `31533388647` 已通过；真实设备/Chat Server/辅助功能待验证。
+
+Apple Mobile CHAT-04 已补入本人消息删除受限闭环：只有当前未加密会话内本人已发送消息，在 `.deleteOwnMessage` 能力存在时才显示滑动、上下文菜单和 VoiceOver 删除入口。删除需二次确认，提交前后均回读核对，未知结果刷新前不自动重放；关闭会话、转发、服务端置顶、提醒、定时、投票、语音和加密仍不进入当前移动范围。本机移动 Chat 聚焦 66/66 通过；真实 Chat Server 策略、真机与辅助功能为 `PENDING_USER_VALIDATION`。
 | CM-02 · C | 容器生命周期/删除、映像删除、网络创建/删除、Registry 搜索/标签/拉取 | 分步对话、后台任务状态 | **当前不做**：生命周期、删除、拉取和网络写交给 Mac App 或 DSM Web | `ServiceManagementModel.swift` |
 | VM-01 · C | 虚拟机、主机、存储、网络、映像、保护与事件读取 | 数据视图、详情与多选操作 | **受限**：只读健康与资源摘要；iPad 多栏，iPhone 摘要优先 | `VirtualMachineManagerPane` |
 | VM-02 · C | 基础创建/修改、电源/删除、网络修改/删除、映像删除、独立远程控制台 | 分步向导和可调整控制台窗口 | **当前不做**：创建/编辑/删除/网络写/电源与控制台交给 Mac App 或 DSM Web | `ServiceManagementModel.swift`、`ServiceManagementView.swift` |

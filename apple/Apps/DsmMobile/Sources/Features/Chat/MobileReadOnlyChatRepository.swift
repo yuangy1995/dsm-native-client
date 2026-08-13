@@ -2,7 +2,7 @@ import DsmCore
 import Foundation
 import UniformTypeIdentifiers
 
-/// 移动端 Chat 能力边界：只透传当前受限范围内的会话读取、文字和单附件消息能力。
+/// 移动端 Chat 能力边界：只透传当前受限范围内的会话读取、文字、单附件和本人消息删除能力。
 struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
     let base: any ChatRepository
 
@@ -17,7 +17,8 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
             .fileAttachment,
             .attachmentDownload,
             .groupMembers,
-            .pinnedMessages
+            .pinnedMessages,
+            .deleteOwnMessage
         ]
         let mobileFeatures = value.status == .available
             ? value.supportedFeatures.intersection(mobileScope)
@@ -162,7 +163,16 @@ struct MobileReadOnlyChatRepository: ChatRepository, Sendable {
         messageID: String,
         clientRequestID: UUID
     ) async throws {
-        throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        let value = await base.availability()
+        guard value.status == .available,
+              value.supportedFeatures.contains(.deleteOwnMessage) else {
+            throw MobileReadOnlyChatRepositoryError.operationUnavailable
+        }
+        try await base.deleteMessage(
+            conversationID: conversationID,
+            messageID: messageID,
+            clientRequestID: clientRequestID
+        )
     }
 
     func closeConversation(

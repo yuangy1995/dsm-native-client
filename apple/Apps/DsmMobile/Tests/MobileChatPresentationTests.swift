@@ -42,7 +42,7 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("mobile.chat.conversation.accessibility.encrypted"))
         for forbidden in [
             "TextEditor(",
-            "downloadAttachment(", "startRealtime(", "contextMenu", "onHover", "doubleClick"
+            "downloadAttachment(", "startRealtime(", "onHover", "doubleClick"
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
@@ -218,6 +218,45 @@ final class MobileChatPresentationTests: XCTestCase {
         XCTAssertTrue(state.contains("announcementsByConversation"))
         XCTAssertTrue(repository.contains(".pinnedMessages"))
         XCTAssertTrue(repository.contains("attachments: []"))
+        XCTAssertFalse(model.contains("setMessagePinned"))
+    }
+
+    func test本人消息删除使用原生行菜单二次确认和防重放状态() throws {
+        let source = try chatViewSources()
+        let model = try sourceFile("Sources/Features/Chat/MobileChatModel.swift")
+        let state = try sourceFile("Sources/Features/Chat/MobileChatState.swift")
+        let repository = try sourceFile("Sources/Features/Chat/MobileReadOnlyChatRepository.swift")
+
+        XCTAssertTrue(source.contains("private struct MobileChatMessageRow: View"))
+        XCTAssertTrue(source.contains(".swipeActions(edge: .trailing, allowsFullSwipe: false)"))
+        XCTAssertTrue(source.contains(".contextMenu"))
+        XCTAssertTrue(source.contains("MobileChatDeleteAccessibilityAction(isEnabled: chat.canDeleteMessage(message))"))
+        XCTAssertTrue(source.contains(".confirmationDialog("))
+        XCTAssertTrue(source.contains("Button(L10n.string(\"mobile.chat.message.action.delete\"), role: .destructive)"))
+        XCTAssertTrue(source.contains("chat.canDeleteMessage(message)"))
+        XCTAssertTrue(source.contains("await chat.deleteMessage(message)"))
+        XCTAssertTrue(source.contains("chat.state.deletingMessageID == message.id"))
+        XCTAssertTrue(source.contains("chat.state.deleteMessageErrorID == message.id"))
+        for key in [
+            "mobile.chat.message.action.delete",
+            "mobile.chat.message.delete.confirm.title",
+            "mobile.chat.message.delete.confirm.message",
+            "mobile.chat.message.delete.confirm.cancel",
+            "mobile.chat.message.delete.progress",
+            "mobile.chat.message.delete.failed"
+        ] {
+            XCTAssertTrue(source.contains(key), key)
+        }
+        XCTAssertTrue(model.contains("canDeleteMessage(_ message: ChatMessage)"))
+        XCTAssertTrue(model.contains("message.isFromCurrentUser == true"))
+        XCTAssertTrue(model.contains("supportedFeatures.contains(.deleteOwnMessage)"))
+        XCTAssertTrue(model.contains("deleteReviewBlockedMessageIDsByConversation"))
+        XCTAssertTrue(model.contains("messageDeleteGeneration"))
+        XCTAssertTrue(state.contains("deletingMessageID"))
+        XCTAssertTrue(state.contains("deleteMessageErrorCategory"))
+        XCTAssertTrue(repository.contains(".deleteOwnMessage"))
+        XCTAssertFalse(source.contains("forwardMessage("))
+        XCTAssertFalse(source.contains("closeConversation("))
         XCTAssertFalse(model.contains("setMessagePinned"))
     }
 
