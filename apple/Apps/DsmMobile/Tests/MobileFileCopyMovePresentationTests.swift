@@ -23,6 +23,8 @@ final class MobileFileCopyMovePresentationTests: XCTestCase {
         XCTAssertTrue(browser.contains("beginCopyMove(.move, item: item)"))
         XCTAssertTrue(browser.contains("guard canCopyMove(item)"))
         XCTAssertTrue(browser.contains("MobileFileCopyMoveModel.canBegin("))
+        XCTAssertTrue(browser.contains("canBatchCopyMove(_ item: FileItem)"))
+        XCTAssertTrue(browser.contains("MobileFileCopyMoveModel.canBeginBatchItem("))
         XCTAssertTrue(browser.contains("copyMove.deactivate()"))
         XCTAssertTrue(browser.contains("MobileFileCopyMoveView("))
         XCTAssertTrue(browser.contains(".task(id: activationIdentity)"))
@@ -50,6 +52,8 @@ final class MobileFileCopyMovePresentationTests: XCTestCase {
         XCTAssertTrue(model.contains("overwrite: false"))
         XCTAssertTrue(model.contains("ObjectIdentifier(repository)"))
         XCTAssertTrue(model.contains("MobileFileCopyMoveReviewBlocker"))
+        XCTAssertTrue(model.contains("isSupportedSourceItem(_ item: FileItem, allowDirectory: Bool)"))
+        XCTAssertTrue(model.contains("isInvalidDestination(_ path: String, for sources: [FileItem])"))
     }
 
     func test批次视图展示当前进度与守恒摘要且不提供重放动作() throws {
@@ -61,6 +65,7 @@ final class MobileFileCopyMovePresentationTests: XCTestCase {
         XCTAssertTrue(view.contains("batchIssues(presentation)"))
         XCTAssertTrue(view.contains("mobile.files.copy-move.batch.issues.title"))
         XCTAssertTrue(view.contains("batchCompletedWithoutIssues"))
+        XCTAssertTrue(view.contains("!presentation.canSubmitDestination"))
         let review = try slice(view, from: "private func reviewView", to: "@ToolbarContentBuilder")
         XCTAssertFalse(review.contains("retry"))
         XCTAssertFalse(review.contains("submit"))

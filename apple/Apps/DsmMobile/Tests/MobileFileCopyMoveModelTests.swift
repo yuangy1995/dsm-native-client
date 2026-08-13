@@ -109,6 +109,79 @@ final class MobileFileCopyMoveModelTests: XCTestCase {
         XCTAssertEqual(requests.count, 1)
     }
 
+    func test单文件夹复制不依赖目录大小且复用同一写链路() async throws {
+        let profileID = UUID()
+        let source = item(profileID, "folder", "/source/folder", .directory, size: nil)
+        let copied = item(profileID, "folder", "/target/folder", .directory, size: 999)
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: pages(profileID),
+            reply: .outcome(try outcome(.confirmedSuccess, .copy, source, "/target", copied))
+        )
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        model.begin(
+            operation: .copy,
+            item: source,
+            parentPath: "/source",
+            source: .browser,
+            visibleItems: [source],
+            readOnlyRoots: [],
+            repository: repository
+        )
+        await waitForBrowser(model)
+        model.openFolder(item(profileID, "target", "/target", .directory), repository: repository)
+        await waitForPath(model, "/target")
+
+        let success = await model.submit(repository: repository)
+
+        XCTAssertEqual(success?.item, copied)
+        XCTAssertFalse(model.isPresented)
+        let requests = await repository.recordedRequests()
+        let request = requests.first
+        XCTAssertEqual(request?.source, source)
+        XCTAssertEqual(request?.destinationFolderPath, "/target")
+        XCTAssertFalse(request?.overwrite ?? true)
+    }
+
+    func test文件夹目标浏览排除源目录子树且源父目录不可提交() async {
+        let profileID = UUID()
+        let source = item(profileID, "folder", "/source/folder", .directory, size: nil)
+        let sourceRoot = item(profileID, "source", "/source", .directory)
+        let sibling = item(profileID, "sibling", "/source/sibling", .directory)
+        let target = item(profileID, "target", "/target", .directory)
+        let repository = FileCopyMoveRepositoryStub(
+            profileID: profileID,
+            pages: [
+                "": page("", [sourceRoot, target]),
+                "/source": page("/source", [source, sibling]),
+                "/target": page("/target", []),
+            ]
+        )
+        let model = MobileFileCopyMoveModel(blocker: MobileFileCopyMoveReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        model.begin(
+            operation: .move,
+            item: source,
+            parentPath: "/source",
+            source: .browser,
+            visibleItems: [source],
+            readOnlyRoots: [],
+            repository: repository
+        )
+        await waitForBrowser(model)
+        model.openFolder(sourceRoot, repository: repository)
+        await waitForPath(model, "/source")
+
+        XCTAssertEqual(model.presentation?.destination.folders, [sibling])
+        XCTAssertEqual(model.presentation?.canSubmitDestination, false)
+        let result = await model.submit(repository: repository)
+        XCTAssertNil(result)
+        XCTAssertEqual(model.presentation?.feedback, .invalidDestination)
+        let requests = await repository.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     func test远程回收站目录外profile非当前revision与只读根均零入口零写() async {
         let profileID = UUID()
         let repository = FileCopyMoveRepositoryStub(profileID: profileID, pages: pages(profileID))

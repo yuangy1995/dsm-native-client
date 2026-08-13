@@ -2532,9 +2532,7 @@ public actor DsmFileRepository: FileRepository {
         let operation = request.operation.rawValue
         guard request.profileID == profileID,
               request.source.profileID == profileID,
-              request.source.kind == .file,
-              let sourceSize = request.source.sizeBytes,
-              sourceSize >= 0,
+              Self.isSupportedCopyMoveSource(request.source),
               !request.overwrite,
               let sourcePath = Self.normalizedMutationPath(request.source.path),
               sourcePath == request.source.path,
@@ -5595,6 +5593,17 @@ public actor DsmFileRepository: FileRepository {
 
     private static func isRemoteMutationItem(_ item: FileItem) -> Bool {
         isRemoteMount(item)
+    }
+
+    private static func isSupportedCopyMoveSource(_ item: FileItem) -> Bool {
+        switch item.kind {
+        case .file:
+            item.sizeBytes.map { $0 >= 0 } == true
+        case .directory:
+            true
+        case .symlink, .unknown:
+            false
+        }
     }
 
     private static func hasCanonicalMutationIdentity(_ item: FileItem) -> Bool {

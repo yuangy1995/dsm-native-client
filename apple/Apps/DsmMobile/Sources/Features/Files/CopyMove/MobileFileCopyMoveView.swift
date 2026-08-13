@@ -288,8 +288,7 @@ struct MobileFileCopyMoveView: View {
                 Button(confirmTitle(presentation.operation)) { submit() }
                     .disabled(
                         presentation.phase != .browsing ||
-                        presentation.destination.path.isEmpty ||
-                        presentation.destination.path == presentation.sourceParentPath
+                        !presentation.canSubmitDestination
                     )
                     .frame(minHeight: 44)
             }

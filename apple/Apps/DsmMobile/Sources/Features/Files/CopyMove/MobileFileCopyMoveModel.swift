@@ -50,12 +50,18 @@ final class MobileFileCopyMoveModel {
         readOnlyRoots: [String],
         repository: any MobileFileCopyMoving
     ) {
-        begin(
-            operation: operation,
-            items: [item],
+        guard let frozenItem = Self.validatedItem(
+            item,
             parentPath: parentPath,
             source: source,
             visibleItems: visibleItems,
+            readOnlyRoots: readOnlyRoots,
+            profileID: repository.profileID
+        ) else { return }
+        present(
+            operation: operation,
+            items: [frozenItem],
+            parentPath: parentPath,
             readOnlyRoots: readOnlyRoots,
             repository: repository
         )
@@ -78,16 +84,33 @@ final class MobileFileCopyMoveModel {
             readOnlyRoots: readOnlyRoots,
             profileID: repository.profileID
         )
+        guard !frozenItems.isEmpty else { return }
+        present(
+            operation: operation,
+            items: frozenItems,
+            parentPath: parentPath,
+            readOnlyRoots: readOnlyRoots,
+            repository: repository
+        )
+    }
+
+    private func present(
+        operation: FileCopyMoveOperation,
+        items: [FileItem],
+        parentPath: String,
+        readOnlyRoots: [String],
+        repository: any MobileFileCopyMoving
+    ) {
         guard isActive(repository),
               requestTask == nil,
               presentation?.phase != .submitting,
-              let first = frozenItems.first else { return }
+              let first = items.first else { return }
         generation &+= 1
         presentation = MobileFileCopyMovePresentation(
             profileID: repository.profileID,
             operation: operation,
             source: first,
-            sources: frozenItems,
+            sources: items,
             sourceParentPath: parentPath,
             readOnlyRoots: readOnlyRoots
         )
@@ -168,7 +191,8 @@ final class MobileFileCopyMoveModel {
                 let added = Self.allowedFolders(
                     page.items,
                     profileID: profileID,
-                    readOnlyRoots: current.readOnlyRoots
+                    readOnlyRoots: current.readOnlyRoots,
+                    sources: current.sources
                 )
                 guard !page.hasMore || !added.isEmpty else { throw MobileFileCopyMoveError.zeroProgress }
                 var paths = Set(current.destination.folders.map(\.path))
@@ -195,7 +219,7 @@ final class MobileFileCopyMoveModel {
               snapshot.profileID == repository.profileID else { return nil }
         guard Self.isCanonicalAbsolutePath(snapshot.destination.path),
               !Self.isReadOnlyPath(snapshot.destination.path, roots: snapshot.readOnlyRoots),
-              snapshot.destination.path != snapshot.sourceParentPath else {
+              snapshot.canSubmitDestination else {
             setFeedback(.invalidDestination)
             return nil
         }
@@ -347,10 +371,48 @@ final class MobileFileCopyMoveModel {
         readOnlyRoots: [String],
         profileID: UUID
     ) -> Bool {
+        canUseItem(
+            item,
+            parentPath: parentPath,
+            source: source,
+            visibleItems: visibleItems,
+            readOnlyRoots: readOnlyRoots,
+            profileID: profileID,
+            allowDirectory: true
+        )
+    }
+
+    static func canBeginBatchItem(
+        item: FileItem,
+        parentPath: String,
+        source: MobileFileLocationSource,
+        visibleItems: [FileItem],
+        readOnlyRoots: [String],
+        profileID: UUID
+    ) -> Bool {
+        canUseItem(
+            item,
+            parentPath: parentPath,
+            source: source,
+            visibleItems: visibleItems,
+            readOnlyRoots: readOnlyRoots,
+            profileID: profileID,
+            allowDirectory: false
+        )
+    }
+
+    private static func canUseItem(
+        _ item: FileItem,
+        parentPath: String,
+        source: MobileFileLocationSource,
+        visibleItems: [FileItem],
+        readOnlyRoots: [String],
+        profileID: UUID,
+        allowDirectory: Bool
+    ) -> Bool {
         !source.isReadOnlyLocation &&
             item.profileID == profileID &&
-            item.kind == .file &&
-            item.sizeBytes.map { $0 >= 0 } == true &&
+            isSupportedSourceItem(item, allowDirectory: allowDirectory) &&
             visibleItems.contains(item) &&
             isCanonicalAbsolutePath(parentPath) &&
             Self.parentPath(of: item.path) == parentPath &&
@@ -358,6 +420,25 @@ final class MobileFileCopyMoveModel {
             !item.isRecyclePath &&
             !isRemote(item) &&
             !isReadOnlyPath(item.path, roots: readOnlyRoots)
+    }
+
+    private static func validatedItem(
+        _ item: FileItem,
+        parentPath: String,
+        source: MobileFileLocationSource,
+        visibleItems: [FileItem],
+        readOnlyRoots: [String],
+        profileID: UUID
+    ) -> FileItem? {
+        canUseItem(
+            item,
+            parentPath: parentPath,
+            source: source,
+            visibleItems: visibleItems,
+            readOnlyRoots: readOnlyRoots,
+            profileID: profileID,
+            allowDirectory: true
+        ) ? item : nil
     }
 
     private static func validatedBatch(
@@ -373,7 +454,7 @@ final class MobileFileCopyMoveModel {
         let frozen = items.filter { paths.insert($0.path).inserted }
         guard !frozen.isEmpty, frozen.count <= maximumBatchCount,
               frozen.allSatisfy({
-                  canBegin(
+                  canBeginBatchItem(
                       item: $0,
                       parentPath: parentPath,
                       source: source,
@@ -424,7 +505,8 @@ final class MobileFileCopyMoveModel {
                 let folders = Self.allowedFolders(
                     page.items,
                     profileID: profileID,
-                    readOnlyRoots: current.readOnlyRoots
+                    readOnlyRoots: current.readOnlyRoots,
+                    sources: current.sources
                 )
                 current.destination = MobileFileCopyMoveDestinationState(
                     path: path,
@@ -480,8 +562,7 @@ final class MobileFileCopyMoveModel {
                   item.path == expectedPath,
                   item.name == source.name,
                   item.kind == source.kind,
-                  item.kind == .file,
-                  item.sizeBytes == source.sizeBytes,
+                  Self.isConfirmedItem(item, source: source),
                   !item.isRecyclePath,
                   !Self.isRemote(item) else {
                 return .pendingReview
@@ -593,10 +674,12 @@ final class MobileFileCopyMoveModel {
     private static func allowedFolders(
         _ items: [FileItem],
         profileID: UUID,
-        readOnlyRoots: [String]
+        readOnlyRoots: [String],
+        sources: [FileItem]
     ) -> [FileItem] {
         items.filter {
-            isAllowedFolder($0, profileID: profileID, readOnlyRoots: readOnlyRoots)
+            isAllowedFolder($0, profileID: profileID, readOnlyRoots: readOnlyRoots) &&
+                !isInvalidDestination($0.path, for: sources)
         }
     }
 
@@ -638,6 +721,34 @@ final class MobileFileCopyMoveModel {
     private static func isRemote(_ item: FileItem) -> Bool {
         guard let type = item.mountPointType?.lowercased(), !type.isEmpty else { return false }
         return type != "normal" && type != "shared_folder"
+    }
+
+    private static func isSupportedSourceItem(_ item: FileItem, allowDirectory: Bool) -> Bool {
+        switch item.kind {
+        case .file:
+            item.sizeBytes.map { $0 >= 0 } == true
+        case .directory:
+            allowDirectory
+        case .symlink, .unknown:
+            false
+        }
+    }
+
+    private static func isInvalidDestination(_ path: String, for sources: [FileItem]) -> Bool {
+        sources.contains {
+            $0.kind == .directory && (path == $0.path || path.hasPrefix($0.path + "/"))
+        }
+    }
+
+    private static func isConfirmedItem(_ item: FileItem, source: FileItem) -> Bool {
+        switch source.kind {
+        case .file:
+            item.kind == .file && item.sizeBytes == source.sizeBytes
+        case .directory:
+            item.kind == .directory
+        case .symlink, .unknown:
+            false
+        }
     }
 }
 

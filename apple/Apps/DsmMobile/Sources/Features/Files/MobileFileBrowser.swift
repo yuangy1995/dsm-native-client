@@ -680,7 +680,7 @@ struct MobileFileBrowser: View {
                 ? "checkmark.circle.fill"
                 : "circle"
         )
-        .foregroundStyle(canCopyMove(item) ? Color.accentColor : Color.secondary)
+        .foregroundStyle(canBatchCopyMove(item) ? Color.accentColor : Color.secondary)
         .frame(width: 32, height: 44)
         .accessibilityHidden(true)
     }
@@ -1037,7 +1037,7 @@ struct MobileFileBrowser: View {
     }
 
     private var selectableCopyMoveItems: [FileItem] {
-        state.page.items.filter(canCopyMove)
+        state.page.items.filter(canBatchCopyMove)
     }
 
     private var selectedCopyMoveItems: [FileItem] {
@@ -1058,7 +1058,7 @@ struct MobileFileBrowser: View {
     }
 
     private func canSelectCopyMoveItem(_ item: FileItem) -> Bool {
-        canCopyMove(item) && (
+        canBatchCopyMove(item) && (
             selectedCopyMovePaths.contains(item.path) ||
                 selectedCopyMovePaths.count < MobileFileCopyMoveModel.maximumBatchCount
         )
@@ -1069,13 +1069,25 @@ struct MobileFileBrowser: View {
         if selectedCopyMovePaths.contains(item.path) {
             return L10n.string("mobile.files.batch-selection.selected")
         }
-        if !canCopyMove(item) {
+        if !canBatchCopyMove(item) {
             return L10n.string("mobile.files.batch-selection.unavailable")
         }
         if selectedCopyMovePaths.count >= MobileFileCopyMoveModel.maximumBatchCount {
             return L10n.string("mobile.files.batch-selection.limit-reached")
         }
         return L10n.string("mobile.files.batch-selection.not-selected")
+    }
+
+    private func canBatchCopyMove(_ item: FileItem) -> Bool {
+        guard let profileID = model.activeProfile?.id else { return false }
+        return MobileFileCopyMoveModel.canBeginBatchItem(
+            item: item,
+            parentPath: state.currentPath,
+            source: state.location.source,
+            visibleItems: state.page.items,
+            readOnlyRoots: readOnlyMutationRoots,
+            profileID: profileID
+        )
     }
 
     private func fileItemAccessibilityHint(_ item: FileItem) -> String {

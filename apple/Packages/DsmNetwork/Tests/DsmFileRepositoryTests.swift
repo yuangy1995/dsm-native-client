@@ -1585,6 +1585,43 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "start" }.count, 1)
     }
 
+    func test单文件夹复制固定CopyMoveV3且不依赖目录大小() async throws {
+        let transport = MockHTTPTransport(responses: [
+            copyMoveFolderBaseline(),
+            mutationInfo(),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"taskid":"copy-folder"}}"#),
+            response(#"{"success":true,"data":{"finished":true}}"#),
+            copyMoveFolderReadback(operation: .copy, destinationSize: 4096),
+        ])
+        let repository = try makeRepository(
+            capabilities: copyMoveCapabilities(),
+            transport: transport
+        )
+
+        let outcome = try await repository.copyMoveResult(
+            copyMoveFolderRequest(repository: repository, operation: .copy)
+        ) { _, _ in }
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.sourcePath, "/home/folder")
+        XCTAssertEqual(outcome.destinationPath, "/archive/folder")
+        XCTAssertEqual(outcome.item?.kind, .directory)
+        XCTAssertEqual(outcome.item?.sizeBytes, 4_096)
+        let requests = await transport.recordedRequests()
+        let start = try XCTUnwrap(requests.first {
+            requestParameter("method", in: $0) == "start"
+        })
+        XCTAssertEqual(requestParameter("version", in: start), "3")
+        XCTAssertEqual(requestParameter("dest_folder_path", in: start), "/archive")
+        XCTAssertEqual(requestParameter("overwrite", in: start), "false")
+        let path = try XCTUnwrap(requestParameter("path", in: start))
+        XCTAssertEqual(
+            try JSONDecoder().decode([String].self, from: Data(path.utf8)),
+            ["/home/folder"]
+        )
+    }
+
     func test单文件移入已发现回收站固定DeleteV2且精确回读确认() async throws {
         let transport = MockHTTPTransport(responses: [
             recycleMovePreflight(),
@@ -1955,7 +1992,7 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(methods.last, "getinfo")
     }
 
-    func test复制移动拒绝目录覆盖远程回收站与错误profile且零请求() async throws {
+    func test复制移动拒绝符号链接覆盖远程回收站与错误profile且零请求() async throws {
         let transport = MockHTTPTransport(responses: [])
         let repository = try makeRepository(
             capabilities: copyMoveCapabilities(),
@@ -1963,7 +2000,7 @@ final class DsmFileRepositoryTests: XCTestCase {
         )
         let otherProfileID = UUID()
         let invalidSources = [
-            FileItem(profileID: repository.profileID, name: "folder", path: "/home/folder", kind: .directory),
+            FileItem(profileID: repository.profileID, name: "link", path: "/home/link", kind: .symlink),
             FileItem(profileID: repository.profileID, name: "item.txt", path: "/home/#recycle/item.txt", kind: .file, sizeBytes: 12),
             FileItem(profileID: repository.profileID, name: "item.txt", path: "/remote/item.txt", kind: .file, sizeBytes: 12, mountPointType: "cifs"),
             FileItem(profileID: repository.profileID, name: "item.txt", path: "/remote/item.txt", kind: .file, sizeBytes: 12, mountPointType: "future_remote_type"),
@@ -3667,6 +3704,21 @@ final class DsmFileRepositoryTests: XCTestCase {
         )
     }
 
+    private func copyMoveFolderSource(repository: DsmFileRepository) -> FileItem {
+        FileItem(
+            profileID: repository.profileID,
+            name: "folder",
+            path: "/home/folder",
+            kind: .directory,
+            permissions: FilePermissions(
+                canRead: true,
+                canWrite: true,
+                canDelete: true,
+                posixMode: nil
+            )
+        )
+    }
+
     private func copyMoveRequest(
         repository: DsmFileRepository,
         operation: FileCopyMoveOperation
@@ -3680,9 +3732,28 @@ final class DsmFileRepositoryTests: XCTestCase {
         )
     }
 
+    private func copyMoveFolderRequest(
+        repository: DsmFileRepository,
+        operation: FileCopyMoveOperation
+    ) -> FileCopyMoveRequest {
+        FileCopyMoveRequest(
+            profileID: repository.profileID,
+            operation: operation,
+            source: copyMoveFolderSource(repository: repository),
+            destinationFolderPath: "/archive",
+            overwrite: false
+        )
+    }
+
     private func copyMoveBaseline() -> DsmHTTPResponse {
         response(
             #"{"success":true,"data":{"files":[{"name":"source.txt","path":"/home/source.txt","isdir":false,"additional":{"size":12,"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"archive","path":"/archive","isdir":true,"additional":{"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
+        )
+    }
+
+    private func copyMoveFolderBaseline() -> DsmHTTPResponse {
+        response(
+            #"{"success":true,"data":{"files":[{"name":"folder","path":"/home/folder","isdir":true,"additional":{"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"archive","path":"/archive","isdir":true,"additional":{"perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}}"#
         )
     }
 
@@ -3697,6 +3768,21 @@ final class DsmFileRepositoryTests: XCTestCase {
             "{\"success\":true,\"data\":{\"files\":[" + source +
                 "{\"name\":\"source.txt\",\"path\":\"/archive/source.txt\",\"isdir\":false," +
                 "\"additional\":{\"size\":\(destinationSize)}}]}}"
+        )
+    }
+
+    private func copyMoveFolderReadback(
+        operation: FileCopyMoveOperation,
+        destinationSize: Int64? = nil
+    ) -> DsmHTTPResponse {
+        let source = operation == .copy
+            ? #"{"name":"folder","path":"/home/folder","isdir":true},"#
+            : ""
+        let additional = destinationSize.map { #","additional":{"size":\#($0)}"# } ?? ""
+        return response(
+            "{\"success\":true,\"data\":{\"files\":[" + source +
+                "{\"name\":\"folder\",\"path\":\"/archive/folder\",\"isdir\":true" +
+                additional + "}]}}"
         )
     }
 

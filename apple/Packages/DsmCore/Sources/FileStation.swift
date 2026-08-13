@@ -103,13 +103,13 @@ public struct FileItemMutationOutcome: Equatable, Sendable {
     }
 }
 
-/// 单个普通本地文件在同一 NAS 内复制或移动的操作类型。
+/// 单个普通本地文件或文件夹在同一 NAS 内复制或移动的操作类型。
 public enum FileCopyMoveOperation: String, Codable, Sendable {
     case copy
     case move
 }
 
-/// 单个普通本地文件的有界复制或移动请求；首版明确不允许覆盖目标。
+/// 单个普通本地文件或文件夹的有界复制或移动请求；明确不允许覆盖目标。
 public struct FileCopyMoveRequest: Equatable, Sendable {
     public let profileID: UUID
     public let operation: FileCopyMoveOperation

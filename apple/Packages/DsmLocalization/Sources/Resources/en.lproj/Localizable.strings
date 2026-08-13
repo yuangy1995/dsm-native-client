@@ -2807,7 +2807,7 @@
 "mobile.activity.status-cancelled" = "Cancelled";
 "mobile.activity.status-result-needs-review" = "Check the Result";
 "mobile.activity.operation-download-station" = "Download Station task";
-"mobile.activity.operation-file-copy-move" = "Copy or move files";
+"mobile.activity.operation-file-copy-move" = "Copy or move files and folders";
 "mobile.activity.operation-file-delete" = "Delete files";
 "mobile.activity.operation-file-compress" = "Compress files";
 "mobile.activity.operation-file-extract" = "Extract files";
@@ -3578,8 +3578,8 @@
 "mobile.files.copy-move.review.message" = "The operation may have reached the NAS. Check the source and destination before trying again.";
 "mobile.files.copy-move.review.dismiss" = "Close";
 "mobile.files.copy-move.permission" = "You don’t have permission to use this destination. Choose another folder or ask an administrator for access.";
-"mobile.files.copy-move.unsupported" = "This operation isn’t available for the selected file or destination.";
-"mobile.files.copy-move.conflict" = "A file with this name already exists in the destination. Choose another folder.";
+"mobile.files.copy-move.unsupported" = "This operation isn’t available for the selected item or destination.";
+"mobile.files.copy-move.conflict" = "A file or folder with this name already exists in the destination. Choose another folder.";
 "mobile.files.copy-move.destination.invalid" = "Choose a regular local folder on this NAS.";
 "mobile.files.copy-move.progress.accessibility" = "%1$@, %2$lld%% complete";
 "mobile.files.batch-selection.start" = "Select Files";

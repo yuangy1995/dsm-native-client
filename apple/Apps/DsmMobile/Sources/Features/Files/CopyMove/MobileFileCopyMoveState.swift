@@ -113,6 +113,15 @@ struct MobileFileCopyMovePresentation: Equatable, Sendable {
         guard let totalBytes, totalBytes > 0 else { return nil }
         return min(1, max(0, Double(completedBytes) / Double(totalBytes)))
     }
+
+    var canSubmitDestination: Bool {
+        guard !destination.path.isEmpty,
+              destination.path != sourceParentPath else { return false }
+        return !sources.contains {
+            $0.kind == .directory &&
+                (destination.path == $0.path || destination.path.hasPrefix($0.path + "/"))
+        }
+    }
 }
 
 struct MobileFileCopyMoveSuccess: Equatable, Sendable {

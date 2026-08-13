@@ -250,9 +250,8 @@ actor FileCopyMoveMutationCoordinator {
         guard let observedSource = baseline.first(where: { $0.path == prepared.sourcePath }),
               observedSource.profileID == prepared.request.profileID,
               hasCanonicalIdentity(observedSource),
-              observedSource.kind == .file,
-              observedSource.sizeBytes == prepared.request.source.sizeBytes,
-              observedSource.times?.modifiedAt == prepared.request.source.times?.modifiedAt,
+              isSupportedCopyMoveSource(observedSource),
+              isSameCopyMoveSource(observedSource, prepared.request.source),
               !isRemote(observedSource),
               let destinationFolder = baseline.first(where: {
                   $0.path == prepared.destinationFolderPath
@@ -327,7 +326,7 @@ actor FileCopyMoveMutationCoordinator {
               }),
               hasCanonicalIdentity(destination),
               destination.kind == review.source.kind,
-              destination.sizeBytes == review.source.sizeBytes,
+              hasConfirmedCopyMoveIdentity(destination, review.source),
               !isRemote(destination) else {
             return .mismatch
         }
@@ -339,7 +338,7 @@ actor FileCopyMoveMutationCoordinator {
             guard let source,
                   hasCanonicalIdentity(source),
                   source.kind == review.source.kind,
-                  source.sizeBytes == review.source.sizeBytes,
+                  hasConfirmedCopyMoveIdentity(source, review.source),
                   !isRemote(source) else {
                 return .mismatch
             }
@@ -583,6 +582,41 @@ actor FileCopyMoveMutationCoordinator {
     private func isRemote(_ item: FileItem) -> Bool {
         guard let type = item.mountPointType?.lowercased(), !type.isEmpty else { return false }
         return type != "normal" && type != "shared_folder"
+    }
+
+    private func isSupportedCopyMoveSource(_ item: FileItem) -> Bool {
+        switch item.kind {
+        case .file:
+            item.sizeBytes.map { $0 >= 0 } == true
+        case .directory:
+            true
+        case .symlink, .unknown:
+            false
+        }
+    }
+
+    private func isSameCopyMoveSource(_ observed: FileItem, _ requested: FileItem) -> Bool {
+        guard observed.kind == requested.kind else { return false }
+        switch requested.kind {
+        case .file:
+            return observed.sizeBytes == requested.sizeBytes &&
+                observed.times?.modifiedAt == requested.times?.modifiedAt
+        case .directory:
+            return true
+        case .symlink, .unknown:
+            return false
+        }
+    }
+
+    private func hasConfirmedCopyMoveIdentity(_ item: FileItem, _ source: FileItem) -> Bool {
+        switch source.kind {
+        case .file:
+            return item.kind == .file && item.sizeBytes == source.sizeBytes
+        case .directory:
+            return item.kind == .directory
+        case .symlink, .unknown:
+            return false
+        }
     }
 
     private func isRecyclePath(_ path: String) -> Bool {

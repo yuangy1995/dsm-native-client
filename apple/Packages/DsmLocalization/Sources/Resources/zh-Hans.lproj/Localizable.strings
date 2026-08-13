@@ -2807,7 +2807,7 @@
 "mobile.activity.status-cancelled" = "已取消";
 "mobile.activity.status-result-needs-review" = "请核对结果";
 "mobile.activity.operation-download-station" = "Download Station 任务";
-"mobile.activity.operation-file-copy-move" = "复制或移动文件";
+"mobile.activity.operation-file-copy-move" = "复制或移动文件和文件夹";
 "mobile.activity.operation-file-delete" = "删除文件";
 "mobile.activity.operation-file-compress" = "压缩文件";
 "mobile.activity.operation-file-extract" = "解压文件";
@@ -3578,8 +3578,8 @@
 "mobile.files.copy-move.review.message" = "操作可能已提交到 NAS。再次尝试前，请核对源位置和目标位置。";
 "mobile.files.copy-move.review.dismiss" = "关闭";
 "mobile.files.copy-move.permission" = "你没有权限使用此目标位置。请选择其他文件夹，或联系管理员获取权限。";
-"mobile.files.copy-move.unsupported" = "所选文件或目标位置不支持此操作。";
-"mobile.files.copy-move.conflict" = "目标位置已有同名文件。请选择其他文件夹。";
+"mobile.files.copy-move.unsupported" = "所选项目或目标位置不支持此操作。";
+"mobile.files.copy-move.conflict" = "目标位置已有同名文件或文件夹。请选择其他文件夹。";
 "mobile.files.copy-move.destination.invalid" = "请选择此 NAS 上的普通本地文件夹。";
 "mobile.files.copy-move.progress.accessibility" = "%1$@，已完成 %2$lld%%";
 "mobile.files.batch-selection.start" = "选择文件";
