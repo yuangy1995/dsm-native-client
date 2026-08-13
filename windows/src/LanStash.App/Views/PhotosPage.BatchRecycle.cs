@@ -65,6 +65,7 @@ public sealed partial class PhotosPage
             return;
         }
 
+        ClosePhotoShareManagementDialog();
         var selected = _viewModel.SelectedItem;
         _isSynchronizingPhotoBatchSelection = true;
         PhotoGrid.SelectedItems.Clear();
@@ -546,6 +547,7 @@ public sealed partial class PhotosPage
             OpenButton.IsEnabled = false;
             SaveButton.IsEnabled = false;
             PhotoShareLinkButton.IsEnabled = false;
+            PhotoManageShareLinksButton.IsEnabled = false;
             PhotoMoveButton.IsEnabled = false;
             PhotoMoveToRecycleButton.IsEnabled = false;
             PhotoRestoreFromRecycleButton.IsEnabled = false;

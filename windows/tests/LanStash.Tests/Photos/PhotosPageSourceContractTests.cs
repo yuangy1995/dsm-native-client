@@ -107,8 +107,13 @@ public sealed class PhotosPageSourceContractTests
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
         var page = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
         var share = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.Share.cs");
+        var viewer = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.Viewer.cs");
         var batch = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.BatchRecycle.cs");
         var dialog = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoShareLinkDialog.cs");
+        var managementDialog = ReadRepositoryFile(
+            "windows/src/LanStash.App/Views/FileShareLinkManagementDialog.cs");
+        var managementModel = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Files/Sharing/FileShareLinkManagementViewModel.cs");
         var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
         var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
         var shell = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
@@ -121,16 +126,33 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("PhotoShareLinkAccelerator_Invoked", xaml);
         Assert.Contains("Modifiers=\"Control,Shift\"", xaml);
         Assert.Contains("x:Name=\"ShareLinkButton\"", timelineXaml);
+        Assert.Contains("x:Name=\"PhotoManageShareLinksButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoViewerManageShareLinksButton\"", xaml);
+        Assert.Contains("PhotoManageShareLinksAccelerator_Invoked", xaml);
+        Assert.Contains("Modifiers=\"Control,Menu\"", xaml);
+        Assert.Contains("x:Uid=\"PhotoShareLinkManage\"", xaml);
+        Assert.Contains("x:Uid=\"PhotoShareLinkManageButton\"", xaml);
+        Assert.Contains("x:Name=\"ManageShareLinksButton\"", timelineXaml);
         Assert.Contains("Func<PhotoItem, bool>? _canShare", timeline);
         Assert.Contains("Func<PhotoItem, Task>? _share", timeline);
+        Assert.Contains("Func<PhotoItem, bool>? _canManageShareLinks", timeline);
+        Assert.Contains("Func<PhotoItem, Task>? _manageShareLinks", timeline);
+        Assert.Contains("ManageShareLinksSelectedAsync", timeline);
         Assert.Contains("CanSharePhoto", page);
         Assert.Contains("SharePhotoAsync", page);
+        Assert.Contains("CanManagePhotoShareLinks", page);
+        Assert.Contains("ManagePhotoShareLinksAsync", page);
         Assert.Contains("FileShareLinkTargetBaseline.PhotoMedia", share);
         Assert.Contains("item.ModifiedAt is not null", share);
         Assert.Contains("!IsSelectingPhotoBatch", share);
         Assert.Contains("PhotoShareLinkButton.IsEnabled = false;", batch);
+        Assert.Contains("PhotoManageShareLinksButton.IsEnabled = false;", batch);
+        Assert.Contains("PhotoViewerManageShareLinksButton.IsEnabled", viewer);
         Assert.Contains("!HasRecyclePathSegment(item.Path)", share);
         Assert.Contains("_photoShareLinkDialog.Close();", page);
+        Assert.Contains("ClosePhotoShareManagementDialog();", page);
+        Assert.Contains("_photoShareRepository", page);
+        Assert.Contains("_photoShareClipboard", page);
         Assert.Contains("photoShareRepository?.ProfileId != photoProfile.Id", shell);
         Assert.Contains("shareReviewBlocker: FileShareLinkReviewBlocker.Current", shell);
 
@@ -141,12 +163,23 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("model?.Dispose();", dialog);
         Assert.Contains("ConfirmedUrl", dialog);
         Assert.DoesNotContain("Password", clipboard, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManagementDialogOptions.ForPhoto(new(item.Path))", share);
+        Assert.Contains("PhotoTimelineViewModel.ContainsCanonicalPath", share);
+        Assert.Contains("_photoShareManagementDialog?.IsOpen != true", share);
+        Assert.Contains("FileShareLinkManagementScope", managementModel);
+        Assert.Contains("links.Where(_scope.Contains)", managementModel);
+        Assert.Contains("!IsInScope(link)", managementModel);
+        Assert.Contains("PhotoShareLinkManageTitle", managementDialog);
         Assert.Contains("IsAllowedInHistory = false", clipboard);
         Assert.Contains("IsRoamable = false", clipboard);
         var english = ReadRepositoryFile("windows/src/LanStash.App/Strings/en-US/Resources.resw");
         var chinese = ReadRepositoryFile("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
         Assert.Contains("name=\"PhotoShareLinkButton.Content\"", english);
         Assert.Contains("name=\"PhotoShareLinkButton.Content\"", chinese);
+        Assert.Contains("name=\"PhotoShareLinkManageButton.Content\"", english);
+        Assert.Contains("name=\"PhotoShareLinkManageButton.Content\"", chinese);
+        Assert.Contains("name=\"PhotoShareLinkManageTitle\"", english);
+        Assert.Contains("name=\"PhotoShareLinkManageTitle\"", chinese);
     }
 
     [Fact]

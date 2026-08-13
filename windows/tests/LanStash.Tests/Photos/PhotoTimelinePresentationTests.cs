@@ -230,6 +230,22 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("ShareLinkButton.IsEnabled = CanShareSelected", source);
     }
 
+    [Fact]
+    public void TimelineShareManagementUsesThePageCallbackOutsideBatchSelection()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml"));
+        var source = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("x:Uid=\"PhotoShareLinkManageButton\" x:Name=\"ManageShareLinksButton\"", xaml);
+        Assert.Contains("Click=\"ManageShareLinks_Click\"", xaml);
+        Assert.Contains("_batchSelectionOperation == PhotoBatchSelectionOperation.None", source);
+        Assert.Contains("_canManageShareLinks?.Invoke(entry.Item) == true", source);
+        Assert.Contains("await _manageShareLinks(entry.Item)", source);
+        Assert.Contains("if (!CanManageShareLinksSelected ||", source);
+        Assert.Contains("ManageShareLinksButton.IsEnabled = CanManageShareLinksSelected", source);
+    }
+
     private static string RepositoryRoot([System.Runtime.CompilerServices.CallerFilePath] string file = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, "../../../../"));
 }

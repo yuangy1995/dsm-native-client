@@ -364,6 +364,8 @@ public sealed partial class PhotosPage
             _photoViewerIndex + 1 < _photoViewerItems.Count;
         PhotoViewerSaveButton.IsEnabled = item is not null && !_isSaving;
         PhotoViewerShareLinkButton.IsEnabled = item is not null && CanSharePhoto(item);
+        PhotoViewerManageShareLinksButton.IsEnabled = item is not null &&
+            CanManagePhotoShareLinks(item);
         PhotoPreviewPane.SetSaveCopyEnabled(PhotoViewerSaveButton.IsEnabled);
 
         var localization = LocalizationService.Current;

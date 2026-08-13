@@ -29,6 +29,10 @@
             Key="L"
             Modifiers="Control,Shift"
             Invoked="PhotoShareLinkAccelerator_Invoked" />
+        <KeyboardAccelerator
+            Key="L"
+            Modifiers="Control,Menu"
+            Invoked="PhotoManageShareLinksAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid
@@ -233,6 +237,12 @@
                     x:Uid="FileShareLink"
                     x:Name="PhotoShareLinkButton"
                     Click="PhotoShareLink_Click"
+                    Icon="Link"
+                    MinHeight="44" />
+                <AppBarButton
+                    x:Uid="PhotoShareLinkManage"
+                    x:Name="PhotoManageShareLinksButton"
+                    Click="PhotoManageShareLinks_Click"
                     Icon="Link"
                     MinHeight="44" />
                 <AppBarButton
@@ -552,6 +562,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button
                     x:Uid="PhotoViewerPrevious"
@@ -586,9 +597,16 @@
                     MinWidth="44"
                     MinHeight="44" />
                 <Button
+                    x:Uid="PhotoShareLinkManageButton"
+                    x:Name="PhotoViewerManageShareLinksButton"
+                    Grid.Column="5"
+                    Click="PhotoViewerManageShareLinks_Click"
+                    MinWidth="44"
+                    MinHeight="44" />
+                <Button
                     x:Uid="PhotoViewerSave"
                     x:Name="PhotoViewerSaveButton"
-                    Grid.Column="5"
+                    Grid.Column="6"
                     Click="PhotoViewerSave_Click"
                     MinHeight="44" />
             </Grid>

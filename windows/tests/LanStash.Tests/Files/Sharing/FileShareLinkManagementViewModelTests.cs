@@ -102,6 +102,60 @@ public sealed class FileShareLinkManagementViewModelTests
     }
 
     [Fact]
+    public async Task ScopeShowsOnlyExactPathAndRejectsOffScopeDeletion()
+    {
+        var included = Link("photo", "/photos/current.jpg");
+        var repository = new StubRepository
+        {
+            Listed =
+            [
+                included,
+                Link("prefix", "/photos/current.jpg.bak"),
+                Link("child", "/photos/current.jpg/child"),
+                Link("other", "/photos/other.jpg"),
+            ],
+            Deletion = DeleteOutcome(MutationResultStatus.ConfirmedSuccess, included),
+        };
+        using var model = new FileShareLinkManagementViewModel(
+            repository,
+            ProfileId,
+            new FileShareLinkManagementScope("/photos/current.jpg"));
+
+        await model.LoadAsync();
+        model.BeginDelete(Link("other", "/photos/other.jpg"));
+        await model.ConfirmDeleteAsync();
+
+        Assert.Equal(FileShareLinkManagementState.Content, model.State);
+        Assert.Single(model.Links);
+        Assert.Equal("photo", model.Links[0].Id);
+        Assert.Equal(FileShareLinkDeletionState.None, model.DeletionState);
+        Assert.Equal(0, repository.DeleteCount);
+
+        model.BeginDelete(included);
+        await model.ConfirmDeleteAsync();
+
+        Assert.Equal(FileShareLinkDeletionState.Deleted, model.DeletionState);
+        Assert.Empty(model.Links);
+        Assert.Equal(1, repository.DeleteCount);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(" /photos/current.jpg")]
+    [InlineData("photos/current.jpg")]
+    [InlineData("/")]
+    [InlineData("/photos/")]
+    [InlineData("/photos//current.jpg")]
+    [InlineData("/photos\\current.jpg")]
+    [InlineData("/photos/./current.jpg")]
+    [InlineData("/photos/../current.jpg")]
+    public void ScopeRejectsUnsafePaths(string path)
+    {
+        Assert.Throws<ArgumentException>(() => new FileShareLinkManagementScope(path));
+    }
+
+    [Fact]
     public async Task LargeListExpandsInBoundedLocalPages()
     {
         var repository = new StubRepository
@@ -119,9 +173,9 @@ public sealed class FileShareLinkManagementViewModelTests
         Assert.False(model.HasMoreLinks);
     }
 
-    private static FileShareLink Link(string id = "one") => new(
+    private static FileShareLink Link(string id = "one", string? path = null) => new(
         id,
-        $"/share/{id}.txt",
+        path ?? $"/share/{id}.txt",
         new Uri($"https://share.invalid/{id}"),
         HasPassword: false,
         ExpiresOn: null);

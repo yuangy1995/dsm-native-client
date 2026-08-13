@@ -26,10 +26,36 @@ public enum FileShareLinkDeletionState
     Cancelled,
 }
 
+public sealed class FileShareLinkManagementScope
+{
+    public FileShareLinkManagementScope(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) ||
+            !string.Equals(path, path.Trim(), StringComparison.Ordinal) ||
+            !path.StartsWith("/", StringComparison.Ordinal) ||
+            path == "/" ||
+            path.EndsWith("/", StringComparison.Ordinal) ||
+            path.Contains("//", StringComparison.Ordinal) ||
+            path.Contains('\\') ||
+            path.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Any(segment => segment is "." or ".."))
+        {
+            throw new ArgumentException("file.share.management.scope.invalid", nameof(path));
+        }
+        Path = path;
+    }
+
+    public string Path { get; }
+
+    internal bool Contains(FileShareLink link) =>
+        string.Equals(link.Path, Path, StringComparison.Ordinal);
+}
+
 public sealed class FileShareLinkManagementViewModel : ObservableObject, IDisposable
 {
     private const int VisiblePageSize = 100;
     private readonly IFileShareLinkRepository _repository;
+    private readonly FileShareLinkManagementScope? _scope;
     private CancellationTokenSource? _cancellation;
     private IReadOnlyList<FileShareLink> _links = [];
     private FileShareLinkManagementState _state;
@@ -39,7 +65,10 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
     private bool _disposed;
     private long _generation;
 
-    public FileShareLinkManagementViewModel(IFileShareLinkRepository repository, Guid profileId)
+    public FileShareLinkManagementViewModel(
+        IFileShareLinkRepository repository,
+        Guid profileId,
+        FileShareLinkManagementScope? scope = null)
     {
         ArgumentNullException.ThrowIfNull(repository);
         if (repository.ProfileId != profileId)
@@ -47,6 +76,7 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
             throw new ArgumentException("file.share.profile-mismatch", nameof(repository));
         }
         _repository = repository;
+        _scope = scope;
         _state = repository.ShareLinkAvailability.IsAvailable
             ? FileShareLinkManagementState.Loading
             : FileShareLinkManagementState.Unsupported;
@@ -113,8 +143,11 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
             {
                 return;
             }
-            Links = links;
-            State = links.Count == 0
+            var visibleLinks = _scope is null
+                ? links
+                : links.Where(_scope.Contains).ToArray();
+            Links = visibleLinks;
+            State = visibleLinks.Count == 0
                 ? FileShareLinkManagementState.Empty
                 : FileShareLinkManagementState.Content;
         }
@@ -144,6 +177,7 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
         if (State != FileShareLinkManagementState.Content || IsDeleting ||
             (DeletionState == FileShareLinkDeletionState.NeedsReview &&
                 string.Equals(PendingDeletion?.Id, link.Id, StringComparison.Ordinal)) ||
+            !IsInScope(link) ||
             !Links.Any(item => ExactLink(item, link)))
         {
             return;
@@ -177,7 +211,9 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
     public async Task ConfirmDeleteAsync()
     {
         ThrowIfDisposed();
-        if (DeletionState != FileShareLinkDeletionState.Confirming || PendingDeletion is not { } link)
+        if (DeletionState != FileShareLinkDeletionState.Confirming ||
+            PendingDeletion is not { } link ||
+            !IsInScope(link))
         {
             return;
         }
@@ -264,6 +300,8 @@ public sealed class FileShareLinkManagementViewModel : ObservableObject, IDispos
         string.Equals(left.Path, right.Path, StringComparison.Ordinal) &&
         left.Url == right.Url && left.HasPassword == right.HasPassword &&
         left.ExpiresOn == right.ExpiresOn;
+
+    private bool IsInScope(FileShareLink link) => _scope?.Contains(link) != false;
 
     private bool IsCurrent(long generation) => !_disposed && generation == _generation;
 

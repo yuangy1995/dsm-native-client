@@ -87,10 +87,14 @@ public sealed class FileShareLinkPageSourceContractTests
             root, "windows", "src", "LanStash.App", "Views", "FilesPage.xaml"));
         var management = File.ReadAllText(Path.Combine(
             root, "windows", "src", "LanStash.App", "Views",
+            "FileShareLinkManagementDialog.cs"));
+        var pageManagement = File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Views",
             "FilesPage.ShareManagement.cs"));
 
         Assert.Contains("ManageShareLinksButton", xaml, StringComparison.Ordinal);
         Assert.Contains("CommandBar.SecondaryCommands", xaml, StringComparison.Ordinal);
+        Assert.Contains("new FileShareLinkManagementDialog(", pageManagement, StringComparison.Ordinal);
         Assert.Contains("ContentDialog", management, StringComparison.Ordinal);
         Assert.Contains("FileShareLinkManagementState.Loading", management, StringComparison.Ordinal);
         Assert.Contains("FileShareLinkManagementState.Empty", management, StringComparison.Ordinal);
@@ -124,7 +128,10 @@ public sealed class FileShareLinkPageSourceContractTests
         Assert.Contains("FileShareLinkManageDeleteMessage", chinese, StringComparison.Ordinal);
         Assert.Contains("FileShareLinkManageReviewMessage", english, StringComparison.Ordinal);
         Assert.Contains("FileShareLinkManageReviewMessage", chinese, StringComparison.Ordinal);
-        Assert.Contains("AutomationLiveSetting.Polite", management, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkManagementDialog", management, StringComparison.Ordinal);
+        Assert.Contains("AutomationLiveSetting.Polite", File.ReadAllText(Path.Combine(
+            root, "windows", "src", "LanStash.App", "Views",
+            "FileShareLinkManagementDialog.cs")), StringComparison.Ordinal);
     }
 
     private static string RepositoryRoot()

@@ -547,6 +547,14 @@ Windows Photos 文件夹、主动时间线和查看器已增加单个普通媒�
 
 Photos 媒体基线严格核对 profile、规范路径、名称、非目录、大小、修改时间和 File Station 当前可读权限。由于 Photos 列表不提供 owner/write/delete，本切片不把缺失值伪造为照片选择基线，也不拿它们参与照片基线比较；共享预检仍沿用 File Station `getinfo` 读取完整目标信息，Files 原有完整基线规则保持不变。批量共享、链接管理/撤销、系统分享和 Synology Photos 私有分享继续关闭。本地 Release xUnit 1485/1485、Application 构建、本地化、XAML/RESW XML 与差异检查已通过；macOS 无法执行 Windows WinUI `XamlCompiler.exe`。GitHub Windows Build run `31679774447` 已通过 1485/1485 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31679774474` 已通过。真实 NAS、Narrator、高对比和 200% 缩放为 `PENDING_USER_VALIDATION`。
 
+### PHOTO-03 单项共享链接管理增量
+
+Windows Photos 已在文件夹、主动时间线和查看器三个入口补入当前普通媒体的分享链接管理。用户可打开原生 ContentDialog，只看到路径与当前媒体完整路径精确相等的既有分享链接，并可复制链接或二次确认撤销单条链接。
+
+该切片复用 FILE-07 的公开 File Station Sharing v3 `list`/`delete` 链和共享管理 ViewModel，不新增 Synology Photos 私有请求或 NAS 请求类型。列表过滤只接受当前照片空间根下的普通图片/视频、非回收站、已知大小和修改时间；不按文件名前缀、目录、旧缩略图或 Synology Photos 字段推断归属。撤销前继续冻结稳定 ID、路径、URL、密码状态和到期日，提交前由 Repository 重读完整列表核对，提交后只有稳定 ID 消失才确认成功；未知、取消或断线只回读并要求用户核对，不自动重放。密码不进入界面、剪贴板或日志。
+
+本地已通过 Release xUnit 1497/1497、Repository Check 可跑脚本、本地化、XAML/RESW XML 与差异检查；功能分支 Windows Build run `31684348377` 已通过 1497/1497 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31684348386` 已通过。批量共享、批量撤销、编辑密码/到期日、系统分享和 Synology Photos 私有分享继续关闭。真实 NAS 撤销传播、权限差异、真实 Windows/Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
+
 ## 11. 参考资料
 
 - [macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)

@@ -1,7 +1,7 @@
 # 岚仓照片管理开发计划
 
 > 最后更新：2026-08-12
-> 当前状态：PH0 进行中；macOS PH1–PH3 基础能力已实现；Apple 移动 PH6-A 与 Windows PH8 已完成文件夹/时间线/缩略图/主动导入和普通媒体同 NAS 移动等精选主流程，Windows 已补入 1～20 项有界批量移动并通过 Windows 分支门禁；Windows PH8 本地媒体元数据白名单和沉浸式查看器体验也已通过 Windows 分支门禁；Apple 移动本次切片已通过 Apple Build 与 Repository Check；各端仍待真实设备/NAS 验收；PH6-B 自动备份保持后续
+> 当前状态：PH0 进行中；macOS PH1–PH3 基础能力已实现；Apple 移动 PH6-A 与 Windows PH8 已完成文件夹/时间线/缩略图/主动导入和普通媒体同 NAS 移动等精选主流程，Windows 已补入 1～20 项有界批量移动并通过 Windows 分支门禁；Windows PH8 本地媒体元数据白名单、沉浸式查看器体验、单项分享链接创建，以及单项分享链接管理源码闭环也已完成；Apple 移动本次切片已通过 Apple Build 与 Repository Check；各端仍待真实设备/NAS 验收；PH6-B 自动备份保持后续
 > 首个参考平台：macOS
 > 后续平台：iPhone、iPad、Android、Windows
 
@@ -234,6 +234,7 @@ Windows PH8/PHOTO-03 现已具备五条有界批量主流程：文件夹网格�
 8. Windows PHOTO-03 已补齐 1～20 项普通媒体批量保存副本源码闭环：文件夹与时间线复用原生多选，提交前重核 profile、照片空间、媒体类型、非负大小、完整选择版本和当前选择；项目映射为 `FileDownloadBatchItem` 后复用 `BoundedFileDownloadBatch` 与 `WindowsTransferPickerService`，一次选择本地文件夹并由 Activity 跟踪，不新增 NAS 请求。大小写不敏感同名、Windows 非法名或本地已有同名整批拒绝且零下载，目标全部先预留并保持不覆盖；严格串行中单项失败继续，取消停止后续并保留已保存项目。本机聚焦 xUnit 50/50、Release 全量 xUnit 1196/1196、本地化、XML 与差异检查已通过；macOS WinUI App 构建停在不可执行的 Windows `XamlCompiler.exe`，不记为通过。Windows Build run `31546988775` 已通过 1196/1196 与 WinUI x64/ARM64 构建，Repository Check run `31546988693` 已通过。真实 Windows/NAS、Narrator、高对比、200% 缩放、窄窗口、键鼠/触控、系统文件夹选择器和取消时机为 `PENDING_USER_VALIDATION`。
 9. Windows PHOTO-03 已补齐 1～20 项普通媒体批量恢复源码闭环：文件夹与时间线复用原生多选和 FILE-09，只接受规范 `#recycle` 路径，提交前重核 profile、空间、模式、完整版本、当前选择和可解析原目的地。恢复固定不覆盖，重复目的地整批拒绝；严格串行中明确失败继续，未知、异常或提交后取消停止余项、进入复核门且不重放。本机聚焦 63/63、Release xUnit 1199/1199、本地化、23 个 XAML/RESW XML 与差异检查已通过；macOS WinUI App 不记为通过。Windows Build run `31548672121` 与 Repository Check run `31548672132` 已通过。真实 Windows/NAS、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`；覆盖/改名恢复、跨 NAS、并行、后台恢复和系统图库恢复继续关闭。
 10. Windows PHOTO-03 已补入单个普通媒体共享链接创建与复制源码闭环：文件夹、主动时间线和查看器复用公开 File Station Sharing v3，支持可选密码和到期时间；每次只提交一次并在提交后回读确认，提交未知按 profile+path 阻断重放。照片基线严格核对 profile、规范路径、名称、非目录、大小、修改时间和可读权限；Photos 列表未提供的 owner/write/delete 不会被伪造为照片选择基线，也不参与照片基线比较，共享预检仍沿用 File Station `getinfo` 读取完整目标信息。批量共享、链接管理/撤销、系统分享和 Synology Photos 私有分享不在本切片。本地 Release xUnit 1485/1485、Application 构建、本地化、XAML/RESW XML 与差异检查已通过；macOS 无法执行 WinUI `XamlCompiler.exe`。GitHub Windows Build run `31679774447` 已通过 1485/1485 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31679774474` 已通过。真实 NAS、Narrator、高对比和 200% 缩放为 `PENDING_USER_VALIDATION`。
+11. Windows PHOTO-03 已补入单个普通媒体共享链接管理源码闭环：文件夹、主动时间线和查看器可打开当前媒体专属管理弹窗，列表仅包含路径与当前媒体完整路径精确相等的链接，用户可复制链接或二次确认撤销单条链接。实现复用 Files 的 Sharing v3 `list`/`delete`、稳定 ID 与完整链接基线、防重复、一次提交、未知结果只回读不重放和删除后列表回读；不新增 NAS 请求，不展示密码，不按前缀、名称、目录或 Synology Photos 私有字段猜测归属。本机 Release xUnit 1497/1497、Repository Check 可跑脚本、本地化、XAML/RESW XML 与差异检查已通过；功能分支 Windows Build run `31684348377` 已通过 1497/1497 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31684348386` 已通过。批量共享、批量撤销、编辑密码/到期日和系统分享继续关闭；真实 NAS、Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
 
 ## 11. 关联文档
 

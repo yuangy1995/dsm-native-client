@@ -9,6 +9,7 @@ using LanStash.App.Features.Photos.Timeline;
 using LanStash.App.Features.Settings;
 using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
+using LanStash.App.Platform.Sharing;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -40,7 +41,11 @@ public sealed partial class PhotosPage : Page, IDisposable
     private bool _updatingSpaces;
     private bool _isPhotoPageActive;
     private bool _disposed;
+    private readonly Guid _profileGuid;
+    private readonly IFileShareLinkRepository? _photoShareRepository;
+    private readonly WindowsClipboard _photoShareClipboard = new();
     private readonly PhotoShareLinkDialog _photoShareLinkDialog;
+    private FileShareLinkManagementDialog? _photoShareManagementDialog;
 
     internal PhotosPage(
         IPhotoRepository repository,
@@ -99,10 +104,14 @@ public sealed partial class PhotosPage : Page, IDisposable
         _timelineDataSource = timelineDataSource;
         _cacheRegistration = AppSettingsService.Current.Caches.Register(thumbnails);
         _profileId = profileId;
+        _profileGuid = Guid.Parse(profileId);
         _transfers = transfers;
+        _photoShareRepository = shareRepository?.ProfileId == _profileGuid
+            ? shareRepository
+            : null;
         _photoShareLinkDialog = new PhotoShareLinkDialog(
-            shareRepository,
-            Guid.Parse(profileId),
+            _photoShareRepository,
+            _profileGuid,
             shareReviewBlocker ?? FileShareLinkReviewBlocker.Current);
         InitializePhotoRecycle(locationsRepository, recycleRepository, recycleReviewBlocker);
         InitializePhotoCopyMove(copyMoveRepository, copyMoveFolderSource, copyMoveReviewBlocker);
@@ -130,7 +139,9 @@ public sealed partial class PhotosPage : Page, IDisposable
                 RestorePhotoItemAsync,
                 RestoreMultiplePhotosAsync,
                 CanSharePhoto,
-                SharePhotoAsync);
+                SharePhotoAsync,
+                CanManagePhotoShareLinks,
+                ManagePhotoShareLinksAsync);
         }
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -205,6 +216,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         ClosePhotoBatchCopyMoveDialog();
         ClosePhotoRecycleDialog();
         ClosePhotoBatchRecycleDialog();
+        ClosePhotoShareManagementDialog();
         _photoShareLinkDialog.Close();
         ExitPhotoBatchSelection();
         DeactivatePhotoRecycleLocations();
@@ -663,6 +675,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private async Task RunLocationChangeAsync(Func<Task> action)
     {
         ExitPhotoBatchSelection();
+        ClosePhotoShareManagementDialog();
         await ClosePhotoViewerAsync();
         CancelThumbnailRequests();
         await RunAsync(action);
@@ -707,6 +720,9 @@ public sealed partial class PhotosPage : Page, IDisposable
         SaveButton.IsEnabled = CanSaveSelectedMedia();
         PhotoShareLinkButton.IsEnabled =
             _viewModel.SelectedItem is { IsMedia: true } selected && CanSharePhoto(selected.Item);
+        PhotoManageShareLinksButton.IsEnabled =
+            _viewModel.SelectedItem is { IsMedia: true } shareSelected &&
+            CanManagePhotoShareLinks(shareSelected.Item);
         UpdatePhotoViewerState();
         UpdatePhotoCopyMoveControls();
         UpdatePhotoRecycleControls();
@@ -828,6 +844,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         ClosePhotoBatchCopyMoveDialog();
         ClosePhotoRecycleDialog();
         ClosePhotoBatchRecycleDialog();
+        ClosePhotoShareManagementDialog();
         _photoShareLinkDialog.Close();
         DisposePhotoRecycleLocations();
         CancelThumbnailRequests();

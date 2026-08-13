@@ -1094,6 +1094,10 @@
   <data name="FileShareLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Create a share link for the selected item</value></data>
   <data name="PhotoShareLinkButton.Content" xml:space="preserve"><value>Create share link</value></data>
   <data name="PhotoShareLinkButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Create a share link for this photo or video</value></data>
+  <data name="PhotoShareLinkManage.Label" xml:space="preserve"><value>Manage share links</value></data>
+  <data name="PhotoShareLinkManage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>View and manage share links for the selected photo or video</value></data>
+  <data name="PhotoShareLinkManageButton.Content" xml:space="preserve"><value>Manage links</value></data>
+  <data name="PhotoShareLinkManageButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>View and manage share links for this photo or video</value></data>
   <data name="FileShareLinkTitle" xml:space="preserve"><value>Create share link</value></data>
   <data name="FileShareLinkTarget" xml:space="preserve"><value>Selected item: {0}</value></data>
   <data name="FileShareLinkAccessNote" xml:space="preserve"><value>Anyone with this link can open the item until it expires. Add a password if you need extra protection.</value></data>
@@ -1159,6 +1163,11 @@
   <data name="FileShareLinkManageUnsupportedMessage" xml:space="preserve"><value>This NAS cannot revoke share links with the compatible sharing feature. You can continue using the rest of Files.</value></data>
   <data name="FileShareLinkManageFailureMessage" xml:space="preserve"><value>The link was not confirmed as revoked. Check the connection and refresh the list.</value></data>
   <data name="FileShareLinkManageCancelledMessage" xml:space="preserve"><value>The request stopped before it was sent. The share link was not changed.</value></data>
+  <data name="PhotoShareLinkManageTitle" xml:space="preserve"><value>Share links for this item</value></data>
+  <data name="PhotoShareLinkManageEmptyTitle" xml:space="preserve"><value>No links for this item</value></data>
+  <data name="PhotoShareLinkManageEmptyMessage" xml:space="preserve"><value>Share links created for this photo or video will appear here.</value></data>
+  <data name="PhotoShareLinkManageCount" xml:space="preserve"><value>{0:N0} links for this item</value></data>
+  <data name="PhotoShareLinkManageUnsupportedMessage" xml:space="preserve"><value>This NAS does not offer the compatible sharing feature needed to manage links for photos and videos. The rest of Photos remains available.</value></data>
   <data name="PhotoModeFolders.Content" xml:space="preserve"><value>Folders</value></data>
   <data name="PhotoModeTimeline.Content" xml:space="preserve"><value>Timeline</value></data>
   <data name="PhotoTimelineSearch.PlaceholderText" xml:space="preserve"><value>Search file names</value></data>

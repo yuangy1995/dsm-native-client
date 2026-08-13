@@ -1325,7 +1325,7 @@ public sealed partial class FilesPage : Page, IDisposable
             : Visibility.Visible;
         ManageShareLinksButton.IsEnabled =
             _shareRepository is not null &&
-            _shareManagementDialog is null &&
+            _shareManagementDialog?.IsOpen != true &&
             _shareLinkDialog is null &&
             !_isClosingShareLink;
         DirectorySizeButton.IsEnabled = CanShowDirectorySize();
