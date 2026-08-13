@@ -772,9 +772,10 @@ public sealed partial class DsmRepository
         string.Equals(observed.Path, target.Path, StringComparison.Ordinal) &&
         string.Equals(observed.Name, target.Name, StringComparison.Ordinal) &&
         observed.IsDirectory == target.IsDirectory &&
-        string.Equals(observed.Owner, target.Owner, StringComparison.Ordinal) &&
-        observed.CanWrite == target.CanWrite &&
-        observed.CanDelete == target.CanDelete &&
+        (target.Baseline == FileShareLinkTargetBaseline.PhotoMedia ||
+            string.Equals(observed.Owner, target.Owner, StringComparison.Ordinal) &&
+            observed.CanWrite == target.CanWrite &&
+            observed.CanDelete == target.CanDelete) &&
         (target.IsDirectory ||
             observed.Size == target.Size && observed.ModifiedAt == target.ModifiedAt);
 
@@ -796,7 +797,16 @@ public sealed partial class DsmRepository
         target.ProfileId != Guid.Empty &&
         StrictDsmAbsolutePath(target.Path) &&
         !string.IsNullOrWhiteSpace(target.Name) &&
-        (target.IsDirectory || target.Size >= 0);
+        (target.IsDirectory || target.Size >= 0) &&
+        (target.Baseline == FileShareLinkTargetBaseline.FileBrowser ||
+            target is
+            {
+                Baseline: FileShareLinkTargetBaseline.PhotoMedia,
+                IsDirectory: false,
+                Owner: null,
+                CanWrite: false,
+                CanDelete: false,
+            });
 
     private bool TryClaimSharePath(string path)
     {

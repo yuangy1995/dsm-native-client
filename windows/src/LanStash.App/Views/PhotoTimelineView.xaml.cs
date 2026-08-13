@@ -39,6 +39,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     private Func<PhotoItem, bool>? _canRestore;
     private Func<PhotoItem, Task>? _restore;
     private Func<IReadOnlyList<PhotoItem>, Task>? _restoreMultiple;
+    private Func<PhotoItem, bool>? _canShare;
+    private Func<PhotoItem, Task>? _share;
     private CancellationTokenSource _thumbnailCancellation = new();
     private bool _syncingControls;
     private bool _syncingBatchSelection;
@@ -71,7 +73,9 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         Func<IReadOnlyList<PhotoItem>, Task>? moveMultipleToRecycle = null,
         Func<PhotoItem, bool>? canRestore = null,
         Func<PhotoItem, Task>? restore = null,
-        Func<IReadOnlyList<PhotoItem>, Task>? restoreMultiple = null)
+        Func<IReadOnlyList<PhotoItem>, Task>? restoreMultiple = null,
+        Func<PhotoItem, bool>? canShare = null,
+        Func<PhotoItem, Task>? share = null)
     {
         _source = source;
         _thumbnails = thumbnails;
@@ -90,6 +94,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         _canRestore = canRestore;
         _restore = restore;
         _restoreMultiple = restoreMultiple;
+        _canShare = canShare;
+        _share = share;
     }
 
     internal async Task ShowAsync(PhotoSpace space)
@@ -128,6 +134,11 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
 
     internal bool CanOpenSelected =>
         _batchSelectionOperation == PhotoBatchSelectionOperation.None && TimelineGrid.SelectedItem is PhotoTimelineEntry entry && CanOpen(entry.Item);
+
+    internal bool CanShareSelected =>
+        _batchSelectionOperation == PhotoBatchSelectionOperation.None &&
+        TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
+        _canShare?.Invoke(entry.Item) == true;
 
     internal bool CanRestoreSelected =>
         _batchSelectionOperation == PhotoBatchSelectionOperation.None && TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
@@ -169,6 +180,17 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         if (TimelineGrid.SelectedItem is PhotoTimelineEntry entry &&
             CanOpen(entry.Item) && _open is not null)
             await _open(entry.Item, VisibleMediaItems());
+    }
+
+    internal async Task ShareSelectedAsync()
+    {
+        if (!CanShareSelected ||
+            TimelineGrid.SelectedItem is not PhotoTimelineEntry entry ||
+            _share is null)
+        {
+            return;
+        }
+        await _share(entry.Item);
     }
 
     internal async Task RestoreSelectedAsync()
@@ -366,6 +388,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     { await OpenSelectedAsync(); }
     private async void Save_Click(object sender, RoutedEventArgs e)
     { await SaveSelectedAsync(); }
+    private async void ShareLink_Click(object sender, RoutedEventArgs e)
+    { await ShareSelectedAsync(); }
     private void SaveMultiple_Click(object sender, RoutedEventArgs e) =>
         EnterBatchSelection(PhotoBatchSelectionOperation.Save);
     private async void SaveSelectedItems_Click(object sender, RoutedEventArgs e)
@@ -512,6 +536,7 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
         FilterPicker.IsEnabled = _viewModel.HasCompletedSnapshot;
         OpenButton.IsEnabled = CanOpenSelected;
         SaveButton.IsEnabled = CanSaveSelected;
+        ShareLinkButton.IsEnabled = CanShareSelected;
         MoveButton.IsEnabled = CanMoveSelected;
         MoveButton.Visibility = CanMoveSelected ? Visibility.Visible : Visibility.Collapsed;
         MoveToRecycleButton.Content = LocalizationService.Current.Get("FileRecycleMoveAction");

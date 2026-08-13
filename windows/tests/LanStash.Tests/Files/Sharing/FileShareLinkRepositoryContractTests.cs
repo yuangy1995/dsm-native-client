@@ -10,6 +10,74 @@ public sealed class FileShareLinkRepositoryContractTests
     private static readonly DateTimeOffset Modified = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
 
     [Fact]
+    public async Task PhotoMediaBaselineUsesTheExistingReadPreflightAndStillChecksRevision()
+    {
+        var api = new SharingApiClient(
+            [TargetResponse(false, owner: "another-user"), LinkPage(0), LinkPage(1, Link("new", "/share/a.txt"))],
+            new FileShareLinkTransportResult(
+                FileShareLinkTransportStatus.ResponseReceived,
+                new JsonObject { ["id"] = "new" }));
+
+        var result = await Repository(api).CreateFileShareLinkAsync(new(
+            Target(false) with
+            {
+                Owner = null,
+                CanWrite = false,
+                CanDelete = false,
+                Baseline = FileShareLinkTargetBaseline.PhotoMedia,
+            }));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(1, api.CreateCount);
+        Assert.Equal(1, api.Requests.Count(request => request.Method == "getinfo"));
+    }
+
+    [Fact]
+    public async Task ChangedOrUnreadablePhotoMediaBaselineMakesZeroWrites()
+    {
+        var changedResponse = TargetResponse(false);
+        changedResponse["files"]![0]!["size"] = 11;
+        var changedApi = new SharingApiClient([changedResponse], UnsupportedTransport());
+        var unreadableApi = new SharingApiClient(
+            [TargetResponse(false, canRead: false)],
+            UnsupportedTransport());
+        var target = Target(false) with
+        {
+            Owner = null,
+            CanWrite = false,
+            CanDelete = false,
+            Baseline = FileShareLinkTargetBaseline.PhotoMedia,
+        };
+
+        var changed = await Repository(changedApi).CreateFileShareLinkAsync(new(target));
+        var unreadable = await Repository(unreadableApi).CreateFileShareLinkAsync(new(target));
+
+        Assert.Equal(MutationErrorCategory.Conflict, changed.Result.ErrorCategory);
+        Assert.Equal(MutationErrorCategory.Conflict, unreadable.Result.ErrorCategory);
+        Assert.Equal(0, changedApi.CreateCount);
+        Assert.Equal(0, unreadableApi.CreateCount);
+    }
+
+    [Fact]
+    public async Task PhotoMediaBaselineRejectsInventedFilePermissionsBeforeAnyRequest()
+    {
+        var api = new SharingApiClient([], UnsupportedTransport());
+        var target = Target(false) with
+        {
+            Owner = null,
+            CanWrite = true,
+            CanDelete = false,
+            Baseline = FileShareLinkTargetBaseline.PhotoMedia,
+        };
+
+        var result = await Repository(api).CreateFileShareLinkAsync(new(target));
+
+        Assert.Equal(MutationErrorCategory.Validation, result.Result.ErrorCategory);
+        Assert.Empty(api.Requests);
+        Assert.Equal(0, api.CreateCount);
+    }
+
+    [Fact]
     public async Task ListUsesStrictBoundedPagination()
     {
         var api = new SharingApiClient(

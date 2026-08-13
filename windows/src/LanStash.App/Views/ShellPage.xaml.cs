@@ -378,6 +378,11 @@ public sealed partial class ShellPage : Page
                     {
                         photoCopyMoveRepository = null;
                     }
+                    var photoShareRepository = _app.Repository as IFileShareLinkRepository;
+                    if (photoShareRepository?.ProfileId != photoProfile.Id)
+                    {
+                        photoShareRepository = null;
+                    }
                     IFileCopyMoveFolderSource? photoCopyMoveFolderSource = null;
                     if (photoLocationsRepository is not null)
                     {
@@ -396,7 +401,9 @@ public sealed partial class ShellPage : Page
                         previewRepository: photoPreviewRepository,
                         copyMoveRepository: photoCopyMoveRepository,
                         copyMoveFolderSource: photoCopyMoveFolderSource,
-                        copyMoveReviewBlocker: FileCopyMoveReviewBlocker.Current);
+                        copyMoveReviewBlocker: FileCopyMoveReviewBlocker.Current,
+                        shareRepository: photoShareRepository,
+                        shareReviewBlocker: FileShareLinkReviewBlocker.Current);
                     _photosProfileId = photoProfile.Id;
                     _photosRepository = photoRepository;
                 }

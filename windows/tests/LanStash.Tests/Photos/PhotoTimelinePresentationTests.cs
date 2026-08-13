@@ -214,6 +214,22 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("MoveButton.Visibility = CanMoveSelected", source);
     }
 
+    [Fact]
+    public void TimelineSingleShareUsesThePageCallbackOutsideBatchSelection()
+    {
+        var root = RepositoryRoot();
+        var xaml = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml"));
+        var source = File.ReadAllText(Path.Combine(root, "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("x:Uid=\"PhotoShareLinkButton\" x:Name=\"ShareLinkButton\"", xaml);
+        Assert.Contains("Click=\"ShareLink_Click\"", xaml);
+        Assert.Contains("_batchSelectionOperation == PhotoBatchSelectionOperation.None", source);
+        Assert.Contains("_canShare?.Invoke(entry.Item) == true", source);
+        Assert.Contains("await _share(entry.Item)", source);
+        Assert.Contains("if (!CanShareSelected ||", source);
+        Assert.Contains("ShareLinkButton.IsEnabled = CanShareSelected", source);
+    }
+
     private static string RepositoryRoot([System.Runtime.CompilerServices.CallerFilePath] string file = "") =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!, "../../../../"));
 }

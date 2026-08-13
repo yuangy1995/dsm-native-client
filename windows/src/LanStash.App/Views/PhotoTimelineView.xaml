@@ -38,6 +38,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="PhotoTimelineSearch" x:Name="SearchBox" MinHeight="44"
                      TextChanged="SearchBox_TextChanged" />
@@ -60,33 +61,35 @@
                     MinHeight="44" Click="Open_Click" />
             <Button x:Uid="PhotoTimelineSave" x:Name="SaveButton" Grid.Column="4"
                     MinHeight="44" Click="Save_Click" />
-            <Button x:Uid="PhotoBrowserSaveMultiple" x:Name="SaveMultipleButton" Grid.Column="5"
+            <Button x:Uid="PhotoShareLinkButton" x:Name="ShareLinkButton" Grid.Column="5"
+                    MinHeight="44" Click="ShareLink_Click" />
+            <Button x:Uid="PhotoBrowserSaveMultiple" x:Name="SaveMultipleButton" Grid.Column="6"
                     MinHeight="44" Click="SaveMultiple_Click" Visibility="Collapsed" />
-            <Button x:Uid="PhotoBrowserSaveSelected" x:Name="SaveSelectedItemsButton" Grid.Column="6"
+            <Button x:Uid="PhotoBrowserSaveSelected" x:Name="SaveSelectedItemsButton" Grid.Column="7"
                     MinHeight="44" Click="SaveSelectedItems_Click" Visibility="Collapsed" />
-            <Button x:Uid="FileCopyMoveMove" x:Name="MoveButton" Grid.Column="7"
+            <Button x:Uid="FileCopyMoveMove" x:Name="MoveButton" Grid.Column="8"
                     MinHeight="44" Click="Move_Click" Visibility="Collapsed" />
-            <Button x:Name="RestoreButton" Grid.Column="8"
+            <Button x:Name="RestoreButton" Grid.Column="9"
                     MinHeight="44" Click="Restore_Click" Visibility="Collapsed" />
-            <Button x:Name="MoveToRecycleButton" Grid.Column="9"
+            <Button x:Name="MoveToRecycleButton" Grid.Column="10"
                     MinHeight="44" Click="MoveToRecycle_Click" Visibility="Collapsed" />
-            <Button x:Uid="FileCopyMoveCopyMultiple" x:Name="CopyMultipleButton" Grid.Column="10"
+            <Button x:Uid="FileCopyMoveCopyMultiple" x:Name="CopyMultipleButton" Grid.Column="11"
                     MinHeight="44" Click="CopyMultiple_Click" Visibility="Collapsed" />
-            <Button x:Uid="FileCopyMoveCopySelected" x:Name="CopySelectedItemsButton" Grid.Column="11"
+            <Button x:Uid="FileCopyMoveCopySelected" x:Name="CopySelectedItemsButton" Grid.Column="12"
                     MinHeight="44" Click="CopySelectedItems_Click" Visibility="Collapsed" />
-            <Button x:Uid="FileCopyMoveMoveMultiple" x:Name="MoveMultipleButton" Grid.Column="12"
+            <Button x:Uid="FileCopyMoveMoveMultiple" x:Name="MoveMultipleButton" Grid.Column="13"
                     MinHeight="44" Click="MoveMultiple_Click" Visibility="Collapsed" />
-            <Button x:Uid="FileCopyMoveMoveSelected" x:Name="MoveSelectedItemsButton" Grid.Column="13"
+            <Button x:Uid="FileCopyMoveMoveSelected" x:Name="MoveSelectedItemsButton" Grid.Column="14"
                     MinHeight="44" Click="MoveSelectedItems_Click" Visibility="Collapsed" />
-            <Button x:Name="MoveMultipleToRecycleButton" Grid.Column="14"
+            <Button x:Name="MoveMultipleToRecycleButton" Grid.Column="15"
                     MinHeight="44" Click="MoveMultipleToRecycle_Click" Visibility="Collapsed" />
-            <Button x:Name="MoveSelectedToRecycleButton" Grid.Column="15"
+            <Button x:Name="MoveSelectedToRecycleButton" Grid.Column="16"
                     MinHeight="44" Click="MoveSelectedToRecycle_Click" Visibility="Collapsed" />
-            <Button x:Uid="FileRestoreBatchMultiple" x:Name="RestoreMultipleButton" Grid.Column="16"
+            <Button x:Uid="FileRestoreBatchMultiple" x:Name="RestoreMultipleButton" Grid.Column="17"
                     MinHeight="44" Click="RestoreMultiple_Click" Visibility="Collapsed" />
-            <Button x:Uid="FileRestoreBatchSelected" x:Name="RestoreSelectedItemsButton" Grid.Column="17"
+            <Button x:Uid="FileRestoreBatchSelected" x:Name="RestoreSelectedItemsButton" Grid.Column="18"
                     MinHeight="44" Click="RestoreSelectedItems_Click" Visibility="Collapsed" />
-            <Button x:Name="CancelRecycleSelectionButton" Grid.Column="18"
+            <Button x:Name="CancelRecycleSelectionButton" Grid.Column="19"
                     MinHeight="44" Click="CancelBatchSelection_Click" Visibility="Collapsed" />
         </Grid>
         </ScrollViewer>

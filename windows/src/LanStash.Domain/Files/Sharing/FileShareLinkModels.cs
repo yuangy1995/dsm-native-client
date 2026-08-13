@@ -20,6 +20,12 @@ public sealed record FileShareLink(
     bool HasPassword,
     DateOnly? ExpiresOn);
 
+public enum FileShareLinkTargetBaseline
+{
+    FileBrowser,
+    PhotoMedia,
+}
+
 public sealed record FileShareLinkTarget(
     Guid ProfileId,
     string Path,
@@ -29,7 +35,8 @@ public sealed record FileShareLinkTarget(
     DateTimeOffset? ModifiedAt,
     string? Owner,
     bool CanWrite,
-    bool CanDelete);
+    bool CanDelete,
+    FileShareLinkTargetBaseline Baseline = FileShareLinkTargetBaseline.FileBrowser);
 
 public sealed record CreateFileShareLinkRequest(
     FileShareLinkTarget Target,

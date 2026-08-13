@@ -384,6 +384,12 @@ Apple Mobile 当前受限范围已完成 Container 五分区和 VMM 七分区源
 
 Windows 主动照片时间线已补入 macOS 同义的年/月快速定位，并转换为 WinUI 原生菜单交互。菜单只从当前已加载、搜索和类型筛选后仍可见的月份生成，按年份与月份倒序排列，日期未知项目单列；选择后滚动并聚焦目标组首项，不改变当前筛选、不新增 NAS 请求。批量选择期间禁用定位入口。本机聚焦 xUnit 31/31、完整 Release xUnit 1479/1479、本地化、请求契约、XML 和差异检查已通过；GitHub Windows Build run `31675765969` 已通过 1479/1479 与 WinUI x64/ARM64，Repository Check run `31675766023` 已通过。真实大图库、Windows/Narrator、高对比、200% 缩放、窄窗口与键鼠/触控为 `PENDING_USER_VALIDATION`。
 
+### Windows PHOTO-03 单项共享链接增量
+
+Windows Photos 已在文件夹、主动时间线和查看器三个入口补入单个普通媒体的共享链接创建与复制。该能力复用公开 File Station Sharing v3，支持可选密码和到期时间；创建固定一次提交并在提交后回读，提交结果未知时按 profile+path 阻断再次创建，不把旧链接或不确定结果冒充成功。
+
+照片来源不具备 File Station 列表中的 owner/write/delete 字段，因此本切片不把缺失值伪造为照片选择基线，也不拿它们参与照片基线比较；创建前仍通过既有 File Station `getinfo` 读取完整目标信息，并严格核对 profile、规范路径、名称、非目录、大小、修改时间和当前可读权限。批量共享、链接管理/撤销、系统分享和 Synology Photos 私有分享明确不在本切片。本地 Release xUnit 1485/1485、Application 构建、本地化、XAML/RESW XML 与差异检查已通过；macOS 无法执行 Windows WinUI `XamlCompiler.exe`。GitHub Windows Build run `31679774447` 已通过 1485/1485 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31679774474` 已通过。真实 NAS、Narrator、高对比和 200% 缩放为 `PENDING_USER_VALIDATION`。
+
 ## 13. 参考资料
 
 - [总体架构](../architecture/ARCHITECTURE.md)

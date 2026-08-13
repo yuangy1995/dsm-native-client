@@ -6,6 +6,30 @@ namespace LanStash.Tests.Files.Sharing;
 public sealed class FileShareLinkViewModelTests
 {
     private static readonly Guid ProfileId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    [Fact]
+    public void PhotoMediaTargetOverloadKeepsTheFrozenBaseline()
+    {
+        var repository = new StubRepository(ProfileId);
+        var target = new FileShareLinkTarget(
+            ProfileId,
+            "/share/photo.jpg",
+            "photo.jpg",
+            IsDirectory: false,
+            10,
+            DateTimeOffset.FromUnixTimeSeconds(1_700_000_000),
+            Owner: null,
+            CanWrite: false,
+            CanDelete: false,
+            FileShareLinkTargetBaseline.PhotoMedia);
+
+        using var model = new FileShareLinkViewModel(repository, ProfileId, target);
+
+        Assert.Equal("photo.jpg", model.TargetName);
+        Assert.Equal("/share/photo.jpg", model.TargetPath);
+        Assert.False(model.IsDirectory);
+        Assert.Equal(FileShareLinkPresentationState.Form, model.State);
+    }
     private static readonly FileItem Item = new(
         "/shared/report.pdf", "report.pdf", false, 42, null, "owner", true, false);
 

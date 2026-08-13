@@ -1092,6 +1092,8 @@
   <data name="Settings.SaveFailedMessage" xml:space="preserve"><value>请检查此应用是否可以在此设备上保存数据，然后重试。</value></data>
   <data name="FileShareLink.Label" xml:space="preserve"><value>创建分享链接</value></data>
   <data name="FileShareLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>为选中的项目创建分享链接</value></data>
+  <data name="PhotoShareLinkButton.Content" xml:space="preserve"><value>创建分享链接</value></data>
+  <data name="PhotoShareLinkButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>为此照片或视频创建分享链接</value></data>
   <data name="FileShareLinkTitle" xml:space="preserve"><value>创建分享链接</value></data>
   <data name="FileShareLinkTarget" xml:space="preserve"><value>所选项目：{0}</value></data>
   <data name="FileShareLinkAccessNote" xml:space="preserve"><value>在链接到期前，任何获得链接的人都能打开这个项目。如需加强保护，可以添加密码。</value></data>

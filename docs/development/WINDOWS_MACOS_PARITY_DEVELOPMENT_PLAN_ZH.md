@@ -541,6 +541,12 @@ Windows Photos 主动时间线已增加本地年/月快速定位。工具栏使�
 
 本机 PhotoTimeline 聚焦 xUnit 31/31、完整 Release xUnit 1479/1479、本地化、请求契约、XAML/RESW XML 与差异检查已通过；GitHub Windows Build run `31675765969` 已通过 1479/1479 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31675766023` 已通过。真实大图库、Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
 
+### PHOTO-03 单项共享链接增量
+
+Windows Photos 文件夹、主动时间线和查看器已增加单个普通媒体的“创建共享链接并复制”入口。实现复用公开 File Station Sharing v3 与既有 typed 创建链，支持可选密码和到期时间；每次只提交一次，提交后回读确认本次新链接，提交结果未知时使用 profile+path 会话阻断，禁止自动重放。
+
+Photos 媒体基线严格核对 profile、规范路径、名称、非目录、大小、修改时间和 File Station 当前可读权限。由于 Photos 列表不提供 owner/write/delete，本切片不把缺失值伪造为照片选择基线，也不拿它们参与照片基线比较；共享预检仍沿用 File Station `getinfo` 读取完整目标信息，Files 原有完整基线规则保持不变。批量共享、链接管理/撤销、系统分享和 Synology Photos 私有分享继续关闭。本地 Release xUnit 1485/1485、Application 构建、本地化、XAML/RESW XML 与差异检查已通过；macOS 无法执行 Windows WinUI `XamlCompiler.exe`。GitHub Windows Build run `31679774447` 已通过 1485/1485 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31679774474` 已通过。真实 NAS、Narrator、高对比和 200% 缩放为 `PENDING_USER_VALIDATION`。
+
 ## 11. 参考资料
 
 - [macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)

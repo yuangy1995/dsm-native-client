@@ -2,6 +2,7 @@ using LanStash.App.Features.Files;
 using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Preview;
 using LanStash.App.Features.Files.Recycle;
+using LanStash.App.Features.Files.Sharing;
 using LanStash.App.Features.Photos;
 using LanStash.App.Features.Photos.Import;
 using LanStash.App.Features.Photos.Timeline;
@@ -39,6 +40,7 @@ public sealed partial class PhotosPage : Page, IDisposable
     private bool _updatingSpaces;
     private bool _isPhotoPageActive;
     private bool _disposed;
+    private readonly PhotoShareLinkDialog _photoShareLinkDialog;
 
     internal PhotosPage(
         IPhotoRepository repository,
@@ -50,7 +52,9 @@ public sealed partial class PhotosPage : Page, IDisposable
         IFilePreviewRepository? previewRepository = null,
         IFileCopyMoveRepository? copyMoveRepository = null,
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
-        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null)
+        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
+        IFileShareLinkRepository? shareRepository = null,
+        FileShareLinkReviewBlocker? shareReviewBlocker = null)
         : this(
             new RepositoryPhotoBrowserDataSource(repository),
             new PhotoBrowserViewModel(),
@@ -64,7 +68,9 @@ public sealed partial class PhotosPage : Page, IDisposable
             previewRepository,
             copyMoveRepository,
             copyMoveFolderSource,
-            copyMoveReviewBlocker)
+            copyMoveReviewBlocker,
+            shareRepository,
+            shareReviewBlocker)
     {
     }
 
@@ -81,7 +87,9 @@ public sealed partial class PhotosPage : Page, IDisposable
         IFilePreviewRepository? previewRepository = null,
         IFileCopyMoveRepository? copyMoveRepository = null,
         IFileCopyMoveFolderSource? copyMoveFolderSource = null,
-        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null)
+        FileCopyMoveReviewBlocker? copyMoveReviewBlocker = null,
+        IFileShareLinkRepository? shareRepository = null,
+        FileShareLinkReviewBlocker? shareReviewBlocker = null)
     {
         EnsureMatchingProfile(dataSource.ProfileId, profileId);
         InitializeComponent();
@@ -92,6 +100,10 @@ public sealed partial class PhotosPage : Page, IDisposable
         _cacheRegistration = AppSettingsService.Current.Caches.Register(thumbnails);
         _profileId = profileId;
         _transfers = transfers;
+        _photoShareLinkDialog = new PhotoShareLinkDialog(
+            shareRepository,
+            Guid.Parse(profileId),
+            shareReviewBlocker ?? FileShareLinkReviewBlocker.Current);
         InitializePhotoRecycle(locationsRepository, recycleRepository, recycleReviewBlocker);
         InitializePhotoCopyMove(copyMoveRepository, copyMoveFolderSource, copyMoveReviewBlocker);
         InitializePhotoImport();
@@ -116,7 +128,9 @@ public sealed partial class PhotosPage : Page, IDisposable
                 MoveMultiplePhotosToRecycleAsync,
                 CanRestorePhotoItem,
                 RestorePhotoItemAsync,
-                RestoreMultiplePhotosAsync);
+                RestoreMultiplePhotosAsync,
+                CanSharePhoto,
+                SharePhotoAsync);
         }
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -191,6 +205,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         ClosePhotoBatchCopyMoveDialog();
         ClosePhotoRecycleDialog();
         ClosePhotoBatchRecycleDialog();
+        _photoShareLinkDialog.Close();
         ExitPhotoBatchSelection();
         DeactivatePhotoRecycleLocations();
     }
@@ -690,6 +705,8 @@ public sealed partial class PhotosPage : Page, IDisposable
         RefreshButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsLoadingMore;
         OpenButton.IsEnabled = CanOpenSelectedMedia();
         SaveButton.IsEnabled = CanSaveSelectedMedia();
+        PhotoShareLinkButton.IsEnabled =
+            _viewModel.SelectedItem is { IsMedia: true } selected && CanSharePhoto(selected.Item);
         UpdatePhotoViewerState();
         UpdatePhotoCopyMoveControls();
         UpdatePhotoRecycleControls();
@@ -811,6 +828,7 @@ public sealed partial class PhotosPage : Page, IDisposable
         ClosePhotoBatchCopyMoveDialog();
         ClosePhotoRecycleDialog();
         ClosePhotoBatchRecycleDialog();
+        _photoShareLinkDialog.Close();
         DisposePhotoRecycleLocations();
         CancelThumbnailRequests();
         _locationCancellation.Dispose();

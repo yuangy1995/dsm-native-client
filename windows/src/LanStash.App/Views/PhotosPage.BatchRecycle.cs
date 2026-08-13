@@ -545,6 +545,7 @@ public sealed partial class PhotosPage
             RefreshButton.IsEnabled = false;
             OpenButton.IsEnabled = false;
             SaveButton.IsEnabled = false;
+            PhotoShareLinkButton.IsEnabled = false;
             PhotoMoveButton.IsEnabled = false;
             PhotoMoveToRecycleButton.IsEnabled = false;
             PhotoRestoreFromRecycleButton.IsEnabled = false;

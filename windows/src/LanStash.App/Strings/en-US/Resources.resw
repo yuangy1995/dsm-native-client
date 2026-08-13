@@ -1092,6 +1092,8 @@
   <data name="Settings.SaveFailedMessage" xml:space="preserve"><value>Check that this app can save data on this device, then try again.</value></data>
   <data name="FileShareLink.Label" xml:space="preserve"><value>Create share link</value></data>
   <data name="FileShareLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Create a share link for the selected item</value></data>
+  <data name="PhotoShareLinkButton.Content" xml:space="preserve"><value>Create share link</value></data>
+  <data name="PhotoShareLinkButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Create a share link for this photo or video</value></data>
   <data name="FileShareLinkTitle" xml:space="preserve"><value>Create share link</value></data>
   <data name="FileShareLinkTarget" xml:space="preserve"><value>Selected item: {0}</value></data>
   <data name="FileShareLinkAccessNote" xml:space="preserve"><value>Anyone with this link can open the item until it expires. Add a password if you need extra protection.</value></data>

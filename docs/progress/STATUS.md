@@ -304,7 +304,7 @@ Windows FILE-07 分享链接管理已形成闭环：Files 次级命令可打开�
 | PH5 macOS 发布验收 | 未开始 | 自动化、实机、安全、缓存、键盘、VoiceOver 和深色模式出口通过 |
 | PH6 iPhone/iPad 精选体验与自动备份 | PH6-A 精选体验已实现；PH6-B 自动备份后续 | 已完成个人/共享空间、文件夹、主动有界时间线、缩略图、PHOTO-02 查看/基础元数据、PHOTO-03A 单项导入、导出/分享、单项同 NAS 移动、单项移入回收站和受限恢复；继续完成 iPad/真机/真实 NAS 验收。整库自动备份、后台恢复和释放设备空间不在当前 DAG，须独立范围升级 |
 | PH7 Android 对齐 | 进行中 | Compose 照片浏览、查看、管理和用户选定项目的安全移动备份调用链已建立；“释放设备空间”仅建立五项全真的 fail-closed 门禁，仍无 UI、媒体删除权限和本机删除执行器；待设备格式、大图库、真实 NAS 写操作及未来独立释放空间流程验收 |
-| PH8 Windows 对齐 | 基础精选体验、PHOTO-02 查看器、PHOTO-03 管理主流程和年/月快速定位已通过 Windows 云端门禁 | 已完成个人/共享空间、文件夹浏览、有界时间线、搜索/筛选、缩略图、保存副本、单项导入、回收站恢复和图片/视频查看；当前筛选后可见月份现按年份组成原生跳转菜单，选择后滚动并聚焦对应组首项，不新增 NAS 请求。年/月定位本机聚焦 xUnit 31/31、完整 Release xUnit 1479/1479、本地化、请求契约、XML 和差异检查已通过；GitHub Windows Build run `31675765969` 已通过 1479/1479 与 WinUI x64/ARM64，Repository Check run `31675766023` 已通过。批量/永久删除、收藏写及真实 Windows/NAS/辅助功能验收继续后置 |
+| PH8 Windows 对齐 | 基础精选体验、PHOTO-02 查看器、PHOTO-03 管理主流程和年/月快速定位已通过 Windows 云端门禁；单项共享链接闭环已通过 Windows 云端门禁 | 已完成个人/共享空间、文件夹浏览、有界时间线、搜索/筛选、缩略图、保存副本、单项导入、回收站恢复和图片/视频查看；文件夹、时间线和查看器现可为单个普通媒体创建共享链接并复制。共享复用公开 File Station Sharing v3，支持可选密码和到期时间，并保留一次提交、提交后回读及 profile+path 未知结果阻断。照片基线严格核对 profile、规范路径、名称、非目录、大小、修改时间和可读权限；Photos 列表未提供的 owner/write/delete 不会被伪造为照片选择基线，也不参与照片基线比较，共享预检仍通过 File Station `getinfo` 读取完整目标信息。批量共享、链接管理/撤销、系统分享和 Synology Photos 私有分享未开放。本地 Release xUnit 1485/1485、Application 构建、本地化、XML 与差异检查已通过；GitHub Windows Build run `31679774447` 已通过 1485/1485 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31679774474` 已通过。真实 NAS、Narrator、高对比和 200% 缩放为 `PENDING_USER_VALIDATION` |
 
 照片模块按[照片管理开发计划](../development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)推进。基础照片主流程已建立；下一步集中验证大图库、权限、弱网和写操作，并继续补齐相册与智能能力。
 

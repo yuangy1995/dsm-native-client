@@ -25,6 +25,10 @@
         <KeyboardAccelerator
             Key="F11"
             Invoked="PhotoViewerImmersiveAccelerator_Invoked" />
+        <KeyboardAccelerator
+            Key="L"
+            Modifiers="Control,Shift"
+            Invoked="PhotoShareLinkAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid
@@ -225,6 +229,12 @@
                 MinHeight="44"
                 Visibility="Collapsed" />
             <CommandBar.SecondaryCommands>
+                <AppBarButton
+                    x:Uid="FileShareLink"
+                    x:Name="PhotoShareLinkButton"
+                    Click="PhotoShareLink_Click"
+                    Icon="Link"
+                    MinHeight="44" />
                 <AppBarButton
                     x:Uid="PhotoBrowserSaveMultiple"
                     x:Name="PhotoSaveMultipleButton"
@@ -541,6 +551,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Button
                     x:Uid="PhotoViewerPrevious"
@@ -568,9 +579,16 @@
                     MinWidth="44"
                     MinHeight="44" />
                 <Button
+                    x:Uid="PhotoShareLinkButton"
+                    x:Name="PhotoViewerShareLinkButton"
+                    Grid.Column="4"
+                    Click="PhotoViewerShareLink_Click"
+                    MinWidth="44"
+                    MinHeight="44" />
+                <Button
                     x:Uid="PhotoViewerSave"
                     x:Name="PhotoViewerSaveButton"
-                    Grid.Column="4"
+                    Grid.Column="5"
                     Click="PhotoViewerSave_Click"
                     MinHeight="44" />
             </Grid>

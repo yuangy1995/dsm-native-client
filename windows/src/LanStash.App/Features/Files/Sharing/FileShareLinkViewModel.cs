@@ -46,17 +46,43 @@ public sealed class FileShareLinkViewModel : ObservableObject, IDisposable
         FileItem item,
         bool systemShareAvailable = false,
         bool initialNeedsReview = false)
+        : this(
+            repository,
+            activeProfileId,
+            TargetFromItem(activeProfileId, item),
+            systemShareAvailable,
+            initialNeedsReview)
+    {
+    }
+
+    public FileShareLinkViewModel(
+        IFileShareLinkRepository repository,
+        Guid activeProfileId,
+        FileShareLinkTarget target,
+        bool systemShareAvailable = false,
+        bool initialNeedsReview = false)
     {
         ArgumentNullException.ThrowIfNull(repository);
-        ArgumentNullException.ThrowIfNull(item);
-        if (repository.ProfileId != activeProfileId)
+        ArgumentNullException.ThrowIfNull(target);
+        if (repository.ProfileId != activeProfileId || target.ProfileId != activeProfileId)
         {
             throw new ArgumentException("file.share.profile-mismatch", nameof(repository));
         }
         _repository = repository;
         _systemShareAvailable = systemShareAvailable;
-        _target = new FileShareLinkTarget(
-            activeProfileId,
+        _target = target;
+        _state = !repository.ShareLinkAvailability.IsAvailable
+            ? FileShareLinkPresentationState.Unsupported
+            : initialNeedsReview
+                ? FileShareLinkPresentationState.NeedsReview
+                : FileShareLinkPresentationState.Form;
+    }
+
+    private static FileShareLinkTarget TargetFromItem(Guid profileId, FileItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return new(
+            profileId,
             item.Path,
             item.Name,
             item.IsDirectory,
@@ -65,11 +91,6 @@ public sealed class FileShareLinkViewModel : ObservableObject, IDisposable
             item.Owner,
             item.CanWrite,
             item.CanDelete);
-        _state = !repository.ShareLinkAvailability.IsAvailable
-            ? FileShareLinkPresentationState.Unsupported
-            : initialNeedsReview
-                ? FileShareLinkPresentationState.NeedsReview
-                : FileShareLinkPresentationState.Form;
     }
 
     public string TargetName => _target.Name;

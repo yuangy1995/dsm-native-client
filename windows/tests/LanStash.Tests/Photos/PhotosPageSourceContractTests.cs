@@ -102,6 +102,54 @@ public sealed class PhotosPageSourceContractTests
     }
 
     [Fact]
+    public void SinglePhotoShareLinkUsesTheFilesSafetyChainAcrossAllThreeSurfaces()
+    {
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
+        var page = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml.cs");
+        var share = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.Share.cs");
+        var batch = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.BatchRecycle.cs");
+        var dialog = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoShareLinkDialog.cs");
+        var timelineXaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml");
+        var timeline = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs");
+        var shell = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+        var clipboard = ReadRepositoryFile(
+            "windows/src/LanStash.App/Platform/Sharing/WindowsClipboard.cs");
+
+        Assert.Contains("x:Name=\"PhotoShareLinkButton\"", xaml);
+        Assert.Contains("x:Name=\"PhotoViewerShareLinkButton\"", xaml);
+        Assert.Contains("x:Uid=\"PhotoShareLinkButton\"", xaml);
+        Assert.Contains("PhotoShareLinkAccelerator_Invoked", xaml);
+        Assert.Contains("Modifiers=\"Control,Shift\"", xaml);
+        Assert.Contains("x:Name=\"ShareLinkButton\"", timelineXaml);
+        Assert.Contains("Func<PhotoItem, bool>? _canShare", timeline);
+        Assert.Contains("Func<PhotoItem, Task>? _share", timeline);
+        Assert.Contains("CanSharePhoto", page);
+        Assert.Contains("SharePhotoAsync", page);
+        Assert.Contains("FileShareLinkTargetBaseline.PhotoMedia", share);
+        Assert.Contains("item.ModifiedAt is not null", share);
+        Assert.Contains("!IsSelectingPhotoBatch", share);
+        Assert.Contains("PhotoShareLinkButton.IsEnabled = false;", batch);
+        Assert.Contains("!HasRecyclePathSegment(item.Path)", share);
+        Assert.Contains("_photoShareLinkDialog.Close();", page);
+        Assert.Contains("photoShareRepository?.ProfileId != photoProfile.Id", shell);
+        Assert.Contains("shareReviewBlocker: FileShareLinkReviewBlocker.Current", shell);
+
+        Assert.Contains("new FileShareLinkViewModel(", dialog);
+        Assert.Contains("_reviewBlocker.Contains(_profileId, target.Path)", dialog);
+        Assert.Contains("_reviewBlocker.Block(_profileId, model.TargetPath)", dialog);
+        Assert.Contains("model?.RequestCancellation();", dialog);
+        Assert.Contains("model?.Dispose();", dialog);
+        Assert.Contains("ConfirmedUrl", dialog);
+        Assert.DoesNotContain("Password", clipboard, StringComparison.Ordinal);
+        Assert.Contains("IsAllowedInHistory = false", clipboard);
+        Assert.Contains("IsRoamable = false", clipboard);
+        var english = ReadRepositoryFile("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = ReadRepositoryFile("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+        Assert.Contains("name=\"PhotoShareLinkButton.Content\"", english);
+        Assert.Contains("name=\"PhotoShareLinkButton.Content\"", chinese);
+    }
+
+    [Fact]
     public void ViewerUsesExistingFilePreviewAndKeepsPhotoMetadataAccessible()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/PhotosPage.xaml");
