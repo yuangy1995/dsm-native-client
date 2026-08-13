@@ -12,24 +12,32 @@ final class MobileFileShareLinkPresentationTests: XCTestCase {
             "interactiveDismissDisabled", "requestCancellation()", "minHeight: 44",
             ".disabled(!model.canSubmit)",
             "accessibilityAddTraits([.isStaticText, .updatesFrequently])",
+            "List {", "model.confirmDeleteManagedLink()", "Button(role: .destructive)",
         ] {
             XCTAssertTrue(source.contains(required), "缺少 \(required)")
         }
-        for phase in [".form", ".creating", ".confirmedSuccess", ".reviewRequired", ".confirmedFailure"] {
+        for phase in [
+            ".form", ".creating", ".confirmedSuccess", ".reviewRequired", ".confirmedFailure",
+            ".managementLoading", ".managementEmpty", ".managementContent", ".managementError",
+            ".managementUnsupported", ".deletionConfirm", ".deleting", ".deletionConfirmed",
+            ".deletionReviewRequired", ".deletionFailure",
+        ] {
             XCTAssertTrue(source.contains(phase), "缺少五态 \(phase)")
         }
     }
 
-    func test用户文案只引用语义资源且成功前无复制分享入口() throws {
+    func test用户文案只引用语义资源且危险动作需要确认和回读() throws {
         let view = try Self.source("MobileFileShareLinkView.swift")
         let model = try Self.source("MobileFileShareLinkModel.swift")
 
         XCTAssertFalse(view.contains("Text(\""))
         XCTAssertTrue(view.contains("mobile.files.share-link.action.copy"))
         XCTAssertTrue(view.contains("mobile.files.share-link.action.share"))
+        XCTAssertTrue(view.contains("mobile.files.share-link.delete.confirm.title"))
         XCTAssertTrue(model.contains("state.phase == .confirmedSuccess"))
         XCTAssertTrue(model.contains("confirmedLink"))
-        XCTAssertFalse(model.contains("deleteShareLinks"))
+        XCTAssertTrue(model.contains("deleteShareLinks(ids: [link.id])"))
+        XCTAssertTrue(model.contains("loadManagedLinkSnapshot(targetPath: targetPath, repository: repository)"))
         XCTAssertFalse(model.contains("clear_invalid"))
         XCTAssertFalse(model.contains("download("))
     }

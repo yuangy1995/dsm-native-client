@@ -504,6 +504,14 @@ struct MobileFileBrowser: View {
                         systemImage: "link.badge.plus"
                     )
                 }
+                Button {
+                    beginShareLinkManagement(for: item)
+                } label: {
+                    Label(
+                        L10n.string("mobile.files.share-link.management.action"),
+                        systemImage: "link"
+                    )
+                }
             }
             if item.isDirectory {
                 Button(L10n.string("ui.c771248e511fbf93")) { openDirectory(item) }
@@ -1191,6 +1199,11 @@ struct MobileFileBrowser: View {
     private func beginShareLink(for item: FileItem) {
         guard !state.location.source.isReadOnlyLocation else { return }
         model.fileShareLinkModel.begin(for: item)
+    }
+
+    private func beginShareLinkManagement(for item: FileItem) {
+        guard !state.location.source.isReadOnlyLocation else { return }
+        model.fileShareLinkModel.beginManagement(for: item)
     }
 
     private func handleFileImport(_ result: Result<[URL], Error>) {

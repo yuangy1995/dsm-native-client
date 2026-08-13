@@ -52,7 +52,7 @@
 | NAS | 只有少量只读摘要，远少于 macOS 21 类管理页 | 只补健康与必要只读诊断；配置、电源、账号和长时分析不是当前缺口 |
 | iPad | 只按 horizontal size class 分支，缺实际宽度、键盘、指针和拖放设计 | 补齐当前范围的自适应生产力；多窗口后续 |
 
-立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息、受限纯文字与单附件发送、Chat 本地会话置顶及前台实时/轮询降级、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、NAS-02/NAS-04 四分区有界只读详情、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，正式提交 `5850f4c` 的 Apple Build run `31356270194` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。ACT-01 首片已合入正式提交 `2491212`，把 Download Station 已加载任务快照投影到 Activity 的独立 NAS 来源，新增暂停态与 NAS 项只读控制边界；本地 Activity 聚焦测试已通过，GitHub Apple Build run `31360092209` 通过共享包 675 项 XCTest（2 跳过）+10 Swift Testing、iPhone/iPad 通用应用构建和 macOS 打包，真机与真实 NAS 待验收。Chat 本地会话置顶只保存 profile 绑定会话 ID 顺序，列表滑动操作和详情工具栏可完成置顶/取消置顶，本机 iPhone 模拟器 Chat 聚焦 38/38 通过，GitHub Apple Build run `31450710918` 和 Repository Check run `31450710909` 已通过。Download RSS/文件优先级/BT 高级/设置写、Activity 主动后台轮询、后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
+立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接创建/复制/系统分享与 Files 单项管理撤销、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息、受限纯文字与单附件发送、Chat 本地会话置顶及前台实时/轮询降级、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、NAS-02/NAS-04 四分区有界只读详情、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，正式提交 `5850f4c` 的 Apple Build run `31356270194` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。FILE-07 管理切片已让 Files 单个文件/文件夹可按完整路径列出既有公开 Sharing v3 链接、复制、系统分享并二次确认撤销；撤销固定稳定 ID、完整链接基线、单次提交、结果未知只核对不重放和删除后回读确认，本机 iPhone 模拟器聚焦 20/20、共享包 111/111、本地化与差异检查已通过。ACT-01 首片已合入正式提交 `2491212`，把 Download Station 已加载任务快照投影到 Activity 的独立 NAS 来源，新增暂停态与 NAS 项只读控制边界；本地 Activity 聚焦测试已通过，GitHub Apple Build run `31360092209` 通过共享包 675 项 XCTest（2 跳过）+10 Swift Testing、iPhone/iPad 通用应用构建和 macOS 打包，真机与真实 NAS 待验收。Chat 本地会话置顶只保存 profile 绑定会话 ID 顺序，列表滑动操作和详情工具栏可完成置顶/取消置顶，本机 iPhone 模拟器 Chat 聚焦 38/38 通过，GitHub Apple Build run `31450710918` 和 Repository Check run `31450710909` 已通过。Download RSS/文件优先级/BT 高级/设置写、Activity 主动后台轮询、后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
 
 ## 3. 移动范围与 macOS 语义基线
 
@@ -102,7 +102,7 @@
 | FILE-04 | 核心 | 核心 | 用户选择的单文件上传、下载/导出、系统分享与取消；文件夹/大批量和常驻后台传输当前不做 |
 | FILE-05 | 受限 | 受限 | 有明确上限的同 NAS 复制/移动；iPad 增加拖放快捷方式；跨 NAS 和大批量交给 Mac App 或 DSM Web |
 | FILE-06 | 当前不做 | 当前不做 | 密码/编码/覆盖组合的压缩解压交给 Mac App 或 DSM Web |
-| FILE-07 | 核心/受限 | 核心/受限 | 创建、复制、系统分享链接为核心；列出/撤销等管理仅按已验证端点受限开放 |
+| FILE-07 | 核心/受限 | 核心/受限 | 创建、复制、系统分享链接为核心；Files 单项既有链接列表、复制、系统分享和二次确认撤销已按公开 Sharing v3 受限开放；批量撤销、编辑密码/到期日、Photos 管理入口和私有照片分享当前不做 |
 | FILE-08 | 核心 | 核心 | 图片、PDF、文本只读、音视频预览与分享；iPad 并列详情；文本编辑/格式整理当前不做 |
 | FILE-09 | 受限 | 受限 | 移入回收站与恢复；永久删除当前不做 |
 | ACT-01 | 核心 | 核心 | App 前台传输与 NAS 任务分源显示、进度、取消和可解释结果；不承诺常驻后台 |
@@ -564,7 +564,7 @@ CM-01 当前源码已覆盖容器、映像、网络、项目与事件五分区�
 
 - 前台/后台、系统挂起、系统终止、用户强制结束、设备重启和 App 升级；未完成的前台传输不得在重启后被自动重放。
 - Wi-Fi/蜂窝切换、低数据、低电量、无网、慢网和存储不足。
-- 已实现的 Document Picker/Exporter、分享 Sheet、QuickLook/PDFKit/AVKit、FILE-07 系统分享，以及 PHOTO-03A PhotosPicker/iCloud-only 主动导入；分别验证完成、取消、授权失效和临时文件清理。
+- 已实现的 Document Picker/Exporter、分享 Sheet、QuickLook/PDFKit/AVKit、FILE-07 系统分享与管理链接系统分享，以及 PHOTO-03A PhotosPicker/iCloud-only 主动导入；分别验证完成、取消、授权失效和临时文件清理。
 - 同一窗口切换 NAS 后，任务、选择、筛选和草稿不串用。
 
 ### 13.3 DSM
@@ -572,7 +572,7 @@ CM-01 当前源码已覆盖容器、映像、网络、项目与事件五分区�
 - 局域网、公网直连、QuickConnect 中继和证书变化。
 - 普通账号、受限管理员、功能无权限、套件未安装和 capability 缺失。
 - 当前记录的 DSM build + 套件完整版本；未记录环境的内部写必须关闭。
-- 对已经实现的单文件上传、FILE-07 单对象分享链接、FILE-03 单项新建文件夹/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 移入回收站/恢复、PHOTO-03A 单项导入、Chat 纯文字发送，以及 Download 单任务创建/暂停/继续/只移除任务，验证成功、权限拒绝、冲突、超时、提交未知、取消后复查和回读不一致；未确认结果在核对前不得重放。永久删除、删除已下载数据、Chat 附件/NAS 写和 Download 高级设置不进入本矩阵。
+- 对已经实现的单文件上传、FILE-07 单对象分享链接创建、复制、系统分享、管理列表和单条撤销、FILE-03 单项新建文件夹/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 移入回收站/恢复、PHOTO-03A 单项导入、Chat 纯文字发送，以及 Download 单任务创建/暂停/继续/只移除任务，验证成功、权限拒绝、冲突、超时、提交未知、取消后复查和回读不一致；未确认结果在核对前不得重放。永久删除、删除已下载数据、Chat 附件/NAS 写和 Download 高级设置不进入本矩阵。
 
 ## 14. 关键风险
 

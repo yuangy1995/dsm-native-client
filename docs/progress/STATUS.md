@@ -136,6 +136,8 @@ Windows FILE-09 有界多项移入回收站已形成源码、本机自动化与�
 
 Windows FILE-07 分享链接管理已形成闭环：Files 次级命令可打开原生 ContentDialog，使用公开 `SYNO.FileStation.Sharing` v3 严格分页读取当前 NAS 最多 5,000 条链接，并以本地每次 100 条有界展开提供复制和单条撤销。列表仅展示路径、是否受密码保护和到期日，不读取或显示密码；复制仍使用不可漫游、默认不进入历史的 Windows 剪贴板路径。撤销前冻结稳定 ID、路径、URL、密码状态和到期日并重新读取完整列表，目标缺失或变化时零写入；同 ID 在途互斥，`delete` 只提交一次，取消、断线或响应未知后把待复核记录绑定到当前 API 会话与 profile，跨 Files 页面/Repository 重建只回读、不重放，只有稳定 ID 已消失才确认成功。WinUI 覆盖加载、空内容、错误、不可用、列表、确认、删除中、成功、权限不足、目标变化、取消和待核对状态，全部文案已进入英中资源。本机 Files Sharing 聚焦 113/113、Release 完整 xUnit 1002/1002、本地化检查、RESW/XAML XML 解析和 `git diff --check` 已通过；GitHub Windows Build `31465173331` 已通过 1002/1002 与 WinUI x64/ARM64，Repository Check `31465173335` 已通过。批量撤销、编辑密码/到期日、跨 NAS 汇总、Photos 管理入口和 Apple 移动端管理扩展不在本切片。真实 Windows/Narrator/高对比/200% 缩放/窄窗口/键盘/触控，以及真实 NAS 列表字段、权限拒绝、撤销传播和提交后断线为 `PENDING_USER_VALIDATION`；失败时只回传脱敏状态与诊断标签，不回传链接 URL、真实路径或响应正文。
 
+iPhone/iPad FILE-07 分享链接管理已形成当前源码与本机聚焦自动化闭环：Files 单个文件/文件夹现在可从操作菜单进入“管理分享链接”，按当前项目完整路径精确列出公开 Sharing v3 链接，提供复制、系统分享和单条撤销。列表不展示完整 URL 或密码，只展示当前对象、是否受密码保护和到期日；超出本地 5,000 条扫描上限时提示用户核对。撤销前冻结稳定 ID、路径、URL、密码状态和到期日，先重读列表确认目标仍匹配，再通过 `MobileMutationCoordinator` 对同 ID 去重且只提交一次 `delete`，提交后再次回读确认稳定 ID 消失才移除；断线、取消、权限拒绝、能力缺失、目标变化和未知结果均进入失败或核对态，不自动重放。英中资源各新增 30 项；本机 iPhone 17 Pro 模拟器聚焦 20/20、共享包 `DsmFileRepositoryTests` 111/111、本地化和差异检查已通过。批量撤销、编辑密码/到期日、Photos 管理入口和 Synology Photos 私有分享仍关闭；真实 iPhone/iPad、真实 NAS 撤销传播、系统分享面板、剪贴板、VoiceOver、最大动态文字和 iPad 键盘/指针为 `PENDING_USER_VALIDATION`。
+
 ### 第 2 波已合并（单一简体中文功能提交已全绿）
 
 - 基线：`641852b408ae24f8819e4a49cd70df4c8d9e5011`；功能对齐账本见[第 2 波账本](../development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md)。

@@ -25,9 +25,27 @@ enum MobileFileShareLinkPhase: Equatable, Sendable {
     case confirmedSuccess
     case reviewRequired
     case confirmedFailure
+    case managementLoading
+    case managementEmpty
+    case managementContent
+    case managementError
+    case managementUnsupported
+    case deletionConfirm
+    case deleting
+    case deletionConfirmed
+    case deletionReviewRequired
+    case deletionFailure
 }
 
 enum MobileFileShareLinkFailure: Equatable, Sendable {
+    case generic
+    case permission
+    case changed
+    case unsupported
+    case duplicate
+}
+
+enum MobileFileShareLinkDeletionFailure: Equatable, Sendable {
     case generic
     case permission
     case changed
@@ -51,4 +69,10 @@ struct MobileFileShareLinkState: Equatable, Sendable {
     var canRetry = false
     var copied = false
     var sharePresentation: MobileFileSharePresentation?
+    var managedLinks: [FileShareLink] = []
+    var managedLinkTotal = 0
+    var managedLinksTruncated = false
+    var pendingDeletion: FileShareLink?
+    var deletionFailure: MobileFileShareLinkDeletionFailure?
+    var copiedManagedLinkID: String?
 }

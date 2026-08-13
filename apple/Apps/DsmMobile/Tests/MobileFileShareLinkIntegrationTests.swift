@@ -5,10 +5,11 @@ final class MobileFileShareLinkIntegrationTests: XCTestCase {
     func testFiles文件和文件夹共用单项菜单入口且复用系统分享() throws {
         let source = try Self.mobileSource("Features/Files/MobileFileBrowser.swift")
         XCTAssertTrue(source.contains("model.fileShareLinkModel.begin(for: item)"))
+        XCTAssertTrue(source.contains("model.fileShareLinkModel.beginManagement(for: item)"))
+        XCTAssertTrue(source.contains("mobile.files.share-link.management.action"))
         XCTAssertTrue(source.contains("MobileFileShareLinkView"))
         XCTAssertTrue(source.contains("model.fileShareLinkModel.activate"))
         XCTAssertTrue(source.contains("model.fileShareLinkModel.deactivate"))
-        XCTAssertFalse(source.contains("deleteShareLinks"))
     }
 
     func testProfile切换离开Files与退出均释放分享链接状态() throws {

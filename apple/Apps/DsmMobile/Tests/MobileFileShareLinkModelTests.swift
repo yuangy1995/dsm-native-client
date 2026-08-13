@@ -280,6 +280,97 @@ final class MobileFileShareLinkModelTests: XCTestCase {
         try await waitUntil { model.state.phase == .reviewRequired }
     }
 
+    func test管理分享链接只显示当前项目并可复制和系统分享可信链接() async throws {
+        let profileID = UUID()
+        let item = Self.item(profileID: profileID)
+        let link = Self.link(for: item)
+        let other = FileShareLink(
+            id: "other-link",
+            name: "Other.pdf",
+            path: "/home/Other.pdf",
+            url: "https://share.example.invalid/other"
+        )
+        let repository = ShareLinkRepositoryStub(
+            profileID: profileID,
+            outcomes: [],
+            sharePages: [Self.sharePage([other, link])]
+        )
+        let clipboard = ClipboardProbe()
+        let model = MobileFileShareLinkModel(clipboard: clipboard)
+        model.activate(profileID: profileID, repository: repository)
+
+        model.beginManagement(for: item)
+        try await waitUntil { model.state.phase == .managementContent }
+
+        XCTAssertEqual(model.state.managedLinks, [link])
+        model.copyManagedLink(link)
+        XCTAssertEqual(clipboard.urls, [URL(string: link.url)!])
+        model.presentManagedLinkShare(link)
+        XCTAssertEqual(model.state.sharePresentation?.url, URL(string: link.url))
+    }
+
+    func test管理分享链接删除前后回读确认后才移除链接() async throws {
+        let profileID = UUID()
+        let item = Self.item(profileID: profileID)
+        let link = Self.link(for: item)
+        let repository = ShareLinkRepositoryStub(
+            profileID: profileID,
+            outcomes: [],
+            sharePages: [
+                Self.sharePage([link]),
+                Self.sharePage([link]),
+                Self.sharePage([])
+            ],
+            deleteReplies: [.success]
+        )
+        let model = MobileFileShareLinkModel()
+        model.activate(profileID: profileID, repository: repository)
+        model.beginManagement(for: item)
+        try await waitUntil { model.state.phase == .managementContent }
+
+        model.beginDeleteManagedLink(link)
+        XCTAssertEqual(model.state.phase, .deletionConfirm)
+        model.confirmDeleteManagedLink()
+        try await waitUntil { model.state.phase == .deletionConfirmed }
+
+        let deletedIDs = await repository.deletedIDs()
+        XCTAssertEqual(deletedIDs, [["confirmed-link"]])
+        XCTAssertTrue(model.state.managedLinks.isEmpty)
+        model.dismissDeletionFeedback()
+        XCTAssertEqual(model.state.phase, .managementEmpty)
+    }
+
+    func test撤销提交后无法确认会进入核对且不自动重放() async throws {
+        let profileID = UUID()
+        let item = Self.item(profileID: profileID)
+        let link = Self.link(for: item)
+        let repository = ShareLinkRepositoryStub(
+            profileID: profileID,
+            outcomes: [],
+            sharePages: [
+                Self.sharePage([link]),
+                Self.sharePage([link])
+            ],
+            deleteReplies: [.appError(AppError(
+                category: .networkUnavailable,
+                isRetryable: true,
+                safeUserMessage: "test"
+            ))]
+        )
+        let model = MobileFileShareLinkModel()
+        model.activate(profileID: profileID, repository: repository)
+        model.beginManagement(for: item)
+        try await waitUntil { model.state.phase == .managementContent }
+
+        model.beginDeleteManagedLink(link)
+        model.confirmDeleteManagedLink()
+        try await waitUntil { model.state.phase == .deletionReviewRequired }
+
+        let deletedIDs = await repository.deletedIDs()
+        XCTAssertEqual(deletedIDs, [["confirmed-link"]])
+        XCTAssertEqual(model.state.managedLinks, [link])
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 2_000_000_000,
         _ predicate: @escaping @MainActor () -> Bool
@@ -310,6 +401,22 @@ final class MobileFileShareLinkModelTests: XCTestCase {
             name: item.name,
             path: item.path,
             url: "https://share.example.invalid/confirmed"
+        )
+    }
+
+    private static func sharePage(
+        _ links: [FileShareLink],
+        offset: Int = 0,
+        total: Int? = nil,
+        hasMore: Bool = false,
+        isTruncated: Bool = false
+    ) -> FileShareLinkPage {
+        FileShareLinkPage(
+            links: links,
+            offset: offset,
+            total: total ?? links.count,
+            hasMore: hasMore,
+            isTruncated: isTruncated
         )
     }
 
@@ -344,22 +451,47 @@ private final class ClipboardProbe: MobileClipboardWriting {
 }
 
 private actor ShareLinkRepositoryStub: MobileFileShareLinkServing {
+    enum DeleteReply: Sendable {
+        case success
+        case appError(AppError)
+    }
+
     nonisolated let profileID: UUID
     nonisolated let fileShareLinkAvailability = FileShareLinkAvailability(
         status: .available,
         resolvedVersion: 3
     )
     private var outcomes: [FileShareLinkCreateOutcome]
+    private var sharePages: [FileShareLinkPage]
+    private var deleteReplies: [DeleteReply]
     private var recordedRequests: [FileShareLinkCreateRequest] = []
+    private var recordedDeleteIDs: [[String]] = []
     private let blocksFirst: Bool
     private var didBlock = false
     private var continuation: CheckedContinuation<Void, Never>?
     private var observer: CheckedContinuation<Void, Never>?
 
-    init(profileID: UUID, outcomes: [FileShareLinkCreateOutcome], blocksFirst: Bool = false) {
+    init(
+        profileID: UUID,
+        outcomes: [FileShareLinkCreateOutcome],
+        sharePages: [FileShareLinkPage] = [],
+        deleteReplies: [DeleteReply] = [],
+        blocksFirst: Bool = false
+    ) {
         self.profileID = profileID
         self.outcomes = outcomes
+        self.sharePages = sharePages
+        self.deleteReplies = deleteReplies
         self.blocksFirst = blocksFirst
+    }
+
+    func listShareLinksPage(offset: Int, limit: Int) async throws -> FileShareLinkPage {
+        guard !sharePages.isEmpty else { throw AppError(
+            category: .invalidResponse,
+            isRetryable: false,
+            safeUserMessage: "test"
+        ) }
+        return sharePages.removeFirst()
     }
 
     func createShareLinkResult(
@@ -376,6 +508,19 @@ private actor ShareLinkRepositoryStub: MobileFileShareLinkServing {
     }
 
     func requests() -> [FileShareLinkCreateRequest] { recordedRequests }
+
+    func deleteShareLinks(ids: [String]) async throws {
+        recordedDeleteIDs.append(ids)
+        guard !deleteReplies.isEmpty else { return }
+        switch deleteReplies.removeFirst() {
+        case .success:
+            return
+        case .appError(let error):
+            throw error
+        }
+    }
+
+    func deletedIDs() -> [[String]] { recordedDeleteIDs }
 
     func waitUntilBlocked() async {
         guard continuation == nil else { return }

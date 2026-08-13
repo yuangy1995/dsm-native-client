@@ -396,6 +396,12 @@ Windows Photos 已接入当前普通媒体的分享链接管理入口，覆盖�
 
 实现继续复用公开 File Station Sharing v3，不新增 Synology Photos 私有请求；撤销链复用 FILE-07 的稳定 ID、完整链接基线、提交前列表重读、防重复、一次提交、未知结果只回读不重放和删除后回读确认。照片入口额外要求当前 profile、当前照片空间根、普通图片/视频、非回收站、已知大小和修改时间；不按前缀、名称、目录或私有照片字段猜测归属，不展示密码。本机 Release xUnit 1497/1497、Repository Check 可跑脚本、本地化、XAML/RESW XML 与差异检查已通过；功能分支 Windows Build run `31684348377` 已通过 1497/1497 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31684348386` 已通过。批量分享、批量撤销、编辑密码/到期日、系统分享和 Apple 移动端扩展不随本切片开放；真实 NAS、真实 Windows 与辅助功能为 `PENDING_USER_VALIDATION`。
 
+### iPhone/iPad FILE-07 单项分享链接管理增量
+
+iPhone/iPad Files 已补入当前单个文件/文件夹的分享链接管理入口。该能力对应 macOS 已有的“列出并取消分享链接”用户结果，并转换为 SwiftUI 原生 Sheet：只按当前项目完整路径精确列出既有公开 Sharing v3 链接，提供复制、系统分享和二次确认撤销，不展示完整 URL 或密码。
+
+撤销链固定稳定 ID、路径、URL、密码状态和到期日作为完整链接基线，提交前重读列表确认目标仍匹配，同 ID 经 `MobileMutationCoordinator` 去重且只提交一次，提交后再次回读确认稳定 ID 消失才移除。取消、断线或响应未知只进入核对态，不自动重放；权限拒绝、能力缺失和目标变化使用用户可理解的双语失败态。英中资源各新增 30 项；本机 iPhone 17 Pro 模拟器聚焦 20/20、共享包 `DsmFileRepositoryTests` 111/111、本地化与差异检查已通过。批量撤销、编辑密码/到期日、Photos 管理入口和 Synology Photos 私有分享不随本切片开放；真实 iPhone/iPad、真实 NAS 撤销传播、系统分享面板、剪贴板、VoiceOver、最大动态文字和 iPad 键盘/指针为 `PENDING_USER_VALIDATION`。
+
 ## 13. 参考资料
 
 - [总体架构](../architecture/ARCHITECTURE.md)
