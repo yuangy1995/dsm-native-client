@@ -225,8 +225,7 @@ final class MobileFileRecycleActionModel {
     ) -> Bool {
         !source.isReadOnlyLocation &&
             item.profileID == profileID &&
-            item.kind == .file &&
-            item.sizeBytes.map { $0 >= 0 } == true &&
+            isSupportedRecycleItem(item) &&
             visibleItems.contains(item) &&
             isCanonicalAbsolutePath(parentPath) &&
             isCanonicalAbsolutePath(item.path) &&
@@ -245,8 +244,7 @@ final class MobileFileRecycleActionModel {
     ) -> Bool {
         source == .recycle &&
             item.profileID == profileID &&
-            item.kind == .file &&
-            item.sizeBytes.map { $0 >= 0 } == true &&
+            isSupportedRecycleItem(item) &&
             visibleItems.contains(item) &&
             isCanonicalAbsolutePath(parentPath) &&
             isCanonicalAbsolutePath(item.path) &&
@@ -270,8 +268,7 @@ final class MobileFileRecycleActionModel {
                   item.path == snapshot.destinationPath,
                   item.name == snapshot.source.name,
                   item.kind == snapshot.source.kind,
-                  item.kind == .file,
-                  item.sizeBytes == snapshot.source.sizeBytes,
+                  Self.isConfirmedItemIdentity(item, source: snapshot.source),
                   isConfirmedDestination(item, for: snapshot.operation) else {
                 blocker.insert(reviewKey)
                 enterReview(snapshot)
@@ -434,6 +431,28 @@ final class MobileFileRecycleActionModel {
     private static func isRemote(_ item: FileItem) -> Bool {
         guard let type = item.mountPointType?.lowercased(), !type.isEmpty else { return false }
         return type != "normal" && type != "shared_folder"
+    }
+
+    private static func isSupportedRecycleItem(_ item: FileItem) -> Bool {
+        switch item.kind {
+        case .file:
+            return item.sizeBytes.map { $0 >= 0 } == true
+        case .directory:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isConfirmedItemIdentity(_ item: FileItem, source: FileItem) -> Bool {
+        switch source.kind {
+        case .file:
+            return item.sizeBytes == source.sizeBytes
+        case .directory:
+            return true
+        default:
+            return false
+        }
     }
 }
 

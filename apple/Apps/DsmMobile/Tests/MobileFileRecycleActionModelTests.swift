@@ -131,6 +131,65 @@ final class MobileFileRecycleActionModelTests: XCTestCase {
         XCTAssertEqual(requests.map(\.item), [source])
     }
 
+    func test文件夹移入回收站与恢复不依赖目录大小() async throws {
+        let profileID = UUID()
+        let folder = item(profileID, "docs", "/team/docs", .directory, size: nil)
+        let movedFolder = item(profileID, "docs", "/team/#recycle/docs", .directory, size: 4096)
+        let restoredFolder = item(profileID, "docs", "/team/docs", .directory, size: nil)
+        let location = recycle("team", "/team")
+        let repository = FileRecycleActionRepositoryStub(
+            profileID: profileID,
+            moveReply: .outcome(try outcome(
+                .confirmedSuccess,
+                .moveToRecycle,
+                folder,
+                movedFolder.path,
+                movedFolder
+            )),
+            restoreReply: .outcome(try outcome(
+                .confirmedSuccess,
+                .restoreFromRecycle,
+                movedFolder,
+                restoredFolder.path,
+                restoredFolder
+            ))
+        )
+        let model = MobileFileRecycleActionModel(blocker: MobileFileRecycleActionReviewBlocker())
+        model.activate(profileID: profileID, repository: repository)
+        model.beginMoveToRecycle(
+            item: folder,
+            parentPath: "/team",
+            source: .browser,
+            visibleItems: [folder],
+            recycleLocations: [location],
+            repository: repository
+        )
+
+        let moveSuccess = await model.submit(repository: repository)
+
+        XCTAssertEqual(moveSuccess?.operation, .moveToRecycle)
+        XCTAssertEqual(moveSuccess?.destinationPath, "/team/#recycle/docs")
+        XCTAssertEqual(moveSuccess?.item, movedFolder)
+        let moveRequests = await repository.recordedMoveRequests()
+        XCTAssertEqual(moveRequests.map(\.item), [folder])
+
+        model.beginRestoreFromRecycle(
+            item: movedFolder,
+            parentPath: "/team/#recycle",
+            source: .recycle,
+            visibleItems: [movedFolder],
+            repository: repository
+        )
+
+        let restoreSuccess = await model.submit(repository: repository)
+
+        XCTAssertEqual(restoreSuccess?.operation, .restoreFromRecycle)
+        XCTAssertEqual(restoreSuccess?.destinationPath, "/team/docs")
+        XCTAssertEqual(restoreSuccess?.item, restoredFolder)
+        let restoreRequests = await repository.recordedRestoreRequests()
+        XCTAssertEqual(restoreRequests.map(\.item), [movedFolder])
+    }
+
     func test远程目录回收站内移入无发现入口与非canonical路径均零入口零写() async {
         let profileID = UUID()
         let repository = FileRecycleActionRepositoryStub(profileID: profileID)

@@ -402,6 +402,12 @@ iPhone/iPad Files 已补入当前单个文件/文件夹的分享链接管理入�
 
 撤销链固定稳定 ID、路径、URL、密码状态和到期日作为完整链接基线，提交前重读列表确认目标仍匹配，同 ID 经 `MobileMutationCoordinator` 去重且只提交一次，提交后再次回读确认稳定 ID 消失才移除。取消、断线或响应未知只进入核对态，不自动重放；权限拒绝、能力缺失和目标变化使用用户可理解的双语失败态。英中资源各新增 30 项；本机 iPhone 17 Pro 模拟器聚焦 20/20、共享包 `DsmFileRepositoryTests` 111/111、本地化与差异检查已通过。批量撤销、编辑密码/到期日、Photos 管理入口和 Synology Photos 私有分享不随本切片开放；真实 iPhone/iPad、真实 NAS 撤销传播、系统分享面板、剪贴板、VoiceOver、最大动态文字和 iPad 键盘/指针为 `PENDING_USER_VALIDATION`。
 
+### iPhone/iPad FILE-09 单文件夹回收站增量
+
+iPhone/iPad Files 已补入当前单个普通本地文件夹的移入回收站与恢复入口。该能力对应 macOS 和 Windows 已有的“文件夹作为一个项目进入回收站”用户结果，并继续转换为 SwiftUI 原生确认 Sheet；确认文案明确文件夹内容会一同移动或恢复。
+
+实现复用既有 Delete v2 / CopyMove v3 结果链，不新增请求契约。入口仍要求当前 profile、普通本地位置、可见列表项、完整路径和已发现回收站位置；symlink/unknown、远程位置、回收站内移入、普通浏览恢复、批量、永久删除和清空回收站保持零入口。目录确认只核对目标路径、名称和类型，不依赖 DSM 非稳定目录大小；文件仍继续核对大小。提交未知、取消和回读不一致继续进入核对态，不自动重放。本机 iPhone 17 Pro 模拟器 Recycle 聚焦 11/11、本地化与差异检查已通过；真实 iPhone/iPad、真实 NAS 目录副作用、权限变化、同名恢复策略、弱网取消、VoiceOver、最大动态文字和 iPad 键盘/指针为 `PENDING_USER_VALIDATION`。
+
 ## 13. 参考资料
 
 - [总体架构](../architecture/ARCHITECTURE.md)

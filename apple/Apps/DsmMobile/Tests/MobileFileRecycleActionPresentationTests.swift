@@ -11,6 +11,8 @@ final class MobileFileRecycleActionPresentationTests: XCTestCase {
         XCTAssertTrue(view.contains(".interactiveDismissDisabled"))
         XCTAssertTrue(view.contains(".frame(minWidth: 44, minHeight: 44)"))
         XCTAssertTrue(view.contains(".accessibilityLabel"))
+        XCTAssertTrue(view.contains("mobile.files.recycle.move.folder.message"))
+        XCTAssertTrue(view.contains("mobile.files.recycle.restore.folder.message"))
         XCTAssertTrue(view.contains("@Environment(\\.accessibilityReduceMotion)"))
         XCTAssertFalse(view.contains(".font(.system(size:"))
     }
@@ -38,6 +40,8 @@ final class MobileFileRecycleActionPresentationTests: XCTestCase {
         XCTAssertTrue(model.contains("repository.moveToRecycleResult("))
         XCTAssertTrue(model.contains("repository.restoreFromRecycleResult("))
         XCTAssertTrue(model.contains("MobileFileRecycleActionReviewBlocker"))
+        XCTAssertTrue(model.contains("isSupportedRecycleItem(item)"))
+        XCTAssertTrue(model.contains("isConfirmedItemIdentity(item, source: snapshot.source)"))
         let review = try slice(view, from: "private var reviewView", to: "@ToolbarContentBuilder")
         XCTAssertFalse(review.contains("submit"))
         XCTAssertFalse(review.contains("retry"))

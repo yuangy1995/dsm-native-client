@@ -53,7 +53,7 @@ struct MobileFileRecycleActionView: View {
                         )
                 }
             } footer: {
-                Text(message(presentation.operation))
+                Text(message(presentation))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -177,12 +177,19 @@ struct MobileFileRecycleActionView: View {
             : L10n.string("mobile.files.recycle.cancel")
     }
 
-    private func message(_ operation: MobileFileRecycleActionOperation) -> String {
-        L10n.string(
-            operation == .moveToRecycle
-                ? "mobile.files.recycle.move.message"
-                : "mobile.files.recycle.restore.message"
-        )
+    private func message(_ presentation: MobileFileRecycleActionPresentation) -> String {
+        let key: String
+        switch (presentation.operation, presentation.source.kind) {
+        case (.moveToRecycle, .directory):
+            key = "mobile.files.recycle.move.folder.message"
+        case (.restoreFromRecycle, .directory):
+            key = "mobile.files.recycle.restore.folder.message"
+        case (.moveToRecycle, _):
+            key = "mobile.files.recycle.move.message"
+        case (.restoreFromRecycle, _):
+            key = "mobile.files.recycle.restore.message"
+        }
+        return L10n.string(key)
     }
 
     private func workingText(_ presentation: MobileFileRecycleActionPresentation) -> String {

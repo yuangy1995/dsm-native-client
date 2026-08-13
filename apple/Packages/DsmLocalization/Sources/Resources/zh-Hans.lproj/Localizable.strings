@@ -3612,6 +3612,8 @@
 "mobile.files.recycle.destination.accessibility" = "目标位置：%@";
 "mobile.files.recycle.move.message" = "这会将文件移到 NAS 回收站，不会永久删除文件。";
 "mobile.files.recycle.restore.message" = "这会将文件恢复到 NAS 上的原位置。如果无法确认结果，App 会请你核对文件夹。";
+"mobile.files.recycle.move.folder.message" = "这会将文件夹及其中内容移到 NAS 回收站，不会永久删除它们。";
+"mobile.files.recycle.restore.folder.message" = "这会将文件夹及其中内容恢复到 NAS 上的原位置。如果无法确认结果，App 会请你核对文件夹。";
 "mobile.files.recycle.cancel" = "取消";
 "mobile.files.recycle.move.submit" = "移到回收站";
 "mobile.files.recycle.restore.submit" = "恢复";

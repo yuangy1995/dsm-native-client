@@ -3612,6 +3612,8 @@
 "mobile.files.recycle.destination.accessibility" = "Destination: %@";
 "mobile.files.recycle.move.message" = "This moves the file to the NAS recycle bin. It does not permanently delete the file.";
 "mobile.files.recycle.restore.message" = "This restores the file to its original location on the NAS. The app will ask you to check the folder if the result cannot be confirmed.";
+"mobile.files.recycle.move.folder.message" = "This moves the folder and its contents to the NAS recycle bin. It does not permanently delete them.";
+"mobile.files.recycle.restore.folder.message" = "This restores the folder and its contents to the original location on the NAS. The app will ask you to check the folder if the result cannot be confirmed.";
 "mobile.files.recycle.cancel" = "Cancel";
 "mobile.files.recycle.move.submit" = "Move to Recycle Bin";
 "mobile.files.recycle.restore.submit" = "Restore";
