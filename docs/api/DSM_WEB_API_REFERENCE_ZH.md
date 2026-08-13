@@ -638,7 +638,10 @@ id=<逗号分隔或按服务器要求编码的任务 ID>
 force_complete=false
 ```
 
-`force_complete` 只适用于删除场景且会改变任务结果，必须由用户明确触发。
+`force_complete` 只适用于删除场景。[Synology 官方 Download Station Web API 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/DownloadStation/All/enu/Synology_Download_Station_Web_API.pdf)将
+`true` 定义为结束任务，并把未完成的下载文件移动到目标目录；它**不是**“删除已下载
+数据”的参数。该动作不可恢复为继续下载，必须由用户明确触发，并在提交未知时只回读、
+不得自动重放。客户端不得仅根据旧实现中的 `removeData` 命名把它展示为文件删除。
 
 官方指南中的 `Task.edit` 只公开 `id` 与 `destination`，用于修改任务目标目录；
 `Task_File.priority` 虽然可在列表和详情中读取，但官方写方法没有文件 ID 或优先级参数。

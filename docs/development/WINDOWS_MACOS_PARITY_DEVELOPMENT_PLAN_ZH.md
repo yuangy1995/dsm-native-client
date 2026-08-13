@@ -257,7 +257,7 @@ FILE-04 单文件夹 ZIP 下载增量复用官方 `SYNO.FileStation.Download` v2
 
 - 建立有界缩略图/预览缓存、可见窗口优先加载和离页取消。
 - 图片、PDF、UTF 文本、Range 音视频预览；文本编辑、格式整理和未保存保护。
-- 通过公开 File Station 扫描 `/home/Photos` 与 `/photo`，实现个人/共享空间、文件夹、时间线、文件夹式相册、分页、搜索和年/月定位。
+- 通过公开 File Station 扫描 `/home/Photos` 与 `/photo`，实现个人/共享空间、文件夹、时间线、文件夹式相册、分页、搜索和年/月定位。Windows 年/月定位使用当前筛选后可见月份生成按年份分组的原生菜单，未知日期单独列出；选择月份后滚动并聚焦组内首项，不新增扫描或 NAS 请求。
 - 已接入 Photos 文件夹/时间线媒体打开、右侧预览、前后切换、基础文件元数据、图片/基础视频尺寸、拍摄时间、相机品牌/型号、基础视频时长和保存副本；基础查看器提交 `4e1272e` 已通过 Windows xUnit、WinUI x64/ARM64 和 Repository Check。本地媒体元数据白名单切片不新增 NAS 请求，不读取位置、厂商私有、设备序列或镜头序列类隐私元数据；GitHub Windows Build run `31410536634` 已通过 943/943 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31410536680` 已通过。页面内沉浸式查看已提供 F11、左右方向键、Esc、焦点恢复、Ctrl+S 和双语自动化名称；该历史切片当时未使用系统级 `AppWindow` 全屏 presenter，GitHub Windows Build run `31414591711` 与 Repository Check run `31414591262` 已通过。
 - PHOTO-02 系统全屏与媒体恢复增量已完成源码：F11 现在进入系统级 `AppWindow` 全屏，退出、关闭、离页、语言重建、注销、托盘隐藏和释放页面都会幂等恢复进入前的普通或最大化窗口状态；隐藏到托盘会暂停视频，恢复窗口不自动播放。媒体失败只在当前查看代次进入既有可恢复错误态，切换、关闭和释放都会退订并清理播放器。HEIC/HEIF/WebP 与 MKV/WebM 已进入安全预览白名单，缺少系统编解码器时仅显示不可用，仍可重试或保存副本；不新增 NAS 请求、第三方编解码器、编辑或智能照片能力。本机聚焦测试 100/100、Release 全量 xUnit 1164/1164、本地化和差异检查通过；GitHub Windows Build run `31513964648` 已通过 1164/1164 与 WinUI x64/ARM64 构建，Repository Check run `31513964640` 已通过。真实多显示器全屏、托盘暂停、格式/编解码器、Range 播放、Narrator、高对比、100/150/200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
 - PHOTO-03 单项普通媒体移入回收站增量已完成源码：Photos 文件夹网格和主动时间线只在当前 profile、普通图片/视频、稳定大小、Delete v2、已发现同共享回收站入口均有效且源不在 `#recycle` 时显示命令。页面每次重新进入都刷新既有只读位置快照，不自行拼接目标；位置发现失败显示双语重试。用户确认后先关闭预览，再核对选择、profile 和冻结映射；权限与源身份重读、一次提交、取消、提交未知只回读不重放及最终结果核对全部复用 FILE-09 typed 链，确认成功只刷新仍匹配的文件夹或时间线。本机相关聚焦 138/138、Release 全量 xUnit 1165/1165、本地化、XAML/RESW XML 和差异检查通过；GitHub Windows Build run `31516242228` 已通过 1165/1165 与 WinUI x64/ARM64 构建，Repository Check run `31516242282` 已通过。批量、永久删除、清空回收站、系统图库删除、跨 NAS、收藏写和查看器内独立动作不在本切片；真实 Windows/NAS 副作用、Narrator、高对比、200% 缩放和键鼠/触控为 `PENDING_USER_VALIDATION`。
@@ -534,6 +534,12 @@ Windows Container Manager 已形成容器、映像、网络、项目与事件五
 Container 内部接口仅调用已记录的 `list`；VMM 五个资源分区优先公开 v1，保护与事件仅在已记录能力存在时调用内部只读 `list`。认证标志或错误码 106/107/119 均向上交给统一会话处理，不能被局部失败吞掉；保护未知根数组按读取失败处理，合法已知空数组才显示空内容。生命周期、删除、创建、映像/网络写和 noVNC 继续在界面、ViewModel 与 Repository 边界关闭。
 
 本机关闭 PRI 生成后聚焦 xUnit 69/69、Release 全量 xUnit 1477/1477、本地化、XAML/RESW XML 与差异检查已通过；最终功能分支 GitHub Windows Build run `31672028792` 已通过 1477/1477 项 xUnit 和 WinUI x64/ARM64 构建，Repository Check run `31672028862` 已通过。真实 Windows/NAS、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
+
+### PHOTO-01 年/月快速定位增量
+
+Windows Photos 主动时间线已增加本地年/月快速定位。工具栏使用原生 Button 与 MenuFlyout，按当前搜索和类型筛选后仍可见的月份生成倒序年份与月份菜单，日期未知项目使用独立入口；选择后只滚动到组内首项并恢复键盘焦点，不改变筛选、不发起新扫描或 NAS 请求。批量选择期间入口禁用，避免焦点跳转干扰冻结选择；菜单项提供双语 Narrator 名称并继续使用系统主题和 44 px 控件高度。
+
+本机 PhotoTimeline 聚焦 xUnit 31/31、完整 Release xUnit 1479/1479、本地化、请求契约、XAML/RESW XML 与差异检查已通过；GitHub Windows Build run `31675765969` 已通过 1479/1479 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31675766023` 已通过。真实大图库、Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
 
 ## 11. 参考资料
 

@@ -1168,6 +1168,10 @@
   <data name="PhotoTimelineRefresh.Content" xml:space="preserve"><value>Scan again</value></data>
   <data name="PhotoTimelineOpen.Content" xml:space="preserve"><value>Open</value></data>
   <data name="PhotoTimelineOpen.AutomationProperties.Name" xml:space="preserve"><value>Open the selected photo or video</value></data>
+  <data name="PhotoTimelineJump.Content" xml:space="preserve"><value>Jump to</value></data>
+  <data name="PhotoTimelineJump.AutomationProperties.Name" xml:space="preserve"><value>Jump to a year and month in the photo timeline</value></data>
+  <data name="PhotoTimelineJumpYear" xml:space="preserve"><value>{0}</value></data>
+  <data name="PhotoTimelineJumpMonthAutomationName" xml:space="preserve"><value>Jump to {0}</value></data>
   <data name="PhotoTimelineSave.Content" xml:space="preserve"><value>Save selected</value></data>
   <data name="PhotoTimelineGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Photo timeline</value></data>
   <data name="PhotoTimelineTruncated.Title" xml:space="preserve"><value>Showing a limited timeline</value></data>

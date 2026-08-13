@@ -127,6 +127,30 @@ public sealed class PhotoTimelineViewModelTests
     }
 
     [Fact]
+    public async Task VisibleJumpGroupsStayInDescendingCrossYearOrderAfterFiltering()
+    {
+        var profile = Guid.NewGuid();
+        var source = new TimelineSource(profile, (_, _) => Task.FromResult(Snapshot(profile,
+        [
+            Image(profile, "february.jpg", "/photo/february.jpg", new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero)),
+            Image(profile, "january.jpg", "/photo/january.jpg", new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)),
+            Image(profile, "december.jpg", "/photo/december.jpg", new DateTimeOffset(2025, 12, 1, 0, 0, 0, TimeSpan.Zero)),
+            Image(profile, "unknown.jpg", "/photo/unknown.jpg"),
+        ])));
+        using var model = new PhotoTimelineViewModel();
+        model.Activate(source, PhotoSpace.Shared);
+        await model.RefreshAsync();
+
+        Assert.Equal(["2026-02", "2026-01", "2025-12", "unknown"],
+            model.Groups.Select(group => group.Key));
+
+        model.Query = "december";
+        await model.WaitForPendingQueryAsync();
+
+        Assert.Equal(["2025-12"], model.Groups.Select(group => group.Key));
+    }
+
+    [Fact]
     public void MonthBoundaryUsesRequestedLocalTimeZoneBeforeGrouping()
     {
         var zone = TimeZoneInfo.CreateCustomTimeZone("test-plus-eight", TimeSpan.FromHours(8), "test", "test");

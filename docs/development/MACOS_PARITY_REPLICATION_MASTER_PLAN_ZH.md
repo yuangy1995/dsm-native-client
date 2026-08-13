@@ -380,6 +380,10 @@ Apple Mobile 当前受限范围已完成 Container 五分区和 VMM 七分区源
 
 本机验证已覆盖 Apple 共享包 705 项 XCTest（2 项环境跳过）与 10 项 Swift Testing、DsmMobile 480/480、iPhone 模拟器测试构建、macOS App + File Provider 无签名回归构建，以及 Windows Release xUnit 1477/1477、本地化、XAML/RESW XML 和差异检查。最终功能分支 GitHub Apple Build run `31672028838`、Windows Build run `31672028792` 与 Repository Check run `31672028862` 均通过；真实 NAS、真实设备及辅助功能继续作为 `PENDING_USER_VALIDATION`，不阻塞后续无依赖源码切片。
 
+### Windows PHOTO-01 年/月快速定位增量
+
+Windows 主动照片时间线已补入 macOS 同义的年/月快速定位，并转换为 WinUI 原生菜单交互。菜单只从当前已加载、搜索和类型筛选后仍可见的月份生成，按年份与月份倒序排列，日期未知项目单列；选择后滚动并聚焦目标组首项，不改变当前筛选、不新增 NAS 请求。批量选择期间禁用定位入口。本机聚焦 xUnit 31/31、完整 Release xUnit 1479/1479、本地化、请求契约、XML 和差异检查已通过；GitHub Windows Build run `31675765969` 已通过 1479/1479 与 WinUI x64/ARM64，Repository Check run `31675766023` 已通过。真实大图库、Windows/Narrator、高对比、200% 缩放、窄窗口与键鼠/触控为 `PENDING_USER_VALIDATION`。
+
 ## 13. 参考资料
 
 - [总体架构](../architecture/ARCHITECTURE.md)

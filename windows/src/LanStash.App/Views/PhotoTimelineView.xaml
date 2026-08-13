@@ -47,8 +47,15 @@
                 <ComboBoxItem x:Uid="PhotoTimelineFilterImages" Tag="Images" MinHeight="44" />
                 <ComboBoxItem x:Uid="PhotoTimelineFilterVideos" Tag="Videos" MinHeight="44" />
             </ComboBox>
-            <Button x:Uid="PhotoTimelineRefresh" x:Name="RefreshButton" Grid.Column="2"
-                    MinHeight="44" Click="Refresh_Click" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12">
+                <Button x:Uid="PhotoTimelineJump" x:Name="JumpButton" MinHeight="44">
+                    <Button.Flyout>
+                        <MenuFlyout x:Name="JumpMenu" Opening="JumpMenu_Opening" />
+                    </Button.Flyout>
+                </Button>
+                <Button x:Uid="PhotoTimelineRefresh" x:Name="RefreshButton"
+                        MinHeight="44" Click="Refresh_Click" />
+            </StackPanel>
             <Button x:Uid="PhotoTimelineOpen" x:Name="OpenButton" Grid.Column="3"
                     MinHeight="44" Click="Open_Click" />
             <Button x:Uid="PhotoTimelineSave" x:Name="SaveButton" Grid.Column="4"

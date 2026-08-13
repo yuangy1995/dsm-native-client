@@ -18,6 +18,8 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("PhotoTimelineFilterAll\" Tag=\"All\" MinHeight=\"44\"", xaml);
         Assert.Contains("PhotoTimelineFilterImages\" Tag=\"Images\" MinHeight=\"44\"", xaml);
         Assert.Contains("PhotoTimelineFilterVideos\" Tag=\"Videos\" MinHeight=\"44\"", xaml);
+        Assert.Contains("x:Uid=\"PhotoTimelineJump\"", xaml);
+        Assert.Contains("x:Name=\"JumpMenu\" Opening=\"JumpMenu_Opening\"", xaml);
         Assert.Contains("x:Uid=\"PhotoTimelineOpen\"", xaml);
         Assert.Contains("OpenAccelerator_Invoked", xaml);
         Assert.Contains("PhotoTimelineTruncated", xaml);
@@ -27,6 +29,29 @@ public sealed class PhotoTimelinePresentationTests
         Assert.Contains("TimeSpan.FromMilliseconds(250)", model);
         Assert.Contains("generation != _queryGeneration", model);
         Assert.DoesNotContain("UserDefaults", model);
+    }
+
+    [Fact]
+    public void TimelineJumpUsesVisibleGroupsNativeMenusAndKeyboardFocus()
+    {
+        var root = RepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            root,
+            "windows/src/LanStash.App/Views/PhotoTimelineView.xaml.cs"));
+
+        Assert.Contains("_viewModel.Groups", source);
+        Assert.Contains("GroupBy(group => group.Month!.Value.Year)", source);
+        Assert.Contains("OrderByDescending(group => group.Key)", source);
+        Assert.Contains("new MenuFlyoutSubItem", source);
+        Assert.Contains("new MenuFlyoutItem", source);
+        Assert.True(source.Split("MinHeight = 44", StringSplitOptions.None).Length - 1 >= 3);
+        Assert.Contains("group.Month is null", source);
+        Assert.Contains("TimelineGrid.ScrollIntoView(entry, ScrollIntoViewAlignment.Leading)", source);
+        Assert.Contains("DispatcherQueue.TryEnqueue", source);
+        Assert.Contains("FocusJumpTarget(entry)", source);
+        Assert.Contains("TimelineGrid.Focus(FocusState.Keyboard)", source);
+        Assert.Contains("_batchSelectionOperation == PhotoBatchSelectionOperation.None", source);
+        Assert.DoesNotContain("LoadAsync(space", source);
     }
 
     [Fact]

@@ -8,6 +8,7 @@ using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Data;
@@ -239,6 +240,81 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     internal void RefreshActionState() => UpdateState();
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
+    private void JumpMenu_Opening(object sender, object e)
+    {
+        JumpMenu.Items.Clear();
+        var localization = LocalizationService.Current;
+        var culture = CultureInfo.GetCultureInfo(localization.ResolvedLanguage);
+        foreach (var year in _viewModel.Groups
+                     .Where(group => group.Month is not null)
+                     .GroupBy(group => group.Month!.Value.Year)
+                     .OrderByDescending(group => group.Key))
+        {
+            var yearMenu = new MenuFlyoutSubItem
+            {
+                Text = localization.Format("PhotoTimelineJumpYear", year.Key),
+                MinHeight = 44,
+            };
+            foreach (var group in year.OrderByDescending(item => item.Month))
+            {
+                var item = new MenuFlyoutItem
+                {
+                    Text = group.Month!.Value.ToString("MMMM", culture),
+                    Tag = group,
+                    MinHeight = 44,
+                };
+                AutomationProperties.SetName(
+                    item,
+                    localization.Format("PhotoTimelineJumpMonthAutomationName", group.Title));
+                item.Click += JumpMonth_Click;
+                yearMenu.Items.Add(item);
+            }
+            JumpMenu.Items.Add(yearMenu);
+        }
+        var unknown = _viewModel.Groups.FirstOrDefault(group => group.Month is null);
+        if (unknown is not null)
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = unknown.Title,
+                Tag = unknown,
+                MinHeight = 44,
+            };
+            AutomationProperties.SetName(
+                item,
+                localization.Format("PhotoTimelineJumpMonthAutomationName", unknown.Title));
+            item.Click += JumpMonth_Click;
+            JumpMenu.Items.Add(item);
+        }
+    }
+
+    private void JumpMonth_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuFlyoutItem { Tag: PhotoTimelineGroup group } ||
+            group.Items.FirstOrDefault() is not { } entry)
+        {
+            return;
+        }
+        TimelineGrid.ScrollIntoView(entry, ScrollIntoViewAlignment.Leading);
+        TimelineGrid.UpdateLayout();
+        if (FocusJumpTarget(entry))
+        {
+            return;
+        }
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            TimelineGrid.UpdateLayout();
+            if (!FocusJumpTarget(entry))
+            {
+                TimelineGrid.Focus(FocusState.Keyboard);
+            }
+        });
+    }
+
+    private bool FocusJumpTarget(PhotoTimelineEntry entry) =>
+        TimelineGrid.ContainerFromItem(entry) is GridViewItem container &&
+        container.Focus(FocusState.Keyboard);
+
     private void Cancel_Click(object sender, RoutedEventArgs e) { _viewModel.Cancel(); UpdateState(); }
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -409,6 +485,8 @@ public sealed partial class PhotoTimelineView : UserControl, IDisposable
     {
         if (_disposed || IdleState is null) return;
         var hasVisible = _viewModel.Groups.Any(group => group.Items.Count > 0);
+        JumpButton.IsEnabled = hasVisible &&
+            _batchSelectionOperation == PhotoBatchSelectionOperation.None;
         IdleState.Visibility = _viewModel.Phase == PhotoTimelinePhase.Idle ? Visibility.Visible : Visibility.Collapsed;
         LoadingState.Visibility = _viewModel.Phase == PhotoTimelinePhase.Scanning && !_viewModel.HasCompletedSnapshot ? Visibility.Visible : Visibility.Collapsed;
         var showsBaseline = _viewModel.Phase == PhotoTimelinePhase.Scanning && _viewModel.HasCompletedSnapshot;
