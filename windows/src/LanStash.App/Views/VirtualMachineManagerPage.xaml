@@ -37,6 +37,29 @@
                     Text="{x:Bind HealthText}" />
             </Grid>
         </DataTemplate>
+        <DataTemplate x:Key="VirtualizationProtectionTemplate" x:DataType="vm:VirtualizationResourceItem">
+            <Grid Padding="4,8" ColumnSpacing="12" AutomationProperties.Name="{x:Bind AutomationName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="3">
+                    <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" TextWrapping="Wrap" />
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind KindText}" TextWrapping="Wrap" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind HealthText}" TextWrapping="Wrap" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="VirtualMachineEventTemplate" x:DataType="vm:VirtualMachineEventItem">
+            <Grid Padding="4,8" ColumnSpacing="12" AutomationProperties.Name="{x:Bind AutomationName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock FontWeight="SemiBold" Text="{x:Bind TimeText}" TextWrapping="Wrap" />
+                <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind LevelText}" TextWrapping="Wrap" />
+            </Grid>
+        </DataTemplate>
     </Page.Resources>
 
     <Grid Padding="24,20,24,16" RowSpacing="12">
@@ -88,6 +111,14 @@
             IsClosable="False"
             IsOpen="False"
             Severity="Warning" />
+        <InfoBar
+            x:Uid="VirtualMachineManagerSessionExpired"
+            x:Name="SessionExpiredNotice"
+            Grid.Row="2"
+            AutomationProperties.LiveSetting="Assertive"
+            IsClosable="False"
+            IsOpen="False"
+            Severity="Error" />
 
         <Grid Grid.Row="3" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
@@ -273,6 +304,24 @@
                                 <StackPanel x:Name="ImagesEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
                                 <StackPanel x:Name="ImagesErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
                                 <StackPanel x:Name="ImagesUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                            </Grid>
+                        </PivotItem>
+                        <PivotItem x:Uid="VirtualMachineManagerProtectionTab">
+                            <Grid AutomationProperties.LiveSetting="Polite">
+                                <ListView x:Uid="VirtualMachineManagerProtectionList" x:Name="ProtectionList" ItemsSource="{Binding Protection}" ItemTemplate="{StaticResource VirtualizationProtectionTemplate}" SelectionMode="None" />
+                                <StackPanel x:Name="ProtectionLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="VirtualMachineManagerSectionLoading" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="ProtectionEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="ProtectionErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="ProtectionUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                            </Grid>
+                        </PivotItem>
+                        <PivotItem x:Uid="VirtualMachineManagerEventsTab">
+                            <Grid AutomationProperties.LiveSetting="Polite">
+                                <ListView x:Uid="VirtualMachineManagerEventsList" x:Name="EventsList" ItemsSource="{Binding Events}" ItemTemplate="{StaticResource VirtualMachineEventTemplate}" SelectionMode="None" />
+                                <StackPanel x:Name="EventsLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="VirtualMachineManagerSectionLoading" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="EventsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="EventsErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                                <StackPanel x:Name="EventsUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="VirtualMachineManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
                             </Grid>
                         </PivotItem>
                     </Pivot>

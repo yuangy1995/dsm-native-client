@@ -532,6 +532,12 @@ xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj \
 
 ## 12. 自动化覆盖要求
 
+### CM-01 / VM-01 多分区只读增量
+
+CM-01 当前源码已覆盖容器、映像、网络、项目与事件五分区；VM-01 已覆盖虚拟机、主机、存储、网络、映像、保护与事件七分区。交互按移动端转换：iPhone 使用分区列表进入资源页，iPad 常规宽度使用侧栏与详情；容器和虚拟机主分区继续提供稳定枚举筛选，筛选后为空使用独立状态。每个附属分区独立呈现内容、空内容、不可用与失败，刷新失败保留旧成功值；Repository 换绑、profile 切换、离页与缓存清理均使用代次门拒绝旧结果。
+
+共享 snapshot 只增加向后兼容的 unavailable/failed 分区集合，移动 wrapper 只保存窄 `@Sendable` 读取闭包。共享层严格校验命名根数组、项目完整性和稳定身份唯一性；主分区畸形整体失败，附属分区畸形只标记对应分区失败。认证与 OTP 进入明确的重新连接状态并阻断继续刷新。移动层不显示事件正文、绑定、真实路径、账号、内部 ID 或原始诊断，不新增 NAS 请求，不开放生命周期、删除、创建、映像/网络写或控制台。本机共享包 705 项 XCTest（2 项环境跳过）与 10 项 Swift Testing、DsmMobile 480/480、iPhone 模拟器测试构建、本地化、差异检查和 macOS App + File Provider 无签名回归构建已通过；最终功能分支 GitHub Apple Build run `31672028838` 已通过共享包测试、iPhone/iPad 通用应用构建、macOS 打包与产物上传，Repository Check run `31672028862` 已通过。真实 iPhone/iPad、真实 NAS、VoiceOver、最大动态文字、iPad 分栏、键盘与指针为 `PENDING_USER_VALIDATION`。
+
 - 当前核心/受限 Feature 的状态机、分页、筛选、取消、恢复和错误映射单元测试。
 - 当前范围内每个写操作的成功、部分、拒绝、提交未确认、提交后取消和回读不一致。
 - 合成请求 fixture 验证 API 名、版本、方法、路径、参数、认证材料位置和 no-retry 策略。

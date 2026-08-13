@@ -134,13 +134,34 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         ErrorState.Visibility = Visible(_viewModel.HasError);
         ContentState.Visibility = Visible(_viewModel.HasContent);
         UnavailableState.Visibility = Visible(_viewModel.IsUnavailable);
+        ApplySectionState(_viewModel.ImagesState, ImagesList, ImagesLoadingState, ImagesEmptyState, ImagesErrorState, ImagesUnavailableState);
+        ApplySectionState(_viewModel.NetworksState, NetworksList, NetworksLoadingState, NetworksEmptyState, NetworksErrorState, NetworksUnavailableState);
+        ApplySectionState(_viewModel.ProjectsState, ProjectsList, ProjectsLoadingState, ProjectsEmptyState, ProjectsErrorState, ProjectsUnavailableState);
+        ApplySectionState(_viewModel.EventsState, EventsList, EventsLoadingState, EventsEmptyState, EventsErrorState, EventsUnavailableState);
         RefreshButton.IsEnabled = _viewModel.CanRefresh;
-        RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError && !_viewModel.HasError;
+        RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError &&
+            !_viewModel.HasError && !_viewModel.RequiresReconnect;
+        SessionExpiredNotice.IsOpen = _viewModel.RequiresReconnect;
         ContainerList.SelectedItem = _viewModel.SelectedContainer;
         NoSelectionState.Visibility = Visible(!_viewModel.HasSelection);
         DetailState.Visibility = Visible(_viewModel.HasSelection);
         SyncFilterPicker();
         UpdateAdaptiveLayout();
+    }
+
+    private static void ApplySectionState(
+        ContainerManagerContentState state,
+        FrameworkElement content,
+        FrameworkElement loading,
+        FrameworkElement empty,
+        FrameworkElement error,
+        FrameworkElement unavailable)
+    {
+        content.Visibility = Visible(state == ContainerManagerContentState.Content);
+        loading.Visibility = Visible(state == ContainerManagerContentState.Loading);
+        empty.Visibility = Visible(state == ContainerManagerContentState.Empty);
+        error.Visibility = Visible(state == ContainerManagerContentState.Error);
+        unavailable.Visibility = Visible(state == ContainerManagerContentState.Unavailable);
     }
 
     private void SyncFilterPicker()

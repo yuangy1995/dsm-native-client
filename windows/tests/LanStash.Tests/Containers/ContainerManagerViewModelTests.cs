@@ -15,6 +15,10 @@ public sealed class ContainerManagerViewModelTests
         await model.RefreshAsync();
 
         Assert.Equal(ContainerManagerContentState.Unavailable, model.ContentState);
+        Assert.Equal(ContainerManagerContentState.Unavailable, model.ImagesState);
+        Assert.Equal(ContainerManagerContentState.Unavailable, model.NetworksState);
+        Assert.Equal(ContainerManagerContentState.Unavailable, model.ProjectsState);
+        Assert.Equal(ContainerManagerContentState.Unavailable, model.EventsState);
         Assert.False(model.CanRefresh);
         Assert.Empty(repository.Requests);
     }
@@ -93,6 +97,68 @@ public sealed class ContainerManagerViewModelTests
         Assert.False(model.IsLoading);
     }
 
+    [Theory]
+    [InlineData(500, true)]
+    [InlineData(106, false)]
+    [InlineData(107, false)]
+    [InlineData(119, false)]
+    public async Task AuthenticationFailureRequiresReconnectAndIsNeverAutomaticallyReplayed(
+        int code,
+        bool authenticationFailure)
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(
+            repository.ProfileId,
+            Container("kept", ContainerOperationalState.Running)));
+        repository.Results.Enqueue(new DsmException(
+            "login",
+            "login",
+            code,
+            authenticationFailure));
+        using var model = new ContainerManagerViewModel();
+        await model.ActivateAsync(repository);
+
+        await model.RefreshAsync();
+        await model.ActivateAsync(repository);
+        await model.RefreshAsync();
+
+        Assert.True(model.RequiresReconnect);
+        Assert.False(model.HasRefreshError);
+        Assert.False(model.CanRefresh);
+        Assert.False(model.IsLoading);
+        Assert.Equal("kept", Assert.Single(model.Containers).Id);
+        Assert.Equal(2, repository.Requests.Count);
+    }
+
+    [Fact]
+    public async Task SectionFailureRetainsItsContentWhileOtherSectionsRefresh()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(SectionSnapshot(
+            repository.ProfileId,
+            containers: [Container("old", ContainerOperationalState.Running)],
+            images: [Resource("old-image", ContainerResourceKind.Image)]));
+        repository.Results.Enqueue(new ContainerManagerSnapshot(
+            repository.ProfileId,
+            ContainerManagerSection<ContainerSummary>.Available([Container("new", ContainerOperationalState.Stopped)]),
+            ContainerManagerSection<ContainerResourceSummary>.Failed,
+            ContainerManagerSection<ContainerResourceSummary>.Available([Resource("network", ContainerResourceKind.Network)]),
+            ContainerManagerSection<ContainerResourceSummary>.Available([]),
+            ContainerManagerSection<ServiceEventSummary>.Available([new("event", DateTimeOffset.UnixEpoch, ServiceEventLevel.Information)])));
+        using var model = new ContainerManagerViewModel();
+        await model.ActivateAsync(repository);
+
+        await model.RefreshAsync();
+
+        Assert.Equal("new", Assert.Single(model.Containers).Id);
+        Assert.Equal("old-image", Assert.Single(model.Images).Name);
+        Assert.Equal(ContainerManagerContentState.Content, model.ImagesState);
+        Assert.Equal("network", Assert.Single(model.Networks).Name);
+        Assert.Equal(ContainerManagerContentState.Empty, model.ProjectsState);
+        Assert.Single(model.Events);
+        Assert.True(model.HasRefreshError);
+    }
+
     [Fact]
     public async Task ProfileSwitchCancelsOldGenerationAndRejectsLateSnapshot()
     {
@@ -120,6 +186,8 @@ public sealed class ContainerManagerViewModelTests
         Assert.True(oldToken.IsCancellationRequested);
         Assert.Equal(profileB, model.ActiveProfileId);
         Assert.Equal("b", Assert.Single(model.Containers).Id);
+        Assert.False(model.RequiresReconnect);
+        Assert.False(model.HasRefreshError);
     }
 
     [Fact]
@@ -210,13 +278,30 @@ public sealed class ContainerManagerViewModelTests
 
     private static FakeRepository Available(Guid profileId) => new(profileId, available: true);
 
+    private static ContainerManagerSnapshot SectionSnapshot(
+        Guid profileId,
+        IReadOnlyList<ContainerSummary>? containers = null,
+        IReadOnlyList<ContainerResourceSummary>? images = null,
+        IReadOnlyList<ContainerResourceSummary>? networks = null,
+        IReadOnlyList<ContainerResourceSummary>? projects = null,
+        IReadOnlyList<ServiceEventSummary>? events = null) => new(
+            profileId,
+            ContainerManagerSection<ContainerSummary>.Available(containers ?? []),
+            ContainerManagerSection<ContainerResourceSummary>.Available(images ?? []),
+            ContainerManagerSection<ContainerResourceSummary>.Available(networks ?? []),
+            ContainerManagerSection<ContainerResourceSummary>.Available(projects ?? []),
+            ContainerManagerSection<ServiceEventSummary>.Available(events ?? []));
+
     private static ContainerManagerSnapshot Snapshot(
         Guid profileId,
-        params ContainerSummary[] containers) => new(profileId, containers);
+        params ContainerSummary[] containers) => SectionSnapshot(profileId, containers: containers);
 
     private static ContainerSummary Container(
         string id,
         ContainerOperationalState state) => new(id, id, state, $"image-{id}");
+
+    private static ContainerResourceSummary Resource(string id, ContainerResourceKind kind) =>
+        new(id, id, kind, ContainerOperationalState.Unknown);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
@@ -234,7 +319,10 @@ public sealed class ContainerManagerViewModelTests
         public ContainerManagerAvailability Availability { get; } = new(
             available
                 ? ContainerManagerAvailabilityStatus.InternalObserved
-                : ContainerManagerAvailabilityStatus.Unavailable);
+                : ContainerManagerAvailabilityStatus.Unavailable,
+            available
+                ? new HashSet<ContainerManagerReadFeature>(Enum.GetValues<ContainerManagerReadFeature>())
+                : new HashSet<ContainerManagerReadFeature>());
         public Queue<object> Results { get; } = new();
         public List<CancellationToken> Requests { get; } = [];
 

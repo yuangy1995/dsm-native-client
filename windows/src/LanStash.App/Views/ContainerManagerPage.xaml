@@ -9,6 +9,28 @@
         <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="BackAccelerator_Invoked" />
         <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
+    <Page.Resources>
+        <DataTemplate x:Key="ContainerResourceTemplate" x:DataType="containers:ContainerResourceItem">
+            <Grid Padding="4,10" ColumnSpacing="12" AutomationProperties.Name="{x:Bind AutomationName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" TextWrapping="Wrap" />
+                <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind StatusText}" TextWrapping="Wrap" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="ContainerEventTemplate" x:DataType="containers:ContainerEventItem">
+            <Grid Padding="4,10" ColumnSpacing="12" AutomationProperties.Name="{x:Bind AutomationName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock FontWeight="SemiBold" Text="{x:Bind TimeText}" TextWrapping="Wrap" />
+                <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind LevelText}" TextWrapping="Wrap" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
 
     <Grid Padding="24,20,24,16" RowSpacing="12">
         <Grid.RowDefinitions>
@@ -62,7 +84,18 @@
             IsOpen="False"
             Severity="Warning" />
 
-        <Grid Grid.Row="3">
+        <InfoBar
+            x:Uid="ContainerManagerSessionExpired"
+            x:Name="SessionExpiredNotice"
+            Grid.Row="2"
+            AutomationProperties.LiveSetting="Assertive"
+            IsClosable="False"
+            IsOpen="False"
+            Severity="Error" />
+
+        <Pivot x:Name="SectionPivot" Grid.Row="3">
+            <PivotItem x:Uid="ContainerManagerContainersTab">
+        <Grid>
             <Grid
                 x:Name="ContentState"
                 ColumnSpacing="12"
@@ -256,5 +289,43 @@
                 <TextBlock x:Uid="ContainerManagerUnavailableMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
         </Grid>
+            </PivotItem>
+            <PivotItem x:Uid="ContainerManagerImagesTab">
+                <Grid AutomationProperties.LiveSetting="Polite">
+                    <ListView x:Uid="ContainerManagerImagesList" x:Name="ImagesList" ItemsSource="{Binding Images}" ItemTemplate="{StaticResource ContainerResourceTemplate}" SelectionMode="None" />
+                    <StackPanel x:Name="ImagesLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="ContainerManagerSectionLoading" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="ImagesEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="ImagesErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="ImagesUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                </Grid>
+            </PivotItem>
+            <PivotItem x:Uid="ContainerManagerNetworksTab">
+                <Grid AutomationProperties.LiveSetting="Polite">
+                    <ListView x:Uid="ContainerManagerNetworksList" x:Name="NetworksList" ItemsSource="{Binding Networks}" ItemTemplate="{StaticResource ContainerResourceTemplate}" SelectionMode="None" />
+                    <StackPanel x:Name="NetworksLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="ContainerManagerSectionLoading" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="NetworksEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="NetworksErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="NetworksUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                </Grid>
+            </PivotItem>
+            <PivotItem x:Uid="ContainerManagerProjectsTab">
+                <Grid AutomationProperties.LiveSetting="Polite">
+                    <ListView x:Uid="ContainerManagerProjectsList" x:Name="ProjectsList" ItemsSource="{Binding Projects}" ItemTemplate="{StaticResource ContainerResourceTemplate}" SelectionMode="None" />
+                    <StackPanel x:Name="ProjectsLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="ContainerManagerSectionLoading" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="ProjectsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="ProjectsErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="ProjectsUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                </Grid>
+            </PivotItem>
+            <PivotItem x:Uid="ContainerManagerEventsTab">
+                <Grid AutomationProperties.LiveSetting="Polite">
+                    <ListView x:Uid="ContainerManagerEventsList" x:Name="EventsList" ItemsSource="{Binding Events}" ItemTemplate="{StaticResource ContainerEventTemplate}" SelectionMode="None" />
+                    <StackPanel x:Name="EventsLoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"><ProgressRing Width="30" Height="30" IsActive="True" /><TextBlock x:Uid="ContainerManagerSectionLoading" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="EventsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionEmpty" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="EventsErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionError" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel x:Name="EventsUnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Spacing="8" Visibility="Collapsed"><TextBlock x:Uid="ContainerManagerSectionUnavailable" TextAlignment="Center" TextWrapping="Wrap" /></StackPanel>
+                </Grid>
+            </PivotItem>
+        </Pivot>
     </Grid>
 </Page>

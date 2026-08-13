@@ -527,6 +527,14 @@ Chat Server 请求，也不开放高级写。
 失败与 MD5 确认不完整；通知正文和生命周期所有权不符合隐私与系统集成门。上述入口均
 恢复关闭，不删除原有只读/零写请求守卫。
 
+### CM-01 / VM-01 多分区只读增量
+
+Windows Container Manager 已形成容器、映像、网络、项目与事件五分区，Virtual Machine Manager 已形成虚拟机、主机、存储、网络、映像、保护与事件七分区。页面使用原生 NavigationView/列表、主题资源、键盘焦点与 Narrator 名称；分区各自呈现内容、空内容、不可用和失败，刷新失败保留其他分区及已有内容。所有列表最多映射 200 项，事件只保留时间和等级，不保留正文、用户、路径、绑定、原始响应或诊断。
+
+Container 内部接口仅调用已记录的 `list`；VMM 五个资源分区优先公开 v1，保护与事件仅在已记录能力存在时调用内部只读 `list`。认证标志或错误码 106/107/119 均向上交给统一会话处理，不能被局部失败吞掉；保护未知根数组按读取失败处理，合法已知空数组才显示空内容。生命周期、删除、创建、映像/网络写和 noVNC 继续在界面、ViewModel 与 Repository 边界关闭。
+
+本机关闭 PRI 生成后聚焦 xUnit 69/69、Release 全量 xUnit 1477/1477、本地化、XAML/RESW XML 与差异检查已通过；最终功能分支 GitHub Windows Build run `31672028792` 已通过 1477/1477 项 xUnit 和 WinUI x64/ARM64 构建，Repository Check run `31672028862` 已通过。真实 Windows/NAS、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
+
 ## 11. 参考资料
 
 - [macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)

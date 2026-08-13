@@ -435,25 +435,38 @@ public struct ServiceEvent: Identifiable, Equatable, Sendable {
     }
 }
 
+public enum ContainerManagerSection: String, Hashable, Sendable {
+    case images
+    case networks
+    case projects
+    case logs
+}
+
 public struct ContainerManagerSnapshot: Equatable, Sendable {
     public let containers: [ContainerInstance]
     public let images: [ContainerImage]
     public let networks: [ContainerNetwork]
     public let projects: [ContainerProject]
     public let events: [ServiceEvent]
+    public let unavailableSections: Set<ContainerManagerSection>
+    public let failedSections: Set<ContainerManagerSection>
 
     public init(
         containers: [ContainerInstance],
         images: [ContainerImage],
         networks: [ContainerNetwork],
         projects: [ContainerProject],
-        events: [ServiceEvent]
+        events: [ServiceEvent],
+        unavailableSections: Set<ContainerManagerSection> = [],
+        failedSections: Set<ContainerManagerSection> = []
     ) {
         self.containers = containers
         self.images = images
         self.networks = networks
         self.projects = projects
         self.events = events
+        self.unavailableSections = unavailableSections
+        self.failedSections = failedSections
     }
 }
 
@@ -666,6 +679,7 @@ public struct VirtualMachineManagerSnapshot: Equatable, Sendable {
     public let protectionRetentionPolicies: [VirtualizationResource]
     public let events: [ServiceEvent]
     public let unavailableSections: Set<VirtualMachineManagerSection>
+    public let failedSections: Set<VirtualMachineManagerSection>
 
     public init(
         source: ServiceContractSource,
@@ -678,7 +692,8 @@ public struct VirtualMachineManagerSnapshot: Equatable, Sendable {
         protectionSchedulePolicies: [VirtualizationResource] = [],
         protectionRetentionPolicies: [VirtualizationResource] = [],
         events: [ServiceEvent],
-        unavailableSections: Set<VirtualMachineManagerSection> = []
+        unavailableSections: Set<VirtualMachineManagerSection> = [],
+        failedSections: Set<VirtualMachineManagerSection> = []
     ) {
         self.source = source
         self.machines = machines
@@ -691,6 +706,7 @@ public struct VirtualMachineManagerSnapshot: Equatable, Sendable {
         self.protectionRetentionPolicies = protectionRetentionPolicies
         self.events = events
         self.unavailableSections = unavailableSections
+        self.failedSections = failedSections
     }
 }
 

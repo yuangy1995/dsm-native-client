@@ -138,6 +138,8 @@ Release xUnit 1452/1452、本地化与 XML 门禁已通过；GitHub Windows Buil
 `31665344416` 已通过同一组 xUnit 与 WinUI x64/ARM64 构建，Repository Check run
 `31665344401` 已通过。
 
+2026-08-13 源码校正：表中 Apple Mobile 与 Windows 的“Container/VMM 生命周期、删除、网络写”等旧简写不再作为已交付事实。iPhone/iPad 当前只交付 Container 五分区和 VMM 七分区的隐私白名单只读摘要；Windows 当前切片同样只交付 Container 五分区和 VMM 七分区的独立状态、刷新和只读摘要。两端均不显示事件正文、绑定、真实路径、账号、原始诊断或内部标识；Container/VMM 写与 noVNC 继续关闭。源码已通过本机聚焦和全量自动化；最终功能分支 GitHub Apple Build run `31672028838`、Windows Build run `31672028792` 与 Repository Check run `31672028862` 均通过，Windows 完成 1477/1477 项 xUnit 及 WinUI x64/ARM64 构建。真实 NAS、真实 Windows/iPhone/iPad 及辅助功能仍为 `PENDING_USER_VALIDATION`。
+
 审查期间发现的 Download 设置、Container/VMM 写、noVNC、Chat 提醒/定时/投票/转发、
 统一存储分析和传输通知原型均未达到现有契约、安全或准确性门，因此没有进入矩阵完成
 范围；这些入口继续按各自既有“关闭”状态处理。

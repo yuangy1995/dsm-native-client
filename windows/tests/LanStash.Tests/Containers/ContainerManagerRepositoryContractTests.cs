@@ -27,7 +27,8 @@ public sealed class ContainerManagerRepositoryContractTests
             Assert.DoesNotContain(AppModule.Containers, ((DsmRepository)repository).AvailableModules);
             var snapshot = await repository.LoadSnapshotAsync();
             Assert.Equal(ProfileId, snapshot.ProfileId);
-            Assert.Empty(snapshot.Containers);
+            Assert.Equal(ContainerManagerSectionStatus.Unavailable, snapshot.Containers.Status);
+            Assert.Empty(snapshot.Containers.Items);
             Assert.Empty(api.Requests);
         }
     }
@@ -54,11 +55,11 @@ public sealed class ContainerManagerRepositoryContractTests
         Assert.Equal(1, request.Version);
         Assert.Equal(3, request.Parameters.Count);
         Assert.Equal("0", request.Parameters["offset"]);
-        Assert.Equal("-1", request.Parameters["limit"]);
+        Assert.Equal("200", request.Parameters["limit"]);
         Assert.Equal("all", request.Parameters["type"]);
         Assert.Equal(ProfileId, snapshot.ProfileId);
         Assert.Collection(
-            snapshot.Containers,
+            snapshot.Containers.Items,
             item => Assert.Equal(
                 ("container-1", "Web", ContainerOperationalState.Running, "example/web:1"),
                 (item.Id, item.Name, item.State, item.Image)),
@@ -101,7 +102,8 @@ public sealed class ContainerManagerRepositoryContractTests
             var repository = CreateRepository(
                 new RecordingApiClient(_ => response),
                 Capability(1, 1));
-            await Assert.ThrowsAsync<DsmException>(() => repository.LoadSnapshotAsync());
+            var snapshot = await repository.LoadSnapshotAsync();
+            Assert.Equal(ContainerManagerSectionStatus.Failed, snapshot.Containers.Status);
         }
     }
 
@@ -115,7 +117,8 @@ public sealed class ContainerManagerRepositoryContractTests
             var repository = CreateRepository(
                 new RecordingApiClient(_ => Containers(item)),
                 Capability(1, 1));
-            await Assert.ThrowsAsync<DsmException>(() => repository.LoadSnapshotAsync());
+            var snapshot = await repository.LoadSnapshotAsync();
+            Assert.Equal(ContainerManagerSectionStatus.Failed, snapshot.Containers.Status);
         }
 
         var withoutImage = Container("without-image", "name", "running", "unused");
@@ -124,14 +127,157 @@ public sealed class ContainerManagerRepositoryContractTests
             new RecordingApiClient(_ => Containers(withoutImage)),
             Capability(1, 1));
         var optionalImageSnapshot = await optionalImageRepository.LoadSnapshotAsync();
-        Assert.Null(Assert.Single(optionalImageSnapshot.Containers).Image);
+        Assert.Null(Assert.Single(optionalImageSnapshot.Containers.Items).Image);
 
         var duplicateRepository = CreateRepository(
             new RecordingApiClient(_ => Containers(
                 Container("same", "first", "running", "image-a"),
                 Container("same", "second", "stopped", "image-b"))),
             Capability(1, 1));
-        await Assert.ThrowsAsync<DsmException>(() => duplicateRepository.LoadSnapshotAsync());
+        var duplicateSnapshot = await duplicateRepository.LoadSnapshotAsync();
+        Assert.Equal(ContainerManagerSectionStatus.Failed, duplicateSnapshot.Containers.Status);
+    }
+
+    [Fact]
+    public async Task FiveSectionsUseOnlyFixedReadRequestsAndDiscardPrivateFields()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Docker.Container" => Containers(Container("container", "Web", "running", "example/web:1")),
+            "SYNO.Docker.Image" => Resources("images", new JsonObject
+            {
+                ["image_id"] = "image",
+                ["repository"] = "example/web",
+                ["path"] = "/private/image/path",
+            }),
+            "SYNO.Docker.Network" => Resources("networks", new JsonObject
+            {
+                ["network_id"] = "network",
+                ["name"] = "Frontend",
+                ["address"] = "private-address",
+            }),
+            "SYNO.Docker.Project" => Resources("projects", new JsonObject
+            {
+                ["project_id"] = "project",
+                ["project_name"] = "Website",
+                ["status"] = "running",
+                ["compose"] = "private-compose",
+            }),
+            "SYNO.Docker.Log" => Resources("logs", new JsonObject
+            {
+                ["log_id"] = "event",
+                ["time"] = 1_700_000_000,
+                ["level"] = "warning",
+                ["user"] = "private-user",
+                ["message"] = "private-message",
+            }),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        IContainerManagerRepository repository = CreateRepository(
+            api,
+            Capability("SYNO.Docker.Container"),
+            Capability("SYNO.Docker.Image"),
+            Capability("SYNO.Docker.Network"),
+            Capability("SYNO.Docker.Project"),
+            Capability("SYNO.Docker.Log"));
+
+        var snapshot = await repository.LoadSnapshotAsync();
+
+        Assert.Equal(5, api.Requests.Count);
+        Assert.All(api.Requests, request =>
+        {
+            Assert.Equal(1, request.Version);
+            Assert.Equal("list", request.Method);
+        });
+        var eventRequest = Assert.Single(api.Requests, request => request.ApiName == "SYNO.Docker.Log");
+        Assert.Equal("0", eventRequest.Parameters["offset"]);
+        Assert.Equal("200", eventRequest.Parameters["limit"]);
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Containers.Status);
+        Assert.Equal("example/web", Assert.Single(snapshot.Images.Items).Name);
+        Assert.Equal("Frontend", Assert.Single(snapshot.Networks.Items).Name);
+        Assert.Equal(ContainerOperationalState.Running, Assert.Single(snapshot.Projects.Items).State);
+        Assert.Equal(ServiceEventLevel.Warning, Assert.Single(snapshot.Events.Items).Level);
+        Assert.DoesNotContain(
+            typeof(ServiceEventSummary).GetProperties(),
+            property => property.Name is "Message" or "User" or "Details" or "RawResponse");
+    }
+
+    [Fact]
+    public async Task SupplementaryFailureDoesNotHideOtherSuccessfulSections()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Docker.Container" => Containers(),
+            "SYNO.Docker.Image" => throw new DsmException("failed", "retry", 402),
+            "SYNO.Docker.Network" => Resources("networks"),
+            "SYNO.Docker.Project" => Resources("projects"),
+            "SYNO.Docker.Log" => Resources("logs"),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        IContainerManagerRepository repository = CreateRepository(
+            api,
+            Capability("SYNO.Docker.Container"),
+            Capability("SYNO.Docker.Image"),
+            Capability("SYNO.Docker.Network"),
+            Capability("SYNO.Docker.Project"),
+            Capability("SYNO.Docker.Log"));
+
+        var snapshot = await repository.LoadSnapshotAsync();
+
+        Assert.Equal(ContainerManagerSectionStatus.Failed, snapshot.Images.Status);
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Containers.Status);
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Networks.Status);
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Projects.Status);
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Events.Status);
+    }
+
+    [Theory]
+    [InlineData(106)]
+    [InlineData(107)]
+    [InlineData(119)]
+    public async Task AuthenticationCodesPropagateEvenWithoutAuthenticationFlag(int code)
+    {
+        var api = new RecordingApiClient(_ =>
+            throw new DsmException("login", "login", code, authenticationFailure: false));
+        var repository = CreateRepository(api, Capability("SYNO.Docker.Container"));
+
+        var error = await Assert.ThrowsAsync<DsmException>(() => repository.LoadSnapshotAsync());
+
+        Assert.Equal(code, error.Code);
+        Assert.False(error.AuthenticationFailure);
+    }
+
+    [Fact]
+    public async Task EverySectionLimitsArrayMappingToTwoHundredItems()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Docker.Container" => Containers(Enumerable.Range(0, 201)
+                .Select(index => Container($"container-{index}", $"Container {index}", "running", "image"))
+                .ToArray()),
+            "SYNO.Docker.Image" => Resources("images", ResourceItems("image_id", "repository")),
+            "SYNO.Docker.Network" => Resources("networks", ResourceItems("network_id", "name")),
+            "SYNO.Docker.Project" => Resources("projects", ResourceItems("project_id", "project_name")),
+            "SYNO.Docker.Log" => Resources("logs", Enumerable.Range(0, 201)
+                .Select(index => new JsonObject { ["log_id"] = $"event-{index}" })
+                .ToArray()),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(
+            api,
+            Capability("SYNO.Docker.Container"),
+            Capability("SYNO.Docker.Image"),
+            Capability("SYNO.Docker.Network"),
+            Capability("SYNO.Docker.Project"),
+            Capability("SYNO.Docker.Log"));
+
+        var snapshot = await repository.LoadSnapshotAsync();
+
+        Assert.Equal(200, snapshot.Containers.Items.Count);
+        Assert.Equal(200, snapshot.Images.Items.Count);
+        Assert.Equal(200, snapshot.Networks.Items.Count);
+        Assert.Equal(200, snapshot.Projects.Items.Count);
+        Assert.Equal(200, snapshot.Events.Items.Count);
     }
 
     [Fact]
@@ -152,7 +298,7 @@ public sealed class ContainerManagerRepositoryContractTests
     }
 
     [Fact]
-    public void ContractSurfaceContainsNoOtherContainerAreasOrWriteMethods()
+    public void ContractSurfaceContainsOnlyRecordedReadAreasAndNoWriteMethods()
     {
         var combined =
             Read("windows/src/LanStash.Domain/Containers/ContainerManagerModels.cs") +
@@ -161,12 +307,19 @@ public sealed class ContainerManagerRepositoryContractTests
             Read("windows/src/LanStash.App/Features/Containers/ContainerManagerState.cs") +
             Read("windows/src/LanStash.App/Features/Containers/ContainerManagerViewModel.cs");
 
+        foreach (var required in new[]
+        {
+            "SYNO.Docker.Container", "SYNO.Docker.Image", "SYNO.Docker.Network",
+            "SYNO.Docker.Project", "SYNO.Docker.Log"
+        })
+        {
+            Assert.Contains(required, combined, StringComparison.Ordinal);
+        }
         foreach (var forbidden in new[]
         {
-            "SYNO.Docker.Image", "SYNO.Docker.Network", "SYNO.Docker.Project",
-            "Registry", "Process", "LoadImages", "LoadNetworks", "LoadProjects",
-            "LoadLogs", "CreateContainer", "DeleteContainer", "StartContainer",
-            "StopContainer", "RestartContainer", "ControlContainer"
+            "Registry", "Process", "CreateContainer", "DeleteContainer", "StartContainer",
+            "StopContainer", "RestartContainer", "ControlContainer", "pull_start",
+            "WebView", "noVNC", "RawResponse"
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);
@@ -193,8 +346,11 @@ public sealed class ContainerManagerRepositoryContractTests
         null,
         "user");
 
-    private static ApiCapability Capability(int minimum, int maximum) => new(
-        "SYNO.Docker.Container",
+    private static ApiCapability Capability(int minimum, int maximum) =>
+        Capability("SYNO.Docker.Container", minimum, maximum);
+
+    private static ApiCapability Capability(string name, int minimum = 1, int maximum = 1) => new(
+        name,
         "entry.cgi",
         minimum,
         maximum,
@@ -204,6 +360,20 @@ public sealed class ContainerManagerRepositoryContractTests
     {
         ["containers"] = new JsonArray(items.Select(item => (JsonNode)item).ToArray()),
     };
+
+    private static JsonObject Resources(string root, params JsonObject[] items) => new()
+    {
+        [root] = new JsonArray(items.Select(item => (JsonNode)item).ToArray()),
+    };
+
+    private static JsonObject[] ResourceItems(string idKey, string nameKey) =>
+        Enumerable.Range(0, 201)
+            .Select(index => new JsonObject
+            {
+                [idKey] = $"resource-{index}",
+                [nameKey] = $"Resource {index}",
+            })
+            .ToArray();
 
     private static JsonObject Container(
         string id,

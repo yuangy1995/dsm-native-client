@@ -3,20 +3,28 @@ import Foundation
 
 protocol MobileContainerInventoryReading: Sendable {
     var profileID: UUID { get }
-    func loadInventory() async throws -> ContainerInventorySnapshot
+    func loadInventory() async throws -> ContainerManagerSnapshot
 }
 
-/// 移动端只持有容器实例清单读取能力，不暴露完整服务管理写方法。
+/// 移动端只持有一次完整只读快照能力，不暴露服务管理写方法。
 struct MobileReadOnlyContainerRepository: MobileContainerInventoryReading, Sendable {
     let profileID: UUID
-    private let base: any ContainerInventoryReading
+    private let loader: @Sendable () async throws -> ContainerManagerSnapshot
 
-    init(profileID: UUID, base: any ContainerInventoryReading) {
+    init(profileID: UUID, base: any ServiceManagementRepository) {
         self.profileID = profileID
-        self.base = base
+        loader = { try await base.loadContainerManager() }
     }
 
-    func loadInventory() async throws -> ContainerInventorySnapshot {
-        try await base.loadContainerInventory()
+    init(
+        profileID: UUID,
+        loader: @escaping @Sendable () async throws -> ContainerManagerSnapshot
+    ) {
+        self.profileID = profileID
+        self.loader = loader
+    }
+
+    func loadInventory() async throws -> ContainerManagerSnapshot {
+        try await loader()
     }
 }

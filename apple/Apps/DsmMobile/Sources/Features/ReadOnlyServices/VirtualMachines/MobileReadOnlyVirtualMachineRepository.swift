@@ -3,20 +3,28 @@ import Foundation
 
 protocol MobileVirtualMachineInventoryReading: Sendable {
     var profileID: UUID { get }
-    func loadInventory() async throws -> VirtualMachineInventorySnapshot
+    func loadInventory() async throws -> VirtualMachineManagerSnapshot
 }
 
-/// 移动端只持有公开虚拟机清单读取能力，不暴露服务管理写方法。
+/// 移动端只持有一次完整只读快照能力，不暴露服务管理写方法。
 struct MobileReadOnlyVirtualMachineRepository: MobileVirtualMachineInventoryReading, Sendable {
     let profileID: UUID
-    private let base: any VirtualMachineInventoryReading
+    private let loader: @Sendable () async throws -> VirtualMachineManagerSnapshot
 
-    init(profileID: UUID, base: any VirtualMachineInventoryReading) {
+    init(profileID: UUID, base: any ServiceManagementRepository) {
         self.profileID = profileID
-        self.base = base
+        loader = { try await base.loadVirtualMachineManager() }
     }
 
-    func loadInventory() async throws -> VirtualMachineInventorySnapshot {
-        try await base.loadVirtualMachineInventory()
+    init(
+        profileID: UUID,
+        loader: @escaping @Sendable () async throws -> VirtualMachineManagerSnapshot
+    ) {
+        self.profileID = profileID
+        self.loader = loader
+    }
+
+    func loadInventory() async throws -> VirtualMachineManagerSnapshot {
+        try await loader()
     }
 }

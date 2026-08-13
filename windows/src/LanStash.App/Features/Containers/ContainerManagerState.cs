@@ -1,5 +1,6 @@
 using LanStash.App.Localization;
 using LanStash.Domain;
+using System.Globalization;
 
 namespace LanStash.App.Features.Containers;
 
@@ -41,4 +42,39 @@ public sealed record ContainerItem(ContainerSummary Container)
         "ContainerManagerItemAutomationName",
         Name,
         StatusText);
+}
+
+public sealed record ContainerResourceItem(ContainerResourceSummary Resource)
+{
+    public string Id => Resource.Id;
+    public string Name => Resource.Name;
+    public string StatusText => LocalizationService.Current.Get(Resource.State switch
+    {
+        ContainerOperationalState.Running => "ContainerManagerStatusRunning",
+        ContainerOperationalState.Stopped => "ContainerManagerStatusStopped",
+        ContainerOperationalState.Attention => "ContainerManagerStatusNeedsAttention",
+        _ => "ContainerManagerStatusUnknown",
+    });
+    public string AutomationName => LocalizationService.Current.Format(
+        "ContainerManagerItemAutomationName",
+        Name,
+        StatusText);
+}
+
+public sealed record ContainerEventItem(ServiceEventSummary Event)
+{
+    public string Id => Event.Id;
+    public string TimeText => Event.OccurredAt?.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)
+        ?? LocalizationService.Current.Get("ContainerManagerValueUnavailable");
+    public string LevelText => LocalizationService.Current.Get(Event.Level switch
+    {
+        ServiceEventLevel.Information => "ContainerManagerEventLevelInformation",
+        ServiceEventLevel.Warning => "ContainerManagerEventLevelWarning",
+        ServiceEventLevel.Error => "ContainerManagerEventLevelError",
+        _ => "ContainerManagerStatusUnknown",
+    });
+    public string AutomationName => LocalizationService.Current.Format(
+        "ContainerManagerEventAutomationName",
+        TimeText,
+        LevelText);
 }

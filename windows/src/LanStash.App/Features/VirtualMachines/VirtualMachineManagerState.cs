@@ -95,8 +95,33 @@ public sealed record VirtualizationResourceItem(VirtualizationResourceSummary Re
                 VirtualMachineItem.FormatBytes(allocated),
                 VirtualMachineItem.FormatBytes(capacity))
             : LocalizationService.Current.Get("VirtualMachineManagerValueUnavailable");
+    public string KindText => LocalizationService.Current.Get(Resource.Kind switch
+    {
+        VirtualizationResourceKind.ProtectionPlan => "VirtualMachineManagerProtectionPlan",
+        VirtualizationResourceKind.ProtectionSchedule => "VirtualMachineManagerProtectionSchedule",
+        VirtualizationResourceKind.ProtectionRetention => "VirtualMachineManagerProtectionRetention",
+        _ => "VirtualMachineManagerResource",
+    });
     public string AutomationName => LocalizationService.Current.Format(
         "VirtualMachineManagerResourceAutomationName",
         Name,
         HealthText);
+}
+
+public sealed record VirtualMachineEventItem(ServiceEventSummary Event)
+{
+    public string Id => Event.Id;
+    public string TimeText => Event.OccurredAt?.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)
+        ?? LocalizationService.Current.Get("VirtualMachineManagerValueUnavailable");
+    public string LevelText => LocalizationService.Current.Get(Event.Level switch
+    {
+        ServiceEventLevel.Information => "VirtualMachineManagerEventLevelInformation",
+        ServiceEventLevel.Warning => "VirtualMachineManagerEventLevelWarning",
+        ServiceEventLevel.Error => "VirtualMachineManagerEventLevelError",
+        _ => "VirtualMachineManagerStatusUnknown",
+    });
+    public string AutomationName => LocalizationService.Current.Format(
+        "VirtualMachineManagerEventAutomationName",
+        TimeText,
+        LevelText);
 }

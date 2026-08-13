@@ -853,7 +853,8 @@ public sealed partial class ShellPage : Page
     {
         public Guid ProfileId { get; } = profileId;
         public ContainerManagerAvailability Availability { get; } = new(
-            ContainerManagerAvailabilityStatus.Unavailable);
+            ContainerManagerAvailabilityStatus.Unavailable,
+            new HashSet<ContainerManagerReadFeature>());
 
         public Task<ContainerManagerSnapshot> LoadSnapshotAsync(
             CancellationToken cancellationToken = default) =>

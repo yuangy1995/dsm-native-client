@@ -859,13 +859,15 @@
   <data name="DownloadStationByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
   <data name="DownloadStationByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
   <data name="VirtualMachineManagerTitle.Text" xml:space="preserve"><value>虚拟机</value></data>
-  <data name="VirtualMachineManagerDescription.Text" xml:space="preserve"><value>查看此 NAS 上的虚拟机和虚拟化资源。</value></data>
+  <data name="VirtualMachineManagerDescription.Text" xml:space="preserve"><value>查看此 NAS 上的虚拟机、资源、保护和近期事件状态。</value></data>
   <data name="VirtualMachineManagerRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新虚拟机</value></data>
   <data name="VirtualMachineManagerRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
   <data name="VirtualMachineManagerReadOnly.Title" xml:space="preserve"><value>只读视图</value></data>
   <data name="VirtualMachineManagerReadOnly.Message" xml:space="preserve"><value>你可以在此查看虚拟机和资源。如需更改，请使用 DSM 中的 Virtual Machine Manager。</value></data>
   <data name="VirtualMachineManagerRefreshError.Title" xml:space="preserve"><value>部分信息未能刷新</value></data>
   <data name="VirtualMachineManagerRefreshError.Message" xml:space="preserve"><value>当前仍显示上次可用的信息。请检查连接后重试。</value></data>
+  <data name="VirtualMachineManagerSessionExpired.Title" xml:space="preserve"><value>会话已失效</value></data>
+  <data name="VirtualMachineManagerSessionExpired.Message" xml:space="preserve"><value>会话已失效，请重新连接这台 NAS。</value></data>
   <data name="VirtualMachineManagerMachinesHeading.Text" xml:space="preserve"><value>虚拟机</value></data>
   <data name="VirtualMachineManagerMachineList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>虚拟机列表</value></data>
   <data name="VirtualMachineManagerMachinesLoading.Text" xml:space="preserve"><value>正在加载虚拟机…</value></data>
@@ -875,7 +877,7 @@
   <data name="VirtualMachineManagerMachinesErrorMessage.Text" xml:space="preserve"><value>请检查与此 NAS 的连接，然后选择“刷新”。</value></data>
   <data name="VirtualMachineManagerUnavailableTitle.Text" xml:space="preserve"><value>虚拟机不可用</value></data>
   <data name="VirtualMachineManagerUnavailableMessage.Text" xml:space="preserve"><value>此 NAS 当前无法向 App 提供虚拟机信息。</value></data>
-  <data name="VirtualMachineManagerViewResources.Content" xml:space="preserve"><value>查看主机、存储、网络和映像</value></data>
+  <data name="VirtualMachineManagerViewResources.Content" xml:space="preserve"><value>查看资源、保护和事件</value></data>
   <data name="VirtualMachineManagerBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回虚拟机列表</value></data>
   <data name="VirtualMachineManagerDetailsHeading.Text" xml:space="preserve"><value>详情与资源</value></data>
   <data name="VirtualMachineManagerChooseMachineMessage.Text" xml:space="preserve"><value>选择虚拟机可查看详情。下方还可查看资源信息。</value></data>
@@ -917,13 +919,15 @@
   <data name="VirtualMachineManagerMachineAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
   <data name="VirtualMachineManagerResourceAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
   <data name="ContainerManagerTitle.Text" xml:space="preserve"><value>容器</value></data>
-  <data name="ContainerManagerDescription.Text" xml:space="preserve"><value>查看此 NAS 上的容器实例。</value></data>
+  <data name="ContainerManagerDescription.Text" xml:space="preserve"><value>查看此 NAS 上的容器、映像、网络、项目和近期事件状态。</value></data>
   <data name="ContainerManagerRefresh.AutomationProperties.Name" xml:space="preserve"><value>刷新容器</value></data>
   <data name="ContainerManagerRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
   <data name="ContainerManagerReadOnly.Title" xml:space="preserve"><value>只读视图</value></data>
   <data name="ContainerManagerReadOnly.Message" xml:space="preserve"><value>你可以在此查看容器实例。如需更改，请使用 DSM 中的 Container Manager。</value></data>
   <data name="ContainerManagerRefreshError.Title" xml:space="preserve"><value>容器信息未能刷新</value></data>
   <data name="ContainerManagerRefreshError.Message" xml:space="preserve"><value>当前仍显示上次可用的信息。请检查连接后重试。</value></data>
+  <data name="ContainerManagerSessionExpired.Title" xml:space="preserve"><value>会话已失效</value></data>
+  <data name="ContainerManagerSessionExpired.Message" xml:space="preserve"><value>会话已失效，请重新连接这台 NAS。</value></data>
   <data name="ContainerManagerFilter.Header" xml:space="preserve"><value>状态</value></data>
   <data name="ContainerManagerFilterAll.Content" xml:space="preserve"><value>全部</value></data>
   <data name="ContainerManagerFilterRunning.Content" xml:space="preserve"><value>正在运行</value></data>
@@ -1735,4 +1739,33 @@
   <data name="NasSettingsSecurityTitle" xml:space="preserve"><value>安全设置</value></data>
   <data name="NasSettingsHardwareTitle" xml:space="preserve"><value>硬件与电源设置</value></data>
   <data name="ActionEdit" xml:space="preserve"><value>编辑</value></data>
+  <data name="ContainerManagerContainersTab.Header" xml:space="preserve"><value>容器</value></data>
+  <data name="ContainerManagerImagesTab.Header" xml:space="preserve"><value>映像</value></data>
+  <data name="ContainerManagerNetworksTab.Header" xml:space="preserve"><value>网络</value></data>
+  <data name="ContainerManagerProjectsTab.Header" xml:space="preserve"><value>项目</value></data>
+  <data name="ContainerManagerEventsTab.Header" xml:space="preserve"><value>事件</value></data>
+  <data name="ContainerManagerImagesList.AutomationProperties.Name" xml:space="preserve"><value>容器映像列表</value></data>
+  <data name="ContainerManagerNetworksList.AutomationProperties.Name" xml:space="preserve"><value>容器网络列表</value></data>
+  <data name="ContainerManagerProjectsList.AutomationProperties.Name" xml:space="preserve"><value>容器项目列表</value></data>
+  <data name="ContainerManagerEventsList.AutomationProperties.Name" xml:space="preserve"><value>容器事件列表</value></data>
+  <data name="ContainerManagerSectionLoading.Text" xml:space="preserve"><value>正在载入信息…</value></data>
+  <data name="ContainerManagerSectionEmpty.Text" xml:space="preserve"><value>此分区目前没有可显示的项目。在 DSM 中进行更改后可刷新查看。</value></data>
+  <data name="ContainerManagerSectionError.Text" xml:space="preserve"><value>无法载入此信息。请选择“刷新”重试。</value></data>
+  <data name="ContainerManagerSectionUnavailable.Text" xml:space="preserve"><value>此 NAS 目前未向应用提供此信息。</value></data>
+  <data name="ContainerManagerEventLevelInformation" xml:space="preserve"><value>信息</value></data>
+  <data name="ContainerManagerEventLevelWarning" xml:space="preserve"><value>警告</value></data>
+  <data name="ContainerManagerEventLevelError" xml:space="preserve"><value>需要注意</value></data>
+  <data name="ContainerManagerEventAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="VirtualMachineManagerProtectionTab.Header" xml:space="preserve"><value>保护</value></data>
+  <data name="VirtualMachineManagerEventsTab.Header" xml:space="preserve"><value>事件</value></data>
+  <data name="VirtualMachineManagerProtectionList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>虚拟机保护列表</value></data>
+  <data name="VirtualMachineManagerEventsList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>虚拟机事件列表</value></data>
+  <data name="VirtualMachineManagerProtectionPlan" xml:space="preserve"><value>保护计划</value></data>
+  <data name="VirtualMachineManagerProtectionSchedule" xml:space="preserve"><value>计划策略</value></data>
+  <data name="VirtualMachineManagerProtectionRetention" xml:space="preserve"><value>保留策略</value></data>
+  <data name="VirtualMachineManagerResource" xml:space="preserve"><value>资源</value></data>
+  <data name="VirtualMachineManagerEventLevelInformation" xml:space="preserve"><value>信息</value></data>
+  <data name="VirtualMachineManagerEventLevelWarning" xml:space="preserve"><value>警告</value></data>
+  <data name="VirtualMachineManagerEventLevelError" xml:space="preserve"><value>需要注意</value></data>
+  <data name="VirtualMachineManagerEventAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
 </root>

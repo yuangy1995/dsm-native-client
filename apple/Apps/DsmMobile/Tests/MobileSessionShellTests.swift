@@ -225,17 +225,20 @@ private actor SessionContainerInventoryRepository: MobileContainerInventoryReadi
         self.profileID = profileID
     }
 
-    func loadInventory() async throws -> ContainerInventorySnapshot {
-        ContainerInventorySnapshot(
-            source: .internalAPI,
+    func loadInventory() async throws -> ContainerManagerSnapshot {
+        ContainerManagerSnapshot(
             containers: [
-                ContainerInventoryItem(
+                ContainerInstance(
                     id: "container-session-test",
                     name: "Container session test",
+                    image: "synthetic:latest",
                     status: "running",
-                    image: "synthetic:latest"
                 )
-            ]
+            ],
+            images: [],
+            networks: [],
+            projects: [],
+            events: []
         )
     }
 }
@@ -265,7 +268,7 @@ final class MobileSessionShellTests: XCTestCase {
 
         XCTAssertNil(model.containerInventoryModel.activeProfileID)
         XCTAssertEqual(
-            model.containerInventoryModel.profiles[first.id]?.items.map(\.name),
+            model.containerInventoryModel.profiles[first.id]?.containers.map(\.name),
             ["Container session test"]
         )
 

@@ -18,6 +18,8 @@ public sealed class VirtualMachineManagerViewModelTests
         Assert.Equal(VirtualMachineManagerContentState.Unavailable, model.StoragesState);
         Assert.Equal(VirtualMachineManagerContentState.Unavailable, model.NetworksState);
         Assert.Equal(VirtualMachineManagerContentState.Unavailable, model.ImagesState);
+        Assert.Equal(VirtualMachineManagerContentState.Unavailable, model.ProtectionState);
+        Assert.Equal(VirtualMachineManagerContentState.Unavailable, model.EventsState);
         Assert.Empty(repository.Requests);
         Assert.False(model.CanRefresh);
     }
@@ -43,7 +45,7 @@ public sealed class VirtualMachineManagerViewModelTests
     }
 
     [Fact]
-    public async Task FiveSectionsKeepIndependentContentEmptyErrorAndUnavailableStates()
+    public async Task SevenSectionsKeepIndependentContentEmptyErrorAndUnavailableStates()
     {
         var profile = Guid.NewGuid();
         var repository = Available(profile);
@@ -53,7 +55,9 @@ public sealed class VirtualMachineManagerViewModelTests
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Failed,
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([Resource("network", VirtualizationResourceKind.Network)]),
-            VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable));
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable,
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([Resource("plan", VirtualizationResourceKind.ProtectionPlan)]),
+            VirtualMachineManagerSection<ServiceEventSummary>.Available([])));
         using var model = new VirtualMachineManagerViewModel();
 
         await model.ActivateAsync(repository);
@@ -63,6 +67,8 @@ public sealed class VirtualMachineManagerViewModelTests
         Assert.Equal(VirtualMachineManagerContentState.Empty, model.StoragesState);
         Assert.Equal(VirtualMachineManagerContentState.Content, model.NetworksState);
         Assert.Equal(VirtualMachineManagerContentState.Unavailable, model.ImagesState);
+        Assert.Equal(VirtualMachineManagerContentState.Content, model.ProtectionState);
+        Assert.Equal(VirtualMachineManagerContentState.Empty, model.EventsState);
         Assert.True(model.HasRefreshError);
         Assert.Equal("network", Assert.Single(model.Networks).Name);
     }
@@ -82,7 +88,9 @@ public sealed class VirtualMachineManagerViewModelTests
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Failed,
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([Resource("storage", VirtualizationResourceKind.Storage)]),
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
-            VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([])));
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
+            VirtualMachineManagerSection<ServiceEventSummary>.Available([])));
         using var model = new VirtualMachineManagerViewModel();
         await model.ActivateAsync(repository);
 
@@ -115,6 +123,38 @@ public sealed class VirtualMachineManagerViewModelTests
         Assert.False(model.IsLoading);
     }
 
+    [Theory]
+    [InlineData(500, true)]
+    [InlineData(106, false)]
+    [InlineData(107, false)]
+    [InlineData(119, false)]
+    public async Task AuthenticationFailureRequiresReconnectAndIsNeverAutomaticallyReplayed(
+        int code,
+        bool authenticationFailure)
+    {
+        var profile = Guid.NewGuid();
+        var repository = Available(profile);
+        repository.Results.Enqueue(Snapshot(profile, machines: [Machine("kept")]));
+        repository.Results.Enqueue(new DsmException(
+            "login",
+            "login",
+            code,
+            authenticationFailure));
+        using var model = new VirtualMachineManagerViewModel();
+        await model.ActivateAsync(repository);
+
+        await model.RefreshAsync();
+        await model.ActivateAsync(repository);
+        await model.RefreshAsync();
+
+        Assert.True(model.RequiresReconnect);
+        Assert.False(model.HasRefreshError);
+        Assert.False(model.CanRefresh);
+        Assert.False(model.IsLoading);
+        Assert.Equal("kept", Assert.Single(model.Machines).Name);
+        Assert.Equal(2, repository.Requests.Count);
+    }
+
     [Fact]
     public async Task ProfileSwitchCancelsOldGenerationAndRejectsLateSnapshot()
     {
@@ -139,6 +179,8 @@ public sealed class VirtualMachineManagerViewModelTests
         Assert.Equal(profileB, model.ActiveProfileId);
         Assert.Equal("b", Assert.Single(model.Machines).Name);
         Assert.False(model.IsLoading);
+        Assert.False(model.RequiresReconnect);
+        Assert.False(model.HasRefreshError);
     }
 
     [Fact]
@@ -223,7 +265,9 @@ public sealed class VirtualMachineManagerViewModelTests
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available(hosts ?? []),
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
-            VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]));
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Available([]),
+            VirtualMachineManagerSection<ServiceEventSummary>.Available([]));
 
     private static VirtualMachineSummary Machine(string name) => new(
         $"id-{name}",

@@ -1046,11 +1046,77 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
 
         XCTAssertEqual(snapshot.containers.first?.name, "示例容器")
         XCTAssertTrue(snapshot.images.isEmpty)
+        XCTAssertEqual(snapshot.unavailableSections, [.images, .networks, .projects, .logs])
+        XCTAssertTrue(snapshot.failedSections.isEmpty)
         let requests = await transport.recordedRequests()
         let request = try XCTUnwrap(requests.first)
         XCTAssertEqual(requestValue("offset", in: request), "0")
         XCTAssertEqual(requestValue("limit", in: request), "-1")
         XCTAssertEqual(requestValue("type", in: request), "all")
+    }
+
+    func test容器主分区拒绝非根数组坏元素与重复身份() async throws {
+        let payloads = [
+            #"{"success":true,"data":{"items":[]}}"#,
+            #"{"success":true,"data":{"containers":[{"name":"缺少身份"}]}}"#,
+            #"{"success":true,"data":{"containers":[{"id":"same"},{"id":"same"}]}}"#
+        ]
+        for payload in payloads {
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.dockerContainer],
+                transport: MockHTTPTransport(responses: [response(payload)])
+            )
+            do {
+                _ = try await repository.loadContainerManager()
+                XCTFail("畸形容器主分区必须整体失败")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test容器附属分区严格解析失败进入Typed状态() async throws {
+        let transport = ServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: response(containerListResponse(ids: ["container-1"])),
+            DsmAPIName.dockerImage: response(#"{"success":true,"data":{"images":[{"id":"same"},{"id":"same"}]}}"#),
+            DsmAPIName.dockerNetwork: response(#"{"success":true,"data":{"networks":[{"name":"缺少身份"}]}}"#),
+            DsmAPIName.dockerProject: response(#"{"success":true,"data":{"projects":{}}}"#),
+            DsmAPIName.dockerLog: response(#"{"success":true,"data":{"logs":[{}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [
+                DsmAPIName.dockerContainer, DsmAPIName.dockerImage,
+                DsmAPIName.dockerNetwork, DsmAPIName.dockerProject, DsmAPIName.dockerLog
+            ],
+            transport: transport
+        )
+
+        let snapshot = try await repository.loadContainerManager()
+
+        XCTAssertEqual(snapshot.containers.map(\.id), ["container-1"])
+        XCTAssertEqual(snapshot.failedSections, [.images, .networks, .projects, .logs])
+        XCTAssertTrue(snapshot.images.isEmpty)
+        XCTAssertTrue(snapshot.networks.isEmpty)
+        XCTAssertTrue(snapshot.projects.isEmpty)
+        XCTAssertTrue(snapshot.events.isEmpty)
+    }
+
+    func test无服务器事件身份时只用时间与顺序生成稳定白名单身份() async throws {
+        let transport = ServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: response(containerListResponse(ids: ["container-1"])),
+            DsmAPIName.dockerLog: response(#"{"success":true,"data":{"logs":[{"time":100,"level":"info","user":"user-a","message":"same"},{"time":100,"level":"info","user":"user-a","message":"same"}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerLog],
+            transport: transport
+        )
+
+        let snapshot = try await repository.loadContainerManager()
+
+        XCTAssertEqual(snapshot.events.count, 2)
+        XCTAssertEqual(Set(snapshot.events.map(\.id)).count, 2)
+        XCTAssertTrue(snapshot.events.allSatisfy { $0.id.hasPrefix("event-") })
+        XCTAssertFalse(snapshot.failedSections.contains(.logs))
     }
 
     func test容器删除回读确认后返回成功() async throws {
@@ -1386,6 +1452,89 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.networks.first?.name, "默认网络")
         XCTAssertEqual(snapshot.images.first?.name, "安装映像")
         XCTAssertTrue(snapshot.events.isEmpty)
+        XCTAssertEqual(snapshot.failedSections, [.logs])
+        XCTAssertEqual(snapshot.unavailableSections, [.protection])
+    }
+
+    func test虚拟机主分区拒绝非根数组坏元素与重复身份() async throws {
+        let payloads = [
+            #"{"success":true,"data":{"items":[]}}"#,
+            #"{"success":true,"data":{"guests":[{"guest_name":"缺少身份"}]}}"#,
+            #"{"success":true,"data":{"guests":[{"guest_id":"same"},{"guest_id":"same"}]}}"#
+        ]
+        for payload in payloads {
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.virtualizationAPIGuest],
+                transport: MockHTTPTransport(responses: [response(payload)])
+            )
+            do {
+                _ = try await repository.loadVirtualMachineManager()
+                XCTFail("畸形虚拟机主分区必须整体失败")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test虚拟机附属分区严格解析失败进入Typed状态() async throws {
+        let transport = ServiceRoutingTransport(responses: [
+            DsmAPIName.virtualizationAPIGuest: response(#"{"success":true,"data":{"guests":[]}}"#),
+            DsmAPIName.virtualizationAPIHost: response(#"{"success":true,"data":{"hosts":[{"host_id":"same","host_name":"一"},{"host_id":"same","host_name":"二"}]}}"#),
+            DsmAPIName.virtualizationAPIStorage: response(#"{"success":true,"data":{"storages":[{"storage_name":"缺少身份"}]}}"#),
+            DsmAPIName.virtualizationAPINetwork: response(#"{"success":true,"data":{"networks":{}}}"#),
+            DsmAPIName.virtualizationAPIGuestImage: response(#"{"success":true,"data":{"images":[1]}}"#),
+            DsmAPIName.virtualizationProtectionPlan: response(#"{"success":true,"data":{"plans":[{}]}}"#),
+            DsmAPIName.virtualizationLog: response(#"{"success":true,"data":{"logs":[{"log_id":"same","event":"一"},{"log_id":"same","event":"二"}]}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [
+                DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationAPIHost,
+                DsmAPIName.virtualizationAPIStorage, DsmAPIName.virtualizationAPINetwork,
+                DsmAPIName.virtualizationAPIGuestImage,
+                DsmAPIName.virtualizationProtectionPlan, DsmAPIName.virtualizationLog
+            ],
+            transport: transport
+        )
+
+        let snapshot = try await repository.loadVirtualMachineManager()
+
+        XCTAssertEqual(
+            snapshot.failedSections,
+            [.hosts, .storages, .networks, .images, .protection, .logs]
+        )
+        XCTAssertTrue(snapshot.machines.isEmpty)
+        XCTAssertTrue(snapshot.hosts.isEmpty)
+        XCTAssertTrue(snapshot.events.isEmpty)
+    }
+
+    func test容器附属分区区分缺能力与读取失败且认证继续抛出() async throws {
+        let failedTransport = ServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: response(containerListResponse(ids: ["container-1"])),
+            DsmAPIName.dockerImage: response(#"{"success":false,"error":{"code":402}}"#)
+        ])
+        let failedRepository = try makeRepository(
+            apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerImage],
+            transport: failedTransport
+        )
+
+        let snapshot = try await failedRepository.loadContainerManager()
+        XCTAssertEqual(snapshot.failedSections, [.images])
+        XCTAssertEqual(snapshot.unavailableSections, [.networks, .projects, .logs])
+
+        let authenticationTransport = ServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: response(containerListResponse(ids: ["container-1"])),
+            DsmAPIName.dockerImage: response(#"{"success":false,"error":{"code":106}}"#)
+        ])
+        let authenticationRepository = try makeRepository(
+            apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerImage],
+            transport: authenticationTransport
+        )
+        do {
+            _ = try await authenticationRepository.loadContainerManager()
+            XCTFail("认证错误不应被折叠为分区状态")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .authenticationRequired)
+        }
     }
 
     func test虚拟机官方只读列表不兼容时降级到已发现的内部列表() async throws {

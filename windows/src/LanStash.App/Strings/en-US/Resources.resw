@@ -859,13 +859,15 @@
   <data name="DownloadStationByteValueGB" xml:space="preserve"><value>{0} GB</value></data>
   <data name="DownloadStationByteValueTB" xml:space="preserve"><value>{0} TB</value></data>
   <data name="VirtualMachineManagerTitle.Text" xml:space="preserve"><value>Virtual Machines</value></data>
-  <data name="VirtualMachineManagerDescription.Text" xml:space="preserve"><value>Review virtual machines and virtualization resources on this NAS.</value></data>
+  <data name="VirtualMachineManagerDescription.Text" xml:space="preserve"><value>Review virtual machines, resources, protection, and recent event status on this NAS.</value></data>
   <data name="VirtualMachineManagerRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh virtual machines</value></data>
   <data name="VirtualMachineManagerRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
   <data name="VirtualMachineManagerReadOnly.Title" xml:space="preserve"><value>Read-only view</value></data>
   <data name="VirtualMachineManagerReadOnly.Message" xml:space="preserve"><value>You can review virtual machines and resources here. Use Virtual Machine Manager in DSM when you need to make changes.</value></data>
   <data name="VirtualMachineManagerRefreshError.Title" xml:space="preserve"><value>Some information wasn’t refreshed</value></data>
   <data name="VirtualMachineManagerRefreshError.Message" xml:space="preserve"><value>The last available information is still shown. Check the connection and try again.</value></data>
+  <data name="VirtualMachineManagerSessionExpired.Title" xml:space="preserve"><value>Session expired</value></data>
+  <data name="VirtualMachineManagerSessionExpired.Message" xml:space="preserve"><value>The session has expired. Please reconnect this NAS.</value></data>
   <data name="VirtualMachineManagerMachinesHeading.Text" xml:space="preserve"><value>Virtual machines</value></data>
   <data name="VirtualMachineManagerMachineList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Virtual machine list</value></data>
   <data name="VirtualMachineManagerMachinesLoading.Text" xml:space="preserve"><value>Loading virtual machines…</value></data>
@@ -875,7 +877,7 @@
   <data name="VirtualMachineManagerMachinesErrorMessage.Text" xml:space="preserve"><value>Check the connection to this NAS, then select Refresh.</value></data>
   <data name="VirtualMachineManagerUnavailableTitle.Text" xml:space="preserve"><value>Virtual machines aren’t available</value></data>
   <data name="VirtualMachineManagerUnavailableMessage.Text" xml:space="preserve"><value>This NAS doesn’t currently provide virtual machine information to the app.</value></data>
-  <data name="VirtualMachineManagerViewResources.Content" xml:space="preserve"><value>View hosts, storage, networks, and images</value></data>
+  <data name="VirtualMachineManagerViewResources.Content" xml:space="preserve"><value>View resources, protection, and events</value></data>
   <data name="VirtualMachineManagerBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to virtual machines</value></data>
   <data name="VirtualMachineManagerDetailsHeading.Text" xml:space="preserve"><value>Details and resources</value></data>
   <data name="VirtualMachineManagerChooseMachineMessage.Text" xml:space="preserve"><value>Select a virtual machine to review its details. Resource information is available below.</value></data>
@@ -917,13 +919,15 @@
   <data name="VirtualMachineManagerMachineAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
   <data name="VirtualMachineManagerResourceAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
   <data name="ContainerManagerTitle.Text" xml:space="preserve"><value>Containers</value></data>
-  <data name="ContainerManagerDescription.Text" xml:space="preserve"><value>Review container instances on this NAS.</value></data>
+  <data name="ContainerManagerDescription.Text" xml:space="preserve"><value>Review containers, images, networks, projects, and recent event status on this NAS.</value></data>
   <data name="ContainerManagerRefresh.AutomationProperties.Name" xml:space="preserve"><value>Refresh containers</value></data>
   <data name="ContainerManagerRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
   <data name="ContainerManagerReadOnly.Title" xml:space="preserve"><value>Read-only view</value></data>
   <data name="ContainerManagerReadOnly.Message" xml:space="preserve"><value>You can review container instances here. To make changes, open Container Manager in DSM.</value></data>
   <data name="ContainerManagerRefreshError.Title" xml:space="preserve"><value>Container information wasn’t refreshed</value></data>
   <data name="ContainerManagerRefreshError.Message" xml:space="preserve"><value>The last available information is still shown. Check the connection and try again.</value></data>
+  <data name="ContainerManagerSessionExpired.Title" xml:space="preserve"><value>Session expired</value></data>
+  <data name="ContainerManagerSessionExpired.Message" xml:space="preserve"><value>The session has expired. Please reconnect this NAS.</value></data>
   <data name="ContainerManagerFilter.Header" xml:space="preserve"><value>Status</value></data>
   <data name="ContainerManagerFilterAll.Content" xml:space="preserve"><value>All</value></data>
   <data name="ContainerManagerFilterRunning.Content" xml:space="preserve"><value>Running</value></data>
@@ -1735,4 +1739,33 @@
   <data name="NasSettingsSecurityTitle" xml:space="preserve"><value>Security settings</value></data>
   <data name="NasSettingsHardwareTitle" xml:space="preserve"><value>Hardware and power settings</value></data>
   <data name="ActionEdit" xml:space="preserve"><value>Edit</value></data>
+  <data name="ContainerManagerContainersTab.Header" xml:space="preserve"><value>Containers</value></data>
+  <data name="ContainerManagerImagesTab.Header" xml:space="preserve"><value>Images</value></data>
+  <data name="ContainerManagerNetworksTab.Header" xml:space="preserve"><value>Networks</value></data>
+  <data name="ContainerManagerProjectsTab.Header" xml:space="preserve"><value>Projects</value></data>
+  <data name="ContainerManagerEventsTab.Header" xml:space="preserve"><value>Events</value></data>
+  <data name="ContainerManagerImagesList.AutomationProperties.Name" xml:space="preserve"><value>Container image list</value></data>
+  <data name="ContainerManagerNetworksList.AutomationProperties.Name" xml:space="preserve"><value>Container network list</value></data>
+  <data name="ContainerManagerProjectsList.AutomationProperties.Name" xml:space="preserve"><value>Container project list</value></data>
+  <data name="ContainerManagerEventsList.AutomationProperties.Name" xml:space="preserve"><value>Container event list</value></data>
+  <data name="ContainerManagerSectionLoading.Text" xml:space="preserve"><value>Loading information…</value></data>
+  <data name="ContainerManagerSectionEmpty.Text" xml:space="preserve"><value>No items are available in this section. Refresh after changes are made in DSM.</value></data>
+  <data name="ContainerManagerSectionError.Text" xml:space="preserve"><value>This information couldn’t be loaded. Select Refresh to try again.</value></data>
+  <data name="ContainerManagerSectionUnavailable.Text" xml:space="preserve"><value>This NAS doesn’t currently provide this information to the app.</value></data>
+  <data name="ContainerManagerEventLevelInformation" xml:space="preserve"><value>Information</value></data>
+  <data name="ContainerManagerEventLevelWarning" xml:space="preserve"><value>Warning</value></data>
+  <data name="ContainerManagerEventLevelError" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="ContainerManagerEventAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="VirtualMachineManagerProtectionTab.Header" xml:space="preserve"><value>Protection</value></data>
+  <data name="VirtualMachineManagerEventsTab.Header" xml:space="preserve"><value>Events</value></data>
+  <data name="VirtualMachineManagerProtectionList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Virtual machine protection list</value></data>
+  <data name="VirtualMachineManagerEventsList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Virtual machine event list</value></data>
+  <data name="VirtualMachineManagerProtectionPlan" xml:space="preserve"><value>Protection plan</value></data>
+  <data name="VirtualMachineManagerProtectionSchedule" xml:space="preserve"><value>Schedule policy</value></data>
+  <data name="VirtualMachineManagerProtectionRetention" xml:space="preserve"><value>Retention policy</value></data>
+  <data name="VirtualMachineManagerResource" xml:space="preserve"><value>Resource</value></data>
+  <data name="VirtualMachineManagerEventLevelInformation" xml:space="preserve"><value>Information</value></data>
+  <data name="VirtualMachineManagerEventLevelWarning" xml:space="preserve"><value>Warning</value></data>
+  <data name="VirtualMachineManagerEventLevelError" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="VirtualMachineManagerEventAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
 </root>

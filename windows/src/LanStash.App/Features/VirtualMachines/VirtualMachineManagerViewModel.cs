@@ -16,11 +16,14 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     private VirtualMachineItem? _selectedMachine;
     private bool _isLoading;
     private bool _hasRefreshError;
+    private bool _requiresReconnect;
     private VirtualMachineManagerContentState _machinesState = VirtualMachineManagerContentState.Loading;
     private VirtualMachineManagerContentState _hostsState = VirtualMachineManagerContentState.Loading;
     private VirtualMachineManagerContentState _storagesState = VirtualMachineManagerContentState.Loading;
     private VirtualMachineManagerContentState _networksState = VirtualMachineManagerContentState.Loading;
     private VirtualMachineManagerContentState _imagesState = VirtualMachineManagerContentState.Loading;
+    private VirtualMachineManagerContentState _protectionState = VirtualMachineManagerContentState.Loading;
+    private VirtualMachineManagerContentState _eventsState = VirtualMachineManagerContentState.Loading;
     private bool _disposed;
 
     public ObservableCollection<VirtualMachineItem> Machines { get; } = [];
@@ -28,6 +31,8 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     public ObservableCollection<VirtualizationResourceItem> Storages { get; } = [];
     public ObservableCollection<VirtualizationResourceItem> Networks { get; } = [];
     public ObservableCollection<VirtualizationResourceItem> Images { get; } = [];
+    public ObservableCollection<VirtualizationResourceItem> Protection { get; } = [];
+    public ObservableCollection<VirtualMachineEventItem> Events { get; } = [];
 
     public Guid? ActiveProfileId
     {
@@ -57,6 +62,18 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     {
         get => _hasRefreshError;
         private set => SetProperty(ref _hasRefreshError, value);
+    }
+
+    public bool RequiresReconnect
+    {
+        get => _requiresReconnect;
+        private set
+        {
+            if (SetProperty(ref _requiresReconnect, value))
+            {
+                RaisePropertyChanged(nameof(CanRefresh));
+            }
+        }
     }
 
     public VirtualMachineManagerContentState MachinesState
@@ -89,8 +106,20 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         private set => SetProperty(ref _imagesState, value);
     }
 
+    public VirtualMachineManagerContentState ProtectionState
+    {
+        get => _protectionState;
+        private set => SetProperty(ref _protectionState, value);
+    }
+
+    public VirtualMachineManagerContentState EventsState
+    {
+        get => _eventsState;
+        private set => SetProperty(ref _eventsState, value);
+    }
+
     public bool HasSelection => SelectedMachine is not null;
-    public bool CanRefresh => !IsLoading &&
+    public bool CanRefresh => !IsLoading && !RequiresReconnect &&
         _repository?.Availability is
         {
             Status: VirtualMachineManagerAvailabilityStatus.Available,
@@ -101,16 +130,20 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(repository);
+        var keepsReconnectBlock = ReferenceEquals(_repository, repository) &&
+            ActiveProfileId == repository.ProfileId && RequiresReconnect;
         SaveCurrentProfileState();
         CancelRequest();
         _repository = repository;
         ActiveProfileId = repository.ProfileId;
+        RequiresReconnect = keepsReconnectBlock;
 
         if (repository.Availability.Status != VirtualMachineManagerAvailabilityStatus.Available ||
             !repository.Availability.Features.Contains(VirtualMachineManagerReadFeature.Machines))
         {
             ClearVisibleContent();
             HasRefreshError = false;
+            RequiresReconnect = false;
             SetAllStates(VirtualMachineManagerContentState.Unavailable);
             RaisePropertyChanged(nameof(CanRefresh));
             return;
@@ -160,6 +193,7 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         ActiveProfileId = null;
         ClearVisibleContent();
         HasRefreshError = false;
+        RequiresReconnect = false;
         SetAllStates(VirtualMachineManagerContentState.Loading);
         RaisePropertyChanged(nameof(CanRefresh));
     }
@@ -196,6 +230,19 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
         {
         }
+        catch (DsmException error) when (IsAuthenticationFailure(error))
+        {
+            if (IsCurrent(request.Generation, repository))
+            {
+                RequiresReconnect = true;
+                HasRefreshError = false;
+                if (!preserveContentOnFailure || !profile.Loaded)
+                {
+                    ClearVisibleContent();
+                    MarkSupportedSectionsFailed(repository.Availability.Features);
+                }
+            }
+        }
         catch
         {
             if (IsCurrent(request.Generation, repository))
@@ -225,6 +272,8 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         ApplyResourceSection(profile, VirtualMachineManagerReadFeature.Storages, snapshot.Storages);
         ApplyResourceSection(profile, VirtualMachineManagerReadFeature.Networks, snapshot.Networks);
         ApplyResourceSection(profile, VirtualMachineManagerReadFeature.Images, snapshot.Images);
+        ApplyResourceSection(profile, VirtualMachineManagerReadFeature.Protection, snapshot.Protection);
+        ApplyEventSection(profile, snapshot.Events);
         RestoreProfile(profile);
         HasRefreshError = profile.HasSectionFailure;
     }
@@ -288,6 +337,34 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         }
     }
 
+    private static void ApplyEventSection(
+        ProfileState profile,
+        VirtualMachineManagerSection<ServiceEventSummary> section)
+    {
+        if (section.Status == VirtualMachineManagerSectionStatus.Available)
+        {
+            profile.Events = section.Items.Select(item => new VirtualMachineEventItem(item)).ToArray();
+            profile.EventsState = profile.Events.Count == 0
+                ? VirtualMachineManagerContentState.Empty
+                : VirtualMachineManagerContentState.Content;
+            profile.EventsRefreshFailed = false;
+        }
+        else if (section.Status == VirtualMachineManagerSectionStatus.Failed)
+        {
+            profile.EventsRefreshFailed = true;
+            if (profile.Events.Count == 0)
+            {
+                profile.EventsState = VirtualMachineManagerContentState.Error;
+            }
+        }
+        else
+        {
+            profile.Events = [];
+            profile.EventsState = VirtualMachineManagerContentState.Unavailable;
+            profile.EventsRefreshFailed = false;
+        }
+    }
+
     private void RestoreProfile(ProfileState profile)
     {
         Replace(Machines, profile.Machines);
@@ -295,11 +372,15 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         Replace(Storages, profile.Resources[VirtualMachineManagerReadFeature.Storages].Items);
         Replace(Networks, profile.Resources[VirtualMachineManagerReadFeature.Networks].Items);
         Replace(Images, profile.Resources[VirtualMachineManagerReadFeature.Images].Items);
+        Replace(Protection, profile.Resources[VirtualMachineManagerReadFeature.Protection].Items);
+        Replace(Events, profile.Events);
         MachinesState = profile.MachinesState;
         HostsState = profile.Resources[VirtualMachineManagerReadFeature.Hosts].State;
         StoragesState = profile.Resources[VirtualMachineManagerReadFeature.Storages].State;
         NetworksState = profile.Resources[VirtualMachineManagerReadFeature.Networks].State;
         ImagesState = profile.Resources[VirtualMachineManagerReadFeature.Images].State;
+        ProtectionState = profile.Resources[VirtualMachineManagerReadFeature.Protection].State;
+        EventsState = profile.EventsState;
         SelectedMachine = profile.SelectedMachineId is { } id
             ? Machines.FirstOrDefault(item => item.Id == id)
             : null;
@@ -320,6 +401,8 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         StoragesState = InitialState(features, VirtualMachineManagerReadFeature.Storages);
         NetworksState = InitialState(features, VirtualMachineManagerReadFeature.Networks);
         ImagesState = InitialState(features, VirtualMachineManagerReadFeature.Images);
+        ProtectionState = InitialState(features, VirtualMachineManagerReadFeature.Protection);
+        EventsState = InitialState(features, VirtualMachineManagerReadFeature.Events);
     }
 
     private void MarkSupportedSectionsFailed(IReadOnlySet<VirtualMachineManagerReadFeature> features)
@@ -329,6 +412,8 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         StoragesState = FailedState(features, VirtualMachineManagerReadFeature.Storages);
         NetworksState = FailedState(features, VirtualMachineManagerReadFeature.Networks);
         ImagesState = FailedState(features, VirtualMachineManagerReadFeature.Images);
+        ProtectionState = FailedState(features, VirtualMachineManagerReadFeature.Protection);
+        EventsState = FailedState(features, VirtualMachineManagerReadFeature.Events);
     }
 
     private static VirtualMachineManagerContentState InitialState(
@@ -382,6 +467,9 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
     private IVirtualMachineManagerRepository RequireRepository() => _repository ??
         throw new InvalidOperationException("Virtual Machine Manager is not active for a NAS profile.");
 
+    private static bool IsAuthenticationFailure(DsmException error) =>
+        error.AuthenticationFailure || error.Code is 106 or 107 or 119;
+
     private void CancelRequest()
     {
         _generation++;
@@ -398,6 +486,8 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         Storages.Clear();
         Networks.Clear();
         Images.Clear();
+        Protection.Clear();
+        Events.Clear();
         SelectedMachine = null;
     }
 
@@ -408,6 +498,8 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
         StoragesState = state;
         NetworksState = state;
         ImagesState = state;
+        ProtectionState = state;
+        EventsState = state;
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> items)
@@ -448,9 +540,14 @@ public sealed class VirtualMachineManagerViewModel : ObservableObject, IDisposab
             [VirtualMachineManagerReadFeature.Storages] = ResourceState.Loading,
             [VirtualMachineManagerReadFeature.Networks] = ResourceState.Loading,
             [VirtualMachineManagerReadFeature.Images] = ResourceState.Loading,
+            [VirtualMachineManagerReadFeature.Protection] = ResourceState.Loading,
         };
+        public IReadOnlyList<VirtualMachineEventItem> Events { get; set; } = [];
+        public VirtualMachineManagerContentState EventsState { get; set; } =
+            VirtualMachineManagerContentState.Loading;
+        public bool EventsRefreshFailed { get; set; }
         public bool HasSectionFailure => MachinesRefreshFailed ||
-            Resources.Values.Any(section => section.RefreshFailed);
+            EventsRefreshFailed || Resources.Values.Any(section => section.RefreshFailed);
     }
 
     private sealed record ResourceState(

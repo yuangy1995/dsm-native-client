@@ -129,6 +129,7 @@ private enum ServiceJSON: Decodable, Sendable {
 private enum SupplementaryServiceResult: Sendable {
     case available(ServiceJSON)
     case unavailable
+    case failed
 
     var value: ServiceJSON? {
         guard case .available(let value) = self else { return nil }
@@ -137,6 +138,11 @@ private enum SupplementaryServiceResult: Sendable {
 
     var isUnavailable: Bool {
         if case .unavailable = self { return true }
+        return false
+    }
+
+    var isFailed: Bool {
+        if case .failed = self { return true }
         return false
     }
 }
@@ -739,30 +745,70 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 "type": .string("all")
             ]
         )
-        async let imagesValue = supplementaryCall(DsmAPIName.dockerImage, method: "list")
-        async let networksValue = supplementaryCall(DsmAPIName.dockerNetwork, method: "list")
-        async let projectsValue = supplementaryCall(DsmAPIName.dockerProject, method: "list")
+        async let imagesValue = supplementaryCall(DsmAPIName.dockerImage, methods: ["list"])
+        async let networksValue = supplementaryCall(DsmAPIName.dockerNetwork, methods: ["list"])
+        async let projectsValue = supplementaryCall(DsmAPIName.dockerProject, methods: ["list"])
         async let eventsValue = supplementaryCall(
             DsmAPIName.dockerLog,
-            method: "list",
+            methods: ["list"],
             parameters: ["offset": .integer(0), "limit": .integer(200)]
         )
-        let (containerJSON, imageJSON, networkJSON, projectJSON, eventJSON) =
+        let (containerJSON, imageResult, networkResult, projectResult, eventResult) =
             try await (containersValue, imagesValue, networksValue, projectsValue, eventsValue)
 
+        let supplementaryResults: [(ContainerManagerSection, SupplementaryServiceResult)] = [
+            (.images, imageResult),
+            (.networks, networkResult),
+            (.projects, projectResult),
+            (.logs, eventResult)
+        ]
+        let unavailableSections = Set(supplementaryResults.compactMap { section, result in
+            result.isUnavailable ? section : nil
+        })
+        var failedSections = Set(supplementaryResults.compactMap { section, result in
+            result.isFailed ? section : nil
+        })
+        let containers = try Self.strictMappedItems(
+            containerJSON,
+            keys: ["containers", "container"],
+            parser: Self.container
+        )
+        let images: [ContainerImage] = Self.strictSupplementaryItems(
+            imageResult,
+            keys: ["images", "image"],
+            parser: Self.image,
+            failedSection: .images,
+            failedSections: &failedSections
+        )
+        let networks: [ContainerNetwork] = Self.strictSupplementaryItems(
+            networkResult,
+            keys: ["networks", "network"],
+            parser: Self.containerNetwork,
+            failedSection: .networks,
+            failedSections: &failedSections
+        )
+        let projects: [ContainerProject] = Self.strictSupplementaryItems(
+            projectResult,
+            keys: ["projects", "project"],
+            parser: Self.project,
+            failedSection: .projects,
+            failedSections: &failedSections
+        )
+        let events = Self.strictSupplementaryEvents(
+            eventResult,
+            keys: ["logs", "events"],
+            failedSection: .logs,
+            failedSections: &failedSections
+        )
+
         return ContainerManagerSnapshot(
-            containers: containerJSON.objects(for: ["containers", "container", "data", "list"])
-                .compactMap(Self.container),
-            images: imageJSON?.objects(for: ["images", "image", "data", "list"])
-                .compactMap(Self.image) ?? [],
-            networks: networkJSON?.objects(for: ["networks", "network", "data", "list"])
-                .compactMap(Self.containerNetwork) ?? [],
-            projects: projectJSON?.objects(for: ["projects", "project", "data", "list"])
-                .compactMap(Self.project) ?? [],
-            events: eventJSON?.objects(for: ["logs", "events", "data", "list"])
-                .enumerated().map {
-                    Self.event(offset: $0.offset, element: $0.element)
-                } ?? []
+            containers: containers,
+            images: images,
+            networks: networks,
+            projects: projects,
+            events: events,
+            unavailableSections: unavailableSections,
+            failedSections: failedSections
         )
     }
 
@@ -1131,12 +1177,6 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             try await (
                 hostsResult, storagesResult, networksResult, imagesResult, plansResult, eventsResult
             )
-        let hostJSON = hostResult.value
-        let storageJSON = storageResult.value
-        let networkJSON = networkResult.value
-        let imageJSON = imageResult.value
-        let planJSON = planResult.value
-        let eventJSON = eventResult.value
         var unavailableSections: Set<VirtualMachineManagerSection> = []
         if hostResult.isUnavailable { unavailableSections.insert(.hosts) }
         if storageResult.isUnavailable { unavailableSections.insert(.storages) }
@@ -1144,34 +1184,66 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         if imageResult.isUnavailable { unavailableSections.insert(.images) }
         if planResult.isUnavailable { unavailableSections.insert(.protection) }
         if eventResult.isUnavailable { unavailableSections.insert(.logs) }
+        var failedSections: Set<VirtualMachineManagerSection> = []
+        if hostResult.isFailed { failedSections.insert(.hosts) }
+        if storageResult.isFailed { failedSections.insert(.storages) }
+        if networkResult.isFailed { failedSections.insert(.networks) }
+        if imageResult.isFailed { failedSections.insert(.images) }
+        if planResult.isFailed { failedSections.insert(.protection) }
+        if eventResult.isFailed { failedSections.insert(.logs) }
+        let machines = try Self.strictMappedItems(
+            guestJSON,
+            keys: ["guests", "guest", "vms"],
+            parser: Self.machine
+        )
+        let hosts: [VirtualizationResource] = Self.strictSupplementaryResources(
+            hostResult,
+            keys: ["hosts", "host"],
+            failedSection: .hosts,
+            failedSections: &failedSections
+        )
+        let storages: [VirtualizationResource] = Self.strictSupplementaryResources(
+            storageResult,
+            keys: ["repos", "storages"],
+            failedSection: .storages,
+            failedSections: &failedSections
+        )
+        let networks: [VirtualizationResource] = Self.strictSupplementaryResources(
+            networkResult,
+            keys: ["networks", "network"],
+            failedSection: .networks,
+            failedSections: &failedSections
+        )
+        let images: [VirtualizationResource] = Self.strictSupplementaryResources(
+            imageResult,
+            keys: ["images", "image"],
+            failedSection: .images,
+            failedSections: &failedSections
+        )
+        let protection = Self.strictSupplementaryProtection(
+            planResult,
+            failedSections: &failedSections
+        )
+        let events = Self.strictSupplementaryEvents(
+            eventResult,
+            keys: ["logs", "log", "events", "records", "entries", "items"],
+            failedSection: .logs,
+            failedSections: &failedSections
+        )
 
         return VirtualMachineManagerSnapshot(
             source: official ? .official : .internalAPI,
-            machines: guestJSON.objects(for: ["guests", "guest", "vms", "data", "list"])
-                .compactMap(Self.machine),
-            hosts: Self.resources(hostJSON, keys: ["hosts", "host", "data", "list"]),
-            storages: Self.resources(storageJSON, keys: ["repos", "storages", "data", "list"]),
-            networks: Self.resources(networkJSON, keys: ["networks", "network", "data", "list"]),
-            images: Self.resources(imageJSON, keys: ["images", "image", "data", "list"]),
-            protectionPlans: Self.resources(
-                planJSON,
-                keys: ["plans", "plan", "protection_plans", "guest_protects", "data", "list"]
-            ),
-            protectionSchedulePolicies: Self.resources(
-                planJSON,
-                keys: ["schedule_policies", "schedules", "schedule_policy"]
-            ),
-            protectionRetentionPolicies: Self.resources(
-                planJSON,
-                keys: ["retention_policies", "retentions", "retention_policy"]
-            ),
-            events: eventJSON?.objects(for: [
-                "logs", "log", "events", "records", "entries", "items", "data", "list"
-            ])
-                .enumerated().map {
-                    Self.event(offset: $0.offset, element: $0.element)
-                } ?? [],
-            unavailableSections: unavailableSections
+            machines: machines,
+            hosts: hosts,
+            storages: storages,
+            networks: networks,
+            images: images,
+            protectionPlans: protection.plans,
+            protectionSchedulePolicies: protection.schedules,
+            protectionRetentionPolicies: protection.retentions,
+            events: events,
+            unavailableSections: unavailableSections,
+            failedSections: failedSections
         )
     }
 
@@ -3397,7 +3469,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 }
             }
         }
-        return .unavailable
+        return .failed
     }
 
     private func call(
@@ -3841,9 +3913,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     private static func project(_ object: [String: ServiceJSON]) -> ContainerProject? {
         let value = ServiceJSON.object(object)
-        guard let name = value.firstString(["name", "project_name", "id"]) else { return nil }
+        guard let id = value.firstString(["id", "project_id"]),
+              let name = value.firstString(["name", "project_name"]) else { return nil }
         return ContainerProject(
-            id: value.firstString(["id", "project_id"]) ?? name,
+            id: id,
             name: name,
             status: value.firstString(["status", "state"]) ?? "unknown",
             containerCount: Int(value.firstInteger(["container_count", "services"]) ?? 0)
@@ -3994,34 +4067,184 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
     }
 
+    private static func strictRootObjects(
+        _ value: ServiceJSON,
+        keys: [String]
+    ) throws -> [[String: ServiceJSON]] {
+        if case .array(let nodes) = value {
+            return try nodes.map { node in
+                guard case .object(let object) = node else {
+                    throw invalidServiceResponseStatic()
+                }
+                return object
+            }
+        }
+        guard case .object(let root) = value else {
+            throw invalidServiceResponseStatic()
+        }
+        for key in keys where root[key] != nil {
+            guard case .array(let nodes)? = root[key] else {
+                throw invalidServiceResponseStatic()
+            }
+            return try nodes.map { node in
+                guard case .object(let object) = node else {
+                    throw invalidServiceResponseStatic()
+                }
+                return object
+            }
+        }
+        throw invalidServiceResponseStatic()
+    }
+
+    private static func strictMappedItems<Item: Identifiable>(
+        _ value: ServiceJSON,
+        keys: [String],
+        parser: ([String: ServiceJSON]) -> Item?
+    ) throws -> [Item] where Item.ID == String {
+        let objects = try strictRootObjects(value, keys: keys)
+        var identifiers = Set<String>()
+        return try objects.map { object in
+            guard let item = parser(object),
+                  !item.id.isEmpty,
+                  identifiers.insert(item.id).inserted else {
+                throw invalidServiceResponseStatic()
+            }
+            return item
+        }
+    }
+
+    private static func strictSupplementaryItems<Item: Identifiable, Section: Hashable>(
+        _ result: SupplementaryServiceResult,
+        keys: [String],
+        parser: ([String: ServiceJSON]) -> Item?,
+        failedSection: Section,
+        failedSections: inout Set<Section>
+    ) -> [Item] where Item.ID == String {
+        guard case .available(let value) = result else { return [] }
+        do {
+            return try strictMappedItems(value, keys: keys, parser: parser)
+        } catch {
+            failedSections.insert(failedSection)
+            return []
+        }
+    }
+
+    private static func strictSupplementaryResources(
+        _ result: SupplementaryServiceResult,
+        keys: [String],
+        failedSection: VirtualMachineManagerSection,
+        failedSections: inout Set<VirtualMachineManagerSection>
+    ) -> [VirtualizationResource] {
+        strictSupplementaryItems(
+            result,
+            keys: keys,
+            parser: resource,
+            failedSection: failedSection,
+            failedSections: &failedSections
+        )
+    }
+
+    private static func strictSupplementaryEvents<Section: Hashable>(
+        _ result: SupplementaryServiceResult,
+        keys: [String],
+        failedSection: Section,
+        failedSections: inout Set<Section>
+    ) -> [ServiceEvent] {
+        guard case .available(let value) = result else { return [] }
+        do {
+            let objects = try strictRootObjects(value, keys: keys)
+            var identifiers = Set<String>()
+            return try objects.enumerated().map { offset, object in
+                guard let event = strictEvent(object, offset: offset),
+                      identifiers.insert(event.id).inserted else {
+                    throw invalidServiceResponseStatic()
+                }
+                return event
+            }
+        } catch {
+            failedSections.insert(failedSection)
+            return []
+        }
+    }
+
+    private static func strictSupplementaryProtection(
+        _ result: SupplementaryServiceResult,
+        failedSections: inout Set<VirtualMachineManagerSection>
+    ) -> (
+        plans: [VirtualizationResource],
+        schedules: [VirtualizationResource],
+        retentions: [VirtualizationResource]
+    ) {
+        guard case .available(let value) = result else { return ([], [], []) }
+        do {
+            guard case .object(let root) = value else {
+                throw invalidServiceResponseStatic()
+            }
+            let groups: [([String], WritableKeyPath<ProtectionGroups, [VirtualizationResource]>)] = [
+                (["plans", "plan", "protection_plans", "guest_protects"], \.plans),
+                (["schedule_policies", "schedules", "schedule_policy"], \.schedules),
+                (["retention_policies", "retentions", "retention_policy"], \.retentions)
+            ]
+            var parsed = ProtectionGroups()
+            var foundArray = false
+            for (keys, keyPath) in groups where keys.contains(where: { root[$0] != nil }) {
+                parsed[keyPath: keyPath] = try strictMappedItems(value, keys: keys, parser: resource)
+                foundArray = true
+            }
+            guard foundArray else { throw invalidServiceResponseStatic() }
+            return (parsed.plans, parsed.schedules, parsed.retentions)
+        } catch {
+            failedSections.insert(.protection)
+            return ([], [], [])
+        }
+    }
+
+    private struct ProtectionGroups {
+        var plans: [VirtualizationResource] = []
+        var schedules: [VirtualizationResource] = []
+        var retentions: [VirtualizationResource] = []
+    }
+
+    private static func resource(
+        _ object: [String: ServiceJSON]
+    ) -> VirtualizationResource? {
+        let value = ServiceJSON.object(object)
+        guard let id = value.firstString([
+            "id", "storage_id", "repo_id", "network_id", "image_id", "host_id"
+        ]),
+        let name = value.firstString([
+            "name", "host_name", "storage_name", "repo_name",
+            "network_name", "image_name", "plan_name", "policy_name", "title", "id"
+        ]) else {
+            return nil
+        }
+        return VirtualizationResource(
+            id: id,
+            name: name,
+            status: value.firstString(["status", "state", "health"]),
+            detail: value.firstString(["description", "type", "path", "volume_path"]),
+            hostID: value.firstString(["host_id"]),
+            hostName: value.firstString(["host_name"]),
+            allocatedBytes: value.firstInteger([
+                "allocated_size", "allocated_bytes", "used_size"
+            ]),
+            capacityBytes: value.firstInteger(["size", "capacity", "total_size"])
+        )
+    }
+
     private static func resources(
         _ value: ServiceJSON?,
         keys: [String]
     ) -> [VirtualizationResource] {
-        value?.objects(for: keys).compactMap { object in
-            let value = ServiceJSON.object(object)
-            guard let name = value.firstString([
-                "name", "host_name", "storage_name", "repo_name",
-                "network_name", "image_name", "plan_name", "policy_name", "title", "id"
-            ]) else {
-                return nil
-            }
-            return VirtualizationResource(
-                id: value.firstString([
-                    "id", "storage_id", "repo_id", "network_id", "image_id", "host_id"
-                ])
-                    ?? name,
-                name: name,
-                status: value.firstString(["status", "state", "health"]),
-                detail: value.firstString(["description", "type", "path", "volume_path"]),
-                hostID: value.firstString(["host_id"]),
-                hostName: value.firstString(["host_name"]),
-                allocatedBytes: value.firstInteger([
-                    "allocated_size", "allocated_bytes", "used_size"
-                ]),
-                capacityBytes: value.firstInteger(["size", "capacity", "total_size"])
-            )
-        } ?? []
+        value?.objects(for: keys).compactMap(resource) ?? []
+    }
+
+    private static func invalidServiceResponseStatic() -> AppError {
+        AppError(
+            category: .invalidResponse,
+            isRetryable: true,
+            safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+        )
     }
 
     private static func randomVirtualMACAddress() -> String {
@@ -4055,4 +4278,32 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             message: message
         )
     }
+
+    private static func strictEvent(
+        _ element: [String: ServiceJSON],
+        offset: Int
+    ) -> ServiceEvent? {
+        let value = ServiceJSON.object(element)
+        guard let message = value.firstString([
+            "event", "message", "description", "msg", "content", "detail"
+        ]) else {
+            return nil
+        }
+        let timestampKeys = ["time", "timestamp", "date", "event_time", "create_time", "created_at"]
+        let timestamp = date(value, keys: timestampKeys)
+        let level = value.firstString(["level", "severity", "type", "priority"])
+            ?? L10n.string("shared.e7028601e7da793d")
+        let user = value.firstString(["user", "username", "owner", "account", "user_name"])
+        let timestampIdentity = timestamp?.timeIntervalSince1970.description ?? "unknown"
+        let id = value.firstString(["id", "log_id"])
+            ?? "event-\(timestampIdentity)-\(offset)"
+        return ServiceEvent(
+            id: id,
+            timestamp: timestamp,
+            level: level,
+            user: user,
+            message: message
+        )
+    }
+
 }

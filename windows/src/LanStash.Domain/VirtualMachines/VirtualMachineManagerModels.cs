@@ -13,6 +13,8 @@ public enum VirtualMachineManagerReadFeature
     Storages,
     Networks,
     Images,
+    Protection,
+    Events,
 }
 
 public sealed record VirtualMachineManagerAvailability(
@@ -66,6 +68,9 @@ public enum VirtualizationResourceKind
     Storage,
     Network,
     Image,
+    ProtectionPlan,
+    ProtectionSchedule,
+    ProtectionRetention,
 }
 
 public enum VirtualizationResourceHealth
@@ -92,4 +97,6 @@ public sealed record VirtualMachineManagerSnapshot(
     VirtualMachineManagerSection<VirtualizationResourceSummary> Hosts,
     VirtualMachineManagerSection<VirtualizationResourceSummary> Storages,
     VirtualMachineManagerSection<VirtualizationResourceSummary> Networks,
-    VirtualMachineManagerSection<VirtualizationResourceSummary> Images);
+    VirtualMachineManagerSection<VirtualizationResourceSummary> Images,
+    VirtualMachineManagerSection<VirtualizationResourceSummary> Protection,
+    VirtualMachineManagerSection<ServiceEventSummary> Events);

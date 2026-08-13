@@ -7,19 +7,13 @@ struct MobileVirtualMachinesView: View {
 
     var body: some View {
         Group {
-            if inventory.state.pageState == .filteredEmpty {
-                filteredEmptyView
+            if inventory.state.pageState == .loading {
+                ProgressView(L10n.string("mobile.virtual-machines.loading"))
+                    .fillsAvailableContentArea()
+            } else if horizontalSizeClass == .regular {
+                regularLayout
             } else {
-                MobilePageStateView(
-                    state: inventory.state.pageState,
-                    labels: stateLabels,
-                    emptySystemImage: "desktopcomputer",
-                    filteredEmptySystemImage: "line.3.horizontal.decrease.circle",
-                    errorSystemImage: "exclamationmark.triangle",
-                    retryAction: { Task { await inventory.refresh() } }
-                ) {
-                    content
-                }
+                compactLayout
             }
         }
         .fillsAvailableContentArea(
@@ -27,27 +21,188 @@ struct MobileVirtualMachinesView: View {
         )
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if horizontalSizeClass == .regular {
-            HStack(spacing: 0) {
-                machineList(selectionMode: true)
-                    .frame(minWidth: 300, idealWidth: 360, maxWidth: 440)
-                Divider()
-                if let item = inventory.state.selectedItem {
-                    MobileVirtualMachineDetailView(item: item)
-                } else {
-                    ContentUnavailableView(
-                        L10n.string("mobile.virtual-machines.detail.select.title"),
-                        systemImage: "rectangle.split.2x1",
-                        description: Text(L10n.string("mobile.virtual-machines.detail.select.message"))
-                    )
-                    .fillsAvailableContentArea()
+    private var compactLayout: some View {
+        List {
+            noticeSections
+            Section {
+                ForEach(MobileVirtualMachineSection.allCases) { section in
+                    NavigationLink {
+                        MobileVirtualMachineSectionView(inventory: inventory, section: section)
+                    } label: {
+                        MobileVirtualMachineSectionRow(
+                            section: section,
+                            state: inventory.state.sectionState(section),
+                            count: inventory.state.itemCount(section)
+                        )
+                    }
+                    .frame(minHeight: 44)
                 }
             }
-        } else {
-            machineList(selectionMode: false)
         }
+        .listStyle(.insetGrouped)
+        .refreshable { await inventory.refresh() }
+    }
+
+    private var regularLayout: some View {
+        HStack(spacing: 0) {
+            List(selection: sectionSelection) {
+                noticeSections
+                Section {
+                    ForEach(MobileVirtualMachineSection.allCases) { section in
+                        MobileVirtualMachineSectionRow(
+                            section: section,
+                            state: inventory.state.sectionState(section),
+                            count: inventory.state.itemCount(section)
+                        )
+                        .tag(section)
+                        .frame(minHeight: 44)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
+            .refreshable { await inventory.refresh() }
+
+            Divider()
+            MobileVirtualMachineSectionView(
+                inventory: inventory,
+                section: inventory.state.selectedSection,
+                supportsSelection: true
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var noticeSections: some View {
+        if inventory.state.requiresReconnect {
+            Section {
+                Label(
+                    L10n.string("mobile.virtual-machines.session-expired"),
+                    systemImage: "person.crop.circle.badge.exclamationmark"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.orange)
+                .accessibilityElement(children: .combine)
+            }
+        } else if inventory.state.hasRefreshError {
+            Section {
+                Label(
+                    L10n.string("mobile.virtual-machines.refresh.failed"),
+                    systemImage: "exclamationmark.arrow.triangle.2.circlepath"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.orange)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        Section {
+            Label(L10n.string("mobile.virtual-machines.read-only.notice"), systemImage: "eye")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var sectionSelection: Binding<MobileVirtualMachineSection?> {
+        Binding(
+            get: { inventory.state.selectedSection },
+            set: { if let section = $0 { inventory.selectSection(section) } }
+        )
+    }
+}
+
+private struct MobileVirtualMachineSectionRow: View {
+    let section: MobileVirtualMachineSection
+    let state: MobileReadOnlySectionState
+    let count: Int
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(section.title).font(.body)
+                Text(state.virtualMachineSummary(count: count))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: section.systemImage)
+                .foregroundStyle(state == .failed ? .orange : .secondary)
+                .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            L10n.string(
+                "mobile.virtual-machines.accessibility.section",
+                section.title,
+                state.virtualMachineSummary(count: count)
+            )
+        )
+    }
+}
+
+private struct MobileVirtualMachineSectionView: View {
+    @Bindable var inventory: MobileVirtualMachineInventoryModel
+    let section: MobileVirtualMachineSection
+    var supportsSelection = false
+
+    var body: some View {
+        Group {
+            if section == .machines, inventory.state.pageState == .filteredEmpty {
+                filteredEmptyView
+            } else {
+                switch inventory.state.sectionState(section) {
+                case .unavailable: unavailableView
+                case .failed: failedView
+                case .empty: emptyView
+                case .content: content
+                }
+            }
+        }
+        .navigationTitle(section.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .fillsAvailableContentArea(
+            alignment: inventory.state.sectionState(section) == .content ? .topLeading : .center
+        )
+    }
+
+    private var unavailableView: some View {
+        ContentUnavailableView(
+            L10n.string("mobile.virtual-machines.section.unavailable.title"),
+            systemImage: "eye.slash",
+            description: Text(L10n.string("mobile.virtual-machines.section.unavailable.message"))
+        )
+    }
+
+    private var failedView: some View {
+        ContentUnavailableView {
+            Label(
+                L10n.string("mobile.virtual-machines.section.failed.title"),
+                systemImage: "exclamationmark.triangle"
+            )
+        } description: {
+            Text(
+                inventory.state.requiresReconnect
+                    ? L10n.string("mobile.virtual-machines.session-expired")
+                    : L10n.string("mobile.virtual-machines.section.failed.message")
+            )
+        } actions: {
+            if !inventory.state.requiresReconnect {
+                Button(L10n.string("mobile.virtual-machines.action.retry")) {
+                    Task { await inventory.refresh() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .frame(minWidth: 44, minHeight: 44)
+            }
+        }
+    }
+
+    private var emptyView: some View {
+        ContentUnavailableView(
+            L10n.string("mobile.virtual-machines.section.empty.title", section.title),
+            systemImage: section.systemImage,
+            description: Text(L10n.string("mobile.virtual-machines.section.empty.message"))
+        )
     }
 
     private var filteredEmptyView: some View {
@@ -66,190 +221,215 @@ struct MobileVirtualMachinesView: View {
             .controlSize(.large)
             .frame(minWidth: 44, minHeight: 44)
         }
-        .fillsAvailableContentArea()
     }
 
     @ViewBuilder
-    private func machineList(selectionMode: Bool) -> some View {
-        if selectionMode {
-            machineListBody(selectionMode: true)
-                .listStyle(.sidebar)
-                .refreshable { await inventory.refresh() }
+    private var content: some View {
+        if supportsSelection {
+            HStack(spacing: 0) {
+                itemList(selectionMode: true)
+                    .frame(minWidth: 280, idealWidth: 340, maxWidth: 420)
+                Divider()
+                if let selectedID = inventory.state.selectedItemID {
+                    detail(for: selectedID)
+                } else {
+                    ContentUnavailableView(
+                        L10n.string("mobile.virtual-machines.detail.select.title"),
+                        systemImage: "rectangle.split.2x1",
+                        description: Text(L10n.string("mobile.virtual-machines.detail.select.message"))
+                    )
+                    .fillsAvailableContentArea()
+                }
+            }
         } else {
-            machineListBody(selectionMode: false)
-                .listStyle(.insetGrouped)
-                .refreshable { await inventory.refresh() }
+            itemList(selectionMode: false)
         }
     }
 
-    private func machineListBody(selectionMode: Bool) -> some View {
+    private func itemList(selectionMode: Bool) -> some View {
         List {
-            if inventory.state.hasRefreshError {
-                Section {
-                    Label(
-                        L10n.string("mobile.virtual-machines.refresh.failed"),
-                        systemImage: "exclamationmark.arrow.triangle.2.circlepath"
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.orange)
-                    .accessibilityElement(children: .combine)
-                }
-            }
-
-            Section {
-                Label(
-                    L10n.string("mobile.virtual-machines.read-only.notice"),
-                    systemImage: "eye"
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
-            }
-
-            Section {
+            switch section {
+            case .machines:
                 Picker(
                     L10n.string("mobile.virtual-machines.filter.label"),
-                    selection: filterBinding
+                    selection: Binding(
+                        get: { inventory.state.filter },
+                        set: { inventory.setFilter($0) }
+                    )
                 ) {
                     ForEach(MobileVirtualMachineFilter.allCases, id: \.self) { filter in
                         Text(filter.title).tag(filter)
                     }
                 }
+                ForEach(inventory.state.visibleMachines) { item in itemLink(item.id, selectionMode: selectionMode) { machineRow(item) } }
+            case .hosts:
+                ForEach(inventory.state.hosts) { item in itemLink(item.id, selectionMode: selectionMode) { resourceRow(item) } }
+            case .storages:
+                ForEach(inventory.state.storages) { item in itemLink(item.id, selectionMode: selectionMode) { resourceRow(item) } }
+            case .networks:
+                ForEach(inventory.state.networks) { item in itemLink(item.id, selectionMode: selectionMode) { resourceRow(item) } }
+            case .images:
+                ForEach(inventory.state.images) { item in itemLink(item.id, selectionMode: selectionMode) { resourceRow(item) } }
+            case .protection:
+                ForEach(inventory.state.protection) { item in itemLink(item.id, selectionMode: selectionMode) { protectionRow(item) } }
+            case .events:
+                ForEach(inventory.state.events) { item in itemLink(item.id, selectionMode: selectionMode) { eventRow(item) } }
             }
+        }
+        .listStyle(.insetGrouped)
+        .refreshable { await inventory.refresh() }
+    }
 
-            Section {
-                ForEach(inventory.state.visibleItems) { item in
-                    if selectionMode {
-                        Button {
-                            inventory.select(item.id)
-                        } label: {
-                            MobileVirtualMachineRow(item: item, showsDisclosure: false)
-                        }
-                        .buttonStyle(.plain)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                        .accessibilityAddTraits(
-                            inventory.state.selectedID == item.id ? .isSelected : []
-                        )
-                    } else {
-                        NavigationLink {
-                            MobileVirtualMachineDetailView(item: item)
-                        } label: {
-                            MobileVirtualMachineRow(item: item, showsDisclosure: false)
-                        }
-                        .frame(minHeight: 44)
-                    }
-                }
-            }
+    @ViewBuilder
+    private func itemLink<Label: View>(
+        _ id: String,
+        selectionMode: Bool,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+        if selectionMode {
+            Button { inventory.selectItem(id) } label: { label() }
+                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+                .accessibilityAddTraits(inventory.state.selectedItemID == id ? .isSelected : [])
+        } else {
+            NavigationLink { detail(for: id) } label: { label() }
+                .frame(minHeight: 44)
         }
     }
 
-    private var filterBinding: Binding<MobileVirtualMachineFilter> {
-        Binding(
-            get: { inventory.state.filter },
-            set: { newValue in
-                inventory.setFilter(newValue)
-            }
+    private func machineRow(_ item: MobileVirtualMachineItem) -> some View {
+        summaryRow(item.name, item.status.title, item.status.systemImage, item.status.color)
+    }
+
+    private func resourceRow(_ item: MobileVirtualizationResourceItem) -> some View {
+        summaryRow(item.name, item.status.title, section.systemImage, item.status.color)
+    }
+
+    private func protectionRow(_ item: MobileProtectionItem) -> some View {
+        summaryRow(item.name, item.kind.title, "lock.shield", item.status.color)
+    }
+
+    private func eventRow(_ item: MobileVirtualMachineEventItem) -> some View {
+        summaryRow(
+            item.level,
+            item.timestamp?.formatted(date: .abbreviated, time: .shortened)
+                ?? L10n.string("mobile.virtual-machines.value.time-unavailable"),
+            "clock.arrow.circlepath",
+            .secondary
         )
     }
 
-    private var stateLabels: MobilePageStateLabels {
-        MobilePageStateLabels(
-            loading: L10n.string("mobile.virtual-machines.loading"),
-            emptyTitle: L10n.string("mobile.virtual-machines.empty.title"),
-            emptyMessage: L10n.string("mobile.virtual-machines.empty.message"),
-            filteredEmptyTitle: L10n.string("mobile.virtual-machines.filtered-empty.title"),
-            filteredEmptyMessage: L10n.string("mobile.virtual-machines.filtered-empty.message"),
-            errorTitle: L10n.string("mobile.virtual-machines.error.title"),
-            errorMessage: L10n.string("mobile.virtual-machines.error.message"),
-            retryTitle: L10n.string("mobile.virtual-machines.action.retry")
-        )
-    }
-}
-
-private struct MobileVirtualMachineRow: View {
-    let item: MobileVirtualMachineItem
-    let showsDisclosure: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: item.status.systemImage)
-                .foregroundStyle(item.status.color)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.name)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                Text(item.status.title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    private func summaryRow(
+        _ title: String,
+        _ subtitle: String,
+        _ systemImage: String,
+        _ color: Color
+    ) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.body.weight(.medium)).lineLimit(2)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
-            Spacer(minLength: 8)
-            if showsDisclosure {
-                Image(systemName: "chevron.forward")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
+        } icon: {
+            Image(systemName: systemImage).foregroundStyle(color).accessibilityHidden(true)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 3)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            L10n.string("mobile.virtual-machines.accessibility.row", item.name, item.status.title)
+            L10n.string("mobile.virtual-machines.accessibility.item", title, subtitle)
         )
     }
-}
 
-private struct MobileVirtualMachineDetailView: View {
-    let item: MobileVirtualMachineItem
-
-    var body: some View {
-        Form {
-            Section {
-                Label(
-                    L10n.string("mobile.virtual-machines.read-only.notice"),
-                    systemImage: "eye"
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityElement(children: .combine)
-            }
-
-            Section(item.name) {
-                LabeledContent(L10n.string("mobile.virtual-machines.field.status")) {
-                    Label(item.status.title, systemImage: item.status.systemImage)
-                        .foregroundStyle(item.status.color)
-                }
-                if let cpuCount = item.cpuCount {
+    @ViewBuilder
+    private func detail(for id: String) -> some View {
+        switch section {
+        case .machines:
+            if let item = inventory.state.machines.first(where: { $0.id == id }) {
+                detailForm(title: item.name) {
+                    LabeledContent(L10n.string("mobile.virtual-machines.field.status"), value: item.status.title)
+                    if let cpu = item.cpuCount {
+                        LabeledContent(L10n.string("mobile.virtual-machines.field.cpu"), value: cpu.formatted())
+                    }
+                    if let memory = item.memoryBytes {
+                        LabeledContent(L10n.string("mobile.virtual-machines.field.memory")) {
+                            Text(memory, format: .byteCount(style: .memory))
+                        }
+                    }
+                    if let storage = item.storageBytes {
+                        LabeledContent(L10n.string("mobile.virtual-machines.field.storage")) {
+                            Text(storage, format: .byteCount(style: .file))
+                        }
+                    }
                     LabeledContent(
-                        L10n.string("mobile.virtual-machines.field.cpu"),
-                        value: cpuCount.formatted()
+                        L10n.string("mobile.virtual-machines.field.auto-start"),
+                        value: item.autoStart
+                            ? L10n.string("mobile.virtual-machines.value.enabled")
+                            : L10n.string("mobile.virtual-machines.value.disabled")
                     )
                 }
-                if let memoryBytes = item.memoryBytes {
-                    LabeledContent(L10n.string("mobile.virtual-machines.field.memory")) {
-                        Text(memoryBytes, format: .byteCount(style: .memory))
+            }
+        case .hosts, .storages, .networks, .images:
+            if let item = resources.first(where: { $0.id == id }) {
+                detailForm(title: item.name) {
+                    LabeledContent(L10n.string("mobile.virtual-machines.field.status"), value: item.status.title)
+                    if let allocated = item.allocatedBytes {
+                        LabeledContent(L10n.string("mobile.virtual-machines.field.allocated")) {
+                            Text(allocated, format: .byteCount(style: .file))
+                        }
+                    }
+                    if let capacity = item.capacityBytes {
+                        LabeledContent(L10n.string("mobile.virtual-machines.field.capacity")) {
+                            Text(capacity, format: .byteCount(style: .file))
+                        }
                     }
                 }
-                if let storageBytes = item.storageBytes {
-                    LabeledContent(L10n.string("mobile.virtual-machines.field.storage")) {
-                        Text(storageBytes, format: .byteCount(style: .file))
-                    }
+            }
+        case .protection:
+            if let item = inventory.state.protection.first(where: { $0.id == id }) {
+                detailForm(title: item.name) {
+                    LabeledContent(L10n.string("mobile.virtual-machines.field.kind"), value: item.kind.title)
+                    LabeledContent(L10n.string("mobile.virtual-machines.field.status"), value: item.status.title)
                 }
-                LabeledContent(
-                    L10n.string("mobile.virtual-machines.field.auto-start"),
-                    value: L10n.string(
-                        item.autoStart
-                            ? "mobile.virtual-machines.value.enabled"
-                            : "mobile.virtual-machines.value.disabled"
+            }
+        case .events:
+            if let item = inventory.state.events.first(where: { $0.id == id }) {
+                detailForm(title: item.level) {
+                    LabeledContent(L10n.string("mobile.virtual-machines.field.level"), value: item.level)
+                    LabeledContent(
+                        L10n.string("mobile.virtual-machines.field.time"),
+                        value: item.timestamp?.formatted(date: .abbreviated, time: .shortened)
+                            ?? L10n.string("mobile.virtual-machines.value.time-unavailable")
                     )
-                )
+                }
             }
         }
+    }
+
+    private var resources: [MobileVirtualizationResourceItem] {
+        switch section {
+        case .hosts: inventory.state.hosts
+        case .storages: inventory.state.storages
+        case .networks: inventory.state.networks
+        case .images: inventory.state.images
+        default: []
+        }
+    }
+
+    private func detailForm<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Form {
+            Section {
+                Label(L10n.string("mobile.virtual-machines.read-only.notice"), systemImage: "eye")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Section(title) { content() }
+        }
         .formStyle(.grouped)
-        .navigationTitle(item.name)
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .fillsAvailableContentArea(alignment: .topLeading)
     }
@@ -262,6 +442,43 @@ private extension MobileVirtualMachineFilter {
         case .running: L10n.string("mobile.virtual-machines.filter.running")
         case .stopped: L10n.string("mobile.virtual-machines.filter.stopped")
         case .attention: L10n.string("mobile.virtual-machines.filter.attention")
+        }
+    }
+}
+
+private extension MobileVirtualMachineSection {
+    var title: String {
+        switch self {
+        case .machines: L10n.string("mobile.virtual-machines.section.machines")
+        case .hosts: L10n.string("mobile.virtual-machines.section.hosts")
+        case .storages: L10n.string("mobile.virtual-machines.section.storages")
+        case .networks: L10n.string("mobile.virtual-machines.section.networks")
+        case .images: L10n.string("mobile.virtual-machines.section.images")
+        case .protection: L10n.string("mobile.virtual-machines.section.protection")
+        case .events: L10n.string("mobile.virtual-machines.section.events")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .machines: "desktopcomputer"
+        case .hosts: "server.rack"
+        case .storages: "externaldrive"
+        case .networks: "network"
+        case .images: "opticaldisc"
+        case .protection: "lock.shield"
+        case .events: "clock.arrow.circlepath"
+        }
+    }
+}
+
+private extension MobileReadOnlySectionState {
+    func virtualMachineSummary(count: Int) -> String {
+        switch self {
+        case .unavailable: L10n.string("mobile.virtual-machines.section.state.unavailable")
+        case .failed: L10n.string("mobile.virtual-machines.section.state.failed")
+        case .empty: L10n.string("mobile.virtual-machines.section.state.empty")
+        case .content: L10n.string("mobile.virtual-machines.section.state.content", count)
         }
     }
 }
@@ -290,6 +507,16 @@ private extension MobileVirtualMachineStatus {
         case .running: .green
         case .stopped, .unknown: .secondary
         case .attention: .orange
+        }
+    }
+}
+
+private extension MobileProtectionKind {
+    var title: String {
+        switch self {
+        case .plan: L10n.string("mobile.virtual-machines.protection.plan")
+        case .schedule: L10n.string("mobile.virtual-machines.protection.schedule")
+        case .retention: L10n.string("mobile.virtual-machines.protection.retention")
         }
     }
 }

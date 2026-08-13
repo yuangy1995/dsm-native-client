@@ -355,6 +355,14 @@ Windows Files 已补入文件夹属性与官方 DirSize v2 源码闭环：只对
 
 本机关闭 PRI 生成后 DirSize 聚焦 29/29、Release 全量 xUnit 1315/1315、本地化、请求/Fixture 契约、XAML/RESW XML 与差异检查通过；WinUI x64/ARM64 和 Repository Check 尚待本切片 GitHub CI。真实 Windows/NAS、普通账号、超大目录、远程挂载、取消时序、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
 
+## Container/VMM 多分区只读对齐增量
+
+iPhone/iPad 已把 Container 从单一容器清单扩展为容器、映像、网络、项目、事件五分区，把 VMM 从单一虚拟机清单扩展为虚拟机、主机、存储、网络、映像、保护、事件七分区。iPhone 使用分层导航，iPad 常规宽度使用列表与详情分栏；主资源保留全部、运行、停止、关注筛选。每个附属分区独立区分内容、空内容、能力不可用和读取失败；刷新失败保留该分区旧成功内容，切换 profile、换绑 Repository、离页、LRU 淘汰与清理均拒绝迟到结果。移动适配器只投影隐私白名单摘要，不显示事件正文、绑定、账号、路径、内部标识或原始诊断，也不暴露写能力。
+
+Windows 已形成同义的 Container 五分区和 VMM 七分区 WinUI 页面。Repository 对每个分区单独降级，最多映射 200 项，认证失效进入明确的重新连接状态并阻断继续刷新；VMM 保护只调用已记录的 `list`，未知根数组不伪装成空结果。Apple 共享层同样严格校验根数组、项目完整性与稳定身份唯一性，畸形附属响应只标记对应分区失败。事件只保留时间与等级，Container/VMM 生命周期、删除、网络写、映像写、创建和 noVNC 继续关闭。本机已通过 Windows Release xUnit 1477/1477、Apple 共享包 705 项 XCTest（2 项环境跳过）与 10 项 Swift Testing、DsmMobile 480/480、iPhone 模拟器测试构建，以及 macOS App + File Provider 无签名回归构建；本地化和差异检查通过。最终功能分支 GitHub Apple Build run `31672028838`、Windows Build run `31672028792` 与 Repository Check run `31672028862` 均通过，其中 Windows 完成 1477/1477 项 xUnit 和 WinUI x64/ARM64 构建，Apple 完成共享包测试、iPhone/iPad 通用应用构建、macOS 打包与产物上传。
+
+`PENDING_USER_VALIDATION`：使用脱敏专用 NAS 分别验证套件未安装、能力缺失、合法空列表、单分区权限拒绝、会话过期和正常多分区数据；在真实 iPhone/iPad/Windows 上验证 VoiceOver/Narrator、最大动态文字或 200% 缩放、深色/高对比、iPad 分栏、窄窗口、键盘和触控。预期其他分区不被单一失败遮蔽，刷新失败保留旧内容，任何页面均无 Container/VMM 写入口或事件正文。失败时只回传系统版本、DSM 与套件完整版本、受影响分区、通俗错误和脱敏日志类别，不回传地址、账号、SID、Token、Cookie、真实路径或原始响应。
+
 ## 状态定义
 
 ```text

@@ -168,6 +168,156 @@ public sealed class VirtualMachineManagerRepositoryContractTests
     }
 
     [Fact]
+    public async Task ProtectionAndEventsUseRecordedReadOnlyWireAndPrivacyWhitelist()
+    {
+        var api = new VirtualMachineRecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Virtualization.API.Guest" => Guests(),
+            "SYNO.Virtualization.GuestProtect.Plan" => Resources(
+                "plans",
+                new JsonObject
+                {
+                    ["id"] = "plan",
+                    ["plan_name"] = "Daily protection",
+                    ["path"] = "/private/repository",
+                }),
+            "SYNO.Virtualization.Log" => Resources(
+                "logs",
+                new JsonObject
+                {
+                    ["log_id"] = "event",
+                    ["time"] = 1_700_000_000,
+                    ["level"] = "error",
+                    ["user"] = "private-user",
+                    ["message"] = "private-message",
+                }),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        IVirtualMachineManagerRepository repository = CreateRepository(
+            api,
+            Capability("SYNO.Virtualization.API.Guest"),
+            Capability("SYNO.Virtualization.GuestProtect.Plan", 1, 2),
+            Capability("SYNO.Virtualization.Log"));
+
+        var snapshot = await repository.LoadSnapshotAsync();
+
+        Assert.Equal("Daily protection", Assert.Single(snapshot.Protection.Items).Name);
+        Assert.Equal(ServiceEventLevel.Error, Assert.Single(snapshot.Events.Items).Level);
+        var protection = Assert.Single(api.Requests, request =>
+            request.ApiName == "SYNO.Virtualization.GuestProtect.Plan");
+        Assert.Equal("list", protection.Method);
+        Assert.Equal(2, protection.Version);
+        var events = Assert.Single(api.Requests, request => request.ApiName == "SYNO.Virtualization.Log");
+        Assert.Equal("list", events.Method);
+        Assert.Equal(8, events.Parameters.Count);
+        Assert.Equal("DESC", events.Parameters["sort_dir"]);
+        Assert.DoesNotContain(
+            typeof(ServiceEventSummary).GetProperties(),
+            property => property.Name is "Message" or "User" or "Details" or "RawResponse");
+    }
+
+    [Fact]
+    public async Task ProtectionListFailureDoesNotGuessAParameterlessGetRequest()
+    {
+        var api = new VirtualMachineRecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Virtualization.API.Guest" => Guests(),
+            "SYNO.Virtualization.GuestProtect.Plan" =>
+                throw new DsmException("failed", "retry", 402),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(
+            api,
+            Capability("SYNO.Virtualization.API.Guest"),
+            Capability("SYNO.Virtualization.GuestProtect.Plan", 1, 2));
+
+        var snapshot = await repository.LoadSnapshotAsync();
+
+        Assert.Equal(VirtualMachineManagerSectionStatus.Failed, snapshot.Protection.Status);
+        var request = Assert.Single(api.Requests, item =>
+            item.ApiName == "SYNO.Virtualization.GuestProtect.Plan");
+        Assert.Equal("list", request.Method);
+    }
+
+    [Fact]
+    public async Task ProtectionRequiresKnownArrayRootsAndRejectsEveryUnknownArray()
+    {
+        foreach (var response in new[]
+        {
+            Resources("unknown"),
+            new JsonObject
+            {
+                ["plans"] = new JsonArray(),
+                ["unknown"] = new JsonArray(),
+            },
+        })
+        {
+            var api = new VirtualMachineRecordingApiClient(request => request.ApiName switch
+            {
+                "SYNO.Virtualization.API.Guest" => Guests(),
+                "SYNO.Virtualization.GuestProtect.Plan" => response,
+                _ => throw new InvalidOperationException(request.ApiName),
+            });
+            var repository = CreateRepository(
+                api,
+                Capability("SYNO.Virtualization.API.Guest"),
+                Capability("SYNO.Virtualization.GuestProtect.Plan", 1, 2));
+
+            var snapshot = await repository.LoadSnapshotAsync();
+
+            Assert.Equal(VirtualMachineManagerSectionStatus.Failed, snapshot.Protection.Status);
+        }
+
+        var emptyApi = new VirtualMachineRecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Virtualization.API.Guest" => Guests(),
+            "SYNO.Virtualization.GuestProtect.Plan" => Resources("plans"),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var emptyRepository = CreateRepository(
+            emptyApi,
+            Capability("SYNO.Virtualization.API.Guest"),
+            Capability("SYNO.Virtualization.GuestProtect.Plan", 1, 2));
+
+        var emptySnapshot = await emptyRepository.LoadSnapshotAsync();
+
+        Assert.Equal(VirtualMachineManagerSectionStatus.Available, emptySnapshot.Protection.Status);
+        Assert.Empty(emptySnapshot.Protection.Items);
+    }
+
+    [Fact]
+    public async Task ProtectionLimitsAllKnownRootArraysToTwoHundredItemsTotal()
+    {
+        var protection = new JsonObject
+        {
+            ["plans"] = ProtectionItems("plan", 0, 90),
+            ["schedules"] = ProtectionItems("schedule", 90, 90),
+            ["retentions"] = ProtectionItems("retention", 180, 90),
+        };
+        var api = new VirtualMachineRecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Virtualization.API.Guest" => Guests(),
+            "SYNO.Virtualization.GuestProtect.Plan" => protection,
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = CreateRepository(
+            api,
+            Capability("SYNO.Virtualization.API.Guest"),
+            Capability("SYNO.Virtualization.GuestProtect.Plan", 1, 2));
+
+        var snapshot = await repository.LoadSnapshotAsync();
+
+        Assert.Equal(VirtualMachineManagerSectionStatus.Available, snapshot.Protection.Status);
+        Assert.Equal(200, snapshot.Protection.Items.Count);
+        Assert.Equal(90, snapshot.Protection.Items.Count(item =>
+            item.Kind == VirtualizationResourceKind.ProtectionPlan));
+        Assert.Equal(90, snapshot.Protection.Items.Count(item =>
+            item.Kind == VirtualizationResourceKind.ProtectionSchedule));
+        Assert.Equal(20, snapshot.Protection.Items.Count(item =>
+            item.Kind == VirtualizationResourceKind.ProtectionRetention));
+    }
+
+    [Fact]
     public async Task AuthenticationFailureAndCancellationAreNeverConvertedToASectionFailure()
     {
         var authenticationApi = new VirtualMachineRecordingApiClient(_ =>
@@ -189,6 +339,43 @@ public sealed class VirtualMachineManagerRepositoryContractTests
 
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => cancellationRepository.LoadSnapshotAsync(cancellation.Token));
+    }
+
+    [Theory]
+    [InlineData(106)]
+    [InlineData(107)]
+    [InlineData(119)]
+    public async Task AuthenticationCodesPropagateEvenWithoutAuthenticationFlag(int code)
+    {
+        var publicApi = new VirtualMachineRecordingApiClient(_ =>
+            throw new DsmException("login", "login", code, authenticationFailure: false));
+        var publicRepository = CreateRepository(
+            publicApi,
+            Capability("SYNO.Virtualization.API.Guest"));
+
+        var publicError = await Assert.ThrowsAsync<DsmException>(
+            () => publicRepository.LoadSnapshotAsync());
+
+        Assert.Equal(code, publicError.Code);
+        Assert.False(publicError.AuthenticationFailure);
+
+        var internalApi = new VirtualMachineRecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Virtualization.API.Guest" => Guests(),
+            "SYNO.Virtualization.GuestProtect.Plan" =>
+                throw new DsmException("login", "login", code, authenticationFailure: false),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var internalRepository = CreateRepository(
+            internalApi,
+            Capability("SYNO.Virtualization.API.Guest"),
+            Capability("SYNO.Virtualization.GuestProtect.Plan", 1, 2));
+
+        var internalError = await Assert.ThrowsAsync<DsmException>(
+            () => internalRepository.LoadSnapshotAsync());
+
+        Assert.Equal(code, internalError.Code);
+        Assert.False(internalError.AuthenticationFailure);
     }
 
     [Fact]
@@ -245,6 +432,9 @@ public sealed class VirtualMachineManagerRepositoryContractTests
             "ControlVirtualMachineAsync", "DeleteVirtualMachineAsync",
             "RenameVirtualMachineNetworkAsync", "DeleteVirtualMachineNetworkAsync",
             "DeleteVirtualMachineImageAsync", "SYNO.Virtualization.Guest.Action",
+            "noVNC", "WebView", "pull_start", "RawResponse", "RawDiagnostic",
+            "\"create\"", "\"set\"", "\"delete\"", "\"poweron\"",
+            "\"poweroff\"", "method: \"shutdown\"", "\"pwr_ctl\"", "\"reset\"",
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.Ordinal);
@@ -305,6 +495,15 @@ public sealed class VirtualMachineManagerRepositoryContractTests
     {
         [root] = new JsonArray(items.Select(item => (JsonNode)item).ToArray()),
     };
+
+    private static JsonArray ProtectionItems(string prefix, int start, int count) =>
+        new(Enumerable.Range(start, count)
+            .Select(index => (JsonNode)new JsonObject
+            {
+                ["id"] = $"{prefix}-{index}",
+                ["name"] = $"{prefix} {index}",
+            })
+            .ToArray());
 
     private static string Read(string relativePath)
     {

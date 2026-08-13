@@ -4,17 +4,20 @@ using LanStash.Domain;
 namespace LanStash.Infrastructure;
 
 /// <summary>
-/// Virtual Machine Manager 官方公开 v1 只读接口适配器。
-/// 内部 SYNO.Virtualization.* 接口不属于本契约，也不会作为自动降级路径。
+/// Virtual Machine Manager 隐私白名单只读适配器。
+/// 五个资源分区优先使用官方公开 v1；保护和事件只使用已记录的内部读取契约。
 /// </summary>
 public sealed partial class DsmRepository
 {
     private const int PublicVirtualMachineApiVersion = 1;
+    private const int VirtualMachineManagerSectionLimit = 200;
     private const string PublicGuestApi = "SYNO.Virtualization.API.Guest";
     private const string PublicHostApi = "SYNO.Virtualization.API.Host";
     private const string PublicStorageApi = "SYNO.Virtualization.API.Storage";
     private const string PublicNetworkApi = "SYNO.Virtualization.API.Network";
     private const string PublicImageApi = "SYNO.Virtualization.API.Guest.Image";
+    private const string InternalProtectionApi = "SYNO.Virtualization.GuestProtect.Plan";
+    private const string InternalEventApi = "SYNO.Virtualization.Log";
 
     private bool HasReadablePublicVirtualMachineManagerContract =>
         HasPublicVirtualMachineVersion(PublicGuestApi);
@@ -41,6 +44,8 @@ public sealed partial class DsmRepository
             AddAvailableFeature(features, PublicStorageApi, VirtualMachineManagerReadFeature.Storages);
             AddAvailableFeature(features, PublicNetworkApi, VirtualMachineManagerReadFeature.Networks);
             AddAvailableFeature(features, PublicImageApi, VirtualMachineManagerReadFeature.Images);
+            AddAvailableInternalFeature(features, InternalProtectionApi, VirtualMachineManagerReadFeature.Protection, 1, 2);
+            AddAvailableInternalFeature(features, InternalEventApi, VirtualMachineManagerReadFeature.Events, 1, 1);
             return new(VirtualMachineManagerAvailabilityStatus.Available, features);
         }
     }
@@ -87,8 +92,10 @@ public sealed partial class DsmRepository
             "image_name",
             VirtualizationResourceKind.Image,
             cancellationToken).ConfigureAwait(false);
+        var protection = await LoadProtectionSectionAsync(cancellationToken).ConfigureAwait(false);
+        var events = await LoadVirtualMachineEventSectionAsync(cancellationToken).ConfigureAwait(false);
 
-        return new(_profile.Id, machines, hosts, storages, networks, images);
+        return new(_profile.Id, machines, hosts, storages, networks, images, protection, events);
     }
 
     private VirtualMachineManagerSnapshot UnavailableVirtualMachineManagerSnapshot() =>
@@ -98,7 +105,88 @@ public sealed partial class DsmRepository
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable,
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable,
             VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable,
-            VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable);
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable,
+            VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable,
+            VirtualMachineManagerSection<ServiceEventSummary>.Unavailable);
+
+    private async Task<VirtualMachineManagerSection<VirtualizationResourceSummary>>
+        LoadProtectionSectionAsync(CancellationToken cancellationToken)
+    {
+        if (!HasInternalVirtualMachineVersion(InternalProtectionApi, 1, 2))
+        {
+            return VirtualMachineManagerSection<VirtualizationResourceSummary>.Unavailable;
+        }
+
+        return await LoadInternalVirtualMachineSectionAsync(
+            InternalProtectionApi,
+            ["list"],
+            parameters: null,
+            ParseProtectionResources,
+            minimumVersion: 1,
+            maximumVersion: 2,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<VirtualMachineManagerSection<ServiceEventSummary>>
+        LoadVirtualMachineEventSectionAsync(CancellationToken cancellationToken)
+    {
+        if (!HasInternalVirtualMachineVersion(InternalEventApi, 1, 1))
+        {
+            return VirtualMachineManagerSection<ServiceEventSummary>.Unavailable;
+        }
+
+        return await LoadInternalVirtualMachineSectionAsync(
+            InternalEventApi,
+            ["list"],
+            new Dictionary<string, string>
+            {
+                ["offset"] = "0",
+                ["limit"] = "1000",
+                ["loglevel"] = string.Empty,
+                ["filter_content"] = string.Empty,
+                ["datefrom"] = "0",
+                ["dateto"] = "0",
+                ["sort_by"] = "time",
+                ["sort_dir"] = "DESC",
+            },
+            ParseVirtualMachineEvents,
+            minimumVersion: 1,
+            maximumVersion: 1,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<VirtualMachineManagerSection<T>> LoadInternalVirtualMachineSectionAsync<T>(
+        string apiName,
+        string[] methods,
+        IReadOnlyDictionary<string, string>? parameters,
+        Func<JsonObject, IReadOnlyList<T>> parse,
+        int minimumVersion,
+        int maximumVersion,
+        CancellationToken cancellationToken)
+    {
+        foreach (var method in methods)
+        {
+            try
+            {
+                var data = await CallInternalVirtualMachineAsync(
+                    apiName,
+                    method,
+                    parameters,
+                    minimumVersion,
+                    maximumVersion,
+                    cancellationToken).ConfigureAwait(false);
+                return VirtualMachineManagerSection<T>.Available(parse(data));
+            }
+            catch (DsmException error) when (!IsMutationAuthenticationFailure(error))
+            {
+                if (method == methods[^1])
+                {
+                    return VirtualMachineManagerSection<T>.Failed;
+                }
+            }
+        }
+        return VirtualMachineManagerSection<T>.Failed;
+    }
 
     private async Task<VirtualMachineManagerSection<VirtualizationResourceSummary>>
         LoadPublicResourceSectionAsync(
@@ -134,7 +222,7 @@ public sealed partial class DsmRepository
                 cancellationToken).ConfigureAwait(false);
             return VirtualMachineManagerSection<T>.Available(parse(data));
         }
-        catch (DsmException error) when (!error.AuthenticationFailure)
+        catch (DsmException error) when (!IsMutationAuthenticationFailure(error))
         {
             return VirtualMachineManagerSection<T>.Failed;
         }
@@ -166,10 +254,40 @@ public sealed partial class DsmRepository
             cancellationToken);
     }
 
+    private Task<JsonObject> CallInternalVirtualMachineAsync(
+        string apiName,
+        string method,
+        IReadOnlyDictionary<string, string>? parameters,
+        int minimumVersion,
+        int maximumVersion,
+        CancellationToken cancellationToken)
+    {
+        var capability = _capabilities[apiName];
+        return _api.CallAsync(
+            _profile,
+            _session,
+            capability with
+            {
+                MinVersion = Math.Max(capability.MinVersion, minimumVersion),
+                MaxVersion = Math.Min(capability.MaxVersion, maximumVersion),
+            },
+            method,
+            parameters,
+            cancellationToken);
+    }
+
     private bool HasPublicVirtualMachineVersion(string apiName) =>
         _capabilities.TryGetValue(apiName, out var capability) &&
         capability.MinVersion <= PublicVirtualMachineApiVersion &&
         capability.MaxVersion >= PublicVirtualMachineApiVersion;
+
+    private bool HasInternalVirtualMachineVersion(
+        string apiName,
+        int minimumVersion,
+        int maximumVersion) =>
+        _capabilities.TryGetValue(apiName, out var capability) &&
+        capability.MaxVersion >= minimumVersion &&
+        capability.MinVersion <= maximumVersion;
 
     private void EnsureVirtualMachineManagerProfile()
     {
@@ -188,6 +306,19 @@ public sealed partial class DsmRepository
         VirtualMachineManagerReadFeature feature)
     {
         if (HasPublicVirtualMachineVersion(apiName))
+        {
+            features.Add(feature);
+        }
+    }
+
+    private void AddAvailableInternalFeature(
+        HashSet<VirtualMachineManagerReadFeature> features,
+        string apiName,
+        VirtualMachineManagerReadFeature feature,
+        int minimumVersion,
+        int maximumVersion)
+    {
+        if (HasInternalVirtualMachineVersion(apiName, minimumVersion, maximumVersion))
         {
             features.Add(feature);
         }
@@ -254,15 +385,141 @@ public sealed partial class DsmRepository
         return result;
     }
 
-    private static List<JsonObject> RequiredObjectArray(JsonObject data, string root)
+    private static IReadOnlyList<VirtualizationResourceSummary> ParseProtectionResources(
+        JsonObject data)
     {
-        if (data[root] is not JsonArray array)
+        var result = new List<VirtualizationResourceSummary>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        string[][] knownRoots =
+        [
+            ["plans", "plan", "protection_plans", "guest_protects"],
+            ["schedule_policies", "schedules", "schedule_policy"],
+            ["retention_policies", "retentions", "retention_policy"],
+        ];
+        var knownRootNames = knownRoots.SelectMany(roots => roots).ToHashSet(StringComparer.Ordinal);
+        if (data.Any(pair => pair.Value is JsonArray && !knownRootNames.Contains(pair.Key)))
         {
             throw InvalidVirtualMachineManagerResponse();
         }
 
-        var result = new List<JsonObject>(array.Count);
-        foreach (var node in array)
+        var recognizedRoot = false;
+        AppendProtectionResources(
+            result,
+            ids,
+            data,
+            knownRoots[0],
+            VirtualizationResourceKind.ProtectionPlan,
+            ref recognizedRoot);
+        AppendProtectionResources(
+            result,
+            ids,
+            data,
+            knownRoots[1],
+            VirtualizationResourceKind.ProtectionSchedule,
+            ref recognizedRoot);
+        AppendProtectionResources(
+            result,
+            ids,
+            data,
+            knownRoots[2],
+            VirtualizationResourceKind.ProtectionRetention,
+            ref recognizedRoot);
+        if (!recognizedRoot)
+        {
+            throw InvalidVirtualMachineManagerResponse();
+        }
+        return result;
+    }
+
+    private static void AppendProtectionResources(
+        List<VirtualizationResourceSummary> result,
+        HashSet<string> ids,
+        JsonObject data,
+        string[] roots,
+        VirtualizationResourceKind kind,
+        ref bool recognizedRoot)
+    {
+        var array = roots.Select(root => data[root]).OfType<JsonArray>().FirstOrDefault();
+        if (array is null)
+        {
+            return;
+        }
+        recognizedRoot = true;
+        var remaining = VirtualMachineManagerSectionLimit - result.Count;
+        foreach (var node in array.Take(remaining))
+        {
+            if (node is not JsonObject item)
+            {
+                throw InvalidVirtualMachineManagerResponse();
+            }
+            var name = VirtualMachineRequiredString(
+                item,
+                "name",
+                "plan_name",
+                "policy_name",
+                "title",
+                "id");
+            var id = OptionalStableId(item, "id") ??
+                OptionalStableId(item, "plan_id") ??
+                OptionalStableId(item, "policy_id") ?? name;
+            if (!ids.Add(id))
+            {
+                throw InvalidVirtualMachineManagerResponse();
+            }
+            result.Add(new(
+                id,
+                name,
+                kind,
+                ParseResourceHealth(VirtualMachineOptionalString(item, "status") ??
+                    VirtualMachineOptionalString(item, "state"))));
+        }
+    }
+
+    private static IReadOnlyList<ServiceEventSummary> ParseVirtualMachineEvents(JsonObject data)
+    {
+        var objects = RequiredObjectArray(
+            data,
+            "logs",
+            "log",
+            "events",
+            "records",
+            "entries",
+            "items",
+            "data",
+            "list");
+        var result = new List<ServiceEventSummary>(objects.Count);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in objects.Select((item, index) => (item, index)))
+        {
+            var occurredAt = entry.item.Date("time") ?? entry.item.Date("timestamp") ??
+                entry.item.Date("date") ?? entry.item.Date("event_time") ??
+                entry.item.Date("create_time") ?? entry.item.Date("created_at");
+            var id = OptionalStableId(entry.item, "id") ??
+                OptionalStableId(entry.item, "log_id") ??
+                $"event-{occurredAt?.ToUnixTimeSeconds() ?? 0}-{entry.index}";
+            if (!ids.Add(id))
+            {
+                throw InvalidVirtualMachineManagerResponse();
+            }
+            result.Add(new(
+                id,
+                occurredAt,
+                ParseVirtualMachineEventLevel(
+                    VirtualMachineOptionalString(entry.item, "level") ??
+                    VirtualMachineOptionalString(entry.item, "severity") ??
+                    VirtualMachineOptionalString(entry.item, "type") ??
+                    VirtualMachineOptionalString(entry.item, "priority"))));
+        }
+        return result;
+    }
+
+    private static List<JsonObject> RequiredObjectArray(JsonObject data, params string[] roots)
+    {
+        var array = roots.Select(root => data[root]).OfType<JsonArray>().FirstOrDefault()
+            ?? throw InvalidVirtualMachineManagerResponse();
+
+        var result = new List<JsonObject>(Math.Min(array.Count, VirtualMachineManagerSectionLimit));
+        foreach (var node in array.Take(VirtualMachineManagerSectionLimit))
         {
             if (node is not JsonObject item)
             {
@@ -386,6 +643,15 @@ public sealed partial class DsmRepository
             "error" or "failed" or "critical" => VirtualizationResourceHealth.Error,
             "offline" or "stopped" => VirtualizationResourceHealth.Offline,
             _ => VirtualizationResourceHealth.Unknown,
+        };
+
+    private static ServiceEventLevel ParseVirtualMachineEventLevel(string? value) =>
+        value?.ToLowerInvariant() switch
+        {
+            "info" or "information" or "0" => ServiceEventLevel.Information,
+            "warning" or "warn" or "1" => ServiceEventLevel.Warning,
+            "error" or "err" or "2" => ServiceEventLevel.Error,
+            _ => ServiceEventLevel.Unknown,
         };
 
     private static DsmException InvalidVirtualMachineManagerResponse() =>

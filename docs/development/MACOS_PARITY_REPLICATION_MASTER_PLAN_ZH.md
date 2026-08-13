@@ -374,6 +374,12 @@ Windows 已补入官方 DirSize v2 文件夹属性源码闭环：原生“属性
 
 本机 Release xUnit 1434/1434 通过且 0 跳过。功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建，本切片提升为 `BUILD_VERIFIED`。收藏与远程挂载写缺少可靠 typed 提交边界，跨 NAS 写缺少安全的第二 NAS 独立会话，NAS 设置/DDNS/电源写及 Chat 高级写缺少真实版本化契约验收，以上入口均继续关闭且不得作为对齐完成项；既有只读能力照旧。真实 NAS、真实 Windows、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
 
+### CM-01 / VM-01 多分区只读对齐增量
+
+Apple Mobile 当前受限范围已完成 Container 五分区和 VMM 七分区源码闭环；Windows 已完成同义的五分区与七分区只读页面。两端均以分区独立失败、刷新保留、profile/Repository 代次隔离、200 项以内有界列表和隐私字段白名单为边界。事件仅显示时间与等级；绑定、正文、用户、路径、内部标识、原始响应与诊断不跨越 Repository。Apple 的 Container/VMM 写和控制台不属于当前范围，Windows 的对应写与 noVNC 因缺少版本化行为验证继续关闭。
+
+本机验证已覆盖 Apple 共享包 705 项 XCTest（2 项环境跳过）与 10 项 Swift Testing、DsmMobile 480/480、iPhone 模拟器测试构建、macOS App + File Provider 无签名回归构建，以及 Windows Release xUnit 1477/1477、本地化、XAML/RESW XML 和差异检查。最终功能分支 GitHub Apple Build run `31672028838`、Windows Build run `31672028792` 与 Repository Check run `31672028862` 均通过；真实 NAS、真实设备及辅助功能继续作为 `PENDING_USER_VALIDATION`，不阻塞后续无依赖源码切片。
+
 ## 13. 参考资料
 
 - [总体架构](../architecture/ARCHITECTURE.md)

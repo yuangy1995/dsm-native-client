@@ -117,7 +117,8 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
             return;
         }
         RefreshButton.IsEnabled = _viewModel.CanRefresh;
-        RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError;
+        RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError && !_viewModel.RequiresReconnect;
+        SessionExpiredNotice.IsOpen = _viewModel.RequiresReconnect;
         MachineList.SelectedItem = _viewModel.SelectedMachine;
         MachineDetailState.Visibility = Visible(_viewModel.HasSelection);
         NoSelectionState.Visibility = Visible(!_viewModel.HasSelection);
@@ -132,6 +133,8 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         ApplySectionState(_viewModel.StoragesState, StoragesList, StoragesLoadingState, StoragesEmptyState, StoragesErrorState, StoragesUnavailableState);
         ApplySectionState(_viewModel.NetworksState, NetworksList, NetworksLoadingState, NetworksEmptyState, NetworksErrorState, NetworksUnavailableState);
         ApplySectionState(_viewModel.ImagesState, ImagesList, ImagesLoadingState, ImagesEmptyState, ImagesErrorState, ImagesUnavailableState);
+        ApplySectionState(_viewModel.ProtectionState, ProtectionList, ProtectionLoadingState, ProtectionEmptyState, ProtectionErrorState, ProtectionUnavailableState);
+        ApplySectionState(_viewModel.EventsState, EventsList, EventsLoadingState, EventsEmptyState, EventsErrorState, EventsUnavailableState);
         UpdateAdaptiveLayout();
     }
 

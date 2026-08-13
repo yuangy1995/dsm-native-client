@@ -34,6 +34,10 @@ public sealed class ContainerManagerPageSourceContractTests
         Assert.Contains("ContainerManagerFilterAttention", xaml);
         Assert.Contains("ContainerManagerRefreshError", xaml);
         Assert.Contains("_viewModel.HasRefreshError", source);
+        Assert.Contains("ContainerManagerSessionExpired", xaml);
+        Assert.Contains("x:Name=\"SessionExpiredNotice\"", xaml);
+        Assert.Contains("_viewModel.RequiresReconnect", source);
+        Assert.Contains("SessionExpiredNotice.IsOpen = _viewModel.RequiresReconnect", source);
         Assert.Contains("SelectedContainer.Name", xaml);
         Assert.Contains("SelectedContainer.StatusText", xaml);
         Assert.Contains("SelectedContainer.ImageText", xaml);
@@ -63,7 +67,7 @@ public sealed class ContainerManagerPageSourceContractTests
     }
 
     [Fact]
-    public void PageAndRouteExposeNoOtherDockerAreasOrWriteActions()
+    public void PageAndRouteExposeFiveReadSectionsAndNoWriteActions()
     {
         var combined =
             Read("windows/src/LanStash.App/Views/ContainerManagerPage.xaml") +
@@ -72,12 +76,17 @@ public sealed class ContainerManagerPageSourceContractTests
             Read("windows/src/LanStash.App/Features/Containers/ContainerManagerViewModel.cs") +
             Read("windows/src/LanStash.Infrastructure/Features/Containers/PrivateApi/DsmRepository.ContainerManager.Private.cs");
 
+        foreach (var section in new[] { "Containers", "Images", "Networks", "Projects", "Events" })
+        {
+            Assert.Contains($"ContainerManager{section}Tab", combined, StringComparison.Ordinal);
+        }
         foreach (var forbidden in new[]
         {
-            "SYNO.Docker.Image", "SYNO.Docker.Network", "SYNO.Docker.Project",
             "Registry", "Compose", "Terminal", "LoadLogs", "CreateContainer",
             "DeleteContainer", "StartContainer", "StopContainer", "RestartContainer",
-            "ControlContainer"
+            "ControlContainer", "pull_start", "WebView", "noVNC", "RawResponse",
+            "RawDiagnostic", "\"create\"", "\"set\"", "\"remove\"",
+            "\"delete\"", "\"start\"", "\"stop\"", "\"restart\""
         })
         {
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);
@@ -93,6 +102,27 @@ public sealed class ContainerManagerPageSourceContractTests
         Assert.True(Count(xaml, "x:Uid=\"ContainerManager") >= 25);
         Assert.DoesNotContain(" Text=\"Container", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(" Header=\"Container", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SessionExpiredCopyIsLocalizedAndDistinctFromRefreshFailure()
+    {
+        var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = Read("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+
+        Assert.Contains("ContainerManagerSessionExpired.Message", english);
+        Assert.Contains("The session has expired. Please reconnect this NAS.", english);
+        Assert.Contains("ContainerManagerSessionExpired.Message", chinese);
+        Assert.Contains("会话已失效，请重新连接这台 NAS。", chinese);
+    }
+
+    [Fact]
+    public void UnavailableShellRepositoryDeclaresNoReadFeatures()
+    {
+        var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
+
+        Assert.Contains("ContainerManagerAvailabilityStatus.Unavailable", shell);
+        Assert.Contains("new HashSet<ContainerManagerReadFeature>()", shell);
     }
 
     private static int Count(string source, string value) =>
