@@ -339,6 +339,11 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError && !_viewModel.HasError;
         ActivitySummary.Visibility = Visible(_viewModel.HasActivity);
         ActivityErrorNotice.IsOpen = _viewModel.HasActivityError;
+        AdvancedSummary.Visibility = Visible(_viewModel.HasAdvancedSummary);
+        StationSettingsSummary.Visibility = Visible(_viewModel.HasSettings);
+        DownloadRssSummary.Visibility = Visible(_viewModel.HasRss);
+        AdvancedSummaryErrorNotice.IsOpen =
+            _viewModel.HasSettingsError || _viewModel.HasRssError;
         LoadMoreErrorNotice.IsOpen = _viewModel.HasLoadMoreError;
         LoadMoreButton.IsEnabled = _viewModel.CanLoadMore;
         LoadMoreButton.Visibility = Visible(

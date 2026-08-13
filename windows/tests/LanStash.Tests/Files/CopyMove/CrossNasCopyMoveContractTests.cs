@@ -133,16 +133,23 @@ public sealed class CrossNasCopyMoveContractTests
     }
 
     [Fact]
-    public void ProductionCrossNasEntryRequiresIndependentSecondSession()
+    public void ProductionCrossNasEntryRequiresSavedIndependentTargetSession()
     {
         var source = Read("windows/src/LanStash.Infrastructure/Features/Files/CopyMove/DsmRepository.FileCrossNasCopyMove.cs");
         var view = Read("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
+        var crossNasPage = Read("windows/src/LanStash.App/Views/FilesPage.CrossNasCopyMove.cs");
+        var shell = Read("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
 
-        Assert.Contains("CanCrossCopy: false", source);
+        Assert.Contains("CanCrossCopy: CrossNasSourceTransferAvailable()", source);
         Assert.Contains("CanCrossMove: false", source);
-        Assert.Contains("file.cross-nas.no-second-session", source);
+        Assert.Contains("file.cross-nas.source-no-capability", source);
         Assert.Contains("CrossNasCopyButton.Visibility", view);
         Assert.Contains("CrossNasMoveButton.Visibility = Visibility.Collapsed", view);
+        Assert.Contains("LoadSavedSessionForCrossNasAsync", shell);
+        Assert.Contains("CreateCrossNasConnectionAsync", shell);
+        Assert.Contains("new LeasedFileCopyMoveFolderSource", shell);
+        Assert.Contains("CrossNasTargetUnavailableMessage", crossNasPage);
+        Assert.Contains("CrossNasFailureMessage", crossNasPage);
     }
 
     [Fact]
@@ -152,7 +159,7 @@ public sealed class CrossNasCopyMoveContractTests
 
         Assert.Contains("EnsureCrossNasRange", source);
         Assert.Contains("file.cross-nas.tree-readback-mismatch", source);
-        Assert.Contains("file.cross-nas.no-second-session", source);
+        Assert.Contains("file.cross-nas.source-no-capability", source);
         Assert.Contains("MutationResultStatus.SubmittedButUnverified", source);
         Assert.Contains("succeeded: succeeded", source);
         Assert.DoesNotContain("childRequest with { DestinationFolderPath", source);

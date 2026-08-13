@@ -9,8 +9,11 @@ public enum DownloadStationAvailabilityStatus
 public enum DownloadStationReadFeature
 {
     Tasks,
+    TaskAdvancedDetails,
     ActivitySummary,
     DefaultDestination,
+    ServerSettings,
+    RssSummary,
     BtSearch,
 }
 
@@ -36,6 +39,33 @@ public enum DownloadTaskControlAction
     Resume,
 }
 
+public enum DownloadTaskPriority
+{
+    Low,
+    Normal,
+    High,
+    Unknown,
+}
+
+public sealed record DownloadTaskAdvancedDetails(
+    DownloadTaskPriority? Priority,
+    int? FileCount,
+    int? TrackerCount,
+    int? PeerCount,
+    int? Seeds,
+    int? Peers,
+    int? Leeches)
+{
+    public static DownloadTaskAdvancedDetails Empty { get; } = new(
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
+}
+
 public sealed record DownloadTask(
     string Id,
     string Title,
@@ -51,6 +81,9 @@ public sealed record DownloadTask(
 {
     // 旧 Workspace 仍读取 Status；新 Download Station 功能使用 State 与 RawStatus。
     public string Status => RawStatus;
+
+    public DownloadTaskAdvancedDetails AdvancedDetails { get; init; } =
+        DownloadTaskAdvancedDetails.Empty;
 
     public DownloadTask(
         string id,
@@ -126,11 +159,44 @@ public sealed record DownloadDefaultDestinationSection(
     DownloadStationSectionStatus Status,
     string? Value);
 
+public sealed record DownloadStationSettingsSummary(
+    string? DefaultDestination,
+    bool? IsEmuleEnabled,
+    bool? IsAutoExtractEnabled,
+    int? BtDownloadLimitKb,
+    int? BtUploadLimitKb,
+    int? HttpDownloadLimitKb,
+    int? FtpDownloadLimitKb,
+    int? NzbDownloadLimitKb,
+    int? EmuleDownloadLimitKb,
+    int? EmuleUploadLimitKb,
+    bool? IsScheduleEnabled,
+    bool? IsEmuleScheduleEnabled);
+
+public sealed record DownloadStationSettingsSection(
+    DownloadStationSectionStatus Status,
+    DownloadStationSettingsSummary? Value);
+
+public sealed record DownloadRssSummary(
+    int SiteCount,
+    int FeedCount);
+
+public sealed record DownloadRssSection(
+    DownloadStationSectionStatus Status,
+    DownloadRssSummary? Value);
+
 public sealed record DownloadStationSnapshot(
     Guid ProfileId,
     DownloadTaskPage Tasks,
     DownloadActivitySection Activity,
-    DownloadDefaultDestinationSection DefaultDestination);
+    DownloadDefaultDestinationSection DefaultDestination)
+{
+    public DownloadStationSettingsSection Settings { get; init; } =
+        new(DownloadStationSectionStatus.Unavailable, null);
+
+    public DownloadRssSection Rss { get; init; } =
+        new(DownloadStationSectionStatus.Unavailable, null);
+}
 
 public sealed record DownloadTaskControlRequest(
     Guid ProfileId,

@@ -257,6 +257,72 @@ public sealed class DownloadStationViewModelTests
     }
 
     [Fact]
+    public async Task AdvancedReadSnapshotProjectsTaskSettingsAndRssSummary()
+    {
+        var profile = Guid.NewGuid();
+        var task = Task("advanced", DownloadTaskState.Downloading) with
+        {
+            AdvancedDetails = new DownloadTaskAdvancedDetails(
+                DownloadTaskPriority.High,
+                FileCount: 2,
+                TrackerCount: 1,
+                PeerCount: 3,
+                Seeds: 8,
+                Peers: 12,
+                Leeches: 4),
+        };
+        var repository = Available(profile);
+        repository.SnapshotResults.Enqueue(new DownloadStationSnapshot(
+            profile,
+            Page(0, 1, 1, null, task),
+            new(DownloadStationSectionStatus.Unavailable, null),
+            new(DownloadStationSectionStatus.Available, "downloads"))
+        {
+            Settings = new(
+                DownloadStationSectionStatus.Available,
+                new DownloadStationSettingsSummary(
+                    "downloads",
+                    IsEmuleEnabled: true,
+                    IsAutoExtractEnabled: true,
+                    BtDownloadLimitKb: 500,
+                    BtUploadLimitKb: 100,
+                    HttpDownloadLimitKb: 200,
+                    FtpDownloadLimitKb: 200,
+                    NzbDownloadLimitKb: 0,
+                    EmuleDownloadLimitKb: 300,
+                    EmuleUploadLimitKb: 50,
+                    IsScheduleEnabled: false,
+                    IsEmuleScheduleEnabled: null)),
+            Rss = new(
+                DownloadStationSectionStatus.Available,
+                new DownloadRssSummary(2, 3)),
+        });
+        using var model = new DownloadStationViewModel();
+
+        await model.ActivateAsync(repository);
+        model.SelectTask(model.Tasks.Single());
+
+        Assert.True(model.HasAdvancedSummary);
+        Assert.True(model.HasSettings);
+        Assert.False(model.HasSettingsError);
+        Assert.True(model.HasRss);
+        Assert.False(model.HasRssError);
+        Assert.DoesNotContain("Not available", model.SettingsDefaultDestinationText);
+        Assert.DoesNotContain("Not available", model.SettingsAutoExtractText);
+        Assert.DoesNotContain("Not available", model.SettingsSpeedLimitText);
+        Assert.DoesNotContain("Not available", model.SettingsEmuleText);
+        Assert.DoesNotContain("Not available", model.RssSitesText);
+        Assert.DoesNotContain("Not available", model.RssFeedsText);
+        Assert.Equal("downloads", model.CreateDestinationText);
+        Assert.DoesNotContain("Not available", model.SelectedTask!.PriorityText);
+        Assert.DoesNotContain("Not available", model.SelectedTask.FileCountText);
+        Assert.DoesNotContain("Not available", model.SelectedTask.TrackerCountText);
+        Assert.DoesNotContain("Not available", model.SelectedTask.PeerCountText);
+        Assert.DoesNotContain("Not available", model.SelectedTask.SeedsText);
+        Assert.DoesNotContain("Not available", model.SelectedTask.LeechesText);
+    }
+
+    [Fact]
     public async Task NewProfileNeverShowsPreviousProfileActivityWhileLoadingOrAfterFailure()
     {
         var profileA = Guid.NewGuid();

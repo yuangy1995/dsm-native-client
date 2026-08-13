@@ -33,9 +33,21 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses["SYNO.Core.Upgrade.Server"] = Json("""
             {"update":{"version":" 7.2.1 ","release_note":" Reliability improvements ","download_url":"https://private.invalid/update","serial":"update-secret"},"promotion":{"version":"9.9"},"task_id":"private-task"}
             """);
-        api.Responses["SYNO.FileStation.List"] = Json("""
-            {"offset":0,"total":4,"shares":[{"name":"Projects","path":"/private/projects","isdir":true,"additional":{"mount_point_type":"normal","owner":"private-owner","perm":{"adv_right":{"read":true,"write":true,"delete":true},"private_acl":"secret"}}},{"name":"Archive","path":"/private/archive","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":false,"delete":false}}}},{"name":"Remote","path":"/private/remote","isdir":true,"additional":{"mount_point_type":"cifs","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"#recycle","path":"/private/#recycle","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}
-            """);
+        api.ResponseSequences["SYNO.FileStation.List"] = new Queue<JsonObject>(
+        [
+            Json("""
+                {"offset":0,"total":4,"shares":[{"name":"Projects","path":"/private/projects","isdir":true,"additional":{"mount_point_type":"normal","owner":"private-owner","perm":{"adv_right":{"read":true,"write":true,"delete":true},"private_acl":"secret"}}},{"name":"Archive","path":"/private/archive","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":false,"delete":false}}}},{"name":"Remote","path":"/private/remote","isdir":true,"additional":{"mount_point_type":"cifs","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}},{"name":"#recycle","path":"/private/#recycle","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true,"write":true,"delete":true}}}}]}
+                """),
+            Json("""
+                {"offset":0,"total":4,"shares":[{"name":"Projects","path":"/private/projects","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true}}}},{"name":"Archive","path":"/private/archive","isdir":true,"additional":{"mount_point_type":"normal","perm":{"adv_right":{"read":true}}}},{"name":"Remote","path":"/private/remote","isdir":true,"additional":{"mount_point_type":"cifs"}},{"name":"#recycle","path":"/private/#recycle","isdir":true,"additional":{"mount_point_type":"normal"}}]}
+                """),
+            Json("""
+                {"offset":0,"total":4,"files":[{"name":"photo.jpg","path":"/private/projects/photo.jpg","isdir":false,"size":4096,"additional":{"time":{"mtime":1000}}},{"name":"photo.jpg","path":"/private/projects/copy/photo.jpg","isdir":false,"size":4096,"additional":{"time":{"mtime":900}}},{"name":"report.pdf","path":"/private/projects/report.pdf","isdir":false,"size":2048,"mtime":1100},{"name":"movie.mp4","path":"/private/projects/movie.mp4","isdir":false,"size":8192,"mtime":1200}]}
+                """),
+            Json("""
+                {"offset":0,"total":1,"files":[{"name":"backup.zip","path":"/private/archive/backup.zip","isdir":false,"size":1024,"mtime":800}]}
+                """),
+        ]);
         api.Responses["SYNO.Core.System.Process"] = Json("""
             {"total":1,"processes":[{"pid":42,"name":"/private/bin/indexer","status":"running","group_id":"service-a","command_line":"--private","user":"private-user","working_directory":"/private/work","listen_port":5000,"source_address":"192.0.2.1"}]}
             """);
@@ -75,6 +87,15 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal(NasShareAccessLevel.ReadOnly, snapshot.ShareAccess.Items[0].AccessLevel);
         Assert.Equal(NasShareAccessLevel.ReadWrite, snapshot.ShareAccess.Items[1].AccessLevel);
         Assert.True(snapshot.ShareAccess.Items[1].CanDelete);
+        var analysis = Assert.Single(snapshot.StorageAnalysis.Items);
+        Assert.Equal(2, analysis.ScannedShareCount);
+        Assert.Equal(5, analysis.ScannedFileCount);
+        Assert.Contains(analysis.Categories, item =>
+            item.Category == NasStorageAnalysisCategory.Images &&
+            item.FileCount == 2);
+        Assert.Equal("movie.mp4", Assert.Single(analysis.LargeFiles.Take(1)).Name);
+        Assert.Contains(analysis.DuplicateCandidates, item =>
+            item.Name == "photo.jpg" && item.FileCount == 2);
         var activity = Assert.Single(snapshot.SystemActivity.Items);
         var process = Assert.Single(activity.Processes);
         Assert.Equal(42, process.ProcessId);
@@ -96,6 +117,8 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.DoesNotContain("/private/", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("private-owner", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("private_acl", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/private/projects", safeProjection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/private/archive", safeProjection, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Drive", Assert.Single(snapshot.Packages.Items).Name);
         Assert.Equal("Backup", Assert.Single(snapshot.ScheduledTasks.Items).Name);
         var log = Assert.Single(snapshot.Logs.Items);
@@ -119,6 +142,9 @@ public sealed class NasDetailsRepositoryContractTests
                 "SYNO.Core.TaskScheduler:3:list",
                 "SYNO.LogCenter.History:1:list",
                 "SYNO.Core.CurrentConnection:1:list",
+                "SYNO.FileStation.List:2:list_share",
+                "SYNO.FileStation.List:2:list",
+                "SYNO.FileStation.List:2:list",
             },
             api.Calls.Select(call => $"{call.ApiName}:{call.Version}:{call.Method}").ToArray());
         var updateCall = api.Calls.Single(call => call.ApiName == "SYNO.Core.Upgrade.Server");
@@ -130,15 +156,145 @@ public sealed class NasDetailsRepositoryContractTests
                 ["need_promotion"] = "false",
             },
             updateCall.Parameters);
-        var shareCall = api.Calls.Single(call => call.ApiName == "SYNO.FileStation.List");
+        var shareCall = api.Calls.First(call => call.ApiName == "SYNO.FileStation.List");
         Assert.Equal("[\"mount_point_type\",\"perm\"]", shareCall.Parameters["additional"]);
         Assert.Equal("name", shareCall.Parameters["sort_by"]);
         Assert.Equal("asc", shareCall.Parameters["sort_direction"]);
+        var analysisFileCalls = api.Calls
+            .Where(call => call.ApiName == "SYNO.FileStation.List" && call.Method == "list")
+            .ToArray();
+        Assert.Equal(new[] { "/private/projects", "/private/archive" },
+            analysisFileCalls.Select(call => call.Parameters["folder_path"]));
+        Assert.All(analysisFileCalls, call =>
+        {
+            Assert.Equal("50", call.Parameters["limit"]);
+            Assert.Equal("size", call.Parameters["sort_by"]);
+            Assert.Equal("desc", call.Parameters["sort_direction"]);
+            Assert.Equal("file", call.Parameters["filetype"]);
+        });
         foreach (var call in api.Calls.Where(call => call.ApiName.StartsWith("SYNO.Core.System.Process", StringComparison.Ordinal)))
         {
             Assert.Equal("0", call.Parameters["start"]);
             Assert.Equal("500", call.Parameters["limit"]);
         }
+    }
+
+    [Fact]
+    public async Task StorageAnalysisCanReloadIndependentlyWithFileStationListOnly()
+    {
+        var api = new FakeApiClient();
+        api.ResponseSequences["SYNO.FileStation.List"] = new Queue<JsonObject>(
+        [
+            Json("""
+                {"offset":0,"total":1,"shares":[{"name":"Projects","path":"/private/projects","isdir":true,"additional":{"mount_point_type":"normal"}}]}
+                """),
+            Json("""
+                {"offset":0,"total":1,"files":[{"name":"photo.jpg","path":"/private/projects/photo.jpg","isdir":false,"size":4096,"mtime":1200}]}
+                """),
+        ]);
+        var repository = Repository(api);
+
+        var section = await repository.LoadStorageAnalysisAsync();
+
+        var analysis = Assert.Single(section.Items);
+        Assert.Equal(NasDetailsSectionStatus.Available, section.Status);
+        Assert.Equal(1, analysis.ScannedShareCount);
+        Assert.Equal(1, analysis.ScannedFileCount);
+        Assert.Equal(4096, analysis.SampledBytes);
+        Assert.Equal(
+            new[]
+            {
+                "SYNO.FileStation.List:2:list_share",
+                "SYNO.FileStation.List:2:list",
+            },
+            api.Calls.Select(call => $"{call.ApiName}:{call.Version}:{call.Method}").ToArray());
+        Assert.DoesNotContain(api.Calls, call => call.ApiName.StartsWith("SYNO.Core.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DeepStorageAnalysisWalksBoundedFoldersAndConfirmsContentDuplicates()
+    {
+        var api = new FakeApiClient();
+        api.ResponseSequences["SYNO.FileStation.List"] = new Queue<JsonObject>(
+        [
+            Json("""
+                {"offset":0,"total":1,"shares":[{"name":"Projects","path":"/private/projects","isdir":true,"additional":{"mount_point_type":"normal"}}]}
+                """),
+            Json("""
+                {"offset":0,"total":3,"files":[{"name":"Docs","path":"/private/projects/docs","isdir":true},{"name":"plan.pdf","path":"/private/projects/plan.pdf","isdir":false,"size":4096,"additional":{"owner":{"user":"owner-a"},"time":{"mtime":1300,"atime":900}}},{"name":"photo.jpg","path":"/private/projects/photo.jpg","isdir":false,"size":2048,"additional":{"owner":"owner-b","time":{"mtime":1200,"atime":800}}}]}
+                """),
+            Json("""
+                {"offset":0,"total":2,"files":[{"name":"plan.pdf","path":"/private/projects/docs/plan.pdf","isdir":false,"size":4096,"additional":{"owner":{"user":"owner-a"},"time":{"mtime":1100,"atime":700}}},{"name":"notes.txt","path":"/private/projects/docs/notes.txt","isdir":false,"size":1024,"additional":{"owner":"owner-b","time":{"mtime":1000}}}]}
+                """),
+        ]);
+        api.ResponseSequences["SYNO.FileStation.MD5"] = new Queue<JsonObject>(
+        [
+            Json("""{"taskid":"md5-a"}"""),
+            Json("""{"finished":true,"md5":"ABCDEF0123456789ABCDEF0123456789"}"""),
+            Json("""{"taskid":"md5-b"}"""),
+            Json("""{"finished":true,"md5":"abcdef0123456789abcdef0123456789"}"""),
+        ]);
+        api.ResponseSequences["SYNO.FileStation.DirSize"] = new Queue<JsonObject>(
+        [
+            Json("""{"taskid":"dirsize-projects"}"""),
+            Json("""{"finished":true,"total_size":11264,"num_file":4,"num_dir":1}"""),
+            Json("""{"taskid":"dirsize-docs"}"""),
+            Json("""{"finished":true,"total_size":5120,"num_file":2,"num_dir":0}"""),
+        ]);
+        var repository = Repository(
+            api,
+            includeFileMd5: true,
+            includeDirectorySize: true,
+            fastPolling: true);
+
+        var section = await repository.LoadDeepStorageAnalysisAsync();
+
+        var analysis = Assert.Single(section.Items);
+        Assert.Equal(NasDetailsSectionStatus.Available, section.Status);
+        Assert.True(analysis.IsDeepAnalysis);
+        Assert.Equal(1, analysis.ScannedShareCount);
+        Assert.Equal(2, analysis.ScannedFolderCount);
+        Assert.Equal(4, analysis.ScannedFileCount);
+        Assert.Equal(11_264, analysis.SampledBytes);
+        Assert.False(analysis.IsPartial);
+        Assert.Equal(4, analysis.OwnerSummary?.KnownOwnerFileCount);
+        Assert.Equal(2, analysis.OwnerSummary?.DistinctOwnerCount);
+        Assert.Equal(3, analysis.AccessTimeSummary?.KnownAccessTimeFileCount);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(700), analysis.AccessTimeSummary?.OldestAccessedAt);
+        Assert.Contains(analysis.Directories ?? [], item =>
+            item.Name == "projects" && item.FileCount == 4 && item.SizeBytes == 11_264);
+        Assert.Contains(analysis.Directories ?? [], item =>
+            item.Name == "docs" && item.FileCount == 2 && item.SizeBytes == 5_120);
+        var duplicate = Assert.Single(analysis.DuplicateCandidates);
+        Assert.True(duplicate.IsContentConfirmed);
+        Assert.Equal("plan.pdf", duplicate.Name);
+        Assert.Equal(2, duplicate.FileCount);
+        Assert.DoesNotContain("/private/", analysis.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            new[]
+            {
+                "SYNO.FileStation.List:2:list_share",
+                "SYNO.FileStation.List:2:list",
+                "SYNO.FileStation.List:2:list",
+                "SYNO.FileStation.MD5:2:start",
+                "SYNO.FileStation.MD5:2:status",
+                "SYNO.FileStation.MD5:2:start",
+                "SYNO.FileStation.MD5:2:status",
+                "SYNO.FileStation.DirSize:2:start",
+                "SYNO.FileStation.DirSize:2:status",
+                "SYNO.FileStation.DirSize:2:start",
+                "SYNO.FileStation.DirSize:2:status",
+            },
+            api.Calls.Select(call => $"{call.ApiName}:{call.Version}:{call.Method}").ToArray());
+        var listCalls = api.Calls
+            .Where(call => call.ApiName == "SYNO.FileStation.List" && call.Method == "list")
+            .ToArray();
+        Assert.All(listCalls, call =>
+        {
+            Assert.Equal("name", call.Parameters["sort_by"]);
+            Assert.Equal("[\"size\",\"owner\",\"time\"]", call.Parameters["additional"]);
+            Assert.False(call.Parameters.ContainsKey("filetype"));
+        });
     }
 
     [Fact]
@@ -280,7 +436,9 @@ public sealed class NasDetailsRepositoryContractTests
         Assert.Equal(
             new[] { "0", "2" },
             api.Calls.Where(call => call.ApiName == "SYNO.FileStation.List")
-                .Select(call => call.Parameters["offset"]));
+                .Where(call => call.Method == "list_share")
+                .Select(call => call.Parameters["offset"])
+                .Take(2));
         Assert.DoesNotContain("/private/", snapshot.ShareAccess.ToString(), StringComparison.Ordinal);
     }
 
@@ -402,7 +560,10 @@ public sealed class NasDetailsRepositoryContractTests
     private static DsmRepository Repository(
         FakeApiClient api,
         bool includeSystemActivity = true,
-        bool includeSystemActivityGroups = true)
+        bool includeSystemActivityGroups = true,
+        bool includeFileMd5 = false,
+        bool includeDirectorySize = false,
+        bool fastPolling = false)
     {
         api.Responses.TryAdd("SYNO.Core.System", Json("""{"model":"DS-synthetic"}"""));
         api.Responses.TryAdd("SYNO.Storage.CGI.Storage", Json("""{"storagePools":[],"volumes":[],"disks":[]}"""));
@@ -433,7 +594,23 @@ public sealed class NasDetailsRepositoryContractTests
         {
             capabilities["SYNO.Core.System.ProcessGroup"] = Capability("SYNO.Core.System.ProcessGroup", max: 1);
         }
-        return new(Profile, Session, api, capabilities);
+        if (includeFileMd5)
+        {
+            capabilities["SYNO.FileStation.MD5"] = Capability("SYNO.FileStation.MD5");
+        }
+        if (includeDirectorySize)
+        {
+            capabilities["SYNO.FileStation.DirSize"] = Capability("SYNO.FileStation.DirSize");
+        }
+        return fastPolling
+            ? new DsmRepository(Profile, Session, api, capabilities)
+            {
+                FileMD5InitialPollDelay = TimeSpan.Zero,
+                FileMD5MaximumPollDelay = TimeSpan.Zero,
+                DirectorySizeInitialPollDelay = TimeSpan.Zero,
+                DirectorySizeMaximumPollDelay = TimeSpan.Zero,
+            }
+            : new DsmRepository(Profile, Session, api, capabilities);
     }
 
     private static ApiCapability Capability(string name, int max = 2) =>
@@ -492,8 +669,24 @@ public sealed class NasDetailsRepositoryContractTests
             ApiCapability capability,
             string method,
             IReadOnlyDictionary<string, string>? parameters = null,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add(new ReadCall(
+                capability.Name,
+                capability.MinVersion,
+                method,
+                parameters ?? new Dictionary<string, string>(StringComparer.Ordinal)));
+            if (Errors.TryGetValue(capability.Name, out var error))
+            {
+                return Task.FromException<JsonObject>(error);
+            }
+            if (ResponseSequences.TryGetValue(capability.Name, out var responses) &&
+                responses.Count > 0)
+            {
+                return Task.FromResult(responses.Dequeue());
+            }
+            return Task.FromResult(Responses[capability.Name]);
+        }
 
         public Task<JsonObject> CallReadJsonObjectAsync(
             NasProfile profile,

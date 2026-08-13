@@ -34,6 +34,12 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
     private DownloadActivitySection _activity = new(
         DownloadStationSectionStatus.Unavailable,
         null);
+    private DownloadStationSettingsSection _settings = new(
+        DownloadStationSectionStatus.Unavailable,
+        null);
+    private DownloadRssSection _rss = new(
+        DownloadStationSectionStatus.Unavailable,
+        null);
     private bool _disposed;
 
     internal DownloadStationViewModel(
@@ -193,6 +199,34 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         DownloadTaskItem.FormatSpeed(_activity.Value?.EmuleDownloadSpeed);
     public string ActivityEmuleUploadSpeedText =>
         DownloadTaskItem.FormatSpeed(_activity.Value?.EmuleUploadSpeed);
+    public bool HasAdvancedSummary =>
+        HasSettings || HasSettingsError || HasRss || HasRssError;
+    public bool HasSettings => _settings.Status == DownloadStationSectionStatus.Available &&
+        _settings.Value is not null;
+    public bool HasSettingsError => _settings.Status == DownloadStationSectionStatus.Failed;
+    public bool HasRss => _rss.Status == DownloadStationSectionStatus.Available &&
+        _rss.Value is not null;
+    public bool HasRssError => _rss.Status == DownloadStationSectionStatus.Failed;
+    public string SettingsDefaultDestinationText =>
+        TextOrUnavailable(_settings.Value?.DefaultDestination);
+    public string SettingsAutoExtractText =>
+        FormatToggle(_settings.Value?.IsAutoExtractEnabled);
+    public string SettingsEmuleText =>
+        FormatEmuleSettings(_settings.Value);
+    public string SettingsScheduleText =>
+        FormatScheduleSettings(_settings.Value);
+    public string SettingsSpeedLimitText =>
+        FormatSpeedLimits(_settings.Value);
+    public string RssSitesText => _rss.Value is { } rss
+        ? LocalizationService.Current.Format(
+            "DownloadStationRssSiteCount",
+            rss.SiteCount.ToString("N0", System.Globalization.CultureInfo.CurrentCulture))
+        : LocalizationService.Current.Get("DownloadStationValueUnavailable");
+    public string RssFeedsText => _rss.Value is { } rss
+        ? LocalizationService.Current.Format(
+            "DownloadStationRssFeedCount",
+            rss.FeedCount.ToString("N0", System.Globalization.CultureInfo.CurrentCulture))
+        : LocalizationService.Current.Get("DownloadStationValueUnavailable");
     public bool CanLoadMore => !IsLoading && !IsLoadingMore &&
         CurrentProfile is { HasMore: true, NextOffset: not null };
 
@@ -217,6 +251,8 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
             Tasks.Clear();
             SelectedTask = null;
             SetActivity(new(DownloadStationSectionStatus.Unavailable, null));
+            SetSettings(new(DownloadStationSectionStatus.Unavailable, null));
+            SetRss(new(DownloadStationSectionStatus.Unavailable, null));
             ResetErrors();
             ClearControlNotice();
             ClearCreateNotice();
@@ -252,6 +288,8 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         Tasks.Clear();
         SelectedTask = null;
         SetActivity(new(DownloadStationSectionStatus.Unavailable, null));
+        SetSettings(new(DownloadStationSectionStatus.Unavailable, null));
+        SetRss(new(DownloadStationSectionStatus.Unavailable, null));
         SearchText = string.Empty;
         Filter = DownloadTaskFilter.All;
         ResetErrors();
@@ -454,7 +492,11 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
             profile.SourceTotal = snapshot.Tasks.SourceTotal;
             profile.Activity = snapshot.Activity;
             profile.DefaultDestination = snapshot.DefaultDestination;
+            profile.Settings = snapshot.Settings;
+            profile.Rss = snapshot.Rss;
             SetActivity(snapshot.Activity);
+            SetSettings(snapshot.Settings);
+            SetRss(snapshot.Rss);
             SyncActivity(profile);
             RaisePropertyChanged(nameof(CreateDestinationText));
             profile.Loaded = true;
@@ -558,6 +600,8 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
     {
         ResetErrors();
         SetActivity(profile.Activity);
+        SetSettings(profile.Settings);
+        SetRss(profile.Rss);
         RestoreFilter(profile);
         SyncActivity(profile);
         ApplyFilter(profile);
@@ -752,6 +796,30 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         RaisePropertyChanged(nameof(ActivityEmuleUploadSpeedText));
     }
 
+    private void SetSettings(DownloadStationSettingsSection settings)
+    {
+        _settings = settings;
+        RaisePropertyChanged(nameof(HasAdvancedSummary));
+        RaisePropertyChanged(nameof(HasSettings));
+        RaisePropertyChanged(nameof(HasSettingsError));
+        RaisePropertyChanged(nameof(SettingsDefaultDestinationText));
+        RaisePropertyChanged(nameof(SettingsAutoExtractText));
+        RaisePropertyChanged(nameof(SettingsEmuleText));
+        RaisePropertyChanged(nameof(SettingsScheduleText));
+        RaisePropertyChanged(nameof(SettingsSpeedLimitText));
+        RaisePropertyChanged(nameof(CreateDestinationText));
+    }
+
+    private void SetRss(DownloadRssSection rss)
+    {
+        _rss = rss;
+        RaisePropertyChanged(nameof(HasAdvancedSummary));
+        RaisePropertyChanged(nameof(HasRss));
+        RaisePropertyChanged(nameof(HasRssError));
+        RaisePropertyChanged(nameof(RssSitesText));
+        RaisePropertyChanged(nameof(RssFeedsText));
+    }
+
     private void SyncActivity(ProfileState profile)
     {
         if (ActiveProfileId is not Guid profileId)
@@ -810,5 +878,72 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         public DownloadDefaultDestinationSection DefaultDestination { get; set; } = new(
             DownloadStationSectionStatus.Unavailable,
             null);
+        public DownloadStationSettingsSection Settings { get; set; } = new(
+            DownloadStationSectionStatus.Unavailable,
+            null);
+        public DownloadRssSection Rss { get; set; } = new(
+            DownloadStationSectionStatus.Unavailable,
+            null);
     }
+
+    private static string TextOrUnavailable(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? LocalizationService.Current.Get("DownloadStationValueUnavailable")
+            : value.Trim();
+
+    private static string FormatToggle(bool? value) => value switch
+    {
+        true => LocalizationService.Current.Get("DownloadStationSettingEnabled"),
+        false => LocalizationService.Current.Get("DownloadStationSettingDisabled"),
+        _ => LocalizationService.Current.Get("DownloadStationValueUnavailable"),
+    };
+
+    private static string FormatEmuleSettings(DownloadStationSettingsSummary? settings)
+    {
+        if (settings is null)
+        {
+            return LocalizationService.Current.Get("DownloadStationValueUnavailable");
+        }
+        return LocalizationService.Current.Format(
+            "DownloadStationSettingsEmuleSummary",
+            FormatToggle(settings.IsEmuleEnabled),
+            FormatLimitKb(settings.EmuleDownloadLimitKb),
+            FormatLimitKb(settings.EmuleUploadLimitKb));
+    }
+
+    private static string FormatScheduleSettings(DownloadStationSettingsSummary? settings)
+    {
+        if (settings is null)
+        {
+            return LocalizationService.Current.Get("DownloadStationValueUnavailable");
+        }
+        return LocalizationService.Current.Format(
+            "DownloadStationSettingsScheduleSummary",
+            FormatToggle(settings.IsScheduleEnabled),
+            FormatToggle(settings.IsEmuleScheduleEnabled));
+    }
+
+    private static string FormatSpeedLimits(DownloadStationSettingsSummary? settings)
+    {
+        if (settings is null)
+        {
+            return LocalizationService.Current.Get("DownloadStationValueUnavailable");
+        }
+        return LocalizationService.Current.Format(
+            "DownloadStationSettingsSpeedLimitSummary",
+            FormatLimitKb(settings.BtDownloadLimitKb),
+            FormatLimitKb(settings.BtUploadLimitKb),
+            FormatLimitKb(settings.HttpDownloadLimitKb),
+            FormatLimitKb(settings.FtpDownloadLimitKb),
+            FormatLimitKb(settings.NzbDownloadLimitKb));
+    }
+
+    private static string FormatLimitKb(int? value) => value switch
+    {
+        null => LocalizationService.Current.Get("DownloadStationValueUnavailable"),
+        <= 0 => LocalizationService.Current.Get("DownloadStationLimitUnlimited"),
+        _ => LocalizationService.Current.Format(
+            "DownloadStationLimitValue",
+            value.Value.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)),
+    };
 }

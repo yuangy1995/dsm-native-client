@@ -88,3 +88,39 @@ public sealed class RepositoryFileCopyMoveFolderSource : IFileCopyMoveFolderSour
     private static bool ContainsRecycle(string path) => path.Split('/', StringSplitOptions.RemoveEmptyEntries)
         .Any(segment => string.Equals(segment, "#recycle", StringComparison.OrdinalIgnoreCase));
 }
+
+public sealed class LeasedFileCopyMoveFolderSource(
+    IFileCopyMoveFolderSource inner,
+    IDisposable lease) : ILeasedFileCopyMoveFolderSource
+{
+    private bool _disposed;
+
+    public Guid ProfileId => inner.ProfileId;
+
+    public bool IsReadOnlyPath(string path)
+    {
+        ThrowIfDisposed();
+        return inner.IsReadOnlyPath(path);
+    }
+
+    public Task<IReadOnlyList<FileCopyMoveFolder>> LoadFoldersAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return inner.LoadFoldersAsync(path, cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
+        lease.Dispose();
+    }
+
+    private void ThrowIfDisposed() =>
+        ObjectDisposedException.ThrowIf(_disposed, this);
+}

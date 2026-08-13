@@ -30,7 +30,13 @@ public sealed class DownloadStationRepositoryContractTests
         Assert.Equal(expected, contract.Availability.Status);
         Assert.Equal(moduleVisible, repository.AvailableModules.Contains(AppModule.Downloads));
         Assert.Equal(
-            moduleVisible ? new[] { DownloadStationReadFeature.Tasks } : [],
+            moduleVisible
+                ? new[]
+                {
+                    DownloadStationReadFeature.Tasks,
+                    DownloadStationReadFeature.TaskAdvancedDetails,
+                }
+                : [],
             contract.Availability.SupportedFeatures.Order());
     }
 
@@ -58,7 +64,7 @@ public sealed class DownloadStationRepositoryContractTests
         Assert.Equal("7", request.Parameters["offset"]);
         Assert.Equal("100", request.Parameters["limit"]);
         Assert.Equal(
-            "detail,transfer",
+            "detail,transfer,file,tracker,peer",
             request.Parameters["additional"]);
         Assert.Equal(7, page.SourceOffset);
         Assert.Equal(8, page.SourceTotal);
@@ -121,6 +127,45 @@ public sealed class DownloadStationRepositoryContractTests
         var page = await repository.ListTasksAsync(0, 100);
 
         Assert.Equal("broken_link", Assert.Single(page.Tasks).Error);
+    }
+
+    [Fact]
+    public async Task TaskListReadsAdvancedDetailsFromOfficialAdditionalFieldsOnly()
+    {
+        var task = TaskItem("advanced-task", "downloading");
+        task["priority"] = "high";
+        task["seeds"] = 8;
+        task["leechs"] = 2;
+        task["additional"]!["file"] = new JsonArray(
+            new JsonObject { ["priority"] = "high" },
+            new JsonObject { ["priority"] = "normal" });
+        task["additional"]!["tracker"] = new JsonArray(
+            new JsonObject { ["status"] = "ok" });
+        task["additional"]!["peer"] = new JsonArray(
+            new JsonObject { ["client"] = "synthetic-a" },
+            new JsonObject { ["client"] = "synthetic-b" },
+            new JsonObject { ["client"] = "synthetic-c" });
+        var api = new DownloadRecordingApiClient(_ => Page(0, 1, task));
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability("SYNO.DownloadStation2.Task", 1, 2));
+
+        var page = await repository.ListTasksAsync(0, 100);
+
+        var details = Assert.Single(page.Tasks).AdvancedDetails;
+        Assert.Equal(DownloadTaskPriority.High, details.Priority);
+        Assert.Equal(2, details.FileCount);
+        Assert.Equal(1, details.TrackerCount);
+        Assert.Equal(3, details.PeerCount);
+        Assert.Equal(8, details.Seeds);
+        Assert.Equal(2, details.Leeches);
+        var request = Assert.Single(api.Requests);
+        Assert.Equal(PublicTaskApi, request.ApiName);
+        Assert.Equal("detail,transfer,file,tracker,peer", request.Parameters["additional"]);
+        Assert.DoesNotContain(
+            api.Requests,
+            request => string.Equals(request.ApiName, "SYNO.DownloadStation2.Task", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -207,6 +252,111 @@ public sealed class DownloadStationRepositoryContractTests
         var statistic = Assert.Single(api.Requests, item => item.ApiName == PublicStatisticApi);
         Assert.Equal(1, statistic.Version);
         Assert.Empty(statistic.Parameters);
+    }
+
+    [Fact]
+    public async Task SnapshotReadsSettingsAndRssSummaryWithOfficialV1Only()
+    {
+        var api = new DownloadRecordingApiClient(request => request.ApiName switch
+        {
+            PublicTaskApi => EmptyPage(),
+            PublicInfoApi => new JsonObject
+            {
+                ["default_destination"] = "downloads",
+                ["emule_enabled"] = true,
+                ["unzip_service_enabled"] = true,
+                ["bt_max_download"] = 500,
+                ["bt_max_upload"] = 100,
+                ["http_max_download"] = 200,
+                ["ftp_max_download"] = 200,
+                ["nzb_max_download"] = 300,
+                ["emule_max_download"] = 400,
+                ["emule_max_upload"] = 50,
+            },
+            PublicScheduleApi => new JsonObject
+            {
+                ["enabled"] = true,
+                ["emule_enabled"] = false,
+            },
+            PublicRssSiteApi => new JsonObject
+            {
+                ["sites"] = new JsonArray(
+                    new JsonObject { ["id"] = "site-a" },
+                    new JsonObject { ["id"] = "site-b" }),
+            },
+            PublicRssFeedApi => new JsonObject
+            {
+                ["feeds"] = new JsonArray(
+                    new JsonObject { ["id"] = "feed-a" },
+                    new JsonObject { ["id"] = "feed-b" },
+                    new JsonObject { ["id"] = "feed-c" }),
+            },
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = (IDownloadStationRepository)CreateRepository(
+            api,
+            Capability(PublicTaskApi),
+            Capability(PublicInfoApi),
+            Capability(PublicScheduleApi),
+            Capability(PublicRssSiteApi),
+            Capability(PublicRssFeedApi),
+            Capability("SYNO.DownloadStation2.Task", 1, 2));
+
+        var snapshot = await repository.LoadSnapshotAsync(0, 100);
+
+        Assert.Contains(DownloadStationReadFeature.ServerSettings, repository.Availability.SupportedFeatures);
+        Assert.Contains(DownloadStationReadFeature.DefaultDestination, repository.Availability.SupportedFeatures);
+        Assert.Contains(DownloadStationReadFeature.RssSummary, repository.Availability.SupportedFeatures);
+        Assert.Equal(DownloadStationSectionStatus.Available, snapshot.DefaultDestination.Status);
+        Assert.Equal("downloads", snapshot.DefaultDestination.Value);
+        Assert.NotNull(snapshot.Settings.Value);
+        var settings = snapshot.Settings.Value;
+        Assert.True(settings.IsEmuleEnabled);
+        Assert.True(settings.IsAutoExtractEnabled);
+        Assert.Equal(500, settings.BtDownloadLimitKb);
+        Assert.Equal(100, settings.BtUploadLimitKb);
+        Assert.Equal(200, settings.HttpDownloadLimitKb);
+        Assert.Equal(200, settings.FtpDownloadLimitKb);
+        Assert.Equal(300, settings.NzbDownloadLimitKb);
+        Assert.Equal(400, settings.EmuleDownloadLimitKb);
+        Assert.Equal(50, settings.EmuleUploadLimitKb);
+        Assert.True(settings.IsScheduleEnabled);
+        Assert.False(settings.IsEmuleScheduleEnabled);
+        Assert.Equal(new DownloadRssSummary(2, 3), snapshot.Rss.Value);
+        Assert.Collection(
+            api.Requests,
+            request => Assert.Equal(PublicTaskApi, request.ApiName),
+            request =>
+            {
+                Assert.Equal(PublicInfoApi, request.ApiName);
+                Assert.Equal("getconfig", request.Method);
+                Assert.Equal(1, request.Version);
+                Assert.Empty(request.Parameters);
+            },
+            request =>
+            {
+                Assert.Equal(PublicScheduleApi, request.ApiName);
+                Assert.Equal("getconfig", request.Method);
+                Assert.Equal(1, request.Version);
+                Assert.Empty(request.Parameters);
+            },
+            request =>
+            {
+                Assert.Equal(PublicRssSiteApi, request.ApiName);
+                Assert.Equal("list", request.Method);
+                Assert.Equal(1, request.Version);
+                Assert.Empty(request.Parameters);
+            },
+            request =>
+            {
+                Assert.Equal(PublicRssFeedApi, request.ApiName);
+                Assert.Equal("list", request.Method);
+                Assert.Equal(1, request.Version);
+                Assert.Empty(request.Parameters);
+            });
+        Assert.DoesNotContain(
+            api.Requests,
+            request => string.Equals(request.ApiName, "SYNO.DownloadStation2.Task", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1060,6 +1210,10 @@ public sealed class DownloadStationRepositoryContractTests
 
     private const string PublicTaskApi = "SYNO.DownloadStation.Task";
     private const string PublicStatisticApi = "SYNO.DownloadStation.Statistic";
+    private const string PublicInfoApi = "SYNO.DownloadStation.Info";
+    private const string PublicScheduleApi = "SYNO.DownloadStation.Schedule";
+    private const string PublicRssSiteApi = "SYNO.DownloadStation.RSS.Site";
+    private const string PublicRssFeedApi = "SYNO.DownloadStation.RSS.Feed";
     private const string PublicBtSearchApi = "SYNO.DownloadStation.BTSearch";
 
     private static DsmRepository CreateRepository(

@@ -137,6 +137,34 @@ public sealed class FileUploadContractTests
     }
 
     [Fact]
+    public async Task InvalidUploadCapabilityOrSessionDoesNotReachHandler()
+    {
+        var sendCount = 0;
+        using var handler = new AsyncStubHandler((_, _) =>
+        {
+            sendCount++;
+            return Task.FromResult(JsonResponse("{\"success\":true}"));
+        });
+        using var http = new HttpClient(handler);
+        var client = new DsmApiClient(http);
+
+        var wrongSession = await client.UploadFileAsync(
+            Profile,
+            Session with { ProfileId = Guid.NewGuid() },
+            Capability,
+            new FileUploadRequest(new MemoryStream([1]), 1, "/projects", "file.bin"));
+        var wrongFormat = await client.UploadFileAsync(
+            Profile,
+            Session,
+            Capability with { RequestFormat = "FORM" },
+            new FileUploadRequest(new MemoryStream([1]), 1, "/projects", "file.bin"));
+
+        Assert.Equal(FileUploadTransportStatus.Unsupported, wrongSession.Status);
+        Assert.Equal(FileUploadTransportStatus.Unsupported, wrongFormat.Status);
+        Assert.Equal(0, sendCount);
+    }
+
+    [Fact]
     public async Task CancellationAfterSendIsNotReportedAsSafeRetry()
     {
         var sendCount = 0;

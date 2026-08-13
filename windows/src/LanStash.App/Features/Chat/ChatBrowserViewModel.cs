@@ -16,10 +16,12 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _messageCancellation;
     private CancellationTokenSource? _memberCancellation;
     private CancellationTokenSource? _announcementCancellation;
+    private CancellationTokenSource? _deleteMessageCancellation;
     private long _conversationGeneration;
     private long _messageGeneration;
     private long _memberGeneration;
     private long _announcementGeneration;
+    private long _deleteMessageGeneration;
     private Guid? _activeProfileId;
     private ChatBrowserContentState _contentState = ChatBrowserContentState.Loading;
     private ChatConversationItem? _selectedConversation;
@@ -31,6 +33,9 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     private bool _hasMessageError;
     private bool _hasLoadEarlierError;
     private bool _hasPinStorageError;
+    private bool _isDeletingMessage;
+    private bool _hasMessageDeleteError;
+    private bool _hasMessageDeleteReview;
     private ChatMembersContentState _membersContentState = ChatMembersContentState.Idle;
     private ChatAnnouncementsContentState _announcementsContentState = ChatAnnouncementsContentState.Idle;
     private bool _disposed;
@@ -85,6 +90,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
                 RaisePropertyChanged(nameof(CanLoadEarlier));
                 RaisePropertyChanged(nameof(CanViewMembers));
                 RaisePropertyChanged(nameof(CanViewAnnouncements));
+                RaisePropertyChanged(nameof(CanDeleteOwnMessages));
             }
         }
     }
@@ -148,6 +154,24 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _hasLoadEarlierError, value);
     }
 
+    public bool IsDeletingMessage
+    {
+        get => _isDeletingMessage;
+        private set => SetProperty(ref _isDeletingMessage, value);
+    }
+
+    public bool HasMessageDeleteError
+    {
+        get => _hasMessageDeleteError;
+        private set => SetProperty(ref _hasMessageDeleteError, value);
+    }
+
+    public bool HasMessageDeleteReview
+    {
+        get => _hasMessageDeleteReview;
+        private set => SetProperty(ref _hasMessageDeleteReview, value);
+    }
+
     public bool HasPinStorageError
     {
         get => _hasPinStorageError;
@@ -188,6 +212,10 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
     public bool RequiresValidation => ContentState == ChatBrowserContentState.RequiresValidation;
     public bool CanLoadEarlier => SelectedConversation is { IsEncrypted: false } &&
         !IsLoadingMessages && !IsLoadingEarlier && (CurrentConversationCache?.HasMoreBefore ?? false);
+    public bool CanDeleteOwnMessages =>
+        _repository is { Availability.Status: ChatAvailabilityStatus.Available } repository &&
+        repository.Availability.SupportedWriteFeatures.Contains(ChatWriteFeature.DeleteOwnMessage) &&
+        SelectedConversation is { IsEncrypted: false };
     public bool CanViewMembers =>
         _repository is { Availability.Status: ChatAvailabilityStatus.Available } repository &&
         repository.Availability.SupportedFeatures.Contains(ChatReadFeature.Members) &&
@@ -226,6 +254,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         ResetAnnouncementView();
         RaisePropertyChanged(nameof(CanViewMembers));
         RaisePropertyChanged(nameof(CanViewAnnouncements));
+        RaisePropertyChanged(nameof(CanDeleteOwnMessages));
 
         if (repository.Availability.Status != ChatAvailabilityStatus.Available)
         {
@@ -263,6 +292,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         ResetAnnouncementView();
         RaisePropertyChanged(nameof(CanViewMembers));
         RaisePropertyChanged(nameof(CanViewAnnouncements));
+        RaisePropertyChanged(nameof(CanDeleteOwnMessages));
         Conversations.Clear();
         Messages.Clear();
         SelectedConversation = null;
@@ -313,6 +343,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         if (item is null)
         {
             CancelMessageRequest();
+            CancelDeleteMessageRequest();
             CancelMemberRequest();
             CancelAnnouncementRequest();
             SelectedConversation = null;
@@ -330,6 +361,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         }
 
         CancelMessageRequest();
+        CancelDeleteMessageRequest();
         CancelMemberRequest();
         CancelAnnouncementRequest();
         ResetMemberView();
@@ -422,7 +454,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             {
                 return;
             }
-            MergeMessages(cache, page);
+            MergeMessages(cache, page, CanDeleteOwnMessages);
             ReplaceMessages(cache.Messages);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -441,6 +473,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             {
                 IsLoadingEarlier = false;
                 RaisePropertyChanged(nameof(CanLoadEarlier));
+                RaisePropertyChanged(nameof(CanDeleteOwnMessages));
             }
         }
     }
@@ -478,6 +511,80 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         catch
         {
             HasPinStorageError = true;
+        }
+    }
+
+    public async Task<MutationResult?> DeleteOwnMessageAsync(ChatMessageItem? item)
+    {
+        ThrowIfDisposed();
+        var repository = RequireRepository();
+        var profile = RequireProfile();
+        var selected = SelectedConversation;
+        var cache = CurrentConversationCache;
+        if (item is null ||
+            selected is null ||
+            cache is null ||
+            IsDeletingMessage ||
+            !CanDeleteOwnMessages ||
+            !item.CanDeleteOwnMessage ||
+            item.RequiresDeleteReview ||
+            !string.Equals(item.ConversationId, selected.Id, StringComparison.Ordinal) ||
+            !Messages.Any(value => string.Equals(value.Id, item.Id, StringComparison.Ordinal)))
+        {
+            return null;
+        }
+
+        var generation = BeginDeleteMessageRequest();
+        var cancellation = _deleteMessageCancellation!;
+        IsDeletingMessage = true;
+        HasMessageDeleteError = false;
+        HasMessageDeleteReview = false;
+        try
+        {
+            var result = await repository.DeleteOwnMessageAsync(
+                new ChatDeleteMessageRequest(item.Id, selected.Id, Guid.NewGuid()),
+                cancellation.Token).ConfigureAwait(true);
+            if (!IsCurrentDeleteMessageRequest(generation, repository, selected.Id))
+            {
+                return result;
+            }
+
+            switch (result.Status)
+            {
+                case MutationResultStatus.ConfirmedSuccess:
+                    RemoveMessageFromCache(profile, selected.Id, item.Id);
+                    break;
+                case MutationResultStatus.SubmittedButUnverified:
+                case MutationResultStatus.CancellationRequestedAfterSubmission:
+                    MarkMessageDeleteForReview(profile, selected.Id, item.Id);
+                    HasMessageDeleteReview = true;
+                    break;
+                case MutationResultStatus.CancelledBeforeSubmission:
+                    break;
+                default:
+                    HasMessageDeleteError = true;
+                    break;
+            }
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch
+        {
+            if (IsCurrentDeleteMessageRequest(generation, repository, selected.Id))
+            {
+                HasMessageDeleteError = true;
+            }
+            return null;
+        }
+        finally
+        {
+            if (IsCurrentDeleteMessageRequest(generation, repository, selected.Id))
+            {
+                IsDeletingMessage = false;
+            }
         }
     }
 
@@ -571,8 +678,10 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             }
             var cache = new ConversationCache();
             profile.Messages[conversationId] = cache;
-            MergeMessages(cache, page);
+            MergeMessages(cache, page, CanDeleteOwnMessages);
             ReplaceMessages(cache.Messages);
+            HasMessageDeleteError = false;
+            HasMessageDeleteReview = false;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -594,6 +703,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
             {
                 IsLoadingMessages = false;
                 RaisePropertyChanged(nameof(CanLoadEarlier));
+                RaisePropertyChanged(nameof(CanDeleteOwnMessages));
             }
         }
     }
@@ -844,10 +954,16 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static void MergeMessages(ConversationCache cache, ChatMessagePage page)
+    private static void MergeMessages(
+        ConversationCache cache,
+        ChatMessagePage page,
+        bool canDeleteOwnMessages)
     {
         var merged = cache.Messages
-            .Concat(page.Messages.Select(value => new ChatMessageItem(value)))
+            .Concat(page.Messages.Select(value => CreateMessageItem(
+                value,
+                canDeleteOwnMessages,
+                cache.PendingDeleteReviewMessageIds)))
             .GroupBy(value => value.Id, StringComparer.Ordinal)
             .Select(group => group.First())
             .OrderBy(value => value.SentAt)
@@ -859,12 +975,64 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         cache.Loaded = true;
     }
 
+    private static ChatMessageItem CreateMessageItem(
+        ChatMessage message,
+        bool canDeleteOwnMessages,
+        IReadOnlySet<string> pendingDeleteReviewIds) =>
+        new(message)
+        {
+            CanDeleteOwnMessage = canDeleteOwnMessages &&
+                message.IsFromCurrentUser == true &&
+                message.EncryptionState == ChatEncryptionState.NotEncrypted,
+            RequiresDeleteReview = pendingDeleteReviewIds.Contains(message.Id),
+        };
+
     private void ReplaceMessages(IEnumerable<ChatMessageItem> messages)
     {
         Messages.Clear();
         foreach (var message in messages)
         {
             Messages.Add(message);
+        }
+    }
+
+    private void RemoveMessageFromCache(
+        ProfileCache profile,
+        string conversationId,
+        string messageId)
+    {
+        if (!profile.Messages.TryGetValue(conversationId, out var cache))
+        {
+            return;
+        }
+        cache.PendingDeleteReviewMessageIds.Remove(messageId);
+        cache.Messages = cache.Messages
+            .Where(value => !string.Equals(value.Id, messageId, StringComparison.Ordinal))
+            .ToArray();
+        if (SelectedConversation?.Id == conversationId)
+        {
+            ReplaceMessages(cache.Messages);
+        }
+    }
+
+    private void MarkMessageDeleteForReview(
+        ProfileCache profile,
+        string conversationId,
+        string messageId)
+    {
+        if (!profile.Messages.TryGetValue(conversationId, out var cache))
+        {
+            return;
+        }
+        cache.PendingDeleteReviewMessageIds.Add(messageId);
+        cache.Messages = cache.Messages
+            .Select(value => string.Equals(value.Id, messageId, StringComparison.Ordinal)
+                ? value with { RequiresDeleteReview = true }
+                : value)
+            .ToArray();
+        if (SelectedConversation?.Id == conversationId)
+        {
+            ReplaceMessages(cache.Messages);
         }
     }
 
@@ -922,6 +1090,13 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         return _announcementGeneration;
     }
 
+    private long BeginDeleteMessageRequest()
+    {
+        CancelDeleteMessageRequest();
+        _deleteMessageCancellation = new CancellationTokenSource();
+        return _deleteMessageGeneration;
+    }
+
     private bool IsCurrentConversationRequest(long generation, IChatRepository repository) =>
         !_disposed && generation == _conversationGeneration &&
         ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId;
@@ -941,6 +1116,14 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId &&
         SelectedConversation is { IsGroup: true, IsEncrypted: false } selected &&
         selected.Id == conversationId;
+
+    private bool IsCurrentDeleteMessageRequest(
+        long generation,
+        IChatRepository repository,
+        string conversationId) =>
+        !_disposed && generation == _deleteMessageGeneration &&
+        ReferenceEquals(repository, _repository) && ActiveProfileId == repository.ProfileId &&
+        SelectedConversation is { IsEncrypted: false } selected && selected.Id == conversationId;
 
     private IChatRepository RequireRepository() => _repository ??
         throw new InvalidOperationException("Chat is not active for a NAS profile.");
@@ -983,12 +1166,22 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         _announcementCancellation = null;
     }
 
+    private void CancelDeleteMessageRequest()
+    {
+        _deleteMessageGeneration++;
+        _deleteMessageCancellation?.Cancel();
+        _deleteMessageCancellation?.Dispose();
+        _deleteMessageCancellation = null;
+        IsDeletingMessage = false;
+    }
+
     private void CancelAllRequests()
     {
         CancelConversationRequest();
         CancelMessageRequest();
         CancelMemberRequest();
         CancelAnnouncementRequest();
+        CancelDeleteMessageRequest();
     }
 
     private void ResetMemberView()
@@ -1009,6 +1202,8 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         HasMessageError = false;
         HasLoadEarlierError = false;
         HasPinStorageError = false;
+        HasMessageDeleteError = false;
+        HasMessageDeleteReview = false;
     }
 
     private void RaiseStateProperties()
@@ -1052,6 +1247,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         _messageGeneration++;
         _memberGeneration++;
         _announcementGeneration++;
+        _deleteMessageGeneration++;
         _conversationCancellation?.Cancel();
         _conversationCancellation?.Dispose();
         _messageCancellation?.Cancel();
@@ -1060,10 +1256,13 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         _memberCancellation?.Dispose();
         _announcementCancellation?.Cancel();
         _announcementCancellation?.Dispose();
+        _deleteMessageCancellation?.Cancel();
+        _deleteMessageCancellation?.Dispose();
         _conversationCancellation = null;
         _messageCancellation = null;
         _memberCancellation = null;
         _announcementCancellation = null;
+        _deleteMessageCancellation = null;
     }
 
     private sealed class ProfileCache
@@ -1088,5 +1287,7 @@ public sealed class ChatBrowserViewModel : ObservableObject, IDisposable
         public IReadOnlyList<ChatMessageItem> Messages { get; set; } = [];
         public string? PreviousCursor { get; set; }
         public bool HasMoreBefore { get; set; }
+        public HashSet<string> PendingDeleteReviewMessageIds { get; } =
+            new(StringComparer.Ordinal);
     }
 }

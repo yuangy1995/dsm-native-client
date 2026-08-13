@@ -62,12 +62,13 @@
 
 - Tracker、Peer、BT 文件选择与优先级。
 - BT 搜索模块、类别、搜索结果和直接下载。Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 已建立官方 `SYNO.DownloadStation.BTSearch` v1 完整闭环，覆盖 `getModule`、`getCategory`、`start`、`list` 与 `clean`；两端均有能力门、会话内隐私、搜索/取消/空态、条件迟到隔离和复用既有单链接创建链。Apple 本机共享聚焦 65/65、全量 675 XCTest（2 跳过）+10 Swift Testing、iPhone 模拟器 11/11；Windows 专项自动化为 26 项。正式提交 `5850f4c` 已通过 Apple Build run `31356270194`、Windows Build run `31356270192`、Android Build run `31356270244` 与 Repository Check run `31356270189`，其中 Windows 为 886/886 项 xUnit 且 WinUI x64/ARM64 均 0 警告、0 错误。iPad/真机、Windows/Narrator/键盘和真实 NAS 验收继续后置。
-- RSS 站点、条目、下载过滤器。
+- RSS 站点、条目、下载过滤器。Windows 本轮仅完成 RSS 站点/条目数量只读摘要，刷新、编辑和过滤规则仍关闭。
 - 已完成官方基础设置：默认位置、eMule、自动解压、BT/HTTP/FTP/NZB/eMule 限速与计划；继续补齐套件内部的 BT 协议高级设置、监听目录、NZB 服务器、RSS 与通知设置。
 - Android 已完成官方任务文件、Tracker、Peer 详情、RSS 站点/条目浏览、RSS 单站点手动刷新和 BT 实际搜索。BT Search v1 通过 `getModule/getCategory` 读取提供方和类别，支持全部、已启用或明确选定提供方、类别、标题过滤、排序字段和方向，并在搜索完成、失败、超时或取消后尝试清理本次临时服务端搜索任务；清理失败不冒充记录已经移除。这不代表 BT 协议高级设置已完成。RSS 条目和搜索结果可经可写目录选择后直接创建任务。RSS 刷新具备目标预检、同站点防重复、写后回读和未确认结果；官方指南未公开 RSS 完整编辑或文件优先级写参数，相关能力与其他高级设置保持关闭并等待版本化契约和真实 NAS 验收。
 - Android、Windows 与 Apple 公开 Download Station 路径均使用官方 `SYNO.DownloadStation.Statistic.getinfo` v1 显示当前标准/eMule 上下行聚合字节速率；Apple 既有 `DownloadStation2` 降级路径仍 best-effort 调用内部 `SYNO.DownloadStation2.Task.Statistic.get`。Android/Windows 对缺失、负数或错误类型进入摘要独立错误，Apple 当前兼容字段别名并在读取失败时隐藏摘要；三端都不得让摘要失败遮蔽任务列表，也不得把结果冒充历史流量、单任务速度或传输结果。
+- Windows 已完成 `WIN-DL-ADV-READ` 只读摘要：公开 Task v1 任务列表读取 `detail/transfer/file/tracker/peer`，展示优先级、文件/Tracker/Peer、做种和下载中节点；`Info.getconfig`、可选 `Schedule.getconfig`、`RSS.Site.list` 与 `RSS.Feed.list` 仅进入摘要卡。设置保存、RSS 刷新/编辑、文件优先级写、任务目标修改、删除已下载数据和内部 `DownloadStation2` 继续关闭；本机 DownloadStation 聚焦 97/97、Release 完整 xUnit 1506/1506 通过，真实 NAS/Windows/辅助功能待验收。
 - Android 已按官方 `SYNO.DownloadStation.Task.edit` v1 接入单任务保存位置修改：选择可写目录、明确提示可能移动已有文件，写前复核任务与目录完整基线，提交后严格回读，断线和取消不自动重放；该能力不复用 `DownloadStation2`。
-- BTSearch 门禁完成后的 ACT-01 首片已在当前分支落盘并通过云端门禁：Apple 与 Windows 均把 Download Station 已加载任务快照投影到 Activity 的 NAS 来源，保留只读展示和不同控制能力；真机与真实 NAS 验收尚未完成。下一步顺序调整为 CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS、文件优先级、BT 协议高级设置、Container/VMM 高危写和 Activity 主动后台轮询不并入该波。
+- BTSearch 门禁完成后的 ACT-01 首片已在当前分支落盘并通过云端门禁：Apple 与 Windows 均把 Download Station 已加载任务快照投影到 Activity 的 NAS 来源，保留只读展示和不同控制能力；真机与真实 NAS 验收尚未完成。下一步顺序调整为 CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传/缩略图/下载 typed 契约；NAS-02/NAS-04 有界只读详情可与 Chat 契约并行。RSS 刷新/编辑、文件优先级写、BT 协议高级设置、Container/VMM 高危写和 Activity 主动后台轮询不并入该波。
 
 ### M3：Container Manager 完整功能
 

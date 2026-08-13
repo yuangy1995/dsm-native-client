@@ -162,6 +162,7 @@ public sealed record ChatAnnouncementItem(ChatPinnedMessage Message)
 public sealed record ChatMessageItem(ChatMessage Message)
 {
     public string Id => Message.Id;
+    public string ConversationId => Message.ConversationId;
     public string Sender => string.IsNullOrWhiteSpace(Message.SenderDisplayName)
         ? LocalizationService.Current.Get("ChatBrowserUnknownSender")
         : Message.SenderDisplayName;
@@ -169,6 +170,15 @@ public sealed record ChatMessageItem(ChatMessage Message)
     public DateTimeOffset SentAt => Message.SentAt;
     public string SentAtText => SentAt.ToString("g", CultureInfo.CurrentCulture);
     public bool IsFromCurrentUser => Message.IsFromCurrentUser == true;
+    public bool CanDeleteOwnMessage { get; init; }
+    public bool RequiresDeleteReview { get; init; }
+    public Visibility DeleteVisibility =>
+        CanDeleteOwnMessage && !RequiresDeleteReview ? Visibility.Visible : Visibility.Collapsed;
+    public string DeleteActionText => LocalizationService.Current.Get("ChatMessageDeleteAction");
+    public string DeleteActionAutomationName => LocalizationService.Current.Format(
+        "ChatMessageDeleteAutomationName",
+        Sender,
+        SentAtText);
     public bool HasAttachments => Message.Attachments.Count > 0;
     public IReadOnlyList<ChatMessageAttachmentItem> Attachments =>
         Message.Attachments

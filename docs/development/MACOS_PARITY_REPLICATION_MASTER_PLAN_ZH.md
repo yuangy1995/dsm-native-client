@@ -172,12 +172,12 @@ Apple 列只用于建立候选映射，是否进入当前开发以 [iPhone/iPad 
 | FILE-02 · A/C | 收藏、最近位置、回收站、远程位置、分享链接入口；公开 VirtualFolder 只读浏览与内部挂载管理分开 | 左侧位置集合与上下文菜单；内部创建/修改/断开在未知环境关闭 | **受限**：收藏/最近/回收站和分享入口；远程挂载管理当前不做 | `WorkspaceModel.swift`、`file-station-remote-mount` |
 | FILE-03 · A | 新建文件夹/空文件、重命名、详情、文件夹统计和 MD5 | 命令栏、F2、属性面板、触控菜单 | **受限**：新建文件夹、重命名和详情；空文件、递归统计与 MD5 当前不做 | `WorkspaceModel.swift`、`FilePropertiesView` |
 | FILE-04 · A/B | 系统选择器上传、覆盖确认、文件/文件夹/批量下载、取消，以及有恢复元数据时的继续/重试；上传重启发送，已知大小普通下载才用严格 Range 分片继续 | FileOpenPicker/FolderPicker/FileSavePicker；Files 已接 1～20 个文件及一个最多 20 文件、20 目录、8 层的小文件夹有界前台上传，并接 1～20 个普通文件的显式多选、目标文件夹无覆盖预检与严格串行事务下载；单文件夹可用公开 Download v2 生成 ZIP 流，经事务暂存和 ZIP 中央目录结构校验后保存；后台传输和系统通知仍后置 | **核心**：用户选择的单文件导入、导出、分享、取消；文件夹/大批量与常驻后台当前不做 | `WorkspaceModel.swift`、`DsmFileRepository.swift` |
-| FILE-05 · A/B | 同 NAS 复制/移动、跨 NAS 有界流、粘贴冲突、拖拽移动和限时撤销 | 剪贴板、拖放、键盘快捷键、Undo InfoBar；Files 已接当前目录最多 20 个文件/文件夹的同 NAS 单目标严格串行复制/移动，保持无覆盖和逐项结果 | **受限**：有上限的同 NAS 复制/移动；跨 NAS 与大批量当前不做 | `AppModel`、`WorkspaceModel.swift` |
+| FILE-05 · A/B | 同 NAS 复制/移动、跨 NAS 有界流、粘贴冲突、拖拽移动和限时撤销 | 剪贴板、拖放、键盘快捷键、Undo InfoBar；Files 已接当前目录最多 20 个文件/文件夹的同 NAS 单目标严格串行复制/移动，保持无覆盖和逐项结果；跨 NAS 已接单个普通本地文件或文件夹 copy-only 受限闭环，使用独立目标会话租约、12 MiB 有界内存中转和目标端回读，move/覆盖/批量/后台恢复继续后置 | **受限**：有上限的同 NAS 复制/移动；跨 NAS 与大批量当前不做 | `AppModel`、`WorkspaceModel.swift` |
 | FILE-06 · A | ZIP/7z 压缩、常见格式解压、密码、编码和覆盖确认 | 分步 ContentDialog/任务中心 | **当前不做**：复杂归档交给 Mac App 或 DSM Web | `WorkspaceModel.swift`、请求 fixture |
 | FILE-07 · A | 创建/复制/列出/删除（撤销）分享链接，支持密码和有效期 | 系统剪贴板/分享、管理表格 | **核心/受限**：创建、复制和系统分享为核心；管理动作按已验证端点受限开放 | `WorkspaceModel.swift` |
 | FILE-08 · A/B | 缩略图、图片/PDF/文本/音频/视频预览、图片切换缩放、媒体 Range、文本编辑与格式整理 | 原生媒体/文档控件、可调整预览区或独立窗口 | **核心**：系统原生预览与分享；文本编辑/格式整理当前不做 | `FilePreviewView.swift` |
 | FILE-09 · A/C | 安全删除、回收站发现与受兼容开关保护的恢复 | 权限摘要、强化确认、结果分级与刷新；Files 已接当前目录最多 20 个文件/文件夹严格串行移入回收站 | **受限**：移入回收站和恢复；永久删除当前不做 | `WorkspaceModel.swift`、`MutationResult.swift` |
-| ACT-01 · B | App 传输与 NAS 后台任务分源、速度/剩余时间、筛选、分页、通知 | 活动中心、Toast/系统通知、托盘摘要 | **核心**：前台传输与 NAS 任务分源状态；Windows 已补 Download Station 与 File Station 前 100 项独立来源，页面可见且窗口前台时立即读取、5 秒单飞轮询、共同手动刷新、独立失败/截断/能力提示、旧快照保留和离页停止，File Station 敏感字段在白名单边界丢弃且结束只提示核对；Apple Mobile 已补 File Station 前 100 项任务的前台立即读取、30 秒单飞刷新、失败保留、离页/后台停止与隐私字段白名单；系统后台与通知仅在后续获批时增强 | `ActivityTask.swift`、`WorkspaceView.swift` |
+| ACT-01 · B | App 传输与 NAS 后台任务分源、速度/剩余时间、筛选、分页、通知 | 活动中心、Toast/系统通知、托盘摘要；Windows 已为 App 发起前台传输完成/失败/需核对接入隐私安全系统通知源码，点击只路由回 Activity，真实通知注册/点击待设备验收 | **核心**：前台传输与 NAS 任务分源状态；Windows 已补 Download Station 与 File Station 前 100 项独立来源，页面可见且窗口前台时立即读取、5 秒单飞轮询、共同手动刷新、独立失败/截断/能力提示、旧快照保留和离页停止，File Station 敏感字段在白名单边界丢弃且结束只提示核对；Apple Mobile 已补 File Station 前 100 项任务的前台立即读取、30 秒单飞刷新、失败保留、离页/后台停止与隐私字段白名单；系统后台与通知仅在后续获批时增强 | `ActivityTask.swift`、`WorkspaceView.swift` |
 | PHOTO-01 · A/D | 基于公开 File Station 扫描 `/home/Photos` 与 `/photo` 的个人/共享空间、文件夹、时间线、文件夹式相册、分页、搜索筛选、年/月定位；人物/地点/标签/真正相册实体未实现 | 自适应照片网格和时间线 | **核心**：内容优先网格、文件夹和用户主动时间线；不宣传智能相册 | `PhotoLibraryModel.swift`、`PhotoLibraryView.swift`、`photos-internal-candidate` |
 | PHOTO-02 · A/B | 缩略图缓存、完整查看、HEIC/MOV/Live Photo 兜底、EXIF 详情 | 查看器、键盘前后切换、元数据面板 | **核心**：沉浸查看、分享和基础元数据；iPad Inspector；受控内存上限 | `PhotoLibraryModel.swift`、`FilePreviewView.swift` |
 | PHOTO-03 · A/C | 上传、导出、删除、分享、移动和照片页回收站恢复 | 多选命令栏、拖放导入导出 | **受限**：主动导入/导出/分享和有上限的 NAS 内移动/回收站；不删除系统图库 | `PhotoLibraryModel.swift` |
@@ -194,6 +194,13 @@ Windows CHAT-02 已补入前台轮询降级闭环：Chat 页面与窗口可见�
 Apple Mobile CHAT-01 已补齐本地已读与可解释未读：只在未加密消息详情可见且最新页成功读取后，以实际消息时间建立 profile/会话内存基线；同一活动的旧未读不反弹，更晚活动恢复显示。返回列表、失败/取消、加密会话或未知时间不清零，不新增服务器已读请求或持久化。本机模型与展示聚焦 56/56、DsmMobile 全量 433/433 通过，Apple Build run `31533388602` 与 Repository Check run `31533388647` 已通过；真实设备/Chat Server/辅助功能待验证。
 
 Apple Mobile CHAT-04 已补入本人消息删除受限闭环：只有当前未加密会话内本人已发送消息，在 `.deleteOwnMessage` 能力存在时才显示滑动、上下文菜单和 VoiceOver 删除入口。删除需二次确认，提交前后均回读核对，未知结果刷新前不自动重放；关闭会话、转发、服务端置顶、提醒、定时、投票、语音和加密仍不进入当前移动范围。本机移动 Chat 聚焦 66/66 通过；真实 Chat Server 策略、真机与辅助功能为 `PENDING_USER_VALIDATION`。
+
+Windows CHAT-04A 已补入本人消息删除源码闭环：WinUI 消息行仅对当前未加密会话内本人已发送消息显示删除入口，二次确认后固定 `SYNO.Chat.Post` v5 `delete` 一次提交；提交前重读消息确认归属，提交后回读确认消失。能力缺失、非本人消息、加密会话和待核对消息均零提交；提交未知、提交后取消或回读不一致只进入刷新核对，不自动重放。会话关闭、转发、提醒、定时、投票、服务端置顶、官方 Star、Socket.IO、后台即时消息和通知继续关闭。本机 Chat 聚焦 159/159、Release xUnit 1503/1503、本地化与差异检查已通过；真实 Chat Server、真实 Windows 与辅助功能为 `PENDING_USER_VALIDATION`。
+
+Windows NAS-05 已补入统一存储分析的只读有界样本和显式深度分析，并提供重跑与取消：NAS 详情“存储分析”分区固定公开 File Station List v2，普通样本最多采样 20 个普通共享和 500 个文件候选，展示类型占用、大文件、近期/较早样本和同名同大小的可能重复候选；用户点击“分析存储”时只重读该分区，点击“深度分析”时最多读取 20 个共享、120 个文件夹和 3000 个文件，补充目录汇总、所有者覆盖、访问时间覆盖，并用有限 DirSize/MD5 任务确认目录大小和内容重复候选；点击“取消分析”会保留上一次分析行。该切片不保存路径、账号、卷标或原始响应，不做历史报告、计划任务和导出；本机 NAS Admin 聚焦 55/55 通过，真实 NAS/Windows/辅助功能为 `PENDING_USER_VALIDATION`。
+
+Windows `WIN-DL-ADV-READ` 已补入 Download Station 只读高级摘要：固定公开 Task v1 读取 `detail/transfer/file/tracker/peer`，在详情展示优先级、文件/Tracker/Peer、做种和下载中节点；Info/Schedule/RSS 只用于摘要卡，设置或 RSS 摘要失败不遮蔽任务列表。设置写、RSS 刷新/编辑、文件优先级写、任务目标修改、批量、删除已下载数据、BT 高级和内部 DownloadStation2 继续关闭；本机 DownloadStation 聚焦 97/97、Release 完整 xUnit 1506/1506 通过，真实 NAS/Windows/辅助功能为 `PENDING_USER_VALIDATION`。
+
 | CM-02 · C | 容器生命周期/删除、映像删除、网络创建/删除、Registry 搜索/标签/拉取 | 分步对话、后台任务状态 | **当前不做**：生命周期、删除、拉取和网络写交给 Mac App 或 DSM Web | `ServiceManagementModel.swift` |
 | VM-01 · C | 虚拟机、主机、存储、网络、映像、保护与事件读取 | 数据视图、详情与多选操作 | **受限**：只读健康与资源摘要；iPad 多栏，iPhone 摘要优先 | `VirtualMachineManagerPane` |
 | VM-02 · C | 基础创建/修改、电源/删除、网络修改/删除、映像删除、独立远程控制台 | 分步向导和可调整控制台窗口 | **当前不做**：创建/编辑/删除/网络写/电源与控制台交给 Mac App 或 DSM Web | `ServiceManagementModel.swift`、`ServiceManagementView.swift` |
@@ -374,7 +381,7 @@ Windows 已补入官方 DirSize v2 文件夹属性源码闭环：原生“属性
 
 本波次完成两个不依赖真实设备的 Windows Files 源码闭环。异步递归搜索固定使用 `start/poll/list/stop` 生命周期，结果上限为 2,000 项，WinUI 已提供进行中、失败重试和截断状态；至多 5 MiB 的白名单文本仅在服务端提供强内容版本时开放编辑，保存前重新读取并核验版本、长度与内容摘要，用户明确确认后只上传一次，提交后使用独立读取核对 SHA。上传后取消、断线或响应不明均进入待核对状态，不自动重放并阻止再次保存；无强版本时入口保持不可用。
 
-本机 Release xUnit 1434/1434 通过且 0 跳过。功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建，本切片提升为 `BUILD_VERIFIED`。收藏与远程挂载写缺少可靠 typed 提交边界，跨 NAS 写缺少安全的第二 NAS 独立会话，NAS 设置/DDNS/电源写及 Chat 高级写缺少真实版本化契约验收，以上入口均继续关闭且不得作为对齐完成项；既有只读能力照旧。真实 NAS、真实 Windows、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
+本机 Release xUnit 1434/1434 通过且 0 跳过。功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建，本切片提升为 `BUILD_VERIFIED`。收藏与远程挂载写缺少可靠 typed 提交边界，跨 NAS 移动、覆盖、批量和后台恢复缺少源端删除安全方案、真实双 NAS 副作用证据及系统集成验收，NAS 设置/DDNS/电源写及 Chat 高级写缺少真实版本化契约验收，以上入口均继续关闭且不得作为对齐完成项；既有只读能力和跨 NAS copy-only 受限闭环照旧。真实 NAS、真实 Windows、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`。
 
 ### CM-01 / VM-01 多分区只读对齐增量
 

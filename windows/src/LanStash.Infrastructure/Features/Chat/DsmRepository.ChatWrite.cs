@@ -8,76 +8,172 @@ public sealed partial class DsmRepository
 {
     // Chat 高级写必须同时满足冻结契约、强类型未知结果和回读规则，当前保持关闭。
     private const bool ChatAdvancedWritesEnabled = false;
+    private const int ChatDeleteOwnMessageVersion = 5;
+
+    private readonly Dictionary<Guid, PendingChatMessageDeleteReview> _pendingChatMessageDeletes = [];
     // ── 消息删除 ──
 
     async Task<MutationResult> IChatRepository.DeleteOwnMessageAsync(
         ChatDeleteMessageRequest request,
         CancellationToken cancellationToken)
     {
-        if (!HasChatWriteCapability("SYNO.Chat.Post"))
+        var messageId = request.MessageId?.Trim() ?? string.Empty;
+        var conversationId = request.ConversationId?.Trim() ?? string.Empty;
+        var normalizedRequest = request with
         {
-            return ChatUnsupported("chat.deleteOwnMessage");
+            MessageId = messageId,
+            ConversationId = conversationId,
+        };
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return ChatCancelled("deleteOwnMessage");
         }
-
-        try
+        if (request.ClientRequestId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(messageId) ||
+            string.IsNullOrWhiteSpace(conversationId) ||
+            _profile.Id != _session.ProfileId)
         {
-            var currentPage = await ListMessagesAsync(
-                request.ConversationId, beforeCursor: null, limit: 100, cancellationToken)
+            return ChatFailure("deleteOwnMessage", "chat.delete-own-message.validation");
+        }
+        if (!HasDeleteOwnMessageContract)
+        {
+            return ChatUnsupported("deleteOwnMessage");
+        }
+        if (_pendingChatMessageDeletes.TryGetValue(request.ClientRequestId, out var pendingReview))
+        {
+            return await FinishPendingChatMessageDeleteAsync(pendingReview, cancellationToken)
                 .ConfigureAwait(false);
-            if (!currentPage.Messages.Any(m => m.Id == request.MessageId))
-            {
-                return new MutationResult(1, MutationResultStatus.ConfirmedSuccess,
-                    "deleteOwnMessage", submitted: false, requiresRefresh: false,
-                    new MutationResultCounts(1, 0, 0));
-            }
-        }
-        catch
-        {
-            return new MutationResult(1, MutationResultStatus.SubmittedButUnverified,
-                "deleteOwnMessage", submitted: false, requiresRefresh: true,
-                new MutationResultCounts(0, 0, 1), MutationErrorCategory.Unknown,
-                diagnosticTag: "chat.delete.readback-preflight");
         }
 
+        IReadOnlyList<ChatConversation> conversations;
         try
         {
-            await CallChatMethodAsync("SYNO.Chat.Post", "delete",
-                new Dictionary<string, string> { ["post_id"] = request.MessageId },
-                cancellationToken).ConfigureAwait(false);
+            conversations = await ListConversationsAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return new MutationResult(1, MutationResultStatus.CancelledBeforeSubmission,
-                "deleteOwnMessage", submitted: false, requiresRefresh: false,
-                new MutationResultCounts(0, 0, 0));
+            return ChatCancelled("deleteOwnMessage");
+        }
+        catch (DsmException error) when (error.AuthenticationFailure == true)
+        {
+            return ChatFailure("deleteOwnMessage", "chat.delete-own-message.authentication",
+                MutationErrorCategory.Authentication);
         }
         catch
         {
-            return new MutationResult(1, MutationResultStatus.SubmittedButUnverified,
-                "deleteOwnMessage", submitted: true, requiresRefresh: true,
-                new MutationResultCounts(0, 0, 1), MutationErrorCategory.Unknown,
-                diagnosticTag: "chat.delete.submit-failed");
+            return ChatFailure("deleteOwnMessage", "chat.delete-own-message.preflight",
+                MutationErrorCategory.Unknown);
         }
 
+        var conversation = conversations.FirstOrDefault(value =>
+            string.Equals(value.Id, conversationId, StringComparison.Ordinal));
+        if (conversation is null || conversation.IsEncrypted)
+        {
+            return ChatFailure(
+                "deleteOwnMessage",
+                conversation is null
+                    ? "chat.delete-own-message.conversation-missing"
+                    : "chat.delete-own-message.encrypted-conversation",
+                MutationErrorCategory.Validation);
+        }
+
+        ChatMessage? message;
+        try
+        {
+            var currentPage = await ListMessagesAsync(
+                conversationId, beforeCursor: null, limit: 100, cancellationToken)
+                .ConfigureAwait(false);
+            message = currentPage.Messages.FirstOrDefault(value =>
+                string.Equals(value.Id, messageId, StringComparison.Ordinal));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return ChatCancelled("deleteOwnMessage");
+        }
+        catch (DsmException error) when (error.Code == 105)
+        {
+            return ChatFailure("deleteOwnMessage", "chat.delete-own-message.permission",
+                MutationErrorCategory.Permission);
+        }
+        catch
+        {
+            return ChatFailure("deleteOwnMessage", "chat.delete-own-message.preflight",
+                MutationErrorCategory.Unknown);
+        }
+
+        if (message is null ||
+            message.IsFromCurrentUser != true ||
+            message.EncryptionState != ChatEncryptionState.NotEncrypted)
+        {
+            return ChatFailure(
+                "deleteOwnMessage",
+                message is null
+                    ? "chat.delete-own-message.message-missing"
+                    : "chat.delete-own-message.not-owned",
+                message is null ? MutationErrorCategory.Conflict : MutationErrorCategory.Permission,
+                submitted: false);
+        }
+
+        var review = new PendingChatMessageDeleteReview(
+            _profile.Id,
+            conversationId,
+            messageId,
+            normalizedRequest.ClientRequestId);
+        try
+        {
+            await CallChatExactVersionAsync(
+                "SYNO.Chat.Post",
+                "delete",
+                ChatDeleteOwnMessageVersion,
+                new Dictionary<string, string> { ["post_id"] = messageId },
+                cancellationToken).ConfigureAwait(false);
+            _pendingChatMessageDeletes[request.ClientRequestId] = review;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _pendingChatMessageDeletes[request.ClientRequestId] = review;
+            return ChatCancelledAfterSubmission("deleteOwnMessage");
+        }
+        catch (DsmException error) when (error.Code == 105)
+        {
+            return ChatFailure("deleteOwnMessage", "chat.delete-own-message.permission",
+                MutationErrorCategory.Permission, submitted: true);
+        }
+        catch
+        {
+            _pendingChatMessageDeletes[request.ClientRequestId] = review;
+            return ChatUnknown("deleteOwnMessage", "chat.delete-own-message.submitted-unverified");
+        }
+
+        return await FinishPendingChatMessageDeleteAsync(review, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MutationResult> FinishPendingChatMessageDeleteAsync(
+        PendingChatMessageDeleteReview review,
+        CancellationToken cancellationToken)
+    {
         try
         {
             var verifiedPage = await ListMessagesAsync(
-                request.ConversationId, beforeCursor: null, limit: 100, cancellationToken)
+                review.ConversationId, beforeCursor: null, limit: 100, cancellationToken)
                 .ConfigureAwait(false);
-            var gone = !verifiedPage.Messages.Any(m => m.Id == request.MessageId);
-            return new MutationResult(1,
-                gone ? MutationResultStatus.ConfirmedSuccess : MutationResultStatus.SubmittedButUnverified,
-                "deleteOwnMessage", submitted: true, requiresRefresh: !gone,
-                new MutationResultCounts(gone ? 1 : 0, 0, gone ? 0 : 1),
-                gone ? null : MutationErrorCategory.Unknown,
-                diagnosticTag: gone ? null : "chat.delete.readback-mismatch");
+            var gone = !verifiedPage.Messages.Any(value =>
+                string.Equals(value.Id, review.MessageId, StringComparison.Ordinal));
+            if (gone)
+            {
+                _pendingChatMessageDeletes.Remove(review.ClientRequestId);
+                return ChatSuccess("deleteOwnMessage");
+            }
+            return ChatUnknown("deleteOwnMessage", "chat.delete-own-message.readback-mismatch");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return ChatCancelledAfterSubmission("deleteOwnMessage");
         }
         catch
         {
-            return new MutationResult(1, MutationResultStatus.SubmittedButUnverified,
-                "deleteOwnMessage", submitted: true, requiresRefresh: true,
-                new MutationResultCounts(0, 0, 1), MutationErrorCategory.Unknown,
-                diagnosticTag: "chat.delete.readback-unavailable");
+            return ChatUnknown("deleteOwnMessage", "chat.delete-own-message.readback-unavailable");
         }
     }
 
@@ -449,6 +545,12 @@ public sealed partial class DsmRepository
     private bool HasChatWriteCapability(string apiName) =>
         ChatAdvancedWritesEnabled && _capabilities.ContainsKey(apiName);
 
+    private bool HasDeleteOwnMessageContract =>
+        HasReadableChatContract &&
+        HasExactChatVersion("SYNO.Chat.Post", ChatDeleteOwnMessageVersion) &&
+        _capabilities.TryGetValue("SYNO.Chat.Post", out var capability) &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+
     private bool HasFrozenChatWriteCapability(string apiName, int requiredVersion) =>
         ChatAdvancedWritesEnabled &&
         _capabilities.TryGetValue(apiName, out var capability) &&
@@ -564,4 +666,10 @@ public sealed partial class DsmRepository
             diagnosticTag: operation.StartsWith("chat.", StringComparison.Ordinal)
                 ? $"{operation}.unsupported".ToLowerInvariant()
                 : $"chat.{operation}.unsupported".ToLowerInvariant());
+
+    private sealed record PendingChatMessageDeleteReview(
+        Guid ProfileId,
+        string ConversationId,
+        string MessageId,
+        Guid ClientRequestId);
 }

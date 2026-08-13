@@ -89,16 +89,51 @@ public sealed class TransferActivitySourceContractTests
             "windows/src/LanStash.App/Views/ShellPage.xaml.cs");
 
         Assert.Contains(
-            "private readonly ForegroundTransferCoordinator _transfers = new();",
+            "private readonly ForegroundTransferCoordinator _transfers;",
             shell);
+        Assert.Contains("_transfers = new ForegroundTransferCoordinator(transferNotifications);", shell);
         Assert.Contains("_files ??= new FilesPage(", shell);
         Assert.Contains("_activity ??= new TransferActivityPage(", shell);
+        Assert.Contains("private async Task OpenModuleAsync(AppModule module)", shell);
+        Assert.Contains("await OpenModuleAsync(module);", shell);
+        Assert.Contains("await OpenModuleAsync(AppModule.Transfers);", shell);
         Assert.Contains("_app.Repository as IDownloadStationRepository", shell);
         Assert.Contains("_app.Repository as IFileBackgroundTaskRepository", shell);
         Assert.Contains("await _activity.DisposeAsync();", shell);
         Assert.Contains("new DownloadStationPage(downloadRepository, _transfers)", shell);
         Assert.Contains("_transferPicker?.Dispose();", shell);
         Assert.Contains("_transfers.Dispose();", shell);
+    }
+
+    [Fact]
+    public void WindowsNotificationsUseGenericTextAndRouteOnlyToActivity()
+    {
+        var service = ReadRepositoryFile(
+            "windows/src/LanStash.App/Platform/Notifications/WindowsTransferNotificationService.cs");
+        var factory = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/ForegroundTransferNotifications.cs");
+        var coordinator = ReadRepositoryFile(
+            "windows/src/LanStash.App/Features/Transfers/ForegroundTransferCoordinator.cs");
+        var window = ReadRepositoryFile(
+            "windows/src/LanStash.App/MainWindow.xaml.cs");
+
+        Assert.Contains("AppNotificationManager.IsSupported()", service);
+        Assert.Contains("AppNotificationManager.Default.Register()", service);
+        Assert.Contains("AppNotificationActivatedEventArgs args", service);
+        Assert.Contains("HandleInvoked(args.Argument)", service);
+        Assert.Contains(".AddArgument(\"route\", \"activity\")", service);
+        Assert.Contains("string.Equals(arguments, \"route=activity\", StringComparison.Ordinal)", service);
+        Assert.Contains("ShowTransfersFromNotification", window);
+        Assert.Contains("await shell.ShowTransfersAsync();", window);
+        Assert.Contains("ForegroundTransferSource.App", factory);
+        Assert.Contains("TransferNotificationCompletedTitle", factory);
+        Assert.Contains("TransferNotificationReviewMessage", factory);
+        Assert.Contains("TransferNotificationFailedMessage", factory);
+        Assert.DoesNotContain("DisplayName", service);
+        Assert.DoesNotContain("RemotePath", service);
+        Assert.DoesNotContain("FailureMessage", service);
+        Assert.DoesNotContain("SourceIdentifier", service);
+        Assert.Contains("NotifyIfNeeded(updatedActivity)", coordinator);
     }
 
     private static string ReadRepositoryFile(string relativePath)

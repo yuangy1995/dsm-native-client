@@ -27,6 +27,7 @@ public enum NasDetailsReadFeature
     StorageHealth,
     SystemUpdate,
     ShareAccess,
+    StorageAnalysis,
     SystemActivity,
     Packages,
     ScheduledTasks,
@@ -85,6 +86,61 @@ public sealed record NasShareAccessSummary(
     string Name,
     NasShareAccessLevel AccessLevel,
     bool CanDelete);
+
+public enum NasStorageAnalysisCategory
+{
+    Images,
+    Videos,
+    Documents,
+    Archives,
+    Other,
+}
+
+public sealed record NasStorageCategorySummary(
+    NasStorageAnalysisCategory Category,
+    int FileCount,
+    long SizeBytes);
+
+public sealed record NasStorageFileCandidate(
+    string Name,
+    long SizeBytes,
+    DateTimeOffset? ModifiedAt);
+
+public sealed record NasStorageDuplicateCandidate(
+    string Name,
+    long SizeBytes,
+    int FileCount,
+    bool IsContentConfirmed = false);
+
+public sealed record NasStorageOwnerSummary(
+    int KnownOwnerFileCount,
+    int DistinctOwnerCount);
+
+public sealed record NasStorageDirectorySummary(
+    string Name,
+    int FileCount,
+    long SizeBytes);
+
+public sealed record NasStorageAccessTimeSummary(
+    int KnownAccessTimeFileCount,
+    DateTimeOffset? OldestAccessedAt);
+
+public sealed record NasStorageAnalysisSummary(
+    int ScannedShareCount,
+    int ScannedFileCount,
+    long SampledBytes,
+    bool IsPartial,
+    IReadOnlyList<NasStorageCategorySummary> Categories,
+    IReadOnlyList<NasStorageFileCandidate> LargeFiles,
+    IReadOnlyList<NasStorageFileCandidate> RecentFiles,
+    IReadOnlyList<NasStorageFileCandidate> OldFiles,
+    IReadOnlyList<NasStorageDuplicateCandidate> DuplicateCandidates,
+    bool IsDeepAnalysis = false,
+    int ScannedFolderCount = 0,
+    int SkippedFolderCount = 0,
+    NasStorageOwnerSummary? OwnerSummary = null,
+    NasStorageAccessTimeSummary? AccessTimeSummary = null,
+    IReadOnlyList<NasStorageDirectorySummary>? Directories = null);
 
 public sealed record NasSystemProcessSummary(
     string Id,
@@ -163,7 +219,11 @@ public sealed record NasDetailsSnapshot(
     NasDetailsSection<NasPackageSummary> Packages,
     NasDetailsSection<NasScheduledTaskSummary> ScheduledTasks,
     NasDetailsSection<NasLogSummary> Logs,
-    NasDetailsSection<NasConnectionSummary> Connections);
+    NasDetailsSection<NasConnectionSummary> Connections)
+{
+    public NasDetailsSection<NasStorageAnalysisSummary> StorageAnalysis { get; init; } =
+        new(NasDetailsSectionStatus.Unavailable, [], DiagnosticTag: "nas-details.storage-analysis.unavailable");
+}
 
 public interface INasDetailsRepository
 {
@@ -171,5 +231,11 @@ public interface INasDetailsRepository
     NasDetailsAvailability Availability { get; }
 
     Task<NasDetailsSnapshot> LoadDetailsAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadStorageAnalysisAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadDeepStorageAnalysisAsync(
         CancellationToken cancellationToken = default);
 }

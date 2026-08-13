@@ -333,6 +333,10 @@ public sealed partial class DsmRepository
         {
             features.Add(ChatWriteFeature.PrivateGroup);
         }
+        if (HasDeleteOwnMessageContract)
+        {
+            features.Add(ChatWriteFeature.DeleteOwnMessage);
+        }
         return features;
     }
 

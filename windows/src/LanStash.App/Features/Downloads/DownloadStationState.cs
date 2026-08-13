@@ -63,6 +63,31 @@ public sealed record DownloadTaskItem(DownloadTask Task)
     public string UploadedText => FormatBytes(Task.Uploaded);
     public string DownloadSpeedText => FormatSpeed(Task.DownloadSpeed);
     public string UploadSpeedText => FormatSpeed(Task.UploadSpeed);
+    public string PriorityText => Task.AdvancedDetails.Priority switch
+    {
+        DownloadTaskPriority.Low => LocalizationService.Current.Get("DownloadStationPriorityLow"),
+        DownloadTaskPriority.Normal => LocalizationService.Current.Get("DownloadStationPriorityNormal"),
+        DownloadTaskPriority.High => LocalizationService.Current.Get("DownloadStationPriorityHigh"),
+        DownloadTaskPriority.Unknown => LocalizationService.Current.Get("DownloadStationPriorityUnknown"),
+        _ => LocalizationService.Current.Get("DownloadStationValueUnavailable"),
+    };
+    public string FileCountText => FormatCount(
+        Task.AdvancedDetails.FileCount,
+        "DownloadStationAdvancedFileCount");
+    public string TrackerCountText => FormatCount(
+        Task.AdvancedDetails.TrackerCount,
+        "DownloadStationAdvancedTrackerCount");
+    public string PeerCountText => Task.AdvancedDetails.PeerCount is int connectedPeers
+        ? LocalizationService.Current.Format(
+            "DownloadStationAdvancedConnectedPeerCount",
+            connectedPeers.ToString("N0", CultureInfo.CurrentCulture))
+        : FormatCount(Task.AdvancedDetails.Peers, "DownloadStationAdvancedPeerCount");
+    public string SeedsText => FormatCount(
+        Task.AdvancedDetails.Seeds,
+        "DownloadStationAdvancedSeedCount");
+    public string LeechesText => FormatCount(
+        Task.AdvancedDetails.Leeches,
+        "DownloadStationAdvancedLeechCount");
     public string DestinationText => string.IsNullOrWhiteSpace(Task.Destination)
         ? LocalizationService.Current.Get("DownloadStationValueUnavailable")
         : Task.Destination;
@@ -109,4 +134,10 @@ public sealed record DownloadTaskItem(DownloadTask Task)
             unitKeys[unit],
             scaled.ToString(format, CultureInfo.CurrentCulture));
     }
+
+    private static string FormatCount(int? count, string resourceKey) => count is null
+        ? LocalizationService.Current.Get("DownloadStationValueUnavailable")
+        : LocalizationService.Current.Format(
+            resourceKey,
+            count.Value.ToString("N0", CultureInfo.CurrentCulture));
 }

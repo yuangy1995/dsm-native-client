@@ -7,10 +7,17 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
     private readonly object _sync = new();
     private readonly Dictionary<string, List<ForegroundTransferActivity>> _activities =
         new(StringComparer.Ordinal);
+    private readonly IForegroundTransferNotificationService _notifications;
     private CancellationTokenSource _profileCancellation = new();
     private string? _activeProfileId;
     private long _profileGeneration;
     private bool _disposed;
+
+    public ForegroundTransferCoordinator(
+        IForegroundTransferNotificationService? notifications = null)
+    {
+        _notifications = notifications ?? NullForegroundTransferNotificationService.Instance;
+    }
 
     public void ActivateProfile(string? profileId)
     {
@@ -400,6 +407,7 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
         ForegroundTransferState state,
         string? failureMessage)
     {
+        ForegroundTransferActivity? updatedActivity = null;
         lock (_sync)
         {
             if (!IsCurrent(profileId, generation))
@@ -408,17 +416,37 @@ internal sealed class ForegroundTransferCoordinator : IDisposable
             }
 
             UpdateActivity(profileId, activityId, activity =>
-                activity.State == ForegroundTransferState.Running
-                    ? activity with
-                    {
-                        State = state,
-                        FailureMessage = failureMessage,
-                        BytesTransferred = state == ForegroundTransferState.Completed
-                            ? activity.TotalBytes
-                            : activity.BytesTransferred,
-                    }
-                    : activity);
+            {
+                if (activity.State != ForegroundTransferState.Running)
+                {
+                    return activity;
+                }
+
+                updatedActivity = activity with
+                {
+                    State = state,
+                    FailureMessage = failureMessage,
+                    BytesTransferred = state == ForegroundTransferState.Completed
+                        ? activity.TotalBytes
+                        : activity.BytesTransferred,
+                };
+                return updatedActivity;
+            });
         }
+
+        NotifyIfNeeded(updatedActivity);
+    }
+
+    private void NotifyIfNeeded(ForegroundTransferActivity? activity)
+    {
+        if (!_notifications.IsEnabled ||
+            activity is null ||
+            ForegroundTransferNotificationFactory.Create(activity) is not { } notification)
+        {
+            return;
+        }
+
+        _notifications.Show(notification);
     }
 
     private bool IsCurrent(string profileId, long generation) =>

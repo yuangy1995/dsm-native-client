@@ -58,7 +58,24 @@ public sealed class NasDetailsViewModelTests
                 [new NasLogSummary("log", DateTimeOffset.UnixEpoch, "System", "info")]),
             new NasDetailsSection<NasConnectionSummary>(
                 NasDetailsSectionStatus.Available,
-                [new NasConnectionSummary("conn", "DSM", "web", DateTimeOffset.UnixEpoch, true)])));
+                [new NasConnectionSummary("conn", "DSM", "web", DateTimeOffset.UnixEpoch, true)]))
+        {
+            StorageAnalysis = new NasDetailsSection<NasStorageAnalysisSummary>(
+                NasDetailsSectionStatus.Available,
+                [new NasStorageAnalysisSummary(
+                    2,
+                    4,
+                    9_000,
+                    IsPartial: true,
+                    [
+                        new NasStorageCategorySummary(NasStorageAnalysisCategory.Images, 2, 4_000),
+                        new NasStorageCategorySummary(NasStorageAnalysisCategory.Documents, 1, 3_000),
+                    ],
+                    [new NasStorageFileCandidate("photo.jpg", 4_000, DateTimeOffset.UnixEpoch)],
+                    [new NasStorageFileCandidate("today.pdf", 3_000, DateTimeOffset.UnixEpoch.AddDays(1))],
+                    [new NasStorageFileCandidate("old.zip", 2_000, DateTimeOffset.UnixEpoch.AddDays(-1))],
+                    [new NasStorageDuplicateCandidate("photo.jpg", 4_000, 2)])]),
+        });
         using var model = new NasDetailsViewModel();
 
         await model.ActivateAsync(repository);
@@ -76,6 +93,12 @@ public sealed class NasDetailsViewModelTests
         Assert.Contains(model.Rows, row => row.Id == "share-access-scope");
         Assert.Contains(model.Rows, row => row.Title == "Archive" && row.Detail == "Read only");
         Assert.Contains(model.Rows, row => row.Title == "Projects" && row.Status == "Delete allowed");
+        model.SelectSection(NasDetailsSectionKind.StorageAnalysis);
+        Assert.Equal(NasDetailsContentState.Content, model.ContentState);
+        Assert.Contains(model.Rows, row => row.Id == "storage-analysis-scope");
+        Assert.Contains(model.Rows, row => row.Title == "Images" && row.Detail == "2 files");
+        Assert.Contains(model.Rows, row => row.Title == "photo.jpg" && row.Detail.Contains("3.91", StringComparison.Ordinal));
+        Assert.Contains(model.Rows, row => row.Title.Contains("Possible duplicate", StringComparison.Ordinal));
         model.SelectSection(NasDetailsSectionKind.SystemActivity);
         Assert.Equal(2, model.Rows.Count);
         Assert.Contains(model.Rows, row => row.Id == "system-activity-scope");
@@ -200,6 +223,123 @@ public sealed class NasDetailsViewModelTests
     }
 
     [Fact]
+    public async Task StorageAnalysisCanRefreshOnlyItsOwnSection()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(repository.ProfileId, packageName: "Package"));
+        repository.StorageAnalysisResults.Enqueue(StorageAnalysisSection(fileCount: 2, bytes: 8_192));
+        using var model = new NasDetailsViewModel();
+        await model.ActivateAsync(repository);
+
+        await model.RunStorageAnalysisAsync();
+        model.SelectSection(NasDetailsSectionKind.StorageAnalysis);
+
+        Assert.Single(repository.Requests);
+        Assert.Single(repository.StorageAnalysisRequests);
+        Assert.True(model.CanRunStorageAnalysis);
+        Assert.False(model.IsStorageAnalysisRunning);
+        Assert.False(model.StorageAnalysisWasCancelled);
+        Assert.Contains(model.Rows, row => row.Id == "storage-analysis-scope" &&
+            row.Detail.Contains("2 file candidates", StringComparison.OrdinalIgnoreCase));
+        model.SelectSection(NasDetailsSectionKind.Packages);
+        Assert.Equal("Package", Assert.Single(model.Rows).Title);
+    }
+
+    [Fact]
+    public async Task DeepStorageAnalysisUsesDedicatedRepositoryRequestAndShowsPrivacySafeRows()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(repository.ProfileId, packageName: "Package"));
+        repository.DeepStorageAnalysisResults.Enqueue(new NasDetailsSection<NasStorageAnalysisSummary>(
+            NasDetailsSectionStatus.Available,
+            [
+                new NasStorageAnalysisSummary(
+                    ScannedShareCount: 1,
+                    ScannedFileCount: 3,
+                    SampledBytes: 9_216,
+                    IsPartial: false,
+                    Categories:
+                    [
+                        new NasStorageCategorySummary(
+                            NasStorageAnalysisCategory.Documents,
+                            3,
+                            9_216),
+                    ],
+                    LargeFiles: [],
+                    RecentFiles: [],
+                    OldFiles: [],
+                    DuplicateCandidates:
+                    [
+                        new NasStorageDuplicateCandidate(
+                            "plan.pdf",
+                            4_096,
+                            2,
+                            IsContentConfirmed: true),
+                    ],
+                    IsDeepAnalysis: true,
+                    ScannedFolderCount: 2,
+                    SkippedFolderCount: 0,
+                    OwnerSummary: new NasStorageOwnerSummary(3, 2),
+                    AccessTimeSummary: new NasStorageAccessTimeSummary(
+                        2,
+                        DateTimeOffset.UnixEpoch),
+                    Directories:
+                    [
+                        new NasStorageDirectorySummary("Projects", 3, 9_216),
+                    ]),
+            ]));
+        using var model = new NasDetailsViewModel();
+        await model.ActivateAsync(repository);
+
+        await model.RunDeepStorageAnalysisAsync();
+        model.SelectSection(NasDetailsSectionKind.StorageAnalysis);
+
+        Assert.Single(repository.Requests);
+        Assert.Empty(repository.StorageAnalysisRequests);
+        Assert.Single(repository.DeepStorageAnalysisRequests);
+        Assert.Contains(model.Rows, row => row.Id == "storage-analysis-scope" &&
+            row.Title == "Deep storage snapshot" &&
+            row.Detail.Contains("2 folders", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(model.Rows, row => row.Id == "storage-analysis-owner" &&
+            row.Detail.Contains("3 files", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(model.Rows, row => row.Id == "storage-analysis-directory-1" &&
+            row.Title == "Projects");
+        Assert.Contains(model.Rows, row => row.Title.Contains("Matching content", StringComparison.Ordinal));
+        Assert.DoesNotContain(model.Rows, row => row.ToString().Contains("/private/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StorageAnalysisCancellationKeepsPreviousRows()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(repository.ProfileId, packageName: "Package") with
+        {
+            StorageAnalysis = StorageAnalysisSection(fileCount: 1, bytes: 4_096),
+        });
+        var delayed = new TaskCompletionSource<NasDetailsSection<NasStorageAnalysisSummary>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.StorageAnalysisResults.Enqueue(delayed.Task);
+        using var model = new NasDetailsViewModel();
+        await model.ActivateAsync(repository);
+        model.SelectSection(NasDetailsSectionKind.StorageAnalysis);
+        var previousRows = model.Rows.Select(row => row.Detail).ToArray();
+
+        var analysis = model.RunStorageAnalysisAsync();
+        await WaitUntilAsync(() => repository.StorageAnalysisRequests.Count == 1);
+        var token = repository.StorageAnalysisRequests.Single();
+        model.CancelStorageAnalysis();
+        delayed.SetCanceled(token);
+        await analysis;
+
+        Assert.True(token.IsCancellationRequested);
+        Assert.False(model.IsStorageAnalysisRunning);
+        Assert.True(model.StorageAnalysisWasCancelled);
+        Assert.True(model.SectionNoticeIsOpen);
+        Assert.Contains("cancel", model.SectionNoticeTitle, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(previousRows, model.Rows.Select(row => row.Detail).ToArray());
+    }
+
+    [Fact]
     public async Task ProfileSwitchCancelsOldGenerationAndRejectsLateSnapshot()
     {
         var profileA = Guid.NewGuid();
@@ -263,6 +403,30 @@ public sealed class NasDetailsViewModelTests
     private static NasDetailsSection<NasSystemActivitySummary> EmptySystemActivity() =>
         new(NasDetailsSectionStatus.Available, []);
 
+    private static NasDetailsSection<NasStorageAnalysisSummary> StorageAnalysisSection(
+        int fileCount,
+        long bytes) =>
+        new(
+            NasDetailsSectionStatus.Available,
+            [
+                new NasStorageAnalysisSummary(
+                    ScannedShareCount: 1,
+                    ScannedFileCount: fileCount,
+                    SampledBytes: bytes,
+                    IsPartial: false,
+                    Categories:
+                    [
+                        new NasStorageCategorySummary(
+                            NasStorageAnalysisCategory.Other,
+                            fileCount,
+                            bytes),
+                    ],
+                    LargeFiles: [],
+                    RecentFiles: [],
+                    OldFiles: [],
+                    DuplicateCandidates: []),
+            ]);
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         for (var attempt = 0; attempt < 100; attempt++)
@@ -280,7 +444,11 @@ public sealed class NasDetailsViewModelTests
     {
         public Guid ProfileId { get; } = profileId;
         public Queue<object> Results { get; } = [];
+        public Queue<object> StorageAnalysisResults { get; } = [];
+        public Queue<object> DeepStorageAnalysisResults { get; } = [];
         public List<CancellationToken> Requests { get; } = [];
+        public List<CancellationToken> StorageAnalysisRequests { get; } = [];
+        public List<CancellationToken> DeepStorageAnalysisRequests { get; } = [];
         public NasDetailsAvailability Availability { get; } = new(
             available ? NasDetailsAvailabilityStatus.Available : NasDetailsAvailabilityStatus.Unavailable,
             available
@@ -290,6 +458,7 @@ public sealed class NasDetailsViewModelTests
                     NasDetailsReadFeature.StorageHealth,
                     NasDetailsReadFeature.SystemUpdate,
                     NasDetailsReadFeature.ShareAccess,
+                    NasDetailsReadFeature.StorageAnalysis,
                     NasDetailsReadFeature.SystemActivity,
                     NasDetailsReadFeature.Packages,
                     NasDetailsReadFeature.ScheduledTasks,
@@ -309,6 +478,34 @@ public sealed class NasDetailsViewModelTests
                 Task<NasDetailsSnapshot> task => await task,
                 Exception error => throw error,
                 _ => throw new InvalidOperationException("Unexpected fake result."),
+            };
+        }
+
+        public async Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadStorageAnalysisAsync(
+            CancellationToken cancellationToken = default)
+        {
+            StorageAnalysisRequests.Add(cancellationToken);
+            var result = StorageAnalysisResults.Dequeue();
+            return result switch
+            {
+                NasDetailsSection<NasStorageAnalysisSummary> section => section,
+                Task<NasDetailsSection<NasStorageAnalysisSummary>> task => await task,
+                Exception error => throw error,
+                _ => throw new InvalidOperationException("Unexpected fake storage-analysis result."),
+            };
+        }
+
+        public async Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadDeepStorageAnalysisAsync(
+            CancellationToken cancellationToken = default)
+        {
+            DeepStorageAnalysisRequests.Add(cancellationToken);
+            var result = DeepStorageAnalysisResults.Dequeue();
+            return result switch
+            {
+                NasDetailsSection<NasStorageAnalysisSummary> section => section,
+                Task<NasDetailsSection<NasStorageAnalysisSummary>> task => await task,
+                Exception error => throw error,
+                _ => throw new InvalidOperationException("Unexpected fake deep storage-analysis result."),
             };
         }
     }

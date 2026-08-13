@@ -33,6 +33,7 @@ public sealed class ChatRepositoryContractTests
         Assert.Contains(ChatWriteFeature.AttachmentMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(ChatWriteFeature.DirectConversation, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(ChatWriteFeature.PrivateGroup, complete.Availability.SupportedWriteFeatures);
+        Assert.Contains(ChatWriteFeature.DeleteOwnMessage, complete.Availability.SupportedWriteFeatures);
         Assert.Contains(AppModule.Chat, complete.AvailableModules);
         Assert.Equal(ChatAvailabilityStatus.Unavailable, incomplete.Availability.Status);
         Assert.Empty(incomplete.Availability.SupportedFeatures);
@@ -1296,6 +1297,62 @@ public sealed class ChatRepositoryContractTests
             api.Requests
                 .Where(value => value.ApiName == "SYNO.Chat.Channel.Named")
                 .Select(value => value.Method));
+    }
+
+    [Fact]
+    public async Task DeleteOwnMessageUsesFixedPostDeleteAndConfirmsDisappearance()
+    {
+        var postReads = 0;
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => Channels(),
+            "SYNO.Chat.Post" when request.Method == "list" && ++postReads == 1 =>
+                Posts(0, 1, MyMessage("mine-1", "hello")),
+            "SYNO.Chat.Post" when request.Method == "delete" => new JsonObject(),
+            "SYNO.Chat.Post" => Posts(0, 0),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = (IChatRepository)CreateRepository(api);
+
+        var result = await repository.DeleteOwnMessageAsync(
+            new ChatDeleteMessageRequest("mine-1", "channel-1", Guid.NewGuid()));
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Status);
+        Assert.True(result.Submitted);
+        Assert.False(result.RequiresRefresh);
+        Assert.Collection(
+            api.Requests,
+            request => AssertWire(request, "SYNO.Chat.User", "list", 3, 0),
+            request => AssertWire(request, "SYNO.Chat.Channel", "list", 5, 0),
+            request => AssertWire(request, "SYNO.Chat.Post", "list", 8, 3),
+            request =>
+            {
+                AssertWire(request, "SYNO.Chat.Post", "delete", 5, 1);
+                Assert.Equal("mine-1", request.Parameters["post_id"]);
+            },
+            request => AssertWire(request, "SYNO.Chat.Post", "list", 8, 3));
+    }
+
+    [Fact]
+    public async Task DeleteOwnMessageRejectsForeignMessageBeforeSubmitting()
+    {
+        var api = new RecordingApiClient(request => request.ApiName switch
+        {
+            "SYNO.Chat.User" => Users(),
+            "SYNO.Chat.Channel" => Channels(),
+            "SYNO.Chat.Post" => Posts(0, 1, Message("other-1", "hello")),
+            _ => throw new InvalidOperationException(request.ApiName),
+        });
+        var repository = (IChatRepository)CreateRepository(api);
+
+        var result = await repository.DeleteOwnMessageAsync(
+            new ChatDeleteMessageRequest("other-1", "channel-1", Guid.NewGuid()));
+
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Status);
+        Assert.False(result.Submitted);
+        Assert.Equal(MutationErrorCategory.Permission, result.ErrorCategory);
+        Assert.DoesNotContain(api.Requests, request => request.Method == "delete");
     }
 
     [Fact]

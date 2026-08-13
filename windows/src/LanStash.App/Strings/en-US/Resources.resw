@@ -44,6 +44,12 @@
   <data name="NasDetailsDescription.Text" xml:space="preserve"><value>Review system health, storage, packages, scheduled tasks, logs, and current connections. This page does not change NAS settings.</value></data>
   <data name="NasDetailsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh NAS details</value></data>
   <data name="NasDetailsRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
+  <data name="NasDetailsRunStorageAnalysis.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Run the storage analysis sample again</value></data>
+  <data name="NasDetailsRunStorageAnalysisLabel.Text" xml:space="preserve"><value>Analyze storage</value></data>
+  <data name="NasDetailsRunDeepStorageAnalysis.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Run a deeper storage analysis</value></data>
+  <data name="NasDetailsRunDeepStorageAnalysisLabel.Text" xml:space="preserve"><value>Deep analysis</value></data>
+  <data name="NasDetailsCancelStorageAnalysis.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Cancel the storage analysis sample</value></data>
+  <data name="NasDetailsCancelStorageAnalysisLabel.Text" xml:space="preserve"><value>Cancel analysis</value></data>
   <data name="NasDetailsReadOnly.Title" xml:space="preserve"><value>Read-only view</value></data>
   <data name="NasDetailsReadOnly.Message" xml:space="preserve"><value>Use DSM when you need to make changes to these items.</value></data>
   <data name="NasDetailsRefreshError.Title" xml:space="preserve"><value>Couldn’t update everything</value></data>
@@ -78,6 +84,7 @@
   <data name="NasDetailsSectionStorage" xml:space="preserve"><value>Storage</value></data>
   <data name="NasDetailsSectionUpdate" xml:space="preserve"><value>Updates</value></data>
   <data name="NasDetailsSectionShareAccess" xml:space="preserve"><value>Share access</value></data>
+  <data name="NasDetailsSectionStorageAnalysis" xml:space="preserve"><value>Storage analysis</value></data>
   <data name="NasDetailsSectionSystemActivity" xml:space="preserve"><value>System activity</value></data>
   <data name="NasDetailsSystemActivityProcessId" xml:space="preserve"><value>Process ID {0}</value></data>
   <data name="NasDetailsSystemActivityGroup" xml:space="preserve"><value>Service: {0}</value></data>
@@ -94,6 +101,39 @@
   <data name="NasDetailsShareAccessCanDelete" xml:space="preserve"><value>Delete allowed</value></data>
   <data name="NasDetailsShareAccessEmptyTitle" xml:space="preserve"><value>No visible shared folders</value></data>
   <data name="NasDetailsShareAccessEmptyMessage" xml:space="preserve"><value>This account may not have access to any shared folders. Refresh after an administrator changes its access.</value></data>
+  <data name="NasDetailsStorageAnalysisScopeTitle" xml:space="preserve"><value>Limited storage snapshot</value></data>
+  <data name="NasDetailsStorageAnalysisScopeDetail" xml:space="preserve"><value>Checked {0} shared folders and {1} file candidates, totaling {2} in the sampled list.</value></data>
+  <data name="NasDetailsStorageAnalysisPartial" xml:space="preserve"><value>Some folders or files were not included. Refresh to sample again.</value></data>
+  <data name="NasDetailsStorageAnalysisComplete" xml:space="preserve"><value>Sample completed within the current limit.</value></data>
+  <data name="NasDetailsDeepStorageAnalysisScopeTitle" xml:space="preserve"><value>Deep storage snapshot</value></data>
+  <data name="NasDetailsDeepStorageAnalysisScopeDetail" xml:space="preserve"><value>Checked {0} shared folders, {1} folders, and {2} files, totaling {3} in this analysis.</value></data>
+  <data name="NasDetailsDeepStorageAnalysisComplete" xml:space="preserve"><value>Deep analysis completed within the current limit.</value></data>
+  <data name="NasDetailsStorageAnalysisDeepScope" xml:space="preserve"><value>Based on the deeper bounded analysis.</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryImages" xml:space="preserve"><value>Images</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryVideos" xml:space="preserve"><value>Videos</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryDocuments" xml:space="preserve"><value>Documents</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryArchives" xml:space="preserve"><value>Archives</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryOther" xml:space="preserve"><value>Other files</value></data>
+  <data name="NasDetailsStorageAnalysisFileCount" xml:space="preserve"><value>{0} files</value></data>
+  <data name="NasDetailsStorageAnalysisLargeFiles" xml:space="preserve"><value>Largest sampled files</value></data>
+  <data name="NasDetailsStorageAnalysisRecentFiles" xml:space="preserve"><value>Recently changed samples</value></data>
+  <data name="NasDetailsStorageAnalysisOldFiles" xml:space="preserve"><value>Older changed samples</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateFiles" xml:space="preserve"><value>Possible duplicates</value></data>
+  <data name="NasDetailsStorageAnalysisFolders" xml:space="preserve"><value>Largest folders checked</value></data>
+  <data name="NasDetailsStorageAnalysisSampleOnly" xml:space="preserve"><value>Based on the bounded sample, not a full recursive scan.</value></data>
+  <data name="NasDetailsStorageAnalysisCancelledTitle" xml:space="preserve"><value>Storage analysis cancelled</value></data>
+  <data name="NasDetailsStorageAnalysisCancelledMessage" xml:space="preserve"><value>The previous storage analysis is still shown. You can run the sample again.</value></data>
+  <data name="NasDetailsStorageAnalysisModified" xml:space="preserve"><value>Changed {0}</value></data>
+  <data name="NasDetailsStorageAnalysisOwnerTitle" xml:space="preserve"><value>Owner coverage</value></data>
+  <data name="NasDetailsStorageAnalysisOwnerDetail" xml:space="preserve"><value>{0} files reported owner info across {1} owners.</value></data>
+  <data name="NasDetailsStorageAnalysisAccessTitle" xml:space="preserve"><value>Access time coverage</value></data>
+  <data name="NasDetailsStorageAnalysisAccessDetail" xml:space="preserve"><value>{0} files reported last access time.</value></data>
+  <data name="NasDetailsStorageAnalysisOldestAccessed" xml:space="preserve"><value>Oldest access {0}</value></data>
+  <data name="NasDetailsStorageAnalysisFolderDetail" xml:space="preserve"><value>{0} files in this folder</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateName" xml:space="preserve"><value>Possible duplicate: {0}</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateCount" xml:space="preserve"><value>{0} files have the same name and size</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateConfirmedName" xml:space="preserve"><value>Matching content: {0}</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateConfirmedCount" xml:space="preserve"><value>{0} files matched by content fingerprint</value></data>
   <data name="NasDetailsUpdateAvailable" xml:space="preserve"><value>Update available</value></data>
   <data name="NasDetailsUpdateCurrent" xml:space="preserve"><value>DSM is up to date</value></data>
   <data name="NasDetailsUpdateStatusUnavailable" xml:space="preserve"><value>Couldn’t determine update status</value></data>
@@ -496,6 +536,13 @@
   <data name="TransferActivityUploadNeedsReview" xml:space="preserve"><value>This upload may have reached the NAS. Refresh the folder and check the file before uploading it again.</value></data>
   <data name="TransferActivityFailed" xml:space="preserve"><value>Download didn’t finish. Check the connection and available storage, then try again.</value></data>
   <data name="TransferActivityUploadFailed" xml:space="preserve"><value>Upload didn’t finish. Check access to the folder, the connection, and available NAS space.</value></data>
+  <data name="TransferNotificationCompletedTitle" xml:space="preserve"><value>Transfer finished</value></data>
+  <data name="TransferNotificationDownloadCompletedMessage" xml:space="preserve"><value>Your download is ready. Open Activity to review it.</value></data>
+  <data name="TransferNotificationUploadCompletedMessage" xml:space="preserve"><value>Your upload finished. Open Activity to review it.</value></data>
+  <data name="TransferNotificationReviewTitle" xml:space="preserve"><value>Check transfer result</value></data>
+  <data name="TransferNotificationReviewMessage" xml:space="preserve"><value>A transfer needs your review. Open Activity to check the result.</value></data>
+  <data name="TransferNotificationFailedTitle" xml:space="preserve"><value>Transfer needs attention</value></data>
+  <data name="TransferNotificationFailedMessage" xml:space="preserve"><value>A transfer could not be completed. Open Activity and try again.</value></data>
   <data name="TransferSaveErrorTitle" xml:space="preserve"><value>Unable to start the download</value></data>
   <data name="TransferSaveErrorMessage" xml:space="preserve"><value>Choose a save location again. If the problem continues, check access to that location.</value></data>
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>Unable to start the upload</value></data>
@@ -591,7 +638,7 @@
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Refresh conversations</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>Refresh</value></data>
   <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>Limited chat features</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>You can start direct conversations and private groups, then send text and one attachment. Encrypted conversations aren’t available here.</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>You can start direct conversations and private groups, send text and one attachment, and delete messages you sent. Encrypted conversations aren’t available here.</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Search conversations</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>Conversations couldn’t be refreshed</value></data>
@@ -654,6 +701,17 @@
   <data name="ChatBrowserSend.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Send message</value></data>
   <data name="ChatBrowserSendProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sending message</value></data>
   <data name="ChatBrowserSendStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Message send status</value></data>
+  <data name="ChatMessageDeleteAction" xml:space="preserve"><value>Delete message</value></data>
+  <data name="ChatMessageDeleteAutomationName" xml:space="preserve"><value>Delete message from {0}, sent {1}</value></data>
+  <data name="ChatMessageDeleteConfirmTitle" xml:space="preserve"><value>Delete this message?</value></data>
+  <data name="ChatMessageDeleteConfirmMessage" xml:space="preserve"><value>This removes the message you sent at {0} from this conversation. Other messages are not changed.</value></data>
+  <data name="ChatMessageDeleteConfirmSubmit" xml:space="preserve"><value>Delete message</value></data>
+  <data name="ChatMessageDeleteConfirmCancel" xml:space="preserve"><value>Keep message</value></data>
+  <data name="ChatMessageDeleteConfirmAutomationName" xml:space="preserve"><value>Confirm message deletion</value></data>
+  <data name="ChatMessageDeleteReview.Title" xml:space="preserve"><value>Refresh before trying again</value></data>
+  <data name="ChatMessageDeleteReview.Message" xml:space="preserve"><value>The NAS may have received the request, but the app could not confirm the message disappeared. Refresh this conversation before deleting it again.</value></data>
+  <data name="ChatMessageDeleteError.Title" xml:space="preserve"><value>Message was not deleted</value></data>
+  <data name="ChatMessageDeleteError.Message" xml:space="preserve"><value>Check the connection, refresh this conversation, then try again.</value></data>
   <data name="ChatBrowserComposerSending" xml:space="preserve"><value>Sending message…</value></data>
   <data name="ChatBrowserComposerSent" xml:space="preserve"><value>Message sent.</value></data>
   <data name="ChatBrowserComposerReview" xml:space="preserve"><value>The message may have been sent. Refresh messages before sending it again.</value></data>
@@ -746,6 +804,12 @@
   <data name="DownloadStationDetailUploadSpeed.Text" xml:space="preserve"><value>Upload speed</value></data>
   <data name="DownloadStationDetailDestination.Text" xml:space="preserve"><value>Save location</value></data>
   <data name="DownloadStationDetailError.Text" xml:space="preserve"><value>Issue</value></data>
+  <data name="DownloadStationDetailPriority.Text" xml:space="preserve"><value>Priority</value></data>
+  <data name="DownloadStationDetailFiles.Text" xml:space="preserve"><value>Files</value></data>
+  <data name="DownloadStationDetailTrackers.Text" xml:space="preserve"><value>Trackers</value></data>
+  <data name="DownloadStationDetailPeers.Text" xml:space="preserve"><value>Peers</value></data>
+  <data name="DownloadStationDetailSeeds.Text" xml:space="preserve"><value>Seeds</value></data>
+  <data name="DownloadStationDetailLeeches.Text" xml:space="preserve"><value>Downloading peers</value></data>
   <data name="DownloadStationChooseTaskTitle.Text" xml:space="preserve"><value>Choose a task</value></data>
   <data name="DownloadStationChooseTaskMessage.Text" xml:space="preserve"><value>Select a task to view its current details.</value></data>
   <data name="DownloadStationLoading.Text" xml:space="preserve"><value>Loading download tasks…</value></data>
@@ -853,6 +917,36 @@
   <data name="DownloadStationActivityEmuleUpload.Text" xml:space="preserve"><value>eMule upload speed</value></data>
   <data name="DownloadStationActivityError.Title" xml:space="preserve"><value>Activity speed is unavailable</value></data>
   <data name="DownloadStationActivityError.Message" xml:space="preserve"><value>The task list is still available. Refresh to try the speed summary again.</value></data>
+  <data name="DownloadStationAdvancedSummaryError.Title" xml:space="preserve"><value>Some details are unavailable</value></data>
+  <data name="DownloadStationAdvancedSummaryError.Message" xml:space="preserve"><value>The task list is still available. Refresh to try Download Station settings or RSS again.</value></data>
+  <data name="DownloadStationSettingsSummaryTitle.Text" xml:space="preserve"><value>Download Station settings</value></data>
+  <data name="DownloadStationSettingsDefaultDestination.Text" xml:space="preserve"><value>Default save location</value></data>
+  <data name="DownloadStationSettingsAutoExtract.Text" xml:space="preserve"><value>Auto extract</value></data>
+  <data name="DownloadStationSettingsSchedule.Text" xml:space="preserve"><value>Schedule</value></data>
+  <data name="DownloadStationSettingsSpeedLimits.Text" xml:space="preserve"><value>Speed limits</value></data>
+  <data name="DownloadStationSettingsEmule.Text" xml:space="preserve"><value>eMule</value></data>
+  <data name="DownloadStationRssSummaryTitle.Text" xml:space="preserve"><value>RSS summary</value></data>
+  <data name="DownloadStationRssSites.Text" xml:space="preserve"><value>Sites</value></data>
+  <data name="DownloadStationRssFeeds.Text" xml:space="preserve"><value>Items</value></data>
+  <data name="DownloadStationSettingEnabled" xml:space="preserve"><value>Enabled</value></data>
+  <data name="DownloadStationSettingDisabled" xml:space="preserve"><value>Off</value></data>
+  <data name="DownloadStationLimitUnlimited" xml:space="preserve"><value>Unlimited</value></data>
+  <data name="DownloadStationLimitValue" xml:space="preserve"><value>{0} KB/s</value></data>
+  <data name="DownloadStationSettingsEmuleSummary" xml:space="preserve"><value>{0}; download {1}, upload {2}</value></data>
+  <data name="DownloadStationSettingsScheduleSummary" xml:space="preserve"><value>{0}; eMule schedule {1}</value></data>
+  <data name="DownloadStationSettingsSpeedLimitSummary" xml:space="preserve"><value>BT: {0} down / {1} up; web: {2}; FTP: {3}; NZB: {4}</value></data>
+  <data name="DownloadStationRssSiteCount" xml:space="preserve"><value>{0} RSS sites</value></data>
+  <data name="DownloadStationRssFeedCount" xml:space="preserve"><value>{0} RSS items</value></data>
+  <data name="DownloadStationPriorityLow" xml:space="preserve"><value>Low</value></data>
+  <data name="DownloadStationPriorityNormal" xml:space="preserve"><value>Normal</value></data>
+  <data name="DownloadStationPriorityHigh" xml:space="preserve"><value>High</value></data>
+  <data name="DownloadStationPriorityUnknown" xml:space="preserve"><value>Not reported</value></data>
+  <data name="DownloadStationAdvancedFileCount" xml:space="preserve"><value>{0} files</value></data>
+  <data name="DownloadStationAdvancedTrackerCount" xml:space="preserve"><value>{0} trackers</value></data>
+  <data name="DownloadStationAdvancedConnectedPeerCount" xml:space="preserve"><value>{0} connected peers</value></data>
+  <data name="DownloadStationAdvancedPeerCount" xml:space="preserve"><value>{0} peers</value></data>
+  <data name="DownloadStationAdvancedSeedCount" xml:space="preserve"><value>{0} seeds</value></data>
+  <data name="DownloadStationAdvancedLeechCount" xml:space="preserve"><value>{0} downloading peers</value></data>
   <data name="DownloadStationByteValueB" xml:space="preserve"><value>{0} B</value></data>
   <data name="DownloadStationByteValueKB" xml:space="preserve"><value>{0} KB</value></data>
   <data name="DownloadStationByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
@@ -1121,6 +1215,7 @@
   <data name="FileShareLinkCopiedMessage" xml:space="preserve"><value>Link copied</value></data>
   <data name="FileShareLinkCopyFailedMessage" xml:space="preserve"><value>The link could not be copied. Try again.</value></data>
   <data name="FileShareLinkSystemShareAction" xml:space="preserve"><value>Share with another app</value></data>
+  <data name="FileShareLinkSystemShareTitle" xml:space="preserve"><value>Shared NAS link</value></data>
   <data name="FileShareLinkSystemShareUnavailable" xml:space="preserve"><value>Sharing with another app is not available in this Windows installation. You can still copy the link.</value></data>
   <data name="FileShareLinkReviewTitle" xml:space="preserve"><value>Check the link in DSM</value></data>
   <data name="FileShareLinkReviewMessage" xml:space="preserve"><value>The request may have reached your NAS, but LanStash could not verify the new link. Check sharing in DSM before trying again.</value></data>
@@ -1715,6 +1810,13 @@
   <data name="CrossNasCompleted" xml:space="preserve"><value>Transfer completed</value></data>
   <data name="CrossNasFailed" xml:space="preserve"><value>Transfer didn't finish</value></data>
   <data name="CrossNasUnsupported" xml:space="preserve"><value>Cross-NAS transfer is not supported on these connections</value></data>
+  <data name="CrossNasUnsupportedTitle" xml:space="preserve"><value>Copy is not available</value></data>
+  <data name="CrossNasUnsupportedMessage" xml:space="preserve"><value>This NAS cannot safely copy items to another NAS right now. Check that both NAS connections support file download, upload, and folder browsing.</value></data>
+  <data name="CrossNasTargetUnavailableTitle" xml:space="preserve"><value>Destination NAS needs attention</value></data>
+  <data name="CrossNasTargetUnavailableMessage" xml:space="preserve"><value>Sign in to the destination NAS again, then return here and try the copy again.</value></data>
+  <data name="CrossNasFailedMessage" xml:space="preserve"><value>The copy could not be completed. Check both NAS connections and try again.</value></data>
+  <data name="CrossNasFailedNeedsReviewMessage" xml:space="preserve"><value>The copy request may have reached the destination NAS. Refresh the destination folder before trying again.</value></data>
+  <data name="CrossNasSameTargetMessage" xml:space="preserve"><value>Choose a different destination NAS.</value></data>
   <data name="CrossNasCopyFileTitle" xml:space="preserve"><value>Copy file to another NAS</value></data>
   <data name="CrossNasCopyFolderTitle" xml:space="preserve"><value>Copy folder to another NAS</value></data>
   <data name="CrossNasMoveFileTitle" xml:space="preserve"><value>Move file to another NAS</value></data>

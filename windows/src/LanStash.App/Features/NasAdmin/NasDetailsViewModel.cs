@@ -10,15 +10,20 @@ namespace LanStash.App.Features.NasAdmin;
 public sealed class NasDetailsViewModel : ObservableObject, IDisposable
 {
     private const int MaximumCachedProfiles = 4;
+    private const int MaximumSectionRows = 50;
     private readonly Dictionary<Guid, NasDetailsProfileState> _profiles = [];
     private readonly LinkedList<Guid> _profileOrder = [];
     private INasDetailsRepository? _repository;
     private CancellationTokenSource? _requestCancellation;
+    private CancellationTokenSource? _storageAnalysisCancellation;
     private long _generation;
+    private long _storageAnalysisGeneration;
     private Guid? _activeProfileId;
     private NasDetailsContentState _contentState = NasDetailsContentState.Loading;
     private NasDetailsSectionKind _selectedSection = NasDetailsSectionKind.SystemOverview;
     private bool _isLoading;
+    private bool _isStorageAnalysisRunning;
+    private bool _storageAnalysisWasCancelled;
     private bool _hasRefreshError;
     private bool _sectionNoticeIsOpen;
     private string _sectionNoticeTitle = string.Empty;
@@ -67,8 +72,32 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _isLoading, value))
             {
                 RaisePropertyChanged(nameof(CanRefresh));
+                RaisePropertyChanged(nameof(CanRunStorageAnalysis));
+                RaisePropertyChanged(nameof(CanRunDeepStorageAnalysis));
+                RaisePropertyChanged(nameof(CanCancelStorageAnalysis));
             }
         }
+    }
+
+    public bool IsStorageAnalysisRunning
+    {
+        get => _isStorageAnalysisRunning;
+        private set
+        {
+            if (SetProperty(ref _isStorageAnalysisRunning, value))
+            {
+                RaisePropertyChanged(nameof(CanRefresh));
+                RaisePropertyChanged(nameof(CanRunStorageAnalysis));
+                RaisePropertyChanged(nameof(CanRunDeepStorageAnalysis));
+                RaisePropertyChanged(nameof(CanCancelStorageAnalysis));
+            }
+        }
+    }
+
+    public bool StorageAnalysisWasCancelled
+    {
+        get => _storageAnalysisWasCancelled;
+        private set => SetProperty(ref _storageAnalysisWasCancelled, value);
     }
 
     public bool HasRefreshError
@@ -106,7 +135,15 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         ? L.Get("NasDetailsShareAccessEmptyMessage")
         : L.Get("NasDetailsEmptyMessageText");
     public bool CanRefresh => !IsLoading &&
+        !IsStorageAnalysisRunning &&
         _repository?.Availability.Status == NasDetailsAvailabilityStatus.Available;
+    public bool CanRunStorageAnalysis =>
+        !IsLoading &&
+        !IsStorageAnalysisRunning &&
+        CurrentProfile is { Loaded: true } &&
+        _repository?.Availability.Features.Contains(NasDetailsReadFeature.StorageAnalysis) == true;
+    public bool CanRunDeepStorageAnalysis => CanRunStorageAnalysis;
+    public bool CanCancelStorageAnalysis => IsStorageAnalysisRunning;
 
     private NasDetailsProfileState? CurrentProfile => ActiveProfileId is Guid id &&
         _profiles.TryGetValue(id, out var profile) ? profile : null;
@@ -117,6 +154,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         ArgumentNullException.ThrowIfNull(repository);
         SaveCurrentProfileState();
         CancelRequest();
+        CancelStorageAnalysis();
         _repository = repository;
         ActiveProfileId = repository.ProfileId;
 
@@ -167,6 +205,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         ThrowIfDisposed();
         SaveCurrentProfileState();
         CancelRequest();
+        CancelStorageAnalysis();
         _repository = null;
         ActiveProfileId = null;
         ClearContent();
@@ -183,6 +222,107 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         }
         _disposed = true;
         CancelRequest();
+        CancelStorageAnalysis();
+    }
+
+    public async Task RunStorageAnalysisAsync()
+    {
+        await RunStorageAnalysisAsync(deep: false);
+    }
+
+    public async Task RunDeepStorageAnalysisAsync()
+    {
+        await RunStorageAnalysisAsync(deep: true);
+    }
+
+    private async Task RunStorageAnalysisAsync(bool deep)
+    {
+        ThrowIfDisposed();
+        if (!CanRunStorageAnalysis || CurrentProfile is not { } profile)
+        {
+            return;
+        }
+
+        var repository = RequireRepository();
+        var request = BeginStorageAnalysisRequest();
+        IsStorageAnalysisRunning = true;
+        StorageAnalysisWasCancelled = false;
+        if (SelectedSection == NasDetailsSectionKind.StorageAnalysis)
+        {
+            SectionNoticeIsOpen = false;
+        }
+
+        try
+        {
+            var section = deep
+                ? await repository.LoadDeepStorageAnalysisAsync(request.Cancellation.Token)
+                : await repository.LoadStorageAnalysisAsync(request.Cancellation.Token);
+            if (!IsCurrentStorageAnalysis(request.Generation, repository) ||
+                profile.Snapshot is not { } snapshot)
+            {
+                return;
+            }
+
+            profile.Snapshot = snapshot with { StorageAnalysis = section };
+            profile.Loaded = true;
+            ApplyStorageAnalysisUpdate(profile);
+            TouchProfile(repository.ProfileId);
+        }
+        catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
+        {
+            if (IsCurrentStorageAnalysis(request.Generation, repository))
+            {
+                StorageAnalysisWasCancelled = true;
+                if (SelectedSection == NasDetailsSectionKind.StorageAnalysis)
+                {
+                    SectionNoticeTitle = L.Get("NasDetailsStorageAnalysisCancelledTitle");
+                    SectionNoticeMessage = L.Get("NasDetailsStorageAnalysisCancelledMessage");
+                    SectionNoticeIsOpen = true;
+                }
+            }
+        }
+        catch
+        {
+            if (IsCurrentStorageAnalysis(request.Generation, repository) &&
+                profile.Snapshot is { } snapshot)
+            {
+                profile.Snapshot = snapshot with
+                {
+                    StorageAnalysis = new(
+                        NasDetailsSectionStatus.Failed,
+                        [],
+                        DiagnosticTag: "nas-details.storage-analysis.failed"),
+                };
+                ApplyStorageAnalysisUpdate(profile);
+            }
+        }
+        finally
+        {
+            if (IsCurrentStorageAnalysis(request.Generation, repository))
+            {
+                IsStorageAnalysisRunning = false;
+            }
+        }
+    }
+
+    public void CancelStorageAnalysis()
+    {
+        _storageAnalysisGeneration++;
+        var cancellation = _storageAnalysisCancellation;
+        _storageAnalysisCancellation = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+        if (IsStorageAnalysisRunning)
+        {
+            IsStorageAnalysisRunning = false;
+            StorageAnalysisWasCancelled = true;
+            if (SelectedSection == NasDetailsSectionKind.StorageAnalysis)
+            {
+                SectionNoticeTitle = L.Get("NasDetailsStorageAnalysisCancelledTitle");
+                SectionNoticeMessage = L.Get("NasDetailsStorageAnalysisCancelledMessage");
+                SectionNoticeIsOpen = true;
+            }
+        }
     }
 
     private async Task LoadAsync(
@@ -211,6 +351,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             }
             profile.Snapshot = snapshot;
             profile.Loaded = true;
+            StorageAnalysisWasCancelled = false;
             ApplySection(profile);
             TouchProfile(repository.ProfileId);
         }
@@ -258,6 +399,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
                 StorageRow),
             NasDetailsSectionKind.SystemUpdate => ProjectUpdateSection(snapshot.SystemUpdate),
             NasDetailsSectionKind.ShareAccess => ProjectShareAccessSection(snapshot.ShareAccess),
+            NasDetailsSectionKind.StorageAnalysis => ProjectStorageAnalysisSection(snapshot.StorageAnalysis),
             NasDetailsSectionKind.SystemActivity => ProjectSystemActivitySection(snapshot.SystemActivity),
             NasDetailsSectionKind.Packages => ProjectSection(
                 snapshot.Packages,
@@ -318,6 +460,10 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             NasDetailsSectionKind.ShareAccess,
             snapshot.ShareAccess.Status,
             snapshot.ShareAccess.Items.Count));
+        Sections.Add(SectionOption(
+            NasDetailsSectionKind.StorageAnalysis,
+            snapshot.StorageAnalysis.Status,
+            snapshot.StorageAnalysis.Items.FirstOrDefault()?.ScannedFileCount ?? 0));
         Sections.Add(SectionOption(
             NasDetailsSectionKind.SystemActivity,
             snapshot.SystemActivity.Status,
@@ -457,6 +603,186 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
                 _ => "\uE897",
             });
     }
+
+    private static SectionProjection ProjectStorageAnalysisSection(
+        NasDetailsSection<NasStorageAnalysisSummary> section)
+    {
+        if (section.Status != NasDetailsSectionStatus.Available || section.Items.Count == 0)
+        {
+            return new(section.Status, [], section.IsTruncated);
+        }
+        var analysis = section.Items[0];
+        var rows = new List<NasDetailsRow>
+        {
+            Row(
+                "storage-analysis-scope",
+                analysis.IsDeepAnalysis
+                    ? L.Get("NasDetailsDeepStorageAnalysisScopeTitle")
+                    : L.Get("NasDetailsStorageAnalysisScopeTitle"),
+                analysis.IsDeepAnalysis
+                    ? L.Format(
+                        "NasDetailsDeepStorageAnalysisScopeDetail",
+                        analysis.ScannedShareCount,
+                        analysis.ScannedFolderCount,
+                        analysis.ScannedFileCount,
+                        FormatBytes(analysis.SampledBytes))
+                    : L.Format(
+                        "NasDetailsStorageAnalysisScopeDetail",
+                        analysis.ScannedShareCount,
+                        analysis.ScannedFileCount,
+                        FormatBytes(analysis.SampledBytes)),
+                analysis.IsPartial || section.IsTruncated
+                    ? L.Get("NasDetailsStorageAnalysisPartial")
+                    : analysis.IsDeepAnalysis
+                        ? L.Get("NasDetailsDeepStorageAnalysisComplete")
+                        : L.Get("NasDetailsStorageAnalysisComplete"),
+                "\uE8B7"),
+        };
+        rows.AddRange(analysis.Categories.Select(CategoryRow));
+        if (analysis.OwnerSummary is { KnownOwnerFileCount: > 0 } owner)
+        {
+            rows.Add(Row(
+                "storage-analysis-owner",
+                L.Get("NasDetailsStorageAnalysisOwnerTitle"),
+                L.Format(
+                    "NasDetailsStorageAnalysisOwnerDetail",
+                    owner.KnownOwnerFileCount,
+                    owner.DistinctOwnerCount),
+                string.Empty,
+                "\uE77B"));
+        }
+        if (analysis.AccessTimeSummary is { KnownAccessTimeFileCount: > 0 } access)
+        {
+            rows.Add(Row(
+                "storage-analysis-access-time",
+                L.Get("NasDetailsStorageAnalysisAccessTitle"),
+                L.Format(
+                    "NasDetailsStorageAnalysisAccessDetail",
+                    access.KnownAccessTimeFileCount),
+                access.OldestAccessedAt is { } oldest
+                    ? L.Format("NasDetailsStorageAnalysisOldestAccessed", oldest.ToLocalTime().ToString("g"))
+                    : string.Empty,
+                "\uE823"));
+        }
+        if (analysis.Directories is { Count: > 0 } directories)
+        {
+            rows.Add(GroupRow(
+                "storage-analysis-directory-title",
+                L.Get("NasDetailsStorageAnalysisFolders"),
+                "\uE8B7",
+                analysis.IsDeepAnalysis
+                    ? L.Get("NasDetailsStorageAnalysisDeepScope")
+                    : null));
+            rows.AddRange(directories.Select((item, index) =>
+                DirectoryRow($"storage-analysis-directory-{index + 1}", item)));
+        }
+        if (analysis.LargeFiles.Count > 0)
+        {
+            rows.Add(GroupRow(
+                "storage-analysis-large-title",
+                L.Get("NasDetailsStorageAnalysisLargeFiles"),
+                "\uE8A1"));
+            rows.AddRange(analysis.LargeFiles.Select((item, index) =>
+                FileCandidateRow($"storage-analysis-large-{index + 1}", item, "\uE8EF")));
+        }
+        if (analysis.RecentFiles.Count > 0)
+        {
+            rows.Add(GroupRow(
+                "storage-analysis-recent-title",
+                L.Get("NasDetailsStorageAnalysisRecentFiles"),
+                "\uE823"));
+            rows.AddRange(analysis.RecentFiles.Select((item, index) =>
+                FileCandidateRow($"storage-analysis-recent-{index + 1}", item, "\uE8FD")));
+        }
+        if (analysis.OldFiles.Count > 0)
+        {
+            rows.Add(GroupRow(
+                "storage-analysis-old-title",
+                L.Get("NasDetailsStorageAnalysisOldFiles"),
+                "\uE7C3"));
+            rows.AddRange(analysis.OldFiles.Select((item, index) =>
+                FileCandidateRow($"storage-analysis-old-{index + 1}", item, "\uE8FD")));
+        }
+        if (analysis.DuplicateCandidates.Count > 0)
+        {
+            rows.Add(GroupRow(
+                "storage-analysis-duplicate-title",
+                L.Get("NasDetailsStorageAnalysisDuplicateFiles"),
+                "\uE8EE"));
+            rows.AddRange(analysis.DuplicateCandidates.Select((item, index) =>
+                DuplicateRow($"storage-analysis-duplicate-{index + 1}", item)));
+        }
+        return new(section.Status, rows.Take(MaximumSectionRows).ToArray(), section.IsTruncated);
+    }
+
+    private static NasDetailsRow CategoryRow(NasStorageCategorySummary item)
+    {
+        var title = item.Category switch
+        {
+            NasStorageAnalysisCategory.Images => L.Get("NasDetailsStorageAnalysisCategoryImages"),
+            NasStorageAnalysisCategory.Videos => L.Get("NasDetailsStorageAnalysisCategoryVideos"),
+            NasStorageAnalysisCategory.Documents => L.Get("NasDetailsStorageAnalysisCategoryDocuments"),
+            NasStorageAnalysisCategory.Archives => L.Get("NasDetailsStorageAnalysisCategoryArchives"),
+            NasStorageAnalysisCategory.Other => L.Get("NasDetailsStorageAnalysisCategoryOther"),
+            _ => throw new ArgumentOutOfRangeException(nameof(item.Category)),
+        };
+        return Row(
+            $"storage-analysis-category-{item.Category.ToString().ToLowerInvariant()}",
+            title,
+            L.Format("NasDetailsStorageAnalysisFileCount", item.FileCount),
+            FormatBytes(item.SizeBytes),
+            "\uE8B7");
+    }
+
+    private static NasDetailsRow FileCandidateRow(
+        string id,
+        NasStorageFileCandidate item,
+        string glyph) =>
+        Row(
+            id,
+            item.Name,
+            FormatBytes(item.SizeBytes),
+            item.ModifiedAt is { } modified
+                ? L.Format("NasDetailsStorageAnalysisModified", modified.ToLocalTime().ToString("g"))
+                : L.Get("UnknownValue"),
+            glyph);
+
+    private static NasDetailsRow DirectoryRow(
+        string id,
+        NasStorageDirectorySummary item) =>
+        Row(
+            id,
+            string.IsNullOrWhiteSpace(item.Name)
+                ? L.Get("UnknownValue")
+                : item.Name,
+            L.Format("NasDetailsStorageAnalysisFolderDetail", item.FileCount),
+            FormatBytes(item.SizeBytes),
+            "\uE8B7");
+
+    private static NasDetailsRow DuplicateRow(
+        string id,
+        NasStorageDuplicateCandidate item) =>
+        Row(
+            id,
+            L.Format(
+                item.IsContentConfirmed
+                    ? "NasDetailsStorageAnalysisDuplicateConfirmedName"
+                    : "NasDetailsStorageAnalysisDuplicateName",
+                item.Name),
+            FormatBytes(item.SizeBytes),
+            L.Format(
+                item.IsContentConfirmed
+                    ? "NasDetailsStorageAnalysisDuplicateConfirmedCount"
+                    : "NasDetailsStorageAnalysisDuplicateCount",
+                item.FileCount),
+            "\uE8EE");
+
+    private static NasDetailsRow GroupRow(
+        string id,
+        string title,
+        string glyph,
+        string? detail = null) =>
+        Row(id, title, detail ?? L.Get("NasDetailsStorageAnalysisSampleOnly"), string.Empty, glyph);
 
     private static SectionProjection ProjectSystemActivitySection(
         NasDetailsSection<NasSystemActivitySummary> section)
@@ -680,6 +1006,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         NasDetailsSectionKind.StorageHealth => L.Get("NasDetailsSectionStorage"),
         NasDetailsSectionKind.SystemUpdate => L.Get("NasDetailsSectionUpdate"),
         NasDetailsSectionKind.ShareAccess => L.Get("NasDetailsSectionShareAccess"),
+        NasDetailsSectionKind.StorageAnalysis => L.Get("NasDetailsSectionStorageAnalysis"),
         NasDetailsSectionKind.SystemActivity => L.Get("NasDetailsSectionSystemActivity"),
         NasDetailsSectionKind.Packages => L.Get("NasDetailsSectionPackages"),
         NasDetailsSectionKind.ScheduledTasks => L.Get("NasDetailsSectionTasks"),
@@ -813,12 +1140,34 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         SectionNoticeIsOpen = false;
     }
 
+    private void ApplyStorageAnalysisUpdate(NasDetailsProfileState profile)
+    {
+        if (SelectedSection == NasDetailsSectionKind.StorageAnalysis)
+        {
+            ApplySection(profile);
+            return;
+        }
+        if (profile.Snapshot is not null)
+        {
+            RebuildSections(profile.Snapshot);
+        }
+    }
+
     private RequestState BeginRequest()
     {
         CancelRequest();
+        CancelStorageAnalysis();
         var cancellation = new CancellationTokenSource();
         _requestCancellation = cancellation;
         return new RequestState(++_generation, cancellation);
+    }
+
+    private RequestState BeginStorageAnalysisRequest()
+    {
+        CancelStorageAnalysis();
+        var cancellation = new CancellationTokenSource();
+        _storageAnalysisCancellation = cancellation;
+        return new RequestState(++_storageAnalysisGeneration, cancellation);
     }
 
     private void CancelRequest()
@@ -833,6 +1182,12 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     private bool IsCurrent(long generation, INasDetailsRepository repository) =>
         !_disposed &&
         generation == _generation &&
+        ReferenceEquals(repository, _repository) &&
+        ActiveProfileId == repository.ProfileId;
+
+    private bool IsCurrentStorageAnalysis(long generation, INasDetailsRepository repository) =>
+        !_disposed &&
+        generation == _storageAnalysisGeneration &&
         ReferenceEquals(repository, _repository) &&
         ActiveProfileId == repository.ProfileId;
 

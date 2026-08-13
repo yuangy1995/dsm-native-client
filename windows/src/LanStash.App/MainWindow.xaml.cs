@@ -1,4 +1,5 @@
 using LanStash.App.Localization;
+using LanStash.App.Platform.Notifications;
 using LanStash.App.ViewModels;
 using LanStash.App.Views;
 using Microsoft.UI;
@@ -14,6 +15,7 @@ public sealed partial class MainWindow : Window
     private readonly AppViewModel _viewModel = new();
     private readonly AppWindow _appWindow;
     private readonly TrayIcon _trayIcon;
+    private WindowsTransferNotificationService? _transferNotifications;
     private bool _isExplicitExit;
     private bool _photoViewerOwnsFullScreen;
     private bool _restorePhotoViewerMaximized;
@@ -66,9 +68,14 @@ public sealed partial class MainWindow : Window
                 LocalizationService.Current.Get("TrayResumeCloudDrives"),
                 LocalizationService.Current.Get("TrayCloudDriveIssues"),
                 LocalizationService.Current.Get("TrayExitApp"));
+            if (_viewModel.Repository is not null)
+            {
+                _transferNotifications ??= new WindowsTransferNotificationService(
+                    () => ShowTransfersFromNotification());
+            }
             RootFrame.Content = _viewModel.Repository is null
                 ? new LoginPage(_viewModel)
-                : new ShellPage(_viewModel);
+                : new ShellPage(_viewModel, _transferNotifications);
         });
     }
 
@@ -77,9 +84,28 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             ExitPhotoViewerFullScreen();
+            _transferNotifications?.Dispose();
+            _transferNotifications = connected
+                ? new WindowsTransferNotificationService(
+                    () => ShowTransfersFromNotification())
+                : null;
             RootFrame.Content = connected
-                ? new ShellPage(_viewModel)
+                ? new ShellPage(_viewModel, _transferNotifications)
                 : new LoginPage(_viewModel);
+        });
+    }
+
+    private void ShowTransfersFromNotification()
+    {
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            _appWindow.Show();
+            Activate();
+            if (RootFrame.Content is ShellPage shell)
+            {
+                await shell.SetWindowVisibleAsync(true);
+                await shell.ShowTransfersAsync();
+            }
         });
     }
 
@@ -119,6 +145,8 @@ public sealed partial class MainWindow : Window
             _isExplicitExit = true;
             ExitPhotoViewerFullScreen();
             _viewModel.Shutdown();
+            _transferNotifications?.Dispose();
+            _transferNotifications = null;
             _trayIcon.Dispose();
             Close();
         });

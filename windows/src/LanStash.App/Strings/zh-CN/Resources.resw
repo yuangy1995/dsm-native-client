@@ -44,6 +44,12 @@
   <data name="NasDetailsDescription.Text" xml:space="preserve"><value>查看系统健康、存储、套件、计划任务、日志和当前连接。此页面不会更改 NAS 设置。</value></data>
   <data name="NasDetailsRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新 NAS 详情</value></data>
   <data name="NasDetailsRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
+  <data name="NasDetailsRunStorageAnalysis.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>重新运行存储分析样本</value></data>
+  <data name="NasDetailsRunStorageAnalysisLabel.Text" xml:space="preserve"><value>分析存储</value></data>
+  <data name="NasDetailsRunDeepStorageAnalysis.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>运行更深入的存储分析</value></data>
+  <data name="NasDetailsRunDeepStorageAnalysisLabel.Text" xml:space="preserve"><value>深度分析</value></data>
+  <data name="NasDetailsCancelStorageAnalysis.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>取消存储分析样本</value></data>
+  <data name="NasDetailsCancelStorageAnalysisLabel.Text" xml:space="preserve"><value>取消分析</value></data>
   <data name="NasDetailsReadOnly.Title" xml:space="preserve"><value>只读视图</value></data>
   <data name="NasDetailsReadOnly.Message" xml:space="preserve"><value>如需更改这些项目，请使用 DSM。</value></data>
   <data name="NasDetailsRefreshError.Title" xml:space="preserve"><value>部分内容无法更新</value></data>
@@ -78,6 +84,7 @@
   <data name="NasDetailsSectionStorage" xml:space="preserve"><value>存储</value></data>
   <data name="NasDetailsSectionUpdate" xml:space="preserve"><value>系统更新</value></data>
   <data name="NasDetailsSectionShareAccess" xml:space="preserve"><value>共享访问</value></data>
+  <data name="NasDetailsSectionStorageAnalysis" xml:space="preserve"><value>存储分析</value></data>
   <data name="NasDetailsSectionSystemActivity" xml:space="preserve"><value>系统活动</value></data>
   <data name="NasDetailsSystemActivityProcessId" xml:space="preserve"><value>进程编号 {0}</value></data>
   <data name="NasDetailsSystemActivityGroup" xml:space="preserve"><value>服务：{0}</value></data>
@@ -94,6 +101,39 @@
   <data name="NasDetailsShareAccessCanDelete" xml:space="preserve"><value>允许删除</value></data>
   <data name="NasDetailsShareAccessEmptyTitle" xml:space="preserve"><value>没有可见的共享文件夹</value></data>
   <data name="NasDetailsShareAccessEmptyMessage" xml:space="preserve"><value>当前账号可能没有任何共享文件夹的访问权限。管理员调整权限后，请刷新再试。</value></data>
+  <data name="NasDetailsStorageAnalysisScopeTitle" xml:space="preserve"><value>有界存储快照</value></data>
+  <data name="NasDetailsStorageAnalysisScopeDetail" xml:space="preserve"><value>已检查 {0} 个共享文件夹和 {1} 个文件候选，样本合计 {2}。</value></data>
+  <data name="NasDetailsStorageAnalysisPartial" xml:space="preserve"><value>部分文件夹或文件未包含在样本中。请刷新重新采样。</value></data>
+  <data name="NasDetailsStorageAnalysisComplete" xml:space="preserve"><value>已在当前上限内完成采样。</value></data>
+  <data name="NasDetailsDeepStorageAnalysisScopeTitle" xml:space="preserve"><value>深度存储快照</value></data>
+  <data name="NasDetailsDeepStorageAnalysisScopeDetail" xml:space="preserve"><value>已检查 {0} 个共享文件夹、{1} 个文件夹和 {2} 个文件，本次分析合计 {3}。</value></data>
+  <data name="NasDetailsDeepStorageAnalysisComplete" xml:space="preserve"><value>已在当前上限内完成深度分析。</value></data>
+  <data name="NasDetailsStorageAnalysisDeepScope" xml:space="preserve"><value>基于更深入的有界分析。</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryImages" xml:space="preserve"><value>图片</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryVideos" xml:space="preserve"><value>视频</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryDocuments" xml:space="preserve"><value>文档</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryArchives" xml:space="preserve"><value>压缩包</value></data>
+  <data name="NasDetailsStorageAnalysisCategoryOther" xml:space="preserve"><value>其他文件</value></data>
+  <data name="NasDetailsStorageAnalysisFileCount" xml:space="preserve"><value>{0} 个文件</value></data>
+  <data name="NasDetailsStorageAnalysisLargeFiles" xml:space="preserve"><value>样本中的大文件</value></data>
+  <data name="NasDetailsStorageAnalysisRecentFiles" xml:space="preserve"><value>最近变化的样本</value></data>
+  <data name="NasDetailsStorageAnalysisOldFiles" xml:space="preserve"><value>较早变化的样本</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateFiles" xml:space="preserve"><value>可能重复的文件</value></data>
+  <data name="NasDetailsStorageAnalysisFolders" xml:space="preserve"><value>已检查的大文件夹</value></data>
+  <data name="NasDetailsStorageAnalysisSampleOnly" xml:space="preserve"><value>基于有界样本，不是完整递归扫描。</value></data>
+  <data name="NasDetailsStorageAnalysisCancelledTitle" xml:space="preserve"><value>已取消存储分析</value></data>
+  <data name="NasDetailsStorageAnalysisCancelledMessage" xml:space="preserve"><value>仍显示上次的存储分析。你可以重新运行样本。</value></data>
+  <data name="NasDetailsStorageAnalysisModified" xml:space="preserve"><value>修改时间 {0}</value></data>
+  <data name="NasDetailsStorageAnalysisOwnerTitle" xml:space="preserve"><value>所有者信息覆盖</value></data>
+  <data name="NasDetailsStorageAnalysisOwnerDetail" xml:space="preserve"><value>{0} 个文件提供了所有者信息，涉及 {1} 个所有者。</value></data>
+  <data name="NasDetailsStorageAnalysisAccessTitle" xml:space="preserve"><value>访问时间覆盖</value></data>
+  <data name="NasDetailsStorageAnalysisAccessDetail" xml:space="preserve"><value>{0} 个文件提供了上次访问时间。</value></data>
+  <data name="NasDetailsStorageAnalysisOldestAccessed" xml:space="preserve"><value>最早访问时间 {0}</value></data>
+  <data name="NasDetailsStorageAnalysisFolderDetail" xml:space="preserve"><value>此文件夹中有 {0} 个文件</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateName" xml:space="preserve"><value>可能重复：{0}</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateCount" xml:space="preserve"><value>{0} 个文件名称和大小相同</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateConfirmedName" xml:space="preserve"><value>内容匹配：{0}</value></data>
+  <data name="NasDetailsStorageAnalysisDuplicateConfirmedCount" xml:space="preserve"><value>{0} 个文件的内容指纹匹配</value></data>
   <data name="NasDetailsUpdateAvailable" xml:space="preserve"><value>有可用更新</value></data>
   <data name="NasDetailsUpdateCurrent" xml:space="preserve"><value>DSM 已是最新版本</value></data>
   <data name="NasDetailsUpdateStatusUnavailable" xml:space="preserve"><value>无法确定更新状态</value></data>
@@ -496,6 +536,13 @@
   <data name="TransferActivityUploadNeedsReview" xml:space="preserve"><value>上传请求可能已到达 NAS。再次上传前，请刷新文件夹并检查目标文件。</value></data>
   <data name="TransferActivityFailed" xml:space="preserve"><value>下载未完成。请检查连接和可用存储空间，然后重试。</value></data>
   <data name="TransferActivityUploadFailed" xml:space="preserve"><value>上传未完成。请检查文件夹访问权限、连接和 NAS 可用空间。</value></data>
+  <data name="TransferNotificationCompletedTitle" xml:space="preserve"><value>传输已完成</value></data>
+  <data name="TransferNotificationDownloadCompletedMessage" xml:space="preserve"><value>下载已准备好。打开活动中心查看结果。</value></data>
+  <data name="TransferNotificationUploadCompletedMessage" xml:space="preserve"><value>上传已完成。打开活动中心查看结果。</value></data>
+  <data name="TransferNotificationReviewTitle" xml:space="preserve"><value>请核对传输结果</value></data>
+  <data name="TransferNotificationReviewMessage" xml:space="preserve"><value>有一项传输需要核对结果。请打开活动中心查看。</value></data>
+  <data name="TransferNotificationFailedTitle" xml:space="preserve"><value>传输需要处理</value></data>
+  <data name="TransferNotificationFailedMessage" xml:space="preserve"><value>有一项传输未能完成。请打开活动中心后重试。</value></data>
   <data name="TransferSaveErrorTitle" xml:space="preserve"><value>无法开始下载</value></data>
   <data name="TransferSaveErrorMessage" xml:space="preserve"><value>请重新选择保存位置。如果问题仍然存在，请检查该位置的访问权限。</value></data>
   <data name="TransferUploadOpenErrorTitle" xml:space="preserve"><value>无法开始上传</value></data>
@@ -591,7 +638,7 @@
   <data name="ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>刷新会话</value></data>
   <data name="ChatBrowserRefreshLabel.Text" xml:space="preserve"><value>刷新</value></data>
   <data name="ChatBrowserReadOnly.Title" xml:space="preserve"><value>聊天功能受限</value></data>
-  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>可新建单聊和私人群聊，并发送文字和一个附件。暂不支持加密会话。</value></data>
+  <data name="ChatBrowserReadOnly.Message" xml:space="preserve"><value>可新建单聊和私人群聊，发送文字和一个附件，并删除自己发送的消息。暂不支持加密会话。</value></data>
   <data name="ChatBrowserSearch.PlaceholderText" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>搜索会话</value></data>
   <data name="ChatBrowserConversationRefreshError.Title" xml:space="preserve"><value>无法刷新会话</value></data>
@@ -654,6 +701,17 @@
   <data name="ChatBrowserSend.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>发送消息</value></data>
   <data name="ChatBrowserSendProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>正在发送消息</value></data>
   <data name="ChatBrowserSendStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>消息发送状态</value></data>
+  <data name="ChatMessageDeleteAction" xml:space="preserve"><value>删除消息</value></data>
+  <data name="ChatMessageDeleteAutomationName" xml:space="preserve"><value>删除 {0} 在 {1} 发送的消息</value></data>
+  <data name="ChatMessageDeleteConfirmTitle" xml:space="preserve"><value>要删除这条消息吗？</value></data>
+  <data name="ChatMessageDeleteConfirmMessage" xml:space="preserve"><value>这会从当前会话中移除你在 {0} 发送的消息，其他消息不会改变。</value></data>
+  <data name="ChatMessageDeleteConfirmSubmit" xml:space="preserve"><value>删除消息</value></data>
+  <data name="ChatMessageDeleteConfirmCancel" xml:space="preserve"><value>保留消息</value></data>
+  <data name="ChatMessageDeleteConfirmAutomationName" xml:space="preserve"><value>确认删除消息</value></data>
+  <data name="ChatMessageDeleteReview.Title" xml:space="preserve"><value>再次尝试前请先刷新</value></data>
+  <data name="ChatMessageDeleteReview.Message" xml:space="preserve"><value>NAS 可能已收到请求，但 App 无法确认消息已经消失。再次删除前，请刷新并核对此会话。</value></data>
+  <data name="ChatMessageDeleteError.Title" xml:space="preserve"><value>消息未删除</value></data>
+  <data name="ChatMessageDeleteError.Message" xml:space="preserve"><value>请检查连接、刷新此会话，然后重试。</value></data>
   <data name="ChatBrowserComposerSending" xml:space="preserve"><value>正在发送消息…</value></data>
   <data name="ChatBrowserComposerSent" xml:space="preserve"><value>消息已发送。</value></data>
   <data name="ChatBrowserComposerReview" xml:space="preserve"><value>消息可能已经发送。再次发送前，请先刷新消息核对。</value></data>
@@ -746,6 +804,12 @@
   <data name="DownloadStationDetailUploadSpeed.Text" xml:space="preserve"><value>上传速度</value></data>
   <data name="DownloadStationDetailDestination.Text" xml:space="preserve"><value>保存位置</value></data>
   <data name="DownloadStationDetailError.Text" xml:space="preserve"><value>问题</value></data>
+  <data name="DownloadStationDetailPriority.Text" xml:space="preserve"><value>优先级</value></data>
+  <data name="DownloadStationDetailFiles.Text" xml:space="preserve"><value>文件</value></data>
+  <data name="DownloadStationDetailTrackers.Text" xml:space="preserve"><value>Tracker</value></data>
+  <data name="DownloadStationDetailPeers.Text" xml:space="preserve"><value>节点</value></data>
+  <data name="DownloadStationDetailSeeds.Text" xml:space="preserve"><value>做种</value></data>
+  <data name="DownloadStationDetailLeeches.Text" xml:space="preserve"><value>下载中节点</value></data>
   <data name="DownloadStationChooseTaskTitle.Text" xml:space="preserve"><value>选择任务</value></data>
   <data name="DownloadStationChooseTaskMessage.Text" xml:space="preserve"><value>选择任务以查看当前详情。</value></data>
   <data name="DownloadStationLoading.Text" xml:space="preserve"><value>正在加载下载任务…</value></data>
@@ -853,6 +917,36 @@
   <data name="DownloadStationActivityEmuleUpload.Text" xml:space="preserve"><value>eMule 上传速度</value></data>
   <data name="DownloadStationActivityError.Title" xml:space="preserve"><value>暂时无法读取活动速度</value></data>
   <data name="DownloadStationActivityError.Message" xml:space="preserve"><value>任务列表仍可查看。请刷新后再次获取速度摘要。</value></data>
+  <data name="DownloadStationAdvancedSummaryError.Title" xml:space="preserve"><value>部分详情暂时不可用</value></data>
+  <data name="DownloadStationAdvancedSummaryError.Message" xml:space="preserve"><value>任务列表仍可查看。请刷新后再次获取 Download Station 设置或 RSS 摘要。</value></data>
+  <data name="DownloadStationSettingsSummaryTitle.Text" xml:space="preserve"><value>Download Station 设置</value></data>
+  <data name="DownloadStationSettingsDefaultDestination.Text" xml:space="preserve"><value>默认保存位置</value></data>
+  <data name="DownloadStationSettingsAutoExtract.Text" xml:space="preserve"><value>自动解压</value></data>
+  <data name="DownloadStationSettingsSchedule.Text" xml:space="preserve"><value>计划</value></data>
+  <data name="DownloadStationSettingsSpeedLimits.Text" xml:space="preserve"><value>速度限制</value></data>
+  <data name="DownloadStationSettingsEmule.Text" xml:space="preserve"><value>eMule</value></data>
+  <data name="DownloadStationRssSummaryTitle.Text" xml:space="preserve"><value>RSS 摘要</value></data>
+  <data name="DownloadStationRssSites.Text" xml:space="preserve"><value>站点</value></data>
+  <data name="DownloadStationRssFeeds.Text" xml:space="preserve"><value>条目</value></data>
+  <data name="DownloadStationSettingEnabled" xml:space="preserve"><value>已开启</value></data>
+  <data name="DownloadStationSettingDisabled" xml:space="preserve"><value>已关闭</value></data>
+  <data name="DownloadStationLimitUnlimited" xml:space="preserve"><value>不限速</value></data>
+  <data name="DownloadStationLimitValue" xml:space="preserve"><value>{0} KB/秒</value></data>
+  <data name="DownloadStationSettingsEmuleSummary" xml:space="preserve"><value>{0}；下载 {1}，上传 {2}</value></data>
+  <data name="DownloadStationSettingsScheduleSummary" xml:space="preserve"><value>{0}；eMule 计划 {1}</value></data>
+  <data name="DownloadStationSettingsSpeedLimitSummary" xml:space="preserve"><value>BT：下载 {0} / 上传 {1}；网页：{2}；FTP：{3}；NZB：{4}</value></data>
+  <data name="DownloadStationRssSiteCount" xml:space="preserve"><value>{0} 个 RSS 站点</value></data>
+  <data name="DownloadStationRssFeedCount" xml:space="preserve"><value>{0} 个 RSS 条目</value></data>
+  <data name="DownloadStationPriorityLow" xml:space="preserve"><value>低</value></data>
+  <data name="DownloadStationPriorityNormal" xml:space="preserve"><value>普通</value></data>
+  <data name="DownloadStationPriorityHigh" xml:space="preserve"><value>高</value></data>
+  <data name="DownloadStationPriorityUnknown" xml:space="preserve"><value>未报告</value></data>
+  <data name="DownloadStationAdvancedFileCount" xml:space="preserve"><value>{0} 个文件</value></data>
+  <data name="DownloadStationAdvancedTrackerCount" xml:space="preserve"><value>{0} 个 Tracker</value></data>
+  <data name="DownloadStationAdvancedConnectedPeerCount" xml:space="preserve"><value>{0} 个已连接节点</value></data>
+  <data name="DownloadStationAdvancedPeerCount" xml:space="preserve"><value>{0} 个节点</value></data>
+  <data name="DownloadStationAdvancedSeedCount" xml:space="preserve"><value>{0} 个做种</value></data>
+  <data name="DownloadStationAdvancedLeechCount" xml:space="preserve"><value>{0} 个下载中节点</value></data>
   <data name="DownloadStationByteValueB" xml:space="preserve"><value>{0} B</value></data>
   <data name="DownloadStationByteValueKB" xml:space="preserve"><value>{0} KB</value></data>
   <data name="DownloadStationByteValueMB" xml:space="preserve"><value>{0} MB</value></data>
@@ -1121,6 +1215,7 @@
   <data name="FileShareLinkCopiedMessage" xml:space="preserve"><value>链接已复制</value></data>
   <data name="FileShareLinkCopyFailedMessage" xml:space="preserve"><value>无法复制链接，请重试。</value></data>
   <data name="FileShareLinkSystemShareAction" xml:space="preserve"><value>通过其他应用分享</value></data>
+  <data name="FileShareLinkSystemShareTitle" xml:space="preserve"><value>NAS 分享链接</value></data>
   <data name="FileShareLinkSystemShareUnavailable" xml:space="preserve"><value>当前 Windows 安装无法通过其他应用分享。你仍可复制链接。</value></data>
   <data name="FileShareLinkReviewTitle" xml:space="preserve"><value>请在 DSM 中核对链接</value></data>
   <data name="FileShareLinkReviewMessage" xml:space="preserve"><value>请求可能已到达 NAS，但 LanStash 无法确认新链接。再次尝试前，请先在 DSM 的分享设置中核对。</value></data>
@@ -1715,6 +1810,13 @@
   <data name="CrossNasCompleted" xml:space="preserve"><value>传输完成</value></data>
   <data name="CrossNasFailed" xml:space="preserve"><value>传输未完成</value></data>
   <data name="CrossNasUnsupported" xml:space="preserve"><value>这些连接不支持跨 NAS 传输</value></data>
+  <data name="CrossNasUnsupportedTitle" xml:space="preserve"><value>暂不能复制</value></data>
+  <data name="CrossNasUnsupportedMessage" xml:space="preserve"><value>当前无法安全地把项目复制到另一台 NAS。请确认两台 NAS 都支持文件下载、上传和文件夹浏览。</value></data>
+  <data name="CrossNasTargetUnavailableTitle" xml:space="preserve"><value>目标 NAS 需要处理</value></data>
+  <data name="CrossNasTargetUnavailableMessage" xml:space="preserve"><value>请重新登录目标 NAS，然后回到这里再次复制。</value></data>
+  <data name="CrossNasFailedMessage" xml:space="preserve"><value>复制未能完成。请检查两台 NAS 的连接后重试。</value></data>
+  <data name="CrossNasFailedNeedsReviewMessage" xml:space="preserve"><value>复制请求可能已经到达目标 NAS。再次尝试前，请先刷新目标文件夹核对结果。</value></data>
+  <data name="CrossNasSameTargetMessage" xml:space="preserve"><value>请选择另一台目标 NAS。</value></data>
   <data name="CrossNasCopyFileTitle" xml:space="preserve"><value>复制文件到另一台 NAS</value></data>
   <data name="CrossNasCopyFolderTitle" xml:space="preserve"><value>复制文件夹到另一台 NAS</value></data>
   <data name="CrossNasMoveFileTitle" xml:space="preserve"><value>移动文件到另一台 NAS</value></data>

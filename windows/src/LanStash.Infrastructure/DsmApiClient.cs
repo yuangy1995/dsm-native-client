@@ -1867,10 +1867,19 @@ public sealed partial class DsmApiClient(HttpClient httpClient) : IDsmApiClient
         IProgress<long>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        if (!string.Equals(
+        if (profile.Id != session.ProfileId ||
+            string.IsNullOrWhiteSpace(session.Sid) ||
+            !string.Equals(
                 capability.Name,
                 "SYNO.FileStation.Upload",
-                StringComparison.Ordinal))
+                StringComparison.Ordinal) ||
+            capability.MinVersion > 2 ||
+            capability.MaxVersion < 2 ||
+            !string.Equals(
+                capability.RequestFormat,
+                "MULTIPART",
+                StringComparison.OrdinalIgnoreCase) ||
+            !IsSafeWebApiPath(capability.Path))
         {
             return new FileUploadTransportResult(
                 FileUploadTransportStatus.Unsupported,

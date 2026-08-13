@@ -17,6 +17,18 @@ public sealed class NasDetailsPageSourceContractTests
         Assert.Contains("x:Name=\"ContentState\"", xaml);
         Assert.Contains("NasDetailsReadOnly", xaml);
         Assert.Contains("Key=\"F5\"", xaml);
+        Assert.Contains("x:Name=\"RunStorageAnalysisButton\"", xaml);
+        Assert.Contains("x:Name=\"RunDeepStorageAnalysisButton\"", xaml);
+        Assert.Contains("x:Name=\"CancelStorageAnalysisButton\"", xaml);
+        Assert.Contains("x:Name=\"HeaderActions\"", xaml);
+        Assert.Contains("ItemsWrapGrid Orientation=\"Horizontal\"", xaml);
+        Assert.Contains("AdaptiveTrigger MinWindowWidth=\"1060\"", xaml);
+        Assert.Contains("RunStorageAnalysis_Click", source);
+        Assert.Contains("RunDeepStorageAnalysis_Click", source);
+        Assert.Contains("CancelStorageAnalysis_Click", source);
+        Assert.Contains("_viewModel.CanRunStorageAnalysis", source);
+        Assert.Contains("_viewModel.CanRunDeepStorageAnalysis", source);
+        Assert.Contains("_viewModel.CanCancelStorageAnalysis", source);
         Assert.Contains("ScrollViewer.HorizontalScrollMode=\"Enabled\"", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
         Assert.True(Count(xaml, "MinHeight=\"44\"") >= 2);
@@ -39,6 +51,7 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsSectionStorage",
             "NasDetailsSectionUpdate",
             "NasDetailsSectionShareAccess",
+            "NasDetailsSectionStorageAnalysis",
             "NasDetailsSectionSystemActivity",
             "NasDetailsSectionPackages",
             "NasDetailsSectionTasks",
@@ -52,6 +65,12 @@ public sealed class NasDetailsPageSourceContractTests
             "NasDetailsShareAccessReadWrite",
             "NasDetailsShareAccessReadOnly",
             "NasDetailsShareAccessUnknown",
+            "NasDetailsStorageAnalysisScopeTitle",
+            "NasDetailsDeepStorageAnalysisScopeTitle",
+            "NasDetailsStorageAnalysisLargeFiles",
+            "NasDetailsStorageAnalysisDuplicateFiles",
+            "NasDetailsStorageAnalysisFolders",
+            "NasDetailsStorageAnalysisOwnerTitle",
             "NasDetailsSystemActivityScopeTitle",
             "NasDetailsSystemActivityProcessId",
             "NasDetailsSystemActivityGroupsUnavailable",

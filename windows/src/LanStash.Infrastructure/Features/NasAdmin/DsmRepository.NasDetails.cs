@@ -12,6 +12,18 @@ public sealed partial class DsmRepository
     private const int ShareAccessApiVersion = 2;
     private const int ShareAccessPageSize = 200;
     private const int ShareAccessSourceLimit = 500;
+    private const int StorageAnalysisApiVersion = 2;
+    private const int StorageAnalysisShareLimit = 20;
+    private const int StorageAnalysisFilesPerShare = 50;
+    private const int StorageAnalysisFileLimit = 500;
+    private const int DeepStorageAnalysisShareLimit = 20;
+    private const int DeepStorageAnalysisFolderLimit = 120;
+    private const int DeepStorageAnalysisFoldersPerParent = 25;
+    private const int DeepStorageAnalysisFilesPerFolder = 100;
+    private const int DeepStorageAnalysisFileLimit = 3_000;
+    private const int DeepStorageAnalysisDirectorySizeLimit = 4;
+    private const int DeepStorageAnalysisDuplicateGroupLimit = 4;
+    private const int DeepStorageAnalysisMd5FilesPerGroup = 3;
     private const int SystemActivityApiVersion = 1;
     private const int SystemActivitySourceLimit = 500;
     private const int SystemActivityMaximumTotal = 1_000_000;
@@ -38,6 +50,10 @@ public sealed partial class DsmRepository
             if (SupportsShareAccess())
             {
                 features.Add(NasDetailsReadFeature.ShareAccess);
+            }
+            if (SupportsStorageAnalysis())
+            {
+                features.Add(NasDetailsReadFeature.StorageAnalysis);
             }
             if (SupportsSystemActivity("SYNO.Core.System.Process"))
             {
@@ -83,8 +99,20 @@ public sealed partial class DsmRepository
             await LoadPackagesSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadScheduledTasksSectionAsync(cancellationToken).ConfigureAwait(false),
             await LoadLogsSectionAsync(cancellationToken).ConfigureAwait(false),
-            await LoadConnectionsSectionAsync(cancellationToken).ConfigureAwait(false));
+            await LoadConnectionsSectionAsync(cancellationToken).ConfigureAwait(false))
+        {
+            StorageAnalysis = await LoadStorageAnalysisAsync(cancellationToken)
+                .ConfigureAwait(false),
+        };
     }
+
+    public Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadStorageAnalysisAsync(
+        CancellationToken cancellationToken = default) =>
+        LoadStorageAnalysisSectionAsync(cancellationToken);
+
+    public Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadDeepStorageAnalysisAsync(
+        CancellationToken cancellationToken = default) =>
+        LoadDeepStorageAnalysisSectionAsync(cancellationToken);
 
     private bool SupportsSystemActivity(string apiName) =>
         _capabilities.TryGetValue(apiName, out var capability) &&
@@ -558,6 +586,729 @@ public sealed partial class DsmRepository
         string Name,
         NasShareAccessLevel AccessLevel,
         bool CanDelete);
+
+    private bool SupportsStorageAnalysis() =>
+        _capabilities.TryGetValue("SYNO.FileStation.List", out var capability) &&
+        string.Equals(capability.Name, "SYNO.FileStation.List", StringComparison.Ordinal) &&
+        capability.MinVersion <= StorageAnalysisApiVersion &&
+        capability.MaxVersion >= StorageAnalysisApiVersion &&
+        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadStorageAnalysisSectionAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!SupportsStorageAnalysis())
+        {
+            return Unavailable<NasStorageAnalysisSummary>(
+                "nas-details.storage-analysis.unavailable");
+        }
+        try
+        {
+            var shares = await LoadStorageAnalysisSharesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var candidates = new List<StorageAnalysisFileCandidate>();
+            var partial = shares.IsTruncated;
+            foreach (var share in shares.Items.Take(StorageAnalysisShareLimit))
+            {
+                if (candidates.Count >= StorageAnalysisFileLimit)
+                {
+                    partial = true;
+                    break;
+                }
+                try
+                {
+                    var remaining = StorageAnalysisFileLimit - candidates.Count;
+                    var files = await LoadStorageAnalysisFilesAsync(
+                        share.Path,
+                        Math.Min(StorageAnalysisFilesPerShare, remaining),
+                        cancellationToken).ConfigureAwait(false);
+                    candidates.AddRange(files);
+                    if (files.Count >= StorageAnalysisFilesPerShare)
+                    {
+                        partial = true;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception error) when (IsNasDetailsReadFailure(error))
+                {
+                    partial = true;
+                }
+            }
+
+            var summary = BuildStorageAnalysisSummary(
+                Math.Min(shares.Items.Count, StorageAnalysisShareLimit),
+                candidates,
+                partial || shares.Items.Count > StorageAnalysisShareLimit);
+            return Available<NasStorageAnalysisSummary>([summary])
+                with { IsTruncated = summary.IsPartial };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return Failed<NasStorageAnalysisSummary>(
+                "nas-details.storage-analysis.failed");
+        }
+    }
+
+    private async Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadDeepStorageAnalysisSectionAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!SupportsStorageAnalysis())
+        {
+            return Unavailable<NasStorageAnalysisSummary>(
+                "nas-details.storage-analysis.unavailable");
+        }
+        try
+        {
+            var shares = await LoadStorageAnalysisSharesAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var files = new List<StorageAnalysisFileCandidate>();
+            var directories = new Dictionary<string, StorageAnalysisDirectoryAccumulator>(
+                StringComparer.Ordinal);
+            var folderQueue = new Queue<string>();
+            var scannedFolders = 0;
+            var skippedFolders = 0;
+            var partial = shares.IsTruncated || shares.Items.Count > DeepStorageAnalysisShareLimit;
+
+            foreach (var share in shares.Items.Take(DeepStorageAnalysisShareLimit))
+            {
+                folderQueue.Enqueue(share.Path);
+            }
+
+            while (folderQueue.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (scannedFolders >= DeepStorageAnalysisFolderLimit ||
+                    files.Count >= DeepStorageAnalysisFileLimit)
+                {
+                    partial = true;
+                    skippedFolders += folderQueue.Count;
+                    break;
+                }
+
+                var folderPath = folderQueue.Dequeue();
+                scannedFolders++;
+                try
+                {
+                    var entries = await LoadDeepStorageAnalysisEntriesAsync(
+                        folderPath,
+                        cancellationToken).ConfigureAwait(false);
+                    partial |= entries.IsTruncated;
+                    skippedFolders += entries.SkippedFolderCount;
+                    foreach (var child in entries.Folders.Take(DeepStorageAnalysisFoldersPerParent))
+                    {
+                        folderQueue.Enqueue(child);
+                    }
+                    foreach (var file in entries.Files)
+                    {
+                        if (files.Count >= DeepStorageAnalysisFileLimit)
+                        {
+                            partial = true;
+                            break;
+                        }
+                        files.Add(file);
+                        AddStorageAnalysisDirectory(directories, folderPath, file);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception error) when (IsNasDetailsReadFailure(error))
+                {
+                    partial = true;
+                    skippedFolders++;
+                }
+            }
+
+            var duplicateCandidates = await BuildDeepDuplicateCandidatesAsync(
+                files,
+                cancellationToken).ConfigureAwait(false);
+            var directorySummaries = await BuildStorageDirectorySummariesAsync(
+                directories,
+                cancellationToken).ConfigureAwait(false);
+
+            var summary = BuildStorageAnalysisSummary(
+                Math.Min(shares.Items.Count, DeepStorageAnalysisShareLimit),
+                files,
+                partial,
+                fileLimit: DeepStorageAnalysisFileLimit,
+                isDeepAnalysis: true,
+                scannedFolderCount: scannedFolders,
+                skippedFolderCount: skippedFolders,
+                directorySummaries: directorySummaries,
+                duplicateCandidates: duplicateCandidates);
+            return Available<NasStorageAnalysisSummary>([summary])
+                with { IsTruncated = summary.IsPartial };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return Failed<NasStorageAnalysisSummary>(
+                "nas-details.storage-analysis.failed");
+        }
+    }
+
+    private async Task<StorageAnalysisSharePage> LoadStorageAnalysisSharesAsync(
+        CancellationToken cancellationToken)
+    {
+        var data = await _api.CallReadJsonObjectAsync(
+            _profile,
+            _session,
+            Required("SYNO.FileStation.List"),
+            StorageAnalysisApiVersion,
+            "list_share",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["offset"] = "0",
+                ["limit"] = StorageAnalysisShareLimit.ToString(CultureInfo.InvariantCulture),
+                ["sort_by"] = "name",
+                ["sort_direction"] = "asc",
+                ["additional"] = "[\"mount_point_type\",\"perm\"]",
+            },
+            cancellationToken).ConfigureAwait(false);
+        var page = ShareAccessRequiredArray(data, "shares");
+        var responseOffset = ShareAccessRequiredNonnegativeInt(data, "offset");
+        var total = ShareAccessRequiredNonnegativeInt(data, "total");
+        if (responseOffset != 0 || page.Count > StorageAnalysisShareLimit ||
+            total < page.Count)
+        {
+            throw new InvalidDataException("Invalid storage-analysis share page.");
+        }
+
+        var shares = new List<StorageAnalysisShare>();
+        foreach (var node in page)
+        {
+            var item = node as JsonObject
+                ?? throw new InvalidDataException("Invalid storage-analysis share.");
+            var path = ShareAccessRequiredPath(item, "path");
+            var name = ShareAccessRequiredName(item, "name");
+            if (!ShareAccessRequiredBoolean(item, "isdir") || IsRecycleShare(path, name))
+            {
+                continue;
+            }
+            var additional = ShareAccessOptionalObject(item, "additional");
+            var mountType = ShareAccessOptionalText(additional, "mount_point_type")
+                ?.ToLowerInvariant();
+            if (mountType is not null and not ("normal" or "shared_folder"))
+            {
+                continue;
+            }
+            shares.Add(new StorageAnalysisShare(path, name));
+        }
+        return new StorageAnalysisSharePage(shares, total > page.Count);
+    }
+
+    private async Task<IReadOnlyList<StorageAnalysisFileCandidate>> LoadStorageAnalysisFilesAsync(
+        string sharePath,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (limit <= 0)
+        {
+            return [];
+        }
+        var data = await _api.CallReadJsonObjectAsync(
+            _profile,
+            _session,
+            Required("SYNO.FileStation.List"),
+            StorageAnalysisApiVersion,
+            "list",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["folder_path"] = sharePath,
+                ["offset"] = "0",
+                ["limit"] = limit.ToString(CultureInfo.InvariantCulture),
+                ["sort_by"] = "size",
+                ["sort_direction"] = "desc",
+                ["filetype"] = "file",
+                ["additional"] = "[\"size\",\"time\"]",
+            },
+            cancellationToken).ConfigureAwait(false);
+        var files = ShareAccessRequiredArray(data, "files");
+        if (files.Count > limit)
+        {
+            throw new InvalidDataException("Storage-analysis file page exceeded its bound.");
+        }
+        var result = new List<StorageAnalysisFileCandidate>();
+        foreach (var node in files)
+        {
+            var item = node as JsonObject
+                ?? throw new InvalidDataException("Invalid storage-analysis file.");
+            if (item.Bool("isdir") == true)
+            {
+                continue;
+            }
+            var name = RequiredDisplayString(item, "name")
+                ?? RequiredDisplayString(item, "path")?.Split('/').LastOrDefault();
+            var size = Nonnegative(item.Long("size") ?? item.Object("additional")?.Long("size"));
+            if (string.IsNullOrWhiteSpace(name) || name.Length > 1_024 ||
+                name.Any(char.IsControl) || name.Contains('/') || name.Contains('\\') ||
+                size is null)
+            {
+                continue;
+            }
+            var modified = item.Object("additional")?.Object("time")?.Date("mtime")
+                ?? item.Date("mtime");
+            result.Add(new StorageAnalysisFileCandidate(
+                name,
+                size.Value,
+                modified,
+                Path: null,
+                Owner: null,
+                AccessedAt: null));
+        }
+        return result;
+    }
+
+    private async Task<DeepStorageAnalysisEntryPage> LoadDeepStorageAnalysisEntriesAsync(
+        string folderPath,
+        CancellationToken cancellationToken)
+    {
+        var data = await _api.CallReadJsonObjectAsync(
+            _profile,
+            _session,
+            Required("SYNO.FileStation.List"),
+            StorageAnalysisApiVersion,
+            "list",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["folder_path"] = folderPath,
+                ["offset"] = "0",
+                ["limit"] = Math.Max(
+                    DeepStorageAnalysisFilesPerFolder,
+                    DeepStorageAnalysisFoldersPerParent).ToString(CultureInfo.InvariantCulture),
+                ["sort_by"] = "name",
+                ["sort_direction"] = "asc",
+                ["additional"] = "[\"size\",\"owner\",\"time\"]",
+            },
+            cancellationToken).ConfigureAwait(false);
+        var items = ShareAccessRequiredArray(data, "files");
+        var responseOffset = data.Int("offset") ?? 0;
+        var total = data.Int("total") ?? items.Count;
+        if (responseOffset != 0 || total < items.Count ||
+            items.Count > Math.Max(DeepStorageAnalysisFilesPerFolder, DeepStorageAnalysisFoldersPerParent))
+        {
+            throw new InvalidDataException("Invalid deep storage-analysis page.");
+        }
+
+        var folders = new List<string>();
+        var files = new List<StorageAnalysisFileCandidate>();
+        var skippedFolders = 0;
+        foreach (var node in items)
+        {
+            var item = node as JsonObject
+                ?? throw new InvalidDataException("Invalid deep storage-analysis item.");
+            var path = RequiredDisplayString(item, "path");
+            var name = RequiredDisplayString(item, "name")
+                ?? path?.Split('/').LastOrDefault();
+            if (string.IsNullOrWhiteSpace(path) ||
+                !path.StartsWith("/", StringComparison.Ordinal) ||
+                path.Length > 4_096 ||
+                path.Any(char.IsControl) ||
+                path.Contains('\\') ||
+                string.IsNullOrWhiteSpace(name) ||
+                name.Length > 1_024 ||
+                name.Any(char.IsControl) ||
+                name.Contains('/') ||
+                name.Contains('\\') ||
+                IsRecycleShare(path, name))
+            {
+                continue;
+            }
+
+            if (item.Bool("isdir") == true)
+            {
+                if (folders.Count < DeepStorageAnalysisFoldersPerParent)
+                {
+                    folders.Add(path);
+                }
+                else
+                {
+                    skippedFolders++;
+                }
+                continue;
+            }
+
+            var additional = item.Object("additional");
+            var size = Nonnegative(item.Long("size") ?? additional?.Long("size"));
+            if (size is null)
+            {
+                continue;
+            }
+            var time = additional?.Object("time");
+            var owner = StorageAnalysisOwner(additional);
+            var modified = time?.Date("mtime") ?? item.Date("mtime");
+            var accessed = time?.Date("atime") ?? item.Date("atime");
+            files.Add(new StorageAnalysisFileCandidate(
+                name,
+                size.Value,
+                modified,
+                Path: path,
+                Owner: owner,
+                AccessedAt: accessed));
+        }
+
+        return new DeepStorageAnalysisEntryPage(
+            files.Take(DeepStorageAnalysisFilesPerFolder).ToArray(),
+            folders,
+            skippedFolders,
+            total > items.Count ||
+                files.Count > DeepStorageAnalysisFilesPerFolder ||
+                folders.Count > DeepStorageAnalysisFoldersPerParent ||
+                skippedFolders > 0);
+    }
+
+    private static NasStorageAnalysisSummary BuildStorageAnalysisSummary(
+        int scannedShareCount,
+        IReadOnlyList<StorageAnalysisFileCandidate> files,
+        bool partial,
+        int fileLimit = StorageAnalysisFileLimit,
+        bool isDeepAnalysis = false,
+        int scannedFolderCount = 0,
+        int skippedFolderCount = 0,
+        IReadOnlyList<NasStorageDirectorySummary>? directorySummaries = null,
+        IReadOnlyList<NasStorageDuplicateCandidate>? duplicateCandidates = null)
+    {
+        var safeFiles = files.Take(fileLimit).ToArray();
+        var categories = safeFiles
+            .GroupBy(item => StorageAnalysisCategoryFor(item.Name))
+            .Select(group => new NasStorageCategorySummary(
+                group.Key,
+                group.Count(),
+                SumStorageAnalysisBytes(group.Select(item => item.SizeBytes))))
+            .OrderByDescending(item => item.SizeBytes)
+            .ThenBy(item => item.Category)
+            .ToArray();
+        var large = safeFiles
+            .OrderByDescending(item => item.SizeBytes)
+            .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(10)
+            .Select(item => new NasStorageFileCandidate(
+                item.Name,
+                item.SizeBytes,
+                item.ModifiedAt))
+            .ToArray();
+        var recent = safeFiles
+            .Where(item => item.ModifiedAt is not null)
+            .OrderByDescending(item => item.ModifiedAt)
+            .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(5)
+            .Select(item => new NasStorageFileCandidate(
+                item.Name,
+                item.SizeBytes,
+                item.ModifiedAt))
+            .ToArray();
+        var old = safeFiles
+            .Where(item => item.ModifiedAt is not null)
+            .OrderBy(item => item.ModifiedAt)
+            .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(5)
+            .Select(item => new NasStorageFileCandidate(
+                item.Name,
+                item.SizeBytes,
+                item.ModifiedAt))
+            .ToArray();
+        var duplicates = duplicateCandidates ?? BuildNameSizeDuplicateCandidates(safeFiles);
+        return new NasStorageAnalysisSummary(
+            scannedShareCount,
+            safeFiles.Length,
+            SumStorageAnalysisBytes(safeFiles.Select(item => item.SizeBytes)),
+            partial || files.Count > safeFiles.Length,
+            categories,
+            large,
+            recent,
+            old,
+            duplicates,
+            isDeepAnalysis,
+            scannedFolderCount,
+            skippedFolderCount,
+            isDeepAnalysis ? BuildOwnerSummary(safeFiles) : null,
+            isDeepAnalysis ? BuildAccessTimeSummary(safeFiles) : null,
+            directorySummaries);
+    }
+
+    private async Task<IReadOnlyList<NasStorageDuplicateCandidate>> BuildDeepDuplicateCandidatesAsync(
+        IReadOnlyList<StorageAnalysisFileCandidate> files,
+        CancellationToken cancellationToken)
+    {
+        var groups = files
+            .Where(item => item.SizeBytes > 0 && item.Path is not null)
+            .GroupBy(
+                item => (Name: item.Name.ToUpperInvariant(), item.SizeBytes),
+                item => item)
+            .Where(group => group.Count() > 1)
+            .OrderByDescending(group => group.Key.SizeBytes)
+            .ThenBy(group => group.Key.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(DeepStorageAnalysisDuplicateGroupLimit)
+            .ToArray();
+        var result = new List<NasStorageDuplicateCandidate>();
+        foreach (var group in groups)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var confirmedCount = await TryConfirmDuplicateContentAsync(
+                group.Take(DeepStorageAnalysisMd5FilesPerGroup).ToArray(),
+                cancellationToken).ConfigureAwait(false);
+            result.Add(new NasStorageDuplicateCandidate(
+                group.First().Name,
+                group.Key.SizeBytes,
+                confirmedCount ?? group.Count(),
+                IsContentConfirmed: confirmedCount is >= 2));
+        }
+        return result;
+    }
+
+    private async Task<int?> TryConfirmDuplicateContentAsync(
+        IReadOnlyList<StorageAnalysisFileCandidate> files,
+        CancellationToken cancellationToken)
+    {
+        if (!FileMD5CapabilityAvailable || files.Count < 2)
+        {
+            return null;
+        }
+
+        var digestCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (file.Path is null)
+                {
+                    continue;
+                }
+                var digest = await CalculateMD5Async(file.Path, cancellationToken)
+                    .ConfigureAwait(false);
+                digestCounts[digest] = digestCounts.TryGetValue(digest, out var count)
+                    ? count + 1
+                    : 1;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (FileMD5Exception)
+        {
+            return null;
+        }
+        catch (Exception error) when (IsNasDetailsReadFailure(error))
+        {
+            return null;
+        }
+        return digestCounts.Count == 0 ? null : digestCounts.Values.Max();
+    }
+
+    private static IReadOnlyList<NasStorageDuplicateCandidate> BuildNameSizeDuplicateCandidates(
+        IReadOnlyList<StorageAnalysisFileCandidate> files) =>
+        files
+            .Where(item => item.SizeBytes > 0)
+            .GroupBy(
+                item => (Name: item.Name.ToUpperInvariant(), item.SizeBytes),
+                item => item)
+            .Where(group => group.Count() > 1)
+            .OrderByDescending(group => group.Key.SizeBytes)
+            .ThenBy(group => group.Key.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(5)
+            .Select(group => new NasStorageDuplicateCandidate(
+                group.First().Name,
+                group.Key.SizeBytes,
+                group.Count()))
+            .ToArray();
+
+    private static NasStorageOwnerSummary BuildOwnerSummary(
+        IReadOnlyList<StorageAnalysisFileCandidate> files)
+    {
+        var owners = files
+            .Select(item => item.Owner)
+            .Where(owner => !string.IsNullOrWhiteSpace(owner))
+            .Select(owner => owner!)
+            .ToArray();
+        return new NasStorageOwnerSummary(
+            owners.Length,
+            owners.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    private static NasStorageAccessTimeSummary BuildAccessTimeSummary(
+        IReadOnlyList<StorageAnalysisFileCandidate> files)
+    {
+        var accessTimes = files
+            .Select(item => item.AccessedAt)
+            .OfType<DateTimeOffset>()
+            .OrderBy(item => item)
+            .ToArray();
+        return new NasStorageAccessTimeSummary(
+            accessTimes.Length,
+            accessTimes.Length > 0 ? accessTimes[0] : null);
+    }
+
+    private static void AddStorageAnalysisDirectory(
+        IDictionary<string, StorageAnalysisDirectoryAccumulator> directories,
+        string folderPath,
+        StorageAnalysisFileCandidate file)
+    {
+        if (!directories.TryGetValue(folderPath, out var accumulator))
+        {
+            accumulator = new StorageAnalysisDirectoryAccumulator(
+                folderPath,
+                SafeStorageAnalysisDirectoryName(folderPath));
+            directories[folderPath] = accumulator;
+        }
+        accumulator.Add(file.SizeBytes);
+    }
+
+    private async Task<IReadOnlyList<NasStorageDirectorySummary>> BuildStorageDirectorySummariesAsync(
+        IReadOnlyDictionary<string, StorageAnalysisDirectoryAccumulator> directories,
+        CancellationToken cancellationToken)
+    {
+        var candidates = directories.Values
+            .OrderByDescending(item => item.SizeBytes)
+            .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Take(8)
+            .ToArray();
+        var results = new List<NasStorageDirectorySummary>();
+        var measured = 0;
+        foreach (var item in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fileCount = item.FileCount;
+            var sizeBytes = item.SizeBytes;
+            if (DirectorySizeCapabilityAvailable &&
+                measured < DeepStorageAnalysisDirectorySizeLimit)
+            {
+                measured++;
+                try
+                {
+                    var measuredSize = await CalculateDirectorySizeAsync(
+                        item.Path,
+                        cancellationToken).ConfigureAwait(false);
+                    fileCount = (int)Math.Min(int.MaxValue, measuredSize.FileCount);
+                    sizeBytes = measuredSize.TotalBytes;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (DirectorySizeException)
+                {
+                }
+                catch (Exception error) when (IsNasDetailsReadFailure(error))
+                {
+                }
+            }
+            results.Add(new NasStorageDirectorySummary(
+                item.Name,
+                fileCount,
+                sizeBytes));
+        }
+        return results;
+    }
+
+    private static string SafeStorageAnalysisDirectoryName(string path)
+    {
+        var name = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        return string.IsNullOrWhiteSpace(name) ||
+            name.Length > 1_024 ||
+            name.Any(char.IsControl)
+                ? string.Empty
+                : name;
+    }
+
+    private static string? StorageAnalysisOwner(JsonObject? additional)
+    {
+        if (additional is null)
+        {
+            return null;
+        }
+        var owner = additional["owner"] switch
+        {
+            JsonObject ownerObject => ownerObject.String("user"),
+            JsonValue => additional.String("owner"),
+            _ => null,
+        };
+        return string.IsNullOrWhiteSpace(owner) || owner.Length > 256 || owner.Any(char.IsControl)
+            ? null
+            : owner.Trim();
+    }
+
+    private static NasStorageAnalysisCategory StorageAnalysisCategoryFor(string name)
+    {
+        var extension = Path.GetExtension(name).ToLowerInvariant();
+        return extension switch
+        {
+            ".jpg" or ".jpeg" or ".png" or ".gif" or ".heic" or ".heif" or ".webp" or ".tif" or ".tiff" =>
+                NasStorageAnalysisCategory.Images,
+            ".mov" or ".mp4" or ".m4v" or ".mkv" or ".webm" or ".avi" =>
+                NasStorageAnalysisCategory.Videos,
+            ".pdf" or ".doc" or ".docx" or ".xls" or ".xlsx" or ".ppt" or ".pptx" or ".txt" or ".md" =>
+                NasStorageAnalysisCategory.Documents,
+            ".zip" or ".7z" or ".rar" or ".tar" or ".gz" or ".tgz" =>
+                NasStorageAnalysisCategory.Archives,
+            _ => NasStorageAnalysisCategory.Other,
+        };
+    }
+
+    private static long SumStorageAnalysisBytes(IEnumerable<long> values)
+    {
+        try
+        {
+            var total = 0L;
+            foreach (var value in values)
+            {
+                total = checked(total + Math.Max(0, value));
+            }
+            return total;
+        }
+        catch (OverflowException)
+        {
+            return long.MaxValue;
+        }
+    }
+
+    private sealed record StorageAnalysisShare(
+        string Path,
+        string Name);
+
+    private sealed record StorageAnalysisSharePage(
+        IReadOnlyList<StorageAnalysisShare> Items,
+        bool IsTruncated);
+
+    private sealed record StorageAnalysisFileCandidate(
+        string Name,
+        long SizeBytes,
+        DateTimeOffset? ModifiedAt,
+        string? Path = null,
+        string? Owner = null,
+        DateTimeOffset? AccessedAt = null);
+
+    private sealed record DeepStorageAnalysisEntryPage(
+        IReadOnlyList<StorageAnalysisFileCandidate> Files,
+        IReadOnlyList<string> Folders,
+        int SkippedFolderCount,
+        bool IsTruncated);
+
+    private sealed class StorageAnalysisDirectoryAccumulator(string path, string name)
+    {
+        public string Path { get; } = path;
+        public string Name { get; } = name;
+        public int FileCount { get; private set; }
+        public long SizeBytes { get; private set; }
+
+        public void Add(long sizeBytes)
+        {
+            FileCount++;
+            SizeBytes = SumStorageAnalysisBytes([SizeBytes, sizeBytes]);
+        }
+    }
 
     private async Task<NasDetailsSection<NasSystemUpdateSummary>> LoadSystemUpdateSectionAsync(
         NasDetailsSection<NasSystemHealthSummary> systemOverview,

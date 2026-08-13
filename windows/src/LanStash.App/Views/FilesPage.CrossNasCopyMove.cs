@@ -15,11 +15,11 @@ public sealed partial class FilesPage
     private ContentDialog? _crossNasCopyMoveDialog;
 
     private IReadOnlyList<NasProfile>? CrossNasTargetProfiles { get; set; }
-    private Func<Guid, IFileCopyMoveFolderSource>? CrossNasFolderSourceFactory { get; set; }
+    private Func<Guid, CancellationToken, Task<IFileCopyMoveFolderSource?>>? CrossNasFolderSourceFactory { get; set; }
 
     internal void SetCrossNasDependencies(
         IReadOnlyList<NasProfile> targetProfiles,
-        Func<Guid, IFileCopyMoveFolderSource> folderSourceFactory)
+        Func<Guid, CancellationToken, Task<IFileCopyMoveFolderSource?>> folderSourceFactory)
     {
         if (_copyMoveRepository?.CrossNasAvailability.CanCrossCopy != true)
         {
@@ -128,6 +128,11 @@ public sealed partial class FilesPage
                 case CrossNasCopyMoveState.Completed:
                     dialog.PrimaryButtonText = localization.Get("FileCopyMove_Close_Button");
                     dialog.CloseButtonText = null;
+                    break;
+                case CrossNasCopyMoveState.TargetUnavailable:
+                    dialog.PrimaryButtonText = localization.Get("FileCopyMove_Close_Button");
+                    dialog.CloseButtonText = null;
+                    dialog.IsPrimaryButtonEnabled = true;
                     break;
                 case CrossNasCopyMoveState.Failure:
                     dialog.PrimaryButtonText = localization.Get("FileCopyMove_Close_Button");
@@ -376,13 +381,39 @@ public sealed partial class FilesPage
                 AutomationLiveSetting.Assertive);
             panel.Children.Add(infoBar);
         }
+        else if (model.State == CrossNasCopyMoveState.Unsupported)
+        {
+            var infoBar = new InfoBar
+            {
+                Severity = InfoBarSeverity.Warning,
+                Title = localization.Get("CrossNasUnsupportedTitle"),
+                Message = localization.Get("CrossNasUnsupportedMessage"),
+                IsOpen = true,
+            };
+            AutomationProperties.SetLiveSetting(infoBar,
+                AutomationLiveSetting.Assertive);
+            panel.Children.Add(infoBar);
+        }
+        else if (model.State == CrossNasCopyMoveState.TargetUnavailable)
+        {
+            var infoBar = new InfoBar
+            {
+                Severity = InfoBarSeverity.Warning,
+                Title = localization.Get("CrossNasTargetUnavailableTitle"),
+                Message = localization.Get("CrossNasTargetUnavailableMessage"),
+                IsOpen = true,
+            };
+            AutomationProperties.SetLiveSetting(infoBar,
+                AutomationLiveSetting.Assertive);
+            panel.Children.Add(infoBar);
+        }
         else if (model.State == CrossNasCopyMoveState.Failure)
         {
             var infoBar = new InfoBar
             {
                 Severity = InfoBarSeverity.Error,
                 Title = localization.Get("CrossNasFailed"),
-                Message = model.ResultMessage,
+                Message = CrossNasFailureMessage(model.ResultMessage, localization),
                 IsOpen = true,
             };
             AutomationProperties.SetLiveSetting(infoBar,
@@ -420,4 +451,24 @@ public sealed partial class FilesPage
         var lastSlash = path.LastIndexOf('/');
         return lastSlash <= 0 ? string.Empty : path[..lastSlash];
     }
+
+    private static string CrossNasFailureMessage(
+        string? diagnosticTag,
+        LocalizationService localization) =>
+        diagnosticTag switch
+        {
+            "file.cross-nas.readback-unavailable" or
+            "file.cross-nas.readback-mismatch" or
+            "file.cross-nas.readback-unverified" or
+            "file.cross-nas.tree-readback-mismatch" =>
+                localization.Get("CrossNasFailedNeedsReviewMessage"),
+            "file.cross-nas.target-not-found" or
+            "file.cross-nas.target-no-capability" or
+            "file.cross-nas.no-second-session" or
+            "file.cross-nas.no-resolver" =>
+                localization.Get("CrossNasTargetUnavailableMessage"),
+            "file.cross-nas.same-profile" =>
+                localization.Get("CrossNasSameTargetMessage"),
+            _ => localization.Get("CrossNasFailedMessage"),
+        };
 }

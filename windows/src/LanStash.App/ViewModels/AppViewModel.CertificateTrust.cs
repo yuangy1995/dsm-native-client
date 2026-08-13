@@ -34,6 +34,11 @@ public sealed partial class AppViewModel
         return new CertificateConnectionContext(profileId, pin);
     }
 
+    internal Task<CertificateConnectionContext> CreateCrossNasConnectionAsync(
+        Guid profileId,
+        CancellationToken cancellationToken) =>
+        CreateCertificateConnectionAsync(profileId, cancellationToken);
+
     private void PublishCertificateChallenge(
         ConnectionAttemptLease attempt,
         ConnectAttempt input,

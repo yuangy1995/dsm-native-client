@@ -21,10 +21,19 @@ public sealed class DownloadStationPageSourceContractTests
         Assert.Contains("DownloadStationReadOnly", xaml);
         Assert.Contains("x:Name=\"ActivitySummary\"", xaml);
         Assert.Contains("x:Name=\"ActivityErrorNotice\"", xaml);
+        Assert.Contains("x:Name=\"AdvancedSummary\"", xaml);
+        Assert.Contains("x:Name=\"StationSettingsSummary\"", xaml);
+        Assert.Contains("x:Name=\"DownloadRssSummary\"", xaml);
+        Assert.Contains("x:Name=\"AdvancedSummaryErrorNotice\"", xaml);
         Assert.Contains("DownloadStationActivityEmuleDownload", xaml);
         Assert.Contains("DownloadStationActivityEmuleUpload", xaml);
         Assert.Contains("ActivityEmuleDownloadSpeedText", xaml);
         Assert.Contains("ActivityEmuleUploadSpeedText", xaml);
+        Assert.Contains("SettingsDefaultDestinationText", xaml);
+        Assert.Contains("SettingsSpeedLimitText", xaml);
+        Assert.Contains("RssSitesText", xaml);
+        Assert.Contains("AdvancedSummary.Visibility", source);
+        Assert.Contains("_viewModel.HasAdvancedSummary", source);
         Assert.Contains("CompactWidth = 760", source);
         Assert.Contains("_viewModel.IsUnavailable", source);
     }
@@ -46,6 +55,12 @@ public sealed class DownloadStationPageSourceContractTests
         Assert.Contains("SelectedTask.DestinationText", xaml);
         Assert.Contains("SelectedTask.ErrorText", xaml);
         Assert.Contains("SelectedTask.StatusText", xaml);
+        Assert.Contains("SelectedTask.PriorityText", xaml);
+        Assert.Contains("SelectedTask.FileCountText", xaml);
+        Assert.Contains("SelectedTask.TrackerCountText", xaml);
+        Assert.Contains("SelectedTask.PeerCountText", xaml);
+        Assert.Contains("SelectedTask.SeedsText", xaml);
+        Assert.Contains("SelectedTask.LeechesText", xaml);
         Assert.Contains("x:Name=\"PauseButton\"", xaml);
         Assert.Contains("x:Name=\"ResumeButton\"", xaml);
         Assert.Contains("x:Name=\"DeleteButton\"", xaml);

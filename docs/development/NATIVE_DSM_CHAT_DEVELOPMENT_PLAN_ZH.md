@@ -1,9 +1,9 @@
 # Synology Chat 原生聊天功能开发计划
 
-> 文档状态：开发中；共同契约、Apple 领域模型、macOS“消息”入口、附件上传和本地会话置顶已进入多端受限实现与实机验收
+> 文档状态：开发中；共同契约、Apple 领域模型、macOS“消息”入口、附件上传、本地会话置顶和本人消息删除已进入多端受限实现与实机验收
 > 首个参考平台：macOS  
 > 目标平台：macOS、iPhone、iPad、Android、Windows  
-> 最后更新：2026-08-11
+> 最后更新：2026-08-13
 
 ## 1. 产品目标
 
@@ -44,6 +44,7 @@
 - Windows 已补入群公告只读闭环：独立 `PinnedMessages` 能力只在 `SYNO.Chat.Post` 精确覆盖 v5、FORM 请求且当前为未加密群聊时开放，固定使用一次有界 `Post.search` 读取最多 100 条置顶消息。标题栏按钮、`Ctrl+Shift+N` 和原生 ContentDialog/ListView 提供加载、空、错误、重试/刷新与内容态；公告只保留发送者、正文、发送/置顶时间等白名单并驻留内存，切换会话/profile 或关闭弹窗会拒绝迟到结果。读取失败不影响消息历史，不读取附件或头像，不持久化响应，不调用 `pin/unpin`；Apple 移动端服务端置顶仍按 CH7 明确排除。Windows 本机 Chat 聚焦 124/124、Release 全量 xUnit 975/975、本地化和 XML 解析已通过；Windows Build run `31459279684` 通过 975/975 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check run `31459279618` 已通过。私有契约仍为 `observed/degraded`，真实 Chat Server 与 Narrator/高对比/缩放/键盘/触控继续 `PENDING_USER_VALIDATION`。
 - Windows 已补入前台自动刷新源码闭环：Chat 页面和窗口可见时立即回读会话，此后每 30 秒严格单飞刷新；当前选择为未加密会话时，在会话读取完成后顺序回读消息。离页、窗口隐藏到托盘、profile 切换或页面释放会取消并拒绝迟到结果，读取失败保留旧内容和现有手动重试入口。该切片不新增 NAS 请求、Socket.IO、后台常驻、通知、服务器已读或成员/公告自动刷新；本机 macOS 使用 .NET 10 且关闭 PRI 生成后 Chat 聚焦 63/63、Release 全量 xUnit 1178/1178 通过。GitHub Windows Build run `31531069884` 通过 1178/1178 项 xUnit 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check run `31531069860` 已通过。真实 Chat Server、窗口/托盘切换、Narrator、键盘、高对比、200% 缩放、窄窗口和触控为 `PENDING_USER_VALIDATION`。
 - Windows 已补齐首次单聊与非加密私人群聊创建源码闭环：首次单聊固定 `Channel.Anonymous.initiate` v2，群聊固定 `Channel.Named` v1 的 `create/join/invite`，都只在精确 FORM 能力门下开放；群聊还要求 `Channel.Member.get` v1 可用，并以候选 ID 和独立成员回读确认全部所选成员。创建前重读用户和会话，过滤当前/停用用户并查重；群聊至少选择两位用户。创建链在 Repository 内串行，同一请求每阶段只提交一次；提交未知或取消后保留请求 ID、候选会话和完整选择，WinUI 只提供“核对结果”，不会自动重放；服务端明确拒绝则返回权限、认证、不支持或失败结果并允许用户修正。原生 ContentDialog、单/多选、`Ctrl+Shift+C`、成功后直接进入会话、英中资源和 Narrator 源码门已接入。本机聚焦 110/110、完整 xUnit 1219/1219、XAML/RESW XML 解析通过；GitHub Windows Build run `31554288412` 通过 1219/1219 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check run `31554288423` 已通过。真实三账号、权限、弱网和辅助功能为 `PENDING_USER_VALIDATION`。
+- Windows 已补齐本人消息删除源码闭环：删除入口只在当前未加密会话、消息为本人已发送、`.deleteOwnMessage` 能力可用且该消息未处于待核对状态时显示。用户通过原生确认后，Repository 固定 `SYNO.Chat.Post` v5 `delete` 一次提交；提交前重读消息列表确认归属，提交后再次回读确认消息消失。非本人消息、加密会话、能力缺失、待核对消息和目标消失均零提交；提交后取消、响应未知或回读不一致只要求刷新核对，不自动重放。会话关闭、转发、提醒、定时、投票、服务端置顶、官方 Star、Socket.IO、后台即时消息和通知继续关闭。本机 Chat 聚焦 159/159、Release xUnit 1503/1503、本地化与差异检查已通过；真实 Chat Server 删除策略、真实 Windows、Narrator、高对比、200% 缩放、窄窗口、键鼠和触控为 `PENDING_USER_VALIDATION`。
 - iPhone/iPad 已补齐首次单聊与非加密私人群聊创建源码闭环：SwiftUI 工具栏与带搜索/筛选空态的原生 Sheet/Form 在运行时精确能力满足时开放，过滤当前和停用用户；iPhone 成功后压入消息页，iPad 直接更新双栏选择。共享 Repository 与 Windows 保持相同固定 wire，并新增公开 typed outcome；所有会话创建共用进程内串行许可，同请求绑定完整目标或群聊草稿。提交未知或提交后取消保留原请求与草稿，后续只回读不重放；群 ID 产生后的加入/邀请失败继续待核对，创建阶段明确 API 拒绝才形成终态失败。群聊以会话候选和 `Channel.Member.get` 独立确认成员，不信任会话摘要成员字段；重连和在途重绑完成后待核对草稿只走新 Repository 的读取入口，联系人读取按代次拒绝旧结果，迟到成功结果按来源 profile 隔离。本机共享全量 695 项 XCTest（2 跳过）+ 10 项 Swift Testing、共享 Chat 聚焦 51/51、移动 Chat 聚焦 63/63、DsmMobile 全量 442/442、双语资源、通用模拟器构建和 macOS 共享回归构建已通过；真实三账号 Chat Server、弱网、权限、VoiceOver、动态文字、键盘/触控和 iPad 分屏为 `PENDING_USER_VALIDATION`。
 - 第二轮实机修正进一步兼容用户根数组、单数/复数容器、对象字典、空显示名及更多用户/发送者字段；用户目录会回填历史消息发送者，已声明头像通过 `SYNO.Chat.User.Avatar.get` 受限读取，每条消息直接显示完整年月日时分秒，空数据时保持全高对齐。上述结果仍需在当前测试 NAS 复验。
 - 已从官方网页客户端确认 `SYNO.Chat.Channel.Anonymous.initiate` v2 使用 `user_ids`、`encrypted` 与 `channel_key_encs` 创建首次一对一会话。岚仓已按“创建前查重、创建后回读”接入普通未加密单聊；尚未向当前测试 NAS 提交此写操作，因此发布兼容结论仍保持待验收。

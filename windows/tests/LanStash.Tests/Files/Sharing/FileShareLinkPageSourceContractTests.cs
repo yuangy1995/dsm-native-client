@@ -19,7 +19,14 @@ public sealed class FileShareLinkPageSourceContractTests
         Assert.True(
             clipboard.IndexOf("if (!accepted)", StringComparison.Ordinal) <
             clipboard.IndexOf("Clipboard.Flush()", StringComparison.Ordinal));
-        Assert.Contains("WindowsPackageType", systemShare, StringComparison.Ordinal);
+        Assert.Contains("DataTransferManager.As<IDataTransferManagerInterop>()", systemShare, StringComparison.Ordinal);
+        Assert.Contains("WindowNative.GetWindowHandle(window)", systemShare, StringComparison.Ordinal);
+        Assert.Contains("ShowShareUIForWindow(_windowHandle)", systemShare, StringComparison.Ordinal);
+        Assert.Contains("args.Request.Data.SetWebLink(uri)", systemShare, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetText", systemShare, StringComparison.Ordinal);
+        Assert.DoesNotContain("Properties.Description", systemShare, StringComparison.Ordinal);
+        Assert.Contains("FileShareLinkSystemShareTitle", systemShare, StringComparison.Ordinal);
+        Assert.Contains("return false;", systemShare, StringComparison.Ordinal);
     }
 
     [Fact]

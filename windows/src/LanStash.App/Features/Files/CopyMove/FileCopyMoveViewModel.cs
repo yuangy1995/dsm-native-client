@@ -78,6 +78,10 @@ public interface IFileCopyMoveFolderSource
     bool IsReadOnlyPath(string path);
 }
 
+public interface ILeasedFileCopyMoveFolderSource : IFileCopyMoveFolderSource, IDisposable
+{
+}
+
 public sealed class FileCopyMoveViewModel : ObservableObject, IDisposable
 {
     private readonly IFileCopyMoveRepository _repository;

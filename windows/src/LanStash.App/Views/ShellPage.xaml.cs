@@ -22,7 +22,7 @@ public sealed partial class ShellPage : Page
     private readonly AppViewModel _app;
     private readonly AppSettingsService _settings = AppSettingsService.Current;
     private readonly WorkspacePage _workspace;
-    private readonly ForegroundTransferCoordinator _transfers = new();
+    private readonly ForegroundTransferCoordinator _transfers;
     private readonly WindowsTransferPickerService? _transferPicker;
     private FilesPage? _files;
     private Guid? _filesProfileId;
@@ -43,12 +43,21 @@ public sealed partial class ShellPage : Page
     private INasDetailsRepository? _nasDetailsRepository;
     private TransferActivityPage? _activity;
     private bool _isWindowVisible = true;
+    private readonly Dictionary<Guid, CrossNasTargetRepositoryLease> _crossNasTargetLeases = [];
 
     public ShellPage(AppViewModel app)
+        : this(app, null)
+    {
+    }
+
+    internal ShellPage(
+        AppViewModel app,
+        IForegroundTransferNotificationService? transferNotifications)
     {
         InitializeComponent();
         _app = app;
         _workspace = new WorkspacePage(app);
+        _transfers = new ForegroundTransferCoordinator(transferNotifications);
         if (app.ActiveProfile is { } activeProfile && app.Repository is { } repository)
         {
             var profileId = activeProfile.Id.ToString();
@@ -122,6 +131,7 @@ public sealed partial class ShellPage : Page
                 await _activity.DisposeAsync();
             }
             _activity = null;
+            ReleaseCrossNasTargetLeases();
             _transferPicker?.Dispose();
             _transfers.Dispose();
             _settings.Changed -= Settings_Changed;
@@ -266,277 +276,282 @@ public sealed partial class ShellPage : Page
         }
         if (args.SelectedItemContainer?.Tag is AppModule module)
         {
-            if (module == AppModule.Files &&
-                _app.Repository is { } repository &&
-                _app.ActiveProfile is { } profile &&
-                _transferPicker is { } transferPicker)
+            await OpenModuleAsync(module);
+        }
+    }
+
+    private async Task OpenModuleAsync(AppModule module)
+    {
+        if (module == AppModule.Files &&
+            _app.Repository is { } repository &&
+            _app.ActiveProfile is { } profile &&
+            _transferPicker is { } transferPicker)
+        {
+            var previewRepository = repository as IFilePreviewRepository ??
+                new UnavailableFilePreviewRepository(Guid.Empty);
+            var shareRepository = repository as IFileShareLinkRepository;
+            if (shareRepository?.ProfileId != profile.Id)
             {
-                var previewRepository = repository as IFilePreviewRepository ??
-                    new UnavailableFilePreviewRepository(Guid.Empty);
-                var shareRepository = repository as IFileShareLinkRepository;
-                if (shareRepository?.ProfileId != profile.Id)
-                {
-                    shareRepository = null;
-                }
-                var locationsRepository = repository as IFileLocationsRepository;
-                if (locationsRepository?.ProfileId != profile.Id)
-                {
-                    locationsRepository = null;
-                }
-                var mutationRepository = repository as IFileMutationRepository;
-                if (mutationRepository?.ProfileId != profile.Id)
-                {
-                    mutationRepository = null;
-                }
-                var recycleRepository = repository as IFileRecycleRepository;
-                if (recycleRepository?.ProfileId != profile.Id)
-                {
-                    recycleRepository = null;
-                }
-                if (_files is not null && _filesProfileId != profile.Id)
-                {
-                    await CloseFilesPageAsync();
-                }
-                _files ??= new FilesPage(
-                    repository,
-                    previewRepository,
-                    profile.Id.ToString(),
-                    transferPicker,
-                    shareRepository,
-                    FileShareLinkReviewBlocker.Current,
-                    locationsRepository,
-                    mutationRepository,
-                    FileMutationReviewBlocker.Current,
-                    recycleRepository: recycleRepository,
-                    recycleReviewBlocker: FileRecycleReviewBlocker.Current);
-                WireCrossNasDependencies(_files, profile.Id);
-                _filesProfileId = profile.Id;
-                ContentFrame.Content = _files;
+                shareRepository = null;
+            }
+            var locationsRepository = repository as IFileLocationsRepository;
+            if (locationsRepository?.ProfileId != profile.Id)
+            {
+                locationsRepository = null;
+            }
+            var mutationRepository = repository as IFileMutationRepository;
+            if (mutationRepository?.ProfileId != profile.Id)
+            {
+                mutationRepository = null;
+            }
+            var recycleRepository = repository as IFileRecycleRepository;
+            if (recycleRepository?.ProfileId != profile.Id)
+            {
+                recycleRepository = null;
+            }
+            if (_files is not null && _filesProfileId != profile.Id)
+            {
+                await CloseFilesPageAsync();
+            }
+            _files ??= new FilesPage(
+                repository,
+                previewRepository,
+                profile.Id.ToString(),
+                transferPicker,
+                shareRepository,
+                FileShareLinkReviewBlocker.Current,
+                locationsRepository,
+                mutationRepository,
+                FileMutationReviewBlocker.Current,
+                recycleRepository: recycleRepository,
+                recycleReviewBlocker: FileRecycleReviewBlocker.Current);
+            WireCrossNasDependencies(_files, profile.Id);
+            _filesProfileId = profile.Id;
+            ContentFrame.Content = _files;
+            return;
+        }
+        if (module == AppModule.Transfers &&
+            _app.ActiveProfile is { } activityProfile &&
+            _transferPicker is { } activityPicker)
+        {
+            var activityRepository = _app.Repository as IDownloadStationRepository;
+            if (activityRepository?.ProfileId != activityProfile.Id)
+            {
+                activityRepository = new UnavailableDownloadStationRepository(
+                    activityProfile.Id);
+            }
+            var fileActivityRepository = _app.Repository as IFileBackgroundTaskRepository;
+            if (fileActivityRepository?.ProfileId != activityProfile.Id)
+            {
+                fileActivityRepository = new UnavailableFileBackgroundTaskRepository(
+                    activityProfile.Id);
+            }
+            _activity ??= new TransferActivityPage(
+                _transfers,
+                activityPicker,
+                activityProfile.Id.ToString(),
+                activityRepository,
+                fileActivityRepository);
+            await _activity.SetWindowVisibleAsync(_isWindowVisible);
+            ContentFrame.Content = _activity;
+            return;
+        }
+        if (module == AppModule.Photos)
+        {
+            if (_app.Repository is not IPhotoRepository photoRepository ||
+                _app.ActiveProfile is not { } photoProfile ||
+                _transferPicker is not { } photoTransferPicker ||
+                photoRepository.ProfileId != photoProfile.Id)
+            {
+                _photos?.Dispose();
+                _photos = null;
+                _photosProfileId = null;
+                _photosRepository = null;
+                ContentFrame.Content = PhotosPage.CreateUnavailableState();
                 return;
             }
-            if (module == AppModule.Transfers &&
-                _app.ActiveProfile is { } activityProfile &&
-                _transferPicker is { } activityPicker)
+            if (_photos is null || _photosProfileId != photoProfile.Id ||
+                !ReferenceEquals(_photosRepository, photoRepository))
             {
-                var activityRepository = _app.Repository as IDownloadStationRepository;
-                if (activityRepository?.ProfileId != activityProfile.Id)
+                _photos?.Dispose();
+                var photoRecycleRepository = _app.Repository as IFileRecycleRepository;
+                if (photoRecycleRepository?.ProfileId != photoProfile.Id)
                 {
-                    activityRepository = new UnavailableDownloadStationRepository(
-                        activityProfile.Id);
+                    photoRecycleRepository = null;
                 }
-                var fileActivityRepository = _app.Repository as IFileBackgroundTaskRepository;
-                if (fileActivityRepository?.ProfileId != activityProfile.Id)
+                var photoLocationsRepository = _app.Repository as IFileLocationsRepository;
+                if (photoLocationsRepository?.ProfileId != photoProfile.Id)
                 {
-                    fileActivityRepository = new UnavailableFileBackgroundTaskRepository(
-                        activityProfile.Id);
+                    photoLocationsRepository = null;
                 }
-                _activity ??= new TransferActivityPage(
-                    _transfers,
-                    activityPicker,
-                    activityProfile.Id.ToString(),
-                    activityRepository,
-                    fileActivityRepository);
-                await _activity.SetWindowVisibleAsync(_isWindowVisible);
-                ContentFrame.Content = _activity;
+                var photoPreviewRepository = _app.Repository as IFilePreviewRepository;
+                if (photoPreviewRepository?.ProfileId != photoProfile.Id)
+                {
+                    photoPreviewRepository = null;
+                }
+                var photoCopyMoveRepository = _app.Repository as IFileCopyMoveRepository;
+                if (photoCopyMoveRepository?.ProfileId != photoProfile.Id)
+                {
+                    photoCopyMoveRepository = null;
+                }
+                var photoShareRepository = _app.Repository as IFileShareLinkRepository;
+                if (photoShareRepository?.ProfileId != photoProfile.Id)
+                {
+                    photoShareRepository = null;
+                }
+                IFileCopyMoveFolderSource? photoCopyMoveFolderSource = null;
+                if (photoLocationsRepository is not null)
+                {
+                    photoCopyMoveFolderSource = new RepositoryFileCopyMoveFolderSource(
+                        photoProfile.Id,
+                        new RepositoryFileBrowserDataSource(_app.Repository),
+                        photoLocationsRepository);
+                }
+                _photos = new PhotosPage(
+                    photoRepository,
+                    photoProfile.Id.ToString(),
+                    photoTransferPicker,
+                    locationsRepository: photoLocationsRepository,
+                    recycleRepository: photoRecycleRepository,
+                    recycleReviewBlocker: FileRecycleReviewBlocker.Current,
+                    previewRepository: photoPreviewRepository,
+                    copyMoveRepository: photoCopyMoveRepository,
+                    copyMoveFolderSource: photoCopyMoveFolderSource,
+                    copyMoveReviewBlocker: FileCopyMoveReviewBlocker.Current,
+                    shareRepository: photoShareRepository,
+                    shareReviewBlocker: FileShareLinkReviewBlocker.Current);
+                _photosProfileId = photoProfile.Id;
+                _photosRepository = photoRepository;
+            }
+            ContentFrame.Content = _photos;
+            return;
+        }
+        if (module == AppModule.Chat)
+        {
+            if (_app.Repository is not IChatRepository chatRepository ||
+                _app.ActiveProfile is not { } chatProfile ||
+                chatRepository.ProfileId != chatProfile.Id)
+            {
+                _chat?.Dispose();
+                _chat = null;
+                _chatProfileId = null;
+                ContentFrame.Content = new ChatPage(
+                    new UnavailableChatRepository(Guid.Empty));
                 return;
             }
-            if (module == AppModule.Photos)
+            if (_chat is null || _chatProfileId != chatProfile.Id)
             {
-                if (_app.Repository is not IPhotoRepository photoRepository ||
-                    _app.ActiveProfile is not { } photoProfile ||
-                    _transferPicker is not { } photoTransferPicker ||
-                    photoRepository.ProfileId != photoProfile.Id)
-                {
-                    _photos?.Dispose();
-                    _photos = null;
-                    _photosProfileId = null;
-                    _photosRepository = null;
-                    ContentFrame.Content = PhotosPage.CreateUnavailableState();
-                    return;
-                }
-                if (_photos is null || _photosProfileId != photoProfile.Id ||
-                    !ReferenceEquals(_photosRepository, photoRepository))
-                {
-                    _photos?.Dispose();
-                    var photoRecycleRepository = _app.Repository as IFileRecycleRepository;
-                    if (photoRecycleRepository?.ProfileId != photoProfile.Id)
-                    {
-                        photoRecycleRepository = null;
-                    }
-                    var photoLocationsRepository = _app.Repository as IFileLocationsRepository;
-                    if (photoLocationsRepository?.ProfileId != photoProfile.Id)
-                    {
-                        photoLocationsRepository = null;
-                    }
-                    var photoPreviewRepository = _app.Repository as IFilePreviewRepository;
-                    if (photoPreviewRepository?.ProfileId != photoProfile.Id)
-                    {
-                        photoPreviewRepository = null;
-                    }
-                    var photoCopyMoveRepository = _app.Repository as IFileCopyMoveRepository;
-                    if (photoCopyMoveRepository?.ProfileId != photoProfile.Id)
-                    {
-                        photoCopyMoveRepository = null;
-                    }
-                    var photoShareRepository = _app.Repository as IFileShareLinkRepository;
-                    if (photoShareRepository?.ProfileId != photoProfile.Id)
-                    {
-                        photoShareRepository = null;
-                    }
-                    IFileCopyMoveFolderSource? photoCopyMoveFolderSource = null;
-                    if (photoLocationsRepository is not null)
-                    {
-                        photoCopyMoveFolderSource = new RepositoryFileCopyMoveFolderSource(
-                            photoProfile.Id,
-                            new RepositoryFileBrowserDataSource(_app.Repository),
-                            photoLocationsRepository);
-                    }
-                    _photos = new PhotosPage(
-                        photoRepository,
-                        photoProfile.Id.ToString(),
-                        photoTransferPicker,
-                        locationsRepository: photoLocationsRepository,
-                        recycleRepository: photoRecycleRepository,
-                        recycleReviewBlocker: FileRecycleReviewBlocker.Current,
-                        previewRepository: photoPreviewRepository,
-                        copyMoveRepository: photoCopyMoveRepository,
-                        copyMoveFolderSource: photoCopyMoveFolderSource,
-                        copyMoveReviewBlocker: FileCopyMoveReviewBlocker.Current,
-                        shareRepository: photoShareRepository,
-                        shareReviewBlocker: FileShareLinkReviewBlocker.Current);
-                    _photosProfileId = photoProfile.Id;
-                    _photosRepository = photoRepository;
-                }
-                ContentFrame.Content = _photos;
-                return;
+                _chat?.Dispose();
+                _chat = new ChatPage(chatRepository);
+                _chatProfileId = chatProfile.Id;
             }
-            if (module == AppModule.Chat)
+            await _chat.SetWindowVisibleAsync(_isWindowVisible);
+            ContentFrame.Content = _chat;
+            return;
+        }
+        if (module == AppModule.Downloads)
+        {
+            if (_app.Repository is not IDownloadStationRepository downloadRepository ||
+                _app.ActiveProfile is not { } downloadProfile ||
+                downloadRepository.ProfileId != downloadProfile.Id)
             {
-                if (_app.Repository is not IChatRepository chatRepository ||
-                    _app.ActiveProfile is not { } chatProfile ||
-                    chatRepository.ProfileId != chatProfile.Id)
-                {
-                    _chat?.Dispose();
-                    _chat = null;
-                    _chatProfileId = null;
-                    ContentFrame.Content = new ChatPage(
-                        new UnavailableChatRepository(Guid.Empty));
-                    return;
-                }
-                if (_chat is null || _chatProfileId != chatProfile.Id)
-                {
-                    _chat?.Dispose();
-                    _chat = new ChatPage(chatRepository);
-                    _chatProfileId = chatProfile.Id;
-                }
-                await _chat.SetWindowVisibleAsync(_isWindowVisible);
-                ContentFrame.Content = _chat;
-                return;
-            }
-            if (module == AppModule.Downloads)
-            {
-                if (_app.Repository is not IDownloadStationRepository downloadRepository ||
-                    _app.ActiveProfile is not { } downloadProfile ||
-                    downloadRepository.ProfileId != downloadProfile.Id)
-                {
-                    _downloads?.Dispose();
-                    _downloads = new DownloadStationPage(
-                        new UnavailableDownloadStationRepository(Guid.Empty),
-                        _transfers);
-                    _downloadsProfileId = null;
-                    ContentFrame.Content = _downloads;
-                    return;
-                }
-                if (_downloads is null || _downloadsProfileId != downloadProfile.Id)
-                {
-                    _downloads?.Dispose();
-                    _downloads = new DownloadStationPage(downloadRepository, _transfers);
-                    _downloadsProfileId = downloadProfile.Id;
-                }
+                _downloads?.Dispose();
+                _downloads = new DownloadStationPage(
+                    new UnavailableDownloadStationRepository(Guid.Empty),
+                    _transfers);
+                _downloadsProfileId = null;
                 ContentFrame.Content = _downloads;
                 return;
             }
-            if (module == AppModule.Containers)
+            if (_downloads is null || _downloadsProfileId != downloadProfile.Id)
             {
-                if (_app.ActiveProfile is not { } containerProfile ||
-                    _app.Repository is not IContainerManagerRepository containerRepository ||
-                    containerRepository.ProfileId != containerProfile.Id)
-                {
-                    _containers?.Dispose();
-                    _containers = new ContainerManagerPage(
-                        new UnavailableContainerManagerRepository(
-                            _app.ActiveProfile?.Id ?? Guid.Empty));
-                    _containersProfileId = null;
-                    _containerRepository = null;
-                    ContentFrame.Content = _containers;
-                    return;
-                }
-                if (_containers is null ||
-                    _containersProfileId != containerProfile.Id ||
-                    !ReferenceEquals(_containerRepository, containerRepository))
-                {
-                    _containers?.Dispose();
-                    _containers = new ContainerManagerPage(containerRepository);
-                    _containersProfileId = containerProfile.Id;
-                    _containerRepository = containerRepository;
-                }
+                _downloads?.Dispose();
+                _downloads = new DownloadStationPage(downloadRepository, _transfers);
+                _downloadsProfileId = downloadProfile.Id;
+            }
+            ContentFrame.Content = _downloads;
+            return;
+        }
+        if (module == AppModule.Containers)
+        {
+            if (_app.ActiveProfile is not { } containerProfile ||
+                _app.Repository is not IContainerManagerRepository containerRepository ||
+                containerRepository.ProfileId != containerProfile.Id)
+            {
+                _containers?.Dispose();
+                _containers = new ContainerManagerPage(
+                    new UnavailableContainerManagerRepository(
+                        _app.ActiveProfile?.Id ?? Guid.Empty));
+                _containersProfileId = null;
+                _containerRepository = null;
                 ContentFrame.Content = _containers;
                 return;
             }
-            if (module == AppModule.VirtualMachines)
+            if (_containers is null ||
+                _containersProfileId != containerProfile.Id ||
+                !ReferenceEquals(_containerRepository, containerRepository))
             {
-                if (_app.ActiveProfile is not { } virtualMachineProfile ||
-                    _app.Repository is not IVirtualMachineManagerRepository virtualMachineRepository ||
-                    virtualMachineRepository.ProfileId != virtualMachineProfile.Id)
-                {
-                    _virtualMachines?.Dispose();
-                    _virtualMachines = new VirtualMachineManagerPage(
-                        new UnavailableVirtualMachineManagerRepository(
-                            _app.ActiveProfile?.Id ?? Guid.Empty));
-                    _virtualMachinesProfileId = null;
-                    ContentFrame.Content = _virtualMachines;
-                    return;
-                }
-                if (_virtualMachines is null ||
-                    _virtualMachinesProfileId != virtualMachineProfile.Id)
-                {
-                    _virtualMachines?.Dispose();
-                    _virtualMachines = new VirtualMachineManagerPage(virtualMachineRepository);
-                    _virtualMachinesProfileId = virtualMachineProfile.Id;
-                }
+                _containers?.Dispose();
+                _containers = new ContainerManagerPage(containerRepository);
+                _containersProfileId = containerProfile.Id;
+                _containerRepository = containerRepository;
+            }
+            ContentFrame.Content = _containers;
+            return;
+        }
+        if (module == AppModule.VirtualMachines)
+        {
+            if (_app.ActiveProfile is not { } virtualMachineProfile ||
+                _app.Repository is not IVirtualMachineManagerRepository virtualMachineRepository ||
+                virtualMachineRepository.ProfileId != virtualMachineProfile.Id)
+            {
+                _virtualMachines?.Dispose();
+                _virtualMachines = new VirtualMachineManagerPage(
+                    new UnavailableVirtualMachineManagerRepository(
+                        _app.ActiveProfile?.Id ?? Guid.Empty));
+                _virtualMachinesProfileId = null;
                 ContentFrame.Content = _virtualMachines;
                 return;
             }
-            if (module == AppModule.NasSettings)
+            if (_virtualMachines is null ||
+                _virtualMachinesProfileId != virtualMachineProfile.Id)
             {
-                if (_app.ActiveProfile is not { } nasProfile ||
-                    _app.Repository is not INasDetailsRepository nasRepository ||
-                    nasRepository.ProfileId != nasProfile.Id)
-                {
-                    _nasDetails?.Dispose();
-                    _nasDetails = new NasDetailsPage(
-                        new UnavailableNasDetailsRepository(_app.ActiveProfile?.Id ?? Guid.Empty));
-                    _nasDetailsProfileId = null;
-                    _nasDetailsRepository = null;
-                    ContentFrame.Content = _nasDetails;
-                    return;
-                }
-                if (_nasDetails is null ||
-                    _nasDetailsProfileId != nasProfile.Id ||
-                    !ReferenceEquals(_nasDetailsRepository, nasRepository))
-                {
-                    _nasDetails?.Dispose();
-                    var settingsRepository = nasRepository as INasSettingsRepository;
-                    _nasDetails = new NasDetailsPage(nasRepository, settingsRepository);
-                    _nasDetailsProfileId = nasProfile.Id;
-                    _nasDetailsRepository = nasRepository;
-                }
+                _virtualMachines?.Dispose();
+                _virtualMachines = new VirtualMachineManagerPage(virtualMachineRepository);
+                _virtualMachinesProfileId = virtualMachineProfile.Id;
+            }
+            ContentFrame.Content = _virtualMachines;
+            return;
+        }
+        if (module == AppModule.NasSettings)
+        {
+            if (_app.ActiveProfile is not { } nasProfile ||
+                _app.Repository is not INasDetailsRepository nasRepository ||
+                nasRepository.ProfileId != nasProfile.Id)
+            {
+                _nasDetails?.Dispose();
+                _nasDetails = new NasDetailsPage(
+                    new UnavailableNasDetailsRepository(_app.ActiveProfile?.Id ?? Guid.Empty));
+                _nasDetailsProfileId = null;
+                _nasDetailsRepository = null;
                 ContentFrame.Content = _nasDetails;
                 return;
             }
-            ContentFrame.Content = _workspace;
-            await _workspace.ShowModuleAsync(module);
+            if (_nasDetails is null ||
+                _nasDetailsProfileId != nasProfile.Id ||
+                !ReferenceEquals(_nasDetailsRepository, nasRepository))
+            {
+                _nasDetails?.Dispose();
+                var settingsRepository = nasRepository as INasSettingsRepository;
+                _nasDetails = new NasDetailsPage(nasRepository, settingsRepository);
+                _nasDetailsProfileId = nasProfile.Id;
+                _nasDetailsRepository = nasRepository;
+            }
+            ContentFrame.Content = _nasDetails;
+            return;
         }
+        ContentFrame.Content = _workspace;
+        await _workspace.ShowModuleAsync(module);
     }
 
     private async Task CloseFilesPageAsync()
@@ -544,6 +559,7 @@ public sealed partial class ShellPage : Page
         var files = _files;
         _files = null;
         _filesProfileId = null;
+        ReleaseCrossNasTargetLeases();
         if (files is null)
         {
             return;
@@ -677,6 +693,20 @@ public sealed partial class ShellPage : Page
         }
     }
 
+    internal async Task ShowTransfersAsync()
+    {
+        var item = Navigation.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(value => value.Tag is AppModule.Transfers);
+        if (item is null)
+        {
+            return;
+        }
+
+        Navigation.SelectedItem = item;
+        await OpenModuleAsync(AppModule.Transfers);
+    }
+
     private void WireCrossNasDependencies(FilesPage page, Guid currentProfileId)
     {
         var otherProfiles = _app.Profiles
@@ -686,15 +716,165 @@ public sealed partial class ShellPage : Page
 
         page.SetCrossNasDependencies(
             otherProfiles,
-            targetProfileId =>
+            RestoreCrossNasFolderSourceAsync);
+    }
+
+    private async Task<IFileCopyMoveFolderSource?> RestoreCrossNasFolderSourceAsync(
+        Guid targetProfileId,
+        CancellationToken cancellationToken)
+    {
+        if (_app.ActiveProfile?.Id == targetProfileId)
+        {
+            return null;
+        }
+        if (_crossNasTargetLeases.TryGetValue(targetProfileId, out var cached))
+        {
+            return new LeasedFileCopyMoveFolderSource(
+                cached.FolderSource,
+                cached.CreateReference());
+        }
+
+        var profile = _app.Profiles.FirstOrDefault(item => item.Id == targetProfileId);
+        if (profile is null)
+        {
+            return null;
+        }
+        var session = await _app.LoadSavedSessionForCrossNasAsync(
+            targetProfileId,
+            cancellationToken).ConfigureAwait(true);
+        if (session is null || session.ProfileId != targetProfileId)
+        {
+            return null;
+        }
+
+        var context = await _app.CreateCrossNasConnectionAsync(
+            targetProfileId,
+            cancellationToken).ConfigureAwait(true);
+        try
+        {
+            var connection = await context.Resolver.DiscoverAsync(
+                profile,
+                updateStatus: null,
+                cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
+            var repository = new DsmRepository(
+                connection.Profile,
+                session,
+                context.Api,
+                connection.Capabilities);
+            if (repository.ProfileId != targetProfileId ||
+                !repository.CanReceiveCrossNasCopy ||
+                !repository.FileMutationAvailability.CanCreateFolder ||
+                repository is not IFileLocationsRepository locations)
             {
-                var targetRepo = DsmRepository.CrossNasRepositoryResolver?.Invoke(targetProfileId);
-                if (targetRepo is null) return null!;
-                return new RepositoryFileCopyMoveFolderSource(
+                context.Dispose();
+                return null;
+            }
+
+            DsmRepository.RegisterRepository(targetProfileId, repository);
+            var lease = new CrossNasTargetRepositoryLease(
+                targetProfileId,
+                repository,
+                context.TakeOwnership(),
+                new RepositoryFileCopyMoveFolderSource(
                     targetProfileId,
-                    new RepositoryFileBrowserDataSource(targetRepo),
-                    targetRepo as IFileLocationsRepository);
-            });
+                    new RepositoryFileBrowserDataSource(repository),
+                    locations),
+                RemoveCrossNasTargetLease);
+            _crossNasTargetLeases[targetProfileId] = lease;
+            return new LeasedFileCopyMoveFolderSource(
+                lease.FolderSource,
+                lease.CreateReference());
+        }
+        catch
+        {
+            context.Dispose();
+            throw;
+        }
+    }
+
+    private void RemoveCrossNasTargetLease(CrossNasTargetRepositoryLease lease)
+    {
+        if (_crossNasTargetLeases.TryGetValue(lease.ProfileId, out var current) &&
+            ReferenceEquals(current, lease))
+        {
+            _crossNasTargetLeases.Remove(lease.ProfileId);
+        }
+    }
+
+    private void ReleaseCrossNasTargetLeases()
+    {
+        foreach (var lease in _crossNasTargetLeases.Values.ToArray())
+        {
+            lease.Dispose();
+        }
+        _crossNasTargetLeases.Clear();
+    }
+
+    private sealed class CrossNasTargetRepositoryLease : IDisposable
+    {
+        private readonly DsmRepository _repository;
+        private readonly HttpClient _httpClient;
+        private readonly Action<CrossNasTargetRepositoryLease> _release;
+        private int _references;
+        private bool _disposed;
+
+        public CrossNasTargetRepositoryLease(
+            Guid profileId,
+            DsmRepository repository,
+            HttpClient httpClient,
+            IFileCopyMoveFolderSource folderSource,
+            Action<CrossNasTargetRepositoryLease> release)
+        {
+            ProfileId = profileId;
+            _repository = repository;
+            _httpClient = httpClient;
+            FolderSource = folderSource;
+            _release = release;
+        }
+
+        public Guid ProfileId { get; }
+        public IFileCopyMoveFolderSource FolderSource { get; }
+
+        public IDisposable CreateReference()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            Interlocked.Increment(ref _references);
+            return new Reference(this);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            DsmRepository.UnregisterRepository(ProfileId, _repository);
+            _httpClient.Dispose();
+            _release(this);
+        }
+
+        private void ReleaseReference()
+        {
+            if (Interlocked.Decrement(ref _references) <= 0)
+            {
+                Dispose();
+            }
+        }
+
+        private sealed class Reference(CrossNasTargetRepositoryLease owner) : IDisposable
+        {
+            private int _disposed;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                {
+                    owner.ReleaseReference();
+                }
+            }
+        }
     }
 
     private sealed class UnavailableNasDetailsRepository(Guid profileId)
@@ -708,6 +888,20 @@ public sealed partial class ShellPage : Page
         public Task<NasDetailsSnapshot> LoadDetailsAsync(
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadStorageAnalysisAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new NasDetailsSection<NasStorageAnalysisSummary>(
+                NasDetailsSectionStatus.Unavailable,
+                [],
+                DiagnosticTag: "nas-details.storage-analysis.unavailable"));
+
+        public Task<NasDetailsSection<NasStorageAnalysisSummary>> LoadDeepStorageAnalysisAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new NasDetailsSection<NasStorageAnalysisSummary>(
+                NasDetailsSectionStatus.Unavailable,
+                [],
+                DiagnosticTag: "nas-details.storage-analysis.unavailable"));
     }
 
     private sealed class UnavailableChatRepository(Guid profileId) : IChatRepository

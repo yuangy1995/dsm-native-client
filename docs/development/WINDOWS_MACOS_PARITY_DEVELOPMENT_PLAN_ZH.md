@@ -73,6 +73,40 @@ Windows 完成标准不是“Shell 中出现入口”，而是对应工作流达
 
 凭据、证书、Cloud Files 内容完整性和危险写规则不后置。未经真实验证会造成数据损坏或系统副作用的入口保持关闭或受能力开关保护，但只阻塞该入口启用、`DEVICE_VERIFIED` 和发布声明，不阻塞 Files、Photos、Chat 等独立功能。
 
+### 3.4 2026-08-13 Windows 未复刻能力账本与开发目标
+
+本账本只记录剔除纯 `PENDING_USER_VALIDATION` 后仍需要源码工作的 Windows 缺口。真实 Windows、ARM64、Explorer/通知注册、安装器/签名、真实 NAS、Narrator、高对比、200% 缩放、窄窗口、键鼠和触控只作为验收待办，不重复列为“未复刻功能”。
+
+本轮已收口：`WIN-CHAT-OWN-DELETE`。Windows Chat 已对齐 macOS/Apple Mobile 的“删除本人消息”受限语义：只在当前未加密会话内本人已发送消息显示入口，原生确认后固定 `SYNO.Chat.Post` v5 `delete` 一次提交，并以消息回读确认消失；未知结果、提交后取消或回读不一致只要求刷新核对，不自动重放。会话关闭、转发、提醒、定时、投票、服务端置顶和官方 Star 仍未开放。
+
+本轮也收口 `WIN-DL-ADV-READ` 的只读部分：Windows Download Station 继续只使用公开 v1 读取路径，任务列表 `additional` 扩为 `detail,transfer,file,tracker,peer` 并在详情展示优先级、文件/Tracker/Peer/做种统计；设置与 RSS 摘要只读展示默认位置、自动解压、eMule、限速、计划和 RSS 数量。任何设置写、RSS 刷新/编辑、文件优先级写、BT 协议高级和删除已下载数据仍不开放。
+
+本轮继续收口 `WIN-STOR-ANALYSIS` 的用户可控主流程：Windows NAS 详情“存储分析”分区保留只读有界样本，同时新增“分析存储”独立重跑、“深度分析”和“取消分析”入口。普通重跑只刷新该分区，不重读其他 NAS 详情；取消保留上一次分析行并给出可恢复提示。深度分析由用户显式触发，使用固定共享、目录、文件和校验候选预算递归读取可见普通共享，补充目录汇总、所有者覆盖、访问时间覆盖，并对预算内同名同大小候选优先用官方 MD5 任务确认内容匹配；历史报告、计划任务和导出仍不开放。
+
+本轮已收口 `WIN-FILE-XNAS-COPY` 的复制侧主流程：Windows Files 可把当前一个普通本地文件或文件夹复制到另一台已保存会话的 NAS。目标 profile 通过独立连接与租约恢复，源 NAS 会话不被复用或破坏；源端固定公开 Download/List，目标端固定公开 Upload/List/文件夹浏览，传输使用 12 MiB 有界内存并在目标端回读确认。跨 NAS move、源端删除、覆盖、自动改名、批量、后台/跨重启恢复、Explorer/Cloud Files 集成和真实双 NAS 副作用验收仍不开放。
+
+本轮已收口 `WIN-SYSTEM-SHARE`：Files 分享链接创建成功且存在已确认 URL 后，Windows 会按当前窗口运行时绑定系统分享面板；可用时显示“通过其他应用分享”，不可用时保留复制链接兜底。系统分享只传递已确认公开链接和通用标题，不传递密码、路径、NAS 名称、账号或任何会话材料；Photos 继续复用分享链接创建与复制/管理安全链。
+
+本轮已收口 `WIN-ACT-NOTIFY` 的源码主流程：Activity 对 App 发起的前台下载/上传在完成、失败或需核对时发送隐私安全的通用系统通知，点击只路由回 Activity。通知不包含 profile、文件名、路径、NAS 名称、任务 ID、错误正文或会话材料；运行时不支持或注册失败时不影响 Activity 页面和托盘。NAS 后台任务结束仍只在 Activity 内提示核对，不用系统通知冒充成功。
+
+| 优先级 | 功能 ID | macOS 业务语义 | Windows 当前状态 | 下一源码切片 |
+| --- | --- | --- | --- | --- |
+| P0 | `WIN-STOR-ANALYSIS` | NAS 管理中按共享、类型、大文件、近期、久未访问和重复文件形成统一存储分析 | 本轮已完成只读有界样本、用户可控重跑/取消和显式深度分析：普通样本最多 20 个普通共享、500 个文件候选；深度分析最多 20 个普通共享、120 个文件夹、3000 个文件、4 组目录大小任务和 4 组重复候选，展示类型占用、大文件、近期/较早样本、目录汇总、所有者/访问时间覆盖和 MD5 内容匹配候选；此前无分页、无预算的原型保持撤回 | 源码主流程已收口；仅剩真实 NAS 大目录/权限/字段差异、真实 Windows、Narrator、高对比、缩放、键鼠和触控验收。历史报告、计划任务和导出继续后置，不作为本轮未复刻功能 |
+| P0 | `WIN-FILE-XNAS-COPY` | 跨 NAS 复制/移动 | 本轮已完成 copy-only 受限闭环：当前单个普通本地文件或文件夹可复制到另一台已保存会话 NAS，独立目标连接租约、源/目标能力检查、12 MiB 有界内存中转和目标端回读确认均已接入；目标不可用显示普通恢复提示 | 下一切片仅在明确源端删除安全方案和真实双 NAS 结果证据后评估 move；覆盖、自动改名、批量、后台恢复、Explorer/Cloud Files 集成继续后置 |
+| P1 | `WIN-DL-ADV-READ` | Download Station 设置、RSS、优先级和任务高级信息 | 本轮已完成只读高级摘要：任务列表公开 v1 读取 `detail/transfer/file/tracker/peer`，展示优先级、文件/Tracker/Peer、做种与下载中节点；Info/Schedule/RSS 只读摘要进入 WinUI，失败不遮蔽任务列表；设置写、RSS 刷新/编辑、批量、目标修改和 removeData 关闭 | 下一切片仅在版本化契约和危险门具备后评估 RSS 单站点刷新或任务目标修改；设置写与删除数据继续高风险独立门 |
+| P1 | `WIN-SYSTEM-SHARE` | 系统分享语义 | 本轮已完成源码闭环：Files 已确认分享链接可经当前窗口 `DataTransferManager` 调起系统分享；运行时不可用则保留复制链接兜底；Photos 复用同一分享链接安全链 | 仅剩真实 Windows Share UI、目标 App、Narrator、高对比、缩放、键鼠和触控验收；不再列源码主流程缺口 |
+| P2 | `WIN-ACT-NOTIFY` | 活动完成后的系统通知和点击回到活动中心 | 本轮已完成源码闭环：App 发起前台传输完成、失败或需核对时可发通用隐私通知，点击只回到 Activity；不支持通知或注册失败时不影响应用内活动 | 仅剩真实 Windows 通知注册、弹出、点击激活、托盘生命周期、重启恢复和辅助功能验收；NAS 后台任务系统通知继续后置 |
+
+以下缺口有源码准备价值，但不得直接开放用户入口；必须先补独立 capability、确认文案、权限/状态预检、提交后回读和未知结果禁止重放：
+
+| 功能 ID | 范围 | 保持关闭原因 | 可先做的源码准备 |
+| --- | --- | --- | --- |
+| `WIN-FILE-LOC-WRITE` | 收藏写入、远程挂载创建/修改/删除 | 会改变 NAS 文件位置或远程连接状态，缺可靠 typed 提交边界和版本化契约 | 抽出写入 transport、补脱敏 fixture 和 source contract；UI 只跟随 availability |
+| `WIN-CHAT-ADV-WRITE` | 会话关闭、转发、提醒、定时、投票、服务端置顶 | Chat Server 内部写入副作用与读回语义未完成 Windows 版本化验收 | 逐项能力门和结果模型可先补；默认仍 false，不借本人消息删除开放总闸 |
+| `WIN-NAS-WRITE` | DDNS、设置、电源、套件、账号、磁盘、当前连接 | 存在断网、关机、账号/套件删除和硬盘任务等危险副作用 | 每类操作拆独立能力、确认、互斥和最终状态复查；真实专用 NAS 前入口关闭 |
+| `WIN-CM-VMM-WRITE` | Container/VMM 生命周期、删除、网络、noVNC | 容器/虚拟机写入和控制台会改变运行状态或暴露会话令牌 | 定义命令接口、任务轮询和会话清理契约，但 Repository 默认 unsupported |
+| `WIN-DL-DESTRUCTIVE` | 删除已下载数据、批量控制、设置写 | 可能删除文件或改变全局下载行为 | 先完成只读设置/RSS/优先级；写入必须单独验收后再开放 |
+
 ## 4. 目标代码结构
 
 在保持当前 solution 分层的前提下，逐步形成以下目录边界：
@@ -313,9 +347,11 @@ Download Station：
 
 - 列表/筛选/详情/进度/速度/目标和任务文件；任务文件导入必须复用已验收的 W2 Picker/Transfer 边界。
 - URL/magnet/torrent/nzb/txt 创建、NAS 目标目录选择。
-- 已完成单任务暂停/继续、URL/磁力与任务文件创建和只移除任务；均使用稳定任务基线、一次提交、独立回读与未确认结果不重放。删除已下载数据、批量控制、RSS/文件优先级/BT 协议高级和设置写继续独立后置。
+- 已完成单任务暂停/继续、URL/磁力与任务文件创建和只移除任务；均使用稳定任务基线、一次提交、独立回读与未确认结果不重放。删除已下载数据、批量控制、RSS 刷新/编辑、文件优先级写、BT 协议高级和设置写继续独立后置。
 
-在既有常用单任务流程之上，官方 `SYNO.DownloadStation.BTSearch` v1 的 Domain、Infrastructure、ViewModel 与 WinUI 闭环也已完成：能力门、原生 ContentDialog、`Ctrl+B`、提供方/类别/排序/方向、会话内隐私、取消/关闭、零提供方、空/筛选空/错误/结果态、迟到结果隔离和单结果创建均已接入；61 项英中资源与 8 项 Repository、15 项 ViewModel、3 项 source-contract 专项测试已落盘，共 26 项。正式提交 `5850f4c` 的 Windows Build run `31356270192` 已通过 886/886 项 .NET 10 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误。真实 NAS、Narrator、键盘、高对比和窗口缩放继续列入 `PENDING_USER_VALIDATION`。RSS、文件优先级、BT 协议高级和设置写不随该切片开放。
+在既有常用单任务流程之上，官方 `SYNO.DownloadStation.BTSearch` v1 的 Domain、Infrastructure、ViewModel 与 WinUI 闭环也已完成：能力门、原生 ContentDialog、`Ctrl+B`、提供方/类别/排序/方向、会话内隐私、取消/关闭、零提供方、空/筛选空/错误/结果态、迟到结果隔离和单结果创建均已接入；61 项英中资源与 8 项 Repository、15 项 ViewModel、3 项 source-contract 专项测试已落盘，共 26 项。正式提交 `5850f4c` 的 Windows Build run `31356270192` 已通过 886/886 项 .NET 10 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误。真实 NAS、Narrator、键盘、高对比和窗口缩放继续列入 `PENDING_USER_VALIDATION`。RSS 刷新/编辑、文件优先级写、BT 协议高级和设置写不随该切片开放。
+
+`WIN-DL-ADV-READ` 已在本轮完成只读摘要闭环：Repository 固定公开 `SYNO.DownloadStation.Task` v1 `list`，`additional=detail,transfer,file,tracker,peer`，任务详情展示优先级、文件数、Tracker 数、Peer 数、做种数和下载中节点；`Info.getconfig`、可选 `Schedule.getconfig`、`RSS.Site.list` 与 `RSS.Feed.list` 仅用于摘要卡，读取失败不阻断任务列表或创建入口。WinUI 使用双语资源和原生卡片展示设置/RSS 摘要，设置保存、RSS 刷新/编辑、任务目标修改、批量控制、删除已下载数据和内部 `DownloadStation2` 继续关闭。本机 DownloadStation 聚焦 97/97、Release 完整 xUnit 1506/1506 通过；真实 NAS 字段/RSS 权限、真实 Windows 与无障碍验收后置。
 
 Container Manager：
 
@@ -352,7 +388,8 @@ Container Manager：
 2. **ACT-01 File Station 后台任务增量已完成源码、本机与云端闭环**：Activity 复用现有协调器新增独立 File Station 来源，固定公开 `SYNO.FileStation.BackgroundTask.list` v3、FORM、`offset=0`、`limit=100`、`crtime desc` 及 CopyMove/Delete/Extract/Compress 四类过滤；能力、版本或格式不满足时零请求。页面可见且窗口前台时立即读取并每 5 秒严格单飞刷新，按钮/F5 同时刷新 Download 与 File 两源；任一失败只保留其旧快照并继续另一源，首次失败、旧快照失败、单源不可用、双源不可用和截断分别给出双语说明。任务参数、路径、处理路径和消息不进入领域、UI、日志或持久化，安全任务 ID 只作内存键；`finished=true` 只显示结束待核对。可信比例缺失时仅对 CopyMove 字节和 Delete 项目数推导进度，Compress/Extract 不猜单位；NAS 文件任务无取消、清理、重试或 `clear_finished`。离页、隐藏和释放会停止两个刷新器并拒绝迟到结果。本机 57/57 聚焦、1286/1286 Release xUnit、本地化、XML、请求/Fixture 契约与差异检查已通过；macOS WinUI 构建按预期停在不可执行的 `XamlCompiler.exe`。功能分支 GitHub Windows Build run `31566775587` 已通过 1286/1286 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31566775481` 已通过。真实 DSM 字段、普通账号权限、Windows/Narrator/高对比/200% 缩放/窄窗口/键鼠触控为 `PENDING_USER_VALIDATION`。
 2. **CHAT-02/03 前台消息主流程**：Windows 已完成文字、单附件及可见时立即读取、30 秒单飞刷新闭环；本切片 GitHub Windows Build run `31531069884` 与 Repository Check run `31531069860` 已通过。真实 Chat Server、系统选择器、托盘切换和辅助功能验收继续后置；Socket.IO、服务器已读、后台即时消息和通知保持关闭。
 3. **NAS-01/NAS-02/NAS-04 有界只读详情已扩展为九区**：专用 `NasDetailsPage` 与 typed Repository 现提供系统概览、存储健康、系统更新、当前账号共享访问、系统活动、套件、计划任务、日志和当前连接。系统活动仅在运行时发现 `SYNO.Core.System.Process` v1 时单次读取 `start=0, limit=500`，只向领域层交付前 50 个进程的本地 ID、数字 PID、清理后的名称、可选状态和受限服务组标识；命令、路径、工作目录、账号、环境变量、端口、地址和原始响应始终丢弃。`System.ProcessGroup.list` v1 是可选补充，缺失、失败或列表不完整时保留进程并明确提示服务详情暂不可用；`service_info`、结束进程、服务控制和持续轮询保持关闭。共享访问继续固定公开 `list_share` v2 和 500 项源上限。九区独立表达失败、不可用、空内容、截断和正常状态。本机已通过系统活动/NAS 聚焦 28/28、Release xUnit 1035/1035、本地化、请求/Fixture 契约、XML 解析与差异检查；功能分支 Windows Build `31484643296` 已通过 1035/1035 与 WinUI x64/ARM64 构建，Repository Check `31484643292` 已通过。macOS App 构建按预期停在不可执行的 Windows `XamlCompiler.exe`，不写成本机通过。系统活动真实 API 仍只有静态证据，真实 NAS 的字段、权限、500 项边界及服务组降级，以及 Narrator、键盘、高对比和 200% 缩放继续后置验收。
-4. Download RSS、文件优先级、BT 协议高级设置以及 Container/VMM 高风险写不进入这一波；没有公开或已记录契约的能力继续关闭。
+4. **NAS-05 存储分析已补入第十区并完成深度分析源码闭环**：Repository 固定公开 `SYNO.FileStation.List` v2，只读取当前账号可见普通共享；普通“分析存储”最多 20 个共享和 500 个文件候选，只刷新该分区并可取消保留旧结果。新增“深度分析”由用户显式触发，最多 20 个共享、120 个文件夹和 3000 个文件，补充目录汇总、所有者覆盖和访问时间覆盖；可用时复用官方 `SYNO.FileStation.DirSize` v2 对前 4 个目录确认大小，并对前 4 组同名同大小候选用 `SYNO.FileStation.MD5` v2、每组最多 3 个文件确认内容指纹。远程挂载、`#recycle`、完整路径、账号、卷标、原始权限和响应均不进入领域/UI；单个共享或目录读取失败只让该分区标记结果不完整，不阻断 NAS 其他详情。本机 NAS Admin 聚焦 55/55 通过；历史报告、计划任务、导出和真实 NAS/Windows 无障碍验收后置。
+5. Download Station RSS 数量、任务优先级/文件/Tracker/Peer、基础设置和计划的只读摘要已进入本轮 `WIN-DL-ADV-READ`；RSS 刷新/编辑、文件优先级写、BT 协议高级设置以及 Container/VMM 高风险写不进入这一波；没有公开或已记录契约的能力继续关闭。
 
 ### W5-A：页面级 Windows 体验收口
 
@@ -502,7 +539,7 @@ Windows Files 异步递归搜索已完成源码主流程：固定 `start/poll/li
 
 本机 Release xUnit 1434/1434 通过，0 失败、0 跳过。功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建。真实 NAS 的强版本与回读行为、真实 Windows、Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
 
-本波次非目标继续关闭：收藏写与远程挂载创建/修改/删除缺少可靠 typed 提交边界；跨 NAS 复制/移动缺少第二 NAS 独立认证会话；NAS 设置、DDNS、电源写与 Chat 提醒、定时消息、投票、转发等高级写缺少真实版本化契约验收。这些实现路径不得作为已交付用户能力，现有只读收藏、远程位置和 NAS 详情保持原范围。
+本波次非目标继续关闭：收藏写与远程挂载创建/修改/删除缺少可靠 typed 提交边界；跨 NAS 移动、覆盖、自动改名、批量和后台恢复缺少源端删除安全方案、真实双 NAS 副作用证据及系统集成验收；NAS 设置、DDNS、电源写与 Chat 提醒、定时消息、投票、转发等高级写缺少真实版本化契约验收；NAS 后台任务系统通知不在本切片。这些实现路径不得作为已交付用户能力，现有只读收藏、远程位置、NAS 详情、跨 NAS copy-only 受限闭环和 App 前台传输隐私通知保持当前范围。
 
 ### FILE-07 单文件 MD5 与 Chat 本地 Emoji 增量
 

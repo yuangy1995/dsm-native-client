@@ -289,14 +289,29 @@
                             </Button>
                         </Grid>
 
-                        <InfoBar
-                            x:Uid="ChatBrowserMessageError"
-                            x:Name="MessageError"
-                            Grid.Row="1"
-                            AutomationProperties.LiveSetting="Polite"
-                            IsClosable="False"
-                            IsOpen="False"
-                            Severity="Warning" />
+                        <StackPanel Grid.Row="1" Spacing="6">
+                            <InfoBar
+                                x:Uid="ChatBrowserMessageError"
+                                x:Name="MessageError"
+                                AutomationProperties.LiveSetting="Polite"
+                                IsClosable="False"
+                                IsOpen="False"
+                                Severity="Warning" />
+                            <InfoBar
+                                x:Uid="ChatMessageDeleteReview"
+                                x:Name="MessageDeleteReview"
+                                AutomationProperties.LiveSetting="Assertive"
+                                IsClosable="False"
+                                IsOpen="False"
+                                Severity="Warning" />
+                            <InfoBar
+                                x:Uid="ChatMessageDeleteError"
+                                x:Name="MessageDeleteError"
+                                AutomationProperties.LiveSetting="Polite"
+                                IsClosable="True"
+                                IsOpen="False"
+                                Severity="Error" />
+                        </StackPanel>
 
                         <Grid Grid.Row="2">
                             <StackPanel
@@ -412,12 +427,24 @@
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="Auto" />
                                                         </Grid.ColumnDefinitions>
                                                         <TextBlock FontWeight="SemiBold" Text="{x:Bind Sender}" />
                                                         <TextBlock
                                                             Grid.Column="1"
                                                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                             Text="{x:Bind SentAtText}" />
+                                                        <Button
+                                                            Grid.Column="2"
+                                                            MinWidth="44"
+                                                            MinHeight="44"
+                                                            Click="DeleteMessage_Click"
+                                                            Tag="{x:Bind}"
+                                                            ToolTipService.ToolTip="{x:Bind DeleteActionText}"
+                                                            AutomationProperties.Name="{x:Bind DeleteActionAutomationName}"
+                                                            Visibility="{x:Bind DeleteVisibility}">
+                                                            <FontIcon Glyph="&#xE74D;" FontSize="16" />
+                                                        </Button>
                                                     </Grid>
                                                     <TextBlock Text="{x:Bind Text}" TextWrapping="WrapWholeWords" />
                                                     <ItemsControl ItemsSource="{x:Bind Attachments}">

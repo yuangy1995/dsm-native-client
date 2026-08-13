@@ -90,6 +90,32 @@ public sealed partial class NasDetailsPage : Page, IDisposable
         UpdateState();
     }
 
+    private async void RunStorageAnalysis_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.SelectSection(NasDetailsSectionKind.StorageAnalysis);
+        RestoreSectionSelection();
+        UpdateState();
+        await _viewModel.RunStorageAnalysisAsync();
+        RestoreSectionSelection();
+        UpdateState();
+    }
+
+    private async void RunDeepStorageAnalysis_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.SelectSection(NasDetailsSectionKind.StorageAnalysis);
+        RestoreSectionSelection();
+        UpdateState();
+        await _viewModel.RunDeepStorageAnalysisAsync();
+        RestoreSectionSelection();
+        UpdateState();
+    }
+
+    private void CancelStorageAnalysis_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.CancelStorageAnalysis();
+        UpdateState();
+    }
+
     private void SectionList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (SectionList.SelectedItem is NasDetailsSectionOption option)
@@ -131,6 +157,12 @@ public sealed partial class NasDetailsPage : Page, IDisposable
             return;
         }
         RefreshButton.IsEnabled = _viewModel.CanRefresh;
+        RunStorageAnalysisButton.IsEnabled = _viewModel.CanRunStorageAnalysis;
+        RunDeepStorageAnalysisButton.IsEnabled = _viewModel.CanRunDeepStorageAnalysis;
+        CancelStorageAnalysisButton.Visibility = _viewModel.CanCancelStorageAnalysis
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CancelStorageAnalysisButton.IsEnabled = _viewModel.CanCancelStorageAnalysis;
         RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError;
         LoadingState.Visibility = _viewModel.IsLoading && !_viewModel.HasContent
             ? Visibility.Visible

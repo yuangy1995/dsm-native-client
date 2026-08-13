@@ -12,6 +12,7 @@ public enum CrossNasCopyMoveState
     Transferring,
     Completed,
     Unsupported,
+    TargetUnavailable,
     Failure,
 }
 
@@ -20,11 +21,12 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
     private readonly IFileCopyMoveRepository _sourceRepository;
     private readonly Guid _sourceProfileId;
     private readonly IReadOnlyList<NasProfile> _targetProfiles;
-    private readonly Func<Guid, IFileCopyMoveFolderSource> _targetFolderSourceFactory;
+    private readonly Func<Guid, CancellationToken, Task<IFileCopyMoveFolderSource?>> _targetFolderSourceFactory;
     private CancellationTokenSource? _request;
     private CrossNasCopyMoveState _state;
     private NasProfile? _selectedTarget;
     private IFileCopyMoveFolderSource? _targetFolderSource;
+    private IDisposable? _targetFolderLease;
     private IReadOnlyList<FileCopyMoveFolder> _folderItems = [];
     private string _destinationPath = string.Empty;
     private bool _destinationCanWrite;
@@ -40,7 +42,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         FileItem source,
         FileCopyMoveOperation operation,
         IReadOnlyList<NasProfile> targetProfiles,
-        Func<Guid, IFileCopyMoveFolderSource> targetFolderSourceFactory)
+        Func<Guid, CancellationToken, Task<IFileCopyMoveFolderSource?>> targetFolderSourceFactory)
     {
         ArgumentNullException.ThrowIfNull(sourceRepository);
         ArgumentNullException.ThrowIfNull(source);
@@ -164,9 +166,40 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         ThrowIfDisposed();
         if (State != CrossNasCopyMoveState.ChoosingTarget) return;
         SelectedTarget = target;
-        _targetFolderSource = _targetFolderSourceFactory(target.Id);
-        State = CrossNasCopyMoveState.ChoosingDestination;
-        await LoadFoldersAsync(string.Empty, destinationCanWrite: true).ConfigureAwait(false);
+
+        var generation = BeginRequest(out var cancellation);
+        State = CrossNasCopyMoveState.LoadingFolders;
+        try
+        {
+            ReleaseTargetFolderSource();
+            _targetFolderSource = await _targetFolderSourceFactory(
+                target.Id, cancellation.Token).ConfigureAwait(false);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (!IsCurrent(generation)) return;
+            if (_targetFolderSource is null ||
+                _targetFolderSource.ProfileId != target.Id)
+            {
+                ReleaseTargetFolderSource();
+                State = CrossNasCopyMoveState.TargetUnavailable;
+                return;
+            }
+            _targetFolderLease = _targetFolderSource as IDisposable;
+            await LoadFoldersCoreAsync(
+                string.Empty,
+                destinationCanWrite: true,
+                generation,
+                cancellation).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!IsCurrent(generation)) { }
+        catch when (IsCurrent(generation))
+        {
+            ReleaseTargetFolderSource();
+            State = CrossNasCopyMoveState.TargetUnavailable;
+        }
+        finally
+        {
+            EndRequest(cancellation);
+        }
     }
 
     public async Task LoadFoldersAsync(string path, bool destinationCanWrite = false)
@@ -182,10 +215,29 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         }
 
         var generation = BeginRequest(out var cancellation);
+        try
+        {
+            await LoadFoldersCoreAsync(
+                path,
+                destinationCanWrite,
+                generation,
+                cancellation).ConfigureAwait(false);
+        }
+        finally { EndRequest(cancellation); }
+    }
+
+    private async Task LoadFoldersCoreAsync(
+        string path,
+        bool destinationCanWrite,
+        long generation,
+        CancellationTokenSource cancellation)
+    {
         State = CrossNasCopyMoveState.LoadingFolders;
         try
         {
-            var folders = await _targetFolderSource.LoadFoldersAsync(
+            var targetFolderSource = _targetFolderSource
+                ?? throw new InvalidOperationException("file.cross-nas.target-not-ready");
+            var folders = await targetFolderSource.LoadFoldersAsync(
                 path, cancellation.Token).ConfigureAwait(false);
             cancellation.Token.ThrowIfCancellationRequested();
             if (!IsCurrent(generation)) return;
@@ -201,7 +253,6 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         }
         catch (OperationCanceledException) when (!IsCurrent(generation)) { }
         catch when (IsCurrent(generation)) { State = CrossNasCopyMoveState.Failure; }
-        finally { EndRequest(cancellation); }
     }
 
     public async Task SubmitAsync()
@@ -254,6 +305,19 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
                 ResultMessage = null;
                 State = CrossNasCopyMoveState.ChoosingDestination;
             }
+            else if (outcome.Result.Status == MutationResultStatus.Unsupported)
+            {
+                if (IsTargetUnavailable(outcome.Result.DiagnosticTag))
+                {
+                    ResultMessage = outcome.Result.DiagnosticTag;
+                    State = CrossNasCopyMoveState.TargetUnavailable;
+                }
+                else
+                {
+                    ResultMessage = null;
+                    State = CrossNasCopyMoveState.Unsupported;
+                }
+            }
             else
             {
                 ResultMessage = outcome.Result.DiagnosticTag ?? "file.cross-nas.failed";
@@ -285,6 +349,7 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
         Cancel();
         _request?.Dispose();
         _request = null;
+        ReleaseTargetFolderSource();
     }
 
     private long BeginRequest(out CancellationTokenSource cancellation)
@@ -304,6 +369,20 @@ public sealed class CrossNasCopyMoveViewModel : ObservableObject, IDisposable
 
     private bool IsCurrent(long generation) =>
         !_disposed && generation == _generation;
+
+    private void ReleaseTargetFolderSource()
+    {
+        _targetFolderSource = null;
+        _targetFolderLease?.Dispose();
+        _targetFolderLease = null;
+    }
+
+    private static bool IsTargetUnavailable(string? diagnosticTag) =>
+        diagnosticTag is
+            "file.cross-nas.target-not-found" or
+            "file.cross-nas.target-no-capability" or
+            "file.cross-nas.no-second-session" or
+            "file.cross-nas.no-resolver";
 
     private static bool IsOrdinaryItem(FileItem item) =>
         FileMutationViewModel.IsMutablePath(item.Path);

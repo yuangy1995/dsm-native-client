@@ -498,6 +498,11 @@ public sealed partial class AppViewModel : ObservableObject
         await RestoreAsync(profile).ConfigureAwait(true);
     }
 
+    internal Task<DsmSession?> LoadSavedSessionForCrossNasAsync(
+        Guid profileId,
+        CancellationToken cancellationToken) =>
+        _sessionStore.LoadAsync(profileId, cancellationToken);
+
     public void BeginAddingProfile()
     {
         CancelConnection();

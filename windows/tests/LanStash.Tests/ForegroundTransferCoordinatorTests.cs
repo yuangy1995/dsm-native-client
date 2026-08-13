@@ -50,6 +50,33 @@ public sealed class ForegroundTransferCoordinatorTests
     }
 
     [Fact]
+    public async Task CompletedDownloadShowsGenericNotificationWithoutPathOrName()
+    {
+        var notifications = new RecordingTransferNotifications();
+        using var coordinator = new ForegroundTransferCoordinator(notifications);
+        coordinator.ActivateProfile("profile-a");
+
+        await coordinator.RunAsync(
+            new ForegroundDownloadRequest(
+                "profile-a",
+                "/secret/private-report.pdf",
+                "private-report.pdf",
+                10),
+            (progress, _) =>
+            {
+                progress.Report(new ForegroundTransferProgress(10, 10));
+                return Task.CompletedTask;
+            });
+
+        var notification = Assert.Single(notifications.Sent);
+        Assert.Equal(ForegroundTransferNotificationKind.Completed, notification.Kind);
+        Assert.Equal(ForegroundTransferDirection.Download, notification.Direction);
+        Assert.DoesNotContain("private-report", notification.Title + notification.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/secret", notification.Title + notification.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Activity", notification.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ProgressNeverMovesBackward()
     {
         var coordinator = new ForegroundTransferCoordinator();
@@ -394,6 +421,54 @@ public sealed class ForegroundTransferCoordinatorTests
             Assert.Single(coordinator.GetActivities("profile-a")).State);
     }
 
+    [Theory]
+    [InlineData(
+        MutationResultStatus.SubmittedButUnverified,
+        (int)ForegroundTransferNotificationKind.NeedsReview)]
+    [InlineData(
+        MutationResultStatus.ConfirmedFailure,
+        (int)ForegroundTransferNotificationKind.Failed)]
+    public async Task UploadNotificationsUseOnlyGenericReviewOrFailureText(
+        MutationResultStatus mutationStatus,
+        int expectedKind)
+    {
+        var notifications = new RecordingTransferNotifications();
+        using var coordinator = new ForegroundTransferCoordinator(notifications);
+        coordinator.ActivateProfile("profile-a");
+
+        await coordinator.RunUploadAsync(
+            new ForegroundUploadRequest(
+                "profile-a",
+                "/private",
+                "family.mov",
+                1,
+                Guid.NewGuid()),
+            (_, _) => Task.FromResult(UploadResult(mutationStatus)));
+
+        var notification = Assert.Single(notifications.Sent);
+        Assert.Equal((ForegroundTransferNotificationKind)expectedKind, notification.Kind);
+        Assert.Equal(ForegroundTransferDirection.Upload, notification.Direction);
+        Assert.DoesNotContain("family.mov", notification.Title + notification.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/private", notification.Title + notification.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Activity", notification.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CancelledTransfersDoNotShowSystemNotifications()
+    {
+        var notifications = new RecordingTransferNotifications();
+        using var coordinator = new ForegroundTransferCoordinator(notifications);
+        coordinator.ActivateProfile("profile-a");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            coordinator.RunAsync(
+                Request("profile-a", 10),
+                (_, cancellationToken) => Task.FromCanceled(cancellationToken),
+                new CancellationToken(canceled: true)));
+
+        Assert.Empty(notifications.Sent);
+    }
+
     [Fact]
     public async Task SwitchingProfileMarksInFlightUploadForReview()
     {
@@ -614,6 +689,17 @@ public sealed class ForegroundTransferCoordinatorTests
 
     private static ForegroundDownloadRequest Request(string profileId, long totalBytes) =>
         new(profileId, "/file.bin", "file.bin", totalBytes);
+
+    private sealed class RecordingTransferNotifications
+        : IForegroundTransferNotificationService
+    {
+        public List<ForegroundTransferNotification> Sent { get; } = [];
+
+        public bool IsEnabled => true;
+
+        public void Show(ForegroundTransferNotification notification) =>
+            Sent.Add(notification);
+    }
 
     private static DownloadTask DownloadTask(
         string id,

@@ -251,6 +251,56 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
+    public void PageSupportsOwnMessageDeleteWithConfirmationAndRefreshReview()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        var model = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserViewModel.cs");
+        var state = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserState.cs");
+        var repository = Read("windows/src/LanStash.Infrastructure/Features/Chat/DsmRepository.ChatWrite.cs");
+        var feature = Read("windows/src/LanStash.Domain/Chat/ChatModels.cs");
+        var english = Read("windows/src/LanStash.App/Strings/en-US/Resources.resw");
+        var chinese = Read("windows/src/LanStash.App/Strings/zh-CN/Resources.resw");
+
+        Assert.Contains("ChatWriteFeature.DeleteOwnMessage", feature + model);
+        Assert.Contains("DeleteMessage_Click", source);
+        Assert.Contains("ContentDialog", source);
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", source);
+        Assert.Contains("DeleteOwnMessageAsync", model);
+        Assert.Contains("ChatDeleteMessageRequest", model);
+        Assert.Contains("HasMessageDeleteReview", model);
+        Assert.Contains("PendingDeleteReviewMessageIds", model);
+        Assert.Contains("MessageDeleteReview", xaml);
+        Assert.Contains("MessageDeleteError", xaml);
+        Assert.Contains("ToolTipService.ToolTip=\"{x:Bind DeleteActionText}\"", xaml);
+        Assert.Contains("AutomationProperties.Name=\"{x:Bind DeleteActionAutomationName}\"", xaml);
+        Assert.Contains("MinWidth=\"44\"", xaml);
+        Assert.Contains("ChatDeleteOwnMessageVersion = 5", repository);
+        Assert.Contains("\"delete\"", repository);
+        Assert.Contains("[\"post_id\"]", repository);
+        Assert.Contains("IsFromCurrentUser != true", repository);
+        Assert.Contains("ChatAdvancedWritesEnabled = false", repository);
+        foreach (var key in new[]
+        {
+            "ChatMessageDeleteAction",
+            "ChatMessageDeleteAutomationName",
+            "ChatMessageDeleteConfirmTitle",
+            "ChatMessageDeleteConfirmMessage",
+            "ChatMessageDeleteConfirmSubmit",
+            "ChatMessageDeleteConfirmCancel",
+            "ChatMessageDeleteConfirmAutomationName",
+            "ChatMessageDeleteReview.Title",
+            "ChatMessageDeleteReview.Message",
+            "ChatMessageDeleteError.Title",
+            "ChatMessageDeleteError.Message",
+        })
+        {
+            Assert.Contains($"name=\"{key}\"", english);
+            Assert.Contains($"name=\"{key}\"", chinese);
+        }
+    }
+
+    [Fact]
     public void PageHasReadOnlyGroupMembersDialogWithFiveStatesAndAccessibleControls()
     {
         var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml");

@@ -13,11 +13,16 @@ namespace LanStash.Infrastructure;
 /// </summary>
 public sealed partial class DsmRepository
 {
+    private const string PublicDownloadInfoApi = "SYNO.DownloadStation.Info";
+    private const string PublicDownloadScheduleApi = "SYNO.DownloadStation.Schedule";
     private const string PublicDownloadTaskApi = "SYNO.DownloadStation.Task";
     private const string PublicDownloadStatisticApi = "SYNO.DownloadStation.Statistic";
+    private const string PublicDownloadRssSiteApi = "SYNO.DownloadStation.RSS.Site";
+    private const string PublicDownloadRssFeedApi = "SYNO.DownloadStation.RSS.Feed";
     private const int PublicDownloadApiVersion = 1;
     private const int MaximumTaskPageSize = 100;
     private const int MaximumTaskReadbackItems = 5_000;
+    private const int MaximumRssSummaryItems = 500;
     private static readonly ConditionalWeakTable<IDsmApiClient, DownloadTaskControlApiState>
         DownloadTaskControlStates = new();
     private static readonly ConditionalWeakTable<IDsmApiClient, DownloadTaskCreateApiState>
@@ -27,6 +32,7 @@ public sealed partial class DsmRepository
         new HashSet<DownloadStationReadFeature>
         {
             DownloadStationReadFeature.Tasks,
+            DownloadStationReadFeature.TaskAdvancedDetails,
         };
 
     private bool HasReadablePublicDownloadStationContract =>
@@ -47,6 +53,16 @@ public sealed partial class DsmRepository
             if (HasPublicDownloadVersion(PublicDownloadStatisticApi))
             {
                 features.Add(DownloadStationReadFeature.ActivitySummary);
+            }
+            if (HasPublicDownloadVersion(PublicDownloadInfoApi))
+            {
+                features.Add(DownloadStationReadFeature.DefaultDestination);
+                features.Add(DownloadStationReadFeature.ServerSettings);
+            }
+            if (HasPublicDownloadVersion(PublicDownloadRssSiteApi) &&
+                HasPublicDownloadVersion(PublicDownloadRssFeedApi))
+            {
+                features.Add(DownloadStationReadFeature.RssSummary);
             }
             if (HasPublicDownloadVersion(PublicDownloadBtSearchApi))
             {
@@ -81,7 +97,7 @@ public sealed partial class DsmRepository
             {
                 ["offset"] = offset.ToString(CultureInfo.InvariantCulture),
                 ["limit"] = safeLimit.ToString(CultureInfo.InvariantCulture),
-                ["additional"] = "detail,transfer",
+                ["additional"] = "detail,transfer,file,tracker,peer",
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -135,11 +151,24 @@ public sealed partial class DsmRepository
     {
         var tasks = await ListTasksAsync(offset, limit, cancellationToken).ConfigureAwait(false);
         var activity = await LoadPublicDownloadActivityAsync(cancellationToken).ConfigureAwait(false);
+        var settings = await LoadPublicDownloadSettingsAsync(cancellationToken).ConfigureAwait(false);
+        var rss = await LoadPublicDownloadRssAsync(cancellationToken).ConfigureAwait(false);
+        var defaultDestination = settings.Status == DownloadStationSectionStatus.Available
+            ? settings.Value?.DefaultDestination
+            : null;
         return new(
             _profile.Id,
             tasks,
             activity,
-            new(DownloadStationSectionStatus.Unavailable, null));
+            new(
+                string.IsNullOrWhiteSpace(defaultDestination)
+                    ? DownloadStationSectionStatus.Unavailable
+                    : DownloadStationSectionStatus.Available,
+                defaultDestination))
+        {
+            Settings = settings,
+            Rss = rss,
+        };
     }
 
     public async Task<DownloadTaskCreateOutcome> CreateTaskAsync(
@@ -608,6 +637,115 @@ public sealed partial class DsmRepository
         }
     }
 
+    private async Task<DownloadStationSettingsSection> LoadPublicDownloadSettingsAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!HasPublicDownloadVersion(PublicDownloadInfoApi))
+        {
+            return new(DownloadStationSectionStatus.Unavailable, null);
+        }
+        try
+        {
+            var config = await CallPublicDownloadAsync(
+                PublicDownloadInfoApi,
+                "getconfig",
+                parameters: null,
+                cancellationToken).ConfigureAwait(false);
+            JsonObject? schedule = null;
+            if (HasPublicDownloadVersion(PublicDownloadScheduleApi))
+            {
+                try
+                {
+                    schedule = await CallPublicDownloadAsync(
+                        PublicDownloadScheduleApi,
+                        "getconfig",
+                        parameters: null,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (DsmException)
+                {
+                    schedule = null;
+                }
+                catch (JsonException)
+                {
+                    schedule = null;
+                }
+                catch (IOException)
+                {
+                    schedule = null;
+                }
+            }
+
+            return new(
+                DownloadStationSectionStatus.Available,
+                new DownloadStationSettingsSummary(
+                    OptionalStableDownloadText(config, "default_destination"),
+                    OptionalDownloadBool(config, "emule_enabled"),
+                    OptionalDownloadBool(config, "unzip_service_enabled"),
+                    OptionalNonNegativeInt(config, "bt_max_download"),
+                    OptionalNonNegativeInt(config, "bt_max_upload"),
+                    OptionalNonNegativeInt(config, "http_max_download"),
+                    OptionalNonNegativeInt(config, "ftp_max_download"),
+                    OptionalNonNegativeInt(config, "nzb_max_download"),
+                    OptionalNonNegativeInt(config, "emule_max_download"),
+                    OptionalNonNegativeInt(config, "emule_max_upload"),
+                    schedule is null ? null : OptionalDownloadBool(schedule, "enabled"),
+                    schedule is null ? null : OptionalDownloadBool(schedule, "emule_enabled")));
+        }
+        catch (DsmException)
+        {
+            return new(DownloadStationSectionStatus.Failed, null);
+        }
+        catch (JsonException)
+        {
+            return new(DownloadStationSectionStatus.Failed, null);
+        }
+        catch (IOException)
+        {
+            return new(DownloadStationSectionStatus.Failed, null);
+        }
+    }
+
+    private async Task<DownloadRssSection> LoadPublicDownloadRssAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!HasPublicDownloadVersion(PublicDownloadRssSiteApi) ||
+            !HasPublicDownloadVersion(PublicDownloadRssFeedApi))
+        {
+            return new(DownloadStationSectionStatus.Unavailable, null);
+        }
+        try
+        {
+            var sites = await CallPublicDownloadAsync(
+                PublicDownloadRssSiteApi,
+                "list",
+                parameters: null,
+                cancellationToken).ConfigureAwait(false);
+            var feeds = await CallPublicDownloadAsync(
+                PublicDownloadRssFeedApi,
+                "list",
+                parameters: null,
+                cancellationToken).ConfigureAwait(false);
+            return new(
+                DownloadStationSectionStatus.Available,
+                new DownloadRssSummary(
+                    CountDownloadRssItems(sites, "sites", "rss_sites", "items", "list"),
+                    CountDownloadRssItems(feeds, "feeds", "items", "list")));
+        }
+        catch (DsmException)
+        {
+            return new(DownloadStationSectionStatus.Failed, null);
+        }
+        catch (JsonException)
+        {
+            return new(DownloadStationSectionStatus.Failed, null);
+        }
+        catch (IOException)
+        {
+            return new(DownloadStationSectionStatus.Failed, null);
+        }
+    }
+
     private void EnsureReadablePublicDownloadStationContract()
     {
         if (_profile.Id != _session.ProfileId)
@@ -669,8 +807,9 @@ public sealed partial class DsmRepository
         {
             throw InvalidDownloadStationResponse();
         }
-        var transfer = item.Object("additional")?.Object("transfer");
-        var detail = item.Object("additional")?.Object("detail");
+        var additional = item.Object("additional");
+        var transfer = additional?.Object("transfer");
+        var detail = additional?.Object("detail");
         var statusExtra = item.Object("status_extra");
         return new DownloadTask(
             id,
@@ -684,7 +823,27 @@ public sealed partial class DsmRepository
             OptionalNonNegativeLong(transfer, "speed_download"),
             OptionalNonNegativeLong(transfer, "speed_upload"),
             detail?.String("destination"),
-            statusExtra?.String("error_detail"));
+            statusExtra?.String("error_detail"))
+        {
+            AdvancedDetails = new DownloadTaskAdvancedDetails(
+                ParseDownloadTaskPriority(
+                    item["priority"] ??
+                    detail?["priority"] ??
+                    FirstDownloadAdditionalObject(additional, "file", "files")?["priority"]),
+                CountDownloadAdditionalObjects(additional, "file", "files"),
+                CountDownloadAdditionalObjects(additional, "tracker", "trackers"),
+                CountDownloadAdditionalObjects(additional, "peer", "peers"),
+                OptionalNonNegativeInt(item, "seeds") ??
+                    OptionalNonNegativeInt(item, "seeders") ??
+                    OptionalNonNegativeInt(detail, "seeds") ??
+                    OptionalNonNegativeInt(detail, "seeders"),
+                OptionalNonNegativeInt(item, "peers") ??
+                    OptionalNonNegativeInt(detail, "peers"),
+                OptionalNonNegativeInt(item, "leeches") ??
+                    OptionalNonNegativeInt(item, "leechs") ??
+                    OptionalNonNegativeInt(detail, "leeches") ??
+                    OptionalNonNegativeInt(detail, "leechs")),
+        };
     }
 
     private static DownloadTaskState ParsePublicDownloadTaskState(string rawStatus) =>
@@ -1073,6 +1232,167 @@ public sealed partial class DsmRepository
         }
         var value = data.Long(key);
         return value is >= 0 ? value : throw InvalidDownloadStationResponse();
+    }
+
+    private static int? OptionalNonNegativeInt(JsonObject? data, string key)
+    {
+        var value = OptionalNonNegativeLong(data, key);
+        return value is null
+            ? null
+            : value <= int.MaxValue
+                ? (int)value.Value
+                : throw InvalidDownloadStationResponse();
+    }
+
+    private static bool? OptionalDownloadBool(JsonObject? data, string key)
+    {
+        if (data is null || !data.ContainsKey(key))
+        {
+            return null;
+        }
+        var value = data.Bool(key);
+        return value ?? throw InvalidDownloadStationResponse();
+    }
+
+    private static string? OptionalStableDownloadText(JsonObject? data, string key)
+    {
+        if (data is null || !data.TryGetPropertyValue(key, out var node) || node is null)
+        {
+            return null;
+        }
+        if (node is not JsonValue value || !value.TryGetValue<string>(out var text))
+        {
+            throw InvalidDownloadStationResponse();
+        }
+        var normalized = text.Trim();
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+        return normalized.Any(char.IsControl)
+            ? throw InvalidDownloadStationResponse()
+            : normalized;
+    }
+
+    private static DownloadTaskPriority? ParseDownloadTaskPriority(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return null;
+        }
+        if (node is not JsonValue value)
+        {
+            throw InvalidDownloadStationResponse();
+        }
+        if (value.TryGetValue<int>(out var integer))
+        {
+            return integer switch
+            {
+                0 => DownloadTaskPriority.Low,
+                1 => DownloadTaskPriority.Normal,
+                2 => DownloadTaskPriority.High,
+                _ => DownloadTaskPriority.Unknown,
+            };
+        }
+        if (!value.TryGetValue<string>(out var text))
+        {
+            throw InvalidDownloadStationResponse();
+        }
+        var normalized = text.Trim();
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+        if (normalized.Any(char.IsControl))
+        {
+            throw InvalidDownloadStationResponse();
+        }
+        return normalized.ToLowerInvariant() switch
+        {
+            "low" or "lower" or "0" => DownloadTaskPriority.Low,
+            "normal" or "medium" or "default" or "1" => DownloadTaskPriority.Normal,
+            "high" or "higher" or "2" => DownloadTaskPriority.High,
+            _ => DownloadTaskPriority.Unknown,
+        };
+    }
+
+    private static int? CountDownloadAdditionalObjects(JsonObject? additional, params string[] keys)
+    {
+        if (additional is null)
+        {
+            return null;
+        }
+        foreach (var key in keys)
+        {
+            if (!additional.TryGetPropertyValue(key, out var node) || node is null)
+            {
+                continue;
+            }
+            return CountDownloadArrayNode(node);
+        }
+        return null;
+    }
+
+    private static JsonObject? FirstDownloadAdditionalObject(JsonObject? additional, params string[] keys)
+    {
+        if (additional is null)
+        {
+            return null;
+        }
+        foreach (var key in keys)
+        {
+            if (!additional.TryGetPropertyValue(key, out var node) || node is null)
+            {
+                continue;
+            }
+            var array = DownloadArrayNode(node);
+            if (array.Count == 0)
+            {
+                return null;
+            }
+            return array[0] as JsonObject ?? throw InvalidDownloadStationResponse();
+        }
+        return null;
+    }
+
+    private static int CountDownloadRssItems(JsonObject data, params string[] roots)
+    {
+        foreach (var root in roots)
+        {
+            if (!data.TryGetPropertyValue(root, out var node) || node is null)
+            {
+                continue;
+            }
+            var count = CountDownloadArrayNode(node);
+            if (count > MaximumRssSummaryItems)
+            {
+                throw InvalidDownloadStationResponse();
+            }
+            return count;
+        }
+        return 0;
+    }
+
+    private static int CountDownloadArrayNode(JsonNode node) =>
+        DownloadArrayNode(node).Count;
+
+    private static JsonArray DownloadArrayNode(JsonNode node)
+    {
+        if (node is JsonArray direct)
+        {
+            return direct;
+        }
+        if (node is JsonObject wrapper)
+        {
+            foreach (var key in new[] { "items", "list", "files", "trackers", "peers", "feeds", "sites" })
+            {
+                if (wrapper.TryGetPropertyValue(key, out var nested) && nested is JsonArray array)
+                {
+                    return array;
+                }
+            }
+        }
+        throw InvalidDownloadStationResponse();
     }
 
     private static DsmException MissingPublicDownloadStationContract() =>

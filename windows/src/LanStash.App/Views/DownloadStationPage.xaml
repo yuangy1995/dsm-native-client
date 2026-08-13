@@ -20,6 +20,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -202,16 +203,99 @@
             </StackPanel>
         </Border>
 
+        <Border
+            x:Name="AdvancedSummary"
+            Grid.Row="4"
+            Padding="16,12"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            AutomationProperties.LiveSetting="Polite"
+            Visibility="Collapsed">
+            <StackPanel Spacing="10">
+                <InfoBar
+                    x:Uid="DownloadStationAdvancedSummaryError"
+                    x:Name="AdvancedSummaryErrorNotice"
+                    AutomationProperties.LiveSetting="Polite"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Warning" />
+                <Grid ColumnSpacing="28" RowSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel
+                        x:Name="StationSettingsSummary"
+                        Spacing="8"
+                        Visibility="Collapsed">
+                        <TextBlock
+                            x:Uid="DownloadStationSettingsSummaryTitle"
+                            FontWeight="SemiBold"
+                            AutomationProperties.HeadingLevel="Level2" />
+                        <Grid ColumnSpacing="12" RowSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Uid="DownloadStationSettingsDefaultDestination" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{Binding SettingsDefaultDestinationText}" TextWrapping="Wrap" />
+                            <TextBlock x:Uid="DownloadStationSettingsAutoExtract" Grid.Row="1" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SettingsAutoExtractText}" TextWrapping="Wrap" />
+                            <TextBlock x:Uid="DownloadStationSettingsSchedule" Grid.Row="2" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SettingsScheduleText}" TextWrapping="Wrap" />
+                            <TextBlock x:Uid="DownloadStationSettingsSpeedLimits" Grid.Row="3" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SettingsSpeedLimitText}" TextWrapping="Wrap" />
+                            <TextBlock x:Uid="DownloadStationSettingsEmule" Grid.Row="4" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SettingsEmuleText}" TextWrapping="Wrap" />
+                        </Grid>
+                    </StackPanel>
+                    <StackPanel
+                        x:Name="DownloadRssSummary"
+                        Grid.Column="1"
+                        Spacing="8"
+                        Visibility="Collapsed">
+                        <TextBlock
+                            x:Uid="DownloadStationRssSummaryTitle"
+                            FontWeight="SemiBold"
+                            AutomationProperties.HeadingLevel="Level2" />
+                        <Grid ColumnSpacing="12" RowSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Uid="DownloadStationRssSites" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{Binding RssSitesText}" TextWrapping="Wrap" />
+                            <TextBlock x:Uid="DownloadStationRssFeeds" Grid.Row="1" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding RssFeedsText}" TextWrapping="Wrap" />
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+
         <InfoBar
             x:Uid="DownloadStationRefreshError"
             x:Name="RefreshErrorNotice"
-            Grid.Row="4"
+            Grid.Row="5"
             AutomationProperties.LiveSetting="Polite"
             IsClosable="False"
             IsOpen="False"
             Severity="Warning" />
 
-        <Grid Grid.Row="5">
+        <Grid Grid.Row="6">
             <Grid
                 x:Name="ContentState"
                 ColumnSpacing="12"
@@ -469,6 +553,12 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
                                         <TextBlock x:Uid="DownloadStationDetailStatus" FontWeight="SemiBold" />
                                         <TextBlock Grid.Column="1" Text="{Binding SelectedTask.StatusText}" TextWrapping="Wrap" />
@@ -488,6 +578,18 @@
                                         <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding SelectedTask.DestinationText}" TextWrapping="Wrap" />
                                         <TextBlock x:Uid="DownloadStationDetailError" Grid.Row="8" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding SelectedTask.ErrorText}" TextWrapping="Wrap" />
+                                        <TextBlock x:Uid="DownloadStationDetailPriority" Grid.Row="9" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding SelectedTask.PriorityText}" TextWrapping="Wrap" />
+                                        <TextBlock x:Uid="DownloadStationDetailFiles" Grid.Row="10" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding SelectedTask.FileCountText}" TextWrapping="Wrap" />
+                                        <TextBlock x:Uid="DownloadStationDetailTrackers" Grid.Row="11" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding SelectedTask.TrackerCountText}" TextWrapping="Wrap" />
+                                        <TextBlock x:Uid="DownloadStationDetailPeers" Grid.Row="12" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedTask.PeerCountText}" TextWrapping="Wrap" />
+                                        <TextBlock x:Uid="DownloadStationDetailSeeds" Grid.Row="13" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="13" Grid.Column="1" Text="{Binding SelectedTask.SeedsText}" TextWrapping="Wrap" />
+                                        <TextBlock x:Uid="DownloadStationDetailLeeches" Grid.Row="14" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Row="14" Grid.Column="1" Text="{Binding SelectedTask.LeechesText}" TextWrapping="Wrap" />
                                     </Grid>
                                 </StackPanel>
                             </ScrollViewer>

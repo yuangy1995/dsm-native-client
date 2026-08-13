@@ -12,15 +12,24 @@ public sealed partial class DsmRepository
     private const int CrossNasFolderItemLimit = 5000;
     private const int CrossNasFolderDepthLimit = 128;
 
-    // 当前组合根只能提供当前会话，不能安全取得第二个 NAS 的独立会话。
     public CrossNasCopyMoveAvailability CrossNasAvailability => new(
-        CanCrossCopy: false,
+        CanCrossCopy: CrossNasSourceTransferAvailable(),
         CanCrossMove: false);
 
-    private bool CrossNasTransferAvailable() =>
+    private bool CrossNasSourceTransferAvailable() =>
         _capabilities.ContainsKey("SYNO.FileStation.Download") &&
-        _capabilities.ContainsKey("SYNO.FileStation.Upload") &&
         MutationListAvailable;
+
+    private bool CrossNasTargetTransferAvailable() =>
+        _capabilities.TryGetValue("SYNO.FileStation.Upload", out var upload) &&
+        string.Equals(upload.Name, "SYNO.FileStation.Upload", StringComparison.Ordinal) &&
+        upload.MinVersion <= 2 &&
+        upload.MaxVersion >= 2 &&
+        string.Equals(upload.RequestFormat, "MULTIPART", StringComparison.OrdinalIgnoreCase) &&
+        SafeMutationCapabilityPath(upload.Path) &&
+        MutationListAvailable;
+
+    public bool CanReceiveCrossNasCopy => CrossNasTargetTransferAvailable();
 
     public async Task<CrossNasCopyMoveOutcome> CrossNasCopyMoveAsync(
         CrossNasCopyMoveRequest request,
@@ -43,7 +52,7 @@ public sealed partial class DsmRepository
                 request.SourcePath,
                 request.DestinationFolderPath,
                 MutationErrorCategory.Unsupported,
-                "file.cross-nas.no-second-session");
+                "file.cross-nas.source-no-capability");
         }
         if (request.SourceProfileId == request.TargetProfileId)
         {
@@ -54,7 +63,7 @@ public sealed partial class DsmRepository
                 MutationErrorCategory.Validation,
                 "file.cross-nas.same-profile");
         }
-        if (!CrossNasTransferAvailable())
+        if (!CrossNasSourceTransferAvailable())
         {
             return CrossNasOutcome(
                 MutationResultStatus.Unsupported,
@@ -85,7 +94,7 @@ public sealed partial class DsmRepository
                 MutationErrorCategory.Validation,
                 "file.cross-nas.target-not-found");
         }
-        if (!target.CrossNasTransferAvailable())
+        if (!target.CrossNasTargetTransferAvailable())
         {
             return CrossNasOutcome(
                 MutationResultStatus.Unsupported,

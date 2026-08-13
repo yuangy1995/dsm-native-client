@@ -8,6 +8,7 @@ public enum NasDetailsSectionKind
     StorageHealth,
     SystemUpdate,
     ShareAccess,
+    StorageAnalysis,
     SystemActivity,
     Packages,
     ScheduledTasks,

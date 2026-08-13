@@ -26,6 +26,7 @@ public enum ChatWriteFeature
     AttachmentMessage,
     DirectConversation,
     PrivateGroup,
+    DeleteOwnMessage,
 }
 
 public sealed record ChatAvailability(

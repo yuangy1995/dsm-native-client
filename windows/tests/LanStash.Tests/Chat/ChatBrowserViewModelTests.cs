@@ -632,11 +632,143 @@ public sealed class ChatBrowserViewModelTests
         Assert.Equal("b1", Assert.Single(model.Messages).Id);
     }
 
+    [Fact]
+    public async Task DeleteOwnMessageRemovesConfirmedMessageAndSendsOneRequest()
+    {
+        var repository = Available(Guid.NewGuid(), canDeleteOwnMessages: true);
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [
+            Message("mine", "a", 1, fromCurrentUser: true),
+            Message("other", "a", 2),
+        ], null, false));
+        repository.DeleteResults.Enqueue(new MutationResult(
+            1,
+            MutationResultStatus.ConfirmedSuccess,
+            "deleteOwnMessage",
+            submitted: true,
+            requiresRefresh: false,
+            new MutationResultCounts(1, 0, 0)));
+        using var model = new ChatBrowserViewModel();
+
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        var mine = model.Messages.Single(value => value.Id == "mine");
+        var other = model.Messages.Single(value => value.Id == "other");
+
+        Assert.True(mine.CanDeleteOwnMessage);
+        Assert.False(other.CanDeleteOwnMessage);
+        var result = await model.DeleteOwnMessageAsync(mine);
+
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result?.Status);
+        Assert.Equal("other", Assert.Single(model.Messages).Id);
+        Assert.Single(repository.DeleteRequests);
+        Assert.False(model.HasMessageDeleteError);
+        Assert.False(model.HasMessageDeleteReview);
+    }
+
+    [Fact]
+    public async Task UnknownDeleteResultRequiresRefreshBeforeRetry()
+    {
+        var repository = Available(Guid.NewGuid(), canDeleteOwnMessages: true);
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [
+            Message("mine", "a", 1, fromCurrentUser: true),
+        ], null, false));
+        repository.DeleteResults.Enqueue(new MutationResult(
+            1,
+            MutationResultStatus.SubmittedButUnverified,
+            "deleteOwnMessage",
+            submitted: true,
+            requiresRefresh: true,
+            new MutationResultCounts(0, 0, 1),
+            MutationErrorCategory.Unknown,
+            diagnosticTag: "chat.delete-own-message.readback-unavailable"));
+        using var model = new ChatBrowserViewModel();
+
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        var result = await model.DeleteOwnMessageAsync(model.Messages.Single());
+        var pending = Assert.Single(model.Messages);
+        var second = await model.DeleteOwnMessageAsync(pending);
+
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result?.Status);
+        Assert.Null(second);
+        Assert.True(model.HasMessageDeleteReview);
+        Assert.True(pending.RequiresDeleteReview);
+        Assert.Equal(Microsoft.UI.Xaml.Visibility.Collapsed, pending.DeleteVisibility);
+        Assert.Single(repository.DeleteRequests);
+    }
+
+    [Fact]
+    public async Task MessageRefreshClearsPendingDeleteReview()
+    {
+        var repository = Available(Guid.NewGuid(), canDeleteOwnMessages: true);
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [
+            Message("mine", "a", 1, fromCurrentUser: true),
+        ], null, false));
+        repository.DeleteResults.Enqueue(new MutationResult(
+            1,
+            MutationResultStatus.SubmittedButUnverified,
+            "deleteOwnMessage",
+            submitted: true,
+            requiresRefresh: true,
+            new MutationResultCounts(0, 0, 1),
+            MutationErrorCategory.Unknown,
+            diagnosticTag: "chat.delete-own-message.readback-unavailable"));
+        repository.MessageResults.Enqueue(Page("a", [
+            Message("mine", "a", 1, fromCurrentUser: true),
+        ], null, false));
+        using var model = new ChatBrowserViewModel();
+
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        await model.DeleteOwnMessageAsync(model.Messages.Single());
+
+        await model.RefreshMessagesAsync();
+
+        var refreshed = Assert.Single(model.Messages);
+        Assert.False(model.HasMessageDeleteReview);
+        Assert.False(model.HasMessageDeleteError);
+        Assert.False(refreshed.RequiresDeleteReview);
+        Assert.True(refreshed.CanDeleteOwnMessage);
+    }
+
+    [Fact]
+    public async Task DeleteOwnMessageDoesNotSubmitForForeignMessages()
+    {
+        var repository = Available(Guid.NewGuid(), canDeleteOwnMessages: true);
+        repository.ConversationResults.Enqueue(
+            (IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [
+            Message("other", "a", 1),
+        ], null, false));
+        using var model = new ChatBrowserViewModel();
+
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        var other = Assert.Single(model.Messages);
+        var result = await model.DeleteOwnMessageAsync(other);
+
+        Assert.Null(result);
+        Assert.False(other.CanDeleteOwnMessage);
+        Assert.Empty(repository.DeleteRequests);
+    }
+
     private static FakeChatRepository Available(
         Guid profileId,
         bool canListMembers = false,
-        bool canListAnnouncements = false) =>
-        new(profileId, ChatAvailabilityStatus.Available, canListMembers, canListAnnouncements);
+        bool canListAnnouncements = false,
+        bool canDeleteOwnMessages = false) =>
+        new(
+            profileId,
+            ChatAvailabilityStatus.Available,
+            canListMembers,
+            canListAnnouncements,
+            canDeleteOwnMessages);
 
     private static ChatConversation Conversation(
         string id,
@@ -650,8 +782,12 @@ public sealed class ChatBrowserViewModelTests
         new(id, ChatConversationKind.Group, title, [], 3, null,
             DateTimeOffset.UnixEpoch.AddMinutes(id[0]), 0, false);
 
-    private static ChatMessage Message(string id, string conversationId, int minute) =>
-        new(id, conversationId, "user", "User", false,
+    private static ChatMessage Message(
+        string id,
+        string conversationId,
+        int minute,
+        bool fromCurrentUser = false) =>
+        new(id, conversationId, fromCurrentUser ? "current" : "user", "User", fromCurrentUser,
             DateTimeOffset.UnixEpoch.AddMinutes(minute), id, [], ChatEncryptionState.NotEncrypted);
 
     private static ChatPinnedMessage Announcement(string id, string conversationId, int minute) =>
@@ -681,7 +817,8 @@ public sealed class ChatBrowserViewModelTests
         Guid profileId,
         ChatAvailabilityStatus status,
         bool canListMembers = false,
-        bool canListAnnouncements = false) : IChatRepository
+        bool canListAnnouncements = false,
+        bool canDeleteOwnMessages = false) : IChatRepository
     {
         public Guid ProfileId { get; } = profileId;
         public ChatAvailability Availability { get; } = new(status,
@@ -693,11 +830,18 @@ public sealed class ChatBrowserViewModelTests
                     }
                     .Concat(canListMembers ? [ChatReadFeature.Members] : [])
                     .Concat(canListAnnouncements ? [ChatReadFeature.PinnedMessages] : []))
-                : new HashSet<ChatReadFeature>());
+                : new HashSet<ChatReadFeature>(),
+            status == ChatAvailabilityStatus.Available
+                ? new HashSet<ChatWriteFeature>(
+                    canDeleteOwnMessages
+                        ? new[] { ChatWriteFeature.DeleteOwnMessage }
+                        : Array.Empty<ChatWriteFeature>())
+                : new HashSet<ChatWriteFeature>());
         public Queue<object> ConversationResults { get; } = [];
         public Queue<object> MemberResults { get; } = [];
         public Queue<object> AnnouncementResults { get; } = [];
         public Queue<object> MessageResults { get; } = [];
+        public Queue<MutationResult> DeleteResults { get; } = [];
         public Queue<Task<IReadOnlyList<ChatUser>>> MemberTasks { get; } = [];
         public Queue<Task<IReadOnlyList<ChatPinnedMessage>>> AnnouncementTasks { get; } = [];
         public Queue<Task<ChatMessagePage>> MessageTasks { get; } = [];
@@ -705,6 +849,7 @@ public sealed class ChatBrowserViewModelTests
         public List<string> MemberRequests { get; } = [];
         public List<string> AnnouncementRequests { get; } = [];
         public List<(string ConversationId, string? Cursor)> MessageRequests { get; } = [];
+        public List<ChatDeleteMessageRequest> DeleteRequests { get; } = [];
 
         public Task<IReadOnlyList<ChatUser>> ListUsersAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ChatUser>>([]);
@@ -769,6 +914,14 @@ public sealed class ChatBrowserViewModelTests
             ChatTextSendRequest request,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<MutationResult> DeleteOwnMessageAsync(
+            ChatDeleteMessageRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            DeleteRequests.Add(request);
+            return Task.FromResult(DeleteResults.Dequeue());
+        }
     }
 
     private sealed class MemoryPinStore : IChatConversationPinStore

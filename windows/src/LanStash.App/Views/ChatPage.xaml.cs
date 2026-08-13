@@ -147,6 +147,37 @@ public sealed partial class ChatPage : Page, IDisposable
     private async void SelectedPin_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(() => _viewModel.ToggleConversationPinAsync(_viewModel.SelectedConversation));
 
+    private async void DeleteMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: ChatMessageItem message } ||
+            !_viewModel.CanDeleteOwnMessages ||
+            message.RequiresDeleteReview)
+        {
+            return;
+        }
+
+        var localization = LocalizationService.Current;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = localization.Get("ChatMessageDeleteConfirmTitle"),
+            Content = localization.Format(
+                "ChatMessageDeleteConfirmMessage",
+                message.SentAtText),
+            PrimaryButtonText = localization.Get("ChatMessageDeleteConfirmSubmit"),
+            CloseButtonText = localization.Get("ChatMessageDeleteConfirmCancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        AutomationProperties.SetName(
+            dialog,
+            localization.Get("ChatMessageDeleteConfirmAutomationName"));
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+        {
+            await RunAsync(async () => await _viewModel.DeleteOwnMessageAsync(message));
+        }
+    }
+
     private void ClearSearch_Click(object sender, RoutedEventArgs e)
     {
         SearchBox.Text = string.Empty;
@@ -260,6 +291,8 @@ public sealed partial class ChatPage : Page, IDisposable
         RefreshMessagesButton.IsEnabled = _viewModel.SelectedConversation is { IsEncrypted: false } &&
             !_viewModel.IsLoadingMessages;
         MessageError.IsOpen = _viewModel.HasMessageError;
+        MessageDeleteReview.IsOpen = _viewModel.HasMessageDeleteReview;
+        MessageDeleteError.IsOpen = _viewModel.HasMessageDeleteError;
         LoadEarlierError.IsOpen = _viewModel.HasLoadEarlierError;
         LoadEarlierButton.IsEnabled = _viewModel.CanLoadEarlier;
         LoadEarlierButton.Visibility = Visible(_viewModel.CanLoadEarlier || _viewModel.HasLoadEarlierError);
