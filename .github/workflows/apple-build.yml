@@ -18,7 +18,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: 检出仓库
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 运行共享包测试
         run: swift test --package-path apple
@@ -51,7 +51,7 @@ jobs:
         run: ./package.sh
 
       - name: 上传打包产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: LanStash-macOS
           path: |

@@ -170,7 +170,7 @@
 
 | 文件 | 当前 ratchet | 非阻断目标 |
 | --- | ---: | ---: |
-| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16834 | 12000 |
+| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16511 | 12000 |
 | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 | 1200 |
 | `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 14934 | 11000 |
 | `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 | 1800 |

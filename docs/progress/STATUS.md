@@ -16,7 +16,7 @@
 | macOS | Files、Photos、Chat、Download Station、NAS 管理与桌面云盘路径均在源码中；高风险内部写入口保持能力门保护。 | 本轮共享包测试、无签名构建和桌面云盘专用回归已通过。 | `PENDING_USER_VALIDATION`：正式签名、Finder/File Provider、真实 NAS、升级与危险写回读。 | 未发布；首个 Beta 仅准备，不得在签名与公证前分发。 |
 | iPhone | 移动范围内的登录、Files、Photos、受限 Chat、Download Station 与只读 NAS 摘要已在通用工程中。 | 本轮 iPhone 模拟器无签名构建已通过。 | `PENDING_USER_VALIDATION`：设备登录、选择器、网络切换、VoiceOver 与真实套件行为。 | 未发布；随 Apple Beta 验收入口统一判断。 |
 | iPad | 与 iPhone 共用领域与网络层，保留双栏、键盘与宽屏适配路径。 | 本轮独立 iPad 模拟器无签名构建已通过。 | `PENDING_USER_VALIDATION`：分栏、键盘、动态文字、VoiceOver 与真实 NAS。 | 未发布；不以 iPhone 模拟器替代 iPad 验收。 |
-| Android | Compose 兼容入口、领域状态、后台任务和质量基线均在源码中；Container 未验证写操作继续关闭。 | 写操作、页面五态、点击目标、动效、结构债务、本地化、fixture 与契约门禁可在仓库运行；完整 Android 门禁待托管 Runner。 | `PENDING_USER_VALIDATION`：真实登录、证书、后台、真实 NAS、危险写和多设备辅助功能。 | 未发布；Release/R8、仪器 APK、lint 与设备验收均是后续门。 |
+| Android | Compose 兼容入口、领域状态、后台任务和质量基线均在源码中；Container 未验证写操作继续关闭。 | 写操作、页面五态、点击目标、动效、结构债务、本地化、fixture 与契约门禁可在仓库运行；在 `7e01eca3373231d8c7dba14aaba2a3359f4cbc62` 的 GitHub Android Build 已覆盖 JVM 单测、Debug APK、Release/R8、androidTest APK 构建与 lintDebug。 | `PENDING_USER_VALIDATION`：真实登录、证书、后台、真实 NAS、危险写和多设备辅助功能。 | 未发布；自动化构建覆盖不替代仪器执行、签名、安装或升级回滚验收。 |
 | Windows | WinUI、领域、基础设施与 Cloud Files 路径保留；危险写和未验证系统集成继续关闭或只读。 | xUnit、WinUI x64/ARM64 由 Windows 托管 Runner 验证。 | `PENDING_USER_VALIDATION`：Windows 设备、Explorer/Cloud Files、通知、安装生命周期和真实 NAS。 | 未发布；不改变当前 unpackaged 形态、签名或程序集引用。 |
 
 ### macOS
@@ -42,13 +42,17 @@
 
 ### Android
 
-- 源码状态：`AppViewModel` 与 `DsmRepository` 仍是兼容门面；`TransferCoordinator` 已唯一持有
+- 源码状态：`AppViewModel` 与 `DsmRepository` 保持兼容门面；`TransferCoordinator` 已唯一持有
   前台传输 Job、下载 execution id 与后台观察 Job，`PhotoBackupCoordinator` 已持有扫描调度代次、
-  Profile 与本地观察 Job。Chat 与 NAS 管理仍待按完整状态和生命周期切片拆分，不改变公开契约、
-  任务语义或持久化格式。
-- 自动化状态：本轮 JSON 质量基线和 Python 门禁已建立；完整 JVM、Release/R8、仪器 APK 与 lint 由托管 Runner 执行。
-- 真机状态：认证、证书、WorkManager、跨 NAS、后台恢复、危险写和辅助功能均待用户验证。
-- 发布状态：无 Play 分发；未验证内部写入口保持关闭。
+  Profile 与本地观察 Job。`ChatFeatureModel` 已持有 Chat 读取、轮询、实时连接、本地已读叠加和
+  资料代次；`NasAdministrationFeatureModel` 已持有 NAS 设置读取 Job、代次和与设置刷新共用的锁。
+  Chat 写操作与其余 NAS 管理写操作仍保留在门面既有安全边界内，不改变公开契约、任务语义或持久化格式。
+- 自动化状态：在 `7e01eca3373231d8c7dba14aaba2a3359f4cbc62` 的 GitHub Android Build 已实际运行
+  JVM 单测、Debug APK、Release 构建及 R8、`assembleDebugAndroidTest` 和 lintDebug；
+  androidTest APK 构建成功只证明测试包可生成，不等于已在真机或模拟器执行仪器测试。
+- 真机状态：真实仪器执行与 Android 版本矩阵、WorkManager 长时间后台、网络切换、Doze、进程重启、
+  真实 DSM/NAS、认证、证书、危险写和辅助功能均为 `PENDING_USER_VALIDATION`。
+- 发布状态：发布签名、安装、升级与回滚均为 `PENDING_USER_VALIDATION`；无 Play 分发，未验证内部写入口保持关闭。
 
 ### Windows
 
@@ -97,10 +101,12 @@
 - 源码：写入口清单、页面五态、触控、动效和结构债务已由 JSON 基线保护。
 - 源码：领域拆分只减少门面责任，不改变请求、持久化、状态和任务语义。
 - 自动化：本机执行轻量门禁、聚焦测试和增量编译，完整 Android 任务交由托管 Runner。
+- 自动化：`assembleDebugAndroidTest` 成功只表示 androidTest APK 已生成，不能替代真机或模拟器上的仪器执行。
 - 自动化：fixture 脱敏、请求契约、私有 API 引用和本地化均为每个切片的基础检查。
-- 真机：设备认证、证书、Doze、WorkManager、相册授权和实际后台限制需要真实 Android。
-- 真机：跨 NAS、危险写、真实套件返回和 TalkBack/OEM 行为需要专用测试环境。
-- 发布：未完成 Release/R8、仪器 APK、lint 与设备验收前不创建发布候选。
+- 真机：实际仪器执行与 Android 版本矩阵、设备认证、证书、Doze、WorkManager 长时间后台、
+  网络切换和进程重启需要真实 Android。
+- 真机：跨 NAS、危险写、真实 DSM/NAS 与套件返回、TalkBack/OEM 行为需要专用测试环境。
+- 发布：发布签名、安装、升级、回滚与设备验收完成前不创建发布候选。
 - 发布：内部写保持关闭，不能因静态覆盖或模拟结果自动开放。
 
 ### Windows 验证边界
@@ -138,24 +144,27 @@
 | 正式 Apple 签名与公证材料不可在仓库中提供 | macOS Beta 与 Finder 验收 | 不发布，不把无签名结果表述为正式发布验证。 | 用户在受控环境运行签名、公证、装订和 Gatekeeper 检查。 |
 | 没有可授权的专用 NAS / Chat Server 环境 | 认证、私有 API、危险写、套件行为与兼容矩阵 | 内部写保持关闭；公开只读可继续开发。 | 用户提供专用环境并按脱敏步骤回传结果。 |
 | 真机与平台系统行为不可由当前工作区模拟 | iPhone、iPad、Android、Windows 和桌面云盘 | 标记 `PENDING_USER_VALIDATION`，不阻塞独立源码与自动化切片。 | 用户完成设备、系统集成和辅助功能矩阵。 |
-| Windows 托管构建未在本轮触发 | Windows 编译、架构构建和 xUnit 结果 | 不把静态阅读视为 Windows 通过。 | 在不含敏感信息的专用验证分支由托管 Runner 执行。 |
-| Android 高负载门禁未在本轮触发 | Release/R8、仪器 APK 与 lint | 本地仅运行增量和聚焦检查。 | 在专用验证分支由托管 Runner 执行完整 Android 门禁。 |
+| Android 真实仪器执行与系统矩阵未验证 | Android 版本兼容、设备行为和辅助功能 | androidTest APK 已构建不被表述为仪器通过；高风险入口继续关闭或受能力门保护。 | 在专用设备或模拟器执行仪器测试，并完成 Android 版本矩阵、网络/Doze/进程重启验证。 |
+| Android 发布签名与安装生命周期未验证 | 发布准备、安装、升级与回滚 | 不创建发布候选，不把 CI 构建等同于已签名或可升级安装包。 | 在受控环境完成签名、安装、升级与回滚，并回传脱敏结论。 |
 
 ## 最近发布周期变化
 
 - 文档角色已收敛为入口、状态、矩阵、路线图、计划、质量基线和归档；阶段性账本已迁入历史归档。
 - Android 四份人工维护审计矩阵已迁入机器数据，生成报告由 CI 比对，写操作门禁不再依赖巨型 Kotlin 文件的整文件散列。
 - Android 结构债务基线已改为当前行数精确 ratchet：文件缩短必须同步收紧，`maxLines` 与
-  `targetLines` 均不得相对上一基线上调。
+  `targetLines` 均不得相对上一基线上调；既有超限生产文件不得转移至新增例外或脱离债务追踪。
 - Android 传输与照片备份运行时所有权已收敛：旧 Job、旧 execution、旧观察和已切换 Profile 的
   迟到回调不能清理新任务；后台唯一工作名称与持久化格式未改变。
+- Android Chat 的读取、轮询、实时连接与本地已读状态，以及 NAS 设置读取的 Job、代次与锁，
+  已迁至各自的特性模型；`AppViewModel` 保持 Compose 兼容门面与既有高风险写操作边界。
 - `Documentation & Quality Preflight` 已按实际覆盖范围命名；它不再被描述为完整发布预检。
 - macOS Beta 就绪报告已记录本轮构建与手工验收边界；没有可以替代正式签名或真实 NAS 的结论。
 - 发布状态保持保守：未完成真实环境验证的高风险能力不会因源码或模拟器结果而开放。
 
 ## 下一步（三项）
 
-1. 继续完成 Android Chat 与 NAS 管理的完整状态和生命周期所有权拆分，随后再处理其余
-   `DsmRepository` 与 `AppViewModel` 领域；逐切片保持 JSON 写入口登记、任务唯一所有权和聚焦测试通过。
+1. 继续按领域缩小 Android `DsmRepository` 与 `AppViewModel` 的剩余责任；逐切片保持 JSON 写入口登记、
+   任务唯一所有权和聚焦测试通过，不迁移已验证的高风险写边界。
 2. 在受控环境执行 macOS 正式签名、公证、票据装订、Gatekeeper 与真实 NAS 验收，并将缺失条件保留为 `PENDING_USER_VALIDATION`。
-3. 在专用验证分支使用托管 Runner 运行 Android 全量门禁和 Windows x64/ARM64、xUnit、WinUI XAML 验证，不提交凭据或本机生成物。
+3. 在专用验证分支持续使用托管 Runner 运行 Android 与 Windows 完整门禁；设备、NAS、签名和安装结论仍须按
+   `PENDING_USER_VALIDATION` 条件单独记录，不提交凭据或本机生成物。

@@ -26,6 +26,8 @@
 
 ```text
 AppViewModel.kt                 Compose 兼容入口与跨领域协调
+ChatFeatureModel.kt             Chat 读取、轮询、实时连接与资料代次所有权
+NasAdministrationFeatureModel.kt NAS 设置读取 Job、代次与同步边界所有权
 data/DsmRepository.kt           兼容门面与共享网络能力
 data/downloads/                 已拆出的 Download Station Repository
 data/container/                 已拆出的 Container Repository
@@ -37,6 +39,11 @@ ui/                             Compose 页面与组件
 
 `AppViewModel` 和 `DsmRepository` 已是结构债务热点。任何拆分都应缩小其行数，不得让
 既有巨型文件增长；新生产 Kotlin 文件超过行数上限时必须在质量基线中声明清晰理由。
+
+`ChatFeatureModel` 只拥有 Chat 的读取、轮询、实时连接、本地已读叠加和资料代次；Chat 写操作仍在
+`AppViewModel` 的既有确认、权限、重复提交和结果复查边界中。`NasAdministrationFeatureModel` 只拥有
+NAS 设置读取 Job、请求代次及其与设置刷新共用的同步边界；其他 NAS 管理写操作仍通过兼容门面执行。
+二者均直接发布既有 `WorkspaceState`，不复制 UI 状态、公开方法、持久化键或 WorkManager 名称。
 
 ## 质量基线
 
@@ -89,14 +96,14 @@ python3 tools/localization/check_localization.py
 
 ### 3. AppViewModel 任务所有权
 
-先迁移 Transfer 与 Photo Backup 等 Job、锁和序列号所有者明确的路径，再依次迁移：
+已迁移 Transfer、Photo Backup、Chat 读取/实时会话和 NAS 设置读取等 Job、锁及序列号所有者明确的
+路径。后续依次迁移：
 
 1. Files；
-2. Chat；
-3. Downloads；
-4. NAS Administration；
-5. Container；
-6. VMM。
+2. Downloads；
+3. Container；
+4. VMM；
+5. Chat 与 NAS Administration 中未迁移的高风险写操作，仅在既有安全契约可独立验证时拆分。
 
 每个任务只保留一个 owner。迁移时必须证明 `onCleared`、取消、重试、进程恢复、迟到结果
 拒绝、持久化和 WorkManager 名称均未改变。跨 NAS、后台、认证和危险写路径在平台构建或

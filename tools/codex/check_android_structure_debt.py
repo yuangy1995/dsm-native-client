@@ -73,23 +73,61 @@ def _exceptions(debt: dict[str, Any], errors: list[str]) -> dict[str, str]:
 
 def _compare_previous_ratchet(
     current: dict[str, dict[str, int]],
+    current_exceptions: dict[str, str],
     previous_structure_debt: dict[str, Any],
-    limit: int,
+    production_root: Path,
+    current_limit: int,
     errors: list[str],
 ) -> None:
     previous_errors: list[str] = []
+    previous_limit = previous_structure_debt.get("newProductionFileLineLimit")
+    if not isinstance(previous_limit, int) or previous_limit <= 0:
+        errors.append("上一基线缺少有效的 newProductionFileLineLimit")
+        return
+    if current_limit > previous_limit:
+        errors.append(
+            "newProductionFileLineLimit 不得上调："
+            f"上一基线 {previous_limit} 行，当前 {current_limit} 行"
+        )
     previous = _registered_large_files(
         previous_structure_debt,
-        limit,
+        previous_limit,
         previous_errors,
         allow_legacy_target_lines=True,
     )
+    previous_exceptions = _exceptions(previous_structure_debt, previous_errors)
+    for relative in sorted(set(previous) & set(previous_exceptions)):
+        previous_errors.append(f"既有巨型文件不应同时登记例外：{relative}")
     if previous_errors:
         errors.extend(f"上一基线无效：{error}" for error in previous_errors)
         return
+
+    for relative, previous_item in previous.items():
+        path = production_root / relative
+        if not path.is_file():
+            # 文件删除或迁出当前生产代码根目录后，不再要求保留历史债务条目。
+            continue
+        lines = _line_count(path)
+        if lines <= current_limit:
+            # 真正降到当前全局阈值以内时，当前基线必须移除该历史债务。
+            continue
+        if relative in current_exceptions:
+            errors.append(
+                f"上一基线既有大文件不得转入 exceptions：{relative}；"
+                "请继续保留在 existingLargeFiles 并收紧当前 ratchet"
+            )
+        elif relative not in current:
+            errors.append(
+                f"上一基线既有大文件仍超过 {current_limit} 行，必须继续登记："
+                f"{relative}（当前 {lines} 行）"
+            )
+
     for relative, current_item in current.items():
         previous_item = previous.get(relative)
         if previous_item is None:
+            if relative in previous_exceptions:
+                # 从历史例外转入精确 ratchet 是收紧，不是绕过。
+                continue
             errors.append(
                 f"新增巨型文件不得直接登记为既有债务：{relative}；请先拆分或登记明确例外理由"
             )
@@ -158,7 +196,14 @@ def validate(
             errors.append(f"超大文件例外已不再需要，请移除：{relative}")
 
     if previous_structure_debt is not None:
-        _compare_previous_ratchet(existing, previous_structure_debt, limit, errors)
+        _compare_previous_ratchet(
+            existing,
+            exceptions,
+            previous_structure_debt,
+            production_root,
+            limit,
+            errors,
+        )
     return errors
 
 

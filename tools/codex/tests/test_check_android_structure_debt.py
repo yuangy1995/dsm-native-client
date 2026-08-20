@@ -28,6 +28,8 @@ class AndroidStructureDebtTests(unittest.TestCase):
         max_lines: int | None = None,
         target_lines: int = 1000,
         relative: str = "AppViewModel.kt",
+        limit: int = 1000,
+        exceptions: list[dict[str, str]] | None = None,
     ) -> dict[str, object]:
         entries: list[dict[str, object]] = []
         if max_lines is not None:
@@ -35,9 +37,9 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 {"file": relative, "maxLines": max_lines, "targetLines": target_lines},
             )
         return {
-            "newProductionFileLineLimit": 1000,
+            "newProductionFileLineLimit": limit,
             "existingLargeFiles": entries,
-            "exceptions": [],
+            "exceptions": exceptions or [],
         }
 
     def test_existing_large_file_cannot_grow(self) -> None:
@@ -117,6 +119,83 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 root,
                 self.debt(max_lines=1001),
                 previous_structure_debt=previous,
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_new_production_file_limit_cannot_increase(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "AppViewModel.kt", 1004)
+
+            errors = structure_debt.validate(
+                root,
+                self.debt(max_lines=1004, target_lines=1000, limit=1003),
+                previous_structure_debt=self.debt(max_lines=1002, target_lines=1000, limit=1000),
+            )
+
+            self.assertTrue(any("newProductionFileLineLimit 不得上调" in error for error in errors))
+            self.assertFalse(any("上一基线无效" in error for error in errors))
+
+    def test_existing_debt_cannot_move_to_exception(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "AppViewModel.kt", 1002)
+            previous = self.debt(max_lines=1002)
+            current = self.debt(
+                exceptions=[{"file": "AppViewModel.kt", "reason": "不允许转移历史债务"}],
+            )
+
+            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+
+            self.assertTrue(any("不得转入 exceptions" in error for error in errors))
+
+    def test_existing_debt_must_remain_tracked_while_above_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "AppViewModel.kt", 1002)
+
+            errors = structure_debt.validate(
+                root,
+                self.debt(),
+                previous_structure_debt=self.debt(max_lines=1002),
+            )
+
+            self.assertTrue(any("必须继续登记" in error for error in errors))
+
+    def test_deleted_or_small_enough_debt_can_be_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            previous = self.debt(max_lines=1002)
+            root = Path(temporary_directory)
+
+            deleted_errors = structure_debt.validate(
+                root,
+                self.debt(),
+                previous_structure_debt=previous,
+            )
+            self.assertEqual(deleted_errors, [])
+
+            self.write_source(root, "AppViewModel.kt", 1000)
+            reduced_errors = structure_debt.validate(
+                root,
+                self.debt(),
+                previous_structure_debt=previous,
+            )
+            self.assertEqual(reduced_errors, [])
+
+    def test_debt_moved_out_of_current_production_root_can_be_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "production"
+            root.mkdir()
+            (Path(temporary_directory) / "moved-out-of-production.kt").write_text(
+                "val item = 1\n" * 1002,
+                encoding="utf-8",
+            )
+
+            errors = structure_debt.validate(
+                root,
+                self.debt(),
+                previous_structure_debt=self.debt(max_lines=1002),
             )
 
             self.assertEqual(errors, [])

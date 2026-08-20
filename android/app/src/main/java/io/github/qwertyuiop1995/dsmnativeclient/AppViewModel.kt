@@ -53,7 +53,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.ArchiveCompressionLevel
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ArchiveFormat
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatConversation
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatMessage
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatMessagePage
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatDeliveryState
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatUser
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatReminder
@@ -106,7 +105,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultCounts
 import io.github.qwertyuiop1995.dsmnativeclient.domain.MutationResultStatus
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasRemoteAccessSettings
-import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsSnapshot
 import io.github.qwertyuiop1995.dsmnativeclient.domain.PackageInfo
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSystemUpdateInfo
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasDiskTestStatus
@@ -141,7 +139,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.domain.deriveWorkspaceRouteStack
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmApiClient
 import io.github.qwertyuiop1995.dsmnativeclient.network.DsmConnectionResolver
 import io.github.qwertyuiop1995.dsmnativeclient.network.ConnectionStatus
-import io.github.qwertyuiop1995.dsmnativeclient.network.ChatRealtimeClient
 import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
 import io.github.qwertyuiop1995.dsmnativeclient.storage.SecureProfileStore
 import io.github.qwertyuiop1995.dsmnativeclient.storage.PersistedWorkspaceUiState
@@ -212,11 +209,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     internal val opaqueExternalNavigationRevision: StateFlow<Long> =
         _opaqueExternalNavigationRevision.asStateFlow()
     private var photoTimelineJob: Job? = null
-    private var chatRefreshJob: Job? = null
-    private var chatRealtimeRefreshJob: Job? = null
-    private var chatRealtimeClient: ChatRealtimeClient? = null
-    @Volatile private var chatRealtimeConnected = false
-    private var chatLocalReadMarkers: Map<String, ChatLocalReadMarker> = emptyMap()
     private var chatAttachmentPreviewJob: Job? = null
     private val chatAttachmentJobs = mutableMapOf<String, Job>()
     private val chatMutationJobs = mutableMapOf<String, Job>()
@@ -252,8 +244,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val chatMutationGenerations = ConcurrentHashMap<String, Long>()
     private val chatAttachmentPreflightGeneration = AtomicLong(0)
     private val previewRequestGeneration = AtomicLong(0)
-    private val nasSettingsRequestGeneration = AtomicLong(0)
-    private val nasSettingsStructuredMutationLock = Any()
     // 下载创建、任务控制、设置保存和工作区退出共用同一 claim 边界，避免跨线程旧状态覆盖。
     private val downloadMutationCoordinatorLock = Any()
     private val downloadCreationMutationLock = downloadMutationCoordinatorLock
@@ -298,6 +288,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _workspace = MutableStateFlow<WorkspaceState?>(null)
     val workspace: StateFlow<WorkspaceState?> = _workspace.asStateFlow()
+    private val nasAdministrationFeature = NasAdministrationFeatureModel(
+        scope = viewModelScope,
+        workspace = _workspace,
+        repositoryProvider = { repository },
+    )
+    private val chatFeature = ChatFeatureModel(
+        scope = viewModelScope,
+        workspace = _workspace,
+        repositoryProvider = { repository },
+        localizedFailure = { failure -> failure.localize(getApplication<Application>()).combined },
+    )
+    private val nasSettingsRequestGeneration: AtomicLong
+        get() = nasAdministrationFeature.settingsRequestGeneration
+    private val nasSettingsStructuredMutationLock: Any
+        get() = nasAdministrationFeature.mutationLock
 
     init {
         startWorkspacePersistence()
@@ -321,7 +326,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectProfile(profile: NasProfile) {
         if (isSwitchingNas) return
-        if (_workspace.value?.profile?.id != profile.id) chatLocalReadMarkers = emptyMap()
+        if (_workspace.value?.profile?.id != profile.id) chatFeature.clearLocalReadMarkers()
         store.setLastProfileId(profile.id)
         val storedPassword = store.password(profile.id).orEmpty()
         _login.update {
@@ -339,7 +344,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun newProfile() {
         if (isSwitchingNas) return
-        chatLocalReadMarkers = emptyMap()
+        chatFeature.clearLocalReadMarkers()
         store.setLastProfileId(null)
         _login.update {
             it.copy(
@@ -419,7 +424,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 DsmRepository(discovered.profile, session, api, discovered.capabilities)
             }.onSuccess { repo ->
-                chatLocalReadMarkers = emptyMap()
+                chatFeature.clearLocalReadMarkers()
                 fileBrowserRequestGeneration.incrementAndGet()
                 downloadListRequestGeneration.incrementAndGet()
                 fileBackgroundTaskRequestGeneration.incrementAndGet()
@@ -566,7 +571,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repo.listShares()
                 repo
             }.onSuccess { repo ->
-                chatLocalReadMarkers = emptyMap()
+                chatFeature.clearLocalReadMarkers()
                 fileBrowserRequestGeneration.incrementAndGet()
                 downloadListRequestGeneration.incrementAndGet()
                 fileBackgroundTaskRequestGeneration.incrementAndGet()
@@ -888,12 +893,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         if (module != Module.CHAT) {
-            chatRefreshJob?.cancel()
-            chatRefreshJob = null
-            chatRealtimeRefreshJob?.cancel()
-            chatRealtimeClient?.stop()
-            chatRealtimeClient = null
-            chatRealtimeConnected = false
+            chatFeature.stopForModuleExit()
         }
         if (module != Module.NAS_SETTINGS ||
             state.nasPerformance.selectedTab == NasSettingsTab.PERFORMANCE
@@ -1820,87 +1820,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 Module.CHAT -> {
-                    startChatRealtime(repo)
-                    val conversation = _workspace.value?.selectedConversation
-                    if (conversation != null) {
-                        loadChatMessages(repo, conversation, reset = true)
-                    } else {
-                        chatRefreshJob?.cancel()
-                        _workspace.update { it?.copy(conversations = Loadable.Loading) }
-                        capture(
-                            block = { repo.chatConversations() },
-                            update = { value ->
-                                if (value is Loadable.Ready) {
-                                    updateChatConversationState(repo, value.value)
-                                } else {
-                                    _workspace.update { state -> state?.copy(conversations = value) }
-                                }
-                            },
-                        )
-                        startChatConversationPolling(repo)
-                    }
+                    chatFeature.loadModule(repo)
                 }
                 Module.NAS_SETTINGS -> {
-                    var previousSnapshot: NasSettingsSnapshot? = null
-                    var generation = 0L
-                    val profileId = synchronized(nasSettingsStructuredMutationLock) {
-                        val current = _workspace.value ?: return@launch
-                        if (current.isPerformingAction) return@launch
-                        previousSnapshot = (current.nasSettings as? Loadable.Ready)?.value
-                        generation = nasSettingsRequestGeneration.incrementAndGet()
-                        _workspace.value = current.copy(
-                            nasSettings = Loadable.Loading,
-                            diskTestStatuses = diskTestStatusesWithoutPendingLoads(current.diskTestStatuses),
-                        )
-                        current.profile.id
-                    }
-                    val value = try {
-                        Loadable.Ready(repo.nasSettings())
-                    } catch (error: Throwable) {
-                        Loadable.Failed(error.asDsmFailure())
-                    }
-                    _workspace.update { current ->
-                        current?.takeIf {
-                            repository === repo && it.profile.id == profileId &&
-                                nasSettingsRequestGeneration.get() == generation
-                        }?.copy(
-                            nasSettings = value,
-                            diskTestStatuses = if (value is Loadable.Ready) {
-                                reconciledDiskTestStatusesAfterSettingsRefresh(
-                                    previousSnapshot,
-                                    value.value,
-                                    current.diskTestStatuses,
-                                )
-                            } else current.diskTestStatuses,
-                            fileServiceMutationRefreshCompleted =
-                                value is Loadable.Ready && value.value.fileServiceSettings != null &&
-                                    current.fileServiceMutationResult != null,
-                            terminalMutationRefreshCompleted =
-                                value is Loadable.Ready && value.value.terminalSettings != null &&
-                                    current.terminalMutationResult != null,
-                            proxyMutationRefreshCompleted =
-                                value is Loadable.Ready && value.value.proxySettings != null &&
-                                    current.proxyMutationResult != null,
-                            regionMutationRefreshCompleted =
-                                value is Loadable.Ready && value.value.regionSettings != null &&
-                                    current.regionMutationResult != null,
-                            remoteAccessState = current.remoteAccessState.copy(
-                                mutationRefreshCompleted =
-                                    value is Loadable.Ready && value.value.remoteAccessSettingsAvailable &&
-                                        (current.remoteAccessMutationResult != null ||
-                                            current.remoteAccessMutationFailure != null) &&
-                                        remoteAccessMutationRefreshIsComplete(
-                                            current.remoteAccessSettingsBaseline,
-                                            current.remoteAccessSettingsDraft,
-                                            value.value.remoteAccessSettings,
-                                        ),
-                                mutationRefreshFailure = if (
-                                    value is Loadable.Ready && value.value.remoteAccessSettingsAvailable &&
-                                    value.value.remoteAccessSettings != null
-                                ) null else current.remoteAccessMutationRefreshFailure,
-                            ),
-                        ) ?: current
-                    }
+                    nasAdministrationFeature.loadSettings(repo)
                 }
                 Module.TRANSFERS -> {
                     if (_workspace.value?.let {
@@ -2190,97 +2113,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         consumePendingOpaque: Boolean,
     ) {
         if (consumePendingOpaque) cancelOpaqueExternalNavigation(consumePending = true)
-        val repo = repository ?: return
         if (_workspace.value?.selectedConversation?.id != conversation.id) {
             invalidateChatAttachmentPreflights()
         }
-        chatRefreshJob?.cancel()
-        val canonicalConversation = (_workspace.value?.conversations as? Loadable.Ready)
-            ?.value
-            ?.firstOrNull { it.id == conversation.id }
-            ?: conversation
-        val marker = canonicalConversation.toChatLocalReadMarker()
-        chatLocalReadMarkers = if (marker == null) {
-            chatLocalReadMarkers - canonicalConversation.id
-        } else {
-            chatLocalReadMarkers + (canonicalConversation.id to marker)
-        }
-        _workspace.update { state ->
-            state ?: return@update state
-            val conversations = (state.conversations as? Loadable.Ready)?.value
-            state.copy(
-                selectedConversation = canonicalConversation.copy(unreadCount = 0),
-                chatMessages = Loadable.Loading,
-                chatIsLoadingMore = false,
-                conversations = conversations?.map { item ->
-                    if (item.id == conversation.id) item.copy(unreadCount = 0) else item
-                }?.let { value -> Loadable.Ready(value) } ?: state.conversations,
-            )
-        }
-        viewModelScope.launch { loadChatMessages(repo, canonicalConversation, reset = true) }
-        if (!chatRealtimeConnected) startChatMessagePolling(repo, canonicalConversation)
+        chatFeature.openConversation(conversation)
     }
 
     fun toggleChatConversationPin(conversationId: String) {
-        if (conversationId.isBlank()) return
-        _workspace.update { state ->
-            state ?: return@update state
-            val pinned = if (conversationId in state.chatPinnedConversationIds) {
-                state.chatPinnedConversationIds.filterNot { it == conversationId }
-            } else {
-                (listOf(conversationId) + state.chatPinnedConversationIds)
-                    .distinct()
-                    .take(MAX_PINNED_CHAT_CONVERSATIONS)
-            }
-            val conversations = (state.conversations as? Loadable.Ready)?.value
-            state.copy(
-                chatPinnedConversationIds = pinned,
-                conversations = conversations?.let {
-                    Loadable.Ready(applyChatConversationPreferences(it, pinned))
-                } ?: state.conversations,
-                selectedConversation = state.selectedConversation?.let {
-                    if (it.id == conversationId) it.copy(isPinnedLocally = conversationId in pinned) else it
-                },
-            )
-        }
-    }
-
-    private fun startChatMessagePolling(repo: DsmRepository, conversation: ChatConversation) {
-        chatRefreshJob?.cancel()
-        chatRefreshJob = viewModelScope.launch {
-            while (true) {
-                delay(CHAT_REFRESH_INTERVAL_MILLIS)
-                val current = _workspace.value
-                if (current?.selectedModule != Module.CHAT ||
-                    current.selectedConversation?.id != conversation.id
-                ) {
-                    break
-                }
-                refreshLatestChatMessages(repo, conversation)
-            }
-        }
+        chatFeature.toggleConversationPin(conversationId)
     }
 
     fun closeConversation() {
-        val repo = repository
         if (_workspace.value?.selectedConversation != null) invalidateChatAttachmentPreflights()
-        chatRefreshJob?.cancel()
-        chatRefreshJob = null
-        _workspace.update {
-            it?.copy(
-                selectedConversation = null,
-                chatMessages = Loadable.Idle,
-                chatIsLoadingMore = false,
-            )
-        }
-        if (repo != null) {
-            viewModelScope.launch {
-                suspendRunCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
-                    updateChatConversationState(repo, conversations)
-                }
-                if (!chatRealtimeConnected) startChatConversationPolling(repo)
-            }
-        }
+        chatFeature.closeConversation()
     }
 
     private fun WorkspaceState.hasActiveChatMutation(
@@ -3190,12 +3035,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadOlderChatMessages() {
-        val repo = repository ?: return
-        val state = _workspace.value ?: return
-        val conversation = state.selectedConversation ?: return
-        val page = (state.chatMessages as? Loadable.Ready)?.value ?: return
-        if (!page.hasMore || state.chatIsLoadingMore) return
-        viewModelScope.launch { loadChatMessages(repo, conversation, reset = false) }
+        chatFeature.loadOlderMessages()
     }
 
     fun updateChatDraft(value: String) {
@@ -13262,6 +13102,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             candidate
         }
         cancelOpaqueExternalNavigation(consumePending = true)
+        nasAdministrationFeature.clearForProfileSwitch()
+        chatFeature.clearForProfileSwitch()
         releasePendingVirtualMachineLocalImageGrant()
         store.saveWorkspaceUiState(state.profile.id, state.persistedUiState())
         chatPendingAttachmentUrisForRelease(state).forEach(::releasePersistedReadPermission)
@@ -13273,9 +13115,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 needsOtp = false,
             )
         }
-        chatRealtimeClient?.stop()
-        chatRealtimeClient = null
-        chatRealtimeConnected = false
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             val switchingJob = currentCoroutineContext()[Job]
             val activeWorkspaceJobs = viewModelScope.coroutineContext[Job]
@@ -13298,9 +13137,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             downloadDiscoverySearchJob = null
             downloadActivityJob = null
             virtualMachineTaskPollingJob = null
-            chatRefreshJob = null
-            chatRealtimeRefreshJob = null
-            chatLocalReadMarkers = emptyMap()
             chatAttachmentPreviewJob = null
             chatAttachmentJobs.clear()
             chatMutationJobs.clear()
@@ -13382,6 +13218,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             candidate
         }
         cancelOpaqueExternalNavigation(consumePending = true)
+        nasAdministrationFeature.clearForProfileSwitch()
+        chatFeature.clearForProfileSwitch()
         releasePendingVirtualMachineLocalImageGrant()
         chatPendingAttachmentUrisForRelease(state).forEach(::releasePersistedReadPermission)
         transferCoordinator.cancelAndClear()
@@ -13393,12 +13231,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         storageAnalysisJob?.cancel()
         storageAnalysisJob = null
         stopNasPerformanceSampling(resetPause = true)
-        chatRefreshJob?.cancel()
-        chatRealtimeRefreshJob?.cancel()
-        chatRealtimeClient?.stop()
-        chatRealtimeClient = null
-        chatRealtimeConnected = false
-        chatLocalReadMarkers = emptyMap()
         chatAttachmentJobs.values.forEach(Job::cancel)
         chatAttachmentJobs.clear()
         chatMutationJobs.values.forEach(Job::cancel)
@@ -13564,163 +13396,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 },
             )
         }
-    }
-
-    private suspend fun loadChatMessages(
-        repo: DsmRepository,
-        conversation: ChatConversation,
-        reset: Boolean,
-    ) {
-        val currentPage = (_workspace.value?.chatMessages as? Loadable.Ready)?.value
-        val offset = if (reset) 0 else currentPage?.nextOffset ?: return
-        if (!reset) _workspace.update { it?.copy(chatIsLoadingMore = true) }
-        suspendRunCatching { repo.chatMessages(conversation.id, offset) }
-            .onSuccess { page ->
-                _workspace.update { current ->
-                    if (current?.selectedConversation?.id != conversation.id) return@update current
-                    val merged = if (reset || currentPage == null) {
-                        page.copy(
-                            messages = (page.messages + current.chatOutgoingMessages[conversation.id].orEmpty())
-                                .distinctBy(ChatMessage::id)
-                                .sortedBy(ChatMessage::createdAtEpochSeconds),
-                        )
-                    } else {
-                        page.copy(
-                            messages = (page.messages + currentPage.messages)
-                                .distinctBy(ChatMessage::id)
-                                .sortedBy(ChatMessage::createdAtEpochSeconds),
-                        )
-                    }
-                    current.copy(chatMessages = Loadable.Ready(merged), chatIsLoadingMore = false)
-                }
-            }
-            .onFailure { error ->
-                if (error is CancellationException) return@onFailure
-                _workspace.update { current ->
-                    if (current?.selectedConversation?.id != conversation.id) return@update current
-                    if (reset) {
-                        current.copy(chatMessages = Loadable.Failed(error.asDsmFailure()))
-                    } else {
-                        current.copy(
-                            chatIsLoadingMore = false,
-                            message = error.asDsmFailure().localize(getApplication<Application>()).combined,
-                        )
-                    }
-                }
-            }
-    }
-
-    private suspend fun refreshLatestChatMessages(
-        repo: DsmRepository,
-        conversation: ChatConversation,
-    ) {
-        val latest = suspendRunCatching { repo.chatMessages(conversation.id, 0) }.getOrNull() ?: return
-        _workspace.update { current ->
-            if (current?.selectedConversation?.id != conversation.id) return@update current
-            val existing = (current.chatMessages as? Loadable.Ready)?.value ?: return@update current
-            current.copy(
-                chatMessages = Loadable.Ready(
-                    existing.copy(
-                        messages = (existing.messages + latest.messages)
-                            .distinctBy(ChatMessage::id)
-                            .sortedBy(ChatMessage::createdAtEpochSeconds),
-                    ),
-                ),
-            )
-        }
-    }
-
-    private fun updateChatConversationState(
-        expectedRepository: DsmRepository,
-        conversations: List<ChatConversation>?,
-    ) = updateChatConversationState(
-        expectedRepository,
-        conversations,
-        requireConversationListActive = false,
-    )
-
-    private fun updateChatConversationState(
-        expectedRepository: DsmRepository,
-        conversations: List<ChatConversation>?,
-        requireConversationListActive: Boolean,
-    ) {
-        if (repository !== expectedRepository) return
-        val state = _workspace.value ?: return
-        if (requireConversationListActive &&
-            (state.selectedModule != Module.CHAT || state.selectedConversation != null)
-        ) return
-        val withConversations = conversations?.let { incoming ->
-            val overlay = applyChatLocalReadOverlay(incoming, chatLocalReadMarkers)
-            chatLocalReadMarkers = overlay.markers
-            val visible = applyChatConversationPreferences(
-                overlay.conversations,
-                state.chatPinnedConversationIds,
-            )
-            state.withRefreshedChatConversations(visible)
-        } ?: state
-        _workspace.value = withConversations
-    }
-
-    private fun startChatConversationPolling(repo: DsmRepository) {
-        chatRefreshJob?.cancel()
-        chatRefreshJob = viewModelScope.launch {
-            while (true) {
-                delay(CHAT_REFRESH_INTERVAL_MILLIS)
-                val current = _workspace.value
-                if (current?.selectedModule != Module.CHAT || current.selectedConversation != null) break
-                suspendRunCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
-                    updateChatConversationState(
-                        expectedRepository = repo,
-                        conversations = conversations,
-                        requireConversationListActive = true,
-                    )
-                }
-            }
-        }
-    }
-
-    private fun startChatRealtime(repo: DsmRepository) {
-        if (chatRealtimeClient != null) return
-        chatRealtimeClient = repo.chatRealtimeClient(
-            onConnectionChanged = { connected ->
-                viewModelScope.launch {
-                    chatRealtimeConnected = connected
-                    if (connected) {
-                        chatRefreshJob?.cancel()
-                        chatRefreshJob = null
-                    } else {
-                        val state = _workspace.value
-                        if (state?.selectedModule == Module.CHAT) {
-                            val conversation = state.selectedConversation
-                            if (conversation == null) startChatConversationPolling(repo)
-                            else startChatMessagePolling(repo, conversation)
-                        }
-                    }
-                }
-            },
-            onContentChanged = {
-                viewModelScope.launch {
-                    chatRealtimeRefreshJob?.cancel()
-                    chatRealtimeRefreshJob = viewModelScope.launch {
-                        delay(CHAT_REALTIME_COALESCE_MILLIS)
-                        val state = _workspace.value
-                        if (state?.selectedModule != Module.CHAT) return@launch
-                        val conversation = state.selectedConversation
-                        if (conversation != null) {
-                            refreshLatestChatMessages(repo, conversation)
-                        } else {
-                            suspendRunCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
-                                updateChatConversationState(
-                                    expectedRepository = repo,
-                                    conversations = conversations,
-                                    requireConversationListActive = true,
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-        ).also { it.start(viewModelScope) }
     }
 
     private fun performChatSend(claim: ChatMutationClaim, local: ChatMessage) {
@@ -16828,6 +16503,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         releasePendingVirtualMachineLocalImageGrant()
+        nasAdministrationFeature.clearForProfileSwitch()
+        chatFeature.clearForProfileSwitch()
         photoBackupCoordinator.clearForProfileSwitch()
         super.onCleared()
     }

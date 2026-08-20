@@ -1828,7 +1828,7 @@
     "existingLargeFiles": [
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-        "maxLines": 16834,
+        "maxLines": 16511,
         "targetLines": 12000
       },
       {
