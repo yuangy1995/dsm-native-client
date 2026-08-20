@@ -1,6 +1,6 @@
 # iPhone 与 iPad 移动精选功能开发计划
 
-- 状态：实施中；第 0～4 波核心/受限切片已持续落地，当前事实与验证等级以跨端账本和 `STATUS.md` 为准
+- 状态：实施中；第 0～4 波核心/受限切片已持续落地，当前事实与验证等级以跨端账本和 `STATUS.md` 为准；2026-08-20 当前 iPhone 主流程进入自动化收口，iPad 共享业务能力已跟随落地但 M8 生产力证据仍需单独收口
 - 上位计划：[macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)
 - 目标技术栈：Swift 6、SwiftUI、URLSession、Apple 系统框架
 - 最低系统基线：保持当前 iOS/iPadOS 17，不在本计划中提高
@@ -53,6 +53,17 @@
 | iPad | 只按 horizontal size class 分支，缺实际宽度、键盘、指针和拖放设计 | 补齐当前范围的自适应生产力；多窗口后续 |
 
 立项时的静态源码中尚未形成完整的 PhotosPicker、系统文件导入导出和 QuickLook/AVKit/PDFKit 移动查看器。当前已完成系统文件导入导出、分享、QuickLook/PDFKit/AVKit 只读预览、FILE-02 位置、FILE-07 分享链接创建/复制/系统分享与 Files 单项管理撤销、FILE-03 新建/重命名、FILE-05 单文件同 NAS 复制/移动、FILE-09 回收站受限写、PHOTO-01 有界时间线、PHOTO-02 基础查看器与元数据、PHOTO-03A PhotosPicker 单项导入、Chat 只读消息、受限纯文字与单附件发送、Chat 本地会话置顶及前台实时/轮询降级、Download 单任务详情、暂停/继续、URL/磁力创建、任务文件创建、单任务删除、当前活动摘要和 BTSearch v1、NAS 健康、NAS-02/NAS-04 四分区有界只读详情、VMM Guest、Container 实例和本地设置闭环。BTSearch 包含 Apple 共享契约、移动端搜索 Sheet、会话内隐私、条件迟到隔离、独立清理、零提供方恢复态、结果创建链和 48 项英中资源；本机共享聚焦 65/65、共享全量 675 XCTest（2 跳过）+10 Swift Testing、移动端 11/11，正式提交 `5850f4c` 的 Apple Build run `31356270194` 又通过同规模共享包测试、iPhone/iPad 通用应用构建和 macOS 打包。FILE-07 管理切片已让 Files 单个文件/文件夹可按完整路径列出既有公开 Sharing v3 链接、复制、系统分享并二次确认撤销；撤销固定稳定 ID、完整链接基线、单次提交、结果未知只核对不重放和删除后回读确认，本机 iPhone 模拟器聚焦 20/20、共享包 111/111、本地化与差异检查已通过。ACT-01 首片已合入正式提交 `2491212`，把 Download Station 已加载任务快照投影到 Activity 的独立 NAS 来源，新增暂停态与 NAS 项只读控制边界；本地 Activity 聚焦测试已通过，GitHub Apple Build run `31360092209` 通过共享包 675 项 XCTest（2 跳过）+10 Swift Testing、iPhone/iPad 通用应用构建和 macOS 打包，真机与真实 NAS 待验收。Chat 本地会话置顶只保存 profile 绑定会话 ID 顺序，列表滑动操作和详情工具栏可完成置顶/取消置顶，本机 iPhone 模拟器 Chat 聚焦 38/38 通过，GitHub Apple Build run `31450710918` 和 Repository Check run `31450710909` 已通过。Download RSS/文件优先级/BT 高级/设置写、Activity 主动后台轮询、后台 URLSession/BGTask、本地通知、File Provider、WKWebView 控制台和多窗口仍属于后续候选或当前排除项。
+
+### 2.3 2026-08-20 分设备源码收口口径
+
+Apple Mobile 不按 macOS 全量功能数计算完成度，只按第 3.3 节“核心/受限”范围判断。iPhone 与 iPad 共用业务代码、Bundle ID、安全存储和资源，但完成证据必须分设备记录；iPhone Simulator 不能替代 iPad Simulator，真实设备和真实 NAS 仍按 `PENDING_USER_VALIDATION` 后置。
+
+| 设备 | 当前源码判断 | 下一步源码/自动化收口 |
+| --- | --- | --- |
+| iPhone | 当前核心/受限主流程已基本落地：登录安全、Files、Photos、Chat、Download、Activity、NAS 健康、Container/VMM 只读摘要和设置均有移动端入口、双语资源和聚焦测试证据。 | M9-A 优先补 iPhone Simulator Debug/Release 构建记录、关键页面五态、双语资源/硬编码扫描、Dynamic Type、深浅色、Reduce Motion 和 VoiceOver 源码属性。不得把 File Provider、后台 URLSession/BGTask、本地通知、自动照片备份、多窗口、VMM 控制台等后续项写成当前缺口。 |
+| iPad | 共享业务能力大体随 iPhone 落地，常规宽度已有 `NavigationSplitView`、详情列和部分 presentation 测试证据；但 iPad 完成标准还包含实际可用宽度、键盘、指针、拖放替代路径和 Inspector。 | M8 优先补 regular width 主从选择、空详情/错误详情、焦点顺序、键盘命令、指针路径、受限拖放和 iPad Simulator 自动化。Stage Manager、外接键盘/指针真硬件、VoiceOver 和真实 NAS 行为只记录为 `PENDING_USER_VALIDATION`。 |
+
+文档层面继续保留一份 Apple Mobile 计划，不拆成 iPhone 与 iPad 两份，避免共享业务和安全门重复维护；只在本计划、`STATUS.md` 和 `PLATFORM_MATRIX.md` 中明确分设备证据。
 
 ## 3. 移动范围与 macOS 语义基线
 

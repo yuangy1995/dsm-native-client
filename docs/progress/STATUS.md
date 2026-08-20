@@ -1,7 +1,7 @@
 # 当前开发进度
 
-> 最后更新：2026-08-13
-> 当前里程碑：`五种设备形态的原生客户端对齐、分平台验收、CHAT-03 单附件与 NAS-02/NAS-04 受限只读详情、Windows NAS-05 存储分析样本/深度分析闭环、Windows Download Station 只读高级摘要、Windows 跨 NAS 复制受限闭环`
+> 最后更新：2026-08-20
+> 当前里程碑：`跨端源码口径消歧、Android A0-A8 187/187、Windows 已批准源码主流程闭环、Apple Mobile 分设备收口`
 
 本文是功能完成情况、自动化结果、下一步和阻塞项的唯一事实来源。路线图、平台矩阵和专项计划不重复维护实时状态；发生冲突时以本文和同一源码版本的可复现验证结果为准。
 
@@ -14,6 +14,19 @@
 设备证据时，不得从源码、单元测试或无签名构建推断系统集成已经可用。
 
 ## 总体状态
+
+### 2026-08-20 源码口径快照
+
+本快照只统计本仓库源码、可复现自动化和已通过的云端门禁；真实设备、真实 NAS、正式签名、安装器、Windows 系统集成、Narrator、VoiceOver、键盘/指针、Stage Manager、Explorer、通知注册和托盘生命周期继续按 `PENDING_USER_VALIDATION` 记录。本文不再维护一个跨平台统一百分比，因为 Android、Windows 和 Apple Mobile 的完成分母不同，统一数字会掩盖产品范围差异。
+
+| 平台 | 当前完成判断 | 剩余源码工作 |
+| --- | --- | --- |
+| Android | A0-A8 开发目标已完成；`python3 tools/codex/check_android_plan_progress.py` 当前输出为 `187/187`、完成度 `100.0%`、剩余 `0`。A9 只保留设备、真实 NAS、签名、发布和兼容验收。 | 不继续扩功能；只保留回归、大文件拆分守卫和设备验收结果回填。Chat 服务器已读、Download 单文件优先级、Container 详细运维、镜像拉取和 noVNC 等继续按专项计划的“版本化契约后再评估/非当前移动目标”处理。 |
+| Windows | 当前已批准、可开放的用户可见源码主流程已收口：本人消息删除、Download 只读高级摘要、存储分析、跨 NAS copy-only、系统分享和隐私通知均已有源码闭环；这不等同完整 macOS 全量复刻。 | 仍剩 5 类不得直接开放的源码准备项：`WIN-FILE-LOC-WRITE`、`WIN-CHAT-ADV-WRITE`、`WIN-NAS-WRITE`、`WIN-CM-VMM-WRITE`、`WIN-DL-DESTRUCTIVE`。下一步优先从低风险收藏写入和非破坏性 Chat 写操作开始，NAS 电源/账号/套件、Download 删除数据和 Container/VMM 生命周期继续保持关闭。 |
+| iPhone | Apple Mobile 当前“核心/受限”主流程基本形成源码和自动化闭环：Files、Photos、Chat、Download、Activity、NAS 健康、Container/VMM 只读摘要和设置均已进入移动范围。 | 优先做 M9-A 自动化收口：iPhone Simulator 构建、五态、双语资源、硬编码扫描、Dynamic Type、深浅色、Reduce Motion 和 VoiceOver 源码属性。File Provider、后台 URLSession/BGTask、本地通知、自动照片备份、多窗口和 VMM 控制台仍为后续或当前不做。 |
+| iPad | 共享业务能力大体随 iPhone 完成，已有 `NavigationSplitView`、regular width 和多模块 presentation 测试证据；不能用 iPhone Simulator 代替 iPad 完成结论。 | 优先做 M8 iPad 生产力收口：regular width 主从选择、空详情/错误详情、Inspector、键盘焦点、指针路径、受限拖放和 iPad Simulator 自动化。真实 iPad、键盘/指针硬件、Stage Manager、VoiceOver 和真实 NAS 仍为 `PENDING_USER_VALIDATION`。 |
+
+文档整理结论：现有总控计划、Windows 专项计划、Apple Mobile 专项计划、Android 完成计划和 Wave 89 账本均保留；它们承担不同分母和审计证据，不建议删除或合并。只更新当前事实入口、矩阵状态标签和专项计划顶部的下一源码切片，避免为整理而整理。
 
 Windows CH7 本人消息删除已完成源码闭环：Chat 消息行仅对当前未加密会话内本人已发送消息显示删除入口，用户经原生确认后只提交一次 `SYNO.Chat.Post` v5 `delete`，提交前重读消息确认归属，提交后回读确认消息消失；结果未知、提交后取消或回读不一致时保留需刷新核对状态，刷新前不自动重放。该能力单独由 `.deleteOwnMessage` 精确能力门开放，不解除会话关闭、转发、提醒、定时、投票、服务端置顶和官方 Star 等高级写入总闸。本机已通过 Chat 聚焦 159/159、Release 完整 xUnit 1503/1503、本地化资源检查和差异检查；真实 Chat Server 删除策略、真实 Windows、Narrator、键盘、高对比、200% 缩放、窄窗口和触控为 `PENDING_USER_VALIDATION`。本机未运行 WinUI App 构建，也未把 macOS 上的测试冒充为 Windows Build。
 
@@ -45,7 +58,7 @@ WinUI x64/ARM64 均通过；Repository Check run `31665344401` 也已通过。�
 结果当作精确总量；系统通知会暴露文件名且生命周期所有权不完整。上述原型入口继续关闭，
 其中存储分析已改以有界样本和显式深度分析重新进入源码闭环，没有以删除安全断言或降低测试要求换取通过。
 
-截至 2026-08-12 当前源码口径，跨端原生客户端总体开发约 **74%**：Android 当前移动端开发目标已冻结为 100% 且进入设备验收；iPhone/iPad 主流程、Chat 单附件、Download/BTSearch/ACT-01 与 NAS-02/NAS-04 受限只读详情已形成源码和自动化闭环，仍缺真实 NAS、iPad/真机和部分无障碍验收；Windows Files/Photos/Chat/Download/Activity 与 NAS-02/NAS-04 只读详情已通过云端门禁，其中 NAS 详情切片通过 933/933 项 Windows xUnit，WinUI x64 与 ARM64 均为 0 警告、0 错误。Windows PHOTO-02 已补入文件夹/时间线媒体打开、右侧预览、前后切换、基础文件元数据、图片尺寸展示和保存副本；基础查看器提交 `4e1272e` 已通过 GitHub `Repository Check` run `31398565746` 与 `Windows Build` run `31398566274`。本地媒体元数据白名单切片已补入拍摄时间、相机品牌/型号和基础视频时长，且不新增 NAS 请求；GitHub `Windows Build` run `31410536634` 通过 943/943 项 xUnit 与 WinUI x64/ARM64 构建，`Repository Check` run `31410536680` 通过。剩余工作主要集中在真实 NAS/Narrator/键盘/高对比/窗口缩放验收、Apple 移动端真实设备/真实 NAS 验收、NAS/Chat/Download 高风险能力的版本化契约确认，以及发布签名、安装/卸载和无障碍矩阵。
+2026-08-12 的跨端总体开发约 **74%** 是历史聚合快照，不再作为当前完成度使用。该快照对应当时 Android 已冻结为 100%、Apple Mobile 主流程和 Windows 早期 Files/Photos/Chat/Download/Activity/NAS 详情云端门禁状态；后续已继续补入 Windows NAS-05 存储分析、Download 只读高级摘要、跨 NAS 复制受限闭环、系统分享、Activity 通知源码链、Apple Mobile ACT-01 主动刷新和 Chat 本人消息删除。当前状态以上方 2026-08-20 源码口径快照、专项计划和同一源码版本的验证结果为准。
 
 Windows Files 本波次新增两项源码闭环。异步递归搜索固定执行 `start/poll/list/stop`，最多呈现 2,000 项，并覆盖进行中、错误重试和结果截断提示；至多 5 MiB 的白名单文本在取得强内容版本时可安全编辑，保存前重新核验原内容，用户明确确认后只上传一次，提交后使用独立读取核对 SHA，提交状态不明时不重放并阻止再次保存。无法取得强内容版本时编辑入口不可用。本机 Release xUnit 1434/1434 通过且 0 跳过；功能分支 Repository Check run `31585274223` 与 Windows Build run `31585274234` 已通过，主分支 Repository Check run `31585568876` 与 Windows Build run `31585568768` 也已通过 1434/1434 项 xUnit 和 WinUI x64/ARM64 构建。收藏与远程挂载写、跨 NAS 移动/覆盖/批量/后台恢复、NAS 设置/DDNS/电源写和 Chat 高级写仍因缺少可靠 typed 提交边界、源端删除安全方案、真实双 NAS 副作用或真实契约验收而保持关闭，现有只读能力和跨 NAS copy-only 受限闭环不受影响。真实 NAS、真实 Windows、Narrator、高对比、200% 缩放及键鼠/触控行为继续标记 `PENDING_USER_VALIDATION`。
 

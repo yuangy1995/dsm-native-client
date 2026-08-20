@@ -1,6 +1,6 @@
 # Windows 对齐 macOS 功能开发计划
 
-- 状态：实施中；认证、Files、Photos、Chat、Download Station 与本地设置已形成多批可用闭环，当前事实与验证等级以 `STATUS.md` 为准
+- 状态：实施中；认证、Files、Photos、Chat、Download Station 与本地设置已形成多批可用闭环，当前事实与验证等级以 `STATUS.md` 为准；2026-08-20 当前已批准用户可见源码主流程已收口，但完整 macOS 全量业务语义仍有高风险写能力保持关闭
 - 上位计划：[macOS 功能对齐总控计划](MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)
 - 目标技术栈：C#、WinUI 3、HttpClient、Windows Cloud Files API
 
@@ -106,6 +106,20 @@ Windows 完成标准不是“Shell 中出现入口”，而是对应工作流达
 | `WIN-NAS-WRITE` | DDNS、设置、电源、套件、账号、磁盘、当前连接 | 存在断网、关机、账号/套件删除和硬盘任务等危险副作用 | 每类操作拆独立能力、确认、互斥和最终状态复查；真实专用 NAS 前入口关闭 |
 | `WIN-CM-VMM-WRITE` | Container/VMM 生命周期、删除、网络、noVNC | 容器/虚拟机写入和控制台会改变运行状态或暴露会话令牌 | 定义命令接口、任务轮询和会话清理契约，但 Repository 默认 unsupported |
 | `WIN-DL-DESTRUCTIVE` | 删除已下载数据、批量控制、设置写 | 可能删除文件或改变全局下载行为 | 先完成只读设置/RSS/优先级；写入必须单独验收后再开放 |
+
+### 3.5 2026-08-20 下一源码切片顺序
+
+剔除纯 `PENDING_USER_VALIDATION` 后，Windows 下一步不再扩展已闭环的只读摘要或普通页面壳，而是按副作用风险逐项推进仍关闭的 macOS 语义差距。源码准备不等于开放用户入口；未满足契约、安全和回读门前，WinUI availability 必须保持关闭或只读。
+
+| 顺序 | 切片 | 源码目标 | 入口策略 |
+| --- | --- | --- | --- |
+| 1 | `WIN-FILE-LOC-WRITE` 收藏写入子集 | 先补 Favorite 写入 transport、typed 结果、脱敏 fixture、source-contract、同 profile 防重复和提交后列表回读；远程挂载创建/修改/删除只做契约记录和关闭态能力门。 | 收藏写入通过自动化和能力门后可评估开放；远程挂载写继续关闭。 |
+| 2 | `WIN-CHAT-ADV-WRITE` 非破坏性子集 | 先拆提醒、转发等相对低风险动作的独立 capability、确认文案、目标基线、提交未知核对和不重放；会话关闭、服务端置顶、定时、投票不得借本人消息删除的能力门开放。 | 每项动作单独开关，默认 false；真实 Chat Server 结果未核对前不进入默认入口。 |
+| 3 | `WIN-DL-DESTRUCTIVE` 非删除子集 | 可先评估 RSS 单站点刷新或任务目标修改的版本化契约；批量控制和删除已下载数据继续要求单独危险门、影响摘要和最终状态复查。 | 删除已下载数据保持关闭，不因只读高级摘要已完成而开放。 |
+| 4 | `WIN-CM-VMM-WRITE` | 只建立命令接口、任务轮询、会话清理和 unsupported 默认实现；不复用此前被撤回的 noVNC/生命周期原型。 | Container/VMM 生命周期、删除、网络和 noVNC 全部继续关闭。 |
+| 5 | `WIN-NAS-WRITE` | DDNS、设置、电源、套件、账号、磁盘和当前连接全部按独立危险写切片处理，先补权限、互斥、确认、最终状态复查和失败恢复。 | 最后推进；真实专用 NAS 验收前不得开放会断网、关机、删除账号/套件或改变硬盘状态的入口。 |
+
+Windows 文档保留本计划、总控计划和平台矩阵的分工：`STATUS.md` 记录当前事实，本计划记录 Windows 源码切片和安全顺序，平台矩阵只记录跨端能力差异。不移动或合并这些文档，避免破坏历史链接和审计证据。
 
 ## 4. 目标代码结构
 
