@@ -38,6 +38,13 @@
 动态测试数量、CI 标识和中间构建记录不进入活动状态页、矩阵或路线图；必要的历史上下文
 只能保留在归档，不能用作当前结论。
 
+## 工作流命名边界
+
+`Documentation & Quality Preflight` 只提供严格文档、Android 质量数据、写操作矩阵、结构债务和
+本地化的 `AUTOMATED` 证据。它不是 Release Preflight，不能证明任一平台的完整构建、Artifact、
+SHA-256、签名、安装、升级、回滚、真机或真实 NAS 验收。真正的 Release Preflight 只能在跨平台
+可复用构建、Artifact manifest、校验和、签名状态和人工验证清单具备后作为独立发布基础设施建立。
+
 ## 平台应用
 
 | 平台 | 自动化或构建可证明 | 仍需真实环境证明 |

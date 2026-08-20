@@ -15,6 +15,13 @@ BASELINE_PATH = ROOT / "tools/codex/android_quality_baseline.json"
 REPORT_PATH = ROOT / "docs/quality/ANDROID_QUALITY_BASELINE_ZH.md"
 PRODUCTION_ROOT = ROOT / "android/app/src/main/java"
 
+STRUCTURE_DEBT_TARGET_LINES = {
+    "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt": 12000,
+    "io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt": 11000,
+    "io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt": 1200,
+    "io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt": 1800,
+}
+
 FUNCTION_PATTERN = re.compile(
     r"(?m)^\s*(?:(?:private|internal|public|protected|open|final|override|"
     r"inline|tailrec|operator|infix)\s+)*(?:suspend\s+)?fun\s+"
@@ -97,6 +104,39 @@ def discover_result_call_sites(
 
 def _markdown_table_row(cells: list[str]) -> str:
     return "| " + " | ".join(cells) + " |"
+
+
+def default_structure_debt_target_lines(relative_path: str) -> int:
+    """返回既有结构债务文件的非阻断拆分目标。"""
+    return STRUCTURE_DEBT_TARGET_LINES.get(relative_path, 1000)
+
+
+def tighten_structure_debt_ratchet(
+    baseline: dict[str, Any],
+    production_root: Path = PRODUCTION_ROOT,
+) -> dict[str, Any]:
+    """仅收紧已登记大文件的当前 ratchet，并同步其默认非阻断目标。"""
+    updated = json.loads(json.dumps(baseline, ensure_ascii=False))
+    debt = updated["structureDebt"]
+    limit = debt["newProductionFileLineLimit"]
+    entries: list[dict[str, Any]] = []
+    for item in debt.get("existingLargeFiles", []):
+        relative = item["file"]
+        path = production_root / relative
+        if not path.is_file():
+            continue
+        lines = len(path.read_text(encoding="utf-8").splitlines())
+        if lines <= limit:
+            continue
+        entries.append(
+            {
+                "file": relative,
+                "maxLines": lines,
+                "targetLines": default_structure_debt_target_lines(relative),
+            }
+        )
+    debt["existingLargeFiles"] = entries
+    return updated
 
 
 def generate_report(baseline: dict[str, Any]) -> str:
@@ -210,14 +250,19 @@ def generate_report(baseline: dict[str, Any]) -> str:
             "## 结构债务门禁",
             "",
             f"新增生产 Kotlin 文件超过 {debt['newProductionFileLineLimit']} 行必须在 JSON 的 `exceptions` 中"
-            "写明理由。以下既有大文件只能缩短，不能增长：",
+            "写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；文件缩短后必须同步"
+            "下调，降至阈值以内时必须移除登记。`targetLines` 只指导后续拆分，不会单独阻断提交：",
             "",
-            _markdown_table_row(["文件", "当前最大行数"]),
-            _markdown_table_row(["---", "---:"]),
+            _markdown_table_row(["文件", "当前 ratchet", "非阻断目标"]),
+            _markdown_table_row(["---", "---:", "---:"]),
         ]
     )
     for item in debt["existingLargeFiles"]:
-        lines.append(_markdown_table_row([f"`{item['file']}`", str(item["maxLines"])]))
+        lines.append(
+            _markdown_table_row(
+                [f"`{item['file']}`", str(item["maxLines"]), str(item["targetLines"])],
+            )
+        )
     if debt.get("exceptions"):
         lines.extend(["", "已登记例外："])
         for exception in debt["exceptions"]:
@@ -268,9 +313,20 @@ def check_report(baseline: dict[str, Any], path: Path = REPORT_PATH) -> list[str
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成或校验 Android 质量基线报告")
     parser.add_argument("--check", action="store_true", help="仅检查生成报告是否漂移")
+    parser.add_argument(
+        "--update-structure-ratchet",
+        action="store_true",
+        help="仅收紧已登记大文件的当前 ratchet，并重新生成报告",
+    )
     args = parser.parse_args()
     try:
         baseline = load_baseline()
+        if args.update_structure_ratchet:
+            baseline = tighten_structure_debt_ratchet(baseline)
+            write_baseline(baseline)
+            write_report(baseline)
+            print("已收紧 Android 结构债务 ratchet 并重新生成质量报告。")
+            return 0
         if args.check:
             errors = check_report(baseline)
             if errors:

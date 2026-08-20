@@ -116,6 +116,8 @@ dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runt
 
 See [`apple/README.md`](apple/README.md), [`android/README.md`](android/README.md), and [`windows/README.md`](windows/README.md) for platform-specific setup. GitHub Actions validates Apple, Android, Windows, and repository-level contracts independently.
 
+`Documentation & Quality Preflight` checks strict documentation, Android quality data, the write-operation matrix, structure debt, and localization only. It is not a full release preflight and does not prove Apple/Android/Windows builds, signing, installation, upgrade, rollback, device, or real-NAS validation. A real Release Preflight remains future release infrastructure and requires reusable cross-platform builds, an artifact manifest, SHA-256 values, signing status, and a manual-validation checklist.
+
 ## Security and privacy
 
 - Never commit passwords, OTPs, SIDs, SynoTokens, cookies, DIDs, private certificate keys, or real user data.

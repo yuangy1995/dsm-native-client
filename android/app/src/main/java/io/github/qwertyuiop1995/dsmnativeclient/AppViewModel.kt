@@ -185,15 +185,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var workspacePersistenceJob: Job? = null
     private var nasSwitchJob: Job? = null
     private var isSwitchingNas = false
-    private val transferTaskJobs = TransferTaskJobOwner()
+    private val transferCoordinator = TransferCoordinator()
     private val crossNasRepositories = mutableMapOf<String, DsmRepository>()
     private val crossNasTransferCoordinator = CrossNasTransferCoordinator()
     private var fileBackgroundTaskJob: Job? = null
     private val fileUploadPreflightJobs = mutableMapOf<String, Job>()
     private var fileUploadPreflightBusyToken: FileUploadPreflightToken? = null
-    private val foregroundDownloadExecutionIds = mutableMapOf<String, String>()
-    private val transferWatchJobs = mutableMapOf<String, Job>()
-    private val photoBackupScanObservation = PhotoBackupScanObservationOwner()
+    private val photoBackupCoordinator = PhotoBackupCoordinator()
     private val virtualMachineImageImportWatchJobs = mutableMapOf<String, Job>()
     private var pendingVirtualMachineLocalImageUri: Uri? = null
     private var pendingVirtualMachineLocalImageContentType: String? = null
@@ -398,7 +396,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     error = null,
                 )
             }
-            runCatching {
+            suspendRunCatching {
                 val discovered = connectionResolver.discover(profile) { status ->
                     _login.update { it.copy(connectionStatus = status) }
                 }
@@ -475,7 +473,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         supportsPerformance = repo.supportsPerformance(),
                     ),
                     photoBackupSourceEnabled = photoBackupSource?.let(::shouldScanPhotoBackupSource) == true,
-                    message = photoBackupSourceRestoreMessage(photoBackupSource),
+                    message = photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource),
                     chatPinnedConversationIds = restoredPinnedConversationIds(profile.id),
                     fileBackgroundTasks = backgroundTaskSnapshot?.toFileBackgroundTaskPage()
                         ?.let { Loadable.Ready(it) } ?: Loadable.Idle,
@@ -485,7 +483,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch { refreshFavorites(repo) }
                 when {
                     photoBackupSource?.needsAttention == true ->
-                        cancelPhotoBackupSourceWork(profile.id)
+                        photoBackupCoordinator.cancelSourceWork(workManager, profile.id)
                     photoBackupSource?.let(::shouldScanPhotoBackupSource) == true &&
                         !schedulePhotoBackupSource(photoBackupSource) -> {
                         _workspace.update {
@@ -555,7 +553,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     error = null,
                 )
             }
-            runCatching {
+            suspendRunCatching {
                 val discovered = connectionResolver.discover(profile) { status ->
                     _login.update { it.copy(connectionStatus = status) }
                 }
@@ -616,7 +614,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         supportsPerformance = repo.supportsPerformance(),
                     ),
                     photoBackupSourceEnabled = photoBackupSource?.let(::shouldScanPhotoBackupSource) == true,
-                    message = photoBackupSourceRestoreMessage(photoBackupSource),
+                    message = photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource),
                     chatPinnedConversationIds = restoredPinnedConversationIds(profile.id),
                     fileBackgroundTasks = backgroundTaskSnapshot?.toFileBackgroundTaskPage()
                         ?.let { Loadable.Ready(it) } ?: Loadable.Idle,
@@ -626,7 +624,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch { refreshFavorites(repo) }
                 when {
                     photoBackupSource?.needsAttention == true ->
-                        cancelPhotoBackupSourceWork(profile.id)
+                        photoBackupCoordinator.cancelSourceWork(workManager, profile.id)
                     photoBackupSource?.let(::shouldScanPhotoBackupSource) == true &&
                         !schedulePhotoBackupSource(photoBackupSource) -> {
                         _workspace.update {
@@ -696,7 +694,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             releasePersistedReadPermission(Uri.parse(treeUri))
         }
         transferStore.photoBackupSource(profile.id)?.let { source ->
-            cancelPhotoBackupSourceWork(profile.id)
+            photoBackupCoordinator.cancelSourceWork(workManager, profile.id)
             releasePersistedReadPermission(Uri.parse(source.treeUri))
         }
         transferStore.virtualMachineImageImports(profile.id).forEach { import ->
@@ -1587,11 +1585,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             ) ?: current
         }
         val job = viewModelScope.launch {
-            val value = runCatching { repo.virtualMachineGuestDetails(guestId) }
-                .fold(
-                    onSuccess = { Loadable.Ready(it) },
-                    onFailure = { Loadable.Failed(it.asDsmFailure()) },
-                )
+            val value = captureLoadable { repo.virtualMachineGuestDetails(guestId) }
             _workspace.update { current ->
                 current?.takeIf {
                     repository === repo && it.profile.id == profileId &&
@@ -2281,7 +2275,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (repo != null) {
             viewModelScope.launch {
-                runCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
+                suspendRunCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
                     updateChatConversationState(repo, conversations)
                 }
                 if (!chatRealtimeConnected) startChatConversationPolling(repo)
@@ -2789,7 +2783,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
         viewModelScope.launch {
             val target = entry.target
-            val refreshed = runCatching {
+            val refreshed = suspendRunCatching {
                 when (target.operation) {
                     ChatMutationOperation.DIRECT_CONVERSATION_CREATE,
                     ChatMutationOperation.PRIVATE_GROUP_CREATE,
@@ -3261,7 +3255,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             var persistedPermissionAcquired = false
             try {
-                runCatching {
+                suspendRunCatching {
                 persistedPermissionAcquired = runCatching {
                     getApplication<Application>().contentResolver.takePersistableUriPermission(
                         uri,
@@ -3331,10 +3325,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 updateOutgoingChatMessage(local, clearsDraft = true)
                 performChatAttachmentSend(claim, local, source, uri)
                 }.onFailure { error ->
-                if (error is CancellationException) {
-                    if (persistedPermissionAcquired) releasePersistedReadPermission(uri)
-                    return@onFailure
-                }
                 if (!chatAttachmentPreflightMatches(preflight)) {
                     if (persistedPermissionAcquired) releasePersistedReadPermission(uri)
                     return@onFailure
@@ -3349,6 +3339,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     error.asDsmFailure(),
                 )
                 }
+            } catch (cancelled: CancellationException) {
+                // 取消不会进入 Result.onFailure；预检尚未把授权交给持久化消息时必须主动归还。
+                if (persistedPermissionAcquired) releasePersistedReadPermission(uri)
+                throw cancelled
             } finally {
                 chatAttachmentJobs.remove(localId)
             }
@@ -3450,7 +3444,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val repo = repository ?: return
         viewModelScope.launch {
-            runCatching {
+            suspendRunCatching {
                 withContext(Dispatchers.IO) {
                     val output = getApplication<Application>().contentResolver.openOutputStream(destination, "w")
                         ?: throw DsmFailure(
@@ -3506,7 +3500,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         chatAttachmentPreviewJob = viewModelScope.launch {
-            runCatching { repo.chatAttachmentThumbnail(messageId) }
+            suspendRunCatching { repo.chatAttachmentThumbnail(messageId) }
                 .onSuccess { bytes ->
                     _workspace.update {
                         if (it?.chatAttachmentPreviewName != attachment.name ||
@@ -3568,7 +3562,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         chatAttachmentPreviewJob = viewModelScope.launch {
             var temporaryFile: File? = null
-            runCatching {
+            try {
+                suspendRunCatching {
                 withContext(Dispatchers.IO) {
                     val directory = File(getApplication<Application>().cacheDir, "chat-preview")
                         .also { it.mkdirs() }
@@ -3612,7 +3607,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.onFailure { error ->
                 temporaryFile?.delete()
-                if (error is CancellationException) return@onFailure
                 _workspace.update { state ->
                     if (state?.chatAttachmentPreviewName == attachment.name &&
                         state.chatAttachmentPreviewIsVideo
@@ -3623,6 +3617,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             .localize(getApplication<Application>()).combined,
                     ) else state
                 }
+            }
+            } catch (cancelled: CancellationException) {
+                // 取消会由 suspendRunCatching 直接传播，已创建的预览文件不能遗留在缓存中。
+                temporaryFile?.delete()
+                throw cancelled
             }
         }
     }
@@ -3657,7 +3656,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         viewModelScope.launch {
-            val recentResult = runCatching { repo.chatMessages(failed.conversationId, 0, 50) }
+            val recentResult = suspendRunCatching { repo.chatMessages(failed.conversationId, 0, 50) }
             val recent = recentResult.getOrNull()
             val canResend = synchronized(downloadMutationCoordinatorLock) {
                 val current = _workspace.value ?: return@synchronized false
@@ -3729,7 +3728,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 updateOutgoingChatMessage(sending)
                 performChatSend(claim, sending)
             } else {
-                runCatching { resolveUploadSource(uri) }
+                suspendRunCatching { resolveUploadSource(uri) }
                     .onSuccess { source ->
                         val retryTarget = chatMutationTarget(
                             existingEntry.target.profileId,
@@ -3843,9 +3842,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (_workspace.value?.supportsFavorites != true) return
         _workspace.update { it?.copy(fileFavorites = Loadable.Loading) }
         viewModelScope.launch {
-            runCatching {
+            suspendRunCatching {
                 repo.listFavorites().take(MAX_FILE_FAVORITES).mapNotNull { favorite ->
-                    runCatching { repo.fileInfo(favorite.path) }.getOrNull()
+                    suspendRunCatching { repo.fileInfo(favorite.path) }.getOrNull()
                         ?.takeIf(FileItem::isDirectory)
                         ?.copy(isFavorite = true)
                 }
@@ -3879,7 +3878,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (_workspace.value?.supportsRemoteLocations != true) return
         _workspace.update { it?.copy(fileRemoteLocations = Loadable.Loading) }
         viewModelScope.launch {
-            runCatching { repo.listRemoteLocations(limit = MAX_FILE_REMOTE_LOCATIONS).items }
+            suspendRunCatching { repo.listRemoteLocations(limit = MAX_FILE_REMOTE_LOCATIONS).items }
                 .onSuccess { locations ->
                     _workspace.update { it?.copy(fileRemoteLocations = Loadable.Ready(locations)) }
                 }
@@ -3913,7 +3912,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _workspace.update { it?.copy(fileRecentLocations = Loadable.Loading) }
         viewModelScope.launch {
             val locations = store.recentDirectories(profileId).mapNotNull { path ->
-                runCatching { repo.fileInfo(path) }.getOrNull()?.takeIf(FileItem::isDirectory)
+                suspendRunCatching { repo.fileInfo(path) }.getOrNull()?.takeIf(FileItem::isDirectory)
             }
             _workspace.update { it?.copy(fileRecentLocations = Loadable.Ready(locations)) }
         }
@@ -3943,7 +3942,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _workspace.update { it?.copy(fileBrowser = next) }
         repository?.let { repo ->
             viewModelScope.launch {
-                runCatching { repo.fileInfo(path) }.getOrNull()?.takeIf(FileItem::isDirectory)?.let { item ->
+                suspendRunCatching { repo.fileInfo(path) }.getOrNull()?.takeIf(FileItem::isDirectory)?.let { item ->
                     _workspace.update { current ->
                         current?.takeIf {
                             repository === repo && it.fileBrowser.path == path
@@ -4022,7 +4021,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             activeState.files !is Loadable.Ready
         ) return
         viewModelScope.launch {
-            runCatching { listFilePage(repo, browser, nextOffset) }
+            suspendRunCatching { listFilePage(repo, browser, nextOffset) }
                 .onSuccess { next ->
                     _workspace.update { current ->
                         val currentPage = (current?.files as? Loadable.Ready)?.value
@@ -4390,7 +4389,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
         _workspace.update { it?.copy(fileCopyMove = next, fileCopyMoveFolders = Loadable.Loading) }
         viewModelScope.launch {
-            runCatching { resolveFileCopyMoveRepository(next) }
+            suspendRunCatching { resolveFileCopyMoveRepository(next) }
                 .onSuccess { loadFileCopyMoveFolders(it, next) }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
@@ -4439,7 +4438,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val move = _workspace.value?.fileCopyMove ?: return
         _workspace.update { it?.copy(fileCopyMoveFolders = Loadable.Loading) }
         viewModelScope.launch {
-            runCatching { resolveFileCopyMoveRepository(move) }
+            suspendRunCatching { resolveFileCopyMoveRepository(move) }
                 .onSuccess { loadFileCopyMoveFolders(it, move) }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
@@ -5302,7 +5301,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             _workspace.value = current.copy(transfers = listOf(task) + current.transfers)
-            transferTaskJobs.register(taskId, job)
+            transferCoordinator.registerForegroundTask(taskId, job)
             job.start()
             true
         }
@@ -5424,7 +5423,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             var added = 0
             uris.distinct().forEach { uri ->
-                val source = runCatching { resolveUploadSource(uri) }.getOrNull() ?: return@forEach
+                val source = suspendRunCatching { resolveUploadSource(uri) }.getOrNull()
+                    ?: return@forEach
                 val grantTaken = runCatching {
                     getApplication<Application>().contentResolver.takePersistableUriPermission(
                         uri,
@@ -5542,7 +5542,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             _workspace.update { it?.copy(isPerformingAction = true, message = null) }
-            runCatching {
+            try {
+                suspendRunCatching {
                 withContext(Dispatchers.IO) {
                     scanDocumentTree(
                         getApplication(),
@@ -5621,6 +5622,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+            } catch (cancelled: CancellationException) {
+                // 取消不会进入 Result.onFailure；目录扫描尚未生成持久化上传记录时必须归还授权。
+                releasePersistedReadPermission(treeUri)
+                throw cancelled
+            }
         }
     }
 
@@ -5641,7 +5647,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
-        cancelPhotoBackupSourceWork(state.profile.id)
+        photoBackupCoordinator.cancelSourceWork(workManager, state.profile.id)
         _workspace.update {
             it?.copy(
                 photoBackupSourceEnabled = false,
@@ -6043,7 +6049,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (thumbnailCache.get(key) != null || thumbnailJobs.containsKey(key)) return
         val repo = repository ?: return
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            runCatching {
+            suspendRunCatching {
                 val cacheFile = thumbnailDiskFile(key)
                 val bytes = withContext(Dispatchers.IO) {
                     loadCachedThumbnailBytes(
@@ -6276,7 +6282,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         val repo = repository ?: return
         previewJob = viewModelScope.launch {
-            runCatching { loadPreview(repo, item) }
+            suspendRunCatching { loadPreview(repo, item) }
                 .onSuccess { content ->
                     _workspace.update { current ->
                         current?.takeIf {
@@ -6465,7 +6471,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelTransfer(id: String) {
         if (transferStore.server(id)?.readOnlyObservation == true) return
-        val job = transferTaskJobs.job(id)
+        val job = transferCoordinator.foregroundTask(id)
         val persisted = transferStore.download(id)
         val upload = transferStore.upload(id)
         if (persisted?.state == TransferState.PAUSED) {
@@ -6529,7 +6535,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (current.canPauseDownload()) current.copy(state = TransferState.PAUSED) else current
         }?.takeIf { it.state == TransferState.PAUSED } ?: return
         syncPersistedDownloads(paused.profileId)
-        transferTaskJobs.job(id)?.cancel()
+        transferCoordinator.foregroundTask(id)?.cancel()
         paused.workId?.let { value ->
             runCatching { workManager.cancelWorkById(UUID.fromString(value)) }
         }
@@ -6616,7 +6622,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             _workspace.update { it?.copy(isPerformingAction = true, message = null) }
-            runCatching {
+            suspendRunCatching {
                 val target = upload.destinationPath.trimEnd('/') + "/" + upload.title
                 val existing = if (repo.itemExists(target)) repo.fileInfo(target) else null
                 retryUploadDecision(existing, upload.expectedBytes, upload.overwrite)
@@ -6783,7 +6789,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             candidate
         }
         viewModelScope.launch {
-            val outcome = runCatching {
+            val outcome = suspendRunCatching {
                 verifyFileServerMutation(claim.repository, claim.target)
             }
             val persistenceFailure = runCatching {
@@ -6913,7 +6919,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun launchDownloadSettingsLoad(repo: DsmRepository, profileId: String, generation: Long) {
         viewModelScope.launch {
-            runCatching { repo.loadDownloadSettings() }
+            suspendRunCatching { repo.loadDownloadSettings() }
                 .onSuccess { settings ->
                     synchronized(downloadSettingsMutationLock) {
                         val current = _workspace.value ?: return@synchronized
@@ -6986,7 +6992,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val profileId = current.profile.id
         _workspace.value = current.withDownloadActivity(Loadable.Loading)
         downloadActivityJob = viewModelScope.launch {
-            runCatching { repo.loadDownloadActivity() }
+            suspendRunCatching { repo.loadDownloadActivity() }
                 .onSuccess { activity ->
                     _workspace.update { state ->
                         state?.takeIf {
@@ -7065,7 +7071,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
         val profileId = current.profile.id
         downloadBtCatalogJob = viewModelScope.launch {
-            runCatching { repo.loadDownloadBtSearchCatalog() }
+            suspendRunCatching { repo.loadDownloadBtSearchCatalog() }
                 .onSuccess { catalog ->
                     _workspace.update { state ->
                         state?.takeIf {
@@ -7157,7 +7163,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             repo to current.profile.id
         }
         downloadDiscoveryLoadJob = viewModelScope.launch {
-            runCatching { claim.first.listDownloadRssSites() }
+            suspendRunCatching { claim.first.listDownloadRssSites() }
                 .onSuccess { sites ->
                     synchronized(downloadRssRefreshMutationLock) {
                         val current = _workspace.value ?: return@synchronized
@@ -7199,7 +7205,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             Triple(repo, current.profile.id, site.id)
         }
         downloadDiscoveryLoadJob = viewModelScope.launch {
-            runCatching { claim.first.listDownloadRssFeeds(claim.third) }
+            suspendRunCatching { claim.first.listDownloadRssFeeds(claim.third) }
                 .onSuccess { feeds ->
                     synchronized(downloadRssRefreshMutationLock) {
                         val current = _workspace.value ?: return@synchronized
@@ -7504,7 +7510,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         downloadDiscoverySearchJob = viewModelScope.launch {
-            runCatching { repo.searchDownloadBt(options) }
+            suspendRunCatching { repo.searchDownloadBt(options) }
                 .onSuccess { results ->
                     _workspace.update { state ->
                         state?.takeIf {
@@ -7672,7 +7678,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             Triple(repo, current.profile.id, generation)
         } ?: return
         viewModelScope.launch {
-            val outcome = runCatching { claim.first.loadDownloadSettings() }
+            val outcome = suspendRunCatching { claim.first.loadDownloadSettings() }
             synchronized(downloadSettingsMutationLock) {
                 val current = _workspace.value ?: return@synchronized
                 val state = current.downloadSettingsState
@@ -11215,7 +11221,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = repo.saveFileServiceSettingsResult(value)
                 val refreshed = if (result.submitted || result.requiresRefresh) {
-                    runCatching { repo.nasSettings() }.getOrNull()
+                    suspendRunCatching { repo.nasSettings() }.getOrNull()
                         ?.takeIf { it.fileServiceSettings != null }
                 } else {
                     null
@@ -11316,7 +11322,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = repo.saveTerminalSettingsResult(value)
                 val refreshed = if (result.submitted || result.requiresRefresh) {
-                    runCatching { repo.nasSettings() }.getOrNull()
+                    suspendRunCatching { repo.nasSettings() }.getOrNull()
                         ?.takeIf { it.terminalSettings != null }
                 } else {
                     null
@@ -11418,7 +11424,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = repo.saveProxySettingsResult(normalizedValue)
                 val refreshed = if (result.submitted || result.requiresRefresh) {
-                    runCatching { repo.nasSettings() }.getOrNull()
+                    suspendRunCatching { repo.nasSettings() }.getOrNull()
                         ?.takeIf { it.proxySettings != null }
                 } else {
                     null
@@ -11524,7 +11530,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = repo.saveRegionSettingsResult(normalizedValue)
                 val refreshed = if (result.submitted || result.requiresRefresh) {
-                    runCatching { repo.nasSettings() }.getOrNull()
+                    suspendRunCatching { repo.nasSettings() }.getOrNull()
                         ?.takeIf { it.regionSettings != null }
                 } else {
                     null
@@ -12361,7 +12367,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (_workspace.value?.nasSystemUpdate is Loadable.Loading) return
         viewModelScope.launch {
             _workspace.update { it?.copy(nasSystemUpdate = Loadable.Loading) }
-            runCatching { repo.checkSystemUpdate() }
+            suspendRunCatching { repo.checkSystemUpdate() }
                 .onSuccess { result ->
                     _workspace.update { it?.copy(nasSystemUpdate = Loadable.Ready(result)) }
                 }
@@ -13141,7 +13147,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         ),
                     ) ?: workspace
                 }
-                runCatching { repo.performanceSample() }
+                suspendRunCatching { repo.performanceSample() }
                     .onSuccess { sample ->
                         _workspace.update { workspace ->
                             workspace?.takeIf { it.matchesNasPerformanceRequest(
@@ -13280,9 +13286,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             activeWorkspaceJobs.forEach(Job::cancel)
             activeWorkspaceJobs.forEach { child -> child.join() }
 
-            transferTaskJobs.clearReferences()
-            foregroundDownloadExecutionIds.clear()
-            transferWatchJobs.clear()
+            transferCoordinator.clearForProfileSwitch()
+            photoBackupCoordinator.clearForProfileSwitch()
             virtualMachineImageImportWatchJobs.clear()
             photoTimelineJob = null
             storageAnalysisJob = null
@@ -13379,9 +13384,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         cancelOpaqueExternalNavigation(consumePending = true)
         releasePendingVirtualMachineLocalImageGrant()
         chatPendingAttachmentUrisForRelease(state).forEach(::releasePersistedReadPermission)
-        transferTaskJobs.cancelAndClear()
-        transferWatchJobs.values.forEach(Job::cancel)
-        transferWatchJobs.clear()
+        transferCoordinator.cancelAndClear()
+        photoBackupCoordinator.clearForProfileSwitch()
         virtualMachineImageImportWatchJobs.values.forEach(Job::cancel)
         virtualMachineImageImportWatchJobs.clear()
         photoTimelineJob?.cancel()
@@ -13447,7 +13451,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun refreshFavorites(repo: DsmRepository) {
         if (repo !== repository || !repo.supportsFavorites()) return
-        runCatching { repo.listFavorites().mapTo(mutableSetOf()) { it.path } }
+        suspendRunCatching { repo.listFavorites().mapTo(mutableSetOf()) { it.path } }
             .onSuccess { favoritePaths ->
                 _workspace.update { current ->
                     current?.takeIf { repo === repository }?.copy(
@@ -13487,10 +13491,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             ).not() ||
             activeState.files != Loadable.Loading
         ) return
-        runCatching {
+        suspendRunCatching {
             // 目录基线只决定后续写入口是否可用，读取失败不能阻断原本可用的浏览。
             val directoryBaseline = browser.path.takeIf(String::isNotBlank)?.let { path ->
-                runCatching { repo.fileInfo(path) }.getOrElse { error ->
+                suspendRunCatching { repo.fileInfo(path) }.getOrElse { error ->
                     if (error is CancellationException) throw error
                     null
                 }
@@ -13570,7 +13574,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val currentPage = (_workspace.value?.chatMessages as? Loadable.Ready)?.value
         val offset = if (reset) 0 else currentPage?.nextOffset ?: return
         if (!reset) _workspace.update { it?.copy(chatIsLoadingMore = true) }
-        runCatching { repo.chatMessages(conversation.id, offset) }
+        suspendRunCatching { repo.chatMessages(conversation.id, offset) }
             .onSuccess { page ->
                 _workspace.update { current ->
                     if (current?.selectedConversation?.id != conversation.id) return@update current
@@ -13610,7 +13614,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repo: DsmRepository,
         conversation: ChatConversation,
     ) {
-        val latest = runCatching { repo.chatMessages(conversation.id, 0) }.getOrNull() ?: return
+        val latest = suspendRunCatching { repo.chatMessages(conversation.id, 0) }.getOrNull() ?: return
         _workspace.update { current ->
             if (current?.selectedConversation?.id != conversation.id) return@update current
             val existing = (current.chatMessages as? Loadable.Ready)?.value ?: return@update current
@@ -13664,7 +13668,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 delay(CHAT_REFRESH_INTERVAL_MILLIS)
                 val current = _workspace.value
                 if (current?.selectedModule != Module.CHAT || current.selectedConversation != null) break
-                runCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
+                suspendRunCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
                     updateChatConversationState(
                         expectedRepository = repo,
                         conversations = conversations,
@@ -13705,7 +13709,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         if (conversation != null) {
                             refreshLatestChatMessages(repo, conversation)
                         } else {
-                            runCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
+                            suspendRunCatching { repo.chatConversations() }.getOrNull()?.let { conversations ->
                                 updateChatConversationState(
                                     expectedRepository = repo,
                                     conversations = conversations,
@@ -13903,7 +13907,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }?.copy(photos = Loadable.Loading) ?: current
             }
         }
-        runCatching {
+        suspendRunCatching {
             PhotoRepository(repo).page(
                 space = browser.selectedSpace,
                 folderPath = browser.folderPath,
@@ -13972,7 +13976,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadPhotoMoveFolders(repo: DsmRepository, move: PhotoMoveState) {
-        runCatching {
+        suspendRunCatching {
             val page = PhotoRepository(repo).page(
                 move.space,
                 move.location.path,
@@ -14016,7 +14020,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repo: DsmRepository,
         operation: FileCopyMoveState,
     ) {
-        runCatching {
+        suspendRunCatching {
             if (operation.location.path.isBlank()) {
                 repo.listShares(limit = 500)
             } else {
@@ -14080,7 +14084,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         repo: DsmRepository,
         picker: DownloadDestinationPickerState,
     ) {
-        runCatching {
+        suspendRunCatching {
             if (picker.location.path.isBlank()) {
                 repo.listShares(limit = 500)
             } else {
@@ -14162,7 +14166,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }?.copy(photoTimeline = Loadable.Loading) ?: current
         }
         photoTimelineJob = viewModelScope.launch {
-            runCatching {
+            suspendRunCatching {
                 PhotoRepository(repo).scanTimeline(browser.selectedSpace) { progress ->
                     _workspace.update { current ->
                         current?.takeIf {
@@ -14445,7 +14449,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             true
         }
         if (!started) return
-        val outcome = runCatching {
+        val outcome = suspendRunCatching {
             when (refresh) {
                 FileStationMutationRefresh.FILE_BROWSER -> {
                     loadFileBrowser(claim.repository)
@@ -14706,7 +14710,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         viewModelScope.launch {
-            val refresh = runCatching { repo.activeDownloadTasksForMutation() }
+            val refresh = suspendRunCatching { repo.activeDownloadTasksForMutation() }
             synchronized(downloadCreationMutationLock) {
                 val current = _workspace.value ?: return@synchronized
                 val creation = current.downloadCreationState
@@ -14787,10 +14791,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (_workspace.value?.isPerformingAction == true) return
         viewModelScope.launch {
             _workspace.update { it?.copy(isPerformingAction = true, message = null) }
-            runCatching { block(repo) }
+            suspendRunCatching { block(repo) }
                 .onSuccess { result ->
                     val refreshed = if (result.submitted || result.requiresRefresh) {
-                        runCatching { repo.containerOverview() }.getOrNull()
+                        suspendRunCatching { repo.containerOverview() }.getOrNull()
                     } else {
                         null
                     }
@@ -15638,8 +15642,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         ) {
             return false
         }
-        cancelPhotoBackupScanObservation(profileId)
-        val scheduleGeneration = photoBackupScanObservation.nextScheduleGeneration()
+        photoBackupCoordinator.cancelObservation(profileId)
+        val scheduleGeneration = photoBackupCoordinator.nextScheduleGeneration()
         val periodicOperation = workManager.enqueueUniquePeriodicWork(
             periodicWorkName,
             ExistingPeriodicWorkPolicy.UPDATE,
@@ -15663,12 +15667,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }.getOrNull()
             }
-            if (!isCurrentPhotoBackupSourceSchedule(source, scheduleGeneration)) {
+            if (!photoBackupCoordinator.isCurrentSourceSchedule(
+                    source,
+                    scheduleGeneration,
+                    transferStore.photoBackupSource(source.profileId),
+                )
+            ) {
                 reconcilePhotoBackupSourceScheduleAttention(source)
                 return@launch
             }
             if (actualPeriodicWorkId == null) {
-                cancelPhotoBackupSourceWork(profileId)
+                photoBackupCoordinator.cancelSourceWork(workManager, profileId)
                 _workspace.update { current ->
                     current?.takeIf { it.profile.id == profileId }?.copy(
                         message = getApplication<Application>().getString(
@@ -15689,7 +15698,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             val scheduledSource = current.copy(workId = actualPeriodicWorkId.toString())
             if (runCatching { transferStore.upsertPhotoBackupSource(scheduledSource) }.isFailure) {
-                cancelPhotoBackupSourceWork(profileId)
+                photoBackupCoordinator.cancelSourceWork(workManager, profileId)
                 _workspace.update { workspace ->
                     workspace?.takeIf { it.profile.id == profileId }?.copy(
                         message = getApplication<Application>().getString(
@@ -15704,18 +15713,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    private fun isCurrentPhotoBackupSourceSchedule(
-        expected: PersistedPhotoBackupSource,
-        generation: Long,
-    ): Boolean =
-        photoBackupScanObservation.isCurrentScheduleGeneration(generation) &&
-            transferStore.photoBackupSource(expected.profileId)?.let { current ->
-                current.treeUri == expected.treeUri &&
-                    current.destinationPath == expected.destinationPath &&
-                    shouldScanPhotoBackupSource(current) &&
-                    current.workId == null
-            } == true
-
     private fun reconcilePhotoBackupSourceScheduleAttention(expected: PersistedPhotoBackupSource) {
         if (
             !isPhotoBackupSourceAttentionFor(
@@ -15727,7 +15724,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         ) {
             return
         }
-        cancelPhotoBackupSourceWork(expected.profileId)
+        photoBackupCoordinator.cancelSourceWork(workManager, expected.profileId)
         _workspace.update { current ->
             current?.takeIf { it.profile.id == expected.profileId }?.copy(
                 photoBackupSourceEnabled = false,
@@ -15744,7 +15741,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         initialWorkId: UUID,
     ) {
         val profileId = source.profileId
-        val generation = photoBackupScanObservation.beginObservation(profileId)
+        val generation = photoBackupCoordinator.beginObservation(profileId)
         val job = viewModelScope.launch {
             launch {
                 observePhotoBackupSourceScan(
@@ -15763,7 +15760,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
-        photoBackupScanObservation.attachObservation(profileId, generation, job)
+        photoBackupCoordinator.attachObservation(profileId, generation, job)
     }
 
     private suspend fun observePhotoBackupSourceScan(
@@ -15775,7 +15772,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         workManager.getWorkInfoByIdFlow(observedWorkId).collectLatest { info ->
             val workInfo = info ?: return@collectLatest
             val decision = photoBackupScanFailureDecision(
-                observationIsCurrent = photoBackupScanObservation.isCurrentObservation(
+                observationIsCurrent = photoBackupCoordinator.isCurrentObservation(
                     source.profileId,
                     generation,
                 ),
@@ -15800,7 +15797,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             ),
                         ) ?: current
                     }
-                    cancelPhotoBackupSourceWork(source.profileId)
+                    photoBackupCoordinator.cancelSourceWork(workManager, source.profileId)
                 }
 
                 PhotoBackupScanFailureDecision.SHOW_SOURCE_STATE_UNAVAILABLE -> {
@@ -15811,7 +15808,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             ),
                         ) ?: current
                     }
-                    cancelPhotoBackupScanObservation(source.profileId, generation)
+                    photoBackupCoordinator.cancelObservation(source.profileId, generation)
                 }
 
                 PhotoBackupScanFailureDecision.IGNORE -> Unit
@@ -15822,32 +15819,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun cancelPhotoBackupSourceWork(profileId: String) {
-        cancelPhotoBackupScanObservation(profileId)
-        workManager.cancelUniqueWork(PhotoBackupScanWorker.UNIQUE_WORK_PREFIX + profileId)
-        workManager.cancelUniqueWork(PhotoBackupScanWorker.UNIQUE_WORK_PREFIX + profileId + "-initial")
-    }
-
-    private fun cancelPhotoBackupScanObservation(profileId: String, generation: Long? = null) {
-        photoBackupScanObservation.cancelObservation(profileId, generation)
-    }
-
-    private fun photoBackupSourceRestoreMessage(source: PersistedPhotoBackupSource?): String? =
-        if (source?.needsAttention == true) {
-            getApplication<Application>().getString(R.string.photo_backup_folder_too_large)
-        } else {
-            null
-        }
-
     private fun enqueueForegroundDownload(
         repo: DsmRepository,
         record: PersistedDownload,
         destination: Uri,
         requireExactResume: Boolean = false,
     ) {
-        val executionId = UUID.randomUUID().toString()
+        lateinit var executionId: String
         fun ownsExecution(): Boolean =
-            foregroundDownloadExecutionIds[record.id].isCurrentDownloadExecution(executionId)
+            transferCoordinator.isCurrentForegroundDownloadExecution(record.id, executionId)
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             val running = transferStore.update(record.id) { current ->
                 if (!ownsExecution() || current.state == TransferState.PAUSED) {
@@ -15932,7 +15912,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val current = transferStore.download(record.id)
                 if (current != null && shouldDeleteCancelledDownload(
                         current.state,
-                        foregroundDownloadExecutionIds[record.id],
+                        executionId.takeIf { ownsExecution() },
                         executionId,
                     )
                 ) {
@@ -15966,13 +15946,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 syncPersistedDownloads(record.profileId)
             }
         }
-        foregroundDownloadExecutionIds[record.id] = executionId
-        transferTaskJobs.register(record.id, job, beforeRemoval = {
+        executionId = transferCoordinator.beginForegroundDownload(record.id)
+        transferCoordinator.registerForegroundTask(record.id, job, beforeRemoval = {
             var finalizedCancellation = false
             val cancelled = transferStore.update(record.id) { current ->
                 val next = current.finalizeForegroundDownloadCancellation(
-                    ownsExecution = foregroundDownloadExecutionIds[record.id]
-                        .isCurrentDownloadExecution(executionId),
+                    ownsExecution = ownsExecution(),
                 )
                 finalizedCancellation = current.state == TransferState.CANCELLING &&
                     next.state == TransferState.CANCELLED
@@ -15988,14 +15967,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 syncPersistedDownloads(cancelled.profileId)
             }
         }, afterRemoval = {
-            foregroundDownloadExecutionIds.remove(record.id, executionId)
+            transferCoordinator.clearForegroundDownloadExecution(record.id, executionId)
         })
         job.start()
     }
 
     private fun restoreDownloads(profileId: String) {
-        transferWatchJobs.values.forEach(Job::cancel)
-        transferWatchJobs.clear()
+        transferCoordinator.cancelWorkObservations()
         transferStore.downloads(profileId).forEach { record ->
             val workId = record.workId?.let { value ->
                 runCatching { UUID.fromString(value) }.getOrNull()
@@ -16216,7 +16194,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        transferTaskJobs.register(record.id, job)
+        transferCoordinator.registerForegroundTask(record.id, job)
     }
 
     private fun updatePersistedServerRecord(
@@ -16314,8 +16292,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun monitorUpload(taskId: String, workId: UUID) {
-        transferWatchJobs.remove(taskId)?.cancel()
-        transferWatchJobs[taskId] = viewModelScope.launch {
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             workManager.getWorkInfoByIdFlow(workId).collectLatest { info ->
                 val completed = info.progress.getLong(PhotoBackupWorker.KEY_COMPLETED_BYTES, 0)
                 transferStore.updateUpload(taskId) { current ->
@@ -16327,16 +16304,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }?.let { syncPersistedDownloads(it.profileId) }
                 if (info.state.isFinished) {
-                    transferWatchJobs.remove(taskId, currentCoroutineContext()[Job])
+                    transferCoordinator.removeWorkObservation(
+                        taskId,
+                        currentCoroutineContext()[Job],
+                    )
                     currentCoroutineContext()[Job]?.cancel()
                 }
             }
         }
+        transferCoordinator.replaceWorkObservation(taskId, job)
+        job.start()
     }
 
     private fun monitorDownload(taskId: String, workId: UUID) {
-        transferWatchJobs.remove(taskId)?.cancel()
-        transferWatchJobs[taskId] = viewModelScope.launch {
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             workManager.getWorkInfoByIdFlow(workId).collectLatest { info ->
                 val completed = info.progress.getLong(FileDownloadWorker.KEY_COMPLETED_BYTES, 0)
                 val total = info.progress.takeIf {
@@ -16366,11 +16347,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 updated?.let { syncPersistedDownloads(it.profileId) }
                 if (info.state.isFinished) {
-                    transferWatchJobs.remove(taskId, currentCoroutineContext()[Job])
+                    transferCoordinator.removeWorkObservation(
+                        taskId,
+                        currentCoroutineContext()[Job],
+                    )
                     currentCoroutineContext()[Job]?.cancel()
                 }
             }
         }
+        transferCoordinator.replaceWorkObservation(taskId, job)
+        job.start()
     }
 
     private fun syncPersistedDownloads(profileId: String) {
@@ -16740,7 +16726,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        transferTaskJobs.register(taskId, job)
+        transferCoordinator.registerForegroundTask(taskId, job)
         job.start()
     }
 
@@ -16837,13 +16823,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         block: suspend () -> T,
         update: (Loadable<T>) -> Unit,
     ) {
-        runCatching { block() }
-            .onSuccess { update(Loadable.Ready(it)) }
-            .onFailure { update(Loadable.Failed(it.asDsmFailure())) }
+        update(captureLoadable(block))
     }
 
     override fun onCleared() {
         releasePendingVirtualMachineLocalImageGrant()
+        photoBackupCoordinator.clearForProfileSwitch()
         super.onCleared()
     }
 }

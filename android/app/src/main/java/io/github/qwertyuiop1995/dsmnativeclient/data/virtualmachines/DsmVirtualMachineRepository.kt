@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines
 
+import io.github.qwertyuiop1995.dsmnativeclient.suspendRunCatching
 import io.github.qwertyuiop1995.dsmnativeclient.domain.LogEntry
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResource
 import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineHardware
@@ -93,7 +94,7 @@ internal class DsmVirtualMachineRepository(
                 unavailable += section
                 return emptyList()
             }
-            return runCatching {
+            return suspendRunCatching {
                 gateway.resourceList(apiName, listOf("list"), *roots)
             }.getOrElse {
                 unavailable += section
@@ -133,7 +134,7 @@ internal class DsmVirtualMachineRepository(
             "list",
         )
         val protectionData = if (gateway.supports("SYNO.Virtualization.GuestProtect.Plan")) {
-            runCatching {
+            suspendRunCatching {
                 gateway.firstSuccessful(
                     "SYNO.Virtualization.GuestProtect.Plan",
                     listOf("list", "get"),
@@ -164,7 +165,7 @@ internal class DsmVirtualMachineRepository(
             gateway.genericResources(it, "retention_policies", "retentions", "retention_policy")
         }.orEmpty()
         val logs = if (gateway.supports("SYNO.Virtualization.Log")) {
-            runCatching { gateway.logs() }.getOrElse {
+            suspendRunCatching { gateway.logs() }.getOrElse {
                 unavailable += VirtualMachineSection.LOGS
                 emptyList()
             }

@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data.chat
 
+import io.github.qwertyuiop1995.dsmnativeclient.suspendRunCatching
 import io.github.qwertyuiop1995.dsmnativeclient.data.bool
 import io.github.qwertyuiop1995.dsmnativeclient.data.elements
 import io.github.qwertyuiop1995.dsmnativeclient.data.firstNonBlank
@@ -55,7 +56,8 @@ internal class DsmChatRepository(
     private val gateway: DsmChatRepositoryGateway,
 ) {
     suspend fun conversations(): List<ChatConversation> {
-        val users = runCatching { users().associateBy(ChatUser::id) }.getOrDefault(emptyMap())
+        val users = suspendRunCatching { users().associateBy(ChatUser::id) }
+            .getOrDefault(emptyMap())
         val data = gateway.conversationsData()
         return sequenceOf("channels", "channel_list", "items")
             .flatMap { data.elements(it).asSequence() }
