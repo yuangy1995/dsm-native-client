@@ -1,5 +1,6 @@
 package io.github.qwertyuiop1995.dsmnativeclient.data.nas
 
+import io.github.qwertyuiop1995.dsmnativeclient.suspendRunCatching
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection
 import io.github.qwertyuiop1995.dsmnativeclient.domain.CapacitySummary
 import io.github.qwertyuiop1995.dsmnativeclient.domain.LogEntry
@@ -79,18 +80,18 @@ internal class DsmNasAdministrationRepository(
     private val gateway: DsmNasAdministrationRepositoryGateway,
 ) {
     suspend fun settings(): NasSettingsSnapshot {
-        val systemJson = runCatching { gateway.systemRead() }.getOrNull()
-        val storageJson = runCatching { gateway.storageRead() }.getOrNull()
-        val packageResult = runCatching { gateway.packages() }
-        val accountResult = runCatching { gateway.accounts() }
-        val groupResult = runCatching { gateway.groups() }
-        val logResult = runCatching { gateway.logsRead() }
-        val connectionResult = runCatching { gateway.connections() }
-        val ethernetResult = runCatching { gateway.ethernetInterfaces() }
-        val ddnsResult = runCatching { gateway.ddnsDirectory() }
-        val securitySettingsResult = runCatching { gateway.securitySettings() }
-        val hardwareSettingsResult = runCatching { gateway.hardwareSettings() }
-        val remoteAccessSettingsResult = runCatching { gateway.remoteAccessSettings() }
+        val systemJson = suspendRunCatching { gateway.systemRead() }.getOrNull()
+        val storageJson = suspendRunCatching { gateway.storageRead() }.getOrNull()
+        val packageResult = suspendRunCatching { gateway.packages() }
+        val accountResult = suspendRunCatching { gateway.accounts() }
+        val groupResult = suspendRunCatching { gateway.groups() }
+        val logResult = suspendRunCatching { gateway.logsRead() }
+        val connectionResult = suspendRunCatching { gateway.connections() }
+        val ethernetResult = suspendRunCatching { gateway.ethernetInterfaces() }
+        val ddnsResult = suspendRunCatching { gateway.ddnsDirectory() }
+        val securitySettingsResult = suspendRunCatching { gateway.securitySettings() }
+        val hardwareSettingsResult = suspendRunCatching { gateway.hardwareSettings() }
+        val remoteAccessSettingsResult = suspendRunCatching { gateway.remoteAccessSettings() }
         return NasSettingsSnapshot(
             system = systemJson?.let { gateway.systemSummary(it) },
             volumes = storageJson?.let { gateway.capacityList(it) }.orEmpty(),
@@ -99,7 +100,7 @@ internal class DsmNasAdministrationRepository(
             storageDisks = storageJson?.let { gateway.storageDisks(it) }.orEmpty(),
             packages = packageResult.getOrDefault(emptyList()),
             packagesAvailable = packageResult.isSuccess,
-            scheduledTasks = runCatching { gateway.scheduledTasks() }.getOrDefault(emptyList()),
+            scheduledTasks = suspendRunCatching { gateway.scheduledTasks() }.getOrDefault(emptyList()),
             accounts = accountResult.getOrDefault(emptyList()),
             accountsAvailable = accountResult.isSuccess,
             groups = groupResult.getOrDefault(emptyList()),
@@ -111,10 +112,10 @@ internal class DsmNasAdministrationRepository(
             networkInterfacesAvailable = ethernetResult.isSuccess,
             ddnsDirectory = ddnsResult.getOrNull(),
             ddnsDirectoryAvailable = ddnsResult.isSuccess,
-            fileServiceSettings = runCatching { gateway.fileServiceSettings() }.getOrNull(),
-            terminalSettings = runCatching { gateway.terminalSettings() }.getOrNull(),
-            proxySettings = runCatching { gateway.proxySettings() }.getOrNull(),
-            regionSettings = runCatching { gateway.regionSettings() }.getOrNull(),
+            fileServiceSettings = suspendRunCatching { gateway.fileServiceSettings() }.getOrNull(),
+            terminalSettings = suspendRunCatching { gateway.terminalSettings() }.getOrNull(),
+            proxySettings = suspendRunCatching { gateway.proxySettings() }.getOrNull(),
+            regionSettings = suspendRunCatching { gateway.regionSettings() }.getOrNull(),
             securitySettings = securitySettingsResult.getOrNull(),
             hardwareSettings = hardwareSettingsResult.getOrNull(),
             security = gateway.securityResources(),

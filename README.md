@@ -119,6 +119,8 @@ dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runt
 
 各平台的补充环境说明见 [`apple/README.md`](apple/README.md)、[`android/README.md`](android/README.md) 和 [`windows/README.md`](windows/README.md)。GitHub Actions 会分别验证 Apple、Android、Windows 和仓库级契约。
 
+`Documentation & Quality Preflight` 只检查严格文档、Android 质量基线、写操作矩阵、结构债务和本地化；它不是完整发布预检，不能证明 Apple/Android/Windows 构建、签名、安装、升级、回滚、真机或真实 NAS 已通过。真正的 Release Preflight 仍是后续发布基础设施：需先具备跨平台可复用构建、Artifact manifest、SHA-256、签名状态和人工验证清单。
+
 ## 安全与隐私
 
 - 不提交密码、OTP、SID、SynoToken、Cookie、DID、证书私钥或真实用户数据。

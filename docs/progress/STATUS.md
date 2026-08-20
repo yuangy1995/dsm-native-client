@@ -42,7 +42,10 @@
 
 ### Android
 
-- 源码状态：`AppViewModel` 与 `DsmRepository` 仍是门面，后续仅作机械拆分，不改变公开契约、任务语义或持久化格式。
+- 源码状态：`AppViewModel` 与 `DsmRepository` 仍是兼容门面；`TransferCoordinator` 已唯一持有
+  前台传输 Job、下载 execution id 与后台观察 Job，`PhotoBackupCoordinator` 已持有扫描调度代次、
+  Profile 与本地观察 Job。Chat 与 NAS 管理仍待按完整状态和生命周期切片拆分，不改变公开契约、
+  任务语义或持久化格式。
 - 自动化状态：本轮 JSON 质量基线和 Python 门禁已建立；完整 JVM、Release/R8、仪器 APK 与 lint 由托管 Runner 执行。
 - 真机状态：认证、证书、WorkManager、跨 NAS、后台恢复、危险写和辅助功能均待用户验证。
 - 发布状态：无 Play 分发；未验证内部写入口保持关闭。
@@ -124,6 +127,9 @@
 - 当前没有跨端发布动作；各平台的验证可并行，但证据不能相互替代。
 - 需要用户操作的项目使用明确前置条件、步骤、预期和允许回传的脱敏信息。
 - 发布结论只在对应平台的签名、设备和回滚证据同时满足后更新。
+- `Documentation & Quality Preflight` 只提供文档与质量门禁，不能作为 Apple、Android、Windows
+  完整构建、签名、安装、升级、回滚、真机或真实 NAS 的发布结论；完整 Release Preflight
+  仍待跨平台构建、Artifact manifest、SHA-256、签名状态和人工验收清单齐备后单独建设。
 
 ## 当前阻塞
 
@@ -139,12 +145,17 @@
 
 - 文档角色已收敛为入口、状态、矩阵、路线图、计划、质量基线和归档；阶段性账本已迁入历史归档。
 - Android 四份人工维护审计矩阵已迁入机器数据，生成报告由 CI 比对，写操作门禁不再依赖巨型 Kotlin 文件的整文件散列。
-- Android 结构债务基线开始阻止既有巨型文件增长，并要求新增超大生产文件提供明确例外理由。
+- Android 结构债务基线已改为当前行数精确 ratchet：文件缩短必须同步收紧，`maxLines` 与
+  `targetLines` 均不得相对上一基线上调。
+- Android 传输与照片备份运行时所有权已收敛：旧 Job、旧 execution、旧观察和已切换 Profile 的
+  迟到回调不能清理新任务；后台唯一工作名称与持久化格式未改变。
+- `Documentation & Quality Preflight` 已按实际覆盖范围命名；它不再被描述为完整发布预检。
 - macOS Beta 就绪报告已记录本轮构建与手工验收边界；没有可以替代正式签名或真实 NAS 的结论。
 - 发布状态保持保守：未完成真实环境验证的高风险能力不会因源码或模拟器结果而开放。
 
 ## 下一步（三项）
 
-1. 继续完成 Android `DsmRepository` 与 `AppViewModel` 的剩余机械领域拆分，逐切片保持 JSON 写入口登记、任务唯一所有权和聚焦测试通过。
+1. 继续完成 Android Chat 与 NAS 管理的完整状态和生命周期所有权拆分，随后再处理其余
+   `DsmRepository` 与 `AppViewModel` 领域；逐切片保持 JSON 写入口登记、任务唯一所有权和聚焦测试通过。
 2. 在受控环境执行 macOS 正式签名、公证、票据装订、Gatekeeper 与真实 NAS 验收，并将缺失条件保留为 `PENDING_USER_VALIDATION`。
 3. 在专用验证分支使用托管 Runner 运行 Android 全量门禁和 Windows x64/ARM64、xUnit、WinUI XAML 验证，不提交凭据或本机生成物。

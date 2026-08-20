@@ -8,6 +8,13 @@
 
 ## P0：发布硬化与可验证性
 
+### 完整 Release Preflight 基础设施
+
+- 现有 `Documentation & Quality Preflight` 只覆盖文档与仓库质量门禁，不替代跨平台发布验证。
+- 在 Apple、Android、Windows 可复用构建、Artifact manifest、SHA-256、签名状态和人工验证
+  清单齐备后，再单独编排真正的 Release Preflight。
+- 在此之前，不把质量工作流通过表述为签名、安装、升级、回滚、真机或真实 NAS 通过。
+
 ### macOS 首个 Beta
 
 - 在受控环境完成 Developer ID 签名、公证、票据装订、Gatekeeper、安装、升级和回退验收。
@@ -32,8 +39,9 @@
 
 - 保留 `DsmRepository` 和 `AppViewModel` 兼容门面，按 decoder、request builder、
   capability resolver、mutation verifier 和领域 Repository 逐步机械拆分。
-- 先迁移 Transfer 与 Photo Backup 等任务所有权明确的路径，再迁 Files、Chat、Downloads、
-  NAS、Container 和 VMM；每个 Job、锁和序列号只能有一个所有者。
+- `TransferCoordinator` 与 `PhotoBackupCoordinator` 已收敛前台/观察 Job、execution、调度代次和
+  Profile 生命周期；下一步按 Chat、NAS、Files、Downloads、Container 和 VMM 的完整状态＋任务
+  切片推进。每个 Job、锁和序列号只能有一个所有者。
 - 最后按状态输入/事件输出拆分 Chat、Files 与 Photos Compose 文件；不改变布局、文案、
   动效、导航、StateFlow 身份或 WorkManager 名称。
 

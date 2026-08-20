@@ -1828,43 +1828,43 @@
     "existingLargeFiles": [
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-        "maxLines": 16872
+        "maxLines": 16834,
+        "targetLines": 12000
       },
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt",
-        "maxLines": 1699
+        "maxLines": 1699,
+        "targetLines": 1200
       },
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt",
-        "maxLines": 15281
+        "maxLines": 14934,
+        "targetLines": 11000
       },
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt",
-        "maxLines": 2299
-      },
-      {
-        "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/ChatScreen.kt",
-        "maxLines": 1335
+        "maxLines": 2299,
+        "targetLines": 1800
       },
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt",
-        "maxLines": 1628
+        "maxLines": 1367,
+        "targetLines": 1000
       },
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt",
-        "maxLines": 1060
-      },
-      {
-        "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/PhotosScreen.kt",
-        "maxLines": 1013
+        "maxLines": 1060,
+        "targetLines": 1000
       },
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt",
-        "maxLines": 1297
+        "maxLines": 1297,
+        "targetLines": 1000
       },
       {
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt",
-        "maxLines": 1142
+        "maxLines": 1142,
+        "targetLines": 1000
       }
     ],
     "exceptions": []

@@ -1,0 +1,66 @@
+name: Documentation & Quality Preflight
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  documentation-and-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 选择上一 Android 结构基线
+        id: previous-android-quality-baseline
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REF_NAME: ${{ github.ref_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          previous_ref=""
+          if [ "$EVENT_NAME" = "pull_request" ] && [ -n "$PR_BASE_SHA" ]; then
+            previous_ref="$PR_BASE_SHA"
+          elif [ "$EVENT_NAME" = "push" ] && [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            if [ -n "$PUSH_BEFORE" ] && ! printf '%s' "$PUSH_BEFORE" | grep -Eq '^0+$'; then
+              previous_ref="$PUSH_BEFORE"
+            fi
+          elif [ "$EVENT_NAME" = "push" ]; then
+            git fetch --no-tags origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+            previous_ref="origin/$DEFAULT_BRANCH"
+          fi
+
+          if [ -n "$previous_ref" ] && \
+            git cat-file -e "$previous_ref:tools/codex/android_quality_baseline.json"; then
+            previous_path="$RUNNER_TEMP/previous-android-quality-baseline.json"
+            git show "$previous_ref:tools/codex/android_quality_baseline.json" > "$previous_path"
+            echo "path=$previous_path" >> "$GITHUB_OUTPUT"
+            echo "将结构 ratchet 与 $previous_ref 比较。"
+          else
+            echo "未找到可用上一基线；仅执行当前行数精确匹配检查。"
+          fi
+
+      - name: 严格文档与质量预检
+        env:
+          PREVIOUS_BASELINE: ${{ steps.previous-android-quality-baseline.outputs.path }}
+        run: |
+          set -euo pipefail
+          python tools/codex/generate_android_quality_baseline.py --check
+          python tools/codex/check_documentation.py --strict-release
+          python tools/codex/check_android_write_test_matrix.py
+          if [ -n "$PREVIOUS_BASELINE" ]; then
+            python tools/codex/check_android_structure_debt.py --previous-baseline "$PREVIOUS_BASELINE"
+          else
+            python tools/codex/check_android_structure_debt.py
+          fi
+          python tools/localization/check_localization.py

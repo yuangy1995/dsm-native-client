@@ -166,20 +166,18 @@
 
 ## 结构债务门禁
 
-新增生产 Kotlin 文件超过 1000 行必须在 JSON 的 `exceptions` 中写明理由。以下既有大文件只能缩短，不能增长：
+新增生产 Kotlin 文件超过 1000 行必须在 JSON 的 `exceptions` 中写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；文件缩短后必须同步下调，降至阈值以内时必须移除登记。`targetLines` 只指导后续拆分，不会单独阻断提交：
 
-| 文件 | 当前最大行数 |
-| --- | ---: |
-| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16872 |
-| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 |
-| `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 15281 |
-| `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/ChatScreen.kt` | 1335 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt` | 1628 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt` | 1060 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/PhotosScreen.kt` | 1013 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt` | 1297 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt` | 1142 |
+| 文件 | 当前 ratchet | 非阻断目标 |
+| --- | ---: | ---: |
+| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16834 | 12000 |
+| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 | 1200 |
+| `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 14934 | 11000 |
+| `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 | 1800 |
+| `io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt` | 1367 | 1000 |
+| `io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt` | 1060 | 1000 |
+| `io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt` | 1297 | 1000 |
+| `io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt` | 1142 | 1000 |
 
 ## 再生成与校验
 
