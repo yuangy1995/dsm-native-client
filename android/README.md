@@ -1,69 +1,74 @@
+<!-- doc-role: platform-readme -->
+<!-- last-reviewed: 2026-08-20 -->
+
 # Android 原生客户端
 
 Android 客户端使用 Kotlin、Jetpack Compose、Coroutines、OkHttp 和 Android Keystore。
+当前 `applicationId` 为 `io.github.qwertyuiop1995.dsmnativeclient`，最低 Android 版本为
+API 29；这些标识和最低版本不是本轮修改范围。
 
-功能补齐顺序、阶段进度、换电脑后的环境恢复与调试交接流程见
-[Android 原生客户端完善、进度记录与跨电脑交接计划](../docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)。
-
-当前工程：
+## 代码边界
 
 ```text
-app/src/main/.../domain/    领域模型与错误语义
-app/src/main/.../network/   DSM WebAPI 传输层
-app/src/main/.../storage/   Keystore 保护的会话与可选密码存储
-app/src/main/.../data/      文件、套件和管理 Repository
-app/src/main/.../ui/        Compose 自适应界面
+app/src/main/.../domain/    领域模型、状态和统一错误语义
+app/src/main/.../network/   DSM Web API 传输、登录与解析
+app/src/main/.../storage/   Keystore 保护的会话与本机偏好
+app/src/main/.../data/      DsmRepository 门面与按领域拆分的 Repository
+app/src/main/.../ui/        Compose 平台原生界面
 ```
 
-中文应用名为“岚仓”、英文应用名为 `LanStash`，applicationId 为
-`io.github.qwertyuiop1995.dsmnativeclient`，最低 Android 版本为 API 29。
+`DsmRepository` 与 `AppViewModel` 是既有 Compose 兼容门面。结构拆分必须保留公开签名、
+DSM 请求契约、`MutationResult` 映射、持久化键、状态顺序、WorkManager 唯一任务名以及
+取消、重试和退出语义。
 
-已接入 HTTPS 与 QuickConnect 登录、加密会话、手机/平板自适应导航、文件管理（分页、刷新、路径、排序、筛选、列表/网格、多选复制/移动/删除/收藏、最近文件夹、远程位置、回收站、分享、ZIP/7z 压缩解压、文本安全编辑、最多 100 项多文件与 1,000 项有界目录上传、覆盖确认、后台恢复和安全从头重试）、系统文件/文件夹下载、图片/视频缩略图、图片缩放/前后切换、PDF 分页缩放，以及已知大小音视频的严格 Range 按需系统播放、独立照片库（个人/共享空间、文件夹分页、渐进时间轴、年/月定位、筛选、图片缩放/前后查看、本机媒体详情、受限视频播放、导出、收藏、移动、分享、安全删除、回收站恢复，以及系统选择器授权的单项/目录约束后台备份）、Chat 会话与消息只读分页、
-Download Station（链接/磁力与任务文件创建、NAS 目录选择、官方基础设置/限速/计划、暂停/继续、受保护删除、Tracker/Peer、RSS 浏览与安全刷新、BT 提供方/类别/过滤/排序搜索与当前活动摘要）、Container Manager、Virtual Machine Manager、NAS 设置、传输中心和应用设置。Chat 已支持会话/消息分页、每会话内存草稿、Unicode 文字与单附件发送、发送中/失败状态、手动重试前回读去重、本地已读、首次单聊/私人群聊、提醒、定时消息、投票创建、Socket.IO 实时刷新和离开页面即停止的 5 秒轮询降级。VMM 包含虚拟机、主机、存储、网络、映像、保护和日志；已支持使用 NAS 上的已有文件创建映像，公开虚拟机与映像删除具备确认，任务中心支持受保护地清理已结束任务，未完成行为验证的内部网络修改和删除保持关闭。
-Container Manager 当前提供容器、镜像、网络、项目与事件的只读列表，主列表与附属分区独立降级；界面只显示稳定名称和普通状态，并明确提示前往 Container Manager 管理。镜像仓库支持只读搜索和标签查看；生命周期、容器/镜像/网络删除、网络创建及镜像拉取等私有写操作在完成版本化行为验证前由界面、ViewModel 与 Repository 三层关闭，不会向 NAS 发送写请求。
-VMM 创建、常规设置和公开生命周期采用持久结构化结果：创建支持总计最多 8 块空白/映像混合磁盘、多网卡和未连接网卡，只接受严格终态任务返回的稳定虚拟机 ID；公开 `Guest.get` 无法回读源映像 ID，因此含映像盘时仅提示需要刷新核对，不冒充严格成功。模糊或取消结果只核对、不按名称认领、不重放；设置只提交变化字段，生命周期携带确认时状态基线。创建步骤/草稿、确认和结果可跨 Activity 配置重建。Android noVNC 控制台因契约未验证保持关闭。
-VMM 映像既可从 NAS 已有文件创建，也可经系统 `OpenDocument` 选择本机文件。NAS 文件路径使用官方 `Guest.Image.create` v1；本机文件先无覆盖上传到用户选择的 File Station 暂存目录，再依次完成公开创建、Task.Info 只读跟踪、映像严格回读、任务清理和按完整文件基线删除临时文件。恢复记录存入既有加密传输存储，同资料同映像名原子防重复；进程重建不会重发边界不明的上传、创建或清理。系统文件授权、后台限制和真实 NAS 副作用仍待打包验证；映像编辑与导出未完成。
-VMM 任务中心最多读取 100 个唯一任务，界面只显示任务 token 的单向摘要稳定键、结束状态和进度，真实 token 只存在当前 Workspace 内存与请求边界。页面可见且存在未结束任务时每 2 秒只刷新 Task.Info，离页、任务结束或 NAS/Repository 变化即停止。用户确认清理数量后，应用会全量复读 `list/get` 基线，只逐项清理未漂移的已结束任务；异常或取消只回读、不自动重放。
-Download Station 的 BT 搜索使用官方 `BTSearch` v1 读取提供方与类别，支持全部、仅启用或指定提供方，以及类别、标题、排序字段和方向；搜索完成、失败、超时或取消后都会尝试清理本次服务端搜索会话，清理结果尚未在真实 NAS 验证。当前活动摘要使用官方 `Statistic.getinfo` v1，独立显示标准任务与 eMule 的当前聚合上传/下载速率；摘要读取失败不会替换任务列表。搜索输入与结果只保留在当前 Workspace 内存，不写入持久状态或日志；这些是搜索选项，不代表 BT 协议高级设置已经完成。
-File Station 的创建文件夹、重命名、收藏、单项/批量删除、复制/移动、回收站恢复及共享链接创建/删除使用统一 Workspace 持久结果：草稿、稳定目标、确认、八类结果、计数、异常和专项刷新可跨 Activity 配置重建；断线、取消或模糊提交只回读、不重放。文件删除使用完整多项目基线逐项复核身份与权限，任务状态读取失败后仍逐项核对且不重放；Files/Photos 结果按模块隔离。文件复制/移动核对比较类型及文件大小/修改时间，共享创建只认领本次确认的稳定链接 ID 与路径；Photos 收藏、分享、恢复、单项移动和删除复用同一反馈。
-NAS 设置的“性能”页每 2 秒读取处理器、内存、网络和存储当前值，只在内存保留最近 120 个采样；可暂停或继续，离开页面、切换模块或断开连接会停止请求。图表使用实线/虚线和可读文字区分数据，并为 TalkBack 提供精确摘要。
-NAS 套件启动/停止/卸载会重新读取稳定套件 ID、状态、明确的卸载许可与桌面应用标识，通过可行性检查后提交，并在写后回读；模糊结果不会自动重放，系统或未明确允许卸载的套件不会显示卸载入口。套件安装和升级仍保持关闭。
-当前连接断开按网页会话与其他服务分别使用 DSM 列表返回的设备/进程标识；不明确允许断开的目标保持只读，当前会话提供更强警告，提交后必须回读确认目标消失。
-账号和群组删除仅在 DSM 明确返回可删除时开放，并额外保护当前账号与系统保留目标；写请求按名称数组提交，未知结果不会重放，目录回读确认目标消失后才报告成功。
-物理网卡支持编辑 DHCP/静态 IPv4、DNS、MTU、默认网关和 VLAN；能力版本不足或字段不完整时关闭写入口，只提交当前网卡，未知结果只回读不重放，保存前说明可能断线及重新连接方式。
-动态域名支持服务商列表、连接测试、创建/编辑、立即更新和删除；测试不会保存，凭据只存在当前编辑状态，保存/删除会回读核对，未知结果不会重放，地址更新也不会冒充公共域名解析已经完成传播。
-文件服务支持 SMB、NFS、FTP/FTPS、SFTP、局域网发现和 SMB 时间机器，保存前一次性核对全部所需能力并整体回读；远程终端支持 SSH、Telnet 和 SSH 端口；互联网代理支持无凭据的 HTTP 代理开关、地址和端口。三类设置均提供影响确认、重复提交保护、部分成功和未知结果反馈。
-区域与时间支持设备返回的时区、日期/时间格式、手动 NAS 时间和最多三个时间服务器；配置回读确认后才会按需请求立即校时。安全设置支持自动封锁、各网卡拒绝服务防护、端口扫描防护和防火墙启停，网卡与防火墙配置档只使用 NAS 预检返回值。两类高风险设置都要求确认，未知结果不会自动重放。
-硬件设置支持设备实际提供的来电恢复、指示灯、风扇、提示音、休眠与 UPS 字段，六组写入会整体回读；关机和重启先预检再单次提交，二次确认中明确请求接受不代表设备动作已经完成，断线结果不会重放。
-统一存储管理会按当前账号可见范围扫描普通共享，汇总共享、类型、所有者、最大文件、最近修改和最久未访问；重复内容先按大小筛选，再通过官方 MD5 任务确认，最多校验 400 个候选且可随时停止。硬盘快速/完整检测和停止操作使用存储列表返回的设备标识，提交前检查占用状态，写后回读，未知结果不重放。
-Compose 已按登录、Workspace、File Station、照片、Chat、Download Station、传输中心、应用设置、Container/VMM、NAS 设置和公共组件拆分，入口文件只负责路由，便于在新电脑按功能继续开发与独立定位问题。
-登录成功后会保留名称、NAS 地址和账号；用户可选择由 Android Keystore 保护密码，并可进一步开启自动登录。
-可选的自定义 HTTPS 端口默认收在“高级连接设置”中。
+## 当前范围
 
-本机默认只运行低负载的增量编译或聚焦测试：
+- 登录、HTTPS、QuickConnect、会话恢复和平台安全存储。
+- Files、Photos、Chat、Download Station、NAS 设置、传输中心和应用设置的既有用户路径。
+- Container Manager 与 VMM 的只读摘要；未完成功能行为验证的 Container 内部写入口保持
+  三层关闭，不向 NAS 发送写请求。
+- 文件、下载、Chat、NAS 设置和 VMM 的开放写操作使用确认、权限、重复提交保护和最终
+  结果回读；模糊提交或提交后取消只允许核对，不自动重放。
+- Android 界面继续遵守 Material、触控、动态字体、深浅色、TalkBack 与降低动效要求。
+
+范围、后续候选和非目标请查看[平台功能矩阵](../docs/progress/PLATFORM_MATRIX.md)。当前
+源码、自动化、真机和发布状态请查看[当前开发进度](../docs/progress/STATUS.md)。
+
+## 质量门
+
+Android 质量基线是机器可读数据：
+
+```bash
+python3 tools/codex/generate_android_quality_baseline.py --check
+python3 tools/codex/check_android_write_test_matrix.py
+python3 tools/codex/check_android_page_state_matrix.py
+python3 tools/codex/check_android_touch_targets.py
+python3 tools/codex/check_android_motion_audit.py
+python3 tools/codex/check_android_structure_debt.py
+python3 tools/localization/check_localization.py
+```
+
+本机默认只运行低负载的增量编译和聚焦测试：
 
 ```bash
 ./gradlew :app:compileDebugKotlin
 ./gradlew :app:testDebugUnitTest --tests '<聚焦测试类>'
 ```
 
-完整 JVM、Debug/Release/R8、仪器测试 APK 与 lint 交给 GitHub 托管 Runner。推送专用
-`codex/` 功能分支后可等待自动运行，也可手动触发：
+完整 JVM、Debug、Release/R8、仪器测试 APK 与 lint 交由 GitHub 托管 Runner。在专用
+`codex/` 验证分支执行前，检查不含凭据、本机配置或一次性产物；不要把本机增量结果
+表述为完整 Android 发布验证。
 
-```bash
-gh workflow run android-build.yml --ref <codex/功能分支>
-gh run list --workflow android-build.yml --limit 5
-gh run watch <run-id> --exit-status
-```
+## 真实环境边界
 
-工作流会上传 Debug APK、未正式签名的 Release 测试 APK、仪器测试 APK，以及 JVM/lint
-报告。中间 CI 修正提交在功能完成后合并为一个完整功能提交，再合并 `main` 并删除临时分支。
+真实设备、证书、WorkManager、后台限制、系统选择器、跨 NAS、真实 DSM/套件返回和
+危险写副作用均为 `PENDING_USER_VALIDATION`。缺少这些环境不阻塞独立源码和自动化工作，
+但未验证的高风险入口必须继续关闭、只读或受能力门保护。
 
-当前完成率、最新自动化数量、阻塞和真实验收结论统一查看[当前开发进度](../docs/progress/STATUS.md)，稳定目标、剩余项与换电脑恢复步骤查看[Android 原生客户端完善计划](../docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)。第 56–58 批已完成 Download Station 任务控制、五类任务创建与设置保存；第 59 批完成 VMM 创建、常规设置和公开生命周期；第 60–62 批完成 File Station 主要既有写操作、Photos 管理及文件浏览器批量删除；第 63–65 批迁移 Chat 写操作；第 79–81 批依次完成 VMM NAS 映像创建、任务清理，以及多磁盘/多网卡、可见期轮询、本机文件持久导入和固定模块外部入口；第 82 批增加唯一无载荷 Container Registry 固定深页并纠正 VMM 删除映像回读 Fixture；第 83 批一次补齐套件更新只读提示、真实套件图标和 Registry 官方来源标识；第 84 批收紧 VMM 任务页可见轮询，并增加 VMM 任务与 NAS 性能两个无载荷固定深页。以上均为既有组合目标完善，不重复计分；A0–A8 仍为 183/202（90.6%）。
+## 相关文档
 
-GitHub Actions 已配置自动及手动 Android 构建门禁：Android 或共享 Fixture 变化时运行 JVM、Debug、debug 测试签名的 Release/R8、仪器测试 APK 编译和 Debug lint；同一分支的新运行会取消旧运行，并上传 APK 与测试/lint 报告。本机 `keystore.properties` 已精确忽略，仓库检查会拒绝任何已跟踪的同名签名配置。CI 只编译仪器测试 APK，不执行模拟器/真机用例；Release 测试包也不是正式签名发布物。
-
-Android 14 真机完成既有冷启动，QuickConnect 已完成不含登录凭据的真实能力发现测试。照片写操作、
-后台备份、Chat 会话创建以及 VMM 映像创建的真实格式、权限和写入结果仍待设备与真实 NAS 复验；VMM 真实任务字段、清理权限、`clear` 副作用、取消与部分完成边界，以及 Download Station 真实搜索目录、速率字段和权限也尚未验证。Chat 内部写能力只在运行时能力覆盖已记录版本时开放，其他能力继续按兼容证据分批接入。
-
-自动化测试不能替代真实 NAS 的版本、套件、权限和写操作验收。
+- [Android 长期计划](../docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)
+- [Android 质量基线](../docs/quality/ANDROID_QUALITY_BASELINE_ZH.md)
+- [功能实现与验证等级](../docs/quality/VERIFICATION_LEVELS_ZH.md)
+- [请求契约与写操作结果计划](../docs/development/REQUEST_CONTRACT_AND_MUTATION_RESULT_PLAN_ZH.md)
+- [历史对齐记录](../docs/archive/2026-h2/ANDROID_ALIGNMENT_HISTORY_82_89.md)

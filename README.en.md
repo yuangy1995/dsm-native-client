@@ -1,3 +1,6 @@
+<!-- doc-role: entrypoint -->
+<!-- last-reviewed: 2026-08-20 -->
+
 # LanStash
 
 [简体中文](README.md) · [English](README.en.md)
@@ -130,6 +133,8 @@ Follow [`SECURITY.md`](SECURITY.md) when reporting a vulnerability. Do not attac
 - [Current progress](docs/progress/STATUS.md)
 - [Product roadmap](docs/progress/ROADMAP.md)
 - [Platform feature matrix](docs/progress/PLATFORM_MATRIX.md)
+- [Android quality baseline](docs/quality/ANDROID_QUALITY_BASELINE_ZH.md)
+- [Release and manual-validation history](docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)
 - [DSM compatibility matrix](docs/compatibility/DSM_COMPATIBILITY_MATRIX.md)
 - [Community Compatibility Program](docs/compatibility/COMMUNITY_COMPATIBILITY_PROGRAM_EN.md)
 - [Community Compatibility Matrix](docs/compatibility/COMMUNITY_COMPATIBILITY_MATRIX_EN.md)

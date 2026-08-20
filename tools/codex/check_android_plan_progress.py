@@ -1,75 +1,44 @@
 #!/usr/bin/env python3
-"""按 Android 计划的叶子目标口径复算开发进度。"""
+"""校验 Android 长期计划保留结构债务与验证入口，而不重新维护动态进度。"""
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAN = ROOT / "docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md"
-STAGE_HEADING = re.compile(r"^## \d+\. A([0-8])：")
-CHECKBOX = re.compile(r"^(?P<indent>\s*)- \[(?P<state>[ xX])] (?P<label>.+)$")
+REQUIRED_SECTIONS = (
+    "## 不变量",
+    "## 质量基线",
+    "## 源码拆分顺序",
+    "## 验证策略",
+    "## 发布与真实环境",
+    "## 交接要求",
+)
+LEGACY_PROGRESS_PATTERN = re.compile(r"(?:完成度|当前完成率|\b\d+\s*/\s*\d+\b|\b\d+(?:\.\d+)?%)")
 
 
-@dataclass(frozen=True)
-class Goal:
-    line: int
-    indent: int
-    completed: bool
-    stage: str
-    label: str
+def validate(path: Path = PLAN) -> list[str]:
+    if not path.is_file():
+        return ["Android 长期计划不存在"]
+    text = path.read_text(encoding="utf-8")
+    errors = [f"Android 长期计划缺少章节：{section}" for section in REQUIRED_SECTIONS if section not in text]
+    if LEGACY_PROGRESS_PATTERN.search(text):
+        errors.append("Android 长期计划不得维护动态完成率、百分比或人工测试数量")
+    return errors
 
 
-def read_goals() -> list[Goal]:
-    goals: list[Goal] = []
-    stage: str | None = None
-    for line_number, line in enumerate(PLAN.read_text(encoding="utf-8").splitlines(), 1):
-        heading = STAGE_HEADING.match(line)
-        if heading:
-            stage = f"A{heading.group(1)}"
-            continue
-        if line.startswith("## "):
-            stage = None
-            continue
-        match = CHECKBOX.match(line)
-        if stage is not None and match:
-            goals.append(
-                Goal(
-                    line=line_number,
-                    indent=len(match.group("indent")),
-                    completed=match.group("state").lower() == "x",
-                    stage=stage,
-                    label=match.group("label"),
-                )
-            )
-    return goals
-
-
-def leaf_goals(goals: list[Goal]) -> list[Goal]:
-    result: list[Goal] = []
-    for index, goal in enumerate(goals):
-        next_goal = goals[index + 1] if index + 1 < len(goals) else None
-        if next_goal is None or next_goal.indent <= goal.indent:
-            result.append(goal)
-    return result
-
-
-def main() -> None:
-    leaves = leaf_goals(read_goals())
-    completed = sum(goal.completed for goal in leaves)
-    remaining = len(leaves) - completed
-    percent = completed / len(leaves) * 100 if leaves else 0.0
-    print(
-        f"Android A0–A8 叶子开发目标：{completed}/{len(leaves)}，"
-        f"完成度 {percent:.1f}%，剩余 {remaining} 项。"
-    )
-    for goal in leaves:
-        if not goal.completed:
-            print(f"- {goal.stage} L{goal.line}: {goal.label}")
+def main() -> int:
+    errors = validate()
+    if errors:
+        for error in errors:
+            print(f"错误：{error}")
+        return 1
+    print("Android 长期计划结构通过：范围、质量基线、拆分、验证和交接边界均已声明。")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

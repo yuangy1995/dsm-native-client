@@ -23,6 +23,10 @@ jobs:
           test -f docs/api/DSM_WEB_API_REFERENCE_ZH.md
           test -f docs/development/NATIVE_DSM_FILE_APP_DEVELOPMENT_PLAN_ZH.md
           test -f docs/progress/STATUS.md
+          test -f docs/quality/ANDROID_QUALITY_BASELINE_ZH.md
+          test -f docs/archive/2026-h2/CROSS_PLATFORM_PARITY_HISTORY.md
+          test -f docs/archive/2026-h2/ANDROID_ALIGNMENT_HISTORY_82_89.md
+          test -f docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md
           test -f contracts/README.md
 
       - name: 校验 JSON
@@ -36,11 +40,14 @@ jobs:
       - name: 校验 Codex Skill 引导脚本
         run: |
           python -m unittest discover -s tools/codex/tests -p 'test_*.py'
+          python tools/codex/generate_android_quality_baseline.py --check
           python tools/codex/check_android_motion_audit.py
           python tools/codex/check_android_page_state_matrix.py
           python tools/codex/check_android_plan_progress.py
           python tools/codex/check_android_touch_targets.py
           python tools/codex/check_android_write_test_matrix.py
+          python tools/codex/check_android_structure_debt.py
+          python tools/codex/check_documentation.py
 
       - name: 校验 Fixture 脱敏与契约工具
         run: |

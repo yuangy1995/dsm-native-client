@@ -1,4 +1,11 @@
-# Windows / Apple 移动端功能对齐账本：第 0 波
+<!-- doc-role: archive -->
+<!-- last-reviewed: 2026-08-20 -->
+
+# 跨端功能对齐历史（2026-H2）
+
+本文件收录已停止维护的阶段性账本，用于追溯当时的决策、范围与验证边界。当前状态请查看 `docs/progress/STATUS.md`，未来工作请查看 `docs/progress/ROADMAP.md`。历史中的本地链接已转为纯文本，避免删除源文档后形成断链；其中的测试、构建和环境结论仅代表当时记录，不能推断当前状态。
+
+## 原始账本：`docs/development/CROSS_PLATFORM_PARITY_WAVE_0_LEDGER_ZH.md`
 
 > 状态：基础拆分、Apple M1、M2-C、M3-A 大目录浏览、M3-B 服务端排序筛选、FILE-02 只读位置导航、FILE-07 分享链接、FILE-08 图片/PDF/文本/音视频只读预览、M4-A1 文件系统照片库、PHOTO-01 用户主动有界时间线、M5-A1a Chat 只读闭环、M6-S0 Download Station、M7-A NAS 健康、M7-B1a VMM 官方虚拟机清单、M7-B2 Container 实例清单与 SET-01 本地设置闭环已通过；Windows W1、W2 文件/传输、FILE-02 只读位置导航、FILE-07 分享链接、FILE-08 预览、W3 文件系统照片库/Chat、PHOTO-01 用户主动有界时间线、W4 Download Station、W4-B0 VMM 官方只读、W4-A Container 实例清单与 SET-01 本地设置源码已收口，GitHub Windows CI 的 691 项 xUnit 与 x64/ARM64 Release 构建已通过，目标设备验收后置
 > 基线提交：`21172ac`（`docs: 完善跨平台复制计划`）
@@ -280,3 +287,502 @@ Download Station BTSearch v1 跨端追加验收：
 ### 6.3 下一实现顺序
 
 BTSearch 与 ACT-01 首片均已通过 Apple/Windows/Repository 云端门禁；BTSearch 另覆盖 Android 云端门禁。两者都只剩真实 NAS、iPad、Windows 交互和无障碍验收，不再占用下一功能波次。ACT-01 首片已把 App 前台传输与 Download Station 已加载任务快照按来源做只读投影。后续顺序调整为：第一，CHAT-03 先补 Apple 单附件 typed outcome 与 Windows 上传、缩略图、下载 typed 契约，再接附件 UI；第二，NAS-02/NAS-04 有界只读详情与 Chat 契约并行；第三，ACT-01 后续再补 Activity 主动刷新 NAS/Download、NAS 文件后台任务和系统通知。Chat 实时、Download RSS/文件优先级/BT 协议高级设置、Container/VMM 高风险写和无证据端点继续后置。每个写切片仍须满足稳定目标、一次提交、结果回读和提交后不自动重放。
+
+## 原始账本：`docs/development/CROSS_PLATFORM_PARITY_WAVE_1_LEDGER_ZH.md`
+
+> 状态：整理后的单一简体中文功能提交 `641852b408ae24f8819e4a49cd70df4c8d9e5011` 已合并到 `main`；云端门禁已通过，真机与真实 NAS 验收后置
+> 基线提交：`bd809f8b6854258ac3c0d9370468b82536b7c34d`（`完善 Windows、iPhone 与 iPad 跨平台功能闭环`）
+> 当前范围：Windows `FND-03/W1 证书安全与连接来源说明`、Windows/Apple `FILE-03 新建文件夹与重命名`、Apple 移动端 `PHOTO-02 只读查看增强`、iPad 当前范围自动化
+> 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；空文件、递归目录统计、MD5、批量重命名、私有 Foto API、照片编辑、后台整库扫描、自动备份和所有未列入本波的危险写
+
+## 1. 账本口径
+
+- `完整`：源码、聚焦自动化与目标平台构建均覆盖用户主流程；只能依赖真机、签名或真实 NAS 的验收另记 `PENDING_USER_VALIDATION`。
+- `部分`：已有可用流程，但契约、状态、错误恢复、自动化或目标平台构建证据仍不完整。
+- `关闭`：缺少稳定契约、行为证据或本波授权，生产入口保持隐藏、只读或能力门关闭。
+- 写操作只有在稳定目标、写前基线、一次提交、提交边界、独立写后回读和提交后零自动重放均成立时才允许进入 UI。
+- 证书安全只有在系统信任优先、合格叶证书、按 profile 固定、变化阻断、relay 仅系统信任和发现阶段零凭据均成立时才允许完成连接。
+- 本地轻量检查不替代 GitHub 的 Windows x64/ARM64、Apple iPhone/iPad 与共享 Package 大型门禁；云端结果必须对应最终候选提交的精确 SHA。
+
+## 2. 本波用户结果与边界
+
+| 用户结果 | macOS / 计划事实来源 | 当前基线 | 本波目标 | 安全与数据边界 | 明确非目标 |
+| --- | --- | --- | --- | --- | --- |
+| Windows 首次自签名证书核对 | `DsmCertificateTrust.swift`、总控 `FND-03`、Windows `W1` | 只有系统默认信任；自签名直接失败，无核对模型、pin store 或 UI | 系统信任证书直接通过；合格自签名叶证书进入一次性核对，用户确认后按 profile 固定 | 不记录证书正文或私钥；只保存 SHA-256 指纹；密码、OTP、SID、Token 与 pin 分离 | 全局忽略证书错误、安装系统根证书、relay 手动固定、自动接受变化 |
+| Windows 证书变化阻断 | 同上 | 无旧/新指纹比较 | 变化时显示旧/新指纹，默认阻断；只有显式再次核对才更新 pin 并继续同一冻结连接尝试 | profile、原始 NAS 身份、direct endpoint 与 attempt generation 同时匹配；迟到结果零回写 | 静默更新 pin、把普通重试当重新确认 |
+| Windows 连接来源与能力说明 | Windows `W1` | 连接阶段只有瞬时状态文案；成功后没有稳定来源摘要 | 保留局域网/公网直连/QuickConnect relay 的稳定、通俗说明；能力缺失给原因与下一步 | relay 只走系统信任；路由发现阶段不发送登录凭据；不显示内部 API/build | 暴露原始路由字段、凭据、诊断地址或私有协议 |
+| Apple/Windows 新建文件夹 | 总控 `FILE-03`、现有公开 CreateFolder | 两端只有 `void` 旧契约；专用 Files 页面生产入口关闭 | 公开 v2、单目标、写前不存在、一次提交、独立回读唯一同路径目录后才确认；结果完整呈现 | canonical 绝对父路径、单段名称、profile 绑定、目标锁、提交后零重放；remote/recycle 及后代保持只读 | 空文件、批量创建、模板、自动重试、内部 API fallback |
+| Apple/Windows 重命名 | 总控 `FILE-03`、现有公开 Rename | 两端只有 `void` 旧契约；新页面未开放 | 冻结原对象身份与目标名称；写前源精确存在且目标不存在；一次提交；写后证明旧路径消失、新路径同类型唯一存在 | 源/目标锁、profile/repository/generation 门；权限、冲突、提交未知与取消后复查可区分 | 批量/规则重命名、跨目录移动、覆盖、永久删除 |
+| iPhone/iPad PHOTO-02 查看增强 | 总控 `PHOTO-02`、现有安全 Preview/Range/Inspector | 图片/视频安全预览、保存副本、系统分享、基础文件详情已可用；缺同一快照前后导航和照片元数据白名单 | 冻结当前可见相册/时间线快照；前后浏览；iPhone 沉浸查看；iPad Inspector；基础元数据只读呈现 | 只读取有界、版本一致的本机 artifact 或严格 Range 前缀；只显示白名单字段；保存/分享始终绑定当前 canonical item | GPS、MakerNote、设备序列号、EXIF 写回、编辑、人物/地点/标签、私有 Foto、后台扫描、PHOTO-03 导入/移动 |
+| iPad 当前范围自动化 | Apple `M8/M9` | 已有自适应 Sidebar/Inspector，但键盘与宽度变化证据不足 | 左右键导航、Return/Space 打开、Escape 返回、Command-S 保存副本；紧凑/常规宽度保持选择和详情 | 可见按钮仍是主入口；指针/快捷键只是增强；44pt、VoiceOver、Dynamic Type、Reduce Motion | 多窗口、拖放唯一入口、桌面级批量运维 |
+
+## 3. 冻结契约与实现顺序
+
+1. **Windows 证书基础切片**：Domain challenge/trust decision、profile pin store、TLS transport gate、direct/relay 安全语义与合成测试先冻结；App/UI 不直接解析证书。
+2. **Apple FILE-03 契约切片**：共享 `FileItemMutationOutcome` 与结果型 create/rename；旧 `void` API 保持兼容，生产移动 UI 只调用新接口。
+3. **Windows FILE-03 契约切片**：复用既有 `MutationResult`，新增独立请求/结果与 transport 提交边界；旧 `IDsmRepository` 方法不得成为新 UI 数据源。
+4. **PHOTO-02 只读切片**：复用现有严格 Range/Preview，不新增 NAS API；先建立 viewer/metadata 状态，再接 iPhone full-screen 与 iPad Inspector。
+5. **UI 与组合根集成**：证书 ContentDialog、两端新建/重命名表单、PHOTO-02 查看器；Shell/AppModel、资源与工程文件由单一集成 owner 串行修改。
+6. **复核与云端出口**：独立安全/写契约复核、本地轻量门、文档同步；创建 `codex/` 验证分支运行 GitHub 全量，全部通过后整理为一条简体中文正式提交并合并 `main`。
+
+## 4. 文件所有权
+
+| 热点 | 唯一 owner | 其他 owner 约束 |
+| --- | --- | --- |
+| Windows Auth Domain、TLS transport、pin store 与安全测试 | Windows 证书契约 owner | 不修改 Login UI、Files、资源、Shell、文档 |
+| Apple `DsmCore/FileStation.swift`、`DsmNetwork/DsmFileRepository.swift` 与 FILE-03 契约测试 | Apple FILE-03 契约 owner | 不修改 Mobile、资源、工程、macOS App、Windows |
+| Windows FILE-03 Domain/Transport/Repository 与契约测试 | Windows FILE-03 契约 owner；证书 transport 冻结后串行开始 | 不修改 FilesPage、资源、Shell、旧 Workspace UI |
+| Apple PHOTO-02 Viewer/Metadata 功能目录、`MobilePhotosView.swift` 与聚焦测试 | Apple PHOTO-02 owner | 不修改共享 Package、AppModel/Session、资源、工程、macOS App |
+| Windows Certificate/File Mutation UI 功能目录、LoginPage/FilesPage 最小接线 | Windows UI owner；对应契约冻结后开始 | 不修改 Domain/Transport/Repository、资源、Shell |
+| Shell/AppModel/Session 组合根、两端双语资源、XcodeGen/工程、账本与最终集成 | 主 agent | 其他 owner 只提交接线需求与资源键清单 |
+
+## 5. 验收门禁
+
+### 5.1 Windows 证书
+
+- 系统可信、首次合格自签名、变化、过期/结构无效、relay 不可信、取消、profile 切换和迟到 challenge 均有行为测试。
+- 确认前零登录凭据；确认后仅同一冻结 attempt 登录一次；pin 只按 profile 保存。
+- UI 使用原生 ContentDialog，旧/新指纹分别可读，默认焦点安全，Escape 取消，确认不可重入。
+
+### 5.2 FILE-03
+
+- 两端固定官方 v2 与 FORM 能力门；名称和路径规则一致；请求参数精确。
+- 写前源/目标基线、目标锁、一次提交、写后独立回读、提交后取消/断网/坏响应只回读不重放。
+- confirmed success、permission、conflict、unsupported、cancelled before submission、submitted but unverified 均有聚焦测试。
+- UI 关闭重开不能绕过需核对 blocker；只读来源与 handler 双门；成功才刷新并移动焦点，失败/取消保留浏览 baseline。
+
+### 5.3 PHOTO-02 / iPad
+
+- 同一 canonical snapshot 前后导航边界、相册/时间线、筛选变化、profile/repository/generation 和迟到结果均有模型测试。
+- 元数据读取有明确上限、版本一致性与字段白名单；无 GPS、MakerNote、序列号或私有 Foto 请求。
+- iPhone full-screen、iPad Inspector、紧凑/常规宽度、键盘、VoiceOver、Dynamic Type 与 Reduce Motion 有聚焦或展示测试。
+- 保存副本和系统分享始终使用当前 viewer item，不使用列表中可能已变化的 selection。
+
+### 5.4 集成与发布
+
+- 本地执行 Swift/C# 形态检查、本地化、请求契约、聚焦低负载测试和 `git diff --check`。
+- GitHub 对候选 SHA 执行 Repository Check、Windows x64/ARM64、Apple iPhone/iPad/共享 Package 与 macOS 回归；Android 只验证未被改动并运行既定云端回归，不修改源码。
+- 云端全绿后把本波整理为一条简体中文功能提交，快进合并并推送 `main`，再删除本地和远端验证分支。
+
+## 6. PENDING_USER_VALIDATION
+
+- Windows 10/11 x64 与 ARM64：首次自签名、证书变化、系统可信、公网直连和 QuickConnect relay；Narrator、高对比、200% 缩放和键盘流程。
+- 真实 NAS：CreateFolder/Rename v2 权限、冲突、断线、提交后取消、回读字段和服务端副作用；只回传脱敏 API 错误类别与结果，不回传真实路径、主机或凭据。
+- iPhone/iPad：代表性 JPEG/HEIC/MOV/MP4 元数据、左右导航、旋转/分屏、外接键盘/指针、VoiceOver、最大动态文字和系统分享/保存副本。
+- 缺少上述真机证据不阻塞其他源码与云端门禁；证书绕过、未确认 FILE-03 重放和未白名单元数据入口必须继续保持关闭。
+
+## 7. 当前验证证据
+
+- Apple FILE-03 共享契约固定公开 v2/FORM，覆盖写前类型与权限基线、目标互斥、单次提交、独立回读、提交后取消/异常不重放和同目标 review blocker；共享 Package 最新执行 645 项 XCTest，2 项按环境跳过、0 失败。
+- Apple 移动端 FILE-03 与 PHOTO-02 已通过 iPhone 17 Pro / iOS 26.5 模拟器聚焦测试 60/60，0 失败、0 跳过；PHOTO-02 同时通过未参与实现者的只读复核，未发现 P0/P1/P2。当前主机没有可用 iPad Simulator，iPad 构建与布局运行证据交由 GitHub Apple 门禁和后续真机验收。
+- Windows 证书链已完成 profile pin、变化阻断、relay 系统信任、稳定连接来源、每次尝试独立 transport、全部 NAS 请求上下文和原生核对对话框；独立对抗终审为 P0/P1/P2 均 0。
+- Windows FILE-03 已完成 typed transport、Repository、session blocker、ViewModel 与 WinUI 主流程；请求契约校验通过 90 个 Fixture 与 1 个写结果示例，双语资源统计为 Apple 3255、Android 1985、Windows 849，XML、硬编码、本地化和差异格式门通过。
+- Windows `FilesPage` 的本波新建/重命名页面逻辑已拆到独立 `FilesPage.Mutations.cs` partial 文件，主页面只保留组合根与生命周期调用点；该拆分不改变状态机、资源或写操作门禁。
+- 当前机器没有 `dotnet`/Windows SDK；候选提交已由 GitHub Windows Runner 完成 756/756 xUnit 与 WinUI x64/ARM64 构建，因此候选状态为 `UNIT_TESTED / BUILD_VERIFIED_WINDOWS_CI_X64_ARM64`，但仍不等同真实 Windows 设备运行。
+- 候选云端证据：`Apple Build` run `31306484946` 在 `e5ac397` 通过共享 Package 645 项 XCTest（2 项按环境跳过）、iPhone/iPad 通用应用构建和 macOS 回归；`Android Build` run `31306484965` 在同一提交完成单元测试、Debug、Release/R8、仪器测试 APK 编译与 Debug lint；`Windows Build` run `31306947634` 在 `f25508b` 通过 756/756 xUnit，x64/ARM64 均为 0 警告、0 错误；`Repository Check` run `31306947631` 在 `f25508b` 通过 90 个请求 Fixture、1 个写结果示例、本地化与隐私门禁。
+- 上述候选修正历史已整理为单一简体中文功能提交 `641852b408ae24f8819e4a49cd70df4c8d9e5011`（`完善跨端证书安全、文件操作与照片查看`）并合并到 `main`；真实设备和真实 NAS 验收仍按 `PENDING_USER_VALIDATION` 后置。
+
+## 8. 本波完成后继续对照的剩余项
+
+- Windows：后续已完成 FILE-05 单文件复制/移动、FILE-09 回收站入口、Chat 纯文字发送、Download 单任务控制、链接/任务文件创建、单任务删除、只读当前活动摘要和 BTSearch v1 Domain/Infrastructure/ViewModel/WinUI；原生 ContentDialog、结果创建链、61 项英中资源和 26 项专项测试均已落盘。正式提交 `5850f4c` 的 Windows Build run `31356270192` 已通过 886/886 项 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；真实 Windows、Narrator、键盘与 NAS 行为继续后置。ACT-01 已合入正式提交 `2491212`，其 Windows Build run `31360092210` 通过：Download Station 已加载任务快照进入 Activity 的 NAS 来源，真机/真实 NAS 待验收。下一步 CHAT-03 先补 typed 附件传输契约，NAS 有界只读详情可并行；统一 ModuleAvailability、文件夹/批量传输、Activity 主动后台刷新和 W5/W6 系统集成仍按独立切片推进。
+- iPhone/iPad：后续已完成 FILE-05 有界同 NAS 复制/移动、FILE-09 回收站写、PHOTO-03A PhotosPicker 单项导入、Chat 纯文字发送、Download 创建/单任务控制、单任务删除、只读当前活动摘要和 BTSearch v1 共享契约/移动端 Sheet；能力门、结果创建链、48 项英中资源、会话内隐私与取消清理均已接入。本地共享聚焦 65/65、共享全量 675 项 XCTest（2 跳过）+10 项 Swift Testing、iPhone 模拟器 11/11 已通过；正式提交 `5850f4c` 的 Apple Build run `31356270194` 又通过同规模共享包测试、iPhone/iPad 通用构建和 macOS 打包。ACT-01 已合入正式提交 `2491212`，其 Apple Build run `31360092209` 通过：Download Station 已加载任务快照进入 Activity 的 NAS 来源，真机/真实 NAS 待验收。下一步 CHAT-03 先补 typed 单附件结果，NAS-02/NAS-04 有界只读详情并行；Chat 实时、Download RSS/文件优先级/BT 协议高级、Activity 主动后台刷新及 M8/M9 其余生产力继续后置。
+- Apple 共享层：`DsmFileRepository.swift` 是既有大型聚合实现；后续继续扩展 File Station 写能力前，单独做保持行为不变的功能拆分与共享 Package/macOS 回归，不在本波危险写验收中顺带扩大内部可见性。
+- 两端：没有稳定公开或已记录私有契约的能力继续关闭；真实设备与真实 NAS 验收按用户安排后置，不用推测性防御代码替代验证。
+
+## 原始账本：`docs/development/CROSS_PLATFORM_PARITY_WAVE_2_LEDGER_ZH.md`
+
+> 状态：整理后的单一简体中文功能提交已合并到 `main`，四组云端门禁通过，真机与真实 NAS 验收后置
+> 基线提交：`641852b408ae24f8819e4a49cd70df4c8d9e5011`（`完善跨端证书安全、文件操作与照片查看`）
+> 当前范围：Windows/iPhone/iPad `FILE-05 单文件同 NAS 复制与移动`、Windows/iPhone/iPad `PHOTO-03A 用户主动导入单项照片或视频`
+> 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；目录复制、批量或跨 NAS 复制移动、覆盖、回收站恢复或永久删除、自动照片备份、整库照片权限、后台扫描、Chat 写和 Download 写
+
+## 1. 账本口径
+
+- `完整`：源码、聚焦自动化与目标平台构建覆盖用户主流程；只能依赖真机、系统选择器或真实 NAS 的验收另记 `PENDING_USER_VALIDATION`。
+- `部分`：已有可用流程，但契约、状态、错误恢复、自动化或目标平台构建证据仍不完整。
+- `关闭`：缺少稳定契约、行为证据或本波授权，生产入口保持隐藏、只读或能力门关闭。
+- 复制与移动只有在稳定源/目标、写前基线、一次提交、真实提交边界、独立写后回读和提交后零自动重放均成立时才允许进入 UI。
+- 主动导入只复用现有上传、临时 artifact 与 Activity 结果链，不建立平行上传实现；系统选择取消不得改变页面基线。
+- 本地只执行形态、资源、请求契约和聚焦低负载测试；Windows x64/ARM64、Apple iPhone/iPad、共享 Package/macOS 回归与 Android 未改动回归交给 GitHub 分支门禁。
+- 同一功能的验证修正可以产生临时提交；正式历史必须整理为一条语义完整的简体中文提交，最终精确 SHA 重新跑全量门禁后才能合并 `main`。
+
+## 2. 本波用户结果与边界
+
+| 用户结果 | 事实来源 | 当前基线 | 本波目标 | 安全与数据边界 | 明确非目标 |
+| --- | --- | --- | --- | --- | --- |
+| Apple/Windows 单文件复制 | 总控 `FILE-05`、公开 File Station CopyMove v3、FILE-03 统一写结果 | Apple 只有旧 `void` copy/move；Windows 无结果型 copy/move；两端生产入口关闭 | 选择一个普通本地文件和同 NAS 普通本地目标目录；无覆盖；独立回读确认目标同类型/大小且源仍存在 | profile/repository/源/目标/generation 冻结；源与目标锁；提交一次；提交后取消、断线或坏回读只核对不重放 | 目录、批量、跨 NAS、覆盖、remote/virtual/recycle/`#recycle`、后台队列 |
+| Apple/Windows 单文件移动 | 同上 | 同上 | 与复制共用目标选择和状态机；独立回读确认目标同类型/大小且源消失 | 移动前冻结源身份；目标路径不得等于源；普通本地来源和目标双门；未确认结果跨页面重建保持 blocker | 复制后递归删除模拟移动、永久删除、回收站恢复、跨卷行为承诺 |
+| iPhone/iPad 主动导入照片或视频 | Apple `PHOTO-03`、系统 `PhotosPicker`、现有 M2 上传/Activity | Photos 已支持浏览、预览、保存和分享；没有 PhotosPicker 导入 | 用户选择一项图片或视频，明确目标后以无覆盖上传；选择取消静默；成功后仅在仍处于同一目标时刷新 | 单项、用户主动、受控临时 artifact；不申请整库权限；profile/目标/repository/generation 门；Activity 接管后零重放 | 自动备份、后台整库扫描、多选、删除系统照片、照片编辑、私有 Foto API |
+| Windows 主动导入照片或视频 | Windows `W3-A`、原生 FileOpenPicker、现有 ForegroundTransfer/Activity | Photos 已支持浏览、时间线、预览和保存；通用上传选择器只在 Files 流程使用 | 从 Photos 页选择一项图片或视频，导入当前普通本地照片目录；宽窄布局、键盘和 Narrator 可完成主流程 | 复用同一 picker/transfer/upload 结果链；timeline 使用当前空间根并明确显示目标；remote/recycle/`#recycle` 零入口 | 新上传协议、后台文件夹监听、批量选择、Cloud Drive、自动图库同步 |
+
+## 3. 交互转换
+
+### 3.1 iPhone
+
+- Files 单项菜单提供“复制到…”和“移动到…”，随后使用原生 Sheet 选择普通本地目标目录并显示冻结的源与目标。
+- 提交中只显示一个进行中的操作和取消请求；只有明确 `CancelledBeforeSubmission` 才允许安全返回表单。
+- 结果未确认时显示需要核对，不自动重放；关闭后同 profile、同操作与同目标仍受 blocker 保护。
+- Photos 工具栏和空状态均提供可见“导入照片或视频”；PhotosPicker 取消静默，导入成功后保留模式、筛选与滚动基线。
+
+### 3.2 iPad
+
+- 复用现有 regular-width Shell，不嵌套新的顶级 `NavigationSplitView`；目标目录选择在 Sheet/Inspector 中完成。
+- 拖放可作为后续快捷方式，但本波可见按钮、菜单和键盘路径必须独立完成全部操作。
+- 导入状态在内容区或 Sheet 中显示准备、上传、取消与需核对；不会因为成功导入到不可见目录而偷偷改变导航。
+
+### 3.3 Windows
+
+- Files 继续使用专用页面；复制/移动业务放入新的 partial 文件和独立 ViewModel，不回填到主 code-behind。
+- 目标选择使用原生 ContentDialog/页面内目录选择，48px 最小目标、可见标签、合理 Tab 顺序、Escape 安全取消、状态使用 Narrator polite live announcement。
+- Photos 在现有页面命令区提供“导入照片或视频”；文件夹模式目标为当前 canonical 路径，时间线模式目标为当前照片空间根，并在提交前显示通俗目标说明。
+- 系统选择器取消不显示错误；成功后若 profile 与目标仍匹配则刷新，否则只保留 Activity 结果，不切换页面。
+
+## 4. 冻结契约与实现顺序
+
+1. **Apple FILE-05 契约**：向后兼容新增操作、请求与结果型接口；Dsm concrete 固定公开 v3/FORM，复杂协调逻辑放入独立内部文件，聚合 Repository 只保留薄接线。
+2. **Windows FILE-05 契约**：新增独立 Domain/Transport/Infrastructure 功能目录，复用 `MutationResult`，不扩展旧 Workspace 写入口。
+3. **两端 PHOTO-03A**：只在 App 层适配系统选择器并复用现有上传/Activity；不修改 NAS 协议。
+4. **两端 FILE-05 UI**：契约冻结后建立独立 state/model/view 或 ViewModel/partial，最后由唯一集成 owner 接 Shell/AppModel 生命周期。
+5. **资源、工程与文档**：双语资源、XcodeGen、Shell/AppModel/Session、状态与平台矩阵由主 agent 串行收口。
+6. **复核与云端出口**：未参与实现者只读对抗复核；本地轻量门；`codex/` 临时分支运行 GitHub 全量；全绿后整理单条简体中文提交并合并、复验、清理分支。
+
+## 5. 文件所有权
+
+| 热点 | 唯一 owner | 其他 owner 约束 |
+| --- | --- | --- |
+| Apple `DsmCore/FileStation.swift`、FILE-05 Network协调/薄接线与共享测试 | Apple FILE-05契约 owner | 不修改 Mobile、资源、工程、macOS App、Windows、文档 |
+| Windows FILE-05 Domain/Transport/Infrastructure 与契约测试 | Windows FILE-05契约 owner | 不修改 App/UI/Shell/资源/文档 |
+| Apple PhotosPicker adapter、Import feature 与照片聚焦测试 | Apple PHOTO-03A owner | 不修改共享 Package、资源、工程、Shell/Session热点 |
+| Windows照片导入 feature、`PhotosPage.Import.cs` 与聚焦测试 | Windows PHOTO-03A owner | 不修改 Domain/Infrastructure、Shell、资源、文档 |
+| Apple/Windows FILE-05 App/UI功能目录与页面最小接线 | 对应平台 UI owner；契约冻结后串行开始 | 不修改另一平台、共享契约、资源、文档 |
+| Shell/AppModel/Session、双语资源、工程生成、账本、状态矩阵和最终Git集成 | 主 agent | 其他 owner 只交资源键与接线需求，不提交或推送 |
+
+## 6. 必须自动化的门禁
+
+### 6.1 FILE-05 契约
+
+- 官方 CopyMove v3、FORM、单源/单目标、`overwrite=false` 的请求形态精确。
+- canonical 路径、普通本地来源和目标、profile/repository identity、文件类型与大小基线严格。
+- same target、目标位于源后代、remote/virtual/recycle/`#recycle`、目录、多项与覆盖请求在发送前拒绝。
+- 同目标并发互斥；提交调用恰好一次；提交后取消、网络异常、解析失败、意外异常与坏回读均建立 blocker。
+- copy 回读源保留且目标同类型/大小；move 回读源消失且目标同类型/大小；同 session 重建后未确认目标只回读、零二次写。
+
+### 6.2 FILE-05 UI
+
+- 选择、目标、操作、profile、repository 与 generation 冻结；迟到结果零回写。
+- remote/recycle/`#recycle` 在 UI、handler 与模型三层零入口；预览、保存副本和只读分享不受影响。
+- 关闭、切 profile、注销或销毁页面时取消请求并保持未知结果 blocker；明确 pre-submit cancel 才可安全重试。
+- 44pt/48px、键盘/系统返回、VoiceOver/Narrator、Dynamic Type/200%、深浅/高对比和 Reduce Motion 均有源码或聚焦证据。
+
+### 6.3 PHOTO-03A
+
+- fake picker 覆盖选择、系统取消、读取失败、类型过滤与临时 artifact 生命周期。
+- 单项图片/视频；普通本地目标；overwrite false；profile/repository/目标/generation 严格。
+- 提交前取消清理 artifact；Activity 接管后不自动重放；成功只刷新仍匹配的当前目标。
+- 空、筛选空、加载、错误、内容五态不隐藏导入入口；状态与错误有可访问名称和 live announcement。
+- 生产源码不出现整库 PhotoKit 权限、后台备份、私有 Foto 请求或新的平行上传实现。
+
+## 7. PENDING_USER_VALIDATION
+
+- iPhone/iPad 真机：iCloud-only 图片/视频准备、PhotosPicker 取消、后台/前台切换、最大动态文字、VoiceOver、分屏与外接键盘；只回传脱敏错误类别，不回传照片内容或真实路径。
+- Windows 10/11 x64 与 ARM64：FileOpenPicker、Narrator、高对比、200% 缩放、窄宽窗口、键盘与 Activity 生命周期。
+- 真实 NAS：CopyMove v3 的权限、同卷/跨卷、任务字段、断线、提交后取消和回读延迟；照片上传权限与文件名冲突。未确认结果不得自动重放。
+- 缺少真机或真实 NAS 不阻塞源码、合成测试和云端构建；目录/批量/跨 NAS/覆盖/回收站写入口继续关闭。
+
+## 8. 当前验证证据
+
+- Apple 移动端最新源码在 iPhone 17 Pro、iOS 26.5 Simulator 上完成 FILE-05 与 PHOTO-03A 六组聚焦测试：45/45 通过，0 失败、0 跳过；当前主机没有 iPad Simulator，不把该结果冒充 iPad 运行结论。
+- Apple 共享层的 FILE-05 结果型 CopyMove v3 契约、会话级目标互斥、提交未知 blocker、独立回读及源大小/修改时间冻结已完成；最新 `DsmFileRepositoryTests` 为 103/103 通过。最终提交的 GitHub Apple Build 已复验共享 Package、DsmMac 与 File Provider 打包路径。
+- Windows FILE-05 的 Domain、Transport、Infrastructure、WinUI 与 PHOTO-03A 复用 Activity 的源码和聚焦测试已完成；本机缺少 .NET/Windows SDK，因此只完成 XML、资源、请求契约、源码安全门和差异格式检查，明确标记 `BUILD_UNVERIFIED_WINDOWS_SDK_UNAVAILABLE`。
+- 请求契约校验通过 92 份请求 Fixture 与 1 份写结果示例；引用 Fixture 校验通过 3 组、19 个引用；双语资源校验通过 Apple 3297、Android 1985、Windows 893 个键。
+- FILE-05 继续只允许单个普通本地文件、同 NAS 普通本地目录与 `overwrite=false`。未知挂载类型、remote/virtual/recycle/`#recycle`、目录、批量、跨 NAS 和覆盖均在提交前拒绝。
+- 未参与实现者对 PHOTO-03A 和 FILE-05 的最终只读终审结论为 P0/P1/P2 均为 0；最终提交已具备 GitHub `BUILD_VERIFIED` 证据，但不等同真机、系统选择器或真实 NAS 副作用验证。
+- 整理后的单一功能提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9`（`完善跨端文件复制移动与照片导入`）已合并到 `main` 并推送。云端证据：Apple Build run `31313485832` 通过共享 Package 655 项 XCTest（2 项按环境跳过）、Swift Testing 10 项、iPhone/iPad 通用应用构建及 macOS 打包；Android Build run `31313485840` 通过完整构建与静态门禁；Windows Build run `31313485833` 通过 815/815 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；Repository Check run `31313485899` 通过。
+
+## 9. 云端与提交策略
+
+- 本波已按 `codex/` 临时分支策略完成验证、整理、合并与本地/远端临时分支清理。
+- GitHub 已在最终提交上运行 Repository Check、Windows x64/ARM64、Apple iPhone/iPad/共享 Package/macOS 回归和 Android 未改动回归。
+- 后续波次继续沿用同一策略：临时修正提交必须整理为一条简体中文功能提交；最终精确 SHA 全绿且 `main` 无未知新提交后才合并并推送。
+
+## 10. 本波完成后继续对照的剩余项
+
+- Windows：FILE-09 回收站恢复、文件夹/受限批量传输、Chat 核心与附件、Download 创建与低风险单任务控制、NAS 管理、统一 ModuleAvailability 和 W5/W6 系统集成。
+- iPhone/iPad：FILE-09 回收站写、PHOTO-03 受限 NAS 内管理、Chat 文字/附件、Download 创建与单任务控制，以及 M8/M9 其余生产力与自动化。
+- 两端：目录复制移动和跨 NAS 操作必须另建有界契约；回收站恢复必须证明不会退化为永久删除；没有版本化证据的内部写继续关闭。
+
+## 原始账本：`docs/development/CROSS_PLATFORM_PARITY_WAVE_3_LEDGER_ZH.md`
+
+> 状态：A0/W0 共享契约、A1/W1 Files 受限入口和 A2/W2 Photos 受限恢复入口已落盘；Files 基线已通过 GitHub Apple/Windows/Repository 门禁，Photos 入口已整理为单条简体中文功能提交，并通过 Apple/Windows/Repository 最终云端门禁
+> 基线提交：`1c7ee4851feb00903327b0599a0d29ea421be8c9`（`完善跨端文件复制移动与照片导入`）
+> 当前范围：Windows/iPhone/iPad `FILE-09 移入回收站与从回收站恢复`；Windows 后续增量包含单个普通本地文件夹
+> 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；永久删除、清空回收站、Apple 移动端目录、批量恢复、跨 NAS 恢复、覆盖恢复、猜测原路径、内部 Core RecycleBin 清理接口、Chat/Download/NAS 写操作
+
+## 1. 账本口径
+
+- `完整`：源码、聚焦自动化和目标平台构建覆盖单项文件主流程；只能依赖真机、系统选择器或真实 NAS 的验收另记 `PENDING_USER_VALIDATION`。
+- `部分`：已有可用流程，但结果型契约、状态、错误恢复、自动化或目标平台构建证据仍不完整。
+- `关闭`：缺少稳定契约、行为证据或本波授权，生产入口保持隐藏、只读或能力门关闭。
+- “移入回收站”只允许在已发现的同共享 `#recycle` 入口存在时提交；首片只支持单个普通文件，成功必须同时回读确认原路径消失、回收站目标文件出现。
+- “恢复”只允许对可解析的 `/share/#recycle/...` 单个普通文件恢复到同一共享的原位置；无法推导原位置、目标已存在或目标不可写时拒绝提交。
+- Windows 后续增量允许上述两条中的单个普通本地文件夹，沿用同一 Delete v2/CopyMove v3 安全链；目录只按顶层源消失与目标同类型存在确认，不声称逐项验证递归内容。Apple 移动端与 Photos 不随此增量扩围。
+- 本地只执行形态、资源、请求契约和聚焦低负载测试；Windows x64/ARM64、Apple iPhone/iPad、共享 Package/macOS 回归与 Android 未改动回归交给 GitHub 分支门禁。
+- 同一功能的验证修正可以产生临时提交；正式历史必须整理为一条语义完整的简体中文提交，最终精确 SHA 重新跑全量门禁后才能合并 `main`。
+
+## 2. 本波用户结果与边界
+
+| 用户结果 | 当前事实 | 本波目标 | 安全与数据边界 | 明确非目标 |
+| --- | --- | --- | --- | --- |
+| Apple/Windows 单项移入回收站 | Apple 共享层已有 `moveToRecycleResult`、Delete v2 任务、已发现回收站入口校验和精确回读；Windows W0 已新增 `IFileRecycleRepository`、Delete v2 transport、Repository 源码与契约测试，并通过 GitHub Windows Build | 在 Files 中对单个普通本地文件显示“移入回收站”；提交一次；通过独立回读确认原路径消失且 `#recycle` 目标文件出现后才显示成功 | profile/repository/canonical item/generation 冻结；权限、已发现回收站入口与普通本地来源门；提交未知进入核对 blocker；目录、`#recycle`、remote、virtual 和回收站后代不允许再次移入回收站 | 永久删除、清空回收站、目录删除、多项批量删除、后台队列、删除后立即自动恢复 |
+| Apple/Windows 单项恢复 | Apple 共享层已有 `restoreFromRecycleResult`，复用 CopyMove v3 `remove_src=true`、`overwrite=false` 与独立回读；Windows W0 已新增同义 Restore 结果链与二次提交 blocker，并通过 GitHub Windows Build | 在只读回收站位置中对单个可解析普通文件显示“恢复”；使用受限结果型契约将文件移回同共享原位置；严格回读确认回收站源消失且目标出现 | 只接受同共享根、单个普通文件、无覆盖、普通本地原目标；提交后取消、断线或坏回读只核对不重放；未确认结果跨页面重建保持 blocker | 猜测被移动过的原目录、跨共享恢复、覆盖恢复、恢复目录、恢复到用户另选目录、永久删除 |
+| Photos 回收站入口 | Photos 已有文件夹、时间线、预览、导入和只读回收站位置；本切片已在 iPhone/iPad 网格、时间线和查看器，以及 Windows 文件夹/时间线视图中仅对 `#recycle` 普通文件接入恢复 | 首片只让 Photos 中位于回收站路径的普通文件复用同一恢复结果链；普通照片删除/批量管理可后续拆分 | 复用 Files 的结果型恢复契约和当前 photo item canonical revision；Windows 复用同一 `FileRecycleViewModel` 与 session blocker；不新增 Foto 私有 API | 删除系统图库项目、目录或批量恢复、整库管理、智能相册回收站、批量照片恢复 |
+
+## 3. 交互转换
+
+### 3.1 iPhone
+
+- Files 单项菜单提供“移入回收站”；首片只在已发现回收站入口覆盖的普通本地文件来源显示。
+- 回收站位置中的可恢复项提供“恢复”；不可解析原路径时只显示说明，不出现提交按钮。
+- 提交中禁止下滑关闭；只有明确写前取消才回到表单，其余未知结果进入核对态。
+- 成功后刷新仍匹配的当前父目录或回收站目录；不会自动跳转到原位置。
+
+### 3.2 iPad
+
+- 复用现有 Files/Photos regular-width 布局，不新增顶级分栏。
+- 菜单、键盘路径和触控路径都能完成主流程；右键或指针菜单不是唯一入口。
+- 回收站恢复核对态在当前 Sheet/Inspector 内显示，不弹出开发者术语。
+
+### 3.3 Windows
+
+- Files 继续使用专用页面；FILE-09 业务放入新的 partial 和独立 ViewModel，不回填到主 `FilesPage.xaml.cs`。
+- 移入回收站和恢复使用原生 ContentDialog，48px 最小目标、可见标签、合理 Tab 顺序、Escape 安全取消和 Narrator polite live announcement。
+- Remote/Recycle source 的写入口必须精确区分：普通回收站来源允许“恢复”，但隐藏上传、创建分享链接、复制/移动到回收站等不适合动作。
+- Photos 若接入恢复，只复用同一个结果型恢复 ViewModel，不建立照片专用写协议。
+
+## 4. 冻结契约与实现顺序
+
+1. **A0/W0 共享结果型契约**：Apple 新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，Windows 新增独立 `IFileRecycleRepository`；旧 void delete 保留兼容但 UI 不调用。
+2. **A0/W0 生产 Repository**：移入回收站固定公开 `SYNO.FileStation.Delete` v2，并要求已发现回收站目标精确回读；恢复复用公开 `SYNO.FileStation.CopyMove` v3 `remove_src=true`、`overwrite=false`，且必须证明不会退化为永久删除或覆盖。
+3. **A1/W1 Files UI**：契约冻结后建立独立 state/model/view 或 ViewModel/partial，接入 Files 单项菜单和回收站位置菜单。
+4. **A2/W2 Photos 受限入口**：只在回收站路径项目上复用恢复流程；普通照片删除另切片。
+5. **资源、工程与文档**：双语资源、XcodeGen、Shell/AppModel/Session、状态与平台矩阵由主 agent 串行收口。
+6. **复核与云端出口**：未参与实现者只读对抗复核；本地轻量门；`codex/` 临时分支运行 GitHub 全量；全绿后整理单条简体中文提交并合并、复验、清理分支。
+
+## 5. 文件所有权
+
+| 热点 | 唯一 owner | 其他 owner 约束 |
+| --- | --- | --- |
+| Apple `DsmCore/FileStation.swift`、DsmNetwork 删除/恢复结果链与共享测试 | Apple FILE-09 契约 owner | 不修改 Mobile、资源、工程、macOS App、Windows、文档 |
+| Windows FILE-09 Domain/Transport/Infrastructure 与契约测试 | Windows FILE-09 契约 owner | 已落盘并由 GitHub Windows Build 验证；未修改 App/UI/Shell/资源 |
+| Apple Files/Photos FILE-09 移动 UI 与聚焦测试 | Apple FILE-09 UI owner | 不修改共享 Package、资源、工程、Shell/Session 热点 |
+| Windows Files/Photos FILE-09 App/UI 与聚焦测试 | Windows FILE-09 UI owner | 不修改 Domain/Infrastructure、Shell、资源、文档 |
+| Shell/AppModel/Session、双语资源、工程生成、账本、状态矩阵和最终 Git 集成 | 主 agent | 其他 owner 只交资源键与接线需求，不提交或推送 |
+
+## 6. 必须自动化的门禁
+
+### 6.1 移入回收站契约
+
+- 官方 Delete v2、FORM、单文件请求形态精确，任务轮询和独立目标回读不可省略。
+- canonical 路径、普通本地来源、已发现回收站入口、profile/repository identity 和文件类型/大小/修改时间基线严格。
+- 目录、remote/virtual/recycle/`#recycle`、根目录、空路径和多项请求在首片 UI 发送前拒绝。
+- 同目标并发互斥；提交调用恰好一次；提交后取消、网络异常、解析失败、意外异常和坏回读均建立 blocker。
+- 成功必须表示目标离开原父目录且同共享 `#recycle` 目标文件出现；如果真实 DSM 对同名回收站路径有额外命名策略，需在真实 NAS 验收中记录并另切片适配。
+
+### 6.2 恢复契约
+
+- `RecycleLocation` 只能接受共享根下第一层 `#recycle`；拒绝 `/share/archive/#recycle/...` 这类伪路径。
+- 恢复目标为同共享原位置，`overwrite=false`，写前确认目标不存在且父目录可写。
+- 恢复提交后独立回读必须同时确认回收站源消失、原目标出现且类型/大小匹配。
+- 成功响应但回读不一致、任务状态未知、提交后取消和网络断开均进入核对态，不自动重放。
+- 未确认恢复结果在同 profile、同源回收站路径和同目标路径下跨页面重建仍只回读。
+
+### 6.3 UI
+
+- 选择、目标、操作、profile、repository 与 generation 冻结；迟到结果零回写。
+- 移入回收站与恢复必须具备普通确认、提交中状态、取消、需核对、权限不足、目标冲突和不支持状态。
+- 写入口可见性与 handler/model 双门一致；预览、保存副本和只读分享不受影响。
+- 44pt/48px、键盘/系统返回、VoiceOver/Narrator、Dynamic Type/200%、深浅/高对比和 Reduce Motion 均有源码或聚焦证据。
+
+## 7. PENDING_USER_VALIDATION
+
+- iPhone/iPad 真机：Files 与 Photos 菜单、确认弹窗、下滑取消、最大动态文字、VoiceOver、分屏与外接键盘。
+- Windows 10/11 x64 与 ARM64：ContentDialog、Narrator、高对比、200% 缩放、窄宽窗口、键盘与页面生命周期。
+- 真实 NAS：共享目录启用/关闭回收站时 Delete v2 行为、权限拒绝、断线、提交后取消、回读延迟、同名回收站路径策略、恢复到原目录的 CopyMove 任务字段和同名冲突。
+- 未验证真实 NAS 前，入口必须清楚显示“移入回收站”而不是“永久删除”；永久删除和清空回收站继续关闭。
+
+## 8. 当前验证证据
+
+- 当前基线提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 已通过第 2 波四组云端门禁，但该证据只覆盖 FILE-05 与 PHOTO-03A。
+- Apple 共享层已新增 `moveToRecycleResult` 与 `restoreFromRecycleResult`，并通过 `DsmFileRepositoryTests` 107/107；`RecycleLocation`、`discoverRecycleLocations()` 和 FILE-05 `copyMoveResult` 继续作为契约事实来源。Apple Files UI 已接入单个普通本地文件移入回收站与回收站位置恢复，本机 iPhone 17 Pro iOS 26.5 模拟器聚焦 42/42 与完整 DsmMobile 375/375 通过；提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Apple Build` run `31318490495` 已通过共享包测试、工程生成、iPhone/iPad 通用应用构建和 macOS 打包。Photos 受限恢复入口已在网格、时间线和查看器中复用同一恢复流程，本机聚焦 `MobileFileRecycleActionPresentationTests` 与 `MobilePhotoViewerPresentationTests` 通过；单条功能提交已通过 GitHub `Apple Build`。真实 iPad 交互、真机和真实 NAS 回收站行为仍待验收。
+- Windows 已新增 `IFileRecycleRepository`、`FileRecycle*` 领域模型、Delete v2 start/status transport、`DsmRepository.FileRecycle` 与 `Files/Recycle` 聚焦测试源码；Windows Files UI 已接入 WinUI ContentDialog 受限入口、普通/回收站来源门和 session blocker，并通过本机 XAML/resw XML、本地化和源码形态静态门。提交 `ba34f7af81e0638e1347ba6189fbdba1aa951e37` 的 GitHub `Windows Build` run `31318490511` 已通过 830/830 xUnit，WinUI x64 与 ARM64 均 0 警告、0 错误；同提交 `Repository Check` run `31318490509` 通过。Photos 受限恢复入口已在文件夹视图、时间线选择和 Shell profile 门中复用同一恢复 ViewModel 与对话框；单条功能提交已通过 GitHub `Windows Build` 与 `Repository Check`。真实 Windows 设备、Narrator、键盘、系统生命周期和真实 NAS 副作用仍待验收。
+- Windows 单文件夹增量已扩展同一 `FileRecycleTarget`、Repository 回读、ViewModel 来源门与 ContentDialog：目录写前重读类型、修改时间和当前删除权限，恢复另复用目标权限检查；同名或权限变化零写入，父文件夹与后代项目路径互斥，结果回读匹配目录类型与修改时间，未知结果继续阻断重放。文件夹专用确认与结果文案已加入英中资源，本机 Files Recycle 聚焦 21/21、Release 完整 xUnit 985/985、本地化、XML 与差异检查通过；GitHub Windows Build `31462403976` 已通过 985/985 与 WinUI x64/ARM64 0 警告、0 错误，Repository Check `31462403992` 已通过。
+- Windows FILE-07 分享链接管理增量复用公开 Sharing v3 `list`/`delete` 契约，新增严格有界列表、复制和单条确认撤销。删除以完整链接基线和稳定 ID 预检，同 ID 防重复，固定一次提交；取消、断线或未知结果保存在 API 会话/profile 级内存复核门，跨 Files 页面与 Repository 重建只回读不重放，ID 消失才确认成功。WinUI 以次级命令和原生 ContentDialog 覆盖加载、空、错误、不可用、列表、确认、删除中及结果状态，每次本地展开 100 条；密码仅展示保护状态，不进入界面、剪贴板或日志。本机 Files Sharing 聚焦 113/113、Release 完整 xUnit 1002/1002、本地化、XML 与差异检查通过；GitHub Windows Build `31465173331` 已通过 1002/1002 与 WinUI x64/ARM64，Repository Check `31465173335` 已通过。Apple 移动端范围未变，批量撤销与编辑链接不在本切片。
+- 请求契约已有 `contracts/request-fixtures/file-station/delete/synthetic-task/request.json`；恢复首片复用现有 CopyMove v3 合成形态，Windows W0 已新增 Delete start/status typed transport 与契约测试。
+
+## 9. 本波完成后继续对照的剩余项
+
+- Windows：文件夹/受限批量传输、Chat 核心与附件、Download 创建与低风险单任务控制、NAS 管理、统一 ModuleAvailability 和 W5/W6 系统集成。
+- iPhone/iPad：PHOTO-03 其余 NAS 内管理、Chat 文字/附件、Download 创建与单任务控制，以及 M8/M9 其余生产力与自动化。
+- 两端：目录复制移动和跨 NAS 操作必须另建有界契约；永久删除、清空回收站和覆盖恢复必须另建危险写契约；没有版本化证据的内部写继续关闭。
+
+## 原始账本：`docs/development/CROSS_PLATFORM_PARITY_WAVE_4_LEDGER_ZH.md`
+
+> 状态：ACT-01 首片已合入 `main`，并通过本地轻量门禁与 GitHub Apple/Windows/Repository 云端门禁；真机和真实 NAS 仍待用户验收
+> 基线提交：`5850f4c15901173ae24204e501b415fa627e879f`（`接入跨端下载站 BT 搜索并更新进度文档`）
+> 最终提交：`2491212da6f81c5b932d97a6af035cfef0719e8f`（`接入跨端活动中心下载任务投影`）
+> 当前范围：Windows/iPhone/iPad `ACT-01 统一活动中心首片`，把 App 前台传输与已加载的 Download Station 任务快照按来源投影到 Activity
+> 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；系统通知、后台常驻、跨重启恢复、Activity 主动轮询 NAS、NAS 文件后台任务、任务暂停/继续/删除、RSS、文件优先级、BT 高级设置和 Download 设置写
+
+## 1. 账本口径
+
+- `完整`：源码、聚焦自动化与目标平台构建覆盖当前用户主流程；只能依赖真机、系统选择器或真实 NAS 的验收另记 `PENDING_USER_VALIDATION`。
+- `部分`：已有可用流程，但跨平台构建、真实设备或真实 NAS 证据仍不完整。
+- `关闭`：缺少稳定契约、行为证据或本波授权，生产入口保持隐藏、只读或能力门关闭。
+- 本波只做“同一 Activity 入口中的来源分层展示”：App 自己发起的前台上传/下载继续保留取消、待核对和从头重试语义；NAS/Download 任务只显示最近加载的 Download Station 快照，不提供 Activity 内控制按钮。
+- 本波不让 Activity 自己新增后台轮询或长期刷新职责。Download Station 页面成功加载、创建、暂停/继续、只移除任务或删除后，会把当前任务快照同步给 Activity；Activity 显示的是该 profile 当前进程内的最新已知快照。
+
+## 2. 本波用户结果与边界
+
+| 用户结果 | 当前事实 | 本波目标 | 安全与数据边界 | 明确非目标 |
+| --- | --- | --- | --- | --- |
+| Apple Activity 显示 Download Station 任务 | M2 前台传输 Activity 已有；Download Station 单任务、当前活动摘要和 BTSearch 已完成；`MobileTransferCoordinator` 曾保留通用 NAS task 类型但无生产同步 | 将当前 profile 的 Download Station 任务快照同步为 `source = .nas` 的 Activity 项，保留进行中、暂停、成功和失败状态，重复刷新不制造重复项 | 按 profile 隔离；Download 任务使用稳定 source identifier；NAS 项没有取消/重试入口；切换 profile 只显示对应 profile 的任务 | Activity 内暂停/继续/删除任务；Activity 主动请求 NAS；系统通知；后台 URLSession 或跨重启恢复 |
+| Windows Activity 显示 Download Station 任务 | ForegroundTransferCoordinator 只展示 App foreground transfer；DownloadStationViewModel 已有任务快照和安全控制链 | Download Station ViewModel 在任务列表成功加载或本机安全操作更新后，把任务快照同步给 ForegroundTransferCoordinator；Activity 页面显示来源标签、暂停状态和只对 App 任务可见的取消按钮 | NAS 项 `Source = Nas`，取消按钮只对 `Source = App` 的 running 任务显示；profile 切换不会把 NAS 任务误标为本机已取消 | Activity 内任务控制；主动后台刷新；托盘/系统通知；真实设备系统集成 |
+| 文档与验收边界 | 旧进度段落需要跟随源码更新 | 将状态更新为“ACT-01 首片源码已落，本地轻量门与云端门禁通过，真机/真实 NAS 待验收” | 不把云端构建冒充真实 NAS 或设备交互；不提升 Download Station 真实兼容等级 | 不把系统通知、NAS 后台文件任务和完整 Activity 中心写成已完成 |
+
+## 3. 交互转换
+
+### 3.1 iPhone / iPad
+
+- Activity 列表继续使用现有来源、方向、进度和状态文案；新增“已暂停”状态。
+- App 来源任务保留取消和安全从头重试；NAS/Download 来源任务只展示状态，不显示取消或重试。
+- Download Station 页面成功更新当前快照后，同步给 Activity。若用户从未加载 Download Station，Activity 不伪造 NAS 任务。
+- iPad 复用同一 SwiftUI 通用视图，不新增独立导航或后台轮询。
+
+### 3.2 Windows
+
+- Activity 页面新增来源文案：App 传输 / NAS 下载任务。
+- 取消按钮继续只出现在 App 自己发起的 running 任务上；NAS 暂停任务显示“已暂停”，但不在 Activity 中提供控制。
+- Download Station 页面创建、删除或刷新任务列表后同步 Activity；同步仅使用当前已加载快照。
+- Shell 继续把同一个 `ForegroundTransferCoordinator` 注入 Download Station 与 Activity 页面，避免出现两个彼此不知情的活动列表。
+
+## 4. 实现顺序与文件所有权
+
+1. **Apple Activity 模型**：为 Activity task 增加稳定来源标识与暂停状态；NAS task 禁用取消/重试。
+2. **Apple Download 同步**：Download Station snapshot 在加载和任务变更后同步到 Activity coordinator。
+3. **Windows Activity 模型**：Foreground transfer 增加 App/NAS 来源、source identifier 和 paused 状态。
+4. **Windows Download 同步**：DownloadStationViewModel 把当前 profile 的任务快照同步到 ForegroundTransferCoordinator；Shell 使用同一个 coordinator。
+5. **资源、测试与文档**：补英中来源/暂停文案、聚焦行为测试、source contract、状态文档和平台矩阵。
+6. **云端出口**：当前分支本地轻量门通过后，通过 GitHub Apple/Windows/Repository 门禁；全绿后整理为单条简体中文提交。
+
+## 5. 必须自动化的门禁
+
+- Download Station 同一任务 ID 多次同步不会重复创建 Activity 项。
+- 新快照缺失的 Download Station 任务会从当前 profile 的 NAS Activity 投影中移除。
+- NAS/Download 投影项不会显示取消或从头重试。
+- profile 切换不会把 NAS 下载任务误标为 App 取消结果。
+- Windows Activity 取消按钮源码门必须同时检查 `Source == App` 与 running 状态。
+- Shell/Download 页面必须注入同一个 Activity coordinator。
+- 双语资源必须覆盖“App 传输 / NAS 下载任务 / 已暂停”，占位符一致。
+
+## 6. 当前验证证据
+
+- Apple：`MobileActivityPresentationTests` 已新增 Download Station 快照同步和移除测试；本机 iPhone 17 Pro 模拟器聚焦 `MobileActivityPresentationTests` 通过。最终提交对应 GitHub `Apple Build` run `31360092209` 通过共享包 675 项 XCTest（2 跳过）+ 10 项 Swift Testing、工程生成、iPhone/iPad 通用应用构建、macOS 打包与产物上传。
+- Windows：`ForegroundTransferCoordinatorTests` 已新增 Download Station NAS 投影、去重、移除和 profile 切换测试；`TransferActivitySourceContractTests` 已新增来源标签、暂停状态、取消按钮和 Shell 注入源码护栏。最终提交对应 GitHub `Windows Build` run `31360092210` 通过 889/889 项 .NET xUnit，并完成 WinUI x64 与 ARM64 构建。
+- 共同轻量门：本地化检查已通过，当前双语资源统计为 Apple 3,462、Android 1,985、Windows 1,074；`TransferActivityPage.xaml` 与 Windows 双语 resw XML 可解析；`git diff --check` 通过。
+- 仓库门禁：最终提交对应 GitHub `Repository Check` run `31360092211` 通过。上述云端证据不等同真机、系统无障碍或真实 NAS 字段验收。
+
+## 7. PENDING_USER_VALIDATION
+
+- iPhone/iPad：Activity 页面中 Download Station 进行中、暂停、完成和错误任务的展示；VoiceOver、动态文字、深浅色和横竖屏；切换 profile 后不显示旧 profile 任务。
+- Windows 10/11 x64 与 ARM64：Activity 页面来源标签、暂停状态、取消按钮只对 App 任务可用；Narrator、高对比、200% 缩放、窄宽窗口和键盘路径。
+- 真实 NAS：Download Station 任务状态、大小、下载字节、暂停和错误字段在真实 DSM/Download Station 版本中的表现。真实任务控制仍在 Download Station 页面验收，不通过 Activity 新增控制。
+
+## 8. 本波完成后继续对照的剩余项
+
+- ACT-01 后续：Activity 主动刷新 NAS/Download 任务、NAS 文件后台任务分区、系统通知、托盘/通知中心联动、长期后台和跨重启恢复。
+- CHAT-03：Apple 单附件 typed outcome 与 Windows 上传、缩略图、下载 typed 契约，再接附件 UI。
+- NAS-02/NAS-04：有界只读套件、计划任务、日志和当前连接详情；不接断开连接、套件生命周期、任务执行或设置写。
+- Download Station：RSS、文件优先级、BT 协议高级设置、设置写和删除已下载数据继续关闭。
+
+## 原始账本：`docs/development/CROSS_PLATFORM_PARITY_WAVE_5_LEDGER_ZH.md`
+
+> 状态：源码与云端门禁完成；Apple A0/A1 和 Windows W0/W1 已通过本波全部云端构建与测试。真实 Chat Server、系统选择器和无障碍/弱网体验仍按 `PENDING_USER_VALIDATION` 验收
+> 基线提交：`2491212da6f81c5b932d97a6af035cfef0719e8f`（`接入跨端活动中心下载任务投影`）
+> 实施分支：`codex/chat03-attachments`
+> 当前范围：Windows/iPhone/iPad `CHAT-03 单附件选择、前台发送、图片缩略预览与另存为`
+> 禁止范围：`android/**`、`apple/Apps/DsmMac/**`；多附件、实时 Socket、前后台轮询、语音、加密会话、投票、提醒、定时消息、建群、删除/转发、通知、后台恢复与跨重启续传
+
+## 1. 账本口径
+
+- 本波只把已经记录的 Chat Server 单附件链补到 Windows 与 Apple 移动端：选择一个图片、视频或普通文件，前台发送，显示进度和结果；收到的图片可按需读缩略图，所有附件可由用户选择位置另存。
+- Chat 的 `Post.create` v5 multipart 与 `Post.File` v2 是已记录的内部套件接口，不等同于 Synology 官方公开 API。只有运行时能力发现明确覆盖对应版本时才显示入口；没有能力或当前会话加密时保持关闭。
+- 单附件发送复用统一 `MutationResult` 语义：提交前取消可以重新选择；实际 multipart 请求开始后，取消、断线、解析失败或回读不匹配都只进入“需要核对”，不能自动重传。
+- 本波不以 macOS 页面是否完整作为移动端串行前置。macOS 仅提供业务语义和已记录请求形态参考；不得修改 `apple/Apps/DsmMac/**`。
+- 真实 Chat Server、系统选择器、iPad/Windows 无障碍和弱网行为保留为 `PENDING_USER_VALIDATION`，不阻断源码与云端构建闭环。
+
+## 2. 当前事实与依赖
+
+| 层级 | Apple 当前事实 | Windows 当前事实 | 本波决策 |
+| --- | --- | --- | --- |
+| 领域模型 | `ChatAttachment`、`ChatMessageDraft.localAttachmentURLs`、`ChatMessageSendOutcome` 已存在；`sendMessageResult` 仅支持纯文字 | `ChatAttachment` 仅为元数据；`IChatRepository` 只有 `SendTextAsync` | 两端新增向后兼容的“单附件发送结果”入口，复用既有统一结果词汇，不建立第三套反馈模型 |
+| 上传契约 | `DsmChatRepository` 已有 `Post.create` v5 multipart 上传，但附件路径直接抛错或返回消息，不能表达提交未知 | 已有 `chat/send-attachment` 合成请求 Fixture，但没有 multipart transport | Apple 收口为 typed outcome；Windows 以同义 typed outcome 实现最小 multipart transport，固定 `channel_id`、`type=file`、`message`、`is_thread=false` 与 `file` |
+| 缩略图与保存 | 共享仓库已有 `Post.File.thumbnail/get` v2 二进制读取；移动 wrapper 当前故意拒绝 | 仅解析附件元数据，尚无二进制读写 | 只在 `Post.File` v2 能力可用时开放；缩略图按消息 post ID 读取，另存为由用户确认目标位置 |
+| 移动/桌面界面 | SwiftUI composer 只有文字输入，已有附件仅显示“只读” | WinUI composer 只有文字输入，附件行明确不可打开 | 新增独立附件 state/model/partial，避免继续膨胀既有文字 composer 文件 |
+
+## 3. 用户结果与非目标
+
+| 用户结果 | iPhone / iPad 交互转换 | Windows 交互转换 | 安全与数据边界 |
+| --- | --- | --- | --- |
+| 选择一个附件 | Composer 左侧使用 44 pt 系统附件按钮；使用 Photos 或 Files 的单选系统选择器；选择后显示名称、大小和移除动作 | Composer 使用 WinUI 单文件选择器、48 px 操作区和单个附件卡 | 本地选择只驻会话内存；不持久化路径、正文或文件内容 |
+| 前台发送与取消 | Composer 显示上传进度；提交前取消回到可编辑状态，提交后取消显示需要核对 | 同义状态、键盘可达取消和明确状态播报 | 同一个 client request / 已核对目标不得自动发第二次 multipart |
+| 图片预览与所有附件另存 | 可见图片按需加载缩略图，点击使用系统查看器；另存由系统选择位置 | 可见图片缩略图；另存使用系统保存选择器 | 服务端文件名只作建议名，不能成为本机写入路径；失败或取消不覆盖已有目标 |
+| 会话切换与离页 | 立即取消前台任务并阻断迟到回写 | 同义 generation/profile/repository 门 | 旧 profile、旧 repository、加密会话或回收站/只读语义不能获得发送入口 |
+
+明确不做：多附件、附件批量重试、视频内嵌播放、语音、图片编辑、聊天实时 Socket、后台上传/下载、跨重启恢复、会话/成员管理、投票、提醒、定时消息、加密会话附件和任何未记录接口。
+
+## 4. 契约与结果语义
+
+### 4.1 Apple A0
+
+- 在 `ChatRepository` 增量加入 `sendAttachmentMessageResult(_:progress:) -> ChatMessageSendOutcome`；默认实现返回 `unsupported`，旧文字 `sendMessageResult` 和 macOS 既有签名保持不变。
+- 只接受一个本地 URL，结果操作标识固定为 `chatAttachmentSend`。
+- `DsmChatRepository` 复用现有 multipart 路径，但成功必须经稳定 post / 消息回读确认；只凭附件名称、正文或时间窗口的模糊匹配不能静默标记为成功。
+- 同一个 client request 已提交但未确认时，后续调用仅回读，不再发起 multipart。
+- **当前实现证据**：`sendAttachmentMessageResult(_:progress:)` 已作为向后兼容入口落入 `DsmCore` 与 `DsmChatRepository`；聚焦 `DsmChatRepositoryTests` 已在本机执行 39 项相关 XCTest 与 2 项既有未验证适配器测试，0 失败。确认回读额外要求稳定消息 ID、当前用户、会话、正文、恰好一个附件、文件名及本地已知长度完全一致；旧 `sendMessage` 在上传响应只有稳定 ID 时也改为同一严格回读，不再用正文或时间窗口猜测成功。
+
+### 4.2 Windows W0
+
+- Domain 新增单附件 source/request/outcome 与独立 `AttachmentMessage`、`AttachmentThumbnail`、`AttachmentContent` capability；文字消息能力不被附件 capability 缺失影响。
+- Windows 发送固定为 `SYNO.Chat.Post.create` v5 multipart；缩略图和另存读取固定为 `SYNO.Chat.Post.File` v2，按 post ID 读取，不能把展示 attachment ID 猜成远端参数。
+- 上传进入真实发送边界后，一切未确认结果都进入本进程 review blocker；后续只通过消息列表精确回读核对，绝不重复上传。
+- **当前实现状态**：单附件 multipart 发送、精确回读和提交未知防重传，以及缩略图和流式另存为均已落入 Domain/Infrastructure；WinUI 通过独立 composer、附件 partial 和系统选择器复用这些读写结果，不修改通用 File Station 上传或范围读取契约。GitHub Windows Build 已完成 .NET 测试与 WinUI 双架构构建；真实设备与 Chat Server 行为仍待验收。
+
+## 5. 实施顺序与文件所有权
+
+1. **A0 Apple shared contract**：仅 `DsmCore/Chat.swift`、`DsmNetwork/DsmChatRepository.swift` 与其测试，先固定单附件 outcome 和防重传语义。
+2. **W0 Windows contract/transport**：仅 `LanStash.Domain/Chat/**`、`LanStash.Infrastructure/Features/Chat/**` 与 Chat 契约测试；不改 WinUI、资源或通用 File Station upload/range 合同。
+3. **A1 Apple mobile presentation**：在 A0 验收后，单独所有权覆盖 `DsmMobile/Sources/Features/Chat/**`、专属测试、英中 strings 与工程生成；iPhone/iPad 共用 SwiftUI 状态机。
+4. **W1 Windows presentation**：在 W0 验收后，单独所有权覆盖 `LanStash.App/Features/Chat/**`、`ChatPage` 附件 partial、专属测试、双语 resw；不把附件代码堆回现有文字 composer 文件。
+5. **集成与文档**：主线程更新本账本、进度、平台矩阵和专项计划，运行本地轻量门后由 GitHub 执行 Apple、Windows、Repository 与必要的 Android 回归。
+
+## 6. 必须自动化的门禁
+
+- 运行时 capability 缺失、加密会话、空/多个附件、无效文件源或选择器取消时零发送请求。
+- 正常单附件发送固定 multipart 字段、版本和认证位置；正文/本机路径/凭据不写入 URL 或诊断。
+- 发送前取消零请求；发送后取消、断线、坏响应或消息回读不匹配进入 `submittedButUnverified` 或 `cancellationRequestedAfterSubmission`，同 request ID 第二次调用零重传。
+- 精确回读至少校验当前 profile、会话、本人、候选消息、单附件名称、已知长度和正文；不匹配不得误报成功。
+- 缩略图只按可见行按需读取，超过已定义边界或非图片时安全降级；另存选择器取消零下载，失败不覆盖用户已有文件。
+- profile、repository、会话或页面代次变化后，进度、缩略图和结果均不能回写旧界面。
+- iPhone/iPad 触控目标至少 44 pt，Windows 至少 48 px；动态文字、VoiceOver/Narrator、键盘、浅深色、高对比和窄宽布局分别有代码/资源门。
+
+## 7. 当前验证与后续出口
+
+- Apple A0 已通过 `swift test --package-path apple --filter DsmChatRepositoryTests`（41 项，0 失败）及差异格式检查；A1 已完成 iOS 通用构建，并在 iPhone 17 Pro iOS 26.5 模拟器通过 Chat 附件与 NAS 只读详情聚焦 13 项，0 失败。GitHub [Apple Build 31384177365](https://github.com/yuangy1995/dsm-native-client/actions/runs/31384177365) 又通过 685 项 XCTest（2 项跳过）、10 项 Swift Testing、工程生成、iPhone/iPad 通用应用构建、macOS 打包与产物上传。iPad 真机与真实 Chat Server 仍未验收。
+- Windows W0/W1 已通过静态契约、fixture、XAML/resw XML、本地化和差异门；WinUI 已接入单文件选择、取消、精确确认、图片缩略预览与用户主动另存，且提交未知跨页面重建不重传。GitHub [Windows Build 31384177338](https://github.com/yuangy1995/dsm-native-client/actions/runs/31384177338) 通过 921/921 项 .NET xUnit，WinUI x64、ARM64 均构建成功；[Repository Check 31384179104](https://github.com/yuangy1995/dsm-native-client/actions/runs/31384179104) 也已通过。本机没有 .NET SDK，因此真实 Windows 交互仍待设备验收。
+- 将以本次文档回填后的最终提交再运行同一组云端门禁；全绿后整理为一条简体中文功能提交合入 `main`，并删除本地和远端 `codex/chat03-attachments` 验证分支。
+
+## 8. PENDING_USER_VALIDATION
+
+- 真实 Chat Server：记录 DSM/Chat Server 脱敏版本、能力版本范围、成功/权限/取消/断线后的结果类别和调用次数；不得回传正文、文件名、post ID、路径、地址、账号、Cookie、SID、Token 或原始响应。
+- iPhone/iPad：Photos/Files 单选、系统分享/另存、横竖屏、分屏、动态文字、VoiceOver、弱网和会话切换。
+- Windows：文件/保存选择器、Narrator、键盘、浅深色、高对比、200% 缩放、x64/ARM64 与真实 NAS 取消边界。

@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""检查 Android 自定义点击目标是否保持至少 48dp 的可审计尺寸。"""
+"""检查 Android 自定义点击目标是否满足 JSON 基线中的尺寸与反馈合约。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import sys
+from typing import Any
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from generate_android_quality_baseline import load_baseline
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,15 +50,13 @@ class TouchTargetFinding:
 
 
 def _modifier_source(lines: list[str], interaction_index: int) -> str:
-    """截取当前交互调用所属 Modifier 链，避免借用上一组件的尺寸。"""
+    """截取当前交互调用所属 Modifier 链，避免借用另一组件的尺寸。"""
     lower_bound = max(0, interaction_index - 16)
     start = interaction_index
     for index in range(interaction_index, lower_bound - 1, -1):
-        # 变量 modifier 是审计边界：不可继续向上借用其他
-        # 组件的 Modifier 根和尺寸。调用方应将尺寸约束显式写在当前链。
         if index < interaction_index and re.search(r"\bmodifier\s*=", lines[index]):
             if not re.search(r"\bModifier\b", lines[index]):
-                return "\n".join(lines[index: interaction_index + 1])
+                return "\n".join(lines[index : interaction_index + 1])
         if re.search(r"\bModifier\b", lines[index]):
             start = index
             break
@@ -79,52 +86,63 @@ def scan_ui(ui_root: Path = UI_ROOT) -> tuple[list[TouchTargetFinding], list[str
     return findings, gesture_errors
 
 
-def _at_least_48(match: re.Match[str] | None) -> bool:
-    return match is not None and float(match.group("value")) >= 48.0
+def _at_least(match: re.Match[str] | None, minimum_dp: float) -> bool:
+    return match is not None and float(match.group("value")) >= minimum_dp
+
+
+def _policy() -> dict[str, Any]:
+    return load_baseline()["touchTargets"]
 
 
 def validate_findings(
     findings: list[TouchTargetFinding],
     gesture_errors: list[str],
+    policy: dict[str, Any] | None = None,
 ) -> list[str]:
-    errors = list(gesture_errors)
+    """根据机器基线验证静态扫描结果，便于单测注入不同阈值。"""
+    resolved_policy = _policy() if policy is None else policy
+    minimum_dp = float(resolved_policy["minimumDp"])
+    rules = resolved_policy.get("rules", {})
+    errors = list(gesture_errors) if rules.get("forbidGestureTapWithoutReview", True) else []
     for finding in findings:
         source = finding.modifier_source
         native_minimum = ".minimumInteractiveComponentSize()" in source
         height_ok = (
             native_minimum
-            or _at_least_48(HEIGHT_PATTERN.search(source))
-            or _at_least_48(SIZE_PATTERN.search(source))
-            or _at_least_48(SIZE_IN_MIN_HEIGHT_PATTERN.search(source))
+            or _at_least(HEIGHT_PATTERN.search(source), minimum_dp)
+            or _at_least(SIZE_PATTERN.search(source), minimum_dp)
+            or _at_least(SIZE_IN_MIN_HEIGHT_PATTERN.search(source), minimum_dp)
         )
         width_ok = (
             native_minimum
             or ".fillMaxWidth(" in source
             or ".weight(" in source
-            or _at_least_48(WIDTH_PATTERN.search(source))
-            or _at_least_48(SIZE_PATTERN.search(source))
-            or _at_least_48(SIZE_IN_MIN_WIDTH_PATTERN.search(source))
+            or _at_least(WIDTH_PATTERN.search(source), minimum_dp)
+            or _at_least(SIZE_PATTERN.search(source), minimum_dp)
+            or _at_least(SIZE_IN_MIN_WIDTH_PATTERN.search(source), minimum_dp)
         )
         location = f"{finding.path}:{finding.line} ({finding.kind})"
         if not height_ok:
-            errors.append(f"自定义点击目标缺少至少 48dp 的高度合约：{location}")
+            errors.append(f"自定义点击目标缺少至少 {minimum_dp:g}dp 的高度合约：{location}")
         if not width_ok:
-            errors.append(f"自定义点击目标缺少至少 48dp 的宽度合约：{location}")
-        if "indication = null" in source:
+            errors.append(f"自定义点击目标缺少至少 {minimum_dp:g}dp 的宽度合约：{location}")
+        if rules.get("requireNativePressFeedback", True) and "indication = null" in source:
             errors.append(f"自定义点击目标禁用了原生按压反馈：{location}")
     return errors
 
 
 def main() -> int:
+    policy = _policy()
     findings, gesture_errors = scan_ui()
-    errors = validate_findings(findings, gesture_errors)
+    errors = validate_findings(findings, gesture_errors, policy)
     if errors:
         for error in errors:
             print(f"错误：{error}")
         return 1
+    minimum_dp = policy["minimumDp"]
     print(
         "Android 点击目标审计通过："
-        f"{len(findings)} 处自定义交互均具备至少 48dp 双向尺寸与原生按压反馈。"
+        f"{len(findings)} 处自定义交互均具备至少 {minimum_dp}dp 双向尺寸与原生按压反馈。"
     )
     return 0
 

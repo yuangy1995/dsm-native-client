@@ -2,8 +2,16 @@ package io.github.qwertyuiop1995.dsmnativeclient.data
 
 import io.github.qwertyuiop1995.dsmnativeclient.data.container.ContainerRepository
 import io.github.qwertyuiop1995.dsmnativeclient.data.container.ContainerRepositoryGateway
+import io.github.qwertyuiop1995.dsmnativeclient.data.chat.DsmChatRepository
+import io.github.qwertyuiop1995.dsmnativeclient.data.chat.DsmChatRepositoryGateway
 import io.github.qwertyuiop1995.dsmnativeclient.data.downloads.DownloadStationRepository
 import io.github.qwertyuiop1995.dsmnativeclient.data.downloads.DownloadStationRepositoryGateway
+import io.github.qwertyuiop1995.dsmnativeclient.data.files.DsmFileStationRepository
+import io.github.qwertyuiop1995.dsmnativeclient.data.files.DsmFileStationRepositoryGateway
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.DsmNasAdministrationRepository
+import io.github.qwertyuiop1995.dsmnativeclient.data.nas.DsmNasAdministrationRepositoryGateway
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.DsmVirtualMachineRepository
+import io.github.qwertyuiop1995.dsmnativeclient.data.virtualmachines.DsmVirtualMachineRepositoryGateway
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ActiveConnection
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ApiCapability
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ArchiveCompressionLevel
@@ -229,6 +237,15 @@ class DsmRepository(
     private val api: DsmApiClient,
     private val capabilities: Map<String, ApiCapability>,
 ) {
+    private val capabilityResolver = DsmRepositoryCapabilityResolver(capabilities)
+    private val requestBuilder = DsmRepositoryRequestBuilder(
+        profile = profile,
+        session = session,
+        api = api,
+        capabilities = capabilityResolver,
+    )
+    private val mutationVerifier = DsmRepositoryMutationVerifier()
+
     fun chatRealtimeClient(
         onConnectionChanged: (Boolean) -> Unit,
         onContentChanged: () -> Unit,
@@ -364,6 +381,196 @@ class DsmRepository(
         )
     })
 
+    private val virtualMachineRepository = DsmVirtualMachineRepository(
+        object : DsmVirtualMachineRepositoryGateway {
+            override fun preferred(vararg names: String): String =
+                this@DsmRepository.preferred(*names)
+
+            override fun preferredOrNull(vararg names: String): String? =
+                this@DsmRepository.preferredOrNull(*names)
+
+            override fun supports(apiName: String): Boolean = this@DsmRepository.supports(apiName)
+
+            override fun supportsVersion(apiName: String, version: Int): Boolean =
+                this@DsmRepository.supportsVersion(apiName, version)
+
+            override suspend fun officialRead(): Pair<List<ManagedResource>, List<VirtualMachineHardware>?> {
+                val read = this@DsmRepository.officialVirtualMachineRead()
+                return read.machines to read.hardware
+            }
+
+            override suspend fun resourceList(
+                apiName: String,
+                methods: List<String>,
+                vararg roots: String,
+            ): List<ManagedResource> = this@DsmRepository.resourceList(apiName, methods, *roots)
+
+            override suspend fun firstSuccessful(
+                apiName: String,
+                methods: List<String>,
+            ): JsonObject = this@DsmRepository.firstSuccessful(apiName, methods)
+
+            override fun genericResources(
+                data: JsonObject,
+                vararg roots: String,
+            ): List<ManagedResource> = this@DsmRepository.genericResources(data, *roots)
+
+            override suspend fun logs(): List<LogEntry> = this@DsmRepository.virtualizationLogs()
+
+            override suspend fun taskCenter(): Pair<List<VirtualMachineTask>, VirtualMachineTaskCenterState> {
+                val center = this@DsmRepository.virtualMachineTaskCenter()
+                return center.tasks to center.state
+            }
+        },
+    )
+
+    private val nasAdministrationRepository = DsmNasAdministrationRepository(
+        object : DsmNasAdministrationRepositoryGateway {
+            override suspend fun systemRead(): JsonObject =
+                this@DsmRepository.firstSuccessful("SYNO.Core.System", listOf("info", "get"))
+
+            override suspend fun storageRead(): JsonObject = this@DsmRepository.firstSuccessful(
+                "SYNO.Storage.CGI.Storage",
+                listOf("load_info", "get"),
+            )
+
+            override suspend fun packages(): List<PackageInfo> =
+                this@DsmRepository.packageList()
+
+            override suspend fun accounts(): List<NasAccount> =
+                this@DsmRepository.accountList()
+
+            override suspend fun groups(): List<NasGroup> = this@DsmRepository.groupList()
+
+            override suspend fun logsRead(): JsonObject = this@DsmRepository.firstSuccessful(
+                this@DsmRepository.preferred("SYNO.LogCenter.History", "SYNO.Core.SyslogClient.Log"),
+                listOf("list", "get"),
+                mapOf("offset" to "0", "limit" to "200"),
+            )
+
+            override suspend fun connections(): List<ActiveConnection> =
+                this@DsmRepository.connectionList()
+
+            override suspend fun ethernetInterfaces(): List<NasEthernetInterface> =
+                this@DsmRepository.ethernetInterfaces()
+
+            override suspend fun ddnsDirectory(): NasDdnsDirectory =
+                this@DsmRepository.ddnsDirectory()
+
+            override suspend fun securitySettings(): NasSecuritySettings =
+                this@DsmRepository.securitySettings()
+
+            override suspend fun hardwareSettings(): NasHardwareSettings =
+                this@DsmRepository.hardwareSettings()
+
+            override suspend fun remoteAccessSettings(): NasRemoteAccessSettings =
+                this@DsmRepository.remoteAccessSettings()
+
+            override suspend fun scheduledTasks(): List<ManagedResource> =
+                this@DsmRepository.resourceList(
+                    "SYNO.Core.TaskScheduler",
+                    listOf("list", "get"),
+                    "tasks",
+                )
+
+            override suspend fun fileServiceSettings(): NasFileServiceSettings =
+                this@DsmRepository.fileServiceSettings()
+
+            override suspend fun terminalSettings(): NasTerminalSettings =
+                this@DsmRepository.terminalSettings()
+
+            override suspend fun proxySettings(): NasProxySettings =
+                this@DsmRepository.proxySettings()
+
+            override suspend fun regionSettings(): NasRegionSettings =
+                this@DsmRepository.regionSettings()
+
+            override suspend fun securityResources(): List<ManagedResource> =
+                this@DsmRepository.securityResources()
+
+            override fun systemSummary(data: JsonObject): SystemSummary =
+                this@DsmRepository.systemSummary(data)
+
+            override fun capacityList(data: JsonObject): List<CapacitySummary> =
+                this@DsmRepository.capacityList(data)
+
+            override fun genericResources(
+                data: JsonObject,
+                vararg roots: String,
+            ): List<ManagedResource> = this@DsmRepository.genericResources(data, *roots)
+
+            override fun storageDisks(data: JsonObject): List<NasStorageDisk> =
+                this@DsmRepository.storageDisks(data)
+
+            override fun logs(data: JsonObject): List<LogEntry> = this@DsmRepository.logs(data)
+        },
+    )
+
+    private val chatRepository = DsmChatRepository(
+        object : DsmChatRepositoryGateway {
+            override suspend fun usersData(): JsonObject =
+                this@DsmRepository.call("SYNO.Chat.User", "list")
+
+            override suspend fun conversationsData(): JsonObject =
+                this@DsmRepository.call("SYNO.Chat.Channel", "list")
+
+            override suspend fun messagesData(
+                conversationId: String,
+                offset: Int,
+                limit: Int,
+            ): JsonObject = this@DsmRepository.call(
+                "SYNO.Chat.Post",
+                "list",
+                mapOf(
+                    "channel_id" to conversationId,
+                    "offset" to offset.toString(),
+                    "limit" to limit.toString(),
+                ),
+            )
+
+            override suspend fun conversationMembersData(conversationId: String): JsonObject =
+                this@DsmRepository.call(
+                    CHAT_CHANNEL_MEMBER_API,
+                    "get",
+                    mapOf("channel_id" to conversationId),
+                    version = 1,
+                )
+
+            override fun supportsConversationMembers(): Boolean =
+                this@DsmRepository.supportsVersion(CHAT_CHANNEL_MEMBER_API, 1)
+
+            override fun invalidConversationRequest(): DsmFailure =
+                this@DsmRepository.invalidChatConversationRequest()
+
+            override fun unsupportedConversationRead(): DsmFailure =
+                this@DsmRepository.unsupportedChatConversationMutation()
+
+            override fun username(): String = profile.username
+
+            override fun currentUserId(): String? = currentChatUserId
+
+            override fun updateCurrentUserId(userId: String) {
+                currentChatUserId = userId
+            }
+
+            override fun poll(post: JsonObject, messageId: String): ChatPoll? =
+                this@DsmRepository.chatPoll(post, messageId)
+        },
+    )
+
+    private val fileStationRepository = DsmFileStationRepository(
+        object : DsmFileStationRepositoryGateway {
+            override suspend fun call(
+                apiName: String,
+                method: String,
+                parameters: Map<String, String>,
+            ): JsonObject = this@DsmRepository.call(apiName, method, parameters)
+
+            override fun jsonStrings(values: List<String>): String =
+                this@DsmRepository.jsonStrings(values)
+        },
+    )
+
     fun availability(): List<ModuleAvailability> = listOf(
         ModuleAvailability(Module.FILES, supports("SYNO.FileStation.List")),
         ModuleAvailability(Module.PHOTOS, supports("SYNO.FileStation.List")),
@@ -397,20 +604,7 @@ class DsmRepository(
         limit: Int = 200,
         sortBy: String = "name",
         sortAscending: Boolean = true,
-    ): FilePage {
-        val data = call(
-            "SYNO.FileStation.List",
-            "list_share",
-            mapOf(
-                "offset" to offset.toString(),
-                "limit" to limit.toString(),
-                "sort_by" to sortBy,
-                "sort_direction" to if (sortAscending) "asc" else "desc",
-                "additional" to "[\"real_path\",\"owner\",\"time\",\"perm\",\"mount_point_type\",\"volume_status\"]",
-            ),
-        )
-        return filePage(data, "shares")
-    }
+    ): FilePage = fileStationRepository.listShares(offset, limit, sortBy, sortAscending)
 
     suspend fun listDirectory(
         path: String,
@@ -419,22 +613,14 @@ class DsmRepository(
         sortBy: String = "name",
         sortAscending: Boolean = true,
         fileType: String = "all",
-    ): FilePage {
-        val data = call(
-            "SYNO.FileStation.List",
-            "list",
-            mapOf(
-                "folder_path" to path,
-                "offset" to offset.toString(),
-                "limit" to limit.toString(),
-                "sort_by" to sortBy,
-                "sort_direction" to if (sortAscending) "asc" else "desc",
-                "filetype" to fileType,
-                "additional" to "[\"real_path\",\"size\",\"owner\",\"time\",\"perm\",\"mount_point_type\"]",
-            ),
-        )
-        return filePage(data, "files")
-    }
+    ): FilePage = fileStationRepository.listDirectory(
+        path,
+        offset,
+        limit,
+        sortBy,
+        sortAscending,
+        fileType,
+    )
 
     /** 使用公开列表分页复查目标是否仍存在，不依赖内部文件接口。 */
     suspend fun itemExists(path: String): Boolean {
@@ -467,17 +653,7 @@ class DsmRepository(
         return found
     }
 
-    suspend fun fileInfo(path: String): FileItem? {
-        val data = call(
-            "SYNO.FileStation.List",
-            "getinfo",
-            mapOf(
-                "path" to jsonStrings(listOf(path)),
-                "additional" to "[\"real_path\",\"size\",\"owner\",\"time\",\"perm\",\"mount_point_type\"]",
-            ),
-        )
-        return filePage(data, "files").items.firstOrNull { it.path == path }
-    }
+    suspend fun fileInfo(path: String): FileItem? = fileStationRepository.fileInfo(path)
 
     /**
      * 读取 File Station 官方后台任务的有限分页脱敏摘要。
@@ -4972,120 +5148,8 @@ class DsmRepository(
     suspend fun deleteContainerNetworkResult(id: String): MutationResult =
         containerRepository.deleteNetworkResult(id)
 
-    suspend fun virtualMachineOverview(): VirtualMachineOverview {
-        val guestApi = preferred("SYNO.Virtualization.API.Guest", "SYNO.Virtualization.Guest")
-        val hostApi = preferredOrNull("SYNO.Virtualization.API.Host", "SYNO.Virtualization.Host")
-        val storageApi = preferredOrNull("SYNO.Virtualization.API.Storage", "SYNO.Virtualization.Repo")
-        val networkApi = preferredOrNull("SYNO.Virtualization.API.Network", "SYNO.Virtualization.Network")
-        val imageApi = preferredOrNull(
-            "SYNO.Virtualization.API.Guest.Image",
-            "SYNO.Virtualization.Guest.Image",
-        )
-        val unavailable = mutableSetOf<VirtualMachineSection>()
-        val officialGuestRead = if (supportsVersion("SYNO.Virtualization.API.Guest", 1)) {
-            try {
-                officialVirtualMachineRead()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                unavailable += VirtualMachineSection.HARDWARE
-                null
-            }
-        } else {
-            unavailable += VirtualMachineSection.HARDWARE
-            null
-        }
-        if (officialGuestRead?.hardware == null) {
-            unavailable += VirtualMachineSection.HARDWARE
-        }
-        val machines = officialGuestRead?.machines
-            ?: resourceList(guestApi, listOf("list"), "guests", "vms")
-        suspend fun optional(
-            section: VirtualMachineSection,
-            apiName: String?,
-            vararg roots: String,
-        ): List<ManagedResource> {
-            if (apiName == null) {
-                unavailable += section
-                return emptyList()
-            }
-            return runCatching { resourceList(apiName, listOf("list"), *roots) }.getOrElse {
-                unavailable += section
-                emptyList()
-            }
-        }
-        val hosts = optional(
-            VirtualMachineSection.HOSTS, hostApi, "hosts", "host", "data", "list",
-        )
-        val storages = optional(
-            VirtualMachineSection.STORAGES, storageApi, "repos", "storages", "data", "list",
-        )
-        val networks = optional(
-            VirtualMachineSection.NETWORKS, networkApi, "networks", "network", "data", "list",
-        )
-        val images = optional(
-            VirtualMachineSection.IMAGES, imageApi, "images", "image", "data", "list",
-        )
-        val protectionData = if (supports("SYNO.Virtualization.GuestProtect.Plan")) {
-            runCatching {
-                firstSuccessful(
-                    "SYNO.Virtualization.GuestProtect.Plan",
-                    listOf("list", "get"),
-                )
-            }.getOrNull()
-        } else {
-            unavailable += VirtualMachineSection.PROTECTION
-            null
-        }
-        if (supports("SYNO.Virtualization.GuestProtect.Plan") && protectionData == null) {
-            unavailable += VirtualMachineSection.PROTECTION
-        }
-        val plans = protectionData?.let {
-            genericResources(
-                it,
-                "plans",
-                "plan",
-                "protection_plans",
-                "guest_protects",
-                "data",
-                "list",
-            )
-        }.orEmpty()
-        val schedules = protectionData?.let {
-            genericResources(it, "schedule_policies", "schedules", "schedule_policy")
-        }.orEmpty()
-        val retentions = protectionData?.let {
-            genericResources(it, "retention_policies", "retentions", "retention_policy")
-        }.orEmpty()
-        val logs = if (supports("SYNO.Virtualization.Log")) {
-            runCatching { virtualizationLogs() }.getOrElse {
-                unavailable += VirtualMachineSection.LOGS
-                emptyList()
-            }
-        } else {
-            unavailable += VirtualMachineSection.LOGS
-            emptyList()
-        }
-        val taskCenter = virtualMachineTaskCenter()
-        if (taskCenter.state != VirtualMachineTaskCenterState.AVAILABLE) {
-            unavailable += VirtualMachineSection.TASKS
-        }
-        return VirtualMachineOverview(
-            machines = machines,
-            hosts = hosts,
-            storages = storages,
-            networks = networks,
-            images = images,
-            protectionPlans = plans,
-            protectionSchedules = schedules,
-            retentionPolicies = retentions,
-            logs = logs,
-            machineHardware = officialGuestRead?.hardware.orEmpty(),
-            tasks = taskCenter.tasks,
-            taskCenterState = taskCenter.state,
-            unavailableSections = unavailable,
-        )
-    }
+    suspend fun virtualMachineOverview(): VirtualMachineOverview =
+        virtualMachineRepository.overview()
 
     /**
      * 仅用公开 Guest.get v1 重新读取一个 Guest；不能用列表或内部 Guest 接口替代这个身份核对。
@@ -6780,138 +6844,15 @@ class DsmRepository(
         return parseVirtualizationLogs(data)
     }
 
-    suspend fun chatConversations(): List<ChatConversation> {
-        val users = runCatching { chatUsers().associateBy(ChatUser::id) }.getOrDefault(emptyMap())
-        val data = call("SYNO.Chat.Channel", "list")
-        return sequenceOf("channels", "channel_list", "items")
-            .flatMap { data.elements(it).asSequence() }
-            .distinctBy { (it as? JsonObject)?.string("channel_id") ?: it.toString() }
-            .mapNotNull { element ->
-                val item = element as? JsonObject ?: return@mapNotNull null
-                val id = item.valueString("channel_id", "id") ?: return@mapNotNull null
-                val memberIds = (item.elements("members") + item.elements("user_ids"))
-                    .mapNotNull { member ->
-                    (member as? JsonObject)?.valueString("user_id", "member_id", "id")
-                        ?: (member as? JsonPrimitive)?.contentOrNull
-                    }.distinct()
-                val rawName = item.string("name") ?: item.string("channel_name").orEmpty()
-                val normalizedType = (item.string("type") ?: item.string("channel_type"))
-                    .orEmpty()
-                    .lowercase()
-                val direct = normalizedType in setOf("direct", "anonymous") ||
-                    (rawName.isBlank() && memberIds.size <= 2 && normalizedType != "chatbot")
-                val lastPost = item.objectValue("last_post")
-                ChatConversation(
-                    id = id,
-                    title = rawName.ifBlank {
-                        memberIds.mapNotNull { users[it]?.displayName }.joinToString("、")
-                    },
-                    kind = if (direct) {
-                        ConversationKind.DIRECT
-                    } else {
-                        ConversationKind.GROUP
-                    },
-                    memberIds = memberIds,
-                    unreadCount = item.int("unread") ?: item.int("unread_count") ?: 0,
-                    memberCount = item.int("member_count") ?: memberIds.size,
-                    latestPreview = lastPost?.string("message") ?: item.string("last_message"),
-                    latestAtEpochSeconds = normalizeEpoch(
-                        lastPost?.long("create_at") ?: item.long("last_update_at") ?: item.long("time"),
-                    ),
-                )
-            }
-            .toList()
-    }
+    suspend fun chatConversations(): List<ChatConversation> = chatRepository.conversations()
 
-    suspend fun chatUsers(): List<ChatUser> {
-        val data = call("SYNO.Chat.User", "list")
-        data.valueString("current_user_id", "current_id", "my_user_id")?.let {
-            currentChatUserId = it
-        }
-        val users = sequenceOf("users", "user_list", "items")
-            .flatMap { data.elements(it).asSequence() }
-            .distinctBy { (it as? JsonObject)?.valueString("user_id", "id") }
-            .mapNotNull { element ->
-                val item = element as? JsonObject ?: return@mapNotNull null
-                val id = item.valueString("user_id", "id", "uid") ?: return@mapNotNull null
-                if (item.bool("is_current") == true || item.bool("is_me") == true ||
-                    item.firstNonBlank("username", "account", "name")
-                        ?.equals(profile.username, ignoreCase = true) == true
-                ) {
-                    currentChatUserId = id
-                }
-                ChatUser(
-                    id = id,
-                    displayName = item.firstNonBlank("nickname", "display_name", "name", "username") ?: id,
-                    username = item.firstNonBlank("username", "account", "name") ?: "",
-                    isDisabled = item.bool("disabled") ?: item.bool("is_disabled") ?: false,
-                    isCurrent = id == currentChatUserId,
-                )
-            }
-            .toList()
-        return users
-    }
+    suspend fun chatUsers(): List<ChatUser> = chatRepository.users()
 
     suspend fun chatMessages(
         conversationId: String,
         offset: Int = 0,
         limit: Int = 50,
-    ): ChatMessagePage {
-        require(conversationId.isNotBlank())
-        require(offset >= 0)
-        val safeLimit = limit.coerceIn(1, 100)
-        val data = call(
-            "SYNO.Chat.Post",
-            "list",
-            mapOf(
-                "channel_id" to conversationId,
-                "offset" to offset.toString(),
-                "limit" to safeLimit.toString(),
-            ),
-        )
-        val rawPosts = data.elements("posts")
-        val messages = rawPosts.mapNotNull { element ->
-            val item = element as? JsonObject ?: return@mapNotNull null
-            val id = item.valueString("post_id", "id") ?: return@mapNotNull null
-            val creator = item.objectValue("creator") ?: item.objectValue("user") ?: item.objectValue("sender")
-            val senderId = item.firstNonBlank("creator_id", "user_id", "sender_id")
-                ?: creator?.valueString("user_id", "id")
-                ?: "unknown"
-            val senderName = item.firstNonBlank("creator_name", "sender_name", "nickname", "username")
-                ?: creator?.firstNonBlank("nickname", "display_name", "name", "username")
-            val body = item.string("message") ?: item.string("text") ?: item.string("content").orEmpty()
-            val attachments = item.elements("files").ifEmpty { item.elements("attachments") }
-                .mapIndexedNotNull { index, value ->
-                    val file = value as? JsonObject ?: return@mapIndexedNotNull null
-                    ChatAttachment(
-                        id = file.valueString("file_id", "id") ?: "$id-$index",
-                        name = file.firstNonBlank("name", "file_name", "filename")
-                            ?: return@mapIndexedNotNull null,
-                        mimeType = file.string("mime_type") ?: file.string("type"),
-                        size = file.long("size") ?: file.long("file_size"),
-                    )
-                }
-            val poll = chatPoll(item, id)
-            if (body.isBlank() && attachments.isEmpty() && poll == null) return@mapNotNull null
-            ChatMessage(
-                id = id,
-                conversationId = item.valueString("channel_id", "conversation_id") ?: conversationId,
-                sender = ChatUser(senderId, senderName ?: senderId, ""),
-                body = body,
-                createdAtEpochSeconds = normalizeEpoch(
-                    item.long("create_at") ?: item.long("created_at") ?: item.long("timestamp"),
-                ) ?: 0,
-                isMine = item.bool("is_my_post") ?: item.bool("is_mine") ?: (senderId == currentChatUserId),
-                attachments = attachments,
-                isPinned = (item.long("last_pin_at") ?: 0) > 0,
-                poll = poll,
-            )
-        }.sortedBy(ChatMessage::createdAtEpochSeconds)
-        val next = offset + rawPosts.size
-        val total = data.int("total")
-        val hasMore = total?.let { next < it } ?: (rawPosts.size == safeLimit)
-        return ChatMessagePage(messages, next.takeIf { hasMore }, hasMore)
-    }
+    ): ChatMessagePage = chatRepository.messages(conversationId, offset, limit)
 
     suspend fun openDirectChatConversation(
         userId: String,
@@ -7415,21 +7356,8 @@ class DsmRepository(
         }
     }
 
-    suspend fun chatConversationMembers(conversationId: String): List<ChatUser> {
-        val normalizedId = conversationId.trim()
-        if (normalizedId.isEmpty()) throw invalidChatConversationRequest()
-        if (!supportsVersion(CHAT_CHANNEL_MEMBER_API, 1)) throw unsupportedChatConversationMutation()
-        val data = call(
-            CHAT_CHANNEL_MEMBER_API,
-            "get",
-            mapOf("channel_id" to normalizedId),
-            version = 1,
-        )
-        val ids = data.elements("user_ids").mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.distinct()
-        if (ids.isEmpty()) return emptyList()
-        val users = chatUsers().associateBy(ChatUser::id)
-        return ids.mapNotNull(users::get)
-    }
+    suspend fun chatConversationMembers(conversationId: String): List<ChatUser> =
+        chatRepository.conversationMembers(conversationId)
 
     private suspend fun findDirectChatConversation(userId: String): ChatConversation? =
         chatConversations().firstOrNull {
@@ -7600,8 +7528,7 @@ class DsmRepository(
         )
     }
 
-    private fun jsonStringArray(values: List<String>): String =
-        JsonArray(values.map(::JsonPrimitive)).toString()
+    private fun jsonStringArray(values: List<String>): String = requestBuilder.jsonStringArray(values)
 
     private fun invalidChatConversationRequest() = DsmFailure(
         null,
@@ -10090,61 +10017,7 @@ class DsmRepository(
         kind = DsmErrorKind.FEATURE_UNSUPPORTED,
     )
 
-    suspend fun nasSettings(): NasSettingsSnapshot {
-        val systemJson = runCatching { firstSuccessful("SYNO.Core.System", listOf("info", "get")) }.getOrNull()
-        val storageJson = runCatching { firstSuccessful("SYNO.Storage.CGI.Storage", listOf("load_info", "get")) }.getOrNull()
-        val packageResult = runCatching { packageList() }
-        val accountResult = runCatching { accountList() }
-        val groupResult = runCatching { groupList() }
-        val logResult = runCatching {
-            firstSuccessful(
-                preferred("SYNO.LogCenter.History", "SYNO.Core.SyslogClient.Log"),
-                listOf("list", "get"),
-                mapOf("offset" to "0", "limit" to "200"),
-            )
-        }
-        val connectionResult = runCatching { connectionList() }
-        val ethernetResult = runCatching { ethernetInterfaces() }
-        val ddnsResult = runCatching { ddnsDirectory() }
-        val securitySettingsResult = runCatching { securitySettings() }
-        val hardwareSettingsResult = runCatching { hardwareSettings() }
-        val remoteAccessSettingsResult = runCatching { remoteAccessSettings() }
-        return NasSettingsSnapshot(
-            system = systemJson?.let(::systemSummary),
-            volumes = storageJson?.let(::capacityList).orEmpty(),
-            pools = storageJson?.let { genericResources(it, "storagePools", "pools") }.orEmpty(),
-            disks = storageJson?.let { genericResources(it, "disks") }.orEmpty(),
-            storageDisks = storageJson?.let(::storageDisks).orEmpty(),
-            packages = packageResult.getOrDefault(emptyList()),
-            packagesAvailable = packageResult.isSuccess,
-            scheduledTasks = runCatching {
-                resourceList("SYNO.Core.TaskScheduler", listOf("list", "get"), "tasks")
-            }.getOrDefault(emptyList()),
-            accounts = accountResult.getOrDefault(emptyList()),
-            accountsAvailable = accountResult.isSuccess,
-            groups = groupResult.getOrDefault(emptyList()),
-            groupsAvailable = groupResult.isSuccess,
-            logs = logResult.getOrNull()?.let(::logs).orEmpty(),
-            connections = connectionResult.getOrDefault(emptyList()),
-            connectionsAvailable = connectionResult.isSuccess,
-            networkInterfaces = ethernetResult.getOrDefault(emptyList()),
-            networkInterfacesAvailable = ethernetResult.isSuccess,
-            ddnsDirectory = ddnsResult.getOrNull(),
-            ddnsDirectoryAvailable = ddnsResult.isSuccess,
-            fileServiceSettings = runCatching { fileServiceSettings() }.getOrNull(),
-            terminalSettings = runCatching { terminalSettings() }.getOrNull(),
-            proxySettings = runCatching { proxySettings() }.getOrNull(),
-            regionSettings = runCatching { regionSettings() }.getOrNull(),
-            securitySettings = securitySettingsResult.getOrNull(),
-            hardwareSettings = hardwareSettingsResult.getOrNull(),
-            security = securityResources(),
-            securitySettingsAvailable = securitySettingsResult.isSuccess,
-            hardwareSettingsAvailable = hardwareSettingsResult.isSuccess,
-            remoteAccessSettings = remoteAccessSettingsResult.getOrNull(),
-            remoteAccessSettingsAvailable = remoteAccessSettingsResult.isSuccess,
-            logsAvailable = logResult.isSuccess,
-        )
-    }
+    suspend fun nasSettings(): NasSettingsSnapshot = nasAdministrationRepository.settings()
 
     /** 已登记的内部只读性能接口；运行时未发现 v1 时固定深页不得进入采样状态。 */
     fun supportsPerformance(): Boolean = supportsVersion(PERFORMANCE_API, 1)
@@ -12437,42 +12310,10 @@ class DsmRepository(
         method: String,
         parameters: Map<String, String> = emptyMap(),
         version: Int? = null,
-    ): JsonObject {
-        val capability = capabilities[apiName]
-            ?: throw DsmFailure(
-                102,
-                "Feature unsupported",
-                "Update DSM or the related package.",
-                kind = DsmErrorKind.FEATURE_UNSUPPORTED,
-        )
-        if (version == null) return api.call(profile, session, capability, method, parameters)
-        if (version !in capability.minVersion..capability.maxVersion) {
-            throw DsmFailure(
-                103,
-                "Feature unsupported",
-                "Update DSM or the related package.",
-                kind = DsmErrorKind.FEATURE_UNSUPPORTED,
-            )
-        }
-        val path = if (capability.path.startsWith("/")) capability.path else "/webapi/${capability.path}"
-        return api.call(
-            profile = profile,
-            session = session,
-            api = capability.name,
-            version = version,
-            method = method,
-            parameters = parameters,
-            path = path,
-        )
-    }
+    ): JsonObject = requestBuilder.call(apiName, method, parameters, version)
 
-    private fun requireCapability(apiName: String): ApiCapability = capabilities[apiName]
-        ?: throw DsmFailure(
-            102,
-            "Feature unsupported",
-            "Update DSM or use File Station in a browser.",
-            kind = DsmErrorKind.FEATURE_UNSUPPORTED,
-        )
+    private fun requireCapability(apiName: String): ApiCapability =
+        capabilityResolver.requireCapability(apiName)
 
     private suspend fun claimFavoriteMutation(path: String): Boolean =
         favoriteMutationLock.withLock { favoriteMutations.add(path) }
@@ -12605,7 +12446,7 @@ class DsmRepository(
     )
 
     private fun preferredOrNull(vararg names: String): String? =
-        names.firstOrNull(::supports)
+        capabilityResolver.preferredOrNull(*names)
 
     private fun shareLink(element: JsonElement): FileShareLink? =
         (element as? JsonObject)?.let(::shareLink)
@@ -13477,7 +13318,7 @@ class DsmRepository(
     private fun isValidPort(value: Int): Boolean = value in 1..65_535
 
     private fun supportsVersion(apiName: String, version: Int): Boolean =
-        capabilities[apiName]?.let { version in it.minVersion..it.maxVersion } == true
+        capabilityResolver.supportsVersion(apiName, version)
 
     private fun invalidSettingsResponse(scope: String) = DsmFailure(
         null,
@@ -13715,17 +13556,18 @@ class DsmRepository(
         requiresRefresh: Boolean = false,
         errorCategory: MutationErrorCategory? = null,
         diagnosticTag: String,
-    ) = MutationResult(
-        schemaVersion = 1,
-        status = status,
+    ) = mutationVerifier.settingsResult(
         operation = operation,
+        status = status,
         submitted = submitted,
+        total = total,
+        succeeded = succeeded,
+        failed = failed,
+        unknown = unknown,
         requiresRefresh = requiresRefresh,
-        counts = MutationResultCounts(succeeded, failed, unknown),
         errorCategory = errorCategory,
-        localizationKey = "mutation.service.${status.name.lowercase()}",
         diagnosticTag = diagnosticTag,
-    ).also { check(total >= succeeded + failed + unknown) }
+    )
 
     private fun unsupportedServiceMutation(operation: String, diagnosticTag: String) =
         serviceMutationResult(
@@ -13976,54 +13818,20 @@ class DsmRepository(
         errorCategory: MutationErrorCategory? = null,
         diagnosticTag: String,
         affectedCount: Int = 1,
-    ): MutationResult {
-        val succeeded = if (status == MutationResultStatus.CONFIRMED_SUCCESS) affectedCount else 0
-        val unknown = if (
-            status == MutationResultStatus.SUBMITTED_BUT_UNVERIFIED ||
-            status == MutationResultStatus.CANCELLATION_REQUESTED_AFTER_SUBMISSION
-        ) affectedCount else 0
-        val failed = if (
-            status in setOf(
-                MutationResultStatus.CONFIRMED_FAILURE,
-                MutationResultStatus.PERMISSION_DENIED,
-                MutationResultStatus.UNSUPPORTED,
-            )
-        ) affectedCount else 0
-        return MutationResult(
-            schemaVersion = 1,
-            status = status,
-            operation = operation,
-            submitted = submitted,
-            requiresRefresh = requiresRefresh,
-            counts = MutationResultCounts(succeeded, failed, unknown),
-            errorCategory = errorCategory,
-            localizationKey = "mutation.service.${status.name.lowercase()}",
-            diagnosticTag = diagnosticTag,
-        )
-    }
-
-    private fun Throwable.asRepositoryFailure(): DsmFailure = this as? DsmFailure ?: DsmFailure(
-        code = null,
-        message = message ?: "Service request failed",
-        recovery = "Refresh the list and check the current state.",
-        kind = DsmErrorKind.UNKNOWN,
+    ): MutationResult = mutationVerifier.serviceResult(
+        operation = operation,
+        status = status,
+        submitted = submitted,
+        requiresRefresh = requiresRefresh,
+        errorCategory = errorCategory,
+        diagnosticTag = diagnosticTag,
+        affectedCount = affectedCount,
     )
 
-    private fun DsmFailure.mutationErrorCategory(): MutationErrorCategory = when (kind) {
-        DsmErrorKind.PERMISSION_DENIED -> MutationErrorCategory.PERMISSION
-        DsmErrorKind.SESSION_EXPIRED,
-        DsmErrorKind.AUTHENTICATION_FAILED,
-        -> MutationErrorCategory.AUTHENTICATION
-        DsmErrorKind.FEATURE_UNSUPPORTED,
-        DsmErrorKind.PACKAGE_VERSION_UNSUPPORTED,
-        -> MutationErrorCategory.UNSUPPORTED
-        DsmErrorKind.CONNECTION_FAILED,
-        DsmErrorKind.INVALID_RESPONSE,
-        -> MutationErrorCategory.NETWORK
-        DsmErrorKind.CHANGE_NOT_CONFIRMED -> MutationErrorCategory.CONFLICT
-        DsmErrorKind.UNKNOWN -> MutationErrorCategory.UNKNOWN
-        else -> MutationErrorCategory.SERVER
-    }
+    private fun Throwable.asRepositoryFailure(): DsmFailure = mutationVerifier.asRepositoryFailure(this)
+
+    private fun DsmFailure.mutationErrorCategory(): MutationErrorCategory =
+        mutationVerifier.mutationErrorCategory(this)
 
     private suspend fun pathExists(path: String): Boolean {
         val parent = path.substringBeforeLast('/', "")
@@ -14939,22 +14747,13 @@ class DsmRepository(
         else -> LogLevel.UNKNOWN
     }
 
-    private fun supports(apiName: String) = capabilities.containsKey(apiName)
+    private fun supports(apiName: String): Boolean = capabilityResolver.supports(apiName)
 
-    private fun preferred(vararg names: String): String =
-        names.firstOrNull(::supports)
-            ?: throw DsmFailure(
-                102,
-                "Feature unsupported",
-                "Update DSM or the related package.",
-                kind = DsmErrorKind.FEATURE_UNSUPPORTED,
-            )
+    private fun preferred(vararg names: String): String = capabilityResolver.preferred(*names)
 
-    private fun jsonStrings(values: List<String>): String =
-        JsonArray(values.map(::JsonPrimitive)).toString()
+    private fun jsonStrings(values: List<String>): String = requestBuilder.jsonStrings(values)
 
-    private fun join(parent: String, child: String): String =
-        if (parent.endsWith('/')) "$parent$child" else "$parent/$child"
+    private fun join(parent: String, child: String): String = requestBuilder.join(parent, child)
 
     private companion object {
         const val FILE_STATION_FAVORITE_API = "SYNO.FileStation.Favorite"
@@ -15131,151 +14930,5 @@ private class RepositoryMediaSource(
 
     override fun close() {
         closed = true
-    }
-}
-
-internal fun decodeTextPreview(bytes: ByteArray): String {
-    val (content, charset) = when {
-        bytes.startsWith(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())) ->
-            bytes.copyOfRange(3, bytes.size) to Charsets.UTF_8
-        bytes.startsWith(byteArrayOf(0xFF.toByte(), 0xFE.toByte())) ->
-            bytes.copyOfRange(2, bytes.size) to Charsets.UTF_16LE
-        bytes.startsWith(byteArrayOf(0xFE.toByte(), 0xFF.toByte())) ->
-            bytes.copyOfRange(2, bytes.size) to Charsets.UTF_16BE
-        else -> bytes to Charsets.UTF_8
-    }
-    return content.toString(charset).replace("\u0000", "�")
-}
-
-private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
-    size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
-
-/** 套件图标只接受 DSM 实际返回的常见位图格式，拒绝 HTML、SVG 和未知二进制内容。 */
-internal fun hasKnownPackageIconSignature(bytes: ByteArray): Boolean = when {
-    bytes.startsWith(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) -> true
-    bytes.startsWith(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())) -> true
-    bytes.startsWith(byteArrayOf(0x47, 0x49, 0x46, 0x38)) -> true
-    bytes.size >= 12 && bytes.copyOfRange(0, 4).contentEquals(byteArrayOf(0x52, 0x49, 0x46, 0x46)) &&
-        bytes.copyOfRange(8, 12).contentEquals(byteArrayOf(0x57, 0x45, 0x42, 0x50)) -> true
-    else -> false
-}
-
-/**
- * 将 File Station 列表数据转换为稳定领域语义，供生产请求和脱敏 Fixture 共用。
- */
-internal fun parseFilePageFixture(data: JsonObject, root: String = "files"): FilePage {
-    val items = data.elements(root).mapNotNull { element ->
-        val item = element as? JsonObject ?: return@mapNotNull null
-        val additional = item.objectValue("additional")
-        val time = additional?.objectValue("time")
-        val permission = additional?.objectValue("perm")
-        FileItem(
-            path = item.string("path") ?: return@mapNotNull null,
-            name = item.string("name") ?: item.string("path")?.substringAfterLast('/').orEmpty(),
-            isDirectory = item.bool("isdir") ?: false,
-            size = item.long("size") ?: additional?.long("size") ?: 0,
-            modifiedAtEpochSeconds = time?.long("mtime") ?: item.long("mtime"),
-            accessedAtEpochSeconds = time?.long("atime") ?: item.long("atime"),
-            owner = additional?.objectValue("owner")?.string("user") ?: additional?.string("owner"),
-            canRead = permission?.bool("read") ?: true,
-            canWrite = permission?.bool("write") ?: false,
-            canDelete = permission?.bool("delete") ?: false,
-            mountPointType = additional?.string("mount_point_type") ?: item.string("mount_point_type"),
-        )
-    }
-    return FilePage(
-        items = items,
-        total = data.int("total") ?: items.size,
-        offset = data.int("offset") ?: 0,
-    )
-}
-
-internal fun parseVirtualizationLogs(data: JsonObject): List<LogEntry> =
-    sequenceOf("logs", "log", "events", "records", "entries", "items", "data", "list")
-        .flatMap { data.elements(it).asSequence() }
-        .distinctBy { it.toString() }
-        .mapIndexedNotNull { index, element ->
-            val item = element as? JsonObject ?: return@mapIndexedNotNull null
-            val rawTime = item.long("time")
-                ?: item.long("timestamp")
-                ?: item.long("date")
-                ?: item.long("event_time")
-                ?: item.long("create_time")
-                ?: item.long("created_at")
-            val event = item.string("event")
-                ?: item.string("message")
-                ?: item.string("description")
-                ?: item.string("msg")
-                ?: item.string("content")
-                ?: item.string("detail")
-                ?: return@mapIndexedNotNull null
-            LogEntry(
-                id = item.string("id") ?: item.string("log_id") ?: "${rawTime ?: 0}:$index",
-                level = parsedLogLevel(
-                    item.string("level")
-                        ?: item.string("severity")
-                        ?: item.string("type")
-                        ?: item.string("priority")
-                ),
-                timeEpochSeconds = rawTime?.let { if (it > 10_000_000_000) it / 1_000 else it },
-                user = item.string("user")
-                    ?: item.string("username")
-                    ?: item.string("owner")
-                    ?: item.string("account")
-                    ?: item.string("user_name")
-                    ?: "SYSTEM",
-                event = event,
-            )
-        }
-        .toList()
-
-private fun parsedLogLevel(value: String?): LogLevel = when (value?.lowercase()) {
-    "info", "information", "0" -> LogLevel.INFO
-    "warning", "warn", "1" -> LogLevel.WARNING
-    "error", "err", "2" -> LogLevel.ERROR
-    else -> LogLevel.UNKNOWN
-}
-
-private fun JsonObject.elements(key: String): List<JsonElement> =
-    (this[key] as? JsonArray)?.toList().orEmpty()
-
-private fun JsonObject.bool(key: String): Boolean? =
-    this[key]?.jsonPrimitive?.let { primitive ->
-        primitive.booleanOrNull
-            ?: primitive.contentOrNull?.let { value ->
-                when (value.lowercase()) {
-                    "1", "true" -> true
-                    "0", "false" -> false
-                    else -> null
-                }
-            }
-    }
-
-private fun JsonObject.number(key: String): Double? =
-    (this[key] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()?.takeIf { it.isFinite() }
-
-private fun JsonObject.nonNegativeLong(key: String): Long? =
-    long(key)?.coerceAtLeast(0)
-
-private fun JsonObject.valueString(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
-    (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
-}
-
-private fun JsonObject.firstNonBlank(vararg keys: String): String? =
-    keys.firstNotNullOfOrNull { key -> string(key)?.trim()?.takeIf(String::isNotBlank) }
-
-private fun normalizeEpoch(value: Long?): Long? = value?.let {
-    when {
-        it > 10_000_000_000L -> it / 1_000
-        it > 0 -> it
-        else -> null
-    }
-}
-
-private fun normalizeEpochMillis(value: Long?): Long? = value?.let {
-    when {
-        it > 10_000_000_000L -> it
-        it > 0 -> it * 1_000
-        else -> null
     }
 }

@@ -2,171 +2,17 @@ import DsmCore
 import Foundation
 import DsmLocalization
 
-private enum DsmDynamicJSON: Decodable, Sendable {
-    case object([String: DsmDynamicJSON])
-    case array([DsmDynamicJSON])
-    case string(String)
-    case number(Double)
-    case boolean(Bool)
-    case null
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let value = try? container.decode(Bool.self) {
-            self = .boolean(value)
-        } else if let value = try? container.decode(Double.self) {
-            self = .number(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
-        } else if let value = try? container.decode([String: DsmDynamicJSON].self) {
-            self = .object(value)
-        } else {
-            self = .array(try container.decode([DsmDynamicJSON].self))
-        }
-    }
-
-    var object: [String: DsmDynamicJSON]? {
-        guard case .object(let value) = self else { return nil }
-        return value
-    }
-
-    var array: [DsmDynamicJSON]? {
-        guard case .array(let value) = self else { return nil }
-        return value
-    }
-
-    subscript(key: String) -> DsmDynamicJSON? {
-        object?[key]
-    }
-
-    func string(_ keys: [String]) -> String? {
-        guard let object else { return scalarString }
-        for key in keys {
-            if let value = object[key]?.scalarString, !value.isEmpty {
-                return value
-            }
-        }
-        return nil
-    }
-
-    var scalarString: String? {
-        switch self {
-        case .string(let value):
-            value
-        case .number(let value):
-            value.rounded() == value ? String(Int64(value)) : String(value)
-        case .boolean(let value):
-            value ? "true" : "false"
-        default:
-            nil
-        }
-    }
-
-    func number(_ keys: [String]) -> Double? {
-        guard let object else { return scalarNumber }
-        for key in keys {
-            if let value = object[key]?.scalarNumber {
-                return value
-            }
-        }
-        return nil
-    }
-
-    var scalarNumber: Double? {
-        switch self {
-        case .number(let value):
-            value
-        case .string(let value):
-            Double(value)
-        case .boolean(let value):
-            value ? 1 : 0
-        default:
-            nil
-        }
-    }
-
-    func integer(_ keys: [String]) -> Int64? {
-        number(keys).map(Int64.init)
-    }
-
-    func boolean(_ keys: [String]) -> Bool? {
-        guard let object else { return scalarBoolean }
-        for key in keys {
-            if let value = object[key]?.scalarBoolean {
-                return value
-            }
-        }
-        return nil
-    }
-
-    var scalarBoolean: Bool? {
-        switch self {
-        case .boolean(let value):
-            value
-        case .number(let value):
-            value != 0
-        case .string(let value):
-            ["true", "yes", "1", "enabled"].contains(value.lowercased())
-        default:
-            nil
-        }
-    }
-
-    func objects(_ key: String) -> [[String: DsmDynamicJSON]] {
-        self[key]?.array?.compactMap(\.object) ?? []
-    }
-
-    func strings(_ keys: [String]) -> [String] {
-        guard let object else {
-            if let value = scalarString {
-                return value.split(separator: " ").map(String.init)
-            }
-            return array?.compactMap(\.scalarString) ?? []
-        }
-        for key in keys {
-            guard let value = object[key] else { continue }
-            if let values = value.array?.compactMap(\.scalarString), !values.isEmpty {
-                return values
-            }
-            if let scalar = value.scalarString, !scalar.isEmpty {
-                return scalar.split(separator: " ").map(String.init)
-            }
-        }
-        return []
-    }
-}
-
-private struct PackageControlMetadata: Sendable {
-    let dsmApps: [String]
-}
-
-private struct DiskTestHistorySnapshot: Sendable {
-    let lastQuickTest: String?
-    let lastExtendedTest: String?
-    let latestResult: String?
-    let isAvailable: Bool
-
-    static let unavailable = DiskTestHistorySnapshot(
-        lastQuickTest: nil,
-        lastExtendedTest: nil,
-        latestResult: nil,
-        isAvailable: false
-    )
-}
-
 /// DSM 的 NAS 管理内部接口适配器。所有写操作都先执行能力与可行性检查。
 public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private let profileName: String
-    private let currentUsername: String?
-    private let capabilities: CapabilitySet
-    private let credential: DsmSessionCredential
-    private let client: DsmAPIClient
-    private let transport: any DsmHTTPTransport
+    let currentUsername: String?
+    let capabilities: CapabilitySet
+    let credential: DsmSessionCredential
+    let client: DsmAPIClient
+    let transport: any DsmHTTPTransport
     private let isConnectedThroughQuickConnectRelay: Bool
-    private var packageControlMetadata: [String: PackageControlMetadata] = [:]
-    private var packageIconCache: [String: Data] = [:]
+    var packageControlMetadata: [String: PackageControlMetadata] = [:]
+    var packageIconCache: [String: Data] = [:]
     private var activePackageMutationIDs: Set<String> = []
     private var activeAccountDeletionNames: Set<String> = []
     private var activeGroupDeletionNames: Set<String> = []
@@ -180,9 +26,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private var isRegionSettingsUpdateActive = false
     private var activeDDNSProviderIDs: Set<String> = []
     private var isDDNSRefreshActive = false
-    private var isPowerActionActive = false
+    var isPowerActionActive = false
     private var activeDiskTestIDs: Set<String> = []
-    private var storageDisks: [String: NasDisk] = [:]
+    var storageDisks: [String: NasDisk] = [:]
     private var diskTestHistories: [String: DiskTestHistorySnapshot] = [:]
     private var beepVolumeFieldName: String?
 
@@ -284,44 +130,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             memoryBytes: rawMemory.map(Self.memoryBytes),
             temperatureCelsius: value.number(["sys_temp"]),
             hasTemperatureWarning: temperatureWarning
-        )
-    }
-
-    public func loadFileServiceSettings() async throws -> NasFileServiceSettings {
-        let hasSMB = capabilities[DsmAPIName.coreFileServiceSMB]?.selectedVersion != nil
-        let hasNFS = capabilities[DsmAPIName.coreFileServiceNFS]?.selectedVersion != nil
-        let hasFTP = capabilities[DsmAPIName.coreFileServiceFTP]?.selectedVersion != nil
-        let hasSFTP = capabilities[DsmAPIName.coreFileServiceSFTP]?.selectedVersion != nil
-        let hasWebDiscovery = capabilities[DsmAPIName.coreWebDSM]?.selectedVersion != nil
-        let hasFileDiscovery =
-            capabilities[DsmAPIName.coreFileServiceDiscovery]?.selectedVersion != nil
-        guard hasSMB || hasNFS || hasFTP || hasSFTP
-                || hasWebDiscovery || hasFileDiscovery else {
-            throw unavailableError()
-        }
-
-        let smb = hasSMB ? try await call(DsmAPIName.coreFileServiceSMB, method: "get") : nil
-        let nfs = hasNFS ? try await call(DsmAPIName.coreFileServiceNFS, method: "get") : nil
-        let ftp = hasFTP ? try await call(DsmAPIName.coreFileServiceFTP, method: "get") : nil
-        let sftp = hasSFTP ? try await call(DsmAPIName.coreFileServiceSFTP, method: "get") : nil
-        let webDiscovery = hasWebDiscovery
-            ? try await call(DsmAPIName.coreWebDSM, method: "get", version: 2)
-            : nil
-        let fileDiscovery = hasFileDiscovery
-            ? try await call(DsmAPIName.coreFileServiceDiscovery, method: "get")
-            : nil
-
-        return NasFileServiceSettings(
-            isSMBEnabled: smb?.boolean(["enable_samba"]),
-            isNFSEnabled: nfs?.boolean(["enable_nfs"]),
-            isFTPEnabled: ftp?.boolean(["enable_ftp"]),
-            isFTPSEnabled: ftp?.boolean(["enable_ftps"]),
-            ftpPort: ftp?.number(["portnum"]).map(Int.init),
-            isSFTPEnabled: sftp?.boolean(["enable"]),
-            sftpPort: sftp?.number(["portnum", "sftp_portnum"]).map(Int.init),
-            isSSDPEnabled: webDiscovery?.boolean(["enable_ssdp"]),
-            isBonjourEnabled: webDiscovery?.boolean(["enable_avahi"]),
-            isSMBTimeMachineEnabled: fileDiscovery?.boolean(["enable_smb_time_machine"])
         )
     }
 
@@ -1101,19 +909,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    public func loadTerminalSettings() async throws -> NasTerminalSettings {
-        let value = try await call(DsmAPIName.coreTerminal, method: "get")
-        guard let ssh = value.boolean(["enable_ssh"]),
-              let telnet = value.boolean(["enable_telnet"]) else {
-            throw verificationError(L10n.string("shared.e53ee9190654879c"))
-        }
-        return NasTerminalSettings(
-            isSSHEnabled: ssh,
-            isTelnetEnabled: telnet,
-            sshPort: value.number(["ssh_port"]).map(Int.init)
-        )
-    }
-
     public func saveTerminalSettings(_ settings: NasTerminalSettings) async throws {
         let result = try await saveTerminalSettingsResult(settings)
         guard result.status == .confirmedSuccess
@@ -1648,18 +1443,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             safeUserMessage: L10n.string(
                 result.localizationKey ?? "terminal.settings.failed"
             )
-        )
-    }
-
-    public func loadProxySettings() async throws -> NasProxySettings {
-        let value = try await call(DsmAPIName.coreNetworkProxy, method: "get")
-        guard let enabled = value.boolean(["enable"]) else {
-            throw verificationError(L10n.string("shared.21598082fdbb7d65"))
-        }
-        return NasProxySettings(
-            isEnabled: enabled,
-            host: value.string(["http_host"]) ?? "",
-            port: value.number(["http_port"]).map(Int.init)
         )
     }
 
@@ -2201,41 +1984,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 result.localizationKey ?? "proxy.settings.failed"
             )
         )
-    }
-
-    public func loadEthernetInterfaces() async throws -> [NasEthernetInterface] {
-        let list = try await call(
-            DsmAPIName.coreNetworkEthernet,
-            method: "list",
-            version: 2
-        )
-        var rows = list.objects("interfaces")
-        if rows.isEmpty {
-            rows = list.array?.compactMap(\.object) ?? []
-        }
-        var result: [NasEthernetInterface] = []
-        for row in rows {
-            guard let id = row["ifname"]?.scalarString
-                    ?? row["id"]?.scalarString,
-                  id.hasPrefix("eth") else {
-                continue
-            }
-            let detail = try await call(
-                DsmAPIName.coreNetworkEthernet,
-                method: "get",
-                version: 1,
-                parameters: ["ifname": .string(id)]
-            )
-            guard let item = Self.ethernetInterface(
-                from: detail,
-                fallback: row,
-                id: id
-            ) else {
-                continue
-            }
-            result.append(item)
-        }
-        return result
     }
 
     public func saveEthernetInterface(_ interface: NasEthernetInterface) async throws {
@@ -4244,89 +3992,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    public func loadSecuritySettings() async throws -> NasSecuritySettings {
-        let value = try await call(DsmAPIName.coreSecurityAutoBlock, method: "get")
-        guard let enabled = value.boolean(["enable"]),
-              let attempts = value.number(["attempts"]).map(Int.init),
-              let withinMinutes = value.number(["within_mins"]).map(Int.init) else {
-            throw verificationError(L10n.string("shared.2ab8b77714bc123d"))
-        }
-        let rawExpiration = value.number(["expire_day"]).map(Int.init) ?? 0
-        var dosProtection: [NasDoSProtectionSetting] = []
-        let firewall = capabilities[DsmAPIName.coreSecurityFirewall]?.selectedVersion != nil
-            ? try await call(DsmAPIName.coreSecurityFirewall, method: "get")
-            : nil
-        let firewallConf =
-            capabilities[DsmAPIName.coreSecurityFirewallConf]?.selectedVersion != nil
-                ? try await call(DsmAPIName.coreSecurityFirewallConf, method: "get")
-                : nil
-        if capabilities[DsmAPIName.coreNetworkEthernet]?.selectedVersion != nil,
-           capabilities[DsmAPIName.coreSecurityDoS]?.selectedVersion != nil {
-            let ethernet = try await call(DsmAPIName.coreNetworkEthernet, method: "list")
-            var adapters = ethernet.objects("interfaces")
-            if adapters.isEmpty {
-                adapters = ethernet.objects("adapters")
-            }
-            if adapters.isEmpty {
-                adapters = ethernet.array?.compactMap(\.object) ?? []
-            }
-            let adapterIDs = adapters.compactMap {
-                $0["id"]?.scalarString
-                    ?? $0["ifname"]?.scalarString
-                    ?? $0["name"]?.scalarString
-            }
-            if !adapterIDs.isEmpty {
-                let configs = adapterIDs.map { ["adapter": DsmJSONValue.string($0)] }
-                let dos = try await call(
-                    DsmAPIName.coreSecurityDoS,
-                    method: "get",
-                    version: 2,
-                    parameters: ["configs": .objectArray(configs)]
-                )
-                var dosObjects = dos.array?.compactMap(\.object) ?? []
-                if dosObjects.isEmpty {
-                    dosObjects = dos.objects("configs")
-                }
-                let enabledPairs: [(String, Bool)] = dosObjects.compactMap {
-                    guard let id = $0["adapter"]?.scalarString,
-                          let enabled = $0["dos_protect_enable"]?.scalarBoolean else {
-                        return nil
-                    }
-                    return (id, enabled)
-                }
-                // DSM 的内部接口在部分版本中会重复返回同一网卡，后返回的状态应覆盖旧值。
-                let enabledByAdapter = enabledPairs.reduce(into: [String: Bool]()) {
-                    $0[$1.0] = $1.1
-                }
-                dosProtection = adapters.compactMap { adapter in
-                    guard let id = adapter["id"]?.scalarString
-                            ?? adapter["ifname"]?.scalarString
-                            ?? adapter["name"]?.scalarString,
-                          let enabled = enabledByAdapter[id] else {
-                        return nil
-                    }
-                    return NasDoSProtectionSetting(
-                        id: id,
-                        displayName: adapter["display"]?.scalarString
-                            ?? adapter["display_name"]?.scalarString
-                            ?? id,
-                        isEnabled: enabled
-                    )
-                }
-            }
-        }
-        return NasSecuritySettings(
-            isAutoBlockEnabled: enabled,
-            failedAttempts: attempts,
-            withinMinutes: withinMinutes,
-            expirationDays: rawExpiration > 0 ? rawExpiration : nil,
-            dosProtection: dosProtection,
-            isFirewallEnabled: firewall?.boolean(["enable_firewall"]),
-            firewallProfileName: firewall?.string(["profile_name"]),
-            isPortScanProtectionEnabled: firewallConf?.boolean(["enable_port_check"])
-        )
-    }
-
     public func saveSecuritySettings(_ settings: NasSecuritySettings) async throws {
         guard settings.failedAttempts > 0, settings.failedAttempts <= 9_999 else {
             throw verificationError(L10n.string("shared.7172e0328c485e2d"))
@@ -4700,7 +4365,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    private func capabilitySupports(_ name: String, version: Int? = nil) -> Bool {
+    func capabilitySupports(_ name: String, version: Int? = nil) -> Bool {
         guard let capability = capabilities[name],
               let selectedVersion = capability.selectedVersion else {
             return false
@@ -7153,91 +6818,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    public func loadStorage() async throws -> NasStorageSnapshot {
-        let value = try await call(DsmAPIName.storageOverview, method: "load_info")
-        let disks = value.objects("disks").enumerated().map { index, raw in
-            let item = DsmDynamicJSON.object(raw)
-            let id = item.string(["id", "device", "name"]) ?? "disk-\(index)"
-            let smartStatus = item.string(["smart_status"])
-            return NasDisk(
-                id: id,
-                deviceID: item.string(["device"]) ?? id,
-                name: item.string(["longName", "name", "device"]) ?? L10n.string("shared.c89654ab90e80308", String(describing: index + 1)),
-                vendor: item.string(["vendor"]),
-                model: item.string(["model"]),
-                type: item.string(["diskType", "portType"]),
-                totalBytes: item.integer(["size_total"]),
-                status: item.string([
-                    "summary_status_key",
-                    "drive_status_key",
-                    "overview_status",
-                    "status"
-                ]),
-                smartStatus: smartStatus,
-                temperatureCelsius: item.number(["temp"]),
-                isSSD: item.boolean(["isSsd"]) ?? false,
-                usedBy: item.string(["used_by", "allocation_role"]),
-                supportsSmartTest: item.boolean(["smart_test_support"]) ?? (smartStatus != nil),
-                serialNumber: item.string(["serial"]),
-                firmwareVersion: item.string(["firm"]),
-                location: item["container"]?.string(["str"]),
-                is4KNative: item.boolean(["is4Kn"]),
-                estimatedLifePercent: item.integer(["remain_life"]).flatMap { value in
-                    value >= 0 ? Int(value) : nil
-                },
-                badSectorCount: item.integer(["unc"]).flatMap { value in
-                    value >= 0 ? Int(value) : nil
-                }
-            )
-        }
-        storageDisks = disks.reduce(into: [:]) { result, disk in
-            result[disk.id] = disk
-        }
-        let pools = value.objects("storagePools").enumerated().map { index, raw in
-            let item = DsmDynamicJSON.object(raw)
-            let id = item.string(["id", "uuid", "num_id"]) ?? "pool-\(index)"
-            let size = item["size"] ?? .object([:])
-            return NasStoragePool(
-                id: id,
-                name: item.string(["desc", "vol_desc"]) ?? L10n.string("shared.cecdcf599fc46c06", String(describing: index + 1)),
-                raidType: item.string(["raidType", "device_type"]),
-                status: item.string(["summary_status", "status", "space_status"]),
-                totalBytes: size.integer(["total"]),
-                usedBytes: size.integer(["used"]),
-                isWritable: item.boolean(["is_writable"]) ?? false,
-                isScrubbing: item.boolean(["data_scrubbing", "is_actioning"]) ?? false,
-                nextScrubbingDate: Self.date(from: item.string(["next_schedule_time"])),
-                diskIDs: item.strings(["disks"]),
-                spareDiskIDs: item.strings(["spares"]),
-                supportsMultipleVolumes: item.string(["raidType"]).map { $0 != "single" }
-            )
-        }
-        let volumes = value.objects("volumes").enumerated().map { index, raw in
-            let item = DsmDynamicJSON.object(raw)
-            let id = item.string(["id", "uuid", "vol_path"]) ?? "volume-\(index)"
-            let size = item["size"] ?? .object([:])
-            return NasVolume(
-                id: id,
-                name: item.string(["vol_desc", "desc", "vol_path"]) ?? L10n.string("shared.e2687545daa50cb0", String(describing: index + 1)),
-                fileSystem: item.string(["fs_type"]),
-                status: item.string(["summary_status", "status", "space_status"]),
-                totalBytes: size.integer(["total"]),
-                usedBytes: size.integer(["used"]),
-                isEncrypted: item.boolean(["is_encrypted"]) ?? false,
-                isWritable: item.boolean(["is_writable"]) ?? false,
-                poolID: item.string(["pool_path"]),
-                path: item.string(["vol_path"])
-            )
-        }
-        return NasStorageSnapshot(
-            overallStatus: value["overview_data"]?.string(["status_level"])
-                ?? value["env"]?.string(["status"]),
-            disks: disks,
-            pools: pools,
-            volumes: volumes
-        )
-    }
-
     public func loadDiskTestStatus(diskID: String) async throws -> NasDiskTestStatus {
         let disk = try await validatedStorageDisk(id: diskID)
         guard disk.supportsSmartTest else {
@@ -7701,139 +7281,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    public func loadPackages() async throws -> [NasPackage] {
-        try await loadPackages(includingIcons: true)
-    }
-
-    private func loadPackages(
-        includingIcons: Bool
-    ) async throws -> [NasPackage] {
-        let value = try await call(
-            DsmAPIName.corePackage,
-            method: "list",
-            parameters: [
-                "offset": .integer(0),
-                "limit": .integer(1_000),
-                "additional": .stringArray([
-                    "status",
-                    "description",
-                    "install_type",
-                    "startable",
-                    "dsm_apps",
-                    "available_operation",
-                    "ctl_uninstall"
-                ])
-            ]
-        )
-
-        var metadata: [String: PackageControlMetadata] = [:]
-        var packages = value.objects("packages").compactMap { raw -> NasPackage? in
-            let item = DsmDynamicJSON.object(raw)
-            guard let id = item.string(["id", "name"]) else { return nil }
-            let additional = item["additional"] ?? .object([:])
-            let rawStatus = additional.string(["status", "status_code"])
-            let rawOrigin = additional.string(["status_origin"])
-            let rawDesc = additional.string(["status_description"])
-            let isRunning = (rawStatus?.lowercased() == "running" || rawStatus?.lowercased() == "active" || rawOrigin?.lowercased().contains("active") == true)
-            let startable = additional.boolean(["startable"]) ?? true
-            let installType = additional.string(["install_type"])
-            let availableOperations = Set(additional.strings(["available_operation"]).map {
-                $0.lowercased()
-            })
-            let hasOperationList = !availableOperations.isEmpty
-            let canStart = startable && !isRunning
-                && (!hasOperationList || availableOperations.contains("start"))
-            let canStop = startable && isRunning
-                && (!hasOperationList || availableOperations.contains("stop"))
-            let canUninstall = installType?.lowercased() != "system"
-                && (additional.boolean(["ctl_uninstall"]) ?? true)
-                && (!hasOperationList || availableOperations.contains("uninstall"))
-            let isUpgradeAvailable = availableOperations.contains("upgrade")
-
-            metadata[id] = PackageControlMetadata(
-                dsmApps: additional.strings(["dsm_apps"])
-            )
-
-            // 精细化清洗后台底层状态日志，避免暴露英文调试文本
-            let formattedStatusDesc = cleanPackageStatusDescription(status: rawStatus, rawOrigin: rawOrigin, rawDesc: rawDesc)
-
-            return NasPackage(
-                id: id,
-                name: item.string(["name"]) ?? id,
-                version: item.string(["version"]),
-                status: rawStatus,
-                statusDescription: formattedStatusDesc,
-                packageDescription: additional.string(["description"]),
-                installType: installType,
-                installedAt: item.number(["timestamp"]).map {
-                    Date(timeIntervalSince1970: $0 > 10_000_000_000 ? $0 / 1_000 : $0)
-                },
-                iconData: nil,
-                canStart: canStart,
-                canStop: canStop,
-                canUninstall: canUninstall,
-                isUpgradeAvailable: isUpgradeAvailable,
-                // 更新需要安装来源、空间与依赖检查，不能复用列表接口直接触发。
-                canUpgrade: false
-            )
-        }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        packageControlMetadata = metadata
-
-        guard includingIcons else { return packages }
-        guard let iconCapability = capabilities[DsmAPIName.corePackageThumb],
-              let iconVersion = iconCapability.selectedVersion else {
-            return packages
-        }
-        for index in packages.indices {
-            let key = Self.packageIconCacheKey(packages[index])
-            if let cached = packageIconCache[key] {
-                packages[index] = Self.package(packages[index], iconData: cached)
-            }
-        }
-        let missingIndices = packages.indices.filter { packages[$0].iconData == nil }
-        for batchStart in stride(from: 0, to: missingIndices.count, by: 8) {
-            let indices = Array(
-                missingIndices[batchStart..<min(batchStart + 8, missingIndices.count)]
-            )
-            let resolved = await withTaskGroup(
-                of: (Int, Data?).self,
-                returning: [Int: Data].self
-            ) { group in
-                for index in indices {
-                    let package = packages[index]
-                    group.addTask { [client, credential, transport] in
-                        let data = await Self.loadPackageIcon(
-                            package: package,
-                            capability: iconCapability,
-                            version: iconVersion,
-                            baseURL: client.baseURL,
-                            credential: credential,
-                            transport: transport
-                        )
-                        return (index, data)
-                    }
-                }
-                var icons: [Int: Data] = [:]
-                for await (index, data) in group {
-                    icons[index] = data
-                }
-                return icons
-            }
-            for index in indices {
-                if let iconData = resolved[index] {
-                    packageIconCache[Self.packageIconCacheKey(packages[index])] = iconData
-                    packages[index] = Self.package(packages[index], iconData: iconData)
-                }
-            }
-        }
-        if packageIconCache.count > 256 {
-            let currentKeys = Set(packages.map(Self.packageIconCacheKey))
-            packageIconCache = packageIconCache.filter { currentKeys.contains($0.key) }
-        }
-        return packages
-    }
-
     public func controlPackage(id: String, action: NasPackageAction) async throws {
         let result = try await controlPackageResult(id: id, action: action)
         guard result.status == .confirmedSuccess
@@ -8271,127 +7718,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    public func performPowerAction(_ action: NasPowerAction) async throws {
-        let result = try await performPowerActionResult(action)
-        guard result.status == .confirmedSuccess
-                || result.status == .cancelledBeforeSubmission else {
-            throw AppError(
-                category: powerAppErrorCategory(for: result),
-                isRetryable: false,
-                safeUserMessage: L10n.string(
-                    result.localizationKey ?? "power.action.rejected"
-                )
-            )
-        }
-    }
-
-    /// 电源请求无法安全回读；明确响应只表示 DSM 已接受，提交阶段断线不得自动重放。
-    public func performPowerActionResult(
-        _ action: NasPowerAction
-    ) async throws -> MutationResult {
-        let operation = action == .shutdown ? "nasShutdown" : "nasReboot"
-        let prefix = action == .shutdown ? "power.shutdown" : "power.reboot"
-        if Task.isCancelled {
-            return try powerMutationResult(
-                status: .cancelledBeforeSubmission,
-                operation: operation,
-                submitted: false,
-                errorCategory: nil,
-                localizationKey: "power.action.cancelled",
-                diagnosticTag: "\(prefix).cancelled-before-submission"
-            )
-        }
-        guard capabilities[DsmAPIName.coreSystem]?.selectedVersion != nil else {
-            return try powerMutationResult(
-                status: .unsupported,
-                operation: operation,
-                submitted: false,
-                errorCategory: .unsupported,
-                localizationKey: "power.action.unsupported",
-                diagnosticTag: "\(prefix).unsupported"
-            )
-        }
-        guard !isPowerActionActive else {
-            return try powerMutationResult(
-                status: .confirmedFailure,
-                operation: operation,
-                submitted: false,
-                errorCategory: .conflict,
-                localizationKey: "power.action.busy",
-                diagnosticTag: "\(prefix).duplicate"
-            )
-        }
-        isPowerActionActive = true
-        defer { isPowerActionActive = false }
-
-        do {
-            _ = try await call(DsmAPIName.coreSystem, method: "info")
-        } catch let error as AppError {
-            return try powerPreflightFailureResult(
-                error,
-                operation: operation,
-                prefix: prefix
-            )
-        } catch {
-            return try powerMutationResult(
-                status: .confirmedFailure,
-                operation: operation,
-                submitted: false,
-                errorCategory: .unknown,
-                localizationKey: "power.action.preflight-failed",
-                diagnosticTag: "\(prefix).preflight-unknown"
-            )
-        }
-
-        if Task.isCancelled {
-            return try powerMutationResult(
-                status: .cancelledBeforeSubmission,
-                operation: operation,
-                submitted: false,
-                errorCategory: nil,
-                localizationKey: "power.action.cancelled",
-                diagnosticTag: "\(prefix).cancelled-after-preflight"
-            )
-        }
-
-        let method: String
-        switch action {
-        case .shutdown: method = "shutdown"
-        case .reboot: method = "reboot"
-        }
-        do {
-            try await callVoid(
-                DsmAPIName.coreSystem,
-                method: method,
-                parameters: [:]
-            )
-            return try powerMutationResult(
-                status: .confirmedSuccess,
-                operation: operation,
-                submitted: true,
-                errorCategory: nil,
-                localizationKey: "\(prefix).accepted",
-                diagnosticTag: "\(prefix).accepted"
-            )
-        } catch let error as AppError {
-            return try powerSubmissionFailureResult(
-                error,
-                operation: operation,
-                prefix: prefix
-            )
-        } catch {
-            return try powerMutationResult(
-                status: .submittedButUnverified,
-                operation: operation,
-                submitted: true,
-                errorCategory: .unknown,
-                localizationKey: "power.action.unverified",
-                diagnosticTag: "\(prefix).submission-unknown"
-            )
-        }
-    }
-
-    private func powerPreflightFailureResult(
+    func powerPreflightFailureResult(
         _ error: AppError,
         operation: String,
         prefix: String
@@ -8445,7 +7772,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    private func powerSubmissionFailureResult(
+    func powerSubmissionFailureResult(
         _ error: AppError,
         operation: String,
         prefix: String
@@ -8508,7 +7835,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    private func powerMutationResult(
+    func powerMutationResult(
         status: MutationResultStatus,
         operation: String,
         submitted: Bool,
@@ -8538,7 +7865,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    private func powerAppErrorCategory(
+    func powerAppErrorCategory(
         for result: MutationResult
     ) -> AppErrorCategory {
         switch result.status {
@@ -8792,317 +8119,6 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         try await taskCommand(method: "delete", id: id, realOwner: realOwner)
     }
 
-    public func loadAccountsAndGroups() async throws -> NasAccountDirectory {
-        async let usersValue = call(
-            DsmAPIName.coreUser,
-            method: "list",
-            parameters: [
-                "offset": .integer(0),
-                "limit": .integer(1_000),
-                "additional": .stringArray([
-                    "uid",
-                    "description",
-                    "email",
-                    "expired",
-                    "groups",
-                    "can_edit",
-                    "can_delete"
-                ])
-            ]
-        )
-        async let groupsValue = call(
-            DsmAPIName.coreGroup,
-            method: "list",
-            parameters: [
-                "offset": .integer(0),
-                "limit": .integer(1_000),
-                "additional": .stringArray([
-                    "gid",
-                    "description",
-                    "can_edit",
-                    "can_delete"
-                ])
-            ]
-        )
-
-        let usersPayload = try await usersValue
-        let groupsPayload = try await groupsValue
-        let users = usersPayload.objects("users").compactMap { raw -> NasAccount? in
-            let item = DsmDynamicJSON.object(raw)
-            guard let name = item.string(["name"]) else { return nil }
-            return NasAccount(
-                id: "user:\(name)",
-                name: name,
-                kind: .user,
-                numericID: item.integer(["uid"]),
-                description: item.string(["description"]),
-                email: item.string(["email"]),
-                groups: item["groups"] == nil ? nil : item.strings(["groups"]),
-                isExpired: item.boolean(["expired"]) ?? false,
-                canEdit: item.boolean(["can_edit"]) ?? true,
-                canDelete: item.boolean(["can_delete"])
-                    ?? !["admin", "guest"].contains(name.lowercased())
-            )
-        }
-        let groups = groupsPayload.objects("groups").compactMap { raw -> NasAccount? in
-            let item = DsmDynamicJSON.object(raw)
-            guard let name = item.string(["name"]) else { return nil }
-            return NasAccount(
-                id: "group:\(name)",
-                name: name,
-                kind: .group,
-                numericID: item.integer(["gid"]),
-                description: item.string(["description"]),
-                canEdit: item.boolean(["can_edit"]) ?? true,
-                canDelete: item.boolean(["can_delete"])
-                    ?? !["administrators", "users", "http"].contains(name.lowercased())
-            )
-        }
-        return NasAccountDirectory(users: users, groups: groups)
-    }
-
-    public func saveAccount(_ draft: NasAccountDraft) async throws {
-        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
-            throw AppError(
-                category: .invalidResponse,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.f4697c2ce8685eba")
-            )
-        }
-        if draft.originalName == nil {
-            guard !draft.password.isEmpty,
-                  draft.password == draft.passwordConfirmation else {
-                throw AppError(
-                    category: .invalidResponse,
-                    isRetryable: false,
-                    safeUserMessage: L10n.string("shared.9c544f72c057fa2f")
-                )
-            }
-        } else if !draft.password.isEmpty,
-                  draft.password != draft.passwordConfirmation {
-            throw AppError(
-                category: .invalidResponse,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.e4a4a3382011b139")
-            )
-        }
-
-        var parameters: [String: DsmParameterValue] = [
-            "name": .string(draft.originalName ?? name),
-            "description": .string(draft.description),
-            "email": .string(draft.email),
-            "expired": .boolean(draft.isExpired)
-        ]
-        if let groups = draft.groups {
-            parameters["groups"] = .stringArray(groups)
-        }
-        if draft.originalName == nil {
-            parameters["password"] = .string(draft.password)
-            parameters["password_confirm"] = .string(draft.passwordConfirmation)
-        } else if !draft.password.isEmpty {
-            parameters["password"] = .string(draft.password)
-            parameters["password_confirm"] = .string(draft.passwordConfirmation)
-        }
-        try await callVoid(
-            DsmAPIName.coreUser,
-            method: draft.originalName == nil ? "create" : "set",
-            parameters: parameters
-        )
-    }
-
-    public func deleteAccount(name: String) async throws {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              !["admin", "guest"].contains(trimmed.lowercased()) else {
-            throw AppError(
-                category: .permissionDenied,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.917cb22bc73cc211")
-            )
-        }
-        try await callVoid(
-            DsmAPIName.coreUser,
-            method: "delete",
-            parameters: ["name": .stringArray([trimmed])]
-        )
-    }
-
-    /// 账号删除必须回读账号目录确认；请求提交后的未知结果不得自动重放。
-    public func deleteAccountResult(name: String) async throws -> MutationResult {
-        try await deleteDirectoryEntryResult(
-            name: name,
-            kind: .user,
-            protectedNames: ["admin", "guest"]
-        )
-    }
-
-    public func saveGroup(_ draft: NasGroupDraft) async throws {
-        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
-            throw AppError(
-                category: .invalidResponse,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.56a567d51676e519")
-            )
-        }
-        try await callVoid(
-            DsmAPIName.coreGroup,
-            method: draft.originalName == nil ? "create" : "set",
-            parameters: [
-                "name": .string(draft.originalName ?? name),
-                "description": .string(draft.description)
-            ]
-        )
-    }
-
-    public func deleteGroup(name: String) async throws {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              !["administrators", "users", "http"].contains(trimmed.lowercased()) else {
-            throw AppError(
-                category: .permissionDenied,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.966bbfaa2a0d098a")
-            )
-        }
-        try await callVoid(
-            DsmAPIName.coreGroup,
-            method: "delete",
-            parameters: ["name": .stringArray([trimmed])]
-        )
-    }
-
-    /// 群组删除必须回读群组目录确认；请求提交后的未知结果不得自动重放。
-    public func deleteGroupResult(name: String) async throws -> MutationResult {
-        try await deleteDirectoryEntryResult(
-            name: name,
-            kind: .group,
-            protectedNames: ["administrators", "users", "http"]
-        )
-    }
-
-    public func loadLogs(offset: Int, limit: Int) async throws -> NasLogPage {
-        // Log Center 可能已安装但没有历史记录；系统日志是 DSM 默认页面的数据源。
-        let value = try await call(
-            DsmAPIName.coreSystemLog,
-            method: "list",
-            parameters: [
-                "offset": .integer(max(0, offset)),
-                "limit": .integer(min(500, max(1, limit)))
-            ]
-        )
-        let entries = value.objects("items").enumerated().compactMap { index, raw -> NasLogEntry? in
-            let item = DsmDynamicJSON.object(raw)
-            guard let message = item.string(["descr", "message", "msg"]) else { return nil }
-            let rawTime = item.string(["time"])
-            return NasLogEntry(
-                id: "log:\(offset + index):\(rawTime ?? "")",
-                date: Self.date(from: rawTime),
-                source: item.string(["logtype", "orginalLogType"]),
-                level: item.string(["level"]),
-                account: item.string(["who"]),
-                message: message
-            )
-        }
-        return NasLogPage(
-            entries: entries,
-            total: Int(value.number(["total"]) ?? Double(entries.count)),
-            infoCount: value.number(["infoCount"]).map(Int.init),
-            warningCount: value.number(["warnCount"]).map(Int.init),
-            errorCount: value.number(["errorCount"]).map(Int.init)
-        )
-    }
-
-    public func loadConnections(offset: Int, limit: Int) async throws -> NasConnectionPage {
-        let value = try await call(
-            DsmAPIName.coreCurrentConnection,
-            method: "list",
-            parameters: [
-                "start": .integer(max(0, offset)),
-                "limit": .integer(min(500, max(1, limit))),
-                "sort": .string("time"),
-                "sort_by": .string("time"),
-                "sort_direction": .string("DESC")
-            ]
-        )
-        let connections = value.objects("items").enumerated().compactMap {
-            index, raw -> NasConnection? in
-            let item = DsmDynamicJSON.object(raw)
-            guard let account = item.string(["who"]) else { return nil }
-            let pid = item.string(["pid"]) ?? "\(index)"
-            let time = item.string(["time"])
-            return NasConnection(
-                id: "connection:\(pid):\(account):\(time ?? "")",
-                processID: item.string(["pid"]),
-                deviceID: item.string(["did"]),
-                account: account,
-                source: item.string(["from"]),
-                location: item.string(["location"]),
-                protocolName: item.string(["protocol"]),
-                type: item.string(["type"]),
-                connectedAt: Self.date(from: time),
-                description: item.string(["descr"]),
-                isCurrentConnection: item.boolean(["is_current_connected"])
-                    ?? (item.string(["who"]) == currentUsername),
-                canDisconnect: item.boolean(["can_be_kicked"]) ?? false
-            )
-        }
-        return NasConnectionPage(
-            connections: connections,
-            total: Int(value.number(["total"]) ?? Double(connections.count))
-        )
-    }
-
-    public func disconnectConnection(_ connection: NasConnection) async throws {
-        guard connection.canDisconnect else {
-            throw AppError(
-                category: .permissionDenied,
-                isRetryable: false,
-                safeUserMessage: L10n.string("shared.59ee3335304d8042")
-            )
-        }
-
-        let common: [String: DsmJSONValue] = [
-            "who": .string(connection.account),
-            "from": .string(connection.source ?? "")
-        ]
-        let serviceConnections: [[String: DsmJSONValue]]
-        let httpConnections: [[String: DsmJSONValue]]
-        if connection.type?.uppercased() == "HTTP/HTTPS" {
-            guard let deviceID = connection.deviceID, !deviceID.isEmpty else {
-                throw unavailableError()
-            }
-            serviceConnections = []
-            httpConnections = [
-                common.merging([
-                    "did": .string(deviceID),
-                    "descr": .string(connection.description ?? "")
-                ]) { _, new in new }
-            ]
-        } else {
-            guard let processID = connection.processID, !processID.isEmpty else {
-                throw unavailableError()
-            }
-            serviceConnections = [
-                common.merging([
-                    "pid": .string(processID),
-                    "type": .string(connection.type ?? "")
-                ]) { _, new in new }
-            ]
-            httpConnections = []
-        }
-
-        try await callVoid(
-            DsmAPIName.coreCurrentConnection,
-            method: "kick_connection",
-            parameters: [
-                "service_conn": .objectArray(serviceConnections),
-                "http_conn": .objectArray(httpConnections)
-            ]
-        )
-    }
-
     private func validatedStorageDisk(id: String) async throws -> NasDisk {
         if let disk = storageDisks[id] {
             return disk
@@ -9118,7 +8134,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return disk
     }
 
-    private func call(
+    func call(
         _ name: String,
         method: String,
         version requestedVersion: Int? = nil,
@@ -9191,7 +8207,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return result
     }
 
-    private func callVoid(
+    func callVoid(
         _ name: String,
         method: String,
         version requestedVersion: Int? = nil,
@@ -9701,7 +8717,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    private func deleteDirectoryEntryResult(
+    func deleteDirectoryEntryResult(
         name: String,
         kind: NasAccount.Kind,
         protectedNames: Set<String>
@@ -10591,7 +9607,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    private func packageMutationErrorCategory(
+    func packageMutationErrorCategory(
         for category: AppErrorCategory
     ) -> MutationErrorCategory {
         switch category {
@@ -10612,7 +9628,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    private func unavailableError() -> AppError {
+    func unavailableError() -> AppError {
         AppError(
             category: .apiUnavailable,
             isRetryable: false,
@@ -10620,7 +9636,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    private func verificationError(_ message: String) -> AppError {
+    func verificationError(_ message: String) -> AppError {
         AppError(
             category: .invalidResponse,
             isRetryable: true,
@@ -10738,7 +9754,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return normalized.isEmpty ? nil : normalized
     }
 
-    private static func ethernetInterface(
+    static func ethernetInterface(
         from value: DsmDynamicJSON,
         fallback: [String: DsmDynamicJSON],
         id: String
@@ -10797,7 +9813,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
     }
 
-    private static func package(_ package: NasPackage, iconData: Data?) -> NasPackage {
+    static func package(_ package: NasPackage, iconData: Data?) -> NasPackage {
         NasPackage(
             id: package.id,
             name: package.name,
@@ -10816,11 +9832,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         )
     }
 
-    private static func packageIconCacheKey(_ package: NasPackage) -> String {
+    static func packageIconCacheKey(_ package: NasPackage) -> String {
         "\(package.id)|\(package.version ?? "")"
     }
 
-    private static func loadPackageIcon(
+    static func loadPackageIcon(
         package: NasPackage,
         capability: ApiCapability,
         version: Int,
@@ -10865,7 +9881,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return response.data
     }
 
-    private static func hasKnownImageSignature(_ data: Data) -> Bool {
+    static func hasKnownImageSignature(_ data: Data) -> Bool {
         let bytes = [UInt8](data.prefix(12))
         if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return true }
         if bytes.starts(with: [0xFF, 0xD8, 0xFF]) { return true }
@@ -11114,7 +10130,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return NasPowerScheduleDate(year: parts[0], month: parts[1], day: parts[2])
     }
 
-    private static func date(from value: String?) -> Date? {
+    static func date(from value: String?) -> Date? {
         guard let value, !value.isEmpty, value != "--" else { return nil }
         if let seconds = Double(value) {
             return Date(timeIntervalSince1970: seconds > 10_000_000_000 ? seconds / 1_000 : seconds)
@@ -11135,7 +10151,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         return nil
     }
 
-    private func cleanPackageStatusDescription(status: String?, rawOrigin: String?, rawDesc: String?) -> String {
+    func cleanPackageStatusDescription(status: String?, rawOrigin: String?, rawDesc: String?) -> String {
         let raw = [rawOrigin, rawDesc].compactMap { $0 }.joined(separator: " ").lowercased()
         if raw.contains("script status is not 0 but the unit is active") {
             return L10n.string("shared.0c1dfe694215dfd3")

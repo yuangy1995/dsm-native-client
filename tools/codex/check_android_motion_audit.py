@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
-"""检查 Android 生产界面是否新增未经审计的显式时间动效。"""
+"""检查 Android 生产界面是否新增未经 JSON 基线审计的显式时间动效。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import sys
+from typing import Any
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from generate_android_quality_baseline import load_baseline
 
 
 ROOT = Path(__file__).resolve().parents[2]
-UI_ROOT = (
-    ROOT
-    / "android/app/src/main/java/io/github/qwertyuiop1995/dsmnativeclient/ui"
-)
-
-
-@dataclass(frozen=True)
-class MotionFinding:
-    path: str
-    line: int
-    source: str
-
+UI_ROOT = ROOT / "android/app/src/main/java/io/github/qwertyuiop1995/dsmnativeclient/ui"
 
 TIME_MOTION_PATTERNS = (
     re.compile(r"^import android\.animation(?:\.|$)"),
@@ -34,18 +32,22 @@ TIME_MOTION_PATTERNS = (
     re.compile(r"\bValueAnimator\.areAnimatorsEnabled\s*\("),
 )
 
-# 当前唯一显式时间动效是 Workspace 的预测返回取消回弹。白名单精确到源码行，
-# 避免在同一文件中悄悄加入另一套未经审计的动效。
-ALLOWED_SOURCES = {
-    "import android.animation.ValueAnimator",
-    "import androidx.compose.animation.core.Animatable",
-    "import androidx.compose.animation.core.tween",
-    "val predictiveBackProgress = remember { Animatable(0f) }",
-    "animationsEnabled = ValueAnimator.areAnimatorsEnabled(),",
-    "if (ValueAnimator.areAnimatorsEnabled()) {",
-    "predictiveBackProgress.animateTo(0f, animationSpec = tween(150))",
-}
-ALLOWED_PATH = "WorkspaceShell.kt"
+
+def _motion_policy() -> dict[str, Any]:
+    return load_baseline()["motion"]
+
+
+# 兼容已有聚焦单测，并且值始终由机器基线而非 Markdown 文档给出。
+_BASELINE_MOTION = _motion_policy()
+ALLOWED_SOURCES = set(_BASELINE_MOTION["allowedSources"])
+ALLOWED_PATH = _BASELINE_MOTION["allowedPath"]
+
+
+@dataclass(frozen=True)
+class MotionFinding:
+    path: str
+    line: int
+    source: str
 
 
 def scan_ui(ui_root: Path = UI_ROOT) -> list[MotionFinding]:
@@ -67,31 +69,34 @@ def scan_ui(ui_root: Path = UI_ROOT) -> list[MotionFinding]:
     return findings
 
 
-def validate_findings(findings: list[MotionFinding]) -> list[str]:
+def validate_findings(
+    findings: list[MotionFinding],
+    policy: dict[str, Any] | None = None,
+) -> list[str]:
+    resolved_policy = _motion_policy() if policy is None else policy
+    allowed_sources = set(resolved_policy["allowedSources"])
+    allowed_path = resolved_policy["allowedPath"]
+    animation_gate = resolved_policy["systemAnimationGate"]
     errors: list[str] = []
     actual_sources: set[str] = set()
     for finding in findings:
-        if finding.path != ALLOWED_PATH or finding.source not in ALLOWED_SOURCES:
+        if finding.path != allowed_path or finding.source not in allowed_sources:
             errors.append(
-                f"未经审计的显式时间动效：{finding.path}:{finding.line}: "
-                f"{finding.source}"
+                f"未经审计的显式时间动效：{finding.path}:{finding.line}: {finding.source}"
             )
         elif finding.source in actual_sources:
             errors.append(
-                f"允许的动效源码重复出现：{finding.path}:{finding.line}: "
-                f"{finding.source}"
+                f"允许的动效源码重复出现：{finding.path}:{finding.line}: {finding.source}"
             )
         else:
             actual_sources.add(finding.source)
 
-    missing = ALLOWED_SOURCES - actual_sources
+    missing = allowed_sources - actual_sources
     for source in sorted(missing):
         errors.append(f"预测返回动效审计基线缺失：{source}")
 
-    if (
-        "if (ValueAnimator.areAnimatorsEnabled()) {" not in actual_sources
-        or "animationsEnabled = ValueAnimator.areAnimatorsEnabled()," not in actual_sources
-    ):
+    gate_sources = {source for source in allowed_sources if animation_gate in source}
+    if not gate_sources.issubset(actual_sources):
         errors.append("预测返回进度与取消回弹必须同时遵守系统动画开关")
     return errors
 

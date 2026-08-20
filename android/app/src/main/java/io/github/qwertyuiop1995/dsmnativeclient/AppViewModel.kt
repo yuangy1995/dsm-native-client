@@ -185,7 +185,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var workspacePersistenceJob: Job? = null
     private var nasSwitchJob: Job? = null
     private var isSwitchingNas = false
-    private val transferJobs = mutableMapOf<String, Job>()
+    private val transferTaskJobs = TransferTaskJobOwner()
     private val crossNasRepositories = mutableMapOf<String, DsmRepository>()
     private val crossNasTransferCoordinator = CrossNasTransferCoordinator()
     private var fileBackgroundTaskJob: Job? = null
@@ -193,10 +193,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var fileUploadPreflightBusyToken: FileUploadPreflightToken? = null
     private val foregroundDownloadExecutionIds = mutableMapOf<String, String>()
     private val transferWatchJobs = mutableMapOf<String, Job>()
-    private var photoBackupScanWatchJob: Job? = null
-    private var photoBackupScanWatchProfileId: String? = null
-    private var photoBackupScanWatchGeneration = 0L
-    private var photoBackupScanScheduleGeneration = 0L
+    private val photoBackupScanObservation = PhotoBackupScanObservationOwner()
     private val virtualMachineImageImportWatchJobs = mutableMapOf<String, Job>()
     private var pendingVirtualMachineLocalImageUri: Uri? = null
     private var pendingVirtualMachineLocalImageContentType: String? = null
@@ -5305,8 +5302,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             _workspace.value = current.copy(transfers = listOf(task) + current.transfers)
-            transferJobs[taskId] = job
-            job.invokeOnCompletion { transferJobs.remove(taskId, job) }
+            transferTaskJobs.register(taskId, job)
             job.start()
             true
         }
@@ -6469,7 +6465,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelTransfer(id: String) {
         if (transferStore.server(id)?.readOnlyObservation == true) return
-        val job = transferJobs[id]
+        val job = transferTaskJobs.job(id)
         val persisted = transferStore.download(id)
         val upload = transferStore.upload(id)
         if (persisted?.state == TransferState.PAUSED) {
@@ -6533,7 +6529,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (current.canPauseDownload()) current.copy(state = TransferState.PAUSED) else current
         }?.takeIf { it.state == TransferState.PAUSED } ?: return
         syncPersistedDownloads(paused.profileId)
-        transferJobs[id]?.cancel()
+        transferTaskJobs.job(id)?.cancel()
         paused.workId?.let { value ->
             runCatching { workManager.cancelWorkById(UUID.fromString(value)) }
         }
@@ -13284,7 +13280,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             activeWorkspaceJobs.forEach(Job::cancel)
             activeWorkspaceJobs.forEach { child -> child.join() }
 
-            transferJobs.clear()
+            transferTaskJobs.clearReferences()
             foregroundDownloadExecutionIds.clear()
             transferWatchJobs.clear()
             virtualMachineImageImportWatchJobs.clear()
@@ -13383,8 +13379,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         cancelOpaqueExternalNavigation(consumePending = true)
         releasePendingVirtualMachineLocalImageGrant()
         chatPendingAttachmentUrisForRelease(state).forEach(::releasePersistedReadPermission)
-        transferJobs.values.forEach(Job::cancel)
-        transferJobs.clear()
+        transferTaskJobs.cancelAndClear()
         transferWatchJobs.values.forEach(Job::cancel)
         transferWatchJobs.clear()
         virtualMachineImageImportWatchJobs.values.forEach(Job::cancel)
@@ -15644,7 +15639,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return false
         }
         cancelPhotoBackupScanObservation(profileId)
-        val scheduleGeneration = ++photoBackupScanScheduleGeneration
+        val scheduleGeneration = photoBackupScanObservation.nextScheduleGeneration()
         val periodicOperation = workManager.enqueueUniquePeriodicWork(
             periodicWorkName,
             ExistingPeriodicWorkPolicy.UPDATE,
@@ -15713,7 +15708,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         expected: PersistedPhotoBackupSource,
         generation: Long,
     ): Boolean =
-        photoBackupScanScheduleGeneration == generation &&
+        photoBackupScanObservation.isCurrentScheduleGeneration(generation) &&
             transferStore.photoBackupSource(expected.profileId)?.let { current ->
                 current.treeUri == expected.treeUri &&
                     current.destinationPath == expected.destinationPath &&
@@ -15748,10 +15743,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         periodicWorkId: UUID,
         initialWorkId: UUID,
     ) {
-        photoBackupScanWatchJob?.cancel()
-        val generation = ++photoBackupScanWatchGeneration
         val profileId = source.profileId
-        photoBackupScanWatchProfileId = profileId
+        val generation = photoBackupScanObservation.beginObservation(profileId)
         val job = viewModelScope.launch {
             launch {
                 observePhotoBackupSourceScan(
@@ -15770,13 +15763,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
-        photoBackupScanWatchJob = job
-        job.invokeOnCompletion {
-            if (photoBackupScanWatchGeneration == generation) {
-                photoBackupScanWatchJob = null
-                photoBackupScanWatchProfileId = null
-            }
-        }
+        photoBackupScanObservation.attachObservation(profileId, generation, job)
     }
 
     private suspend fun observePhotoBackupSourceScan(
@@ -15788,8 +15775,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         workManager.getWorkInfoByIdFlow(observedWorkId).collectLatest { info ->
             val workInfo = info ?: return@collectLatest
             val decision = photoBackupScanFailureDecision(
-                observationIsCurrent = photoBackupScanWatchGeneration == generation &&
-                    photoBackupScanWatchProfileId == source.profileId,
+                observationIsCurrent = photoBackupScanObservation.isCurrentObservation(
+                    source.profileId,
+                    generation,
+                ),
                 workspaceProfileId = _workspace.value?.profile?.id,
                 currentSource = transferStore.photoBackupSource(source.profileId),
                 expectedProfileId = source.profileId,
@@ -15840,16 +15829,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun cancelPhotoBackupScanObservation(profileId: String, generation: Long? = null) {
-        if (
-            photoBackupScanWatchProfileId != profileId ||
-            (generation != null && photoBackupScanWatchGeneration != generation)
-        ) {
-            return
-        }
-        photoBackupScanWatchGeneration += 1
-        photoBackupScanWatchJob?.cancel()
-        photoBackupScanWatchJob = null
-        photoBackupScanWatchProfileId = null
+        photoBackupScanObservation.cancelObservation(profileId, generation)
     }
 
     private fun photoBackupSourceRestoreMessage(source: PersistedPhotoBackupSource?): String? =
@@ -15987,8 +15967,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         foregroundDownloadExecutionIds[record.id] = executionId
-        transferJobs[record.id] = job
-        job.invokeOnCompletion {
+        transferTaskJobs.register(record.id, job, beforeRemoval = {
             var finalizedCancellation = false
             val cancelled = transferStore.update(record.id) { current ->
                 val next = current.finalizeForegroundDownloadCancellation(
@@ -16008,9 +15987,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 releasePersistedDownloadPermission(destination)
                 syncPersistedDownloads(cancelled.profileId)
             }
-            transferJobs.remove(record.id, job)
+        }, afterRemoval = {
             foregroundDownloadExecutionIds.remove(record.id, executionId)
-        }
+        })
         job.start()
     }
 
@@ -16237,8 +16216,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        transferJobs[record.id] = job
-        job.invokeOnCompletion { transferJobs.remove(record.id, job) }
+        transferTaskJobs.register(record.id, job)
     }
 
     private fun updatePersistedServerRecord(
@@ -16762,8 +16740,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        transferJobs[taskId] = job
-        job.invokeOnCompletion { transferJobs.remove(taskId, job) }
+        transferTaskJobs.register(taskId, job)
         job.start()
     }
 

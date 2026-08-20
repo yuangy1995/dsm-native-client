@@ -1,3 +1,6 @@
+<!-- doc-role: entrypoint -->
+<!-- last-reviewed: 2026-08-20 -->
+
 # 岚仓（LanStash）
 
 [简体中文](README.md) · [English](README.en.md)
@@ -15,7 +18,7 @@
 | macOS | Swift 6、SwiftUI、Swift Package Manager | 完成度最高；文件、照片、消息、下载、容器、虚拟机和 NAS 管理主流程已建立 |
 | iPhone | Swift 6、SwiftUI | 已形成登录、Files、Photos、受限 Chat 文字、Download Station 常用单任务与只读管理页等移动闭环；当前范围和实机缺口见[开发状态](docs/progress/STATUS.md) |
 | iPad | Swift 6、SwiftUI | 与 iPhone 共用通用工程，并已接入分栏、键盘和大屏自适应路径；真实 iPad 与 NAS 交互仍按[开发状态](docs/progress/STATUS.md)验收 |
-| Android | Kotlin、Jetpack Compose | 主要模块源码和自动化闭环已建立；当前完成率、剩余目标与验收缺口见[开发状态](docs/progress/STATUS.md) |
+| Android | Kotlin、Jetpack Compose | 主要模块源码和自动化闭环已建立；当前范围、验证状态与验收缺口见[开发状态](docs/progress/STATUS.md) |
 | Windows | C#、WinUI 3 | 已形成认证、Files、Photos、受限 Chat 文字、Download Station、本地设置与桌面集成等原生闭环；云端构建证据和真实设备缺口见[开发状态](docs/progress/STATUS.md) |
 
 “已建立”表示源码路径和自动化测试存在，不等于所有 DSM 型号、系统版本和套件版本都已完成实机兼容验证。高影响写操作仍需能力发现、权限检查、用户确认、重复提交保护和结果校验。
@@ -134,6 +137,8 @@ dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runt
 - [当前进度](docs/progress/STATUS.md)
 - [产品路线图](docs/progress/ROADMAP.md)
 - [平台功能矩阵](docs/progress/PLATFORM_MATRIX.md)
+- [Android 质量基线](docs/quality/ANDROID_QUALITY_BASELINE_ZH.md)
+- [发布与手工验收历史](docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)
 - [DSM 兼容矩阵](docs/compatibility/DSM_COMPATIBILITY_MATRIX.md)
 - [社区兼容性计划](docs/compatibility/COMMUNITY_COMPATIBILITY_PROGRAM_ZH.md)
 - [社区兼容矩阵](docs/compatibility/COMMUNITY_COMPATIBILITY_MATRIX_ZH.md)

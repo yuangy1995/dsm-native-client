@@ -589,122 +589,6 @@ private fun PhotoSpaceChip(
 }
 
 @Composable
-private fun PhotoGrid(
-    state: WorkspaceState,
-    items: List<PhotoItem>,
-    model: AppViewModel,
-    hasMore: Boolean,
-    onAction: (PhotoItem) -> Unit,
-) {
-    val gridState = rememberLazyGridState()
-    PhotoThumbnailWindowEffect(
-        gridState = gridState,
-        items = items,
-        profileId = state.profile.id,
-        enabled = state.supportsThumbnails,
-        acquireThumbnail = { item, profileId ->
-            model.acquireThumbnail(item.file, profileId)
-        },
-        releaseThumbnail = { item, profileId ->
-            model.releaseThumbnail(item.file.path, profileId)
-        },
-    )
-    LazyVerticalGrid(
-        state = gridState,
-        columns = GridCells.Adaptive(120.dp),
-        contentPadding = PaddingValues(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(items, key = PhotoItem::id) { item ->
-            PhotoCard(
-                item = item,
-                state = state,
-                model = model,
-                onClick = {
-                    if (item.kind == PhotoItemKind.FOLDER) {
-                        model.openPhotoFolder(item)
-                    } else {
-                        model.openPhotoViewer(item, items)
-                    }
-                },
-                onAction = { onAction(item) },
-            )
-        }
-        if (hasMore) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (state.photoBrowser.isLoadingMore) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(Modifier.size(24.dp))
-                            Text(stringResource(R.string.loading_more_photos))
-                        }
-                    } else {
-                        Button(onClick = model::loadMorePhotos) {
-                            Text(stringResource(R.string.load_more_photos))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun PhotoThumbnailWindowEffect(
-    gridState: LazyGridState,
-    items: List<PhotoItem>,
-    profileId: String,
-    enabled: Boolean,
-    acquireThumbnail: (PhotoItem, String) -> Unit,
-    releaseThumbnail: (PhotoItem, String) -> Unit,
-) {
-    LaunchedEffect(gridState, items, profileId, enabled) {
-        if (!enabled) return@LaunchedEffect
-        val acquired = linkedMapOf<String, PhotoItem>()
-        try {
-            snapshotFlow {
-                val visibleIndices = gridState.layoutInfo.visibleItemsInfo
-                    .map { it.index }
-                    .filter { it in items.indices }
-                    .distinct()
-                    .sorted()
-                val visibleMedia = visibleIndices
-                    .map(items::get)
-                    .filter { it.kind in setOf(PhotoItemKind.IMAGE, PhotoItemKind.VIDEO) }
-                (visibleMedia + thumbnailPrefetchItems(items, visibleIndices))
-                    .distinctBy { it.file.path }
-            }.distinctUntilChanged().collect { requested ->
-                val requestedPaths = requested.mapTo(mutableSetOf()) { it.file.path }
-                acquired.keys.filterNot(requestedPaths::contains).toList().forEach { path ->
-                    acquired.remove(path)?.let { item ->
-                        releaseThumbnail(item, profileId)
-                    }
-                }
-                requested.forEach { item ->
-                    if (item.file.path !in acquired) {
-                        acquireThumbnail(item, profileId)
-                        acquired[item.file.path] = item
-                    }
-                }
-            }
-        } finally {
-            acquired.values.forEach { item ->
-                releaseThumbnail(item, profileId)
-            }
-        }
-    }
-}
-
-@Composable
 private fun PhotoTimelineGrid(
     state: WorkspaceState,
     items: List<PhotoItem>,
@@ -818,7 +702,7 @@ private fun PhotoTimelineLoading() {
 }
 
 @Composable
-private fun PhotoCard(
+internal fun PhotoCard(
     item: PhotoItem,
     state: WorkspaceState,
     model: AppViewModel,

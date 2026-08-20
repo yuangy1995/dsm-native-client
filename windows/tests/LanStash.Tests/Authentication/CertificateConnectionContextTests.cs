@@ -32,20 +32,32 @@ public sealed class CertificateConnectionContextTests
     [Fact]
     public void EveryRawNasSendHasAContextAssignmentAndQuickConnectControlPlaneHasNone()
     {
-        var api = Read("windows/src/LanStash.Infrastructure/DsmApiClient.cs");
-        var chatAttachmentUpload = Read(
-            "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentUpload.cs");
-        var chatAttachmentContent = Read(
-            "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentContent.cs");
+        var expectedApiSourcePaths = new[]
+        {
+            "windows/src/LanStash.Infrastructure/DsmApiClient.cs",
+            "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentContent.cs",
+            "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentUpload.cs",
+            "windows/src/LanStash.Infrastructure/Features/Files/DsmApiClient.FileArchive.cs",
+            "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.DownloadStream.cs",
+            "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.Transport.cs",
+        };
+        var actualApiSourcePaths = FindRawNasApiSourcePaths();
+        Assert.Equal(expectedApiSourcePaths, actualApiSourcePaths);
+
+        var apiSources = actualApiSourcePaths.Select(Read).ToArray();
         var quickConnect = Read("windows/src/LanStash.Infrastructure/DsmQuickConnectResolver.cs");
 
-        Assert.Equal(20, Count(api, "_http.SendAsync("));
-        Assert.Equal(9, Count(api, "SetNasConnectionContext(request, profile);"));
-        Assert.Equal(1, Count(chatAttachmentUpload, "_http.SendAsync("));
-        Assert.Equal(1, Count(chatAttachmentUpload, "SetNasConnectionContext(request, profile);"));
-        Assert.Equal(1, Count(chatAttachmentContent, "_http.SendAsync("));
-        Assert.Equal(1, Count(chatAttachmentContent, "SetNasConnectionContext(request, profile);"));
-        Assert.Equal(2, Count(api, "WindowsCertificateTrustHandler.SetConnectionContext("));
+        Assert.Equal(23, apiSources.Sum(source => Count(source, "_http.SendAsync(")));
+        Assert.Equal(12, apiSources.Sum(source =>
+            Count(source, "SetNasConnectionContext(request, profile);")));
+        Assert.Equal(2, apiSources.Sum(source =>
+            Count(source, "WindowsCertificateTrustHandler.SetConnectionContext(")));
+        Assert.All(
+            apiSources.Where(source => Count(source, "_http.SendAsync(") > 0),
+            source => Assert.True(
+                source.Contains("SetNasConnectionContext", StringComparison.Ordinal) ||
+                source.Contains("WindowsCertificateTrustHandler.SetConnectionContext", StringComparison.Ordinal),
+                "每个包含裸 NAS SendAsync 的 partial 源文件都必须显式设置证书连接上下文。"));
         Assert.DoesNotContain("SetConnectionContext", quickConnect, StringComparison.Ordinal);
         foreach (var credential in new[] { "_sid", "SynoToken", "Cookie", "passwd" })
             Assert.DoesNotContain(credential, quickConnect, StringComparison.OrdinalIgnoreCase);
@@ -57,6 +69,20 @@ public sealed class CertificateConnectionContextTests
 
     private static string Read(string relativePath) =>
         File.ReadAllText(Path.Combine(RepositoryRoot(), relativePath));
+
+    private static string[] FindRawNasApiSourcePaths()
+    {
+        var root = RepositoryRoot();
+        return Directory.EnumerateFiles(
+                Path.Combine(root, "windows/src/LanStash.Infrastructure"),
+                "DsmApiClient*.cs",
+                SearchOption.AllDirectories)
+            .Where(path => File.ReadAllText(path).Contains("_http.SendAsync(", StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(root, path)
+                .Replace(Path.DirectorySeparatorChar, '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
 
     private static string RepositoryRoot()
     {
