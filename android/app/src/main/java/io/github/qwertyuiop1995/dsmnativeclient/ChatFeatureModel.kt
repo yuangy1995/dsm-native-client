@@ -54,14 +54,23 @@ internal class ChatFeatureModel(
             scope = scope,
             name = CONVERSATION_LOAD_JOB,
             token = token,
-            block = { captureLoadable { repository.chatConversations() } },
-            onResult = { value ->
-                if (!isSessionCurrent(repository, token)) return@launch
+            block = { taskToken ->
+                val result = captureLoadable { repository.chatConversations() }
+                if (!isTaskCurrent(repository, taskToken)) return@launch result
+                result
+            },
+            onResult = { taskToken, value ->
+                if (!isTaskCurrent(repository, taskToken)) return@launch
                 if (value is Loadable.Ready) {
-                    publishConversations(repository, token, value.value, requireConversationListActive = false)
+                    publishConversations(
+                        repository,
+                        taskToken,
+                        value.value,
+                        requireConversationListActive = false,
+                    )
                 } else {
                     workspace.update { current ->
-                        current?.takeIf { isSessionCurrent(repository, token) }
+                        current?.takeIf { isTaskCurrent(repository, taskToken) }
                             ?.copy(conversations = value) ?: current
                     }
                 }
@@ -119,13 +128,24 @@ internal class ChatFeatureModel(
             scope = scope,
             name = CONVERSATION_LOAD_JOB,
             token = token,
-            block = { suspendRunCatching { repository.chatConversations() }.getOrNull() },
-            onResult = { conversations ->
-                if (!isSessionCurrent(repository, token)) return@launch
+            block = { taskToken ->
+                val result = suspendRunCatching { repository.chatConversations() }
+                if (!isTaskCurrent(repository, taskToken)) return@launch null
+                result.getOrNull()
+            },
+            onResult = { taskToken, conversations ->
+                if (!isTaskCurrent(repository, taskToken)) return@launch
                 conversations?.let {
-                    publishConversations(repository, token, it, requireConversationListActive = false)
+                    publishConversations(
+                        repository,
+                        taskToken,
+                        it,
+                        requireConversationListActive = false,
+                    )
                 }
-                if (!isRealtimeConnected()) startConversationPolling(repository, token)
+                if (!isRealtimeConnected()) {
+                    startConversationPolling(repository, token, sourceToken = taskToken)
+                }
             },
         )
     }
@@ -197,6 +217,10 @@ internal class ChatFeatureModel(
         jobOwner.isCurrent(token) && repositoryProvider() === repository &&
             workspace.value?.profile?.id == token.profileId
 
+    private fun isTaskCurrent(repository: DsmRepository, token: ChatTaskToken): Boolean =
+        jobOwner.isCurrent(token) && repositoryProvider() === repository &&
+            workspace.value?.profile?.id == token.session.profileId
+
     private fun loadMessages(
         repository: DsmRepository,
         token: ChatFeatureToken,
@@ -207,28 +231,38 @@ internal class ChatFeatureModel(
             scope = scope,
             name = MESSAGE_LOAD_JOB,
             token = token,
-            block = {
+            block = { taskToken ->
                 val currentPage = (workspace.value?.chatMessages as? Loadable.Ready)?.value
                 val offset = if (reset) 0 else currentPage?.nextOffset
                 if (!reset && offset == null) {
                     null
                 } else {
-                    if (!reset) workspace.update { it?.copy(chatIsLoadingMore = true) }
-                    ChatMessageLoadOutcome(
+                    if (!reset) {
+                        if (!isTaskCurrent(repository, taskToken)) return@launch null
+                        workspace.update { current ->
+                            current?.takeIf { isTaskCurrent(repository, taskToken) }
+                                ?.copy(chatIsLoadingMore = true) ?: current
+                        }
+                    }
+                    val outcome = ChatMessageLoadOutcome(
                         reset = reset,
                         currentPage = currentPage,
                         result = suspendRunCatching {
                             repository.chatMessages(conversation.id, checkNotNull(offset))
                         },
                     )
+                    if (!isTaskCurrent(repository, taskToken)) return@launch null
+                    outcome
                 }
             },
-            onResult = { outcome ->
-                if (outcome == null || !isSessionCurrent(repository, token)) return@launch
+            onResult = { taskToken, outcome ->
+                if (outcome == null || !isTaskCurrent(repository, taskToken)) return@launch
                 val page = outcome.result.getOrNull()
                 if (page != null) {
                     workspace.update { current ->
-                        if (current?.selectedConversation?.id != conversation.id) return@update current
+                        if (!isTaskCurrent(repository, taskToken) ||
+                            current?.selectedConversation?.id != conversation.id
+                        ) return@update current
                         val merged = if (outcome.reset || outcome.currentPage == null) {
                             page.copy(
                                 messages = (page.messages +
@@ -249,7 +283,9 @@ internal class ChatFeatureModel(
                 }
                 val error = outcome.result.exceptionOrNull() ?: return@launch
                 workspace.update { current ->
-                    if (current?.selectedConversation?.id != conversation.id) return@update current
+                    if (!isTaskCurrent(repository, taskToken) ||
+                        current?.selectedConversation?.id != conversation.id
+                    ) return@update current
                     if (outcome.reset) {
                         current.copy(chatMessages = Loadable.Failed(error.asDsmFailure()))
                     } else {
@@ -265,14 +301,17 @@ internal class ChatFeatureModel(
 
     private suspend fun refreshLatestMessages(
         repository: DsmRepository,
-        token: ChatFeatureToken,
+        token: ChatTaskToken,
         conversation: ChatConversation,
     ) {
-        if (!isSessionCurrent(repository, token)) return
-        val latest = suspendRunCatching { repository.chatMessages(conversation.id, 0) }.getOrNull() ?: return
-        if (!isSessionCurrent(repository, token)) return
+        if (!isTaskCurrent(repository, token)) return
+        val result = suspendRunCatching { repository.chatMessages(conversation.id, 0) }
+        if (!isTaskCurrent(repository, token)) return
+        val latest = result.getOrNull() ?: return
         workspace.update { current ->
-            if (current?.selectedConversation?.id != conversation.id) return@update current
+            if (!isTaskCurrent(repository, token) ||
+                current?.selectedConversation?.id != conversation.id
+            ) return@update current
             val existing = (current.chatMessages as? Loadable.Ready)?.value ?: return@update current
             current.copy(
                 chatMessages = Loadable.Ready(
@@ -288,13 +327,13 @@ internal class ChatFeatureModel(
 
     private fun publishConversations(
         repository: DsmRepository,
-        token: ChatFeatureToken,
+        token: ChatTaskToken,
         conversations: List<ChatConversation>,
         requireConversationListActive: Boolean,
     ) {
-        if (!isSessionCurrent(repository, token)) return
+        if (!isTaskCurrent(repository, token)) return
         workspace.update { state ->
-            if (state == null || !isSessionCurrent(repository, token) ||
+            if (state == null || !isTaskCurrent(repository, token) ||
                 requireConversationListActive &&
                 (state.selectedModule != Module.CHAT || state.selectedConversation != null)
             ) return@update state
@@ -311,29 +350,36 @@ internal class ChatFeatureModel(
         }
     }
 
-    private fun startConversationPolling(repository: DsmRepository, token: ChatFeatureToken) {
+    private fun startConversationPolling(
+        repository: DsmRepository,
+        token: ChatFeatureToken,
+        sourceToken: ChatTaskToken? = null,
+    ) {
         jobOwner.launch(
             scope = scope,
             name = REFRESH_JOB,
             token = token,
-            block = {
+            sourceToken = sourceToken,
+            block = { taskToken ->
                 while (currentCoroutineContext().isActive) {
                     delay(CHAT_REFRESH_INTERVAL_MILLIS)
+                    if (!isTaskCurrent(repository, taskToken)) break
                     val current = workspace.value
-                    if (!isSessionCurrent(repository, token) ||
-                        current?.selectedModule != Module.CHAT || current.selectedConversation != null
+                    if (current?.selectedModule != Module.CHAT || current.selectedConversation != null
                     ) break
-                    suspendRunCatching { repository.chatConversations() }.getOrNull()?.let { conversations ->
+                    val result = suspendRunCatching { repository.chatConversations() }
+                    if (!isTaskCurrent(repository, taskToken)) break
+                    result.getOrNull()?.let { conversations ->
                         publishConversations(
                             repository,
-                            token,
+                            taskToken,
                             conversations,
                             requireConversationListActive = true,
                         )
                     }
                 }
             },
-            onResult = {},
+            onResult = { _, _ -> },
         )
     }
 
@@ -341,23 +387,25 @@ internal class ChatFeatureModel(
         repository: DsmRepository,
         token: ChatFeatureToken,
         conversation: ChatConversation,
+        sourceToken: ChatTaskToken? = null,
     ) {
         jobOwner.launch(
             scope = scope,
             name = REFRESH_JOB,
             token = token,
-            block = {
+            sourceToken = sourceToken,
+            block = { taskToken ->
                 while (currentCoroutineContext().isActive) {
                     delay(CHAT_REFRESH_INTERVAL_MILLIS)
+                    if (!isTaskCurrent(repository, taskToken)) break
                     val current = workspace.value
-                    if (!isSessionCurrent(repository, token) ||
-                        current?.selectedModule != Module.CHAT ||
+                    if (current?.selectedModule != Module.CHAT ||
                         current.selectedConversation?.id != conversation.id
                     ) break
-                    refreshLatestMessages(repository, token, conversation)
+                    refreshLatestMessages(repository, taskToken, conversation)
                 }
             },
-            onResult = {},
+            onResult = { _, _ -> },
         )
     }
 
@@ -371,18 +419,39 @@ internal class ChatFeatureModel(
                     scope = scope,
                     name = REALTIME_CONNECTION_JOB,
                     token = token,
-                    block = { connected },
-                    onResult = { currentConnected ->
-                        if (!isSessionCurrent(repository, token)) return@launch
-                        synchronized(lifecycleLock) { realtimeConnected = currentConnected }
+                    block = { taskToken ->
+                        if (!isTaskCurrent(repository, taskToken)) return@launch connected
+                        connected
+                    },
+                    onResult = { taskToken, currentConnected ->
+                        if (!isTaskCurrent(repository, taskToken)) return@launch
+                        val connectionUpdated = synchronized(lifecycleLock) {
+                            if (!isTaskCurrent(repository, taskToken)) {
+                                false
+                            } else {
+                                realtimeConnected = currentConnected
+                                true
+                            }
+                        }
+                        if (!connectionUpdated || !isTaskCurrent(repository, taskToken)) return@launch
                         if (currentConnected) {
-                            jobOwner.cancel(REFRESH_JOB)
+                            jobOwner.cancel(REFRESH_JOB, sourceToken = taskToken)
                         } else {
+                            if (!isTaskCurrent(repository, taskToken)) return@launch
                             val state = workspace.value
                             if (state?.selectedModule == Module.CHAT) {
                                 state.selectedConversation?.let { conversation ->
-                                    startMessagePolling(repository, token, conversation)
-                                } ?: startConversationPolling(repository, token)
+                                    startMessagePolling(
+                                        repository,
+                                        token,
+                                        conversation,
+                                        sourceToken = taskToken,
+                                    )
+                                } ?: startConversationPolling(
+                                    repository,
+                                    token,
+                                    sourceToken = taskToken,
+                                )
                             }
                         }
                     },
@@ -393,25 +462,27 @@ internal class ChatFeatureModel(
                     scope = scope,
                     name = REALTIME_REFRESH_JOB,
                     token = token,
-                    block = {
+                    block = { taskToken ->
                         delay(CHAT_REALTIME_COALESCE_MILLIS)
-                        if (!isSessionCurrent(repository, token)) return@launch
+                        if (!isTaskCurrent(repository, taskToken)) return@launch
                         val state = workspace.value
                         if (state?.selectedModule != Module.CHAT) return@launch
                         state.selectedConversation?.let { conversation ->
-                            refreshLatestMessages(repository, token, conversation)
-                        } ?: suspendRunCatching { repository.chatConversations() }
-                            .getOrNull()
-                            ?.let { conversations ->
+                            refreshLatestMessages(repository, taskToken, conversation)
+                        } ?: run {
+                            val result = suspendRunCatching { repository.chatConversations() }
+                            if (!isTaskCurrent(repository, taskToken)) return@launch
+                            result.getOrNull()?.let { conversations ->
                                 publishConversations(
                                     repository,
-                                    token,
+                                    taskToken,
                                     conversations,
                                     requireConversationListActive = true,
                                 )
                             }
+                        }
                     },
-                    onResult = {},
+                    onResult = { _, _ -> },
                 )
             },
         )
@@ -462,12 +533,20 @@ internal data class ChatFeatureSession(
     val changed: Boolean,
 )
 
+/** 某一类 Chat 读取任务的唯一身份；同名任务替换时仅新代次可以发布副作用。 */
+internal data class ChatTaskToken(
+    val session: ChatFeatureToken,
+    val name: String,
+    val taskGeneration: Long,
+)
+
 /** Chat 特性内所有读取 Job 的唯一所有者，拒绝过期资料的迟到发布。 */
 internal class ChatFeatureJobOwner {
     private val lock = Any()
     private val generation = AtomicLong(0)
     private var activeProfileId: String? = null
     private val jobs = mutableMapOf<String, Job>()
+    private val taskGenerations = mutableMapOf<String, Long>()
 
     fun ensureSession(profileId: String): ChatFeatureSession {
         val jobsToCancel: List<Job>
@@ -483,6 +562,7 @@ internal class ChatFeatureJobOwner {
             val nextGeneration = generation.incrementAndGet()
             jobsToCancel = jobs.values.toList()
             jobs.clear()
+            taskGenerations.clear()
             session = ChatFeatureSession(
                 ChatFeatureToken(profileId, nextGeneration),
                 changed = true,
@@ -496,17 +576,24 @@ internal class ChatFeatureJobOwner {
         val jobsToCancel = synchronized(lock) {
             if (clearProfile) activeProfileId = null
             generation.incrementAndGet()
-            jobs.values.toList().also { jobs.clear() }
+            jobs.values.toList().also {
+                jobs.clear()
+                taskGenerations.clear()
+            }
         }
         jobsToCancel.forEach(Job::cancel)
     }
 
-    fun isCurrent(token: ChatFeatureToken): Boolean = synchronized(lock) {
-        activeProfileId == token.profileId && generation.get() == token.generation
-    }
+    fun isCurrent(token: ChatFeatureToken): Boolean = synchronized(lock) { isSessionCurrentLocked(token) }
 
-    fun cancel(name: String) {
-        val job = synchronized(lock) { jobs.remove(name) }
+    fun isCurrent(token: ChatTaskToken): Boolean = synchronized(lock) { isTaskCurrentLocked(token) }
+
+    fun cancel(name: String, sourceToken: ChatTaskToken? = null) {
+        val job = synchronized(lock) {
+            if (sourceToken != null && !isTaskCurrentLocked(sourceToken)) return@synchronized null
+            invalidateTaskLocked(name)
+            jobs.remove(name)
+        }
         job?.cancel()
     }
 
@@ -514,25 +601,42 @@ internal class ChatFeatureJobOwner {
         scope: CoroutineScope,
         name: String,
         token: ChatFeatureToken,
-        block: suspend () -> T,
-        onResult: (T) -> Unit,
+        sourceToken: ChatTaskToken? = null,
+        block: suspend (ChatTaskToken) -> T,
+        onResult: (ChatTaskToken, T) -> Unit,
     ): Job? {
+        val taskTokenAndPrevious = synchronized(lock) {
+            if (!isSessionCurrentLocked(token) ||
+                sourceToken != null && !isTaskCurrentLocked(sourceToken)
+            ) return@synchronized null
+            val taskToken = ChatTaskToken(
+                session = token,
+                name = name,
+                taskGeneration = invalidateTaskLocked(name),
+            )
+            taskToken to jobs.remove(name)
+        } ?: return null
+        val (taskToken, previous) = taskTokenAndPrevious
+        previous?.cancel()
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            val value = block()
-            if (isCurrent(token)) onResult(value)
+            val value = block(taskToken)
+            if (isCurrent(taskToken)) onResult(taskToken, value)
         }
-        val previous = synchronized(lock) {
-            if (!isCurrent(token)) return@synchronized null
-            jobs.put(name, job)
+        val accepted = synchronized(lock) {
+            if (!isTaskCurrentLocked(taskToken)) {
+                false
+            } else {
+                jobs[name] = job
+                true
+            }
         }
-        if (!isCurrent(token)) {
+        if (!accepted) {
             synchronized(lock) {
                 if (jobs[name] === job) jobs.remove(name)
             }
             job.cancel()
             return null
         }
-        previous?.cancel()
         job.invokeOnCompletion {
             synchronized(lock) {
                 if (jobs[name] === job) jobs.remove(name)
@@ -540,5 +644,19 @@ internal class ChatFeatureJobOwner {
         }
         job.start()
         return job
+    }
+
+    private fun isSessionCurrentLocked(token: ChatFeatureToken): Boolean =
+        activeProfileId == token.profileId && generation.get() == token.generation
+
+    private fun isTaskCurrentLocked(token: ChatTaskToken): Boolean =
+        isSessionCurrentLocked(token.session) &&
+            taskGenerations[token.name] == token.taskGeneration
+
+    /** 先提升同名任务代次，再由调用方在锁外取消旧 Job。 */
+    private fun invalidateTaskLocked(name: String): Long {
+        val next = (taskGenerations[name] ?: 0) + 1
+        taskGenerations[name] = next
+        return next
     }
 }

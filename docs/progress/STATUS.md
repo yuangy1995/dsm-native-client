@@ -1,42 +1,43 @@
 <!-- doc-role: status -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-08-21 -->
 
 # 当前开发进度
 
-> 更新日期：2026-08-20
+> 更新日期：2026-08-21
 
 本页只记录当前源码、自动化、真实环境和发布准备状态。历史决策见
 [跨端功能对齐历史](../archive/2026-h2/CROSS_PLATFORM_PARITY_HISTORY.md) 与
 [Android 对齐历史](../archive/2026-h2/ANDROID_ALIGNMENT_HISTORY_82_89.md)。
+当前定位仍为 RC 工程预览，不构成任何平台的发布批准。
 
 ## 五端状态
 
 | 平台 | 源码 | 自动化 | 真机 / 真实 NAS | 发布 |
 | --- | --- | --- | --- | --- |
 | macOS | Files、Photos、Chat、Download Station、NAS 管理与桌面云盘路径均在源码中；高风险内部写入口保持能力门保护。 | 本轮共享包测试、无签名构建和桌面云盘专用回归已通过。 | `PENDING_USER_VALIDATION`：正式签名、Finder/File Provider、真实 NAS、升级与危险写回读。 | 未发布；首个 Beta 仅准备，不得在签名与公证前分发。 |
-| iPhone | 移动范围内的登录、Files、Photos、受限 Chat、Download Station 与只读 NAS 摘要已在通用工程中。 | 本轮 iPhone 模拟器无签名构建已通过。 | `PENDING_USER_VALIDATION`：设备登录、选择器、网络切换、VoiceOver 与真实套件行为。 | 未发布；随 Apple Beta 验收入口统一判断。 |
-| iPad | 与 iPhone 共用领域与网络层，保留双栏、键盘与宽屏适配路径。 | 本轮独立 iPad 模拟器无签名构建已通过。 | `PENDING_USER_VALIDATION`：分栏、键盘、动态文字、VoiceOver 与真实 NAS。 | 未发布；不以 iPhone 模拟器替代 iPad 验收。 |
-| Android | Compose 兼容入口、领域状态、后台任务和质量基线均在源码中；Container 未验证写操作继续关闭。 | 写操作、页面五态、点击目标、动效、结构债务、本地化、fixture 与契约门禁可在仓库运行；在 `7e01eca3373231d8c7dba14aaba2a3359f4cbc62` 的 GitHub Android Build 已覆盖 JVM 单测、Debug APK、Release/R8、androidTest APK 构建与 lintDebug。 | `PENDING_USER_VALIDATION`：真实登录、证书、后台、真实 NAS、危险写和多设备辅助功能。 | 未发布；自动化构建覆盖不替代仪器执行、签名、安装或升级回滚验收。 |
-| Windows | WinUI、领域、基础设施与 Cloud Files 路径保留；危险写和未验证系统集成继续关闭或只读。 | xUnit、WinUI x64/ARM64 由 Windows 托管 Runner 验证。 | `PENDING_USER_VALIDATION`：Windows 设备、Explorer/Cloud Files、通知、安装生命周期和真实 NAS。 | 未发布；不改变当前 unpackaged 形态、签名或程序集引用。 |
+| iPhone | 移动范围内的登录、Files、Photos、受限 Chat、Download Station 与只读 NAS 摘要已在通用工程中。 | DsmMobile 通用 iOS Simulator 目标无签名构建通过；不构成独立 iPhone 启动验证。 | `PENDING_USER_VALIDATION`：设备登录、选择器、网络切换、VoiceOver 与真实套件行为。 | 未发布；随 Apple Beta 验收入口统一判断。 |
+| iPad | 与 iPhone 共用领域与网络层，保留双栏、键盘与宽屏适配路径。 | DsmMobile 通用 iOS Simulator 目标无签名构建通过；不构成独立 iPad 验证。 | `PENDING_USER_VALIDATION`：iPad 启动、分栏/宽屏、键盘、动态文字、VoiceOver 与真实 NAS。 | 未发布；不以通用编译替代 iPad 验收。 |
+| Android | Compose 兼容入口、领域状态、后台任务和质量基线均在源码中；Container 未验证写操作继续关闭。 | 写操作、页面五态、点击目标、动效、结构债务、本地化、fixture 与契约门禁可在仓库运行；在 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 的 GitHub Android Build 已覆盖 JVM 单测、Debug APK、Release/R8、androidTest APK 构建与 lintDebug。 | `PENDING_USER_VALIDATION`：真实登录、证书、后台、真实 NAS、危险写和多设备辅助功能。 | 未发布；自动化构建覆盖不替代仪器执行、签名、安装或升级回滚验收。 |
+| Windows | WinUI、领域、基础设施与 Cloud Files 路径保留；危险写和未验证系统集成继续关闭或只读。 | 提交 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 已由 Windows 托管 Runner 通过 xUnit、WinUI x64 与 ARM64 构建。 | `PENDING_USER_VALIDATION`：Windows 设备、Explorer/Cloud Files、通知、安装生命周期和真实 NAS。 | 未发布；不改变当前 unpackaged 形态、签名或程序集引用。 |
 
 ### macOS
 
 - 源码状态：共享 Apple Package 是可修改范围；`apple/Apps/DsmMac/**` 仍是只读参考实现。
-- 自动化状态：本轮已通过共享 Package 测试、iPhone/iPad 模拟器构建与 macOS 无签名构建。
+- 自动化状态：本轮已通过共享 Package 测试、DsmMobile 通用 iOS Simulator 目标无签名构建与 macOS 无签名构建。
 - 真机状态：正式签名、notarization、stapling、Gatekeeper、Finder、File Provider、真实 NAS、升级安装和危险写回读均为 `PENDING_USER_VALIDATION`。
 - 发布状态：未形成可公开 Beta；候选包必须先经过正式签名与执行矩阵。
 
 ### iPhone
 
 - 源码状态：坚持随身伴侣范围，不把复杂运维、后台常驻或桌面交互隐式迁入。
-- 自动化状态：本轮 iPhone 模拟器构建已通过；共享 Package 改动同时完成 macOS 回归。
+- 自动化状态：DsmMobile 通用 iOS Simulator 目标无签名构建通过；共享 Package 改动同时完成 macOS 回归，未单独验证 iPhone 启动。
 - 真机状态：系统选择器、前后台切换、触控、网络切换和真实 Chat Server 行为待用户验证。
 - 发布状态：无 TestFlight 或公开分发动作。
 
 ### iPad
 
 - 源码状态：双栏和宽屏路径保留在移动范围，不复制 macOS 的菜单栏或常驻进程语义。
-- 自动化状态：本轮独立 iPad 模拟器构建已通过。
+- 自动化状态：DsmMobile 通用 iOS Simulator 目标无签名构建通过；未单独指定 iPad destination、启动或宽屏流程。
 - 真机状态：分栏、多任务、键盘、VoiceOver、最大动态文字和真实 NAS 待用户验证。
 - 发布状态：无 TestFlight 或公开分发动作。
 
@@ -45,9 +46,9 @@
 - 源码状态：`AppViewModel` 与 `DsmRepository` 保持兼容门面；`TransferCoordinator` 已唯一持有
   前台传输 Job、下载 execution id 与后台观察 Job，`PhotoBackupCoordinator` 已持有扫描调度代次、
   Profile 与本地观察 Job。`ChatFeatureModel` 已持有 Chat 读取、轮询、实时连接、本地已读叠加和
-  资料代次；`NasAdministrationFeatureModel` 已持有 NAS 设置读取 Job、代次和与设置刷新共用的锁。
+  会话与同名任务代次；`NasAdministrationFeatureModel` 已持有 NAS 设置读取 Job、代次和与设置刷新共用的锁。
   Chat 写操作与其余 NAS 管理写操作仍保留在门面既有安全边界内，不改变公开契约、任务语义或持久化格式。
-- 自动化状态：在 `7e01eca3373231d8c7dba14aaba2a3359f4cbc62` 的 GitHub Android Build 已实际运行
+- 自动化状态：在 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 的 GitHub Android Build 已实际运行
   JVM 单测、Debug APK、Release 构建及 R8、`assembleDebugAndroidTest` 和 lintDebug；
   androidTest APK 构建成功只证明测试包可生成，不等于已在真机或模拟器执行仪器测试。
 - 真机状态：真实仪器执行与 Android 版本矩阵、WorkManager 长时间后台、网络切换、Doze、进程重启、
@@ -57,7 +58,7 @@
 ### Windows
 
 - 源码状态：保留 `IDsmApiClient`、`DsmApiClient`、DI、`HttpClient` 生命周期与证书策略；只按 partial 文件边界拆分。
-- 自动化状态：本轮需要 Windows Runner 复核 x64、ARM64、xUnit 与 WinUI XAML。
+- 自动化状态：提交 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 已由 Windows 托管 Runner 通过 xUnit、WinUI x64 与 ARM64 构建；Windows 系统与设备集成仍待验证。
 - 真机状态：Explorer、Cloud Files、通知、安装、托盘、外接卷和真实 NAS 待用户验证。
 - 发布状态：不创建安装包、不变更签名策略、不发布。
 
@@ -89,8 +90,8 @@
 
 - 源码：双栏只在可用宽度下出现，保持与 iPhone 共享领域和会话隔离。
 - 源码：不引入 macOS 菜单栏、悬停、右键或桌面常驻流程。
-- 自动化：iPad 模拟器构建验证通用工程与宽屏组合，不替代实体键盘或多任务。
-- 自动化：共享 Package 回归与 iPhone/iPad 构建共同覆盖修改的移动领域层。
+- 自动化：DsmMobile 通用 iOS Simulator 目标无签名构建只验证通用工程可编译，不构成独立 iPad destination、启动或宽屏组合验证。
+- 自动化：共享 Package 回归与通用 iOS Simulator 构建共同覆盖修改的移动领域层。
 - 真机：分栏、多任务、键盘、最大动态文字和 VoiceOver 需要真实 iPad。
 - 真机：真实 NAS、网络切换、系统分享和选择器权限仍待用户验证。
 - 发布：没有独立 iPad 发布批准；随 Apple Beta 统一判断。
@@ -151,8 +152,9 @@
 
 - 文档角色已收敛为入口、状态、矩阵、路线图、计划、质量基线和归档；阶段性账本已迁入历史归档。
 - Android 四份人工维护审计矩阵已迁入机器数据，生成报告由 CI 比对，写操作门禁不再依赖巨型 Kotlin 文件的整文件散列。
-- Android 结构债务基线已改为当前行数精确 ratchet：文件缩短必须同步收紧，`maxLines` 与
-  `targetLines` 均不得相对上一基线上调；既有超限生产文件不得转移至新增例外或脱离债务追踪。
+- Android 结构债务基线已改为带稳定 ID 的当前行数精确 ratchet：文件可重命名但必须沿用 ID，
+  文件缩短必须同步收紧，`maxLines` 与 `targetLines` 均不得相对上一基线上调；既有超限生产文件
+  不得转移至新增例外、改换身份或脱离债务追踪。
 - Android 传输与照片备份运行时所有权已收敛：旧 Job、旧 execution、旧观察和已切换 Profile 的
   迟到回调不能清理新任务；后台唯一工作名称与持久化格式未改变。
 - Android Chat 的读取、轮询、实时连接与本地已读状态，以及 NAS 设置读取的 Job、代次与锁，

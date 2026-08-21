@@ -1,5 +1,5 @@
 <!-- doc-role: generated-quality-baseline -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-08-21 -->
 <!-- generated-from: tools/codex/android_quality_baseline.json -->
 <!-- generated-by: tools/codex/generate_android_quality_baseline.py -->
 
@@ -166,18 +166,18 @@
 
 ## 结构债务门禁
 
-新增生产 Kotlin 文件超过 1000 行必须在 JSON 的 `exceptions` 中写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；文件缩短后必须同步下调，降至阈值以内时必须移除登记。`targetLines` 只指导后续拆分，不会单独阻断提交：
+新增生产 Kotlin 文件超过 1000 行必须在 JSON 的 `exceptions` 中以全局唯一稳定 ID 写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；文件缩短后必须同步下调，降至阈值以内时必须移除登记。稳定 ID 可随重命名保留，`targetLines` 只指导后续拆分，不会单独阻断提交：
 
-| 文件 | 当前 ratchet | 非阻断目标 |
-| --- | ---: | ---: |
-| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16511 | 12000 |
-| `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 | 1200 |
-| `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 14934 | 11000 |
-| `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 | 1800 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt` | 1367 | 1000 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt` | 1060 | 1000 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt` | 1297 | 1000 |
-| `io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt` | 1142 | 1000 |
+| 稳定 ID | 文件 | 当前 ratchet | 非阻断目标 |
+| --- | --- | ---: | ---: |
+| `android-app-view-model` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16511 | 12000 |
+| `android-app-view-model-support` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 | 1200 |
+| `android-dsm-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 14934 | 11000 |
+| `android-download-station-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 | 1800 |
+| `android-file-browser-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt` | 1367 | 1000 |
+| `android-file-preview-dialog` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt` | 1060 | 1000 |
+| `android-nas-service-settings-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt` | 1297 | 1000 |
+| `android-service-screens` | `io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt` | 1142 | 1000 |
 
 ## 再生成与校验
 

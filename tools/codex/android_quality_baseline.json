@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-08-20",
+  "lastReviewed": "2026-08-21",
   "writeOperations": [
     {
       "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
@@ -1827,41 +1827,49 @@
     "newProductionFileLineLimit": 1000,
     "existingLargeFiles": [
       {
+        "id": "android-app-view-model",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
         "maxLines": 16511,
         "targetLines": 12000
       },
       {
+        "id": "android-app-view-model-support",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt",
         "maxLines": 1699,
         "targetLines": 1200
       },
       {
+        "id": "android-dsm-repository",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt",
         "maxLines": 14934,
         "targetLines": 11000
       },
       {
+        "id": "android-download-station-repository",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt",
         "maxLines": 2299,
         "targetLines": 1800
       },
       {
+        "id": "android-file-browser-screen",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt",
         "maxLines": 1367,
         "targetLines": 1000
       },
       {
+        "id": "android-file-preview-dialog",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt",
         "maxLines": 1060,
         "targetLines": 1000
       },
       {
+        "id": "android-nas-service-settings-screen",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt",
         "maxLines": 1297,
         "targetLines": 1000
       },
       {
+        "id": "android-service-screens",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt",
         "maxLines": 1142,
         "targetLines": 1000

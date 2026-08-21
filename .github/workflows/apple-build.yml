@@ -1,6 +1,7 @@
 name: Apple Build
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - "apple/**"

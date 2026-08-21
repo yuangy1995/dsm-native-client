@@ -115,7 +115,7 @@ def tighten_structure_debt_ratchet(
     baseline: dict[str, Any],
     production_root: Path = PRODUCTION_ROOT,
 ) -> dict[str, Any]:
-    """仅收紧已登记大文件的当前 ratchet，并同步其默认非阻断目标。"""
+    """仅收紧已登记大文件的当前 ratchet，并保留稳定 ID 与拆分目标。"""
     updated = json.loads(json.dumps(baseline, ensure_ascii=False))
     debt = updated["structureDebt"]
     limit = debt["newProductionFileLineLimit"]
@@ -130,9 +130,10 @@ def tighten_structure_debt_ratchet(
             continue
         entries.append(
             {
+                "id": item["id"],
                 "file": relative,
-                "maxLines": lines,
-                "targetLines": default_structure_debt_target_lines(relative),
+                "maxLines": min(item["maxLines"], lines),
+                "targetLines": item["targetLines"],
             }
         )
     debt["existingLargeFiles"] = entries
@@ -250,23 +251,29 @@ def generate_report(baseline: dict[str, Any]) -> str:
             "## 结构债务门禁",
             "",
             f"新增生产 Kotlin 文件超过 {debt['newProductionFileLineLimit']} 行必须在 JSON 的 `exceptions` 中"
-            "写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；文件缩短后必须同步"
-            "下调，降至阈值以内时必须移除登记。`targetLines` 只指导后续拆分，不会单独阻断提交：",
+            "以全局唯一稳定 ID 写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；"
+            "文件缩短后必须同步下调，降至阈值以内时必须移除登记。稳定 ID 可随重命名保留，"
+            "`targetLines` 只指导后续拆分，不会单独阻断提交：",
             "",
-            _markdown_table_row(["文件", "当前 ratchet", "非阻断目标"]),
-            _markdown_table_row(["---", "---:", "---:"]),
+            _markdown_table_row(["稳定 ID", "文件", "当前 ratchet", "非阻断目标"]),
+            _markdown_table_row(["---", "---", "---:", "---:"]),
         ]
     )
     for item in debt["existingLargeFiles"]:
         lines.append(
             _markdown_table_row(
-                [f"`{item['file']}`", str(item["maxLines"]), str(item["targetLines"])],
+                [
+                    f"`{item['id']}`",
+                    f"`{item['file']}`",
+                    str(item["maxLines"]),
+                    str(item["targetLines"]),
+                ],
             )
         )
     if debt.get("exceptions"):
         lines.extend(["", "已登记例外："])
         for exception in debt["exceptions"]:
-            lines.append(f"- `{exception['file']}`：{exception['reason']}")
+            lines.append(f"- `{exception['id']}` / `{exception['file']}`：{exception['reason']}")
     lines.extend(
         [
             "",

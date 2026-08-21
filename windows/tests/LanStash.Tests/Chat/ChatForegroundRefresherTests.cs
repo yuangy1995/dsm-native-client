@@ -11,22 +11,31 @@ public sealed class ChatForegroundRefresherTests
     public async Task StartWithoutImmediateRefreshWaitsForFirstPollingCycle()
     {
         using var conversationCalls = new SemaphoreSlim(0);
+        var releaseFirstConversation = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var conversationCallCount = 0;
         using var refresher = CreateRefresher(
-            refreshConversations: () =>
+            refreshConversations: async () =>
             {
                 Interlocked.Increment(ref conversationCallCount);
                 conversationCalls.Release();
-                return Task.CompletedTask;
+                await releaseFirstConversation.Task;
             },
             pollingInterval: PollingInterval);
 
-        await refresher.StartAsync(refreshImmediately: false);
+        try
+        {
+            await refresher.StartAsync(refreshImmediately: false);
 
-        Assert.Equal(0, Volatile.Read(ref conversationCallCount));
-        Assert.True(await conversationCalls.WaitAsync(TestTimeout));
-        Assert.Equal(1, Volatile.Read(ref conversationCallCount));
-        await refresher.StopAsync();
+            Assert.Equal(0, Volatile.Read(ref conversationCallCount));
+            Assert.True(await conversationCalls.WaitAsync(TestTimeout));
+            Assert.Equal(1, Volatile.Read(ref conversationCallCount));
+        }
+        finally
+        {
+            await refresher.StopAsync();
+            releaseFirstConversation.TrySetResult();
+        }
     }
 
     [Fact]

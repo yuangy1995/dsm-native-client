@@ -31,7 +31,7 @@ class ChatFeatureJobOwnerTest {
                 name = "messages",
                 token = token,
                 block = { throw expected },
-                onResult = { value -> published = value },
+                onResult = { _, value -> published = value },
             ),
         )
         job.invokeOnCompletion { completion = it }
@@ -57,7 +57,7 @@ class ChatFeatureJobOwnerTest {
                 name = "conversations",
                 token = firstToken,
                 block = { firstValue.await() },
-                onResult = { value -> published += "profile-a" to value },
+                onResult = { _, value -> published += "profile-a" to value },
             ),
         )
         val secondToken = owner.ensureSession("profile-b").token
@@ -67,7 +67,7 @@ class ChatFeatureJobOwnerTest {
                 name = "conversations",
                 token = secondToken,
                 block = { "new-profile" },
-                onResult = { value -> published += "profile-b" to value },
+                onResult = { _, value -> published += "profile-b" to value },
             ),
         )
         oldJob.join()
@@ -80,11 +80,12 @@ class ChatFeatureJobOwnerTest {
     }
 
     @Test
-    fun `同一 Chat 任务替换会取消旧任务且保留新任务所有权`() = runBlocking {
+    fun `同一 Chat 任务替换会拒绝已取值且捕获取消的旧结果`() = runBlocking {
         val scope = testScope()
         val owner = ChatFeatureJobOwner()
         val token = owner.ensureSession("profile-a").token
-        val oldValue = CompletableDeferred<String>()
+        val oldValueReady = CompletableDeferred<Unit>()
+        val keepOldTaskSuspended = CompletableDeferred<Unit>()
         val published = mutableListOf<String>()
 
         val oldJob = checkNotNull(
@@ -92,17 +93,27 @@ class ChatFeatureJobOwnerTest {
                 scope = scope,
                 name = "refresh",
                 token = token,
-                block = { oldValue.await() },
-                onResult = published::add,
+                block = {
+                    val value = "stale"
+                    oldValueReady.complete(Unit)
+                    try {
+                        keepOldTaskSuspended.await()
+                    } catch (_: CancellationException) {
+                        // 网络结果已获得后，取消只会在最后一个挂起点恢复；必须拒绝迟到发布。
+                    }
+                    value
+                },
+                onResult = { _, value -> published += value },
             ),
         )
+        oldValueReady.await()
         val newJob = checkNotNull(
             owner.launch(
                 scope = scope,
                 name = "refresh",
                 token = token,
                 block = { "latest" },
-                onResult = published::add,
+                onResult = { _, value -> published += value },
             ),
         )
         oldJob.join()
@@ -111,6 +122,327 @@ class ChatFeatureJobOwnerTest {
         assertTrue(oldJob.isCancelled)
         assertFalse(newJob.isCancelled)
         assertEquals(listOf("latest"), published)
+        scope.cancel()
+    }
+
+    @Test
+    fun `旧任务完成不会清除新任务所有权`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val token = owner.ensureSession("profile-a").token
+        val oldStarted = CompletableDeferred<Unit>()
+        val keepOldTaskSuspended = CompletableDeferred<Unit>()
+        val keepNewTaskSuspended = CompletableDeferred<Unit>()
+
+        val oldJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "refresh",
+                token = token,
+                block = {
+                    oldStarted.complete(Unit)
+                    try {
+                        keepOldTaskSuspended.await()
+                    } catch (_: CancellationException) {
+                        "old"
+                    }
+                },
+                onResult = { _, _ -> },
+            ),
+        )
+        oldStarted.await()
+        val newJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "refresh",
+                token = token,
+                block = { keepNewTaskSuspended.await() },
+                onResult = { _, _ -> },
+            ),
+        )
+
+        oldJob.join()
+        owner.cancel("refresh")
+        newJob.join()
+
+        assertTrue(oldJob.isCancelled)
+        assertTrue(newJob.isCancelled)
+        scope.cancel()
+    }
+
+    @Test
+    fun `取消同名任务会先使旧任务令牌失效`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val session = owner.ensureSession("profile-a").token
+        val started = CompletableDeferred<ChatTaskToken>()
+        val waiting = CompletableDeferred<Unit>()
+
+        val job = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "refresh",
+                token = session,
+                block = { taskToken ->
+                    started.complete(taskToken)
+                    waiting.await()
+                },
+                onResult = { _, _ -> },
+            ),
+        )
+        val taskToken = started.await()
+
+        owner.cancel("refresh")
+        job.join()
+
+        assertTrue(job.isCancelled)
+        assertFalse(owner.isCurrent(taskToken))
+        scope.cancel()
+    }
+
+    @Test
+    fun `旧轮询任务捕获取消后不会写入 Workspace`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val session = owner.ensureSession("profile-a").token
+        val oldValueReady = CompletableDeferred<Unit>()
+        val keepOldPollingSuspended = CompletableDeferred<Unit>()
+        var workspaceValue = "initial"
+
+        val oldJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "refresh",
+                token = session,
+                block = { taskToken ->
+                    val staleValue = "stale"
+                    oldValueReady.complete(Unit)
+                    try {
+                        keepOldPollingSuspended.await()
+                    } catch (_: CancellationException) {
+                        // 轮询请求已返回；继续执行前必须以完整任务令牌复核。
+                    }
+                    if (owner.isCurrent(taskToken)) workspaceValue = staleValue
+                },
+                onResult = { _, _ -> },
+            ),
+        )
+        oldValueReady.await()
+        val newJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "refresh",
+                token = session,
+                block = { taskToken ->
+                    if (owner.isCurrent(taskToken)) workspaceValue = "latest"
+                },
+                onResult = { _, _ -> },
+            ),
+        )
+        oldJob.join()
+        newJob.join()
+
+        assertEquals("latest", workspaceValue)
+        scope.cancel()
+    }
+
+    @Test
+    fun `旧实时连接任务不会改变连接状态或重新启动轮询`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val session = owner.ensureSession("profile-a").token
+        val oldValueReady = CompletableDeferred<Unit>()
+        val keepOldConnectionSuspended = CompletableDeferred<Unit>()
+        var realtimeConnected = true
+        var pollingStarts = 0
+
+        val oldJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "realtime-connection",
+                token = session,
+                block = {
+                    oldValueReady.complete(Unit)
+                    try {
+                        keepOldConnectionSuspended.await()
+                        false
+                    } catch (_: CancellationException) {
+                        false
+                    }
+                },
+                onResult = { taskToken, connected ->
+                    if (owner.isCurrent(taskToken)) {
+                        realtimeConnected = connected
+                        if (!connected) pollingStarts += 1
+                    }
+                },
+            ),
+        )
+        oldValueReady.await()
+        val newJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "realtime-connection",
+                token = session,
+                block = { true },
+                onResult = { taskToken, connected ->
+                    if (owner.isCurrent(taskToken)) realtimeConnected = connected
+                },
+            ),
+        )
+        oldJob.join()
+        newJob.join()
+
+        assertTrue(realtimeConnected)
+        assertEquals(0, pollingStarts)
+        scope.cancel()
+    }
+
+    @Test
+    fun `过期实时任务令牌不能替换当前轮询`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val session = owner.ensureSession("profile-a").token
+        val oldTokenReady = CompletableDeferred<ChatTaskToken>()
+        val keepOldConnectionSuspended = CompletableDeferred<Unit>()
+        val keepRefreshSuspended = CompletableDeferred<Unit>()
+
+        val oldConnection = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "realtime-connection",
+                token = session,
+                block = { taskToken ->
+                    oldTokenReady.complete(taskToken)
+                    try {
+                        keepOldConnectionSuspended.await()
+                    } catch (_: CancellationException) {
+                        Unit
+                    }
+                },
+                onResult = { _, _ -> },
+            ),
+        )
+        val oldToken = oldTokenReady.await()
+        val refresh = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "refresh",
+                token = session,
+                block = { keepRefreshSuspended.await() },
+                onResult = { _, _ -> },
+            ),
+        )
+        val currentConnection = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "realtime-connection",
+                token = session,
+                block = { Unit },
+                onResult = { _, _ -> },
+            ),
+        )
+        oldConnection.join()
+        currentConnection.join()
+
+        val stalePolling = owner.launch(
+            scope = scope,
+            name = "refresh",
+            token = session,
+            sourceToken = oldToken,
+            block = { Unit },
+            onResult = { _, _ -> },
+        )
+        owner.cancel("refresh")
+        refresh.join()
+
+        assertNull(stalePolling)
+        assertTrue(refresh.isCancelled)
+        scope.cancel()
+    }
+
+    @Test
+    fun `资料切换和失效都会拒绝旧任务捕获取消后的结果`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val firstSession = owner.ensureSession("profile-a").token
+        val firstStarted = CompletableDeferred<Unit>()
+        val firstWaiting = CompletableDeferred<Unit>()
+        val published = mutableListOf<String>()
+
+        val profileJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "conversation-load",
+                token = firstSession,
+                block = {
+                    firstStarted.complete(Unit)
+                    try {
+                        firstWaiting.await()
+                        "profile-a"
+                    } catch (_: CancellationException) {
+                        "profile-a"
+                    }
+                },
+                onResult = { _, value -> published += value },
+            ),
+        )
+        firstStarted.await()
+        owner.ensureSession("profile-b")
+        profileJob.join()
+
+        val secondSession = owner.ensureSession("profile-b").token
+        val secondStarted = CompletableDeferred<Unit>()
+        val secondWaiting = CompletableDeferred<Unit>()
+        val invalidatedJob = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "message-load",
+                token = secondSession,
+                block = {
+                    secondStarted.complete(Unit)
+                    try {
+                        secondWaiting.await()
+                        "invalidated"
+                    } catch (_: CancellationException) {
+                        "invalidated"
+                    }
+                },
+                onResult = { _, value -> published += value },
+            ),
+        )
+        secondStarted.await()
+        owner.invalidate(clearProfile = false)
+        invalidatedJob.join()
+
+        assertTrue(profileJob.isCancelled)
+        assertTrue(invalidatedJob.isCancelled)
+        assertEquals(emptyList<String>(), published)
+        scope.cancel()
+    }
+
+    @Test
+    fun `普通失败仍映射为可发布的加载失败`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val token = owner.ensureSession("profile-a").token
+        var published: Loadable<String>? = null
+
+        val job = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "conversation-load",
+                token = token,
+                block = {
+                    captureLoadable<String> { throw IllegalStateException("ordinary failure") }
+                },
+                onResult = { _, value -> published = value },
+            ),
+        )
+        job.join()
+
+        assertFalse(job.isCancelled)
+        assertTrue(published is Loadable.Failed)
         scope.cancel()
     }
 
