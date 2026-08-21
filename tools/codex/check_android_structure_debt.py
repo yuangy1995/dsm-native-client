@@ -15,6 +15,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from generate_android_quality_baseline import (
+    ROOT,
     PRODUCTION_ROOT,
     default_structure_debt_target_lines,
     load_baseline,
@@ -22,7 +23,11 @@ from generate_android_quality_baseline import (
 
 
 STABLE_ID_PATTERN = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*\Z")
-RENAME_STATUS_PATTERN = re.compile(r"R(?:100|\d{1,2})\Z")
+RENAME_STATUS_PATTERN = re.compile(r"R(?:00[1-9]|0[1-9]\d|100)\Z")
+PRODUCTION_PREFIX = PRODUCTION_ROOT.relative_to(ROOT).as_posix()
+PRODUCTION_NAMESPACE_ROOTS = frozenset(
+    child.name for child in PRODUCTION_ROOT.iterdir() if child.is_dir()
+)
 
 
 def _line_count(path: Path) -> int:
@@ -158,8 +163,39 @@ def _by_file(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {str(item["file"]): item for item in entries}
 
 
+def _normalize_git_production_path(path: str, line_number: int) -> str | None:
+    """将 Git 仓库相对路径严格归一为生产根相对路径。"""
+    if not path:
+        raise ValueError(f"rename map 第 {line_number} 行包含空路径")
+    if path == PRODUCTION_PREFIX or path == f"{PRODUCTION_PREFIX}/":
+        raise ValueError(f"rename map 第 {line_number} 行包含空生产相对路径")
+    if (
+        path.startswith("/") or
+        "\\" in path or
+        "\x00" in path or
+        re.match(r"^[A-Za-z]:", path)
+    ):
+        raise ValueError(f"rename map 第 {line_number} 行包含绝对或异常路径")
+    parts = path.split("/")
+    if any(not part or part in {".", ".."} for part in parts):
+        raise ValueError(f"rename map 第 {line_number} 行包含路径遍历或异常分段")
+
+    prefix = f"{PRODUCTION_PREFIX}/"
+    if path.startswith(prefix):
+        relative = path.removeprefix(prefix)
+        if not relative:
+            raise ValueError(f"rename map 第 {line_number} 行包含空生产相对路径")
+        return relative
+
+    # Git 命令必须在仓库根输出路径；把已是生产根相对形式的 io/... 一类混合命名空间拒绝，
+    # 不能误当成生产目录外的普通文件而借出或绕过稳定身份。
+    if parts[0] in PRODUCTION_NAMESPACE_ROOTS:
+        raise ValueError(f"rename map 第 {line_number} 行混用仓库与生产路径命名空间")
+    return None
+
+
 def load_rename_map(path: Path | None) -> dict[str, str]:
-    """读取 ``git diff --name-status -M`` 的精确旧路径到新路径映射。"""
+    """读取 Git 精确 Rnnn 记录，并只保留两端都在生产目录的规范化映射。"""
     if path is None:
         return {}
     renames: dict[str, str] = {}
@@ -174,12 +210,19 @@ def load_rename_map(path: Path | None) -> dict[str, str]:
         if len(fields) != 3 or not RENAME_STATUS_PATTERN.fullmatch(status):
             raise ValueError(f"rename map 第 {line_number} 行不是有效的 Rnnn<TAB>old<TAB>new 记录")
         previous, current = fields[1:]
-        if not previous or not current:
-            raise ValueError(f"rename map 第 {line_number} 行包含空路径")
-        if previous in renames or current in destinations:
+        normalized_previous = _normalize_git_production_path(previous, line_number)
+        normalized_current = _normalize_git_production_path(current, line_number)
+        # 移出生产目录、进入生产目录及生产目录外的改名都不传递 Android 结构身份。
+        if normalized_previous is None or normalized_current is None:
+            continue
+        if (
+            normalized_previous == normalized_current or
+            normalized_previous in renames or
+            normalized_current in destinations
+        ):
             raise ValueError(f"rename map 第 {line_number} 行包含歧义的路径身份")
-        renames[previous] = current
-        destinations.add(current)
+        renames[normalized_previous] = normalized_current
+        destinations.add(normalized_current)
     return renames
 
 

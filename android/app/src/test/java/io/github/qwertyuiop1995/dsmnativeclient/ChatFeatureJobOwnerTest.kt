@@ -466,29 +466,57 @@ class ChatFeatureJobOwnerTest {
     }
 
     @Test
-    fun `历史消息请求挂起时实时刷新发布 C 后旧响应不能覆盖 C`() = runBlocking {
+    fun `历史消息请求挂起时实时 HEAD 刷新发布 C 后分页仍可合并`() = runBlocking {
         val revisions = ChatReadResourceRevisions()
         val current = page(message("A", 1), message("B", 2))
         val historicalResponse = CompletableDeferred<ChatMessagePage>()
-        val historicalRevision = revisions.beginMessageRead("conversation-a")
+        val historicalRevision = revisions.beginMessageRead(
+            "conversation-a",
+            ChatMessageReadLane.PAGINATION,
+        )
         assertFalse(historicalResponse.isCompleted)
 
-        val realtimeRevision = revisions.beginMessageRead("conversation-a")
-        val afterRealtime = mergeChatMessagePage(
-            page(message("C", 3)),
-            current,
-            emptyList(),
+        val realtimeRevision = revisions.beginMessageRead("conversation-a", ChatMessageReadLane.HEAD)
+        val afterRealtime = reconcileChatMessagePage(
+            metadataSource = current,
+            lowerPriority = current.messages,
+            higherPriority = listOf(message("C", 3)),
+            outgoing = emptyList(),
         )
-        assertTrue(revisions.isCurrentMessageRead("conversation-a", realtimeRevision))
+        assertTrue(
+            revisions.isCurrentMessageRead(
+                "conversation-a",
+                ChatMessageReadLane.HEAD,
+                realtimeRevision,
+            ),
+        )
+        assertTrue(
+            revisions.isCurrentMessageRead(
+                "conversation-a",
+                ChatMessageReadLane.PAGINATION,
+                historicalRevision,
+            ),
+        )
 
         historicalResponse.complete(page(message("older", 0), nextOffset = null, hasMore = false))
-        val afterHistorical = if (revisions.isCurrentMessageRead("conversation-a", historicalRevision)) {
-            mergeChatMessagePage(historicalResponse.await(), afterRealtime, emptyList())
+        val afterHistorical = if (revisions.isCurrentMessageRead(
+                "conversation-a",
+                ChatMessageReadLane.PAGINATION,
+                historicalRevision,
+            )
+        ) {
+            val historical = historicalResponse.await()
+            reconcileChatMessagePage(
+                metadataSource = historical,
+                lowerPriority = historical.messages,
+                higherPriority = afterRealtime.messages,
+                outgoing = emptyList(),
+            )
         } else {
             afterRealtime
         }
 
-        assertEquals(listOf("A", "B", "C"), afterHistorical.messages.map(ChatMessage::id))
+        assertEquals(listOf("older", "A", "B", "C"), afterHistorical.messages.map(ChatMessage::id))
         assertTrue(afterHistorical.messages.any { it.id == "C" })
     }
 
@@ -496,13 +524,27 @@ class ChatFeatureJobOwnerTest {
     fun `历史消息请求完成后仍保留请求期间加入的本地 outgoing`() = runBlocking {
         val revisions = ChatReadResourceRevisions()
         val historicalResponse = CompletableDeferred<ChatMessagePage>()
-        val historicalRevision = revisions.beginMessageRead("conversation-a")
+        val historicalRevision = revisions.beginMessageRead(
+            "conversation-a",
+            ChatMessageReadLane.PAGINATION,
+        )
         val outgoing = message("local:request-1", 3, mine = true)
         assertFalse(historicalResponse.isCompleted)
 
         historicalResponse.complete(page(message("older", 1), nextOffset = null, hasMore = false))
-        val merged = if (revisions.isCurrentMessageRead("conversation-a", historicalRevision)) {
-            mergeChatMessagePage(historicalResponse.await(), page(message("current", 2)), listOf(outgoing))
+        val merged = if (revisions.isCurrentMessageRead(
+                "conversation-a",
+                ChatMessageReadLane.PAGINATION,
+                historicalRevision,
+            )
+        ) {
+            val historical = historicalResponse.await()
+            reconcileChatMessagePage(
+                metadataSource = historical,
+                lowerPriority = historical.messages,
+                higherPriority = page(message("current", 2)).messages,
+                outgoing = listOf(outgoing),
+            )
         } else {
             error("历史读取不应在本地发送消息时失效")
         }
@@ -538,15 +580,27 @@ class ChatFeatureJobOwnerTest {
     @Test
     fun `会话切换和资料失效会清理旧资源 revision`() {
         val revisions = ChatReadResourceRevisions()
-        val conversationA = revisions.beginMessageRead("conversation-a")
+        val conversationA = revisions.beginMessageRead("conversation-a", ChatMessageReadLane.HEAD)
 
         revisions.invalidateMessageReads()
-        val conversationB = revisions.beginMessageRead("conversation-b")
-        assertFalse(revisions.isCurrentMessageRead("conversation-a", conversationA))
-        assertTrue(revisions.isCurrentMessageRead("conversation-b", conversationB))
+        val conversationB = revisions.beginMessageRead("conversation-b", ChatMessageReadLane.PAGINATION)
+        assertFalse(revisions.isCurrentMessageRead("conversation-a", ChatMessageReadLane.HEAD, conversationA))
+        assertTrue(
+            revisions.isCurrentMessageRead(
+                "conversation-b",
+                ChatMessageReadLane.PAGINATION,
+                conversationB,
+            ),
+        )
 
         revisions.invalidateAll()
-        assertFalse(revisions.isCurrentMessageRead("conversation-b", conversationB))
+        assertFalse(
+            revisions.isCurrentMessageRead(
+                "conversation-b",
+                ChatMessageReadLane.PAGINATION,
+                conversationB,
+            ),
+        )
         val conversationListRead = revisions.beginConversationRead()
         revisions.invalidateAll()
         assertFalse(revisions.isCurrentConversationRead(conversationListRead))

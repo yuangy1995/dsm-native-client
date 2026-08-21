@@ -463,19 +463,178 @@ class AndroidStructureDebtTests(unittest.TestCase):
     def test_rename_map_only_accepts_exact_git_rename_records(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
             path.write_text(
-                "M\tTracked.kt\nC100\tOld.kt\tCopy.kt\nR100\tOld.kt\tRenamed.kt\n",
+                "M\tTracked.kt\n"
+                "C100\tOld.kt\tCopy.kt\n"
+                "A\tAdded.kt\n"
+                "D\tDeleted.kt\n"
+                f"R090\t{prefix}/AppViewModel.kt\t{prefix}/LegacyAppViewModel.kt\n",
                 encoding="utf-8",
             )
 
             self.assertEqual(
                 structure_debt.load_rename_map(path),
-                {"Old.kt": "Renamed.kt"},
+                {"AppViewModel.kt": "LegacyAppViewModel.kt"},
             )
 
-            path.write_text("R100\tOld.kt\n", encoding="utf-8")
+            path.write_text(f"R100\t{prefix}/AppViewModel.kt\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "有效的 Rnnn"):
                 structure_debt.load_rename_map(path)
+
+    def test_github_actions_rename_map_normalizes_repository_relative_production_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
+            path.write_text(
+                "R100\t"
+                f"{prefix}/io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt\t"
+                f"{prefix}/io/github/qwertyuiop1995/dsmnativeclient/LegacyAppViewModel.kt\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                structure_debt.load_rename_map(path),
+                {
+                    "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt":
+                        "io/github/qwertyuiop1995/dsmnativeclient/LegacyAppViewModel.kt",
+                },
+            )
+
+    def test_github_actions_tracked_rename_keeps_ratchet(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "LegacyAppViewModel.kt", 1001)
+            rename_path = root / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
+            rename_path.write_text(
+                f"R100\t{prefix}/AppViewModel.kt\t{prefix}/LegacyAppViewModel.kt\n",
+                encoding="utf-8",
+            )
+
+            errors = structure_debt.validate(
+                root,
+                self.debt(max_lines=1001, relative="LegacyAppViewModel.kt"),
+                previous_structure_debt=self.debt(max_lines=1002),
+                rename_map=structure_debt.load_rename_map(rename_path),
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_github_actions_tracked_rename_cannot_become_new_id_exception(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "LegacyAppViewModel.kt", 1002)
+            rename_path = root / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
+            rename_path.write_text(
+                f"R100\t{prefix}/AppViewModel.kt\t{prefix}/LegacyAppViewModel.kt\n",
+                encoding="utf-8",
+            )
+            current = self.debt(
+                exceptions=[
+                    {
+                        "id": "android-legacy-app-view-model",
+                        "file": "LegacyAppViewModel.kt",
+                        "reason": "改名不能绕过历史 tracked 身份",
+                    },
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=self.debt(max_lines=1002),
+                rename_map=structure_debt.load_rename_map(rename_path),
+            )
+
+            self.assertTrue(any("稳定 id 不得改换" in error for error in errors))
+
+    def test_github_actions_previous_exception_rename_cannot_change_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RenamedLegacy.kt", 1001)
+            rename_path = root / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
+            rename_path.write_text(
+                f"R100\t{prefix}/Legacy.kt\t{prefix}/RenamedLegacy.kt\n",
+                encoding="utf-8",
+            )
+            previous = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "历史例外"},
+                ],
+            )
+            current = self.debt(
+                exceptions=[
+                    {
+                        "id": "android-renamed-legacy",
+                        "file": "RenamedLegacy.kt",
+                        "reason": "不得通过改名换例外身份",
+                    },
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map=structure_debt.load_rename_map(rename_path),
+            )
+
+            self.assertTrue(any("exception 稳定 id 不得改换" in error for error in errors))
+
+    def test_rename_outside_to_production_does_not_inherit_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
+            path.write_text(
+                f"R100\tdocs/Legacy.kt\t{prefix}/Legacy.kt\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(structure_debt.load_rename_map(path), {})
+
+    def test_rename_production_to_outside_is_treated_as_production_removal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            path = root / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
+            path.write_text(
+                f"R100\t{prefix}/AppViewModel.kt\tdocs/Legacy.kt\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(structure_debt.load_rename_map(path), {})
+            errors = structure_debt.validate(
+                root,
+                self.debt(),
+                previous_structure_debt=self.debt(max_lines=1002),
+                rename_map=structure_debt.load_rename_map(path),
+            )
+            self.assertEqual(errors, [])
+
+    def test_rename_map_rejects_abnormal_mixed_and_ambiguous_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "rename-map.txt"
+            prefix = structure_debt.PRODUCTION_PREFIX
+            invalid_records = [
+                f"R99\t{prefix}/AppViewModel.kt\t{prefix}/Legacy.kt\n",
+                f"R000\t{prefix}/AppViewModel.kt\t{prefix}/Legacy.kt\n",
+                f"R100\t/{prefix}/AppViewModel.kt\t{prefix}/Legacy.kt\n",
+                f"R100\t{prefix}/../AppViewModel.kt\t{prefix}/Legacy.kt\n",
+                f"R100\t{prefix}/\t{prefix}/Legacy.kt\n",
+                f"R100\tio/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt\t{prefix}/Legacy.kt\n",
+                (
+                    f"R100\t{prefix}/AppViewModel.kt\t{prefix}/Legacy.kt\n"
+                    f"R100\t{prefix}/AppViewModel.kt\t{prefix}/AnotherLegacy.kt\n"
+                ),
+            ]
+
+            for record in invalid_records:
+                path.write_text(record, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    structure_debt.load_rename_map(path)
 
     def test_previous_exception_same_path_continues(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

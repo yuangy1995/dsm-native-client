@@ -52,7 +52,8 @@ jobs:
             rename_map_path="$RUNNER_TEMP/android-structure-rename-map.txt"
             echo "previous_ref=$resolved_previous_ref" >> "$GITHUB_OUTPUT"
             git show "$resolved_previous_ref:tools/codex/android_quality_baseline.json" > "$previous_path"
-            git diff --name-status -M "$resolved_previous_ref" "$GITHUB_SHA" > "$rename_map_path"
+            git diff --name-status -M "$resolved_previous_ref" "$GITHUB_SHA" -- \
+              android/app/src/main/java > "$rename_map_path"
             echo "path=$previous_path" >> "$GITHUB_OUTPUT"
             echo "rename_map=$rename_map_path" >> "$GITHUB_OUTPUT"
             echo "将结构 ratchet 与 $resolved_previous_ref 比较。"
