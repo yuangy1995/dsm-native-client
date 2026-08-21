@@ -173,7 +173,12 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 ],
             )
 
-            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={"AppViewModel.kt": "LegacyAppViewModel.kt"},
+            )
 
             self.assertTrue(any("不得转入 exceptions" in error for error in errors))
 
@@ -248,7 +253,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
-    def test_renamed_existing_debt_keeps_same_id_and_ratchet(self) -> None:
+    def test_git_detected_rename_keeps_ratchet(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             self.write_source(root, "LegacyAppViewModel.kt", 1001)
@@ -259,7 +264,12 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 relative="LegacyAppViewModel.kt",
             )
 
-            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={"AppViewModel.kt": "LegacyAppViewModel.kt"},
+            )
 
             self.assertEqual(errors, [])
 
@@ -274,7 +284,12 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 relative="LegacyAppViewModel.kt",
             )
 
-            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={"AppViewModel.kt": "LegacyAppViewModel.kt"},
+            )
 
             self.assertTrue(any("当前 ratchet 不得上调" in error for error in errors))
             self.assertTrue(any("非阻断目标不得上调" in error for error in errors))
@@ -294,7 +309,12 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 ],
             )
 
-            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={"AppViewModel.kt": "LegacyAppViewModel.kt"},
+            )
 
             self.assertTrue(any("不得转入 exceptions" in error for error in errors))
 
@@ -313,9 +333,14 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 ],
             )
 
-            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={"AppViewModel.kt": "LegacyAppViewModel.kt"},
+            )
 
-            self.assertTrue(any("不得同时新增超限身份" in error for error in errors))
+            self.assertTrue(any("稳定 id 不得改换" in error for error in errors))
 
     def test_existing_id_cannot_change_at_same_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -406,6 +431,156 @@ class AndroidStructureDebtTests(unittest.TestCase):
             errors = structure_debt.validate(root, current)
 
             self.assertTrue(any("exceptions 缺少有效、稳定的 id" in error for error in errors))
+
+    def test_unrelated_large_file_cannot_inherit_stable_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "UnrelatedRepository.kt", 1001)
+            previous = self.debt(max_lines=1001)
+            current = self.debt(
+                max_lines=1001,
+                relative="UnrelatedRepository.kt",
+            )
+
+            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+
+            self.assertTrue(any("路径变更缺少 Git rename 证据" in error for error in errors))
+
+    def test_unverified_path_change_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "LegacyAppViewModel.kt", 1001)
+            previous = self.debt(max_lines=1001)
+            current = self.debt(
+                max_lines=1001,
+                relative="LegacyAppViewModel.kt",
+            )
+
+            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+
+            self.assertTrue(any("路径变更缺少 Git rename 证据" in error for error in errors))
+
+    def test_rename_map_only_accepts_exact_git_rename_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "rename-map.txt"
+            path.write_text(
+                "M\tTracked.kt\nC100\tOld.kt\tCopy.kt\nR100\tOld.kt\tRenamed.kt\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                structure_debt.load_rename_map(path),
+                {"Old.kt": "Renamed.kt"},
+            )
+
+            path.write_text("R100\tOld.kt\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "有效的 Rnnn"):
+                structure_debt.load_rename_map(path)
+
+    def test_previous_exception_same_path_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "Legacy.kt", 1001)
+            previous = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "历史例外"},
+                ],
+            )
+            current = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "继续追踪"},
+                ],
+            )
+
+            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+
+            self.assertEqual(errors, [])
+
+    def test_previous_exception_verified_rename_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RenamedLegacy.kt", 1001)
+            previous = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "历史例外"},
+                ],
+            )
+            current = self.debt(
+                exceptions=[
+                    {
+                        "id": "android-legacy",
+                        "file": "RenamedLegacy.kt",
+                        "reason": "重命名后继续追踪",
+                    },
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={"Legacy.kt": "RenamedLegacy.kt"},
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_previous_exception_can_tighten_to_tracked(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "Legacy.kt", 1001)
+            previous = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "历史例外"},
+                ],
+            )
+            current = self.debt(
+                max_lines=1001,
+                target_lines=900,
+                relative="Legacy.kt",
+                stable_id="android-legacy",
+            )
+
+            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+
+            self.assertEqual(errors, [])
+
+    def test_previous_exception_cannot_lend_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "UnrelatedRepository.kt", 1001)
+            previous = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "历史例外"},
+                ],
+            )
+            current = self.debt(
+                max_lines=1001,
+                relative="UnrelatedRepository.kt",
+                stable_id="android-legacy",
+            )
+
+            errors = structure_debt.validate(root, current, previous_structure_debt=previous)
+
+            self.assertTrue(any("路径变更缺少 Git rename 证据" in error for error in errors))
+
+    def test_previous_exception_removal_requires_delete_move_or_below_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "Legacy.kt", 1001)
+            previous = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "历史例外"},
+                ],
+            )
+
+            errors = structure_debt.validate(root, self.debt(), previous_structure_debt=previous)
+
+            self.assertTrue(any("exception 只能在文件删除" in error for error in errors))
+
+            self.write_source(root, "Legacy.kt", 1000)
+            lowered_errors = structure_debt.validate(root, self.debt(), previous_structure_debt=previous)
+
+            self.assertEqual(lowered_errors, [])
 
     def test_generator_preserves_id_and_target_while_only_tightening_max(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

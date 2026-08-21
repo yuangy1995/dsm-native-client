@@ -1,6 +1,10 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
 import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatConversation
+import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatMessage
+import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatMessagePage
+import io.github.qwertyuiop1995.dsmnativeclient.domain.ChatUser
+import io.github.qwertyuiop1995.dsmnativeclient.domain.ConversationKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -462,6 +466,145 @@ class ChatFeatureJobOwnerTest {
     }
 
     @Test
+    fun `历史消息请求挂起时实时刷新发布 C 后旧响应不能覆盖 C`() = runBlocking {
+        val revisions = ChatReadResourceRevisions()
+        val current = page(message("A", 1), message("B", 2))
+        val historicalResponse = CompletableDeferred<ChatMessagePage>()
+        val historicalRevision = revisions.beginMessageRead("conversation-a")
+        assertFalse(historicalResponse.isCompleted)
+
+        val realtimeRevision = revisions.beginMessageRead("conversation-a")
+        val afterRealtime = mergeChatMessagePage(
+            page(message("C", 3)),
+            current,
+            emptyList(),
+        )
+        assertTrue(revisions.isCurrentMessageRead("conversation-a", realtimeRevision))
+
+        historicalResponse.complete(page(message("older", 0), nextOffset = null, hasMore = false))
+        val afterHistorical = if (revisions.isCurrentMessageRead("conversation-a", historicalRevision)) {
+            mergeChatMessagePage(historicalResponse.await(), afterRealtime, emptyList())
+        } else {
+            afterRealtime
+        }
+
+        assertEquals(listOf("A", "B", "C"), afterHistorical.messages.map(ChatMessage::id))
+        assertTrue(afterHistorical.messages.any { it.id == "C" })
+    }
+
+    @Test
+    fun `历史消息请求完成后仍保留请求期间加入的本地 outgoing`() = runBlocking {
+        val revisions = ChatReadResourceRevisions()
+        val historicalResponse = CompletableDeferred<ChatMessagePage>()
+        val historicalRevision = revisions.beginMessageRead("conversation-a")
+        val outgoing = message("local:request-1", 3, mine = true)
+        assertFalse(historicalResponse.isCompleted)
+
+        historicalResponse.complete(page(message("older", 1), nextOffset = null, hasMore = false))
+        val merged = if (revisions.isCurrentMessageRead("conversation-a", historicalRevision)) {
+            mergeChatMessagePage(historicalResponse.await(), page(message("current", 2)), listOf(outgoing))
+        } else {
+            error("历史读取不应在本地发送消息时失效")
+        }
+
+        assertEquals(listOf("older", "current", "local:request-1"), merged.messages.map(ChatMessage::id))
+        assertTrue(merged.messages.any { it.id == outgoing.id })
+        assertNull(merged.nextOffset)
+        assertFalse(merged.hasMore)
+    }
+
+    @Test
+    fun `初始会话列表挂起时实时结果会使初始 revision 失效`() = runBlocking {
+        val revisions = ChatReadResourceRevisions()
+        val initialResponse = CompletableDeferred<List<ChatConversation>>()
+        val initialRevision = revisions.beginConversationRead()
+        val realtimeRevision = revisions.beginConversationRead()
+        var visible = emptyList<ChatConversation>()
+        assertFalse(initialResponse.isCompleted)
+
+        if (revisions.isCurrentConversationRead(realtimeRevision)) {
+            visible = listOf(conversation("realtime"))
+        }
+
+        initialResponse.complete(listOf(conversation("initial")))
+        if (revisions.isCurrentConversationRead(initialRevision)) {
+            visible = initialResponse.await()
+        }
+
+        assertTrue(revisions.isCurrentConversationRead(realtimeRevision))
+        assertEquals(listOf("realtime"), visible.map(ChatConversation::id))
+    }
+
+    @Test
+    fun `会话切换和资料失效会清理旧资源 revision`() {
+        val revisions = ChatReadResourceRevisions()
+        val conversationA = revisions.beginMessageRead("conversation-a")
+
+        revisions.invalidateMessageReads()
+        val conversationB = revisions.beginMessageRead("conversation-b")
+        assertFalse(revisions.isCurrentMessageRead("conversation-a", conversationA))
+        assertTrue(revisions.isCurrentMessageRead("conversation-b", conversationB))
+
+        revisions.invalidateAll()
+        assertFalse(revisions.isCurrentMessageRead("conversation-b", conversationB))
+        val conversationListRead = revisions.beginConversationRead()
+        revisions.invalidateAll()
+        assertFalse(revisions.isCurrentConversationRead(conversationListRead))
+    }
+
+    @Test
+    fun `会话发布 CAS 重试只在成功后提交与最终状态对应的 marker`() {
+        data class State(
+            val conversations: List<ChatConversation>,
+            val unrelatedRevision: Int,
+        )
+
+        val incoming = conversation("conversation-a", unread = 2, latest = 11, preview = "new")
+        val marker = ChatLocalReadMarker(latestAtEpochSeconds = 10, latestPreview = "old")
+        var workspace = State(emptyList(), unrelatedRevision = 0)
+        var localMarkers = mapOf(incoming.id to marker)
+        var compareAttempts = 0
+        var markerCommits = 0
+        var markersAtFirstFailure: Map<String, ChatLocalReadMarker>? = null
+
+        val published = retryChatStatePublication(
+            readCurrent = { workspace },
+            prepare = { state ->
+                val overlay = applyChatLocalReadOverlay(listOf(incoming), localMarkers)
+                ChatStatePublication(
+                    State(overlay.conversations, state.unrelatedRevision),
+                    overlay.markers,
+                )
+            },
+            compareAndSet = { expected, updated ->
+                compareAttempts += 1
+                if (compareAttempts == 1) {
+                    markersAtFirstFailure = localMarkers
+                    workspace = workspace.copy(unrelatedRevision = 1)
+                    false
+                } else if (workspace == expected) {
+                    workspace = updated
+                    true
+                } else {
+                    false
+                }
+            },
+            onPublished = { markers ->
+                markerCommits += 1
+                localMarkers = markers
+            },
+        )
+
+        assertTrue(published)
+        assertEquals(2, compareAttempts)
+        assertEquals(1, markerCommits)
+        assertEquals(1, workspace.unrelatedRevision)
+        assertEquals(2, workspace.conversations.single().unreadCount)
+        assertEquals(mapOf(incoming.id to marker), markersAtFirstFailure)
+        assertEquals(emptyMap<String, ChatLocalReadMarker>(), localMarkers)
+    }
+
+    @Test
     fun `AppViewModel 保持 Chat 公开兼容门面`() {
         assertEquals(
             "openConversation",
@@ -482,4 +625,33 @@ class ChatFeatureJobOwnerTest {
 
     private fun testScope(): CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+    private fun conversation(
+        id: String,
+        unread: Int = 0,
+        latest: Long? = null,
+        preview: String? = null,
+    ) = ChatConversation(
+        id = id,
+        title = id,
+        kind = ConversationKind.DIRECT,
+        unreadCount = unread,
+        latestAtEpochSeconds = latest,
+        latestPreview = preview,
+    )
+
+    private fun message(id: String, time: Long, mine: Boolean = false) = ChatMessage(
+        id = id,
+        conversationId = "conversation-a",
+        sender = ChatUser("user", "User", "user"),
+        body = id,
+        createdAtEpochSeconds = time,
+        isMine = mine,
+    )
+
+    private fun page(
+        vararg messages: ChatMessage,
+        nextOffset: Int? = 50,
+        hasMore: Boolean = true,
+    ) = ChatMessagePage(messages.toList(), nextOffset, hasMore)
 }

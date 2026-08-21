@@ -84,6 +84,34 @@ class DocumentationCheckTests(unittest.TestCase):
             self.assertTrue(any("CI Run ID" in error for error in errors))
             self.assertTrue(any("测试数量" in error for error in errors))
 
+    def test_rejects_full_commit_sha_only_in_status_prose(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            sha = "0123456789abcdef0123456789abcdef01234567"
+            self.write(
+                root,
+                "docs/progress/STATUS.md",
+                self.metadata("status") + f"当前状态引用 {sha}\n",
+            )
+            errors = documentation.validate_active_metadata(
+                root,
+                {"docs/progress/STATUS.md": "status"},
+                today=date(2026, 8, 20),
+            )
+            self.assertTrue(any("完整提交 SHA" in error for error in errors))
+
+            self.write(
+                root,
+                "docs/progress/STATUS.md",
+                self.metadata("status") + f"```text\n{sha}\n```\n",
+            )
+            code_errors = documentation.validate_active_metadata(
+                root,
+                {"docs/progress/STATUS.md": "status"},
+                today=date(2026, 8, 20),
+            )
+            self.assertFalse(any("完整提交 SHA" in error for error in code_errors))
+
     def test_status_line_count_range(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "STATUS.md"

@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 选择上一 Android 结构基线
+      - name: 准备上一 Android 结构基线与 rename 证据
         id: previous-android-quality-baseline
         shell: bash
         env:
@@ -35,31 +35,49 @@ jobs:
             if [ -n "$PUSH_BEFORE" ] && ! printf '%s' "$PUSH_BEFORE" | grep -Eq '^0+$'; then
               previous_ref="$PUSH_BEFORE"
             fi
-          elif [ "$EVENT_NAME" = "push" ]; then
+          elif [ "$REF_NAME" != "$DEFAULT_BRANCH" ] && \
+            { [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; }; then
             git fetch --no-tags origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
-            previous_ref="origin/$DEFAULT_BRANCH"
+            previous_ref="$(git merge-base "$GITHUB_SHA" "origin/$DEFAULT_BRANCH")"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            if git rev-parse --verify "${GITHUB_SHA}^" >/dev/null 2>&1; then
+              previous_ref="${GITHUB_SHA}^"
+            fi
           fi
 
           if [ -n "$previous_ref" ] && \
             git cat-file -e "$previous_ref:tools/codex/android_quality_baseline.json"; then
+            resolved_previous_ref="$(git rev-parse "$previous_ref")"
             previous_path="$RUNNER_TEMP/previous-android-quality-baseline.json"
-            git show "$previous_ref:tools/codex/android_quality_baseline.json" > "$previous_path"
+            rename_map_path="$RUNNER_TEMP/android-structure-rename-map.txt"
+            echo "previous_ref=$resolved_previous_ref" >> "$GITHUB_OUTPUT"
+            git show "$resolved_previous_ref:tools/codex/android_quality_baseline.json" > "$previous_path"
+            git diff --name-status -M "$resolved_previous_ref" "$GITHUB_SHA" > "$rename_map_path"
             echo "path=$previous_path" >> "$GITHUB_OUTPUT"
-            echo "将结构 ratchet 与 $previous_ref 比较。"
+            echo "rename_map=$rename_map_path" >> "$GITHUB_OUTPUT"
+            echo "将结构 ratchet 与 $resolved_previous_ref 比较。"
           else
+            echo "previous_ref=$previous_ref" >> "$GITHUB_OUTPUT"
             echo "未找到可用上一基线；仅执行当前行数精确匹配检查。"
           fi
 
       - name: 严格文档与质量预检
         env:
           PREVIOUS_BASELINE: ${{ steps.previous-android-quality-baseline.outputs.path }}
+          RENAME_MAP: ${{ steps.previous-android-quality-baseline.outputs.rename_map }}
         run: |
           set -euo pipefail
           python tools/codex/generate_android_quality_baseline.py --check
           python tools/codex/check_documentation.py --strict-release
           python tools/codex/check_android_write_test_matrix.py
           if [ -n "$PREVIOUS_BASELINE" ]; then
-            python tools/codex/check_android_structure_debt.py --previous-baseline "$PREVIOUS_BASELINE"
+            if [ -z "$RENAME_MAP" ]; then
+              echo "上一基线存在但缺少 rename 证据文件。" >&2
+              exit 1
+            fi
+            python tools/codex/check_android_structure_debt.py \
+              --previous-baseline "$PREVIOUS_BASELINE" \
+              --rename-map "$RENAME_MAP"
           else
             python tools/codex/check_android_structure_debt.py
           fi

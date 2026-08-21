@@ -35,6 +35,7 @@ internal class ChatFeatureModel(
     private var realtimeClient: ChatRealtimeClient? = null
     private var realtimeConnected = false
     private var localReadMarkers: Map<String, ChatLocalReadMarker> = emptyMap()
+    private val readRevisions = ChatReadResourceRevisions()
 
     fun loadModule(repository: DsmRepository) {
         val token = ensureSession(repository) ?: return
@@ -55,24 +56,29 @@ internal class ChatFeatureModel(
             name = CONVERSATION_LOAD_JOB,
             token = token,
             block = { taskToken ->
+                val revision = beginConversationRead(repository, taskToken) ?: return@launch null
                 val result = captureLoadable { repository.chatConversations() }
-                if (!isTaskCurrent(repository, taskToken)) return@launch result
-                result
+                if (!isTaskCurrent(repository, taskToken)) {
+                    return@launch ChatConversationLoadOutcome(revision, result)
+                }
+                ChatConversationLoadOutcome(revision, result)
             },
             onResult = { taskToken, value ->
-                if (!isTaskCurrent(repository, taskToken)) return@launch
-                if (value is Loadable.Ready) {
+                if (value == null || !isTaskCurrent(repository, taskToken)) return@launch
+                if (value.result is Loadable.Ready) {
                     publishConversations(
                         repository,
                         taskToken,
-                        value.value,
+                        value.result.value,
+                        value.revision,
                         requireConversationListActive = false,
                     )
                 } else {
-                    workspace.update { current ->
-                        current?.takeIf { isTaskCurrent(repository, taskToken) }
-                            ?.copy(conversations = value) ?: current
-                    }
+                    publishConversationState(
+                        repository,
+                        taskToken,
+                        value.revision,
+                    ) { current -> current.copy(conversations = value.result) }
                 }
             },
         )
@@ -83,31 +89,7 @@ internal class ChatFeatureModel(
         val repository = repositoryProvider() ?: return
         val token = ensureSession(repository) ?: return
         jobOwner.cancel(REFRESH_JOB)
-        val canonicalConversation = (workspace.value?.conversations as? Loadable.Ready)
-            ?.value
-            ?.firstOrNull { it.id == conversation.id }
-            ?: conversation
-        synchronized(lifecycleLock) {
-            val marker = canonicalConversation.toChatLocalReadMarker()
-            localReadMarkers = if (marker == null) {
-                localReadMarkers - canonicalConversation.id
-            } else {
-                localReadMarkers + (canonicalConversation.id to marker)
-            }
-        }
-        workspace.update { state ->
-            state?.takeIf { isSessionCurrent(repository, token) }?.let { current ->
-                val conversations = (current.conversations as? Loadable.Ready)?.value
-                current.copy(
-                    selectedConversation = canonicalConversation.copy(unreadCount = 0),
-                    chatMessages = Loadable.Loading,
-                    chatIsLoadingMore = false,
-                    conversations = conversations?.map { item ->
-                        if (item.id == conversation.id) item.copy(unreadCount = 0) else item
-                    }?.let { Loadable.Ready(it) } ?: current.conversations,
-                )
-            } ?: state
-        }
+        val canonicalConversation = publishConversationOpen(repository, token, conversation) ?: return
         loadMessages(repository, token, canonicalConversation, reset = true)
         if (!isRealtimeConnected()) startMessagePolling(repository, token, canonicalConversation)
     }
@@ -115,11 +97,24 @@ internal class ChatFeatureModel(
     fun closeConversation() {
         val repository = repositoryProvider()
         jobOwner.cancel(REFRESH_JOB)
-        workspace.update { current ->
-            current?.copy(
-                selectedConversation = null,
-                chatMessages = Loadable.Idle,
-                chatIsLoadingMore = false,
+        synchronized(lifecycleLock) {
+            // 返回会话列表会切换读取资源；连同列表读取一起失效，避免关闭前的实时列表
+            // 在重新读取前迟到发布。
+            readRevisions.invalidateAll()
+            retryChatStatePublication(
+                readCurrent = { workspace.value },
+                prepare = { current ->
+                    ChatStatePublication(
+                        current.copy(
+                            selectedConversation = null,
+                            chatMessages = Loadable.Idle,
+                            chatIsLoadingMore = false,
+                        ),
+                        Unit,
+                    )
+                },
+                compareAndSet = workspace::compareAndSet,
+                onPublished = {},
             )
         }
         if (repository == null) return
@@ -129,17 +124,19 @@ internal class ChatFeatureModel(
             name = CONVERSATION_LOAD_JOB,
             token = token,
             block = { taskToken ->
+                val revision = beginConversationRead(repository, taskToken) ?: return@launch null
                 val result = suspendRunCatching { repository.chatConversations() }
                 if (!isTaskCurrent(repository, taskToken)) return@launch null
-                result.getOrNull()
+                ChatConversationReadOutcome(revision, result.getOrNull())
             },
-            onResult = { taskToken, conversations ->
-                if (!isTaskCurrent(repository, taskToken)) return@launch
-                conversations?.let {
+            onResult = { taskToken, outcome ->
+                if (outcome == null || !isTaskCurrent(repository, taskToken)) return@launch
+                outcome.conversations?.let {
                     publishConversations(
                         repository,
                         taskToken,
                         it,
+                        outcome.revision,
                         requireConversationListActive = false,
                     )
                 }
@@ -186,6 +183,9 @@ internal class ChatFeatureModel(
 
     fun clearLocalReadMarkers() {
         synchronized(lifecycleLock) {
+            // 清除 marker 通常意味着资料即将切换；同时使正在读取的旧资源失效，防止它在
+            // 清除后成功提交并重新写入与当前会话不对应的 marker。
+            readRevisions.invalidateAll()
             localReadMarkers = emptyMap()
         }
     }
@@ -194,6 +194,9 @@ internal class ChatFeatureModel(
         // 离开 Chat 只终止当前读取/实时会话；本地已读叠加属于当前资料的 UI 状态，返回 Chat
         // 后仍需保留。递增代次可拒绝已停止客户端的迟到回调。
         jobOwner.invalidate(clearProfile = false)
+        synchronized(lifecycleLock) {
+            readRevisions.invalidateAll()
+        }
         stopRealtimeClient()
     }
 
@@ -208,18 +211,199 @@ internal class ChatFeatureModel(
         val session = jobOwner.ensureSession(profileId)
         if (session.changed) {
             stopRealtimeClient()
-            clearLocalReadMarkers()
+            synchronized(lifecycleLock) {
+                readRevisions.invalidateAll()
+                localReadMarkers = emptyMap()
+            }
         }
         return session.token
     }
 
     private fun isSessionCurrent(repository: DsmRepository, token: ChatFeatureToken): Boolean =
-        jobOwner.isCurrent(token) && repositoryProvider() === repository &&
-            workspace.value?.profile?.id == token.profileId
+        isSessionCurrent(repository, token, workspace.value)
+
+    private fun isSessionCurrent(
+        repository: DsmRepository,
+        token: ChatFeatureToken,
+        state: WorkspaceState?,
+    ): Boolean = jobOwner.isCurrent(token) && repositoryProvider() === repository &&
+        state?.profile?.id == token.profileId
 
     private fun isTaskCurrent(repository: DsmRepository, token: ChatTaskToken): Boolean =
-        jobOwner.isCurrent(token) && repositoryProvider() === repository &&
-            workspace.value?.profile?.id == token.session.profileId
+        isTaskCurrent(repository, token, workspace.value)
+
+    private fun isTaskCurrent(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+        state: WorkspaceState?,
+    ): Boolean = jobOwner.isCurrent(token) && repositoryProvider() === repository &&
+        state?.profile?.id == token.session.profileId
+
+    private fun beginConversationRead(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+    ): Long? = synchronized(lifecycleLock) {
+        val state = workspace.value
+        if (!isTaskCurrent(repository, token, state)) {
+            null
+        } else {
+            readRevisions.beginConversationRead()
+        }
+    }
+
+    private fun beginMessageRead(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+        conversation: ChatConversation,
+    ): Long? = synchronized(lifecycleLock) {
+        val state = workspace.value
+        if (!isTaskCurrent(repository, token, state) ||
+            state?.selectedConversation?.id != conversation.id
+        ) {
+            null
+        } else {
+            readRevisions.beginMessageRead(conversation.id)
+        }
+    }
+
+    private fun publishConversationOpen(
+        repository: DsmRepository,
+        token: ChatFeatureToken,
+        requested: ChatConversation,
+    ): ChatConversation? = synchronized(lifecycleLock) {
+        var openedConversation: ChatConversation? = null
+        retryChatStatePublication(
+            readCurrent = { workspace.value },
+            prepare = { current ->
+                if (!isSessionCurrent(repository, token, current)) {
+                    null
+                } else {
+                    val canonical = (current.conversations as? Loadable.Ready)
+                        ?.value
+                        ?.firstOrNull { it.id == requested.id }
+                        ?: requested
+                    val marker = canonical.toChatLocalReadMarker()
+                    val markers = if (marker == null) {
+                        localReadMarkers - canonical.id
+                    } else {
+                        localReadMarkers + (canonical.id to marker)
+                    }
+                    val conversations = (current.conversations as? Loadable.Ready)?.value
+                    val next = current.copy(
+                        selectedConversation = canonical.copy(unreadCount = 0),
+                        chatMessages = Loadable.Loading,
+                        chatIsLoadingMore = false,
+                        conversations = conversations?.map { item ->
+                            if (item.id == canonical.id) item.copy(unreadCount = 0) else item
+                        }?.let { Loadable.Ready(it) } ?: current.conversations,
+                    )
+                    ChatStatePublication(next, ChatConversationOpenCommit(canonical, markers))
+                }
+            },
+            compareAndSet = workspace::compareAndSet,
+            onPublished = { commit ->
+                readRevisions.invalidateMessageReads()
+                localReadMarkers = commit.markers
+                openedConversation = commit.conversation
+            },
+        )
+        openedConversation
+    }
+
+    private fun publishConversationState(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+        revision: Long,
+        requireConversationListActive: Boolean = false,
+        transform: (WorkspaceState) -> WorkspaceState?,
+    ) {
+        synchronized(lifecycleLock) {
+            retryChatStatePublication(
+                readCurrent = { workspace.value },
+                prepare = { current ->
+                    if (!canPublishConversationRead(
+                            repository,
+                            token,
+                            revision,
+                            current,
+                            requireConversationListActive,
+                        )
+                    ) {
+                        null
+                    } else {
+                        transform(current)?.let { ChatStatePublication(it, Unit) }
+                    }
+                },
+                compareAndSet = workspace::compareAndSet,
+                onPublished = {},
+            )
+        }
+    }
+
+    private fun publishMessageState(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+        conversation: ChatConversation,
+        revision: Long,
+        transform: (WorkspaceState) -> WorkspaceState?,
+    ) {
+        synchronized(lifecycleLock) {
+            retryChatStatePublication(
+                readCurrent = { workspace.value },
+                prepare = { current ->
+                    if (!canPublishMessageRead(repository, token, conversation, revision, current)) {
+                        null
+                    } else {
+                        transform(current)?.let { ChatStatePublication(it, Unit) }
+                    }
+                },
+                compareAndSet = workspace::compareAndSet,
+                onPublished = {},
+            )
+        }
+    }
+
+    private fun publishConversationFailureIfLoading(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+        revision: Long,
+        requireConversationListActive: Boolean,
+        error: Throwable,
+    ) {
+        publishConversationState(
+            repository,
+            token,
+            revision,
+            requireConversationListActive,
+        ) { current ->
+            if (current.conversations is Loadable.Loading) {
+                current.copy(conversations = Loadable.Failed(error.asDsmFailure()))
+            } else {
+                current
+            }
+        }
+    }
+
+    private fun canPublishConversationRead(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+        revision: Long,
+        state: WorkspaceState,
+        requireConversationListActive: Boolean,
+    ): Boolean = isTaskCurrent(repository, token, state) &&
+        readRevisions.isCurrentConversationRead(revision) &&
+        (!requireConversationListActive ||
+            state.selectedModule == Module.CHAT && state.selectedConversation == null)
+
+    private fun canPublishMessageRead(
+        repository: DsmRepository,
+        token: ChatTaskToken,
+        conversation: ChatConversation,
+        revision: Long,
+        state: WorkspaceState,
+    ): Boolean = isTaskCurrent(repository, token, state) &&
+        readRevisions.isCurrentMessageRead(conversation.id, revision) &&
+        state.selectedConversation?.id == conversation.id
 
     private fun loadMessages(
         repository: DsmRepository,
@@ -237,16 +421,16 @@ internal class ChatFeatureModel(
                 if (!reset && offset == null) {
                     null
                 } else {
+                    val revision = beginMessageRead(repository, taskToken, conversation)
+                        ?: return@launch null
                     if (!reset) {
-                        if (!isTaskCurrent(repository, taskToken)) return@launch null
-                        workspace.update { current ->
-                            current?.takeIf { isTaskCurrent(repository, taskToken) }
-                                ?.copy(chatIsLoadingMore = true) ?: current
+                        publishMessageState(repository, taskToken, conversation, revision) { current ->
+                            current.copy(chatIsLoadingMore = true)
                         }
                     }
                     val outcome = ChatMessageLoadOutcome(
                         reset = reset,
-                        currentPage = currentPage,
+                        revision = revision,
                         result = suspendRunCatching {
                             repository.chatMessages(conversation.id, checkNotNull(offset))
                         },
@@ -259,35 +443,37 @@ internal class ChatFeatureModel(
                 if (outcome == null || !isTaskCurrent(repository, taskToken)) return@launch
                 val page = outcome.result.getOrNull()
                 if (page != null) {
-                    workspace.update { current ->
-                        if (!isTaskCurrent(repository, taskToken) ||
-                            current?.selectedConversation?.id != conversation.id
-                        ) return@update current
-                        val merged = if (outcome.reset || outcome.currentPage == null) {
-                            page.copy(
-                                messages = (page.messages +
-                                    current.chatOutgoingMessages[conversation.id].orEmpty())
-                                    .distinctBy(ChatMessage::id)
-                                    .sortedBy(ChatMessage::createdAtEpochSeconds),
-                            )
-                        } else {
-                            page.copy(
-                                messages = (page.messages + outcome.currentPage.messages)
-                                    .distinctBy(ChatMessage::id)
-                                    .sortedBy(ChatMessage::createdAtEpochSeconds),
-                            )
-                        }
-                        current.copy(chatMessages = Loadable.Ready(merged), chatIsLoadingMore = false)
+                    publishMessageState(
+                        repository,
+                        taskToken,
+                        conversation,
+                        outcome.revision,
+                    ) { current ->
+                        val visible = (current.chatMessages as? Loadable.Ready)?.value
+                        val merged = mergeChatMessagePage(
+                            page,
+                            visible,
+                            current.chatOutgoingMessages[conversation.id].orEmpty(),
+                        )
+                        current.copy(
+                            chatMessages = Loadable.Ready(merged),
+                            chatIsLoadingMore = false,
+                        )
                     }
                     return@launch
                 }
                 val error = outcome.result.exceptionOrNull() ?: return@launch
-                workspace.update { current ->
-                    if (!isTaskCurrent(repository, taskToken) ||
-                        current?.selectedConversation?.id != conversation.id
-                    ) return@update current
+                publishMessageState(
+                    repository,
+                    taskToken,
+                    conversation,
+                    outcome.revision,
+                ) { current ->
                     if (outcome.reset) {
-                        current.copy(chatMessages = Loadable.Failed(error.asDsmFailure()))
+                        current.copy(
+                            chatMessages = Loadable.Failed(error.asDsmFailure()),
+                            chatIsLoadingMore = false,
+                        )
                     } else {
                         current.copy(
                             chatIsLoadingMore = false,
@@ -305,22 +491,42 @@ internal class ChatFeatureModel(
         conversation: ChatConversation,
     ) {
         if (!isTaskCurrent(repository, token)) return
+        val revision = beginMessageRead(repository, token, conversation) ?: return
         val result = suspendRunCatching { repository.chatMessages(conversation.id, 0) }
         if (!isTaskCurrent(repository, token)) return
-        val latest = result.getOrNull() ?: return
-        workspace.update { current ->
-            if (!isTaskCurrent(repository, token) ||
-                current?.selectedConversation?.id != conversation.id
-            ) return@update current
-            val existing = (current.chatMessages as? Loadable.Ready)?.value ?: return@update current
+        val latest = result.getOrNull()
+        if (latest == null) {
+            val error = result.exceptionOrNull() ?: return
+            publishMessageState(repository, token, conversation, revision) { current ->
+                if (current.chatMessages is Loadable.Loading) {
+                    current.copy(
+                        chatMessages = Loadable.Failed(error.asDsmFailure()),
+                        chatIsLoadingMore = false,
+                    )
+                } else {
+                    current.copy(chatIsLoadingMore = false)
+                }
+            }
+            return
+        }
+        publishMessageState(repository, token, conversation, revision) { current ->
+            val existing = (current.chatMessages as? Loadable.Ready)?.value
+            val page = if (existing == null) {
+                mergeChatMessagePage(
+                    latest,
+                    null,
+                    current.chatOutgoingMessages[conversation.id].orEmpty(),
+                )
+            } else {
+                mergeChatMessagePage(
+                    existing,
+                    latest,
+                    current.chatOutgoingMessages[conversation.id].orEmpty(),
+                )
+            }
             current.copy(
-                chatMessages = Loadable.Ready(
-                    existing.copy(
-                        messages = (existing.messages + latest.messages)
-                            .distinctBy(ChatMessage::id)
-                            .sortedBy(ChatMessage::createdAtEpochSeconds),
-                    ),
-                ),
+                chatMessages = Loadable.Ready(page),
+                chatIsLoadingMore = false,
             )
         }
     }
@@ -329,24 +535,34 @@ internal class ChatFeatureModel(
         repository: DsmRepository,
         token: ChatTaskToken,
         conversations: List<ChatConversation>,
+        revision: Long,
         requireConversationListActive: Boolean,
     ) {
-        if (!isTaskCurrent(repository, token)) return
-        workspace.update { state ->
-            if (state == null || !isTaskCurrent(repository, token) ||
-                requireConversationListActive &&
-                (state.selectedModule != Module.CHAT || state.selectedConversation != null)
-            ) return@update state
-            val overlay = synchronized(lifecycleLock) {
-                applyChatLocalReadOverlay(conversations, localReadMarkers).also {
-                    localReadMarkers = it.markers
-                }
-            }
-            val visible = applyChatConversationPreferences(
-                overlay.conversations,
-                state.chatPinnedConversationIds,
+        synchronized(lifecycleLock) {
+            retryChatStatePublication(
+                readCurrent = { workspace.value },
+                prepare = { state ->
+                    if (!canPublishConversationRead(
+                            repository,
+                            token,
+                            revision,
+                            state,
+                            requireConversationListActive,
+                        )
+                    ) {
+                        null
+                    } else {
+                        val overlay = applyChatLocalReadOverlay(conversations, localReadMarkers)
+                        val visible = applyChatConversationPreferences(
+                            overlay.conversations,
+                            state.chatPinnedConversationIds,
+                        )
+                        ChatStatePublication(state.withRefreshedChatConversations(visible), overlay.markers)
+                    }
+                },
+                compareAndSet = workspace::compareAndSet,
+                onPublished = { markers -> localReadMarkers = markers },
             )
-            state.withRefreshedChatConversations(visible)
         }
     }
 
@@ -367,15 +583,28 @@ internal class ChatFeatureModel(
                     val current = workspace.value
                     if (current?.selectedModule != Module.CHAT || current.selectedConversation != null
                     ) break
+                    val revision = beginConversationRead(repository, taskToken) ?: break
                     val result = suspendRunCatching { repository.chatConversations() }
                     if (!isTaskCurrent(repository, taskToken)) break
-                    result.getOrNull()?.let { conversations ->
+                    val conversations = result.getOrNull()
+                    if (conversations != null) {
                         publishConversations(
                             repository,
                             taskToken,
                             conversations,
+                            revision,
                             requireConversationListActive = true,
                         )
+                    } else {
+                        result.exceptionOrNull()?.let { error ->
+                            publishConversationFailureIfLoading(
+                                repository,
+                                taskToken,
+                                revision,
+                                requireConversationListActive = true,
+                                error = error,
+                            )
+                        }
                     }
                 }
             },
@@ -470,15 +699,28 @@ internal class ChatFeatureModel(
                         state.selectedConversation?.let { conversation ->
                             refreshLatestMessages(repository, taskToken, conversation)
                         } ?: run {
+                            val revision = beginConversationRead(repository, taskToken) ?: return@launch
                             val result = suspendRunCatching { repository.chatConversations() }
                             if (!isTaskCurrent(repository, taskToken)) return@launch
-                            result.getOrNull()?.let { conversations ->
+                            val conversations = result.getOrNull()
+                            if (conversations != null) {
                                 publishConversations(
                                     repository,
                                     taskToken,
                                     conversations,
+                                    revision,
                                     requireConversationListActive = true,
                                 )
+                            } else {
+                                result.exceptionOrNull()?.let { error ->
+                                    publishConversationFailureIfLoading(
+                                        repository,
+                                        taskToken,
+                                        revision,
+                                        requireConversationListActive = true,
+                                        error = error,
+                                    )
+                                }
                             }
                         }
                     },
@@ -510,8 +752,23 @@ internal class ChatFeatureModel(
 
     private data class ChatMessageLoadOutcome(
         val reset: Boolean,
-        val currentPage: ChatMessagePage?,
+        val revision: Long,
         val result: Result<ChatMessagePage>,
+    )
+
+    private data class ChatConversationLoadOutcome(
+        val revision: Long,
+        val result: Loadable<List<ChatConversation>>,
+    )
+
+    private data class ChatConversationReadOutcome(
+        val revision: Long,
+        val conversations: List<ChatConversation>?,
+    )
+
+    private data class ChatConversationOpenCommit(
+        val conversation: ChatConversation,
+        val markers: Map<String, ChatLocalReadMarker>,
     )
 
     private companion object {
@@ -520,6 +777,76 @@ internal class ChatFeatureModel(
         const val REFRESH_JOB = "refresh"
         const val REALTIME_CONNECTION_JOB = "realtime-connection"
         const val REALTIME_REFRESH_JOB = "realtime-refresh"
+    }
+}
+
+/** 将当前可见消息、本地待发送消息与本次读取结果合并，分页字段始终来自本次结果。 */
+internal fun mergeChatMessagePage(
+    page: ChatMessagePage,
+    visible: ChatMessagePage?,
+    outgoing: List<ChatMessage>,
+): ChatMessagePage = page.copy(
+    messages = (page.messages + visible?.messages.orEmpty() + outgoing)
+        .distinctBy(ChatMessage::id)
+        .sortedBy(ChatMessage::createdAtEpochSeconds),
+)
+
+/** 会话列表与单会话消息分别使用单调 revision，防止不同读取任务相互覆盖。 */
+internal class ChatReadResourceRevisions {
+    private val lock = Any()
+    private var nextRevision = 0L
+    private var conversationRevision = 0L
+    private val messageRevisions = mutableMapOf<String, Long>()
+
+    fun beginConversationRead(): Long = synchronized(lock) {
+        (++nextRevision).also { conversationRevision = it }
+    }
+
+    fun beginMessageRead(conversationId: String): Long = synchronized(lock) {
+        (++nextRevision).also { messageRevisions[conversationId] = it }
+    }
+
+    fun isCurrentConversationRead(revision: Long): Boolean = synchronized(lock) {
+        conversationRevision == revision
+    }
+
+    fun isCurrentMessageRead(conversationId: String, revision: Long): Boolean = synchronized(lock) {
+        messageRevisions[conversationId] == revision
+    }
+
+    fun invalidateMessageReads() = synchronized(lock) {
+        nextRevision += 1
+        messageRevisions.clear()
+    }
+
+    fun invalidateAll() = synchronized(lock) {
+        nextRevision += 1
+        conversationRevision = nextRevision
+        messageRevisions.clear()
+    }
+}
+
+internal data class ChatStatePublication<State, Commit>(
+    val state: State,
+    val commit: Commit,
+)
+
+/**
+ * 在调用方持有其生命周期锁时，以显式 CAS 重试发布状态；仅成功的尝试可以提交外部 marker。
+ */
+internal fun <State : Any, Commit> retryChatStatePublication(
+    readCurrent: () -> State?,
+    prepare: (State) -> ChatStatePublication<State, Commit>?,
+    compareAndSet: (State, State) -> Boolean,
+    onPublished: (Commit) -> Unit,
+): Boolean {
+    while (true) {
+        val current = readCurrent() ?: return false
+        val publication = prepare(current) ?: return false
+        if (compareAndSet(current, publication.state)) {
+            onPublished(publication.commit)
+            return true
+        }
     }
 }
 

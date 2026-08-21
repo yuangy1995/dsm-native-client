@@ -22,6 +22,7 @@ from generate_android_quality_baseline import (
 
 
 STABLE_ID_PATTERN = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*\Z")
+RENAME_STATUS_PATTERN = re.compile(r"R(?:100|\d{1,2})\Z")
 
 
 def _line_count(path: Path) -> int:
@@ -157,6 +158,76 @@ def _by_file(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {str(item["file"]): item for item in entries}
 
 
+def load_rename_map(path: Path | None) -> dict[str, str]:
+    """读取 ``git diff --name-status -M`` 的精确旧路径到新路径映射。"""
+    if path is None:
+        return {}
+    renames: dict[str, str] = {}
+    destinations: set[str] = set()
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line:
+            continue
+        fields = line.split("\t")
+        status = fields[0]
+        if not status.startswith("R"):
+            continue
+        if len(fields) != 3 or not RENAME_STATUS_PATTERN.fullmatch(status):
+            raise ValueError(f"rename map 第 {line_number} 行不是有效的 Rnnn<TAB>old<TAB>new 记录")
+        previous, current = fields[1:]
+        if not previous or not current:
+            raise ValueError(f"rename map 第 {line_number} 行包含空路径")
+        if previous in renames or current in destinations:
+            raise ValueError(f"rename map 第 {line_number} 行包含歧义的路径身份")
+        renames[previous] = current
+        destinations.add(current)
+    return renames
+
+
+def _has_verified_path_continuity(
+    previous_item: dict[str, Any],
+    current_item: dict[str, Any],
+    rename_map: dict[str, str],
+) -> bool:
+    previous_path = str(previous_item["file"])
+    current_path = str(current_item["file"])
+    return previous_path == current_path or rename_map.get(previous_path) == current_path
+
+
+def _require_verified_path_continuity(
+    previous_item: dict[str, Any],
+    current_item: dict[str, Any],
+    rename_map: dict[str, str],
+    errors: list[str],
+) -> bool:
+    if _has_verified_path_continuity(previous_item, current_item, rename_map):
+        return True
+    errors.append(
+        "结构债务稳定 id 的路径变更缺少 Git rename 证据："
+        f"{previous_item['id']}（{previous_item['file']} -> {current_item['file']}）",
+    )
+    return False
+
+
+def _may_remove_previous_entry(relative: str, production_root: Path, current_limit: int) -> bool:
+    """仅允许文件删除、移出生产目录或已降至当前阈值内时移除历史身份。"""
+    path = production_root / relative
+    return not path.is_file() or _line_count(path) <= current_limit
+
+
+def _entry_at_previous_or_renamed_path(
+    relative: str,
+    current_by_file: dict[str, dict[str, Any]],
+    current_exceptions_by_file: dict[str, dict[str, Any]],
+    rename_map: dict[str, str],
+) -> dict[str, Any] | None:
+    return (
+        current_by_file.get(relative)
+        or current_exceptions_by_file.get(relative)
+        or current_by_file.get(rename_map.get(relative, ""))
+        or current_exceptions_by_file.get(rename_map.get(relative, ""))
+    )
+
+
 def _compare_entry_ratchet(
     current_item: dict[str, Any],
     previous_item: dict[str, Any],
@@ -225,6 +296,7 @@ def _compare_previous_ratchet(
     production_root: Path,
     current_limit: int,
     errors: list[str],
+    rename_map: dict[str, str],
 ) -> None:
     previous_errors: list[str] = []
     previous_limit = previous_structure_debt.get("newProductionFileLineLimit")
@@ -273,9 +345,6 @@ def _compare_previous_ratchet(
     current_exceptions_by_file = _by_file(current_exceptions)
     previous_by_id = _by_id(previous)
     previous_exceptions_by_id = _by_id(previous_exceptions)
-    previous_ids = set(previous_by_id) | set(previous_exceptions_by_id)
-    current_ids = set(current_by_id) | set(current_exceptions_by_id)
-    new_current_ids = current_ids - previous_ids
 
     for stable_id, previous_item in previous_by_id.items():
         current_item = current_by_id.get(stable_id)
@@ -287,25 +356,25 @@ def _compare_previous_ratchet(
             )
             continue
         if current_item is not None:
+            _require_verified_path_continuity(previous_item, current_item, rename_map, errors)
             _compare_entry_ratchet(current_item, previous_item, errors)
             continue
 
         relative = str(previous_item["file"])
-        path = production_root / relative
-        same_path_item = current_by_file.get(relative) or current_exceptions_by_file.get(relative)
+        same_path_item = _entry_at_previous_or_renamed_path(
+            relative,
+            current_by_file,
+            current_exceptions_by_file,
+            rename_map,
+        )
         if same_path_item is not None:
             errors.append(
                 f"上一基线既有大文件稳定 id 不得改换：{stable_id}（路径 {relative}）",
             )
-        elif path.is_file() and _line_count(path) > current_limit:
+        elif not _may_remove_previous_entry(relative, production_root, current_limit):
             errors.append(
                 f"上一基线既有大文件仍超过 {current_limit} 行，必须继续登记："
-                f"{stable_id}（当前 {_line_count(path)} 行）",
-            )
-        if new_current_ids:
-            errors.append(
-                f"上一基线既有大文件稳定 id 已移除时不得同时新增超限身份：{stable_id}；"
-                "真正删除、降至阈值以内或迁出生产目录必须单独完成",
+                f"{stable_id}（当前 {_line_count(production_root / relative)} 行）",
             )
 
     for current_item in current:
@@ -318,11 +387,49 @@ def _compare_previous_ratchet(
             "请先拆分或登记明确例外理由",
         )
 
+    for stable_id, previous_exception in previous_exceptions_by_id.items():
+        current_exception = current_exceptions_by_id.get(stable_id)
+        current_item = current_by_id.get(stable_id)
+        if current_exception is not None:
+            _require_verified_path_continuity(
+                previous_exception,
+                current_exception,
+                rename_map,
+                errors,
+            )
+            continue
+        if current_item is not None:
+            _require_verified_path_continuity(
+                previous_exception,
+                current_item,
+                rename_map,
+                errors,
+            )
+            continue
+
+        relative = str(previous_exception["file"])
+        same_path_item = _entry_at_previous_or_renamed_path(
+            relative,
+            current_by_file,
+            current_exceptions_by_file,
+            rename_map,
+        )
+        if same_path_item is not None:
+            errors.append(
+                f"上一基线 exception 稳定 id 不得改换：{stable_id}（路径 {relative}）",
+            )
+        elif not _may_remove_previous_entry(relative, production_root, current_limit):
+            errors.append(
+                "上一基线 exception 只能在文件删除、移出生产目录或降至阈值以内时移除："
+                f"{stable_id}（当前 {_line_count(production_root / relative)} 行）",
+            )
+
 
 def validate(
     production_root: Path = PRODUCTION_ROOT,
     structure_debt: dict[str, Any] | None = None,
     previous_structure_debt: dict[str, Any] | None = None,
+    rename_map: dict[str, str] | None = None,
 ) -> list[str]:
     """校验当前精确 ratchet、稳定身份、例外理由及上一基线的单调性。"""
     debt = load_baseline()["structureDebt"] if structure_debt is None else structure_debt
@@ -379,6 +486,7 @@ def validate(
             production_root,
             limit,
             errors,
+            rename_map or {},
         )
     return errors
 
@@ -390,6 +498,11 @@ def main() -> int:
         type=Path,
         help="与当前基线比较的上一版 Android 质量基线 JSON",
     )
+    parser.add_argument(
+        "--rename-map",
+        type=Path,
+        help="由 git diff --name-status -M 生成的旧路径到新路径证据",
+    )
     args = parser.parse_args()
     try:
         previous = (
@@ -397,7 +510,10 @@ def main() -> int:
             if args.previous_baseline is not None
             else None
         )
-        errors = validate(previous_structure_debt=previous)
+        errors = validate(
+            previous_structure_debt=previous,
+            rename_map=load_rename_map(args.rename_map),
+        )
     except (OSError, ValueError) as error:
         print(f"错误：{error}")
         return 1

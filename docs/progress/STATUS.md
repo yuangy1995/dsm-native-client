@@ -14,30 +14,30 @@
 
 | 平台 | 源码 | 自动化 | 真机 / 真实 NAS | 发布 |
 | --- | --- | --- | --- | --- |
-| macOS | Files、Photos、Chat、Download Station、NAS 管理与桌面云盘路径均在源码中；高风险内部写入口保持能力门保护。 | 本轮共享包测试、无签名构建和桌面云盘专用回归已通过。 | `PENDING_USER_VALIDATION`：正式签名、Finder/File Provider、真实 NAS、升级与危险写回读。 | 未发布；首个 Beta 仅准备，不得在签名与公证前分发。 |
-| iPhone | 移动范围内的登录、Files、Photos、受限 Chat、Download Station 与只读 NAS 摘要已在通用工程中。 | DsmMobile 通用 iOS Simulator 目标无签名构建通过；不构成独立 iPhone 启动验证。 | `PENDING_USER_VALIDATION`：设备登录、选择器、网络切换、VoiceOver 与真实套件行为。 | 未发布；随 Apple Beta 验收入口统一判断。 |
-| iPad | 与 iPhone 共用领域与网络层，保留双栏、键盘与宽屏适配路径。 | DsmMobile 通用 iOS Simulator 目标无签名构建通过；不构成独立 iPad 验证。 | `PENDING_USER_VALIDATION`：iPad 启动、分栏/宽屏、键盘、动态文字、VoiceOver 与真实 NAS。 | 未发布；不以通用编译替代 iPad 验收。 |
-| Android | Compose 兼容入口、领域状态、后台任务和质量基线均在源码中；Container 未验证写操作继续关闭。 | 写操作、页面五态、点击目标、动效、结构债务、本地化、fixture 与契约门禁可在仓库运行；在 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 的 GitHub Android Build 已覆盖 JVM 单测、Debug APK、Release/R8、androidTest APK 构建与 lintDebug。 | `PENDING_USER_VALIDATION`：真实登录、证书、后台、真实 NAS、危险写和多设备辅助功能。 | 未发布；自动化构建覆盖不替代仪器执行、签名、安装或升级回滚验收。 |
-| Windows | WinUI、领域、基础设施与 Cloud Files 路径保留；危险写和未验证系统集成继续关闭或只读。 | 提交 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 已由 Windows 托管 Runner 通过 xUnit、WinUI x64 与 ARM64 构建。 | `PENDING_USER_VALIDATION`：Windows 设备、Explorer/Cloud Files、通知、安装生命周期和真实 NAS。 | 未发布；不改变当前 unpackaged 形态、签名或程序集引用。 |
+| macOS | Files、Photos、Chat、Download Station、NAS 管理与桌面云盘路径均在源码中；高风险内部写入口保持能力门保护。 | Apple Build 覆盖共享 Package 测试、DsmMobile 通用 iOS Simulator 无签名构建、macOS 无签名构建和桌面云盘专用回归；精确提交的结果以 GitHub Checks 为准。 | `PENDING_USER_VALIDATION`：正式签名、Finder/File Provider、真实 NAS、升级与危险写回读。 | 未发布；首个 Beta 仅准备，不得在签名与公证前分发。 |
+| iPhone | 移动范围内的登录、Files、Photos、受限 Chat、Download Station 与只读 NAS 摘要已在通用工程中。 | Apple Build 的 DsmMobile 通用 iOS Simulator 无签名构建只覆盖通用工程编译，不构成独立 iPhone 启动验证；精确结果以 GitHub Checks 为准。 | `PENDING_USER_VALIDATION`：设备登录、选择器、网络切换、VoiceOver 与真实套件行为。 | 未发布；随 Apple Beta 验收入口统一判断。 |
+| iPad | 与 iPhone 共用领域与网络层，保留双栏、键盘与宽屏适配路径。 | Apple Build 的 DsmMobile 通用 iOS Simulator 无签名构建只覆盖通用工程编译，不构成独立 iPad 验证；精确结果以 GitHub Checks 为准。 | `PENDING_USER_VALIDATION`：iPad 启动、分栏/宽屏、键盘、动态文字、VoiceOver 与真实 NAS。 | 未发布；不以通用编译替代 iPad 验收。 |
+| Android | Compose 兼容入口、领域状态、后台任务和质量基线均在源码中；Container 未验证写操作继续关闭。 | Android Build 覆盖 JVM 单测、Debug APK、Release/R8、androidTest APK 构建与 lintDebug；写操作、页面五态、点击目标、动效、结构债务、本地化、fixture 与契约门禁可在仓库运行。精确提交的结果以 GitHub Checks 为准。 | `PENDING_USER_VALIDATION`：真实登录、证书、后台、真实 NAS、危险写和多设备辅助功能。 | 未发布；自动化构建覆盖不替代仪器执行、签名、安装或升级回滚验收。 |
+| Windows | WinUI、领域、基础设施与 Cloud Files 路径保留；危险写和未验证系统集成继续关闭或只读。 | Windows Build 在托管 Runner 覆盖 xUnit、WinUI x64 与 ARM64 构建；精确提交的结果以 GitHub Checks 为准。 | `PENDING_USER_VALIDATION`：Windows 设备、Explorer/Cloud Files、通知、安装生命周期和真实 NAS。 | 未发布；不改变当前 unpackaged 形态、签名或程序集引用。 |
 
 ### macOS
 
 - 源码状态：共享 Apple Package 是可修改范围；`apple/Apps/DsmMac/**` 仍是只读参考实现。
-- 自动化状态：本轮已通过共享 Package 测试、DsmMobile 通用 iOS Simulator 目标无签名构建与 macOS 无签名构建。
+- 自动化状态：Apple Build 覆盖共享 Package 测试、DsmMobile 通用 iOS Simulator 目标无签名构建与 macOS 无签名构建；精确提交结论由 GitHub Checks 提供。
 - 真机状态：正式签名、notarization、stapling、Gatekeeper、Finder、File Provider、真实 NAS、升级安装和危险写回读均为 `PENDING_USER_VALIDATION`。
 - 发布状态：未形成可公开 Beta；候选包必须先经过正式签名与执行矩阵。
 
 ### iPhone
 
 - 源码状态：坚持随身伴侣范围，不把复杂运维、后台常驻或桌面交互隐式迁入。
-- 自动化状态：DsmMobile 通用 iOS Simulator 目标无签名构建通过；共享 Package 改动同时完成 macOS 回归，未单独验证 iPhone 启动。
+- 自动化状态：DsmMobile 通用 iOS Simulator 目标无签名构建用于通用工程编译；共享 Package 改动需要同时走 macOS 回归，未单独验证 iPhone 启动。
 - 真机状态：系统选择器、前后台切换、触控、网络切换和真实 Chat Server 行为待用户验证。
 - 发布状态：无 TestFlight 或公开分发动作。
 
 ### iPad
 
 - 源码状态：双栏和宽屏路径保留在移动范围，不复制 macOS 的菜单栏或常驻进程语义。
-- 自动化状态：DsmMobile 通用 iOS Simulator 目标无签名构建通过；未单独指定 iPad destination、启动或宽屏流程。
+- 自动化状态：DsmMobile 通用 iOS Simulator 目标无签名构建用于通用工程编译；未单独指定 iPad destination、启动或宽屏流程。
 - 真机状态：分栏、多任务、键盘、VoiceOver、最大动态文字和真实 NAS 待用户验证。
 - 发布状态：无 TestFlight 或公开分发动作。
 
@@ -46,11 +46,10 @@
 - 源码状态：`AppViewModel` 与 `DsmRepository` 保持兼容门面；`TransferCoordinator` 已唯一持有
   前台传输 Job、下载 execution id 与后台观察 Job，`PhotoBackupCoordinator` 已持有扫描调度代次、
   Profile 与本地观察 Job。`ChatFeatureModel` 已持有 Chat 读取、轮询、实时连接、本地已读叠加和
-  会话与同名任务代次；`NasAdministrationFeatureModel` 已持有 NAS 设置读取 Job、代次和与设置刷新共用的锁。
+  会话列表与每会话消息的资源 revision、会话与同名任务代次；`NasAdministrationFeatureModel` 已持有 NAS 设置读取 Job、代次和与设置刷新共用的锁。
   Chat 写操作与其余 NAS 管理写操作仍保留在门面既有安全边界内，不改变公开契约、任务语义或持久化格式。
-- 自动化状态：在 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 的 GitHub Android Build 已实际运行
-  JVM 单测、Debug APK、Release 构建及 R8、`assembleDebugAndroidTest` 和 lintDebug；
-  androidTest APK 构建成功只证明测试包可生成，不等于已在真机或模拟器执行仪器测试。
+- 自动化状态：Android Build 覆盖 JVM 单测、Debug APK、Release 构建及 R8、
+  `assembleDebugAndroidTest` 和 lintDebug；androidTest APK 生成只证明测试包可生成，不等于已在真机或模拟器执行仪器测试。精确提交结论由 GitHub Checks 提供。
 - 真机状态：真实仪器执行与 Android 版本矩阵、WorkManager 长时间后台、网络切换、Doze、进程重启、
   真实 DSM/NAS、认证、证书、危险写和辅助功能均为 `PENDING_USER_VALIDATION`。
 - 发布状态：发布签名、安装、升级与回滚均为 `PENDING_USER_VALIDATION`；无 Play 分发，未验证内部写入口保持关闭。
@@ -58,7 +57,7 @@
 ### Windows
 
 - 源码状态：保留 `IDsmApiClient`、`DsmApiClient`、DI、`HttpClient` 生命周期与证书策略；只按 partial 文件边界拆分。
-- 自动化状态：提交 `138dbd16cd0396b0321477e0d9e4c189fffd7670` 已由 Windows 托管 Runner 通过 xUnit、WinUI x64 与 ARM64 构建；Windows 系统与设备集成仍待验证。
+- 自动化状态：Windows Build 在托管 Runner 覆盖 xUnit、WinUI x64 与 ARM64 构建；Windows 系统与设备集成仍待验证，精确提交结论由 GitHub Checks 提供。
 - 真机状态：Explorer、Cloud Files、通知、安装、托盘、外接卷和真实 NAS 待用户验证。
 - 发布状态：不创建安装包、不变更签名策略、不发布。
 
@@ -68,7 +67,7 @@
 
 - 源码：共享 Package 可以继续收敛网络和领域实现；DsmMac App 保持只读。
 - 源码：桌面云盘所有改变继续保持只读、安全失败或能力门保护。
-- 自动化：本轮共享 Package 测试与无签名 macOS 构建已通过。
+- 自动化：Apple Build 覆盖共享 Package 测试与无签名 macOS 构建；精确提交结论由 GitHub Checks 提供。
 - 自动化：共享网络变更必须同时验证 macOS 回归，不能只跑移动构建。
 - 真机：正式签名、App Group、Keychain、Finder 与 Extension 的系统行为仍缺证据。
 - 真机：真实 NAS 文件、缓存、取消、恢复、升级和回退仅在专用环境执行。
@@ -125,7 +124,7 @@
 
 - “未发布”表示没有获得目标平台分发批准，不等于源码不可继续开发。
 - “候选准备”只表示可开始运行既定构建和验收步骤，不表示签名或安装通过。
-- “自动化可重跑”只表示命令或托管任务存在，不替代本轮实际运行结果。
+- “自动化可重跑”只表示命令或托管任务存在；某次提交的执行结论仅以对应 GitHub Checks 为准。
 - “真机未验证”不得被写成失败，也不得被自动化或模拟器结果覆盖。
 - 高风险内部写在契约、能力和真实回读不足时始终保持关闭或只读。
 - 认证、证书、后台、跨 NAS、File Provider 与 Cloud Files 的设备结果单独记录。
@@ -160,7 +159,7 @@
 - Android Chat 的读取、轮询、实时连接与本地已读状态，以及 NAS 设置读取的 Job、代次与锁，
   已迁至各自的特性模型；`AppViewModel` 保持 Compose 兼容门面与既有高风险写操作边界。
 - `Documentation & Quality Preflight` 已按实际覆盖范围命名；它不再被描述为完整发布预检。
-- macOS Beta 就绪报告已记录本轮构建与手工验收边界；没有可以替代正式签名或真实 NAS 的结论。
+- macOS Beta 就绪报告记录构建与手工验收边界；没有可以替代正式签名或真实 NAS 的结论。
 - 发布状态保持保守：未完成真实环境验证的高风险能力不会因源码或模拟器结果而开放。
 
 ## 下一步（三项）

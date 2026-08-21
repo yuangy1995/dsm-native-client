@@ -45,6 +45,7 @@ MANUAL_TEST_COUNT_PATTERN = re.compile(
     r"\b\d+\s*/\s*\d+\b.{0,28}(?:测试|test|通过|passed)",
     re.IGNORECASE,
 )
+STATUS_FULL_COMMIT_SHA_PATTERN = re.compile(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", re.IGNORECASE)
 
 
 def _strip_code_fences(text: str) -> str:
@@ -161,6 +162,8 @@ def validate_active_metadata(
             errors.append(f"活动文档不得记录 CI Run ID：{relative}")
         if MANUAL_TEST_COUNT_PATTERN.search(text):
             errors.append(f"活动文档不得记录人工维护的测试数量：{relative}")
+        if relative == "docs/progress/STATUS.md" and STATUS_FULL_COMMIT_SHA_PATTERN.search(text):
+            errors.append("STATUS.md 不得记录完整提交 SHA；精确执行结论应以 GitHub Checks 为准")
 
         if strict_release and reviewed is not None:
             max_age = 30 if relative == "docs/progress/STATUS.md" else 90
@@ -198,7 +201,7 @@ def main() -> int:
             print(f"错误：{error}")
         return 1
     suffix = "（严格发布预检）" if args.strict_release else ""
-    print(f"文档检查通过{suffix}：链接、标题锚点、角色、时效和状态页行数均符合要求。")
+    print(f"文档检查通过{suffix}：链接、标题锚点、角色、时效、动态证据和状态页行数均符合要求。")
     return 0
 
 
