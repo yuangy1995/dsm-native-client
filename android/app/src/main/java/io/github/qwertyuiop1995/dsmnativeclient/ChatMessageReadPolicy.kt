@@ -123,3 +123,48 @@ internal fun reconcileChatMessagePage(
         messages = reconciled.values.sortedBy(ChatMessage::createdAtEpochSeconds),
     )
 }
+
+/**
+ * 合并最新 HEAD 窗口与当前可见消息页。
+ *
+ * `hasMore = false` 表示服务端已确认 HEAD 是完整快照，因此旧的已确认消息不能继续保留。
+ * 有更多历史时，只有服务端已确认 ID 的重叠才说明新窗口已经接上既有分页范围；否则必须采用
+ * 最新窗口的分页边界，确保后续分页可以桥接离线期间形成的缺口。本地 SENDING/FAILED 气泡不
+ * 参与重叠判定，也不会把完整服务端快照误判为已有交集。
+ */
+internal fun reconcileHeadPage(
+    existing: ChatMessagePage?,
+    latest: ChatMessagePage,
+    outgoing: List<ChatMessage>,
+): ChatMessagePage {
+    val existingConfirmedIds = existing
+        ?.messages
+        ?.asSequence()
+        ?.filter { it.deliveryState == ChatDeliveryState.SENT }
+        ?.map(ChatMessage::id)
+        ?.toSet()
+        .orEmpty()
+    val hasConfirmedOverlap = latest.messages.any { message ->
+        message.deliveryState == ChatDeliveryState.SENT && message.id in existingConfirmedIds
+    }
+    val completeSnapshot = !latest.hasMore
+    val metadataSource = when {
+        existing == null -> latest
+        completeSnapshot -> latest
+        hasConfirmedOverlap -> existing
+        else -> latest
+    }
+    val lowerPriority = if (completeSnapshot) emptyList() else existing?.messages.orEmpty()
+    val outgoingToPreserve = if (completeSnapshot) {
+        outgoing.filter { it.deliveryState != ChatDeliveryState.SENT }
+    } else {
+        outgoing
+    }
+
+    return reconcileChatMessagePage(
+        metadataSource = metadataSource,
+        lowerPriority = lowerPriority,
+        higherPriority = latest.messages,
+        outgoing = outgoingToPreserve,
+    )
+}

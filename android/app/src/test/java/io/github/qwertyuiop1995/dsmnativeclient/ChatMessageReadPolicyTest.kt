@@ -171,6 +171,117 @@ class ChatMessageReadPolicyTest {
         assertEquals(0.25f, result.getValue(failed.id).attachmentProgress)
     }
 
+    @Test
+    fun `无重叠的最新 HEAD 使用服务端新分页边界以桥接缺口`() {
+        val existing = page(message("old", 1), nextOffset = null, hasMore = false)
+        val latest = page(message("latest", 100), nextOffset = 50, hasMore = true)
+
+        val result = reconcileHeadPage(
+            existing = existing,
+            latest = latest,
+            outgoing = emptyList(),
+        )
+
+        assertEquals(listOf("old", "latest"), result.messages.map(ChatMessage::id))
+        assertEquals(50, result.nextOffset)
+        assertTrue(result.hasMore)
+    }
+
+    @Test
+    fun `完整最新 HEAD 删除缺失的已确认消息但保留未确认 outgoing`() {
+        val oldConfirmed = message("old-confirmed", 1)
+        val pending = message(
+            id = "local:pending",
+            time = 2,
+            deliveryState = ChatDeliveryState.SENDING,
+            clientRequestId = "pending-request",
+        )
+        val failed = message(
+            id = "local:failed",
+            time = 3,
+            deliveryState = ChatDeliveryState.FAILED,
+            clientRequestId = "failed-request",
+        )
+        val latest = message("latest-confirmed", 4)
+
+        val result = reconcileHeadPage(
+            existing = page(oldConfirmed, nextOffset = 50, hasMore = true),
+            latest = page(latest, nextOffset = null, hasMore = false),
+            outgoing = listOf(pending, failed),
+        )
+
+        assertEquals(
+            listOf("local:pending", "local:failed", "latest-confirmed"),
+            result.messages.map(ChatMessage::id),
+        )
+        assertNull(result.nextOffset)
+        assertFalse(result.hasMore)
+    }
+
+    @Test
+    fun `完整最新 HEAD 仍以服务端新对象覆盖同 ID 已确认消息`() {
+        val existing = message("same-id", 1, body = "旧正文", isPinned = false)
+        val latest = message("same-id", 1, body = "新正文", isPinned = true)
+
+        val result = reconcileHeadPage(
+            existing = page(existing, nextOffset = 50, hasMore = true),
+            latest = page(latest, nextOffset = null, hasMore = false),
+            outgoing = emptyList(),
+        ).messages.single()
+
+        assertEquals("新正文", result.body)
+        assertTrue(result.isPinned)
+        assertEquals(ChatDeliveryState.SENT, result.deliveryState)
+    }
+
+    @Test
+    fun `有已确认重叠的最新 HEAD 保留已加载历史分页边界`() {
+        val existing = page(
+            message("old", 1),
+            message("overlap", 2, body = "旧正文"),
+            nextOffset = 100,
+            hasMore = true,
+        )
+        val latest = page(
+            message("overlap", 2, body = "新正文"),
+            message("latest", 3),
+            nextOffset = 50,
+            hasMore = true,
+        )
+
+        val result = reconcileHeadPage(
+            existing = existing,
+            latest = latest,
+            outgoing = emptyList(),
+        )
+
+        assertEquals(100, result.nextOffset)
+        assertTrue(result.hasMore)
+        assertEquals("新正文", result.messages.single { it.id == "overlap" }.body)
+    }
+
+    @Test
+    fun `本地未确认 outgoing 不会制造 HEAD 重叠`() {
+        val pending = message(
+            id = "local:shared",
+            time = 1,
+            deliveryState = ChatDeliveryState.SENDING,
+            clientRequestId = "request-shared",
+        )
+        val existing = page(pending, nextOffset = null, hasMore = false)
+        val latest = page(message("local:shared", 2), nextOffset = 50, hasMore = true)
+
+        val result = reconcileHeadPage(
+            existing = existing,
+            latest = latest,
+            outgoing = listOf(pending),
+        )
+
+        assertEquals(50, result.nextOffset)
+        assertTrue(result.hasMore)
+        assertEquals(ChatDeliveryState.SENT, result.messages.single().deliveryState)
+    }
+
     private fun message(
         id: String,
         time: Long,

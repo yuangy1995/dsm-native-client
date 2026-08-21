@@ -48,6 +48,52 @@ class ChatFeatureJobOwnerTest {
     }
 
     @Test
+    fun `任务 completion 在结果发布后执行且取消路径也会执行`() = runBlocking {
+        val scope = testScope()
+        val owner = ChatFeatureJobOwner()
+        val token = owner.ensureSession("profile-a").token
+        val events = mutableListOf<String>()
+
+        val successful = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "messages",
+                token = token,
+                block = { "ready" },
+                onResult = { _, value -> events += "result:$value" },
+                onCompletion = { events += "completion:success" },
+            ),
+        )
+        successful.join()
+
+        val started = CompletableDeferred<Unit>()
+        val waiting = CompletableDeferred<Unit>()
+        val cancelled = checkNotNull(
+            owner.launch(
+                scope = scope,
+                name = "pagination",
+                token = token,
+                block = {
+                    started.complete(Unit)
+                    waiting.await()
+                },
+                onResult = { _, _ -> events += "result:cancelled" },
+                onCompletion = { events += "completion:cancelled" },
+            ),
+        )
+        started.await()
+        owner.cancel("pagination")
+        cancelled.join()
+
+        assertTrue(cancelled.isCancelled)
+        assertEquals(
+            listOf("result:ready", "completion:success", "completion:cancelled"),
+            events,
+        )
+        scope.cancel()
+    }
+
+    @Test
     fun `切换资料会取消旧 Chat 读取且只允许新资料发布`() = runBlocking {
         val scope = testScope()
         val owner = ChatFeatureJobOwner()

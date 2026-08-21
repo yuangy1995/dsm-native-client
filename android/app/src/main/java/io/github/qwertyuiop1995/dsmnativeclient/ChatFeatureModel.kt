@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/** 直接读取区分首次/完整重置与保留缓存的刷新，避免刷新失败破坏可用页面。 */
+private enum class ChatHeadLoadMode { INITIAL, REFRESH }
+
 /**
  * Chat 读取、轮询与实时连接的唯一生命周期所有者。
  *
@@ -37,6 +40,7 @@ internal class ChatFeatureModel(
     private var realtimeConnected = false
     private var localReadMarkers: Map<String, ChatLocalReadMarker> = emptyMap()
     private val readRevisions = ChatReadResourceRevisions()
+    private var paginationLoadingOwner: PaginationLoadingOwner? = null
 
     fun loadModule(repository: DsmRepository) {
         if (repositoryProvider() !== repository) return
@@ -52,11 +56,21 @@ internal class ChatFeatureModel(
     private fun loadModule(source: ChatFeatureDataSource) {
         val token = ensureSession(source) ?: return
         startRealtime(source, token)
-        val conversation = workspace.value
-            ?.takeIf { isSessionCurrent(source, token) }
-            ?.selectedConversation
+        val state = workspace.value?.takeIf { isSessionCurrent(source, token) }
+        val conversation = state?.selectedConversation
         if (conversation != null) {
-            loadMessages(source, token, conversation, ChatMessageReadLane.HEAD)
+            val headMode = if (state.chatMessages is Loadable.Ready) {
+                ChatHeadLoadMode.REFRESH
+            } else {
+                ChatHeadLoadMode.INITIAL
+            }
+            loadMessages(
+                source = source,
+                token = token,
+                conversation = conversation,
+                lane = ChatMessageReadLane.HEAD,
+                headMode = headMode,
+            )
             return
         }
         workspace.update { current ->
@@ -101,18 +115,27 @@ internal class ChatFeatureModel(
         val source = sourceProvider() ?: return
         val token = ensureSession(source) ?: return
         jobOwner.cancel(REFRESH_JOB)
+        jobOwner.cancel(ChatMessageReadLane.PAGINATION.jobOwnerName)
         val canonicalConversation = publishConversationOpen(source, token, conversation) ?: return
-        loadMessages(source, token, canonicalConversation, ChatMessageReadLane.HEAD)
+        loadMessages(
+            source = source,
+            token = token,
+            conversation = canonicalConversation,
+            lane = ChatMessageReadLane.HEAD,
+            headMode = ChatHeadLoadMode.INITIAL,
+        )
         if (!isRealtimeConnected()) startMessagePolling(source, token, canonicalConversation)
     }
 
     fun closeConversation() {
         val source = sourceProvider()
         jobOwner.cancel(REFRESH_JOB)
+        jobOwner.cancel(ChatMessageReadLane.PAGINATION.jobOwnerName)
         synchronized(lifecycleLock) {
             // 返回会话列表会切换读取资源；连同列表读取一起失效，避免关闭前的实时列表
             // 在重新读取前迟到发布。
             readRevisions.invalidateAll()
+            clearPaginationLoadingOwnerLocked()
             retryChatStatePublication(
                 readCurrent = { workspace.value },
                 prepare = { current ->
@@ -195,11 +218,13 @@ internal class ChatFeatureModel(
     }
 
     fun clearLocalReadMarkers() {
+        jobOwner.cancel(ChatMessageReadLane.PAGINATION.jobOwnerName)
         synchronized(lifecycleLock) {
             // 清除 marker 通常意味着资料即将切换；同时使正在读取的旧资源失效，防止它在
             // 清除后成功提交并重新写入与当前会话不对应的 marker。
             readRevisions.invalidateAll()
             localReadMarkers = emptyMap()
+            clearPaginationLoadingOwnerLocked()
         }
     }
 
@@ -209,7 +234,7 @@ internal class ChatFeatureModel(
         jobOwner.invalidate(clearProfile = false)
         synchronized(lifecycleLock) {
             readRevisions.invalidateAll()
-            workspace.update { current -> current?.copy(chatIsLoadingMore = false) ?: current }
+            clearPaginationLoadingOwnerLocked()
         }
         stopRealtimeClient()
     }
@@ -228,7 +253,7 @@ internal class ChatFeatureModel(
             synchronized(lifecycleLock) {
                 readRevisions.invalidateAll()
                 localReadMarkers = emptyMap()
-                workspace.update { current -> current?.copy(chatIsLoadingMore = false) ?: current }
+                clearPaginationLoadingOwnerLocked()
             }
         }
         return session.token
@@ -287,8 +312,14 @@ internal class ChatFeatureModel(
         token: ChatFeatureToken,
         requested: ChatConversation,
     ): ChatConversation? = synchronized(lifecycleLock) {
+        if (!isSessionCurrent(source, token, workspace.value)) return@synchronized null
+        // 进入会话是完整消息页重置：必须先使旧 HEAD/PAGINATION 的 revision 失效，随后才
+        // 清除 owner/loading 投影并进入新的 Loading 状态。分页 Job 已由调用方取消，迟到 finally
+        // 只能观察到已清空的 owner。
+        readRevisions.invalidateMessageReads()
+        clearPaginationLoadingOwnerLocked()
         var openedConversation: ChatConversation? = null
-        retryChatStatePublication(
+        val published = retryChatStatePublication(
             readCurrent = { workspace.value },
             prepare = { current ->
                 if (!isSessionCurrent(source, token, current)) {
@@ -318,11 +349,11 @@ internal class ChatFeatureModel(
             },
             compareAndSet = workspace::compareAndSet,
             onPublished = { commit ->
-                readRevisions.invalidateMessageReads()
                 localReadMarkers = commit.markers
                 openedConversation = commit.conversation
             },
         )
+        if (!published) paginationLoadingOwner = null
         openedConversation
     }
 
@@ -378,6 +409,111 @@ internal class ChatFeatureModel(
         )
     }
 
+    /** 在生命周期锁内同时清除私有 owner 与公开 loading 投影。 */
+    private fun clearPaginationLoadingOwnerLocked() {
+        val cleared = retryChatStatePublication(
+            readCurrent = { workspace.value },
+            prepare = { current ->
+                ChatStatePublication(current.copy(chatIsLoadingMore = false), Unit)
+            },
+            compareAndSet = workspace::compareAndSet,
+            onPublished = { paginationLoadingOwner = null },
+        )
+        if (!cleared) paginationLoadingOwner = null
+    }
+
+    private fun claimPaginationLoadingOwner(
+        source: ChatFeatureDataSource,
+        taskToken: ChatTaskToken,
+        conversation: ChatConversation,
+        revision: Long,
+        expectedOffset: Int,
+    ): PaginationLoadingOwner? = synchronized(lifecycleLock) {
+        val candidate = PaginationLoadingOwner(
+            taskToken = taskToken,
+            revision = revision,
+            profileId = taskToken.session.profileId,
+            sourceIdentity = source.identity,
+            conversationId = conversation.id,
+            expectedOffset = expectedOffset,
+        )
+        val claimed = retryChatStatePublication(
+            readCurrent = { workspace.value },
+            prepare = { current ->
+                if (!canPublishMessageRead(
+                        source,
+                        taskToken,
+                        conversation,
+                        ChatMessageReadLane.PAGINATION,
+                        revision,
+                        current,
+                    )
+                ) {
+                    null
+                } else {
+                    val page = (current.chatMessages as? Loadable.Ready)?.value
+                    val previousOwner = paginationLoadingOwner
+                    val canReplaceOwner = previousOwner == null ||
+                        !previousOwner.matches(candidate) && !jobOwner.isCurrent(previousOwner.taskToken)
+                    if (page?.nextOffset != expectedOffset || !page.hasMore ||
+                        !canReplaceOwner || previousOwner == null && current.chatIsLoadingMore
+                    ) {
+                        null
+                    } else {
+                        ChatStatePublication(current.copy(chatIsLoadingMore = true), candidate)
+                    }
+                }
+            },
+            compareAndSet = workspace::compareAndSet,
+            onPublished = { owner -> paginationLoadingOwner = owner },
+        )
+        candidate.takeIf { claimed }
+    }
+
+    private fun releasePaginationLoadingOwner(owner: PaginationLoadingOwner) {
+        synchronized(lifecycleLock) {
+            val currentOwner = paginationLoadingOwner
+            if (currentOwner == null || !currentOwner.matches(owner)) return
+            val currentState = workspace.value
+            if (currentState == null || !matchesPaginationOwnerContext(owner, currentState)) {
+                paginationLoadingOwner = null
+                return
+            }
+            val released = retryChatStatePublication(
+                readCurrent = { workspace.value },
+                prepare = { current ->
+                    if (!paginationLoadingOwner.orEmptyMatches(owner) ||
+                        !matchesPaginationOwnerContext(owner, current)
+                    ) {
+                        null
+                    } else {
+                        ChatStatePublication(current.copy(chatIsLoadingMore = false), Unit)
+                    }
+                },
+                compareAndSet = workspace::compareAndSet,
+                onPublished = { paginationLoadingOwner = null },
+            )
+            if (!released && paginationLoadingOwner?.matches(owner) == true) {
+                paginationLoadingOwner = null
+            }
+        }
+    }
+
+    private fun matchesPaginationOwnerContext(
+        owner: PaginationLoadingOwner,
+        state: WorkspaceState,
+    ): Boolean = state.profile.id == owner.profileId &&
+        state.selectedConversation?.id == owner.conversationId &&
+        sourceProvider()?.identity === owner.sourceIdentity
+
+    private fun PaginationLoadingOwner.matches(other: PaginationLoadingOwner): Boolean =
+        taskToken == other.taskToken && revision == other.revision && profileId == other.profileId &&
+            sourceIdentity === other.sourceIdentity && conversationId == other.conversationId &&
+            expectedOffset == other.expectedOffset
+
+    private fun PaginationLoadingOwner?.orEmptyMatches(other: PaginationLoadingOwner): Boolean =
+        this?.matches(other) == true
+
     private fun publishConversationFailureIfLoading(
         source: ChatFeatureDataSource,
         token: ChatTaskToken,
@@ -421,17 +557,28 @@ internal class ChatFeatureModel(
         readRevisions.isCurrentMessageRead(conversation.id, lane, revision) &&
         state.selectedConversation?.id == conversation.id
 
+    private fun stateAfterHeadFailure(current: WorkspaceState, error: Throwable): WorkspaceState {
+        val failure = error.asDsmFailure()
+        return if (current.chatMessages is Loadable.Ready) {
+            current.copy(message = localizedFailure(failure))
+        } else {
+            current.copy(chatMessages = Loadable.Failed(failure))
+        }
+    }
+
     private fun loadMessages(
         source: ChatFeatureDataSource,
         token: ChatFeatureToken,
         conversation: ChatConversation,
         lane: ChatMessageReadLane,
         expectedOffset: Int? = null,
+        headMode: ChatHeadLoadMode? = null,
     ) {
         val offset = when (lane) {
             ChatMessageReadLane.HEAD -> 0
             ChatMessageReadLane.PAGINATION -> expectedOffset ?: return
         }
+        var paginationOwner: PaginationLoadingOwner? = null
         jobOwner.launch(
             scope = scope,
             name = lane.jobOwnerName,
@@ -439,24 +586,31 @@ internal class ChatFeatureModel(
             block = { taskToken ->
                 val revision = beginMessageRead(source, taskToken, conversation, lane)
                     ?: return@launch null
-                if (lane == ChatMessageReadLane.PAGINATION) {
-                    val ownsLoading = publishMessageState(
+                if (lane == ChatMessageReadLane.HEAD && headMode == ChatHeadLoadMode.INITIAL) {
+                    val prepared = publishMessageState(
                         source,
                         taskToken,
                         conversation,
                         lane,
                         revision,
                     ) { current ->
-                        val currentPage = (current.chatMessages as? Loadable.Ready)?.value
-                        if (currentPage?.nextOffset != offset || !currentPage.hasMore ||
-                            current.chatIsLoadingMore
-                        ) {
-                            null
+                        if (current.chatMessages is Loadable.Ready) {
+                            current
                         } else {
-                            current.copy(chatIsLoadingMore = true)
+                            current.copy(chatMessages = Loadable.Loading)
                         }
                     }
-                    if (!ownsLoading) return@launch null
+                    if (!prepared) return@launch null
+                }
+                if (lane == ChatMessageReadLane.PAGINATION) {
+                    val owner = claimPaginationLoadingOwner(
+                        source,
+                        taskToken,
+                        conversation,
+                        revision,
+                        expectedOffset = offset,
+                    ) ?: return@launch null
+                    paginationOwner = owner
                 }
                 val outcome = ChatMessageLoadOutcome(
                     lane = lane,
@@ -482,11 +636,9 @@ internal class ChatFeatureModel(
                         val outgoing = current.chatOutgoingMessages[conversation.id].orEmpty()
                         when (outcome.lane) {
                             ChatMessageReadLane.HEAD -> {
-                                val metadataSource = visible ?: page
-                                val merged = reconcileChatMessagePage(
-                                    metadataSource = metadataSource,
-                                    lowerPriority = visible?.messages.orEmpty(),
-                                    higherPriority = page.messages,
+                                val merged = reconcileHeadPage(
+                                    existing = visible,
+                                    latest = page,
                                     outgoing = outgoing,
                                 )
                                 current.copy(chatMessages = Loadable.Ready(merged))
@@ -503,7 +655,6 @@ internal class ChatFeatureModel(
                                     )
                                     current.copy(
                                         chatMessages = Loadable.Ready(merged),
-                                        chatIsLoadingMore = false,
                                     )
                                 }
                             }
@@ -520,15 +671,17 @@ internal class ChatFeatureModel(
                     outcome.revision,
                 ) { current ->
                     when (outcome.lane) {
-                        ChatMessageReadLane.HEAD -> current.copy(
-                            chatMessages = Loadable.Failed(error.asDsmFailure()),
-                        )
+                        ChatMessageReadLane.HEAD -> stateAfterHeadFailure(current, error)
                         ChatMessageReadLane.PAGINATION -> current.copy(
-                            chatIsLoadingMore = false,
                             message = localizedFailure(error.asDsmFailure()),
                         )
                     }
                 }
+            },
+            onCompletion = { taskToken ->
+                paginationOwner
+                    ?.takeIf { it.taskToken == taskToken }
+                    ?.let(::releasePaginationLoadingOwner)
             },
         )
     }
@@ -552,11 +705,7 @@ internal class ChatFeatureModel(
                 ChatMessageReadLane.HEAD,
                 revision,
             ) { current ->
-                if (current.chatMessages is Loadable.Loading) {
-                    current.copy(chatMessages = Loadable.Failed(error.asDsmFailure()))
-                } else {
-                    current
-                }
+                stateAfterHeadFailure(current, error)
             }
             return
         }
@@ -568,10 +717,9 @@ internal class ChatFeatureModel(
             revision,
         ) { current ->
             val existing = (current.chatMessages as? Loadable.Ready)?.value
-            val page = reconcileChatMessagePage(
-                metadataSource = existing ?: latest,
-                lowerPriority = existing?.messages.orEmpty(),
-                higherPriority = latest.messages,
+            val page = reconcileHeadPage(
+                existing = existing,
+                latest = latest,
                 outgoing = current.chatOutgoingMessages[conversation.id].orEmpty(),
             )
             current.copy(chatMessages = Loadable.Ready(page))
@@ -797,6 +945,16 @@ internal class ChatFeatureModel(
         client?.stop()
     }
 
+    /** 绑定分页任务、revision、会话、游标及资料/数据源身份的私有 loading 所有权。 */
+    private data class PaginationLoadingOwner(
+        val taskToken: ChatTaskToken,
+        val revision: Long,
+        val profileId: String,
+        val sourceIdentity: Any,
+        val conversationId: String,
+        val expectedOffset: Int,
+    )
+
     private data class ChatMessageLoadOutcome(
         val lane: ChatMessageReadLane,
         val revision: Long,
@@ -932,6 +1090,7 @@ internal class ChatFeatureJobOwner {
         sourceToken: ChatTaskToken? = null,
         block: suspend (ChatTaskToken) -> T,
         onResult: (ChatTaskToken, T) -> Unit,
+        onCompletion: (ChatTaskToken) -> Unit = {},
     ): Job? {
         val taskTokenAndPrevious = synchronized(lock) {
             if (!isSessionCurrentLocked(token) ||
@@ -947,8 +1106,14 @@ internal class ChatFeatureJobOwner {
         val (taskToken, previous) = taskTokenAndPrevious
         previous?.cancel()
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            val value = block(taskToken)
-            if (isCurrent(taskToken)) onResult(taskToken, value)
+            try {
+                val value = block(taskToken)
+                if (isCurrent(taskToken)) onResult(taskToken, value)
+            } finally {
+                // finally 既覆盖成功、普通失败、取消，也覆盖已被替换而不再 current 的结果。
+                // 不捕获取消异常，调用方仍可按协程语义观察到原始 CancellationException。
+                onCompletion(taskToken)
+            }
         }
         val accepted = synchronized(lock) {
             if (!isTaskCurrentLocked(taskToken)) {

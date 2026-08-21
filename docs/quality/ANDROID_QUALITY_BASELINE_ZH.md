@@ -166,7 +166,7 @@
 
 ## 结构债务门禁
 
-新增生产 Kotlin 文件超过 1000 行必须在 JSON 的 `exceptions` 中以全局唯一稳定 ID 写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；文件缩短后必须同步下调，降至阈值以内时必须移除登记。稳定 ID 可随重命名保留，`targetLines` 只指导后续拆分，不会单独阻断提交：
+新增生产 Kotlin 文件超过 1000 行必须在 JSON 的 `exceptions` 中以全局唯一稳定 ID 写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；文件缩短后必须同步下调，降至阈值以内时必须移除登记。稳定 ID 可随重命名保留，`targetLines` 只指导后续拆分，不会单独阻断提交。低相似度 D+A 路径变更必须使用一次性的 `identityTransitions` 声明，不能以新 exception 或新 ID 重置既有身份：
 
 | 稳定 ID | 文件 | 当前 ratchet | 非阻断目标 |
 | --- | --- | ---: | ---: |
@@ -178,6 +178,11 @@
 | `android-file-preview-dialog` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt` | 1060 | 1000 |
 | `android-nas-service-settings-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt` | 1297 | 1000 |
 | `android-service-screens` | `io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt` | 1142 | 1000 |
+
+已登记例外：
+- `android-chat-feature-model` / `io/github/qwertyuiop1995/dsmnativeclient/ChatFeatureModel.kt`：Chat 读取生命周期、分页所有权与实时协调仍集中在同一特性边界，待后续按已验证职责拆分。
+
+`identityTransitions` 当前为空；没有待消费的低相似度身份迁移或删除声明。
 
 ## 再生成与校验
 

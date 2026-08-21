@@ -148,6 +148,7 @@ def generate_report(baseline: dict[str, Any]) -> str:
     touch = baseline["touchTargets"]
     motion = baseline["motion"]
     debt = baseline["structureDebt"]
+    identity_transitions = debt.get("identityTransitions", [])
     lines = [
         "<!-- doc-role: generated-quality-baseline -->",
         f"<!-- last-reviewed: {baseline['lastReviewed']} -->",
@@ -253,7 +254,8 @@ def generate_report(baseline: dict[str, Any]) -> str:
             f"新增生产 Kotlin 文件超过 {debt['newProductionFileLineLimit']} 行必须在 JSON 的 `exceptions` 中"
             "以全局唯一稳定 ID 写明理由。以下既有大文件的当前 ratchet 必须精确等于当前行数；"
             "文件缩短后必须同步下调，降至阈值以内时必须移除登记。稳定 ID 可随重命名保留，"
-            "`targetLines` 只指导后续拆分，不会单独阻断提交：",
+            "`targetLines` 只指导后续拆分，不会单独阻断提交。低相似度 D+A 路径变更必须使用"
+            "一次性的 `identityTransitions` 声明，不能以新 exception 或新 ID 重置既有身份：",
             "",
             _markdown_table_row(["稳定 ID", "文件", "当前 ratchet", "非阻断目标"]),
             _markdown_table_row(["---", "---", "---:", "---:"]),
@@ -274,6 +276,16 @@ def generate_report(baseline: dict[str, Any]) -> str:
         lines.extend(["", "已登记例外："])
         for exception in debt["exceptions"]:
             lines.append(f"- `{exception['id']}` / `{exception['file']}`：{exception['reason']}")
+    if identity_transitions:
+        lines.extend(["", "活动一次性身份迁移/删除声明："])
+        for transition in identity_transitions:
+            if transition["kind"] == "migration":
+                route = f"`{transition['from']}` → `{transition['to']}`"
+            else:
+                route = f"`{transition['from']}` → 删除"
+            lines.append(f"- `{transition['id']}` / {route}：{transition['reason']}")
+    else:
+        lines.extend(["", "`identityTransitions` 当前为空；没有待消费的低相似度身份迁移或删除声明。"])
     lines.extend(
         [
             "",

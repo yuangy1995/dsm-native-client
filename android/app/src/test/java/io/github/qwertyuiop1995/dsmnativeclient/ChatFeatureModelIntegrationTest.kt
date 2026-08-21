@@ -89,6 +89,136 @@ class ChatFeatureModelIntegrationTest {
     }
 
     @Test
+    fun `重复 loadModule 的 HEAD 失败保留 Ready 并允许挂起分页完成`() = runTest {
+        val fixture = Fixture(testScheduler)
+        try {
+            openReadyConversation(fixture)
+            fixture.feature.loadOlderMessages()
+            runCurrent()
+            val pagination = fixture.source.request("conversation-a", 2)
+            assertTrue(fixture.state().chatIsLoadingMore)
+
+            fixture.feature.loadModule()
+            runCurrent()
+            val refreshHead = fixture.source.request("conversation-a", 0, occurrence = 1)
+            refreshHead.response.completeExceptionally(IllegalStateException("head failed"))
+            runCurrent()
+
+            assertTrue(fixture.state().chatMessages is Loadable.Ready)
+            assertEquals(listOf("A", "B"), fixture.messageIds())
+            assertTrue(fixture.state().chatIsLoadingMore)
+
+            pagination.response.complete(page(message("older", 0), nextOffset = null, hasMore = false))
+            runCurrent()
+
+            assertEquals(listOf("older", "A", "B"), fixture.messageIds())
+            assertFalse(fixture.state().chatIsLoadingMore)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `分页失败由当前 owner 的 finally 收回 loading`() = runTest {
+        val fixture = Fixture(testScheduler)
+        try {
+            openReadyConversation(fixture)
+            fixture.feature.loadOlderMessages()
+            runCurrent()
+            val pagination = fixture.source.request("conversation-a", 2)
+            assertTrue(fixture.state().chatIsLoadingMore)
+
+            pagination.response.completeExceptionally(IllegalStateException("pagination failed"))
+            runCurrent()
+
+            assertEquals(listOf("A", "B"), fixture.messageIds())
+            assertFalse(fixture.state().chatIsLoadingMore)
+            assertEquals("读取失败", fixture.state().message)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `取消挂起分页会由当前 owner 的 finally 收回 loading`() = runTest {
+        val fixture = Fixture(testScheduler)
+        try {
+            openReadyConversation(fixture)
+            fixture.feature.loadOlderMessages()
+            runCurrent()
+            assertTrue(fixture.state().chatIsLoadingMore)
+
+            fixture.close()
+            runCurrent()
+
+            assertFalse(fixture.state().chatIsLoadingMore)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `首次无缓存 HEAD 失败仍发布 Failed`() = runTest {
+        val fixture = Fixture(testScheduler)
+        try {
+            fixture.feature.loadModule()
+            runCurrent()
+            fixture.feature.openConversation(fixture.conversationA)
+            runCurrent()
+            fixture.source.request("conversation-a", 0)
+                .response
+                .completeExceptionally(IllegalStateException("initial head failed"))
+            runCurrent()
+
+            assertTrue(fixture.state().chatMessages is Loadable.Failed)
+            assertFalse(fixture.state().chatIsLoadingMore)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `直接 HEAD 无重叠时改用最新分页边界以继续补齐缺口`() = runTest {
+        val fixture = Fixture(testScheduler)
+        try {
+            fixture.feature.loadModule()
+            runCurrent()
+            fixture.feature.openConversation(fixture.conversationA)
+            runCurrent()
+            fixture.source.request("conversation-a", 0).response.complete(
+                page(message("old", 1), nextOffset = null, hasMore = false),
+            )
+            runCurrent()
+
+            fixture.feature.loadModule()
+            runCurrent()
+            fixture.source.request("conversation-a", 0, occurrence = 1).response.complete(
+                page(message("latest", 100), nextOffset = 50, hasMore = true),
+            )
+            runCurrent()
+
+            assertEquals(listOf("old", "latest"), fixture.messageIds())
+            assertEquals(50, fixture.page().nextOffset)
+            assertTrue(fixture.page().hasMore)
+
+            fixture.feature.loadOlderMessages()
+            runCurrent()
+            val bridgePagination = fixture.source.request("conversation-a", 50)
+            assertTrue(fixture.state().chatIsLoadingMore)
+            bridgePagination.response.complete(
+                page(message("bridge", 50), nextOffset = null, hasMore = false),
+            )
+            runCurrent()
+
+            assertEquals(listOf("old", "bridge", "latest"), fixture.messageIds())
+            assertFalse(fixture.state().chatIsLoadingMore)
+            assertFalse(fixture.page().hasMore)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun `实时 HEAD 同 ID 更新会经 Feature 流程覆盖当前消息版本`() = runTest {
         val fixture = Fixture(testScheduler)
         try {
@@ -120,31 +250,42 @@ class ChatFeatureModelIntegrationTest {
     }
 
     @Test
-    fun `分页完成时 offset 已改变不能重复发布或清理当前 loading`() = runTest {
+    fun `旧分页 finally 不能清除替换任务的 loading owner`() = runTest {
         val fixture = Fixture(testScheduler)
         try {
             openReadyConversation(fixture)
-            fixture.feature.loadOlderMessages()
             fixture.feature.loadOlderMessages()
             runCurrent()
             assertEquals(1, fixture.source.requestCount("conversation-a", 2))
             val oldPagination = fixture.source.request("conversation-a", 2)
 
-            // 模拟同一分页分道的新所有者已经发布了下一页标记；旧请求只能静默退出。
+            // 构造同一分页分道已经失去公开投影、但私有 owner 尚未释放的替换窗口。新任务
+            // 必须仅在旧 token 已失效后接管 owner，旧 finally 随后不得清掉新任务的投影。
             fixture.workspace.update { current ->
                 current?.copy(
-                    chatMessages = Loadable.Ready(
-                        fixture.page().copy(nextOffset = 4, hasMore = true),
-                    ),
-                    chatIsLoadingMore = true,
+                    chatIsLoadingMore = false,
                 )
             }
+            fixture.feature.loadOlderMessages()
+            runCurrent()
+
+            assertEquals(2, fixture.source.requestCount("conversation-a", 2))
+            val replacementPagination = fixture.source.request("conversation-a", 2, occurrence = 1)
+            assertTrue(fixture.state().chatIsLoadingMore)
+
             oldPagination.response.complete(page(message("older", 0), nextOffset = null, hasMore = false))
             runCurrent()
 
             assertEquals(listOf("A", "B"), fixture.messageIds())
-            assertEquals(4, fixture.page().nextOffset)
             assertTrue(fixture.state().chatIsLoadingMore)
+
+            replacementPagination.response.complete(
+                page(message("older", 0), nextOffset = null, hasMore = false),
+            )
+            runCurrent()
+
+            assertEquals(listOf("older", "A", "B"), fixture.messageIds())
+            assertFalse(fixture.state().chatIsLoadingMore)
         } finally {
             fixture.close()
         }
@@ -166,6 +307,8 @@ class ChatFeatureModelIntegrationTest {
 
             fixture.feature.openConversation(fixture.conversationB)
             runCurrent()
+            assertTrue(fixture.state().chatMessages is Loadable.Loading)
+            assertFalse(fixture.state().chatIsLoadingMore)
             val newHead = fixture.source.request("conversation-b", 0)
             newHead.response.complete(page(message("B-current", 10, conversationId = "conversation-b")))
             runCurrent()

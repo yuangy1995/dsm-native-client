@@ -41,6 +41,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
         stable_id: str = "android-app-view-model",
         limit: int = 1000,
         exceptions: list[dict[str, str]] | None = None,
+        identity_transitions: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         entries: list[dict[str, object]] = []
         if max_lines is not None:
@@ -61,6 +62,22 @@ class AndroidStructureDebtTests(unittest.TestCase):
             "newProductionFileLineLimit": limit,
             "existingLargeFiles": entries,
             "exceptions": normalized_exceptions,
+            "identityTransitions": [dict(item) for item in identity_transitions or []],
+        }
+
+    def transition(
+        self,
+        stable_id: str = "android-app-view-model",
+        from_path: str = "AppViewModel.kt",
+        to_path: str | None = "LegacyAppViewModel.kt",
+        kind: str = "migration",
+    ) -> dict[str, object]:
+        return {
+            "id": stable_id,
+            "kind": kind,
+            "from": from_path,
+            "to": to_path,
+            "reason": "低相似度移动后的稳定身份连续性验证",
         }
 
     def test_existing_large_file_cannot_grow(self) -> None:
@@ -195,7 +212,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
 
             self.assertTrue(any("必须继续登记" in error for error in errors))
 
-    def test_deleted_or_lowered_debt_can_be_removed_alone(self) -> None:
+    def test_deleted_debt_requires_explicit_deletion_but_lowered_debt_can_be_removed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             previous = self.debt(max_lines=1002)
             root = Path(temporary_directory)
@@ -205,7 +222,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 self.debt(),
                 previous_structure_debt=previous,
             )
-            self.assertEqual(deleted_errors, [])
+            self.assertTrue(any("删除声明" in error for error in deleted_errors))
 
             self.write_source(root, "AppViewModel.kt", 1000)
             reduced_errors = structure_debt.validate(
@@ -215,7 +232,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
             )
             self.assertEqual(reduced_errors, [])
 
-    def test_debt_moved_out_of_current_production_root_can_be_removed(self) -> None:
+    def test_debt_moved_out_of_current_production_root_requires_explicit_deletion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory) / "production"
             root.mkdir()
@@ -230,7 +247,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 previous_structure_debt=self.debt(max_lines=1002),
             )
 
-            self.assertEqual(errors, [])
+            self.assertTrue(any("删除声明" in error for error in errors))
 
     def test_new_large_file_without_reason_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -595,7 +612,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
 
             self.assertEqual(structure_debt.load_rename_map(path), {})
 
-    def test_rename_production_to_outside_is_treated_as_production_removal(self) -> None:
+    def test_rename_production_to_outside_requires_explicit_deletion(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             path = root / "rename-map.txt"
@@ -612,7 +629,7 @@ class AndroidStructureDebtTests(unittest.TestCase):
                 previous_structure_debt=self.debt(max_lines=1002),
                 rename_map=structure_debt.load_rename_map(path),
             )
-            self.assertEqual(errors, [])
+            self.assertTrue(any("删除声明" in error for error in errors))
 
     def test_rename_map_rejects_abnormal_mixed_and_ambiguous_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -734,12 +751,289 @@ class AndroidStructureDebtTests(unittest.TestCase):
 
             errors = structure_debt.validate(root, self.debt(), previous_structure_debt=previous)
 
-            self.assertTrue(any("exception 只能在文件删除" in error for error in errors))
+            self.assertTrue(any("exception 仍超过" in error for error in errors))
 
             self.write_source(root, "Legacy.kt", 1000)
             lowered_errors = structure_debt.validate(root, self.debt(), previous_structure_debt=previous)
 
             self.assertEqual(lowered_errors, [])
+
+    def test_low_similarity_deleted_tracked_to_new_exception_fails_closed_without_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RewrittenAppViewModel.kt", 1002)
+            previous = self.debt(max_lines=1002)
+            current = self.debt(
+                exceptions=[
+                    {
+                        "id": "android-rewritten-app-view-model",
+                        "file": "RewrittenAppViewModel.kt",
+                        "reason": "低相似度改写不能洗白既有债务",
+                    },
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+
+            self.assertTrue(any("D+A" in error for error in errors))
+
+    def test_low_similarity_deleted_exception_to_new_exception_fails_closed_without_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RewrittenLegacy.kt", 1001)
+            previous = self.debt(
+                exceptions=[
+                    {"id": "android-legacy", "file": "Legacy.kt", "reason": "历史例外"},
+                ],
+            )
+            current = self.debt(
+                exceptions=[
+                    {
+                        "id": "android-rewritten-legacy",
+                        "file": "RewrittenLegacy.kt",
+                        "reason": "低相似度改写不能重置例外身份",
+                    },
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+
+            self.assertTrue(any("D+A" in error for error in errors))
+
+    def test_same_stable_id_low_similarity_migration_passes_with_explicit_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RewrittenAppViewModel.kt", 1001)
+            previous = self.debt(max_lines=1002, target_lines=1000)
+            current = self.debt(
+                max_lines=1001,
+                target_lines=1000,
+                relative="RewrittenAppViewModel.kt",
+                identity_transitions=[
+                    self.transition(to_path="RewrittenAppViewModel.kt"),
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_explicit_migration_cannot_raise_max_or_target_ratchet(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RewrittenAppViewModel.kt", 1002)
+            previous = self.debt(max_lines=1001, target_lines=999)
+            current = self.debt(
+                max_lines=1002,
+                target_lines=1000,
+                relative="RewrittenAppViewModel.kt",
+                identity_transitions=[
+                    self.transition(to_path="RewrittenAppViewModel.kt"),
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+
+            self.assertTrue(any("当前 ratchet 不得上调" in error for error in errors))
+            self.assertTrue(any("非阻断目标不得上调" in error for error in errors))
+
+    def test_tracked_debt_cannot_move_to_exception_even_with_explicit_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RewrittenAppViewModel.kt", 1002)
+            previous = self.debt(max_lines=1002)
+            current = self.debt(
+                exceptions=[
+                    {
+                        "id": "android-app-view-model",
+                        "file": "RewrittenAppViewModel.kt",
+                        "reason": "tracked 债务不得降级为例外",
+                    },
+                ],
+                identity_transitions=[
+                    self.transition(to_path="RewrittenAppViewModel.kt"),
+                ],
+            )
+
+            errors = structure_debt.validate(
+                root,
+                current,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+
+            self.assertTrue(any("不得转入 exceptions" in error for error in errors))
+
+    def test_explicit_true_deletion_passes_but_missing_declaration_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            previous = self.debt(max_lines=1002)
+            declared = self.debt(
+                identity_transitions=[
+                    self.transition(to_path=None, kind="deletion"),
+                ],
+            )
+
+            declared_errors = structure_debt.validate(
+                root,
+                declared,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+            missing_errors = structure_debt.validate(
+                root,
+                self.debt(),
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+
+            self.assertEqual(declared_errors, [])
+            self.assertTrue(any("删除声明" in error for error in missing_errors))
+
+    def test_stale_redundant_duplicate_and_conflicting_transitions_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "AppViewModel.kt", 1001)
+            previous = self.debt(max_lines=1001)
+            stale = self.debt(
+                max_lines=1001,
+                identity_transitions=[self.transition(to_path="LegacyAppViewModel.kt")],
+            )
+
+            stale_errors = structure_debt.validate(
+                root,
+                stale,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+            redundant = self.debt(
+                max_lines=1001,
+                identity_transitions=[self.transition(to_path="AppViewModel.kt")],
+            )
+            redundant_errors = structure_debt.validate(
+                root,
+                redundant,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+
+            self.write_source(root, "RewrittenAppViewModel.kt", 1001)
+            migrated = self.debt(
+                max_lines=1001,
+                relative="RewrittenAppViewModel.kt",
+                identity_transitions=[
+                    self.transition(to_path="RewrittenAppViewModel.kt"),
+                    self.transition(to_path="RewrittenAppViewModel.kt"),
+                ],
+            )
+            duplicate_errors = structure_debt.validate(
+                root,
+                migrated,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+            conflict_root = root / "conflict"
+            conflict_root.mkdir()
+            self.write_source(conflict_root, "RewrittenAppViewModel.kt", 1001)
+            conflicting_errors = structure_debt.validate(
+                conflict_root,
+                self.debt(
+                    max_lines=1001,
+                    relative="RewrittenAppViewModel.kt",
+                    identity_transitions=[self.transition(to_path="RewrittenAppViewModel.kt")],
+                ),
+                previous_structure_debt=previous,
+                rename_map={"AppViewModel.kt": "GitRenamedAppViewModel.kt"},
+            )
+
+            self.assertTrue(any("当前目标" in error for error in stale_errors))
+            self.assertTrue(any("from 与 to 不得相同" in error for error in redundant_errors))
+            self.assertTrue(any("重复" in error for error in duplicate_errors))
+            self.assertTrue(any("Git rename" in error for error in conflicting_errors))
+
+    def test_consumed_transition_and_unsafe_transition_schema_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "RewrittenAppViewModel.kt", 1001)
+            previous = self.debt(
+                max_lines=1001,
+                relative="RewrittenAppViewModel.kt",
+            )
+            stale_current = self.debt(
+                max_lines=1001,
+                relative="RewrittenAppViewModel.kt",
+                identity_transitions=[self.transition(to_path="RewrittenAppViewModel.kt")],
+            )
+            unsafe_current = self.debt(
+                max_lines=1001,
+                relative="RewrittenAppViewModel.kt",
+                identity_transitions=[
+                    self.transition(from_path="../AppViewModel.kt", to_path="RewrittenAppViewModel.kt"),
+                ],
+            )
+            missing_schema = self.debt(max_lines=1001, relative="RewrittenAppViewModel.kt")
+            missing_schema.pop("identityTransitions")
+
+            stale_errors = structure_debt.validate(
+                root,
+                stale_current,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+            unsafe_errors = structure_debt.validate(
+                root,
+                unsafe_current,
+                previous_structure_debt=previous,
+                rename_map={},
+            )
+            missing_schema_errors = structure_debt.validate(root, missing_schema)
+
+            self.assertTrue(any("source 路径必须精确" in error for error in stale_errors))
+            self.assertTrue(any("路径遍历" in error for error in unsafe_errors))
+            self.assertTrue(any("缺少 identityTransitions" in error for error in missing_schema_errors))
+
+    def test_r100_and_r090_rename_evidence_remain_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.write_source(root, "LegacyAppViewModel.kt", 1001)
+            previous = self.debt(max_lines=1002)
+            current = self.debt(max_lines=1001, relative="LegacyAppViewModel.kt")
+            prefix = structure_debt.PRODUCTION_PREFIX
+
+            for status in ("R100", "R090"):
+                with self.subTest(status=status):
+                    rename_path = root / f"{status}-rename-map.txt"
+                    rename_path.write_text(
+                        f"{status}\t{prefix}/AppViewModel.kt\t{prefix}/LegacyAppViewModel.kt\n",
+                        encoding="utf-8",
+                    )
+                    errors = structure_debt.validate(
+                        root,
+                        current,
+                        previous_structure_debt=previous,
+                        rename_map=structure_debt.load_rename_map(rename_path),
+                    )
+                    self.assertEqual(errors, [])
 
     def test_generator_preserves_id_and_target_while_only_tightening_max(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

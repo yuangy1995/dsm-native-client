@@ -24,6 +24,7 @@ from generate_android_quality_baseline import (
 
 STABLE_ID_PATTERN = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*\Z")
 RENAME_STATUS_PATTERN = re.compile(r"R(?:00[1-9]|0[1-9]\d|100)\Z")
+IDENTITY_TRANSITION_KINDS = frozenset({"migration", "deletion"})
 PRODUCTION_PREFIX = PRODUCTION_ROOT.relative_to(ROOT).as_posix()
 PRODUCTION_NAMESPACE_ROOTS = frozenset(
     child.name for child in PRODUCTION_ROOT.iterdir() if child.is_dir()
@@ -142,6 +143,111 @@ def _validate_global_identity(
     exception_files = {item["file"] for item in exceptions}
     for relative in sorted(existing_files & exception_files):
         errors.append(f"结构债务路径不得同时登记为 tracked 与 exception：{relative}")
+
+
+def _safe_transition_path(
+    value: object,
+    field: str,
+    index: int,
+    errors: list[str],
+) -> str | None:
+    """只接受生产根下可比较的 POSIX 相对路径。"""
+    if not isinstance(value, str) or not value:
+        errors.append(f"identityTransitions 第 {index} 条缺少有效 {field} 路径")
+        return None
+    if (
+        value.startswith("/") or
+        "\\" in value or
+        "\x00" in value or
+        re.match(r"^[A-Za-z]:", value)
+    ):
+        errors.append(f"identityTransitions 第 {index} 条的 {field} 必须是安全 POSIX 相对路径")
+        return None
+    parts = value.split("/")
+    if any(not part or part in {".", ".."} for part in parts):
+        errors.append(f"identityTransitions 第 {index} 条的 {field} 包含路径遍历或异常分段")
+        return None
+    return value
+
+
+def _identity_transitions(
+    debt: dict[str, Any],
+    errors: list[str],
+) -> list[dict[str, str | None]]:
+    """解析一次性低相似度 D+A 身份迁移/删除声明。"""
+    if "identityTransitions" not in debt:
+        errors.append("结构债务基线缺少 identityTransitions；没有活动迁移时必须显式写为空列表")
+        return []
+    raw_transitions = debt["identityTransitions"]
+    if not isinstance(raw_transitions, list):
+        errors.append("identityTransitions 必须是列表")
+        return []
+
+    transitions: list[dict[str, str | None]] = []
+    seen_ids: set[str] = set()
+    seen_from: set[str] = set()
+    seen_to: set[str] = set()
+    for index, item in enumerate(raw_transitions, start=1):
+        if not isinstance(item, dict):
+            errors.append(f"identityTransitions 第 {index} 条不是对象")
+            continue
+        from_path = _safe_transition_path(item.get("from"), "from", index, errors)
+        stable_id = _stable_id(
+            item,
+            "identityTransitions",
+            from_path or f"第 {index} 条",
+            errors,
+            allow_legacy_ids=False,
+        )
+        kind = item.get("kind")
+        if not isinstance(kind, str) or kind not in IDENTITY_TRANSITION_KINDS:
+            errors.append(
+                f"identityTransitions 第 {index} 条的 kind 必须是 migration 或 deletion",
+            )
+            continue
+        reason = item.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            errors.append(f"identityTransitions 第 {index} 条缺少理由")
+            continue
+
+        to_path: str | None
+        if kind == "migration":
+            to_path = _safe_transition_path(item.get("to"), "to", index, errors)
+            if from_path is not None and to_path == from_path:
+                errors.append(f"identityTransitions 第 {index} 条的 from 与 to 不得相同")
+                continue
+        else:
+            raw_to = item.get("to")
+            if raw_to is not None and raw_to != "":
+                errors.append(f"identityTransitions 第 {index} 条的 deletion 不得设置 to")
+                continue
+            to_path = None
+
+        if stable_id is None or from_path is None or (kind == "migration" and to_path is None):
+            continue
+        if stable_id in seen_ids:
+            errors.append(f"identityTransitions 稳定 id 重复：{stable_id}")
+            continue
+        if from_path in seen_from:
+            errors.append(f"identityTransitions from 路径重复：{from_path}")
+            continue
+        if to_path is not None and to_path in seen_to:
+            errors.append(f"identityTransitions to 路径重复：{to_path}")
+            continue
+        seen_ids.add(stable_id)
+        seen_from.add(from_path)
+        if to_path is not None:
+            seen_to.add(to_path)
+        transitions.append(
+            {
+                "id": stable_id,
+                "kind": str(kind),
+                "from": from_path,
+                "to": to_path,
+                "reason": reason,
+            },
+        )
+    return transitions
 
 
 def _uses_legacy_ids(debt: dict[str, Any]) -> bool:
@@ -271,6 +377,135 @@ def _entry_at_previous_or_renamed_path(
     )
 
 
+def _validate_identity_transitions(
+    transitions: list[dict[str, str | None]],
+    previous: list[dict[str, Any]],
+    previous_exceptions: list[dict[str, str | None]],
+    current: list[dict[str, Any]],
+    current_exceptions: list[dict[str, str | None]],
+    production_root: Path,
+    rename_map: dict[str, str],
+    errors: list[str],
+) -> tuple[dict[str, str], set[str]]:
+    """验证一次性声明与上一/当前身份、磁盘状态和 Git R 证据的闭环。"""
+    previous_entries = {
+        **{str(item["id"]): ("tracked", item) for item in previous if item["id"] is not None},
+        **{
+            str(item["id"]): ("exception", item)
+            for item in previous_exceptions
+            if item["id"] is not None
+        },
+    }
+    current_entries = {
+        **{str(item["id"]): ("tracked", item) for item in current if item["id"] is not None},
+        **{
+            str(item["id"]): ("exception", item)
+            for item in current_exceptions
+            if item["id"] is not None
+        },
+    }
+    current_by_file = {
+        **_by_file(current),
+        **_by_file(current_exceptions),
+    }
+    rename_sources_by_destination = {destination: source for source, destination in rename_map.items()}
+    verified_migrations: dict[str, str] = {}
+    verified_deletions: set[str] = set()
+
+    for transition in transitions:
+        stable_id = str(transition["id"])
+        kind = str(transition["kind"])
+        from_path = str(transition["from"])
+        to_path = transition["to"]
+        previous_entry = previous_entries.get(stable_id)
+        if previous_entry is None:
+            errors.append(
+                "identityTransitions source 必须精确对应上一基线 tracked 或 exception："
+                f"{stable_id}（{from_path}）",
+            )
+            continue
+        previous_kind, previous_item = previous_entry
+        if previous_item["file"] != from_path:
+            errors.append(
+                "identityTransitions source 路径必须精确对应上一基线稳定 id："
+                f"{stable_id}（{previous_item['file']} != {from_path}）",
+            )
+            continue
+
+        git_destination = rename_map.get(from_path)
+        if kind == "migration":
+            assert to_path is not None
+            current_entry = current_entries.get(stable_id)
+            if current_entry is None or current_entry[1]["file"] != to_path:
+                current_path = current_entry[1]["file"] if current_entry is not None else "<缺失>"
+                errors.append(
+                    "identityTransitions 当前目标必须为同一稳定 id 的当前登记项："
+                    f"{stable_id}（期望 {to_path}，实际 {current_path}）",
+                )
+                continue
+            current_kind, _ = current_entry
+            if previous_kind == "tracked" and current_kind != "tracked":
+                errors.append(
+                    "上一基线既有大文件不得转入 exceptions："
+                    f"{stable_id}；identityTransitions 不能降低 tracked 身份",
+                )
+                continue
+            if (production_root / from_path).is_file():
+                errors.append(
+                    f"identityTransitions 迁移源路径仍存在，声明不是一次性 D+A：{from_path}",
+                )
+                continue
+            if not (production_root / to_path).is_file():
+                errors.append(f"identityTransitions 迁移目标不存在：{to_path}")
+                continue
+            if git_destination is not None:
+                if git_destination == to_path:
+                    errors.append(
+                        "identityTransitions 与 Git rename 证据重复："
+                        f"{from_path} -> {to_path}",
+                    )
+                else:
+                    errors.append(
+                        "identityTransitions 与 Git rename 证据冲突："
+                        f"{from_path} -> {to_path}，Git 为 {from_path} -> {git_destination}",
+                    )
+                continue
+            git_source = rename_sources_by_destination.get(to_path)
+            if git_source is not None and git_source != from_path:
+                errors.append(
+                    "identityTransitions 与 Git rename 目标冲突："
+                    f"{from_path} -> {to_path}，Git source 为 {git_source}",
+                )
+                continue
+            verified_migrations[from_path] = to_path
+            continue
+
+        if git_destination is not None:
+            errors.append(
+                "identityTransitions 删除声明与 Git rename 证据冲突："
+                f"{from_path} -> {git_destination}",
+            )
+            continue
+        if (production_root / from_path).is_file():
+            errors.append(f"identityTransitions 删除声明的 source 路径仍存在：{from_path}")
+            continue
+        if stable_id in current_entries:
+            errors.append(
+                "identityTransitions 删除声明不得保留同一稳定 id 的当前注册目标："
+                f"{stable_id}",
+            )
+            continue
+        if from_path in current_by_file:
+            errors.append(
+                "identityTransitions 删除声明不得保留 source 路径的当前注册目标："
+                f"{from_path}",
+            )
+            continue
+        verified_deletions.add(stable_id)
+
+    return verified_migrations, verified_deletions
+
+
 def _compare_entry_ratchet(
     current_item: dict[str, Any],
     previous_item: dict[str, Any],
@@ -335,6 +570,7 @@ def _compare_legacy_previous_ratchet(
 def _compare_previous_ratchet(
     current: list[dict[str, Any]],
     current_exceptions: list[dict[str, str | None]],
+    transitions: list[dict[str, str | None]],
     previous_structure_debt: dict[str, Any],
     production_root: Path,
     current_limit: int,
@@ -388,6 +624,17 @@ def _compare_previous_ratchet(
     current_exceptions_by_file = _by_file(current_exceptions)
     previous_by_id = _by_id(previous)
     previous_exceptions_by_id = _by_id(previous_exceptions)
+    verified_migrations, verified_deletions = _validate_identity_transitions(
+        transitions,
+        previous,
+        previous_exceptions,
+        current,
+        current_exceptions,
+        production_root,
+        rename_map,
+        errors,
+    )
+    continuity_map = {**rename_map, **verified_migrations}
 
     for stable_id, previous_item in previous_by_id.items():
         current_item = current_by_id.get(stable_id)
@@ -399,7 +646,7 @@ def _compare_previous_ratchet(
             )
             continue
         if current_item is not None:
-            _require_verified_path_continuity(previous_item, current_item, rename_map, errors)
+            _require_verified_path_continuity(previous_item, current_item, continuity_map, errors)
             _compare_entry_ratchet(current_item, previous_item, errors)
             continue
 
@@ -408,17 +655,24 @@ def _compare_previous_ratchet(
             relative,
             current_by_file,
             current_exceptions_by_file,
-            rename_map,
+            continuity_map,
         )
         if same_path_item is not None:
             errors.append(
                 f"上一基线既有大文件稳定 id 不得改换：{stable_id}（路径 {relative}）",
             )
-        elif not _may_remove_previous_entry(relative, production_root, current_limit):
-            errors.append(
-                f"上一基线既有大文件仍超过 {current_limit} 行，必须继续登记："
-                f"{stable_id}（当前 {_line_count(production_root / relative)} 行）",
-            )
+        elif stable_id not in verified_deletions:
+            previous_path = production_root / relative
+            if not previous_path.is_file():
+                errors.append(
+                    "上一基线既有大文件删除缺少显式删除声明："
+                    f"{stable_id}（{relative}）",
+                )
+            elif _line_count(previous_path) > current_limit:
+                errors.append(
+                    f"上一基线既有大文件仍超过 {current_limit} 行，必须继续登记："
+                    f"{stable_id}（当前 {_line_count(previous_path)} 行）",
+                )
 
     for current_item in current:
         stable_id = str(current_item["id"])
@@ -437,7 +691,7 @@ def _compare_previous_ratchet(
             _require_verified_path_continuity(
                 previous_exception,
                 current_exception,
-                rename_map,
+                continuity_map,
                 errors,
             )
             continue
@@ -445,7 +699,7 @@ def _compare_previous_ratchet(
             _require_verified_path_continuity(
                 previous_exception,
                 current_item,
-                rename_map,
+                continuity_map,
                 errors,
             )
             continue
@@ -455,17 +709,39 @@ def _compare_previous_ratchet(
             relative,
             current_by_file,
             current_exceptions_by_file,
-            rename_map,
+            continuity_map,
         )
         if same_path_item is not None:
             errors.append(
                 f"上一基线 exception 稳定 id 不得改换：{stable_id}（路径 {relative}）",
             )
-        elif not _may_remove_previous_entry(relative, production_root, current_limit):
-            errors.append(
-                "上一基线 exception 只能在文件删除、移出生产目录或降至阈值以内时移除："
-                f"{stable_id}（当前 {_line_count(production_root / relative)} 行）",
-            )
+        elif stable_id not in verified_deletions:
+            previous_path = production_root / relative
+            if not previous_path.is_file():
+                errors.append(
+                    "上一基线 exception 删除缺少显式删除声明："
+                    f"{stable_id}（{relative}）",
+                )
+            elif _line_count(previous_path) > current_limit:
+                errors.append(
+                    f"上一基线 exception 仍超过 {current_limit} 行，必须继续登记："
+                    f"{stable_id}（当前 {_line_count(previous_path)} 行）",
+                )
+
+    previous_ids = set(previous_by_id) | set(previous_exceptions_by_id)
+    new_exception_ids = sorted(set(current_exceptions_by_id) - previous_ids)
+    if new_exception_ids:
+        for stable_id, previous_item in {**previous_by_id, **previous_exceptions_by_id}.items():
+            if stable_id in current_by_id or stable_id in current_exceptions_by_id:
+                continue
+            if stable_id in verified_deletions:
+                continue
+            if not (production_root / str(previous_item["file"])).is_file():
+                errors.append(
+                    "检测到 previous 身份消失与新增 exception 的 D+A 组合，"
+                    "缺少有效一次性迁移或删除声明："
+                    f"{stable_id}（新增 exception：{', '.join(new_exception_ids)}）",
+                )
 
 
 def validate(
@@ -483,6 +759,7 @@ def validate(
     errors: list[str] = []
     existing = _registered_large_files(debt, limit, errors)
     exceptions = _exceptions(debt, errors)
+    transitions = _identity_transitions(debt, errors)
     _validate_global_identity(existing, exceptions, errors)
     existing_by_file = _by_file(existing)
     exceptions_by_file = _by_file(exceptions)
@@ -525,12 +802,15 @@ def validate(
         _compare_previous_ratchet(
             existing,
             exceptions,
+            transitions,
             previous_structure_debt,
             production_root,
             limit,
             errors,
             rename_map or {},
         )
+    elif transitions:
+        errors.append("identityTransitions 需要上一基线；无法验证一次性声明是否已被消费")
     return errors
 
 

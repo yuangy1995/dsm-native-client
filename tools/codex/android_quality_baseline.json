@@ -1875,6 +1875,13 @@
         "targetLines": 1000
       }
     ],
-    "exceptions": []
+    "exceptions": [
+      {
+        "id": "android-chat-feature-model",
+        "file": "io/github/qwertyuiop1995/dsmnativeclient/ChatFeatureModel.kt",
+        "reason": "Chat 读取生命周期、分页所有权与实时协调仍集中在同一特性边界，待后续按已验证职责拆分。"
+      }
+    ],
+    "identityTransitions": []
   }
 }
