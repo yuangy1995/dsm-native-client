@@ -4,6 +4,43 @@ import XCTest
 @testable import DsmNetwork
 
 final class DsmQuickConnectResolverTests: XCTestCase {
+    override func tearDown() {
+        QuickConnectResponseURLProtocol.handler = nil
+        super.tearDown()
+    }
+
+    func test控制响应超过上限时在完整缓冲前失败() async throws {
+        QuickConnectResponseURLProtocol.handler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Length": "9"]
+                )
+            )
+            return (response, Data(repeating: 0x01, count: 9))
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [QuickConnectResponseURLProtocol.self]
+        let resolver = DsmQuickConnectResolver(
+            session: URLSession(configuration: configuration),
+            controlURLs: [
+                try XCTUnwrap(
+                    URL(string: "https://control.quickconnect.to/Serv.php")
+                )
+            ],
+            maximumResponseBytes: 8
+        )
+
+        do {
+            _ = try await resolver.resolve(id: "family-nas")
+            XCTFail("超过限制的 QuickConnect 响应不应被完整读取。")
+        } catch let error as QuickConnectResolutionError {
+            XCTAssertEqual(error, .invalidResponse)
+        }
+    }
+
     func test可选实机QuickConnect中继与能力发现() async throws {
         guard let quickConnectID = ProcessInfo.processInfo.environment["DSM_TEST_QC_ID"],
               !quickConnectID.isEmpty else {
@@ -180,4 +217,32 @@ final class DsmQuickConnectResolverTests: XCTestCase {
             XCTAssertEqual(error as? QuickConnectResolutionError, .relayDisabled)
         }
     }
+}
+
+private final class QuickConnectResponseURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            guard let handler = Self.handler else {
+                throw URLError(.badServerResponse)
+            }
+            let (response, data) = try handler(request)
+            client?.urlProtocol(
+                self,
+                didReceive: response,
+                cacheStoragePolicy: .notAllowed
+            )
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }

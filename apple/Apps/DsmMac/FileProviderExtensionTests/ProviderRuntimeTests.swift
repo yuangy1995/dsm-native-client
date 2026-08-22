@@ -341,6 +341,288 @@ final class ProviderRuntimeTests: XCTestCase {
         XCTAssertEqual(removedPaths, [oldEntry.remotePath])
     }
 
+    func test持久变更日志分页返回更新和删除() async throws {
+        let context = try makeContext()
+        let first = changeItem(
+            profileID: context.mapping.profileID,
+            name: "first.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 1)
+        )
+        let removed = changeItem(
+            profileID: context.mapping.profileID,
+            name: "removed.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 1)
+        )
+        await context.repository.setListedItems([first, removed])
+        let dependencies = context.dependencies(capacity: .init(results: []))
+        let initialRuntime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: dependencies
+        )
+        let initialAnchor = try await initialRuntime.currentChangeAnchor(
+            for: .rootContainer
+        )
+
+        let modified = changeItem(
+            profileID: context.mapping.profileID,
+            name: "first.txt",
+            size: 2,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        let added = changeItem(
+            profileID: context.mapping.profileID,
+            name: "added.txt",
+            size: 3,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        await context.repository.setListedItems([modified, added])
+
+        // 使用新 runtime 验证变化枚举不依赖 Runtime 局部状态；磁盘重启恢复由专用测试覆盖。
+        let resumedRuntime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: dependencies
+        )
+        var anchor = initialAnchor
+        var updateNames: Set<String> = []
+        var deletedIdentifiers: Set<String> = []
+        var pageCount = 0
+        var hasMore = true
+        while hasMore {
+            let page = try await resumedRuntime.enumerateChanges(
+                for: .rootContainer,
+                from: anchor,
+                limit: 1
+            )
+            XCTAssertNotEqual(page.nextAnchor, anchor)
+            updateNames.formUnion(page.updatedItems.map(\.filename))
+            deletedIdentifiers.formUnion(
+                page.deletedItemIdentifiers.map(\.rawValue)
+            )
+            anchor = page.nextAnchor
+            hasMore = page.moreComing
+            pageCount += 1
+        }
+
+        XCTAssertEqual(pageCount, 3)
+        XCTAssertEqual(updateNames, [modified.name, added.name])
+        XCTAssertEqual(
+            deletedIdentifiers,
+            [
+                try XCTUnwrap(
+                    DesktopDriveItemIdentity.identifier(
+                        mappingID: context.mapping.id,
+                        remotePath: removed.path
+                    )
+                )
+            ]
+        )
+    }
+
+    func test重启后从磁盘配置快照恢复变更日志() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "ProviderRuntimePersistentJournal-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let profile = try NasProfile(
+            id: UUID(),
+            displayName: "测试 NAS",
+            host: "nas.invalid",
+            port: 5_001
+        )
+        let mapping = DesktopDriveMapping(
+            profileID: profile.id,
+            displayName: "测试映射",
+            scope: .folder(path: "/test")
+        )
+        let initialStore = DesktopDriveConfigurationStore(directoryURL: directory)
+        try await initialStore.saveConnection(
+            profile: profile,
+            capabilities: .init([:])
+        )
+        try await initialStore.saveMapping(mapping)
+
+        let first = changeItem(
+            profileID: profile.id,
+            name: "first.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 1)
+        )
+        let removed = changeItem(
+            profileID: profile.id,
+            name: "removed.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 1)
+        )
+        let repository = ProviderRepositoryStub(
+            item: first,
+            progressValues: [],
+            listedItems: [first, removed]
+        )
+        let initialRuntime = ProviderRuntime(
+            mappingIdentifier: mapping.id.uuidString,
+            dependencies: persistedDependencies(
+                configurationStore: initialStore,
+                directory: directory,
+                repository: repository
+            )
+        )
+        let anchor = try await initialRuntime.currentChangeAnchor(
+            for: .rootContainer
+        )
+
+        let modified = changeItem(
+            profileID: profile.id,
+            name: "first.txt",
+            size: 2,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        let added = changeItem(
+            profileID: profile.id,
+            name: "added.txt",
+            size: 3,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        await repository.setListedItems([modified, added])
+
+        // 重建配置 Store 和 Runtime，确保锚点日志来自磁盘快照而非同一 Actor 的内存状态。
+        let reopenedStore = DesktopDriveConfigurationStore(directoryURL: directory)
+        let resumedRuntime = ProviderRuntime(
+            mappingIdentifier: mapping.id.uuidString,
+            dependencies: persistedDependencies(
+                configurationStore: reopenedStore,
+                directory: directory,
+                repository: repository
+            )
+        )
+        let page = try await resumedRuntime.enumerateChanges(
+            for: .rootContainer,
+            from: anchor,
+            limit: 10
+        )
+
+        XCTAssertEqual(Set(page.updatedItems.map(\.filename)), [
+            modified.name,
+            added.name,
+        ])
+        XCTAssertEqual(page.deletedItemIdentifiers.map(\.rawValue), [
+            try XCTUnwrap(
+                DesktopDriveItemIdentity.identifier(
+                    mappingID: mapping.id,
+                    remotePath: removed.path
+                )
+            )
+        ])
+        XCTAssertFalse(page.moreComing)
+    }
+
+    func test被裁剪或格式无效的锚点要求完整重新枚举() async throws {
+        let context = try makeContext()
+        let first = changeItem(
+            profileID: context.mapping.profileID,
+            name: "first.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 1)
+        )
+        await context.repository.setListedItems([first])
+        let dependencies = context.dependencies(
+            capacity: .init(results: []),
+            changeJournalMaximumEntries: 1
+        )
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: dependencies
+        )
+        let staleAnchor = try await runtime.currentChangeAnchor(
+            for: .rootContainer
+        )
+
+        let modified = changeItem(
+            profileID: context.mapping.profileID,
+            name: "first.txt",
+            size: 2,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        let added = changeItem(
+            profileID: context.mapping.profileID,
+            name: "added.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        await context.repository.setListedItems([modified, added])
+
+        let staleError = await capturedError {
+            _ = try await runtime.enumerateChanges(
+                for: .rootContainer,
+                from: staleAnchor,
+                limit: 10
+            )
+        }
+        let malformedError = await capturedError {
+            _ = try await runtime.enumerateChanges(
+                for: .rootContainer,
+                from: Data("not-an-anchor".utf8),
+                limit: 10
+            )
+        }
+        let expected = NSFileProviderError(.syncAnchorExpired) as NSError
+        for error in [staleError, malformedError] {
+            let actual = error as? NSError
+            XCTAssertEqual(actual?.domain, expected.domain)
+            XCTAssertEqual(actual?.code, expected.code)
+        }
+    }
+
+    func test枚举器入口转发变更并完成锚点() async throws {
+        let context = try makeContext()
+        let initial = changeItem(
+            profileID: context.mapping.profileID,
+            name: "entry.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 1)
+        )
+        await context.repository.setListedItems([initial])
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: context.dependencies(capacity: .init(results: []))
+        )
+        let anchor = try await runtime.currentChangeAnchor(for: .rootContainer)
+        let updated = changeItem(
+            profileID: context.mapping.profileID,
+            name: "entry.txt",
+            size: 2,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        await context.repository.setListedItems([updated])
+
+        let completed = expectation(description: "变化枚举完成")
+        let observer = ProviderChangeObserverProbe(completion: completed)
+        let enumerator = ProviderEnumerator(
+            containerIdentifier: .rootContainer,
+            runtime: runtime
+        )
+        enumerator.enumerateChanges(
+            for: observer,
+            from: NSFileProviderSyncAnchor(anchor)
+        )
+        await fulfillment(of: [completed], timeout: 2)
+
+        let snapshot = observer.snapshot()
+        XCTAssertNil(snapshot.error)
+        XCTAssertEqual(snapshot.updatedNames, [updated.name])
+        XCTAssertFalse(snapshot.moreComing)
+        XCTAssertNotEqual(snapshot.anchor, anchor)
+    }
+
     private func makeContext(
         progressValues: [Int64] = [],
         temporaryLimitBytes: Int64 = DesktopDriveCachePolicy
@@ -348,7 +630,8 @@ final class ProviderRuntimeTests: XCTestCase {
         cacheEntries: [DesktopDriveCacheEntry] = [],
         pinnedPaths: [String] = [],
         removeCacheEntriesFails: Bool = false,
-        downloadGate: ProviderDownloadGate? = nil
+        downloadGate: ProviderDownloadGate? = nil,
+        listedItems: [FileItem]? = nil
     ) throws -> ProviderRuntimeTestContext {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -408,7 +691,8 @@ final class ProviderRuntimeTests: XCTestCase {
             repository: ProviderRepositoryStub(
                 item: file,
                 progressValues: progressValues,
-                downloadGate: downloadGate
+                downloadGate: downloadGate,
+                listedItems: listedItems ?? [file]
             )
         )
     }
@@ -428,6 +712,43 @@ final class ProviderRuntimeTests: XCTestCase {
             updatedAt: date
         )
     }
+
+    private func persistedDependencies(
+        configurationStore: DesktopDriveConfigurationStore,
+        directory: URL,
+        repository: ProviderRepositoryStub
+    ) -> ProviderRuntimeDependencies {
+        .init(
+            configurationStore: configurationStore,
+            makeRepository: { _ in repository },
+            temporaryDirectory: { _ in directory },
+            ensureCacheSpace: { _, _ in },
+            evictItem: { _, _ in },
+            removeItem: { try? FileManager.default.removeItem(at: $0) },
+            capacityRecheckIntervalBytes: 1_024,
+            changeJournalMaximumEntries: 2_048
+        )
+    }
+
+    private func changeItem(
+        profileID: UUID,
+        name: String,
+        size: Int64,
+        modifiedAt: Date
+    ) -> FileItem {
+        FileItem(
+            profileID: profileID,
+            name: name,
+            path: "/test/\(name)",
+            kind: .file,
+            sizeBytes: size,
+            times: .init(
+                modifiedAt: modifiedAt,
+                createdAt: nil,
+                accessedAt: nil
+            )
+        )
+    }
 }
 
 private struct ProviderRuntimeTestContext {
@@ -439,7 +760,8 @@ private struct ProviderRuntimeTestContext {
     func dependencies(
         capacity: CapacityProbe,
         eviction: EvictionProbe = .init(results: []),
-        recheckIntervalBytes: Int64 = 1_024
+        recheckIntervalBytes: Int64 = 1_024,
+        changeJournalMaximumEntries: Int = 2_048
     ) -> ProviderRuntimeDependencies {
         .init(
             configurationStore: store,
@@ -452,8 +774,79 @@ private struct ProviderRuntimeTestContext {
                 try eviction.evict(identifier: identifier, mapping: mapping)
             },
             removeItem: { try? FileManager.default.removeItem(at: $0) },
-            capacityRecheckIntervalBytes: recheckIntervalBytes
+            capacityRecheckIntervalBytes: recheckIntervalBytes,
+            changeJournalMaximumEntries: changeJournalMaximumEntries
         )
+    }
+}
+
+private final class ProviderChangeObserverProbe:
+    NSObject,
+    NSFileProviderChangeObserver,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let completion: XCTestExpectation
+    private var storedUpdatedNames: [String] = []
+    private var storedDeletedIdentifiers: [String] = []
+    private var storedAnchor = Data()
+    private var storedMoreComing = false
+    private var storedError: Error?
+
+    init(completion: XCTestExpectation) {
+        self.completion = completion
+    }
+
+    func didUpdate(_ updatedItems: [NSFileProviderItem]) {
+        lock.withLock {
+            storedUpdatedNames.append(contentsOf: updatedItems.map(\.filename))
+        }
+    }
+
+    func didDeleteItems(
+        withIdentifiers deletedItemIdentifiers: [NSFileProviderItemIdentifier]
+    ) {
+        lock.withLock {
+            storedDeletedIdentifiers.append(
+                contentsOf: deletedItemIdentifiers.map(\.rawValue)
+            )
+        }
+    }
+
+    func finishEnumeratingChanges(
+        upTo anchor: NSFileProviderSyncAnchor,
+        moreComing: Bool
+    ) {
+        lock.withLock {
+            storedAnchor = anchor.rawValue
+            storedMoreComing = moreComing
+        }
+        completion.fulfill()
+    }
+
+    func finishEnumeratingWithError(_ error: Error) {
+        lock.withLock {
+            storedError = error
+        }
+        completion.fulfill()
+    }
+
+    func snapshot() -> (
+        updatedNames: [String],
+        deletedIdentifiers: [String],
+        anchor: Data,
+        moreComing: Bool,
+        error: Error?
+    ) {
+        lock.withLock {
+            (
+                storedUpdatedNames,
+                storedDeletedIdentifiers,
+                storedAnchor,
+                storedMoreComing,
+                storedError
+            )
+        }
     }
 }
 
@@ -531,6 +924,7 @@ private actor ProviderConfigurationStoreStub:
     private(set) var recordedEntries: [DesktopDriveCacheEntry] = []
     private var runtimeValue: DesktopDriveMappingRuntime
     private var removedPathValues: [String] = []
+    private var changeJournals: [String: DesktopDriveChangeJournal] = [:]
     private let removeCacheEntriesFails: Bool
 
     init(
@@ -559,6 +953,28 @@ private actor ProviderConfigurationStoreStub:
 
     func remotePath(mappingID: UUID, itemIdentifier: String) -> String? {
         remotePathValue
+    }
+
+    func refreshChangeJournal(
+        mappingID: UUID,
+        containerIdentifier: String,
+        currentItems: [String: FileItem],
+        maximumEntryCount: Int
+    ) -> DesktopDriveChangeJournal {
+        var journal: DesktopDriveChangeJournal
+        if var existing = changeJournals[containerIdentifier], existing.isValid {
+            existing.apply(
+                snapshot: currentItems,
+                maximumEntryCount: maximumEntryCount
+            )
+            journal = existing.isValid
+                ? existing
+                : .init(snapshot: currentItems)
+        } else {
+            journal = .init(snapshot: currentItems)
+        }
+        changeJournals[containerIdentifier] = journal
+        return journal
     }
 
     func recordCacheEntry(
@@ -593,6 +1009,7 @@ private actor ProviderRepositoryStub: ProviderRuntimeRepository {
     let item: FileItem
     let progressValues: [Int64]
     let downloadGate: ProviderDownloadGate?
+    private var listedItems: [FileItem]
     private(set) var downloadCount = 0
     private(set) var partialCleanupCount = 0
     private(set) var reportedProgressValues: [Int64] = []
@@ -600,30 +1017,37 @@ private actor ProviderRepositoryStub: ProviderRuntimeRepository {
     init(
         item: FileItem,
         progressValues: [Int64],
-        downloadGate: ProviderDownloadGate? = nil
+        downloadGate: ProviderDownloadGate? = nil,
+        listedItems: [FileItem]
     ) {
         self.item = item
         self.progressValues = progressValues
         self.downloadGate = downloadGate
+        self.listedItems = listedItems
     }
 
     func listShares(offset: Int, limit: Int) -> FilePage {
-        .init(
-            folderPath: "/",
-            items: [],
-            offset: offset,
-            total: 0,
-            hasMore: false
-        )
+        page(folderPath: "/", offset: offset, limit: limit)
     }
 
     func listFolder(path: String, offset: Int, limit: Int) -> FilePage {
-        .init(
-            folderPath: path,
-            items: [],
-            offset: offset,
-            total: 0,
-            hasMore: false
+        page(folderPath: path, offset: offset, limit: limit)
+    }
+
+    func setListedItems(_ items: [FileItem]) {
+        listedItems = items
+    }
+
+    private func page(folderPath: String, offset: Int, limit: Int) -> FilePage {
+        let safeOffset = min(max(offset, 0), listedItems.count)
+        let safeLimit = max(limit, 1)
+        let end = min(safeOffset + safeLimit, listedItems.count)
+        return .init(
+            folderPath: folderPath,
+            items: Array(listedItems[safeOffset..<end]),
+            offset: safeOffset,
+            total: listedItems.count,
+            hasMore: end < listedItems.count
         )
     }
 

@@ -4,21 +4,34 @@
 
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-    echo "用法：$0 /path/to/LanStash.app /path/to/LanStash.dmg" >&2
+if [[ $# -ne 2 && $# -ne 3 ]]; then
+    echo "用法：$0 /path/to/LanStash.app /path/to/LanStash.dmg [source-commit]" >&2
     exit 2
 fi
 
 APP_PATH="$1"
 DMG_PATH="$2"
+SOURCE_COMMIT="${3:-}"
 FILE_PROVIDER_PATH="$APP_PATH/Contents/PlugIns/LanStashFileProvider.appex"
+MOUNT_POINT=""
+ATTACHED=0
 
 fail() {
     echo "错误：$*" >&2
     exit 1
 }
 
-for command in codesign hdiutil shasum spctl xcrun; do
+cleanup() {
+    if [[ "$ATTACHED" -eq 1 ]]; then
+        /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet || true
+    fi
+    if [[ -n "$MOUNT_POINT" ]]; then
+        /bin/rmdir "$MOUNT_POINT" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
+for command in codesign diff hdiutil mktemp shasum spctl xcrun; do
     command -v "$command" >/dev/null 2>&1 \
         || fail "缺少系统命令：$command"
 done
@@ -27,6 +40,28 @@ done
 [[ -f "$DMG_PATH" ]] || fail "找不到 DMG：$DMG_PATH"
 [[ -d "$FILE_PROVIDER_PATH" ]] \
     || fail "正式分发包缺少 File Provider 扩展"
+if [[ -n "$SOURCE_COMMIT" ]]; then
+    [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
+        || fail "来源提交必须是完整 SHA-1"
+    PLIST_BUDDY="/usr/libexec/PlistBuddy"
+    [[ -x "$PLIST_BUDDY" ]] || fail "找不到 PlistBuddy"
+    ACTUAL_COMMIT="$("$PLIST_BUDDY" -c 'Print :LanStashSourceCommit' "$APP_PATH/Contents/Info.plist")"
+    [[ "$ACTUAL_COMMIT" == "$SOURCE_COMMIT" ]] \
+        || fail "App 记录的来源提交与待发布提交不一致"
+fi
+
+MOUNT_POINT="$(mktemp -d "${TMPDIR:-/tmp}/lanstash-release-verify.XXXXXX")"
+/usr/bin/hdiutil attach \
+    "$DMG_PATH" \
+    -readonly \
+    -nobrowse \
+    -mountpoint "$MOUNT_POINT" >/dev/null
+ATTACHED=1
+MOUNTED_APP_PATH="$MOUNT_POINT/$(/usr/bin/basename "$APP_PATH")"
+[[ -d "$MOUNTED_APP_PATH" ]] \
+    || fail "DMG 中缺少与待发布 App 同名的应用包"
+/usr/bin/diff -qr "$APP_PATH" "$MOUNTED_APP_PATH" >/dev/null \
+    || fail "DMG 内 App 与待发布 App 不完全一致"
 
 echo "==> 校验 App 与扩展签名"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"

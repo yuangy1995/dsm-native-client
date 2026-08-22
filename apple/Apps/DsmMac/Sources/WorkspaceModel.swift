@@ -3289,8 +3289,8 @@ final class WorkspaceModel {
         { [weak self] completed, total in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let metrics = previewProgressEstimator.update(completed: completed, total: total)
-                previewLoadingSpeedBytesPerSecond = metrics.speed
+                let metrics = self.previewProgressEstimator.update(completed: completed, total: total)
+                self.previewLoadingSpeedBytesPerSecond = metrics.speed
             }
         }
     }
@@ -3327,21 +3327,21 @@ final class WorkspaceModel {
     private func progressHandler(for taskID: UUID) -> FileTransferProgress {
         { [weak self] completed, total in
             Task { @MainActor [weak self] in
-                guard let self, let index = transfers.firstIndex(where: { $0.id == taskID }) else {
+                guard let self, let index = self.transfers.firstIndex(where: { $0.id == taskID }) else {
                     return
                 }
-                transfers[index].completedUnits = completed
+                self.transfers[index].completedUnits = completed
                 if let total {
-                    transfers[index].totalUnits = total
+                    self.transfers[index].totalUnits = total
                 }
-                var estimator = progressEstimators[taskID] ?? TransferProgressEstimator()
+                var estimator = self.progressEstimators[taskID] ?? TransferProgressEstimator()
                 let metrics = estimator.update(
                     completed: completed,
-                    total: transfers[index].totalUnits
+                    total: self.transfers[index].totalUnits
                 )
-                progressEstimators[taskID] = estimator
-                transfers[index].bytesPerSecond = metrics.speed
-                transfers[index].estimatedSecondsRemaining = metrics.remaining
+                self.progressEstimators[taskID] = estimator
+                self.transfers[index].bytesPerSecond = metrics.speed
+                self.transfers[index].estimatedSecondsRemaining = metrics.remaining
             }
         }
     }

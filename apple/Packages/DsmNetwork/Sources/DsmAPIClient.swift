@@ -90,6 +90,8 @@ public struct DsmAPIClient: Sendable {
             throw DsmNetworkError.cancelled(requestID: requestID)
         } catch let error as DsmCertificateTrustError {
             throw error
+        } catch is DsmTransportError {
+            throw DsmNetworkError.responseTooLarge(requestID: requestID)
         } catch let error as URLError {
             throw DsmNetworkError.transport(code: error.errorCode, requestID: requestID)
         } catch let error as DsmNetworkError {
@@ -161,6 +163,8 @@ public struct DsmAPIClient: Sendable {
             throw DsmNetworkError.cancelled(requestID: requestID)
         } catch let error as DsmCertificateTrustError {
             throw error
+        } catch is DsmTransportError {
+            throw DsmNetworkError.responseTooLarge(requestID: requestID)
         } catch let error as URLError {
             throw DsmNetworkError.transport(code: error.errorCode, requestID: requestID)
         } catch {

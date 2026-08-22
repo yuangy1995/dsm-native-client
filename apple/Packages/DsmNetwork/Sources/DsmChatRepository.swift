@@ -1726,6 +1726,8 @@ public actor DsmChatRepository: ChatRepository {
             throw CancellationError()
         } catch let error as DsmCertificateTrustError {
             throw error
+        } catch is DsmTransportError {
+            throw mapChatError(.responseTooLarge(requestID: UUID()))
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
         } catch let error as URLError {
@@ -2279,6 +2281,8 @@ public actor DsmChatRepository: ChatRepository {
             response = try await transport.send(request)
         } catch let error as DsmCertificateTrustError {
             throw error
+        } catch is DsmTransportError {
+            throw mapChatError(.responseTooLarge(requestID: UUID()))
         } catch let error as URLError {
             throw DsmErrorMapper.map(.transport(code: error.errorCode, requestID: UUID()))
         }
@@ -2432,13 +2436,17 @@ public actor DsmChatRepository: ChatRepository {
             ?? object["sender"]?.objectValue
             ?? object["author"]?.objectValue
             ?? object["creator_info"]?.objectValue
-        let senderID = object.firstNonEmptyString(for: ["creator_id", "user_id", "sender_id", "author_id", "owner_id"])
-            ?? object["creator"]?.stringValue
+        let directSenderID = object.firstNonEmptyString(
+            for: ["creator_id", "user_id", "sender_id", "author_id", "owner_id"]
+        )
+        let scalarSenderID = object["creator"]?.stringValue
             ?? object["user"]?.stringValue
             ?? object["sender"]?.stringValue
             ?? object["author"]?.stringValue
-            ?? creator?.firstNonEmptyString(for: ["user_id", "creator_id", "sender_id", "author_id", "uid", "id"])
-            ?? "unknown"
+        let nestedSenderID = creator?.firstNonEmptyString(
+            for: ["user_id", "creator_id", "sender_id", "author_id", "uid", "id"]
+        )
+        let senderID = directSenderID ?? scalarSenderID ?? nestedSenderID ?? "unknown"
         let senderName = object.firstNonEmptyString(
             for: ["creator_name", "creator_nickname", "sender_name", "author_name", "nickname", "username", "user_name"]
         )

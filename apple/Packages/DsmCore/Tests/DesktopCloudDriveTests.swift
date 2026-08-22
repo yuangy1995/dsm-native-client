@@ -157,6 +157,87 @@ final class DesktopCloudDriveTests: XCTestCase {
         XCTAssertTrue(oldConfigurationPendingIDs.isEmpty)
     }
 
+    func test变更日志持久化更新删除并随映射清理() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        let store = DesktopDriveConfigurationStore(directoryURL: directoryURL)
+        let profile = try NasProfile(
+            displayName: "NAS",
+            host: "nas.example.test",
+            port: 5001
+        )
+        let mapping = DesktopDriveMapping(
+            profileID: profile.id,
+            displayName: "Projects",
+            scope: .folder(path: "/share/projects")
+        )
+        try await store.saveConnection(profile: profile, capabilities: .init([:]))
+        try await store.saveMapping(mapping)
+
+        let firstIdentifier = "item-first"
+        let secondIdentifier = "item-second"
+        let baseline = [
+            firstIdentifier: Self.file(path: "/share/projects/first.txt", size: 1)
+        ]
+        let initial = try await store.refreshChangeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root",
+            currentItems: baseline,
+            maximumEntryCount: 10
+        )
+        XCTAssertEqual(initial.currentRevision, 0)
+        XCTAssertTrue(initial.entries.isEmpty)
+
+        let changed = [
+            secondIdentifier: Self.file(path: "/share/projects/second.txt", size: 2)
+        ]
+        let journal = try await store.refreshChangeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root",
+            currentItems: changed,
+            maximumEntryCount: 10
+        )
+        XCTAssertEqual(journal.currentRevision, 2)
+        XCTAssertEqual(journal.entries.map(\.kind), [.deleted, .updated])
+        XCTAssertEqual(journal.entries.map(\.itemIdentifier), [
+            firstIdentifier,
+            secondIdentifier,
+        ])
+
+        let reopened = DesktopDriveConfigurationStore(directoryURL: directoryURL)
+        let persistedJournal = try await reopened.changeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
+        XCTAssertEqual(persistedJournal, journal)
+        try await reopened.removeMapping(id: mapping.id)
+        let removedJournal = try await reopened.changeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
+        XCTAssertNil(removedJournal)
+    }
+
+    func test变更日志修订出现缺口时失效以触发完整重新枚举() {
+        let item = Self.file(path: "/share/projects/first.txt", size: 1)
+        var journal = DesktopDriveChangeJournal(snapshot: [:])
+        journal.currentRevision = 2
+        journal.minimumAnchorRevision = 0
+        journal.entries = [
+            .init(
+                revision: 2,
+                kind: .updated,
+                itemIdentifier: "item-first",
+                item: item
+            )
+        ]
+
+        XCTAssertFalse(journal.isValid)
+    }
+
     func test损坏配置读取失败时不会覆盖原始文件() async throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

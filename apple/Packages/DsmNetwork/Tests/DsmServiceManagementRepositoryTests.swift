@@ -792,6 +792,29 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertTrue(bodyText.contains(fileURL.lastPathComponent))
     }
 
+    func test上传种子响应超限映射为安全错误() async throws {
+        let transport = MockHTTPTransport(steps: [.responseTooLarge])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.downloadStationTask],
+            transport: transport
+        )
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-task-\(UUID().uuidString).torrent")
+        try Data("d4:infod4:name4:testee".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        do {
+            try await repository.createDownloadTask(
+                fileURL: fileURL,
+                destination: "downloads",
+                unzipPassword: nil
+            )
+            XCTFail("超限响应不应被当作上传成功。")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
+    }
+
     func test任务文件创建结果固定官方V1且回读确认任务() async throws {
         let transport = MockHTTPTransport(responses: [
             downloadTaskListResponse(ids: []),

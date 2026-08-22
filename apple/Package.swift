@@ -54,10 +54,14 @@ let package = Package(
             path: "Apps/DsmMac/FileProviderExtension",
             exclude: [
                 "FileProviderExtension.swift",
-                "ProviderEnumerator.swift",
                 "ProviderErrorMapper.swift"
             ],
-            sources: ["ProviderItem.swift", "ProviderRuntime.swift"]
+            sources: [
+                "ProviderItem.swift",
+                "ProviderRuntime.swift",
+                "ProviderEnumerator.swift",
+                "ProviderOperationRegistry.swift"
+            ]
         ),
         .testTarget(
             name: "DsmCoreTests",

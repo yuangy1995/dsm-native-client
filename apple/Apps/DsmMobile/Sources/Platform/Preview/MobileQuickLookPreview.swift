@@ -1,4 +1,5 @@
-import QuickLook
+// Quick Look 在 Xcode 16.4 SDK 中尚未标注全局参与者，沿用兼容导入以保持协调器的主线程隔离。
+@preconcurrency import QuickLook
 import SwiftUI
 
 /// SwiftUI 与系统 Quick Look 的轻量桥接；临时文件所有权始终属于预览 Model。
@@ -24,9 +25,8 @@ struct MobileQuickLookPreview: UIViewControllerRepresentable {
         }
     }
 
-    final class Coordinator: NSObject,
-        @MainActor QLPreviewControllerDataSource,
-        @MainActor QLPreviewControllerDelegate {
+    @MainActor
+    final class Coordinator: NSObject, QLPreviewControllerDataSource, QLPreviewControllerDelegate {
         private var item: PreviewItem
         private var onDismiss: () -> Void
 
@@ -71,9 +71,11 @@ struct MobileQuickLookPreview: UIViewControllerRepresentable {
             item
         }
 
-        func previewControllerDidDismiss(_ controller: QLPreviewController) {
-            // 只通知 SwiftUI 容器；这里不能删除仍由 Model 持有的 artifact。
-            onDismiss()
+        nonisolated func previewControllerDidDismiss(_ controller: QLPreviewController) {
+            // 旧版 Quick Look Delegate 未标注主线程隔离；回调后再安全切回 SwiftUI 所在主线程。
+            Task { @MainActor [weak self] in
+                self?.onDismiss()
+            }
         }
     }
 

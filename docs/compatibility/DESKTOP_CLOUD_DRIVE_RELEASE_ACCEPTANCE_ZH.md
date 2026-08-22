@@ -17,6 +17,9 @@
 4. 设置 `LANSTASH_NOTARY_PROFILE`，运行
    `apple/Apps/DsmMac/notarize.sh <DMG>`，等待公证、装订票据并完成 Gatekeeper、
    权限和扩展校验。
+   已配置受控 `macos-release` 环境与发布 Secrets 时，也可手动触发
+   `.github/workflows/macos-release-verification.yml` 执行同一签名、公证和严格校验；
+   缺少这些前置条件时该工作流必须失败，不能用日常临时签名产物替代。
 5. 保存发布版本、构建号、源码提交、安装包 SHA-256 和下表的脱敏结论。不得保存
    签名凭据、NAS 地址、账号、映射名称或真实路径。
 
@@ -79,6 +82,8 @@
 - 关闭主窗口、完全退出主 App、系统终止 Extension、Finder 重启后分别检查映射。
 - 覆盖 Mac 重启、用户注销登录、睡眠唤醒、NAS 重启和临时断网。
 - 覆盖 Wi-Fi/有线切换、局域网地址变化和 QuickConnect 直连/中继变化。
+- 记录一个同步锚点后，在同一目录执行远程创建、修改、改名和删除；分页读取变化并重启
+  Extension 后继续。裁剪、升级或损坏锚点时应触发完整重新枚举，而非静默遗漏变化。
 - App 与 Extension 短暂版本不一致时应安全失败，不得损坏配置或重复创建 domain。
 - 删除映射期间仍有下载任务时，先取消任务，再完成 domain 与本地状态清理。
 

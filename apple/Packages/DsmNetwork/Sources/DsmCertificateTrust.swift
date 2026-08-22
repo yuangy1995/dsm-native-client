@@ -85,17 +85,42 @@ enum DsmCertificateTrustPolicy {
     }
 }
 
+/// TLS 失败必须以 URLSession task 为边界保存，避免并发请求互相消费证书提示。
+final class TaskScopedTLSFailureStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failures: [Int: DsmCertificateTrustError] = [:]
+
+    func store(_ failure: DsmCertificateTrustError, taskIdentifier: Int) {
+        lock.lock()
+        failures[taskIdentifier] = failure
+        lock.unlock()
+    }
+
+    func consume(taskIdentifier: Int) -> DsmCertificateTrustError? {
+        lock.lock()
+        defer { lock.unlock() }
+        return failures.removeValue(forKey: taskIdentifier)
+    }
+
+    func remove(taskIdentifier: Int) {
+        lock.lock()
+        failures.removeValue(forKey: taskIdentifier)
+        lock.unlock()
+    }
+}
+
 final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate, URLSessionDownloadDelegate, URLSessionDataDelegate, @unchecked Sendable {
     private let expectedHost: String?
     private let pinnedFingerprint: String?
     private let requiresSystemTrust: Bool
     private let lock = NSLock()
-    private var pendingFailure: DsmCertificateTrustError?
+    private let failures = TaskScopedTLSFailureStore()
 
     private var progressHandlers = [Int: FileTransferProgress]()
     private var completionHandlers = [Int: (HTTPURLResponse?, Error?) -> Void]()
     private var downloadFinishHandlers = [Int: (URL) -> Void]()
-    private var dataHandlers = [Int: (Data) -> Void]()
+    private var responseHandlers = [Int: (URLResponse) -> URLSession.ResponseDisposition]()
+    private var dataHandlers = [Int: (Data) -> Bool]()
     private var lastProgressUpdateTimes = [Int: Date]()
 
     init(
@@ -110,11 +135,8 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         self.requiresSystemTrust = requiresSystemTrust
     }
 
-    func consumeFailure() -> DsmCertificateTrustError? {
-        lock.lock()
-        defer { lock.unlock() }
-        defer { pendingFailure = nil }
-        return pendingFailure
+    func consumeFailure(for task: URLSessionTask) -> DsmCertificateTrustError? {
+        failures.consume(taskIdentifier: task.taskIdentifier)
     }
 
     func urlSession(
@@ -122,7 +144,11 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        handle(challenge, completionHandler: completionHandler)
+        handle(
+            challenge,
+            taskIdentifier: nil,
+            completionHandler: completionHandler
+        )
     }
 
     func urlSession(
@@ -131,11 +157,31 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        handle(challenge, completionHandler: completionHandler)
+        handle(
+            challenge,
+            taskIdentifier: task.taskIdentifier,
+            completionHandler: completionHandler
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(
+            DsmRedirectPolicy.redirectedRequest(
+                from: task.currentRequest?.url ?? task.originalRequest?.url,
+                proposedRequest: request
+            )
+        )
     }
 
     private func handle(
         _ challenge: URLAuthenticationChallenge,
+        taskIdentifier: Int?,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
@@ -169,7 +215,7 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
                 sha256Fingerprint: fingerprint,
                 canBePinned: false
             )
-            store(.invalid(review))
+            store(.invalid(review), taskIdentifier: taskIdentifier)
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
@@ -201,21 +247,23 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         case .useSystemTrust, .usePinnedCertificate:
             completionHandler(.useCredential, URLCredential(trust: trust))
         case .reviewUntrustedCertificate:
-            store(.untrusted(review))
+            store(.untrusted(review), taskIdentifier: taskIdentifier)
             completionHandler(.cancelAuthenticationChallenge, nil)
         case .reviewChangedCertificate:
-            store(.changed(review))
+            store(.changed(review), taskIdentifier: taskIdentifier)
             completionHandler(.cancelAuthenticationChallenge, nil)
         case .rejectInvalidCertificate:
-            store(.invalid(review))
+            store(.invalid(review), taskIdentifier: taskIdentifier)
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
 
-    private func store(_ failure: DsmCertificateTrustError) {
-        lock.lock()
-        pendingFailure = failure
-        lock.unlock()
+    private func store(
+        _ failure: DsmCertificateTrustError,
+        taskIdentifier: Int?
+    ) {
+        guard let taskIdentifier else { return }
+        failures.store(failure, taskIdentifier: taskIdentifier)
     }
 
     func registerTask(
@@ -223,7 +271,8 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         progress: @escaping FileTransferProgress,
         completion: @escaping (HTTPURLResponse?, Error?) -> Void,
         onDownloadFinish: ((URL) -> Void)? = nil,
-        onDataReceive: ((Data) -> Void)? = nil
+        onResponse: ((URLResponse) -> URLSession.ResponseDisposition)? = nil,
+        onDataReceive: ((Data) -> Bool)? = nil
     ) {
         lock.lock()
         let id = task.taskIdentifier
@@ -231,6 +280,9 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         completionHandlers[id] = completion
         if let onDownloadFinish = onDownloadFinish {
             downloadFinishHandlers[id] = onDownloadFinish
+        }
+        if let onResponse = onResponse {
+            responseHandlers[id] = onResponse
         }
         if let onDataReceive = onDataReceive {
             dataHandlers[id] = onDataReceive
@@ -244,8 +296,10 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
         progressHandlers.removeValue(forKey: id)
         completionHandlers.removeValue(forKey: id)
         downloadFinishHandlers.removeValue(forKey: id)
+        responseHandlers.removeValue(forKey: id)
         dataHandlers.removeValue(forKey: id)
         lastProgressUpdateTimes.removeValue(forKey: id)
+        failures.remove(taskIdentifier: id)
         lock.unlock()
     }
 
@@ -313,12 +367,26 @@ final class DsmTLSDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate
     func urlSession(
         _ session: URLSession,
         dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+    ) {
+        lock.lock()
+        let handler = responseHandlers[dataTask.taskIdentifier]
+        lock.unlock()
+        completionHandler(handler?(response) ?? .allow)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
         didReceive data: Data
     ) {
         lock.lock()
         let handler = dataHandlers[dataTask.taskIdentifier]
         lock.unlock()
-        handler?(data)
+        if handler?(data) == false {
+            dataTask.cancel()
+        }
     }
 
     func urlSession(

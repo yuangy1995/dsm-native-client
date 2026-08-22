@@ -177,7 +177,8 @@ enum DsmRequestBuilder {
             fields[key] = try value.encoded(for: requestFormat)
         }
 
-        if let credential {
+        // GET 请求的认证仅通过 Header 发送，避免会话字段进入 URL、代理日志或重定向目标。
+        if let credential, httpMethod.uppercased() != "GET" {
             fields["_sid"] = credential.sid
             if let synoToken = credential.synoToken, !synoToken.isEmpty {
                 fields["SynoToken"] = synoToken

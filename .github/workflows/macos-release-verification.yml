@@ -1,0 +1,155 @@
+name: macOS Release Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  XCODE_VERSION: "16.4"
+  XCODE_DEVELOPER_DIR: "/Applications/Xcode_16.4.app/Contents/Developer"
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+  LANSTASH_NOTARY_PROFILE: "lanstash-release-notary"
+
+jobs:
+  sign-notarize-and-verify:
+    # 此环境应配置人工审批，以及仅供发布使用的证书和公证 Secrets。
+    environment: macos-release
+    runs-on: macos-15
+    steps:
+      - name: 检出仓库
+        # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: 选择锁定的 Xcode 工具链
+        shell: bash
+        run: |
+          test -d "$XCODE_DEVELOPER_DIR"
+          echo "DEVELOPER_DIR=$XCODE_DEVELOPER_DIR" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE_DEVELOPER_DIR"
+          installed_version="$(xcodebuild -version | awk 'NR == 1 { print $2 }')"
+          test "$installed_version" = "$XCODE_VERSION"
+          xcodebuild -version
+          swift --version
+
+      - name: 安装并校验锁定的 XcodeGen
+        shell: bash
+        run: |
+          xcodegen_archive="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION.zip"
+          xcodegen_root="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION"
+          curl -fsSL --retry 3 \
+            --output "$xcodegen_archive" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$xcodegen_archive" | shasum -a 256 -c -
+          unzip -q "$xcodegen_archive" -d "$xcodegen_root"
+          "$xcodegen_root/xcodegen/bin/xcodegen" --version
+          test "$("$xcodegen_root/xcodegen/bin/xcodegen" --version | awk '{ print $2 }')" = "$XCODEGEN_VERSION"
+          echo "$xcodegen_root/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: 运行共享包测试
+        run: swift test --package-path apple
+
+      - name: 校验发布凭据配置
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          MACOS_DEVELOPER_IDENTITY: ${{ secrets.MACOS_DEVELOPER_IDENTITY }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_SPECIFIC_PASSWORD }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+        run: |
+          for name in \
+            MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 \
+            MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD \
+            MACOS_DEVELOPER_IDENTITY \
+            MACOS_NOTARY_APPLE_ID \
+            MACOS_NOTARY_APP_SPECIFIC_PASSWORD \
+            MACOS_NOTARY_TEAM_ID; do
+            test -n "${!name:-}" || {
+              echo "发布环境缺少必需 Secret：$name" >&2
+              exit 1
+            }
+          done
+
+      - name: 导入临时 Developer ID 证书并配置公证资料
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_SPECIFIC_PASSWORD }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+        run: |
+          release_keychain="$RUNNER_TEMP/lanstash-release.keychain-db"
+          certificate_path="$RUNNER_TEMP/lanstash-developer-id.p12"
+          keychain_password="$(uuidgen)"
+          printf '%s' "$MACOS_DEVELOPER_ID_CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$release_keychain"
+          security set-keychain-settings -lut 21600 "$release_keychain"
+          security unlock-keychain -p "$keychain_password" "$release_keychain"
+          security import "$certificate_path" \
+            -k "$release_keychain" \
+            -P "$MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$keychain_password" \
+            "$release_keychain"
+          security list-keychain -d user -s "$release_keychain"
+          security default-keychain -s "$release_keychain"
+          xcrun notarytool store-credentials "$LANSTASH_NOTARY_PROFILE" \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --password "$MACOS_NOTARY_APP_SPECIFIC_PASSWORD"
+
+      - name: 生成 macOS 工程
+        working-directory: apple/Apps/DsmMac
+        shell: bash
+        run: |
+          xcodegen generate
+          git diff --exit-code -- DsmMac.xcodeproj/project.pbxproj
+
+      - name: 构建、签名并生成候选包
+        working-directory: apple/Apps/DsmMac
+        env:
+          LANSTASH_NON_INTERACTIVE: 1
+          LANSTASH_BUILD_TYPE: Release
+          LANSTASH_TARGET_ARCH: universal
+          LANSTASH_RUN_AFTER_PACKAGE: 0
+          LANSTASH_SIGNING_IDENTITY: ${{ secrets.MACOS_DEVELOPER_IDENTITY }}
+        run: ./package.sh
+
+      - name: 公证、装订并验证正式候选包
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmg_paths=(apple/Apps/DsmMac/dist/LanStash-*.dmg)
+          shopt -u nullglob
+          test "${#dmg_paths[@]}" -eq 1
+          apple/Apps/DsmMac/notarize.sh "${dmg_paths[0]}"
+
+      - name: 上传已验证的正式候选包
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: LanStash-macOS-release-verified
+          path: |
+            apple/Apps/DsmMac/dist/*.app
+            apple/Apps/DsmMac/dist/*.dmg
+          if-no-files-found: error
+
+      - name: 清理临时发布钥匙串
+        if: always()
+        shell: bash
+        run: |
+          release_keychain="$RUNNER_TEMP/lanstash-release.keychain-db"
+          certificate_path="$RUNNER_TEMP/lanstash-developer-id.p12"
+          if [[ -f "$release_keychain" ]]; then
+            security delete-keychain "$release_keychain"
+          fi
+          if [[ -f "$certificate_path" ]]; then
+            /bin/rm -f -- "$certificate_path"
+          fi

@@ -46,4 +46,5 @@ echo "==> 装订并验证公证票据"
 APP_PATH="$SCRIPT_DIR/dist/LanStash.app"
 [[ -d "$APP_PATH" ]] \
     || fail "找不到与 DMG 同批生成的 App：$APP_PATH"
-"$VERIFY_SCRIPT" "$APP_PATH" "$DMG_PATH"
+SOURCE_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD)"
+"$VERIFY_SCRIPT" "$APP_PATH" "$DMG_PATH" "$SOURCE_COMMIT"

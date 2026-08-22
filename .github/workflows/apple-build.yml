@@ -5,31 +5,82 @@ on:
   push:
     paths:
       - "apple/**"
+      - "tools/release/**"
       - ".github/workflows/apple-build.yml"
   pull_request:
     paths:
       - "apple/**"
+      - "tools/release/**"
       - ".github/workflows/apple-build.yml"
 
 permissions:
   contents: read
 
+env:
+  XCODE_VERSION: "16.4"
+  XCODE_DEVELOPER_DIR: "/Applications/Xcode_16.4.app/Contents/Developer"
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+
 jobs:
   test-and-build:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - name: 检出仓库
-        uses: actions/checkout@v7
+        # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: 选择锁定的 Xcode 工具链
+        shell: bash
+        run: |
+          test -d "$XCODE_DEVELOPER_DIR"
+          echo "DEVELOPER_DIR=$XCODE_DEVELOPER_DIR" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE_DEVELOPER_DIR"
+          installed_version="$(xcodebuild -version | awk 'NR == 1 { print $2 }')"
+          test "$installed_version" = "$XCODE_VERSION"
+          xcodebuild -version
+          swift --version
 
       - name: 运行共享包测试
         run: swift test --package-path apple
 
-      - name: 安装 XcodeGen
-        run: brew install xcodegen
+      - name: 安装并校验锁定的 XcodeGen
+        shell: bash
+        run: |
+          xcodegen_archive="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION.zip"
+          xcodegen_root="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION"
+          curl -fsSL --retry 3 \
+            --output "$xcodegen_archive" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$xcodegen_archive" | shasum -a 256 -c -
+          unzip -q "$xcodegen_archive" -d "$xcodegen_root"
+          "$xcodegen_root/xcodegen/bin/xcodegen" --version
+          test "$("$xcodegen_root/xcodegen/bin/xcodegen" --version | awk '{ print $2 }')" = "$XCODEGEN_VERSION"
+          echo "$xcodegen_root/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: 校验正式发布门禁脚本入口
+        shell: bash
+        run: |
+          bash -n tools/release/verify_macos_distribution.sh
+          bash -n tools/release/verify_macos_unsigned_ci_artifact.sh
+          if tools/release/verify_macos_distribution.sh; then
+            echo "正式发布门禁不应在缺少候选产物时通过。" >&2
+            exit 1
+          else
+            formal_gate_exit=$?
+            test "$formal_gate_exit" -eq 2
+          fi
 
       - name: 生成 iPhone 与 iPad 工程
         working-directory: apple/Apps/DsmMobile
         run: xcodegen generate
+
+      - name: 生成 macOS 工程并校验生成物
+        working-directory: apple/Apps/DsmMac
+        shell: bash
+        run: |
+          xcodegen generate
+          git diff --exit-code -- DsmMac.xcodeproj/project.pbxproj
 
       - name: 构建 iPhone 与 iPad 通用应用
         working-directory: apple/Apps/DsmMobile
@@ -51,8 +102,21 @@ jobs:
           LANSTASH_RUN_AFTER_PACKAGE: 0
         run: ./package.sh
 
+      - name: 校验临时签名 macOS 产物
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmg_paths=(apple/Apps/DsmMac/dist/LanStash-*.dmg)
+          shopt -u nullglob
+          test "${#dmg_paths[@]}" -eq 1
+          tools/release/verify_macos_unsigned_ci_artifact.sh \
+            apple/Apps/DsmMac/dist/LanStash.app \
+            "${dmg_paths[0]}" \
+            "$GITHUB_SHA"
+
       - name: 上传打包产物
-        uses: actions/upload-artifact@v7
+        # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LanStash-macOS
           path: |

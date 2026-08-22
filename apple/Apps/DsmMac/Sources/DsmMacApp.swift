@@ -5,7 +5,8 @@ import FileProvider
 import Foundation
 import ServiceManagement
 import SwiftUI
-import UserNotifications
+// Xcode 16.4 的 UserNotifications SDK 未标注部分结果类型为 Sendable；通知调用仍限定在主线程。
+@preconcurrency import UserNotifications
 
 @MainActor
 protocol TransferNotifying: AnyObject {
@@ -44,7 +45,7 @@ final class SystemTransferNotifier: TransferNotifying {
     func prepareAuthorization() {
         guard !Self.isRunningTests, !isPreparingAuthorization else { return }
         isPreparingAuthorization = true
-        Task {
+        Task { @MainActor in
             defer { isPreparingAuthorization = false }
             let settings = await center.notificationSettings()
             guard settings.authorizationStatus == .notDetermined else { return }
@@ -57,7 +58,7 @@ final class SystemTransferNotifier: TransferNotifying {
               task.state == .succeeded || task.state == .failed else {
             return
         }
-        Task {
+        Task { @MainActor in
             var settings = await center.notificationSettings()
             if settings.authorizationStatus == .notDetermined {
                 let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) == true
@@ -393,8 +394,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 @main
 struct DsmMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    @State private var model: AppModel
     @State private var language = AppLanguageStore.shared
+
+    init() {
+        _model = State(initialValue: AppModel())
+    }
 
     var body: some Scene {
         WindowGroup(language.string("app.name")) {

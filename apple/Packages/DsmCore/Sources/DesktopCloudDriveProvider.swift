@@ -45,6 +45,7 @@ public actor DesktopDriveConfigurationStore {
         var connections: [UUID: DesktopDriveProviderConnection] = [:]
         var mappings: [UUID: DesktopDriveMapping] = [:]
         var itemPaths: [UUID: [String: String]]?
+        var changeJournals: [UUID: [String: DesktopDriveChangeJournal]]?
         var runtimes: [UUID: DesktopDriveMappingRuntime]?
         var runtimeRecoveryMappingIDs: Set<UUID>?
         var pendingSessionRemovalProfileIDs: Set<UUID>?
@@ -55,6 +56,7 @@ public actor DesktopDriveConfigurationStore {
             case connections
             case mappings
             case itemPaths
+            case changeJournals
             case runtimes
             case runtimeRecoveryMappingIDs
             case pendingSessionRemovalProfileIDs
@@ -78,6 +80,15 @@ public actor DesktopDriveConfigurationStore {
                 [UUID: [String: String]].self,
                 forKey: .itemPaths
             )
+            // 日志损坏时不能让整个映射配置不可读；丢弃该可重建缓存并让旧锚点过期。
+            do {
+                changeJournals = try container.decodeIfPresent(
+                    [UUID: [String: DesktopDriveChangeJournal]].self,
+                    forKey: .changeJournals
+                )
+            } catch {
+                changeJournals = nil
+            }
             providerAvailable = try container.decodeIfPresent(
                 Bool.self,
                 forKey: .providerAvailable
@@ -135,6 +146,7 @@ public actor DesktopDriveConfigurationStore {
             try container.encode(connections, forKey: .connections)
             try container.encode(mappings, forKey: .mappings)
             try container.encodeIfPresent(itemPaths, forKey: .itemPaths)
+            try container.encodeIfPresent(changeJournals, forKey: .changeJournals)
             try container.encodeIfPresent(
                 runtimes.map(RecoverableRuntimeDictionary.init(values:)),
                 forKey: .runtimes
@@ -281,6 +293,7 @@ public actor DesktopDriveConfigurationStore {
         try updateSnapshot { snapshot in
             snapshot.mappings.removeValue(forKey: id)
             snapshot.itemPaths?[id] = nil
+            snapshot.changeJournals?[id] = nil
             snapshot.runtimes?[id] = nil
             snapshot.runtimeRecoveryMappingIDs?.remove(id)
         }
@@ -297,6 +310,7 @@ public actor DesktopDriveConfigurationStore {
             }
             for mappingID in removedIDs {
                 snapshot.itemPaths?[mappingID] = nil
+                snapshot.changeJournals?[mappingID] = nil
                 snapshot.runtimes?[mappingID] = nil
                 snapshot.runtimeRecoveryMappingIDs?.remove(mappingID)
             }
@@ -359,6 +373,85 @@ public actor DesktopDriveConfigurationStore {
     ) throws -> String? {
         try readSnapshot {
             $0.itemPaths?[mappingID]?[itemIdentifier]
+        }
+    }
+
+    /// 基于一份完整目录快照原子地更新持久化变化日志。
+    ///
+    /// 目录扫描发生在锁外，但与磁盘上最新日志的比较、修订号递增和写回在同一文件锁内
+    /// 完成，因此 Extension 重启或并发实例不会丢弃已记录的变化。
+    public func refreshChangeJournal(
+        mappingID: UUID,
+        containerIdentifier: String,
+        currentItems: [String: FileItem],
+        maximumEntryCount: Int
+    ) throws -> DesktopDriveChangeJournal {
+        var result: DesktopDriveChangeJournal?
+        try updateSnapshot { snapshot in
+            guard snapshot.mappings[mappingID] != nil else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+
+            let existing = snapshot.changeJournals?[mappingID]?[containerIdentifier]
+            let previousIdentifiers: Set<String>
+            if let existing, existing.isValid {
+                previousIdentifiers = Set(existing.snapshot.keys)
+            } else {
+                previousIdentifiers = []
+            }
+            var journal: DesktopDriveChangeJournal
+            if let existing, existing.isValid {
+                journal = existing
+                journal.apply(
+                    snapshot: currentItems,
+                    maximumEntryCount: maximumEntryCount
+                )
+                if !journal.isValid {
+                    journal = DesktopDriveChangeJournal(snapshot: currentItems)
+                }
+            } else {
+                // 缺失、损坏或旧 schema 的日志都建立全新 generation，旧锚点会安全失效。
+                journal = DesktopDriveChangeJournal(snapshot: currentItems)
+            }
+
+            if snapshot.changeJournals == nil {
+                snapshot.changeJournals = [:]
+            }
+            if snapshot.changeJournals?[mappingID] == nil {
+                snapshot.changeJournals?[mappingID] = [:]
+            }
+            snapshot.changeJournals?[mappingID]?[containerIdentifier] = journal
+
+            var pathIndex = snapshot.itemPaths?[mappingID] ?? [:]
+            for identifier in journal.snapshot.keys {
+                guard let item = journal.snapshot[identifier],
+                      DesktopDrivePath.normalized(item.path) != nil else {
+                    continue
+                }
+                pathIndex[identifier] = item.path
+            }
+            for identifier in previousIdentifiers where journal.snapshot[identifier] == nil {
+                pathIndex[identifier] = nil
+            }
+            if snapshot.itemPaths == nil {
+                snapshot.itemPaths = [:]
+            }
+            snapshot.itemPaths?[mappingID] = pathIndex
+            result = journal
+        }
+        guard let result else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return result
+    }
+
+    /// 读取测试、诊断和恢复决策所需的日志副本；调用方不得原地修改共享状态。
+    public func changeJournal(
+        mappingID: UUID,
+        containerIdentifier: String
+    ) throws -> DesktopDriveChangeJournal? {
+        try readSnapshot {
+            $0.changeJournals?[mappingID]?[containerIdentifier]
         }
     }
 
@@ -566,9 +659,10 @@ public actor DesktopDriveConfigurationStore {
     private func readSnapshot<T>(
         _ body: (Snapshot) throws -> T
     ) throws -> T {
-        try withFileLock(exclusive: false) {
-            try body(loadSnapshotUnlocked(allowCachedFallback: true))
+        let snapshot = try withFileLock(exclusive: false) {
+            try loadSnapshotUnlocked(allowCachedFallback: true)
         }
+        return try body(snapshot)
     }
 
     private func updateSnapshot(

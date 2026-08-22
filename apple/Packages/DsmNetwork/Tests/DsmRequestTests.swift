@@ -48,7 +48,7 @@ final class DsmRequestTests: XCTestCase {
         XCTAssertEqual(fields["overwrite"], "false")
     }
 
-    func testGET请求格式编码参数并拼接URL() throws {
+    func testGET请求格式编码参数且凭据不进入URL() throws {
         let request = try DsmRequestBuilder.build(
             baseURL: try XCTUnwrap(URL(string: "https://nas.example.invalid:5001")),
             path: "entry.cgi",
@@ -77,8 +77,10 @@ final class DsmRequestTests: XCTestCase {
         XCTAssertEqual(queryDict["method"], "download")
         XCTAssertEqual(queryDict["path"], "/video/movie.mp4")
         XCTAssertEqual(queryDict["mode"], "download")
-        XCTAssertEqual(queryDict["_sid"], "REDACTED_SESSION")
-        XCTAssertEqual(queryDict["SynoToken"], "REDACTED_TOKEN")
+        XCTAssertNil(queryDict["_sid"])
+        XCTAssertNil(queryDict["SynoToken"])
+        XCTAssertFalse(request.url?.absoluteString.contains("REDACTED_SESSION") == true)
+        XCTAssertFalse(request.url?.absoluteString.contains("REDACTED_TOKEN") == true)
         
         XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "id=REDACTED_SESSION")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-SYNO-TOKEN"), "REDACTED_TOKEN")

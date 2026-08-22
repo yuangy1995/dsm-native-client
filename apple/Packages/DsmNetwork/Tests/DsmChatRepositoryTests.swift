@@ -118,6 +118,24 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(page.messages.last?.isFromCurrentUser, true)
     }
 
+    func test解析发送者标识保持已验证的优先级() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"""
+            {"success":true,"data":{"posts":[
+                {"post_id":"9001","channel_id":"27","creator_id":"direct","creator":"scalar","create_at":1774166400000,"message":"甲"},
+                {"post_id":"9002","channel_id":"27","creator":"scalar","create_at":1774166401000,"message":"乙"},
+                {"post_id":"9003","channel_id":"27","creator":{"user_id":"nested"},"create_at":1774166402000,"message":"丙"},
+                {"post_id":"9004","channel_id":"27","create_at":1774166403000,"message":"丁"}
+            ]}}
+            """#)
+        ])
+        let repository = try makeRepository(transport: transport)
+
+        let page = try await repository.listMessages(conversationID: "27", before: nil, limit: 20)
+
+        XCTAssertEqual(page.messages.map(\.senderID), ["direct", "scalar", "nested", "unknown"])
+    }
+
     func test空发送者名称不会覆盖用户目录名称() async throws {
         let users = response(#"{"success":true,"data":{"users":[{"user_id":"2","nickname":"林青"}]}}"#)
         let channels = response(#"{"success":true,"data":{"channels":[]}}"#)
@@ -1012,6 +1030,28 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(first.result.status, .submittedButUnverified)
         XCTAssertTrue(first.result.submitted)
         XCTAssertTrue(first.result.requiresRefresh)
+        XCTAssertEqual(second.result.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+    }
+
+    func test附件发送响应超限后同请求不重传() async throws {
+        let transport = MockHTTPTransport(steps: [.responseTooLarge])
+        let repository = try makeRepository(transport: transport)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmChatRepositoryTests-\(UUID().uuidString)-response-too-large.png")
+        try Data("PNGDATA".utf8).write(to: fileURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let draft = try ChatMessageDraft(
+            conversationID: "27",
+            text: nil,
+            localAttachmentURLs: [fileURL]
+        )
+
+        let first = try await repository.sendAttachmentMessageResult(draft)
+        let second = try await repository.sendAttachmentMessageResult(draft)
+
+        XCTAssertEqual(first.result.status, .submittedButUnverified)
         XCTAssertEqual(second.result.status, .submittedButUnverified)
         let requests = await transport.recordedRequests()
         XCTAssertEqual(requests.count, 1)

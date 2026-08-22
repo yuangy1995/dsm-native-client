@@ -399,11 +399,28 @@ Windows CI。
 - 后续任何写项必须具备确认、权限检查、重复提交保护、最终状态复查和故障注入测试；
   只读项必须具备能力与权限边界、字段白名单、失败降级、零猜测请求和隐私测试。
 
+### SEC-002：Apple URL 凭据收敛的跨端迁移边界
+
+2026-08-22 的 macOS 发布整改使 Apple 共享网络层不再把 File Station 读取或上传的会话、
+Token 写入 URL，保留 Cookie、Header 和现有 multipart 认证字段。此变更不修改 DSM API
+名称、方法、业务参数或公开客户端签名。
+
+当前 `file-station.upload.synthetic-overwrite` Fixture 仍记录 URL 认证位置，因为 Android
+上传实现和自动化尚未迁移。不能为了让 Apple 测试表面一致而直接修改该 Fixture，也不能把
+Apple 的安全收敛表述为 Android 或 Windows 都已完成。Apple 测试应在保留 Fixture 的 API、
+参数和 multipart 约束下，额外断言 URL 没有凭据；平台矩阵和 macOS 整改账本记录该例外。
+
+后续跨端切片须先获得授权，再按 Android 实现与测试、共享 Fixture、Windows/Apple 回归、
+真实 DSM 兼容性和五端矩阵的顺序迁移；在此之前，Android 不属于本 macOS 发布整改的修改
+范围。
+
 ## 7. 完成条件
 
 - 请求 Fixture 校验器能够拒绝凭据、主机、真实路径、未知字段和危险写操作的可重试
   配置。
-- Apple、Android、Windows 对同一 Fixture 给出一致请求语义。
+- Apple、Android、Windows 对同一 Fixture 给出一致业务请求语义；认证位置若因已记录的
+  平台安全收敛而不同，必须保留共享 Fixture 的历史证据、逐平台自动化、五端矩阵与后续
+  迁移计划，且不得把例外表述为全端完成。
 - 每个迁移的写操作覆盖至少：提交前失败、提交成功且回读成功、提交后网络失败、回读
   失败、批量部分成功和提交后取消。
 - UI 对 `submittedButUnverified` 明确提示先刷新状态，不建议立即重复操作。

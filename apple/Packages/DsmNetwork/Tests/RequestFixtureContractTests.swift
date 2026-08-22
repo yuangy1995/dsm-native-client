@@ -245,7 +245,7 @@ final class RequestFixtureContractTests: XCTestCase {
         try assertFormRequest(try XCTUnwrap(requests.first), matches: fixture)
     }
 
-    func test覆盖上传请求与共享Fixture一致() async throws {
+    func test覆盖上传请求遵守Apple凭据查询收敛并保留共享Fixture业务约束() async throws {
         let fixture = try loadFixture(
             "file-station/upload/synthetic-overwrite/request.json"
         )
@@ -284,8 +284,16 @@ final class RequestFixtureContractTests: XCTestCase {
         try assertMultipartRequest(
             uploadRequest,
             body: uploadBody,
-            matches: fixture
+            matches: fixture,
+            expectedAuthentication: appleAuthenticationExpectation(for: fixture)
         )
+        let queryItems = URLComponents(
+            url: try XCTUnwrap(uploadRequest.url),
+            resolvingAgainstBaseURL: false
+        )?.queryItems ?? []
+        XCTAssertNil(queryItems.first(where: { $0.name == "_sid" }))
+        XCTAssertNil(queryItems.first(where: { $0.name == "SynoToken" }))
+        XCTAssertNil(queryItems.first(where: { $0.name == "synotoken" }))
     }
 
     func test账号创建请求与共享Fixture一致且不保存密码值() async throws {
@@ -1372,7 +1380,8 @@ final class RequestFixtureContractTests: XCTestCase {
     private func assertMultipartRequest(
         _ request: URLRequest,
         body: Data,
-        matches fixture: RequestFixture
+        matches fixture: RequestFixture,
+        expectedAuthentication: RequestFixture.Authentication? = nil
     ) throws {
         XCTAssertEqual(request.httpMethod, fixture.transport.httpMethod)
         XCTAssertEqual(request.url?.lastPathComponent, fixture.api.resolvedPath)
@@ -1441,8 +1450,24 @@ final class RequestFixtureContractTests: XCTestCase {
         if fields["SynoToken"] != nil || fields["synotoken"] != nil {
             tokenLocations.insert("multipart")
         }
-        XCTAssertEqual(sessionLocations, Set(fixture.authentication.sessionLocations))
-        XCTAssertEqual(tokenLocations, Set(fixture.authentication.synoTokenLocations))
+        let authentication = expectedAuthentication ?? fixture.authentication
+        XCTAssertEqual(sessionLocations, Set(authentication.sessionLocations))
+        XCTAssertEqual(tokenLocations, Set(authentication.synoTokenLocations))
+    }
+
+    private func appleAuthenticationExpectation(
+        for fixture: RequestFixture
+    ) -> RequestFixture.Authentication {
+        guard fixture.fixtureId == "file-station.upload.synthetic-overwrite" else {
+            return fixture.authentication
+        }
+        // 共享 Fixture 仍保留 Android 尚未迁移时的历史认证位置；Apple 发布策略不得因此恢复 URL 凭据。
+        return RequestFixture.Authentication(
+            required: fixture.authentication.required,
+            synoTokenRequired: fixture.authentication.synoTokenRequired,
+            sessionLocations: fixture.authentication.sessionLocations.filter { $0 != "query" },
+            synoTokenLocations: fixture.authentication.synoTokenLocations.filter { $0 != "query" }
+        )
     }
 
     private func authenticationLocations(
@@ -1727,6 +1752,7 @@ private struct RequestFixture: Decodable {
         let synoTokenLocations: [String]
     }
 
+    let fixtureId: String
     let api: API
     let transport: Transport
     let parameters: [Parameter]

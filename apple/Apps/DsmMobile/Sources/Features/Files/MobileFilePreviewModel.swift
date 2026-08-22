@@ -42,11 +42,11 @@ final class MobileFilePreviewModel {
             .appendingPathComponent("LanStashPreviews", isDirectory: true)
     }
 
-    isolated deinit {
+    deinit {
         operationTask?.cancel()
         if let ownedDirectoryURL {
             // 只兜底删除当前实例明确持有的操作目录，不能枚举或清扫共享临时根。
-            try? fileManager.removeItem(at: ownedDirectoryURL)
+            Self.cleanupOwnedDirectoryAfterDeinit(ownedDirectoryURL)
         }
     }
 
@@ -496,6 +496,11 @@ final class MobileFilePreviewModel {
     private func cleanup(_ directory: URL) {
         // 只删除本模型为单次操作创建并持有的独占目录，不枚举或清扫共享临时根。
         try? fileManager.removeItem(at: directory)
+    }
+
+    nonisolated private static func cleanupOwnedDirectoryAfterDeinit(_ directory: URL) {
+        // Swift 6.0 的 deinit 不继承主线程隔离，不能读取模型持有的 FileManager。
+        try? FileManager.default.removeItem(at: directory)
     }
 
     private static func failureCategory(for error: Error) -> AppErrorCategory {

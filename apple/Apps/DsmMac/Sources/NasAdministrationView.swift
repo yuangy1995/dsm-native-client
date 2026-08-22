@@ -590,17 +590,17 @@ private struct ZRAMView: View {
 
     private var statusText: String {
         switch snapshot.isEnabled {
-        case true: L10n.string("zram.status-enabled")
-        case false: L10n.string("zram.status-disabled")
-        case nil: L10n.string("zram.value-unavailable")
+        case .some(true): L10n.string("zram.status-enabled")
+        case .some(false): L10n.string("zram.status-disabled")
+        case .none: L10n.string("zram.value-unavailable")
         }
     }
 
     private var statusIcon: String {
         switch snapshot.isEnabled {
-        case true: "checkmark.circle"
-        case false: "pause.circle"
-        case nil: "questionmark.circle"
+        case .some(true): "checkmark.circle"
+        case .some(false): "pause.circle"
+        case .none: "questionmark.circle"
         }
     }
 
@@ -1078,17 +1078,17 @@ private struct PowerScheduleView: View {
 
     private func statusText(_ enabled: Bool?) -> String {
         switch enabled {
-        case true: L10n.string("power-schedule.status-enabled")
-        case false: L10n.string("power-schedule.status-disabled")
-        case nil: L10n.string("power-schedule.status-unknown")
+        case .some(true): L10n.string("power-schedule.status-enabled")
+        case .some(false): L10n.string("power-schedule.status-disabled")
+        case .none: L10n.string("power-schedule.status-unknown")
         }
     }
 
     private func statusIcon(_ enabled: Bool?) -> String {
         switch enabled {
-        case true: "checkmark.circle"
-        case false: "pause.circle"
-        case nil: "questionmark.circle"
+        case .some(true): "checkmark.circle"
+        case .some(false): "pause.circle"
+        case .none: "questionmark.circle"
         }
     }
 

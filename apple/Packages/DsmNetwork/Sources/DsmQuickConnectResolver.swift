@@ -151,7 +151,7 @@ struct QuickConnectRelayDescriptor {
 public actor DsmQuickConnectResolver: QuickConnectResolving {
     private let session: URLSession
     private let controlURLs: [URL]
-    private let maximumResponseBytes = 1_024 * 1_024
+    private let maximumResponseBytes: Int
 
     public init() {
         let configuration = URLSessionConfiguration.ephemeral
@@ -166,6 +166,17 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
             ? ["global.quickconnect.cn", "global.quickconnect.to"]
             : ["global.quickconnect.to", "global.quickconnect.cn"]
         controlURLs = domains.compactMap { URL(string: "https://\($0)/Serv.php") }
+        maximumResponseBytes = 1_024 * 1_024
+    }
+
+    init(
+        session: URLSession,
+        controlURLs: [URL],
+        maximumResponseBytes: Int = 1_024 * 1_024
+    ) {
+        self.session = session
+        self.controlURLs = controlURLs
+        self.maximumResponseBytes = max(maximumResponseBytes, 1)
     }
 
     public func resolve(id: String) async throws -> [QuickConnectEndpoint] {
@@ -282,13 +293,10 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = body
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await boundedData(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode) else {
             throw QuickConnectResolutionError.serviceUnavailable
-        }
-        guard data.count <= maximumResponseBytes else {
-            throw QuickConnectResolutionError.invalidResponse
         }
         return data
     }
@@ -314,10 +322,9 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
                 var request = URLRequest(url: url)
                 request.timeoutInterval = 15
                 request.setValue("application/json", forHTTPHeaderField: "Accept")
-                let (data, response) = try await session.data(for: request)
+                let (data, response) = try await boundedData(for: request)
                 guard let httpResponse = response as? HTTPURLResponse,
-                      (200..<300).contains(httpResponse.statusCode),
-                      data.count <= maximumResponseBytes else {
+                      (200..<300).contains(httpResponse.statusCode) else {
                     throw QuickConnectResolutionError.relayUnavailable
                 }
                 let pingPong = try JSONDecoder().decode(QuickConnectPingPongResponse.self, from: data)
@@ -336,6 +343,29 @@ public actor DsmQuickConnectResolver: QuickConnectResolving {
             }
         }
         throw QuickConnectResolutionError.relayUnavailable
+    }
+
+    /// QuickConnect 控制响应必须在累积前受限，不能先由 data(for:) 无界缓冲。
+    private func boundedData(
+        for request: URLRequest
+    ) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        guard response.expectedContentLength <= Int64(maximumResponseBytes) else {
+            throw QuickConnectResolutionError.invalidResponse
+        }
+        var data = Data()
+        if response.expectedContentLength > 0 {
+            data.reserveCapacity(
+                min(Int(response.expectedContentLength), maximumResponseBytes)
+            )
+        }
+        for try await byte in bytes {
+            guard data.count < maximumResponseBytes else {
+                throw QuickConnectResolutionError.invalidResponse
+            }
+            data.append(byte)
+        }
+        return (data, response)
     }
 
     static func decodeEndpoints(from data: Data) throws -> [QuickConnectEndpoint] {

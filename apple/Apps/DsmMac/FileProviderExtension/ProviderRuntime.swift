@@ -1,3 +1,4 @@
+import CryptoKit
 import DsmCore
 import DsmNetwork
 import FileProvider
@@ -16,6 +17,12 @@ protocol ProviderRuntimeConfigurationStoring: Sendable {
         mappingID: UUID,
         itemIdentifier: String
     ) async throws -> String?
+    func refreshChangeJournal(
+        mappingID: UUID,
+        containerIdentifier: String,
+        currentItems: [String: FileItem],
+        maximumEntryCount: Int
+    ) async throws -> DesktopDriveChangeJournal
     func recordCacheEntry(
         _ entry: DesktopDriveCacheEntry,
         mappingID: UUID
@@ -57,6 +64,7 @@ struct ProviderRuntimeDependencies: Sendable {
     ) async throws -> Void
     var removeItem: @Sendable (URL) -> Void
     var capacityRecheckIntervalBytes: Int64
+    var changeJournalMaximumEntries: Int
 
     static func live() -> Self {
         let configurationStore = DesktopDriveConfigurationStore()
@@ -94,7 +102,9 @@ struct ProviderRuntimeDependencies: Sendable {
                 )
             },
             removeItem: { try? FileManager.default.removeItem(at: $0) },
-            capacityRecheckIntervalBytes: 8 * 1_024 * 1_024
+            capacityRecheckIntervalBytes: 8 * 1_024 * 1_024,
+            // 仅保留有限增量；更旧锚点交给系统完整重新枚举，避免无限增长。
+            changeJournalMaximumEntries: 2_048
         )
     }
 }
@@ -102,6 +112,69 @@ struct ProviderRuntimeDependencies: Sendable {
 struct ProviderRequestedVersion: Equatable, Sendable {
     let content: Data
     let metadata: Data
+}
+
+struct ProviderChangePage: Sendable {
+    let updatedItems: [ProviderItem]
+    let deletedItemIdentifiers: [NSFileProviderItemIdentifier]
+    let nextAnchor: Data
+    let moreComing: Bool
+}
+
+private struct ProviderChangeAnchor: Equatable, Sendable {
+    private static let prefix = "lanstash-change-v1"
+
+    let containerFingerprint: String
+    let generation: UUID
+    let revision: Int64
+
+    init?(_ data: Data) {
+        guard let raw = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        let components = raw.split(separator: "|", omittingEmptySubsequences: false)
+        guard components.count == 4,
+              components[0] == Self.prefix,
+              !components[1].isEmpty,
+              let generation = UUID(uuidString: String(components[2])),
+              let revision = Int64(components[3]),
+              revision >= 0 else {
+            return nil
+        }
+        containerFingerprint = String(components[1])
+        self.generation = generation
+        self.revision = revision
+    }
+
+    init(
+        mappingID: UUID,
+        containerIdentifier: String,
+        generation: UUID,
+        revision: Int64
+    ) {
+        containerFingerprint = Self.fingerprint(
+            mappingID: mappingID,
+            containerIdentifier: containerIdentifier
+        )
+        self.generation = generation
+        self.revision = revision
+    }
+
+    var rawValue: Data {
+        Data(
+            "\(Self.prefix)|\(containerFingerprint)|\(generation.uuidString.lowercased())|\(revision)".utf8
+        )
+    }
+
+    private static func fingerprint(
+        mappingID: UUID,
+        containerIdentifier: String
+    ) -> String {
+        var input = Data(mappingID.uuidString.lowercased().utf8)
+        input.append(0)
+        input.append(contentsOf: containerIdentifier.utf8)
+        return SHA256.hash(data: input).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 actor ProviderRuntime {
@@ -178,7 +251,7 @@ actor ProviderRuntime {
         let runtime = try await configurationStore.runtime(
             mappingID: context.configuration.mapping.id
         )
-        let folderPath = containerIdentifier == .rootContainer
+        let folderPath = Self.isRootLikeContainer(containerIdentifier)
             ? nil
             : try await remotePath(for: containerIdentifier)
         let pageKey = DesktopDriveMetadataCoordinator.PageKey(
@@ -222,6 +295,91 @@ actor ProviderRuntime {
         return (
             items,
             page.hasMore ? page.offset + page.items.count : nil
+        )
+    }
+
+    /// 获取当前目录的持久化增量锚点，并在首次使用时建立完整基线。
+    func currentChangeAnchor(
+        for containerIdentifier: NSFileProviderItemIdentifier
+    ) async throws -> Data {
+        let context = try await makeContext()
+        let result = try await latestChangeJournal(
+            for: containerIdentifier,
+            context: context
+        )
+        return ProviderChangeAnchor(
+            mappingID: context.configuration.mapping.id,
+            containerIdentifier: result.containerIdentifier,
+            generation: result.journal.generation,
+            revision: result.journal.currentRevision
+        ).rawValue
+    }
+
+    /// 从指定锚点开始返回有限批次的目录更新与删除，旧 generation 或被裁剪的锚点
+    /// 一律交给 File Provider 执行完整重新枚举。
+    func enumerateChanges(
+        for containerIdentifier: NSFileProviderItemIdentifier,
+        from anchorData: Data,
+        limit: Int
+    ) async throws -> ProviderChangePage {
+        let context = try await makeContext()
+        let result = try await latestChangeJournal(
+            for: containerIdentifier,
+            context: context
+        )
+        guard let anchor = ProviderChangeAnchor(anchorData),
+              anchor == ProviderChangeAnchor(
+                mappingID: context.configuration.mapping.id,
+                containerIdentifier: result.containerIdentifier,
+                generation: result.journal.generation,
+                revision: anchor.revision
+              ),
+              anchor.revision >= result.journal.minimumAnchorRevision,
+              anchor.revision <= result.journal.currentRevision else {
+            throw NSFileProviderError(.syncAnchorExpired)
+        }
+
+        let maximumCount = max(limit, 1)
+        let pending = result.journal.entries.filter {
+            $0.revision > anchor.revision
+        }
+        let entries = Array(pending.prefix(maximumCount))
+        let runtime = try await configurationStore.runtime(
+            mappingID: context.configuration.mapping.id
+        )
+        var updatedItems: [ProviderItem] = []
+        var deletedItemIdentifiers: [NSFileProviderItemIdentifier] = []
+        for entry in entries {
+            switch entry.kind {
+            case .updated:
+                guard let item = entry.item else {
+                    throw NSFileProviderError(.syncAnchorExpired)
+                }
+                updatedItems.append(
+                    ProviderItem(
+                        fileItem: item,
+                        mapping: context.configuration.mapping,
+                        keptOffline: runtime.keepsOffline(item.path)
+                    )
+                )
+            case .deleted:
+                deletedItemIdentifiers.append(
+                    NSFileProviderItemIdentifier(entry.itemIdentifier)
+                )
+            }
+        }
+        let nextRevision = entries.last?.revision ?? result.journal.currentRevision
+        let nextAnchor = ProviderChangeAnchor(
+            mappingID: context.configuration.mapping.id,
+            containerIdentifier: result.containerIdentifier,
+            generation: result.journal.generation,
+            revision: nextRevision
+        ).rawValue
+        return ProviderChangePage(
+            updatedItems: updatedItems,
+            deletedItemIdentifiers: deletedItemIdentifiers,
+            nextAnchor: nextAnchor,
+            moreComing: pending.count > entries.count
         )
     }
 
@@ -645,6 +803,124 @@ actor ProviderRuntime {
         }
     }
 
+    private func latestChangeJournal(
+        for containerIdentifier: NSFileProviderItemIdentifier,
+        context: (
+            configuration: DesktopDriveProviderConfiguration,
+            repository: any ProviderRuntimeRepository
+        )
+    ) async throws -> (
+        journal: DesktopDriveChangeJournal,
+        containerIdentifier: String
+    ) {
+        let folderPath = try await folderPath(
+            for: containerIdentifier
+        )
+        let items = try await allItems(
+            in: folderPath,
+            context: context
+        )
+        let snapshot = try Self.makeChangeSnapshot(
+            from: items,
+            mappingID: context.configuration.mapping.id
+        )
+        let journalContainerIdentifier = Self.journalContainerIdentifier(
+            for: containerIdentifier
+        )
+        let journal = try await configurationStore.refreshChangeJournal(
+            mappingID: context.configuration.mapping.id,
+            containerIdentifier: journalContainerIdentifier,
+            currentItems: snapshot,
+            maximumEntryCount: dependencies.changeJournalMaximumEntries
+        )
+        // 增量扫描直接读取远端，结果优先于短期元数据缓存。
+        await metadata.invalidate(paths: [
+            folderPath ?? Self.rootPath(for: context.configuration.mapping)
+        ])
+        return (journal, journalContainerIdentifier)
+    }
+
+    private func allItems(
+        in folderPath: String?,
+        context: (
+            configuration: DesktopDriveProviderConfiguration,
+            repository: any ProviderRuntimeRepository
+        )
+    ) async throws -> [FileItem] {
+        var offset = 0
+        var pageCount = 0
+        var items: [FileItem] = []
+        while true {
+            try Task.checkCancellation()
+            guard pageCount < 1_000 else {
+                throw NSFileProviderError(.cannotSynchronize)
+            }
+            let page: FilePage
+            if let folderPath {
+                page = try await context.repository.listFolder(
+                    path: folderPath,
+                    offset: offset,
+                    limit: 500
+                )
+            } else {
+                switch context.configuration.mapping.scope {
+                case .allShares:
+                    page = try await context.repository.listShares(
+                        offset: offset,
+                        limit: 500
+                    )
+                case .folder(let path):
+                    page = try await context.repository.listFolder(
+                        path: path,
+                        offset: offset,
+                        limit: 500
+                    )
+                }
+            }
+            guard page.offset == offset else {
+                throw NSFileProviderError(.cannotSynchronize)
+            }
+            items.append(contentsOf: page.items)
+            guard page.hasMore else { return items }
+            let nextOffset = page.offset.addingReportingOverflow(page.items.count)
+            guard !nextOffset.overflow, nextOffset.partialValue > offset else {
+                throw NSFileProviderError(.cannotSynchronize)
+            }
+            offset = nextOffset.partialValue
+            pageCount += 1
+        }
+    }
+
+    private func folderPath(
+        for containerIdentifier: NSFileProviderItemIdentifier
+    ) async throws -> String? {
+        guard !Self.isRootLikeContainer(containerIdentifier) else {
+            return nil
+        }
+        return try await remotePath(for: containerIdentifier)
+    }
+
+    private static func makeChangeSnapshot(
+        from items: [FileItem],
+        mappingID: UUID
+    ) throws -> [String: FileItem] {
+        var snapshot: [String: FileItem] = [:]
+        for item in items {
+            guard DesktopDrivePath.normalized(item.path) != nil,
+                  let identifier = DesktopDriveItemIdentity.identifier(
+                    mappingID: mappingID,
+                    remotePath: item.path
+                  ) else {
+                throw NSFileProviderError(.cannotSynchronize)
+            }
+            if let previous = snapshot[identifier], previous != item {
+                throw NSFileProviderError(.cannotSynchronize)
+            }
+            snapshot[identifier] = item
+        }
+        return snapshot
+    }
+
     private func makeContext() async throws -> (
         configuration: DesktopDriveProviderConfiguration,
         repository: any ProviderRuntimeRepository
@@ -702,6 +978,20 @@ actor ProviderRuntime {
         case .folder(let path):
             return DesktopDrivePath.normalized(path) ?? "/"
         }
+    }
+
+    private static func isRootLikeContainer(
+        _ identifier: NSFileProviderItemIdentifier
+    ) -> Bool {
+        identifier == .rootContainer || identifier == .workingSet
+    }
+
+    private static func journalContainerIdentifier(
+        for identifier: NSFileProviderItemIdentifier
+    ) -> String {
+        isRootLikeContainer(identifier)
+            ? NSFileProviderItemIdentifier.rootContainer.rawValue
+            : identifier.rawValue
     }
 
     fileprivate static func domain(

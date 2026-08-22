@@ -32,22 +32,26 @@ fail() {
 
 validate_xcode_source_membership() {
     local project_file="$SCRIPT_DIR/DsmMac.xcodeproj/project.pbxproj"
+    local source_directory=""
     local source_file=""
     local source_name=""
     local missing_sources=()
 
     [[ -f "$project_file" ]] || fail "找不到 Xcode 项目文件：$project_file"
-    shopt -s nullglob
-    for source_file in "$SCRIPT_DIR/Sources/"*.swift; do
-        source_name="$(basename "$source_file")"
-        if ! /usr/bin/grep -Fq "/* $source_name in Sources */" "$project_file"; then
-            missing_sources[${#missing_sources[@]}]="$source_name"
-        fi
+    # 主 App 与 File Provider 扩展都必须进入对应构建阶段；避免新建扩展源码只停留在磁盘上。
+    for source_directory in "$SCRIPT_DIR/Sources" "$SCRIPT_DIR/FileProviderExtension"; do
+        shopt -s nullglob
+        for source_file in "$source_directory/"*.swift; do
+            source_name="$(basename "$source_file")"
+            if ! /usr/bin/grep -Fq "/* $source_name in Sources */" "$project_file"; then
+                missing_sources[${#missing_sources[@]}]="$source_name"
+            fi
+        done
+        shopt -u nullglob
     done
-    shopt -u nullglob
 
     if [[ ${#missing_sources[@]} -gt 0 ]]; then
-        fail "以下源码尚未加入 macOS App 构建目标：${missing_sources[*]}"
+        fail "以下源码尚未加入 macOS 构建目标：${missing_sources[*]}"
     fi
 }
 
@@ -241,7 +245,7 @@ else
     configure_package
 fi
 
-for command in xcodebuild codesign diskutil hdiutil ditto lipo open; do
+for command in xcodebuild codesign hdiutil ditto lipo open; do
     command -v "$command" >/dev/null 2>&1 || fail "未找到命令 ${command}，请先安装完整 Xcode"
 done
 
@@ -396,10 +400,12 @@ ln -s /Applications "$STAGING_DIR/Applications"
 
 echo "==> 生成 DMG"
 /bin/rm -f -- "$DMG_PATH"
-/usr/sbin/diskutil image create from \
-    --volumeName "$PRODUCT_NAME $VERSION" \
-    --format UDZO \
-    "$STAGING_DIR" \
+# hdiutil 在 macOS 15 与更高版本均支持此格式；diskutil 的 image 子命令参数并不稳定。
+/usr/bin/hdiutil create \
+    -volname "$PRODUCT_NAME $VERSION" \
+    -srcfolder "$STAGING_DIR" \
+    -format UDZO \
+    -ov \
     "$DMG_PATH"
 
 echo "==> 验证 DMG"

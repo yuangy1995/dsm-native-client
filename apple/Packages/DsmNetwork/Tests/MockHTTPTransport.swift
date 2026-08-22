@@ -6,6 +6,7 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
     enum Step: Sendable {
         case response(DsmHTTPResponse)
         case urlError(URLError.Code)
+        case responseTooLarge
         case waitUntilCancelled
     }
 
@@ -13,6 +14,8 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
     private var requests: [URLRequest] = []
     private var requestCancellationStates: [Bool] = []
     private var uploadBodies: [Data] = []
+    private var cancellationWaiters: [UUID: CheckedContinuation<Void, Error>] = [:]
+    private var pendingCancelledWaiterIDs: Set<UUID> = []
 
     init(responses: [DsmHTTPResponse]) {
         steps = responses.map(Step.response)
@@ -33,9 +36,11 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
             return response
         case .urlError(let code):
             throw URLError(code)
+        case .responseTooLarge:
+            throw DsmTransportError.responseTooLarge
         case .waitUntilCancelled:
-            try await Task.sleep(nanoseconds: UInt64.max)
-            throw URLError(.cancelled)
+            try await waitUntilCancelled()
+            throw CancellationError()
         }
     }
 
@@ -49,6 +54,39 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
 
     func recordedUploadBodies() -> [Data] {
         uploadBodies
+    }
+
+    // 不能以 UInt64.max 休眠模拟无限等待：旧 Swift 运行时可能提前结束，破坏取消测试的同步屏障。
+    private func waitUntilCancelled() async throws {
+        let waiterID = UUID()
+        try await withTaskCancellationHandler(
+            operation: {
+                try await self.suspendUntilCancelled(waiterID)
+            },
+            onCancel: {
+                Task {
+                    await self.cancelWaiter(waiterID)
+                }
+            }
+        )
+    }
+
+    private func suspendUntilCancelled(_ waiterID: UUID) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            if pendingCancelledWaiterIDs.remove(waiterID) != nil {
+                continuation.resume(throwing: CancellationError())
+            } else {
+                cancellationWaiters[waiterID] = continuation
+            }
+        }
+    }
+
+    private func cancelWaiter(_ waiterID: UUID) {
+        if let continuation = cancellationWaiters.removeValue(forKey: waiterID) {
+            continuation.resume(throwing: CancellationError())
+        } else {
+            pendingCancelledWaiterIDs.insert(waiterID)
+        }
     }
 
     func download(

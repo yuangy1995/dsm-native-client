@@ -146,6 +146,7 @@ func resourceList<Item: Identifiable>(
     }
 }
 
+@MainActor
 func summaryLine(_ label: String, _ value: String) -> some View {
     HStack {
         Text(label)
@@ -174,6 +175,7 @@ func fileIcon(_ item: FileItem) -> String {
     }
 }
 
+@MainActor
 func statusIcon(_ status: String) -> some View {
     let normalized = status.lowercased()
     let image = if normalized.contains("down") || normalized.contains("seed") {

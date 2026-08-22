@@ -1,5 +1,5 @@
 <!-- doc-role: platform-matrix -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-08-22 -->
 
 # 平台功能矩阵
 
@@ -35,6 +35,19 @@
 | iPad | 已建立与 iPhone 共用的移动核心和宽屏路径。 | 本轮已通过共享 Package 与独立 iPad 模拟器构建。 | 未验证：分栏、键盘、多任务、VoiceOver 与真实 NAS。 | 未发布：不以 iPhone 结果替代。 |
 | Android | 已建立 Compose 客户端、后台任务和质量门。 | 单元、增量构建与 JSON 质量基线可重跑；完整门禁由托管 Runner 执行。 | 未验证：真实设备、证书、后台、危险写和 NAS。 | 未发布：等待完整构建与设备验收。 |
 | Windows | 已建立 WinUI、领域与基础设施路径；系统集成写操作保持关闭或只读。 | xUnit、XAML 和目标架构构建由 Windows Runner 执行。 | 未验证：Explorer、Cloud Files、通知、安装和真实 NAS。 | 未发布：不改变当前发布形态。 |
+
+## SEC-002：File Station 上传认证位置
+
+此项是 macOS 发布整改的受限安全收敛，不代表五端都已完成同一迁移。共享
+`file-station.upload.synthetic-overwrite` Fixture 仍记录 Android 的旧 URL 认证位置；它不能
+降低 Apple 的 URL 凭据禁止要求。
+
+| 平台 | 当前证据与范围 |
+| --- | --- |
+| macOS | Apple 共享网络层已禁止文件读取和上传 URL 携带会话或 Token，并有合成请求测试；真实 DSM、重定向和发布环境仍待验收。 |
+| iPhone / iPad | 与 macOS 复用 Apple 网络层；本轮没有运行单独移动构建或真机验证。 |
+| Android | File Station 上传仍使用 URL 认证字段，测试也明确记录该现状；迁移需要独立授权、契约更新和 Android 门禁。 |
+| Windows | File Station 上传 URI 已不含会话或 Token，使用 Cookie、Header 和 multipart；本轮只读核实，未执行 Windows 发布验收。 |
 
 ## 用户能力范围
 

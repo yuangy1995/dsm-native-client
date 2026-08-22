@@ -2485,7 +2485,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         let bodySize = try bodyURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         request.setValue(String(bodySize), forHTTPHeaderField: "Content-Length")
 
-        let response = try await binaryTransport.upload(request, from: bodyURL) { _, _ in }
+        let response: DsmHTTPResponse
+        do {
+            response = try await binaryTransport.upload(request, from: bodyURL) { _, _ in }
+        } catch is DsmTransportError {
+            throw DsmErrorMapper.map(.responseTooLarge(requestID: UUID()))
+        }
         guard (200..<300).contains(response.statusCode) else {
             throw AppError(
                 category: .invalidResponse,

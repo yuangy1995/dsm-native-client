@@ -205,6 +205,7 @@ actor DsmChatRealtimeClient {
         activeSocket = socket
         socket.resume()
         defer {
+            tlsDelegate.unregisterTask(socket)
             socket.cancel(with: .goingAway, reason: nil)
             session.invalidateAndCancel()
             if activeSocket === socket { activeSocket = nil }
@@ -218,7 +219,7 @@ actor DsmChatRealtimeClient {
             do {
                 message = try await socket.receive()
             } catch {
-                if let trustError = tlsDelegate.consumeFailure() {
+                if let trustError = tlsDelegate.consumeFailure(for: socket) {
                     throw trustError
                 }
                 throw error

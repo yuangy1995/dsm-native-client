@@ -1042,7 +1042,7 @@ final class DsmFileRepositoryTests: XCTestCase {
         }
     }
 
-    func test二进制下载写入目标且凭据在URL中() async throws {
+    func test二进制下载写入目标且凭据不进入URL() async throws {
         let response = DsmHTTPResponse(
             data: Data("hello".utf8),
             statusCode: 200,
@@ -1072,6 +1072,35 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=0-4")
         XCTAssertNotNil(request.url?.query)
         XCTAssertTrue(request.url?.absoluteString.contains("api=SYNO.FileStation.Download") == true)
+        XCTAssertFalse(request.url?.absoluteString.contains("REDACTED_SESSION") == true)
+    }
+
+    func test下载中断时保留已有目标文件() async throws {
+        let transport = PartialWriteFailureTransport()
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(DsmAPIName.fileStationDownload, version: 2)
+            ]),
+            transport: transport
+        )
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DsmFileRepositoryTests-Existing-\(UUID().uuidString).txt")
+        let oldContents = Data("already-downloaded".utf8)
+        try oldContents.write(to: destination)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        do {
+            try await repository.download(
+                remotePath: "/projects/a.txt",
+                to: destination,
+                expectedSize: nil
+            ) { _, _ in }
+            XCTFail("中断下载不应报告成功。")
+        } catch {
+            // 预期：底层在临时分片写入后失败。
+        }
+
+        XCTAssertEqual(try Data(contentsOf: destination), oldContents)
     }
 
     func test下载返回错误JSON时抛出异常() async throws {
@@ -1347,9 +1376,10 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(uploadQuery["api"], "SYNO.FileStation.Upload")
         XCTAssertEqual(uploadQuery["version"], "2")
         XCTAssertEqual(uploadQuery["method"], "upload")
-        XCTAssertEqual(uploadQuery["_sid"], "REDACTED_SESSION")
-        XCTAssertEqual(uploadQuery["SynoToken"], "REDACTED_SESSION")
-        XCTAssertEqual(uploadQuery["synotoken"], "REDACTED_SESSION")
+        XCTAssertNil(uploadQuery["_sid"])
+        XCTAssertNil(uploadQuery["SynoToken"])
+        XCTAssertNil(uploadQuery["synotoken"])
+        XCTAssertFalse(uploadRequest.url?.absoluteString.contains("REDACTED_SESSION") == true)
     }
 
     func test上传同名冲突显示可执行提示() async throws {
@@ -3949,7 +3979,7 @@ final class DsmFileRepositoryTests: XCTestCase {
 
     private func makeRepository(
         capabilities: CapabilitySet,
-        transport: MockHTTPTransport,
+        transport: any DsmBinaryHTTPTransport,
         directorySizePollingPolicy: DirectorySizePollingPolicy = .production,
         profile suppliedProfile: NasProfile? = nil
     ) throws -> DsmFileRepository {
@@ -3981,6 +4011,30 @@ final class DsmFileRepositoryTests: XCTestCase {
             requestFormat: .form,
             selectedVersion: version
         )
+    }
+}
+
+private actor PartialWriteFailureTransport: DsmBinaryHTTPTransport {
+    func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
+        throw URLError(.networkConnectionLost)
+    }
+
+    func download(
+        _ request: URLRequest,
+        to destinationURL: URL,
+        progress: @escaping FileTransferProgress
+    ) async throws -> DsmHTTPResponse {
+        try Data("incomplete".utf8).write(to: destinationURL)
+        progress(10, nil)
+        throw URLError(.networkConnectionLost)
+    }
+
+    func upload(
+        _ request: URLRequest,
+        from bodyFileURL: URL,
+        progress: @escaping FileTransferProgress
+    ) async throws -> DsmHTTPResponse {
+        throw URLError(.networkConnectionLost)
     }
 }
 

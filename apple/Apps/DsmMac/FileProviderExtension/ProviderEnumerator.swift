@@ -6,7 +6,7 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
     private let runtime: ProviderRuntime
     private let operations = ProviderOperationRegistry()
     private let pageSize = 500
-    private let anchor = NSFileProviderSyncAnchor(Data("v1".utf8))
+    private let changePageSize = 200
 
     init(
         containerIdentifier: NSFileProviderItemIdentifier,
@@ -19,6 +19,9 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
 
     func invalidate() {
         operations.cancelAll()
+        Task {
+            await runtime.invalidate()
+        }
     }
 
     func enumerateItems(
@@ -52,13 +55,52 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
         for observer: NSFileProviderChangeObserver,
         from anchor: NSFileProviderSyncAnchor
     ) {
-        observer.finishEnumeratingChanges(upTo: self.anchor, moreComing: false)
+        let observerBox = UncheckedSendableBox(observer)
+        let operationID = UUID()
+        let operation = Task {
+            defer { operations.remove(operationID) }
+            do {
+                let result = try await runtime.enumerateChanges(
+                    for: containerIdentifier,
+                    from: anchor.rawValue,
+                    limit: changePageSize
+                )
+                if !result.updatedItems.isEmpty {
+                    observerBox.value.didUpdate(result.updatedItems)
+                }
+                if !result.deletedItemIdentifiers.isEmpty {
+                    observerBox.value.didDeleteItems(
+                        withIdentifiers: result.deletedItemIdentifiers
+                    )
+                }
+                observerBox.value.finishEnumeratingChanges(
+                    upTo: NSFileProviderSyncAnchor(result.nextAnchor),
+                    moreComing: result.moreComing
+                )
+            } catch {
+                observerBox.value.finishEnumeratingWithError(error)
+            }
+        }
+        operations.insert(operation, id: operationID)
     }
 
     func currentSyncAnchor(
         completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void
     ) {
-        completionHandler(anchor)
+        let completionBox = UncheckedSendableBox(completionHandler)
+        let operationID = UUID()
+        let operation = Task {
+            defer { operations.remove(operationID) }
+            do {
+                let anchor = try await runtime.currentChangeAnchor(
+                    for: containerIdentifier
+                )
+                completionBox.value(NSFileProviderSyncAnchor(anchor))
+            } catch {
+                completionBox.value(nil)
+            }
+        }
+        operations.insert(operation, id: operationID)
     }
 }
 

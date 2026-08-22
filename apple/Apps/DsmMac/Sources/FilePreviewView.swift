@@ -235,14 +235,17 @@ final class DsmAVAssetResourceLoaderDelegate: NSObject, AVAssetResourceLoaderDel
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        guard request.url?.host?.lowercased() == source.expectedHost.lowercased() else {
+        guard let redirectedRequest = MediaStreamRedirectPolicy.redirectedRequest(
+            from: source.request,
+            proposedRequest: request
+        ) else {
             completionHandler(nil)
             if let dataTask = task as? URLSessionDataTask {
                 finish(dataTask, message: L10n.string("ui.dea6a9f8ea69e6d9"))
             }
             return
         }
-        completionHandler(request)
+        completionHandler(redirectedRequest)
     }
 
     // MARK: - URLSessionDelegate (TLS)

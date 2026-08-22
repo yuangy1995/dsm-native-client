@@ -1715,8 +1715,10 @@ public actor DsmFileRepository: FileRepository {
             do {
                 while completed < expectedSize {
                     try Task.checkCancellation()
-                    let segmentURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(".\(UUID().uuidString).lanstash.segment")
+                    let segmentURL = localURL.deletingLastPathComponent()
+                        .appendingPathComponent(
+                            ".\(localURL.lastPathComponent).\(UUID().uuidString).lanstash.segment"
+                        )
                     defer { try? FileManager.default.removeItem(at: segmentURL) }
 
                     var request = baseRequest
@@ -1739,9 +1741,6 @@ public actor DsmFileRepository: FileRepository {
                         try Self.appendFile(at: segmentURL, to: partURL)
                     } else {
                         // 服务器忽略 Range 时会返回完整文件，直接替换残留片段以避免数据重复。
-                        if FileManager.default.fileExists(atPath: partURL.path) {
-                            try FileManager.default.removeItem(at: partURL)
-                        }
                         try Self.safeReplaceFile(from: segmentURL, to: partURL)
                     }
                     completed = Self.fileSize(at: partURL)
@@ -1821,7 +1820,7 @@ public actor DsmFileRepository: FileRepository {
         let identity = "\(profileID.uuidString)|\(remotePath)|\(expectedSize ?? -1)"
         let digest = SHA256.hash(data: Data(identity.utf8))
         let suffix = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-        return FileManager.default.temporaryDirectory
+        return localURL.deletingLastPathComponent()
             .appendingPathComponent(".\(localURL.lastPathComponent).\(suffix).lanstash.part")
     }
 
@@ -1860,29 +1859,14 @@ public actor DsmFileRepository: FileRepository {
             try Task.checkCancellation()
             try writer.write(contentsOf: data)
         }
+        try writer.synchronize()
     }
 
     private static func safeReplaceFile(from sourceURL: URL, to destinationURL: URL) throws {
-        if !FileManager.default.fileExists(atPath: destinationURL.path) {
-            guard FileManager.default.createFile(atPath: destinationURL.path, contents: nil) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-        } else {
-            let handle = try FileHandle(forWritingTo: destinationURL)
-            try handle.truncate(atOffset: 0)
-            try handle.close()
-        }
-        
-        let reader = try FileHandle(forReadingFrom: sourceURL)
-        let writer = try FileHandle(forWritingTo: destinationURL)
-        defer {
-            try? reader.close()
-            try? writer.close()
-        }
-        while let data = try reader.read(upToCount: 4 * 1024 * 1024), !data.isEmpty {
-            try Task.checkCancellation()
-            try writer.write(contentsOf: data)
-        }
+        try AtomicFilePromotion.promote(
+            from: sourceURL,
+            to: destinationURL
+        )
     }
 
     public func upload(
@@ -1930,11 +1914,6 @@ public actor DsmFileRepository: FileRepository {
                 queryItems.append(URLQueryItem(name: "api", value: capability.name))
                 queryItems.append(URLQueryItem(name: "version", value: String(try selectedVersion(capability))))
                 queryItems.append(URLQueryItem(name: "method", value: "upload"))
-                queryItems.append(URLQueryItem(name: "_sid", value: credential.sid))
-                if let synoToken = credential.synoToken, !synoToken.isEmpty {
-                    queryItems.append(URLQueryItem(name: "SynoToken", value: synoToken))
-                    queryItems.append(URLQueryItem(name: "synotoken", value: synoToken))
-                }
                 components.queryItems = queryItems
                 if let resolvedURL = components.url {
                     uploadURL = resolvedURL
@@ -2101,11 +2080,6 @@ public actor DsmFileRepository: FileRepository {
             queryItems.append(URLQueryItem(name: "api", value: capability.name))
             queryItems.append(URLQueryItem(name: "version", value: String(try selectedVersion(capability))))
             queryItems.append(URLQueryItem(name: "method", value: "upload"))
-            queryItems.append(URLQueryItem(name: "_sid", value: credential.sid))
-            if let synoToken = credential.synoToken, !synoToken.isEmpty {
-                queryItems.append(URLQueryItem(name: "SynoToken", value: synoToken))
-                queryItems.append(URLQueryItem(name: "synotoken", value: synoToken))
-            }
             components.queryItems = queryItems
             uploadURL = components.url ?? uploadURL
         }
@@ -5858,6 +5832,13 @@ public actor DsmFileRepository: FileRepository {
         }
         if error is AppError || error is DsmCertificateTrustError {
             return error
+        }
+        if error is DsmTransportError {
+            return AppError(
+                category: .invalidResponse,
+                isRetryable: false,
+                safeUserMessage: L10n.string("shared.f98d542d79142efa")
+            )
         }
         if let error = error as? URLError {
             return DsmErrorMapper.map(
