@@ -203,6 +203,7 @@ actor DsmChatRealtimeClient {
         let socket = session.webSocketTask(with: request)
         activeSession = session
         activeSocket = socket
+        tlsDelegate.registerTaskForTrustFailures(socket)
         socket.resume()
         defer {
             tlsDelegate.unregisterTask(socket)
@@ -219,6 +220,9 @@ actor DsmChatRealtimeClient {
             do {
                 message = try await socket.receive()
             } catch {
+                if Task.isCancelled {
+                    throw CancellationError()
+                }
                 if let trustError = tlsDelegate.consumeFailure(for: socket) {
                     throw trustError
                 }

@@ -33,10 +33,23 @@ public struct DesktopDriveProviderConfiguration: Codable, Equatable, Sendable {
     }
 }
 
+/// 完整远端扫描开始时观察到的 journal 状态。提交阶段必须与磁盘上的当前状态
+/// 完全一致，才能把该扫描折算为新的增量事件。
+public struct DesktopDriveChangeJournalRevision: Equatable, Sendable {
+    public let generation: UUID
+    public let revision: Int64
+
+    public init(generation: UUID, revision: Int64) {
+        self.generation = generation
+        self.revision = revision
+    }
+}
+
 public enum DesktopDriveConfigurationStoreError: Error, Equatable, Sendable {
     case sharedContainerUnavailable
     case connectionUnavailable
     case invalidStateTransition
+    case staleChangeJournal
 }
 
 public actor DesktopDriveConfigurationStore {
@@ -376,15 +389,39 @@ public actor DesktopDriveConfigurationStore {
         }
     }
 
+    /// 返回扫描开始时需携带到提交阶段的当前 journal revision。
+    ///
+    /// `nil` 表示尚未建立可重放 journal；调用方提交时仍必须带回 `nil`，以便
+    /// 拒绝扫描期间由其他 Extension 实例写入的首个基线。
+    public func changeJournalRevision(
+        mappingID: UUID,
+        containerIdentifier: String
+    ) throws -> DesktopDriveChangeJournalRevision? {
+        try readSnapshot { snapshot in
+            guard snapshot.mappings[mappingID] != nil else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            guard let journal = snapshot.changeJournals?[mappingID]?[containerIdentifier],
+                  journal.isValid else {
+                return nil
+            }
+            return DesktopDriveChangeJournalRevision(
+                generation: journal.generation,
+                revision: journal.currentRevision
+            )
+        }
+    }
+
     /// 基于一份完整目录快照原子地更新持久化变化日志。
     ///
-    /// 目录扫描发生在锁外，但与磁盘上最新日志的比较、修订号递增和写回在同一文件锁内
-    /// 完成，因此 Extension 重启或并发实例不会丢弃已记录的变化。
+    /// 目录扫描发生在锁外。提交时同时比较扫描起点的 generation/revision 与磁盘最新
+    /// 状态；不一致即拒绝旧扫描，避免慢扫描在文件锁内倒退较新快照或制造虚假删除。
     public func refreshChangeJournal(
         mappingID: UUID,
         containerIdentifier: String,
         currentItems: [String: FileItem],
-        maximumEntryCount: Int
+        maximumEntryCount: Int,
+        expectedRevision: DesktopDriveChangeJournalRevision?
     ) throws -> DesktopDriveChangeJournal {
         var result: DesktopDriveChangeJournal?
         try updateSnapshot { snapshot in
@@ -393,6 +430,18 @@ public actor DesktopDriveConfigurationStore {
             }
 
             let existing = snapshot.changeJournals?[mappingID]?[containerIdentifier]
+            let currentRevision: DesktopDriveChangeJournalRevision?
+            if let existing, existing.isValid {
+                currentRevision = DesktopDriveChangeJournalRevision(
+                    generation: existing.generation,
+                    revision: existing.currentRevision
+                )
+            } else {
+                currentRevision = nil
+            }
+            guard currentRevision == expectedRevision else {
+                throw DesktopDriveConfigurationStoreError.staleChangeJournal
+            }
             let previousIdentifiers: Set<String>
             if let existing, existing.isValid {
                 previousIdentifiers = Set(existing.snapshot.keys)
@@ -431,7 +480,16 @@ public actor DesktopDriveConfigurationStore {
                 pathIndex[identifier] = item.path
             }
             for identifier in previousIdentifiers where journal.snapshot[identifier] == nil {
-                pathIndex[identifier] = nil
+                // root、子目录与 working set 使用独立 journal，但共用不透明 item
+                // identifier 的路径索引。仅当所有有效 journal 都不再引用该项目时
+                // 才能删除索引，避免 working set 的自然收缩破坏 root 中仍可见项目。
+                let isStillReferenced = snapshot.changeJournals?[mappingID]?.values
+                    .contains {
+                        $0.isValid && $0.snapshot[identifier] != nil
+                    } ?? false
+                if !isStillReferenced {
+                    pathIndex[identifier] = nil
+                }
             }
             if snapshot.itemPaths == nil {
                 snapshot.itemPaths = [:]

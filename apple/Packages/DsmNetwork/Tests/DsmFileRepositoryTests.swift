@@ -1138,12 +1138,15 @@ final class DsmFileRepositoryTests: XCTestCase {
     }
 
     func test下载从已有分片继续() async throws {
-        let response = DsmHTTPResponse(
-            data: Data("llo".utf8),
-            statusCode: 206,
-            headers: ["content-type": "application/octet-stream"]
-        )
-        let transport = MockHTTPTransport(responses: [response])
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data("llo".utf8),
+                start: 2,
+                end: 4,
+                total: 5,
+                etag: "\"version-one\""
+            )
+        ])
         let repository = try makeRepository(
             capabilities: CapabilitySet([
                 DsmAPIName.fileStationDownload: capability(DsmAPIName.fileStationDownload, version: 2)
@@ -1158,6 +1161,12 @@ final class DsmFileRepositoryTests: XCTestCase {
         let partURL = destination.deletingLastPathComponent()
             .appendingPathComponent(".\(destination.lastPathComponent).\(suffix).lanstash.part")
         try Data("he".utf8).write(to: partURL)
+        try writeResumeMetadata(
+            partURL: partURL,
+            identityDigest: digest.map { String(format: "%02x", $0) }.joined(),
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
 
         try await repository.download(
             remotePath: "/projects/a.txt",
@@ -1169,18 +1178,589 @@ final class DsmFileRepositoryTests: XCTestCase {
         let requests = await transport.recordedRequests()
         let request = try XCTUnwrap(requests.first)
         XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=2-4")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "If-Range"), "\"version-one\"")
         try? FileManager.default.removeItem(at: destination)
         try? FileManager.default.removeItem(at: partURL)
+        try? FileManager.default.removeItem(
+            at: partURL.appendingPathExtension("metadata")
+        )
+    }
+
+    func test同路径同大小但ETag变化会丢弃旧断点并从零开始() async throws {
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data("rld".utf8),
+                start: 2,
+                end: 4,
+                total: 5,
+                etag: "\"version-two\""
+            ),
+            rangedBinaryResponse(
+                Data("world".utf8),
+                start: 0,
+                end: 4,
+                total: 5,
+                etag: "\"version-two\""
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("ChangedETag")
+        let artifacts = partialDownloadArtifacts(
+            repository: repository,
+            remotePath: "/projects/a.txt",
+            expectedSize: 5,
+            destination: destination
+        )
+        defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+        try Data("he".utf8).write(to: artifacts.partURL)
+        try writeResumeMetadata(
+            partURL: artifacts.partURL,
+            identityDigest: artifacts.identityDigest,
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
+
+        try await repository.download(
+            remotePath: "/projects/a.txt",
+            to: destination,
+            expectedSize: 5
+        ) { _, _ in }
+
+        XCTAssertEqual(try Data(contentsOf: destination), Data("world".utf8))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "Range") }, [
+            "bytes=2-4",
+            "bytes=0-4",
+        ])
+        XCTAssertEqual(
+            requests[0].value(forHTTPHeaderField: "If-Range"),
+            "\"version-one\""
+        )
+        XCTAssertNil(requests[1].value(forHTTPHeaderField: "If-Range"))
+    }
+
+    func test下载中远端版本改变不会混合不同分段() async throws {
+        let defaults = UserDefaults.standard
+        let previousChunkSize = defaults.object(forKey: "LanStash_DownloadChunkSize")
+        defaults.set(4, forKey: "LanStash_DownloadChunkSize")
+        defer {
+            if let previousChunkSize {
+                defaults.set(previousChunkSize, forKey: "LanStash_DownloadChunkSize")
+            } else {
+                defaults.removeObject(forKey: "LanStash_DownloadChunkSize")
+            }
+        }
+        let chunkSize = 4 * 1_024 * 1_024
+        let expectedSize = Int64(chunkSize + 1)
+        let oldChunk = Data(repeating: 0x41, count: chunkSize)
+        let newChunk = Data(repeating: 0x42, count: chunkSize)
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                oldChunk,
+                start: 0,
+                end: Int64(chunkSize - 1),
+                total: expectedSize,
+                etag: "\"version-one\""
+            ),
+            rangedBinaryResponse(
+                Data([0x42]),
+                start: Int64(chunkSize),
+                end: Int64(chunkSize),
+                total: expectedSize,
+                etag: "\"version-two\""
+            ),
+            rangedBinaryResponse(
+                newChunk,
+                start: 0,
+                end: Int64(chunkSize - 1),
+                total: expectedSize,
+                etag: "\"version-two\""
+            ),
+            rangedBinaryResponse(
+                Data([0x42]),
+                start: Int64(chunkSize),
+                end: Int64(chunkSize),
+                total: expectedSize,
+                etag: "\"version-two\""
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("ChangedDuringDownload")
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        try await repository.download(
+            remotePath: "/projects/large.bin",
+            to: destination,
+            expectedSize: expectedSize
+        ) { _, _ in }
+
+        let expected = newChunk + Data([0x42])
+        XCTAssertEqual(
+            SHA256.hash(data: try Data(contentsOf: destination)),
+            SHA256.hash(data: expected)
+        )
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 4)
+        XCTAssertEqual(
+            requests[1].value(forHTTPHeaderField: "If-Range"),
+            "\"version-one\""
+        )
+        XCTAssertEqual(requests[2].value(forHTTPHeaderField: "Range"), "bytes=0-\(chunkSize - 1)")
+        XCTAssertNil(requests[2].value(forHTTPHeaderField: "If-Range"))
+    }
+
+    func test分段下载拒绝错误起始位置并丢弃断点() async throws {
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data("llo".utf8),
+                start: 1,
+                end: 3,
+                total: 5,
+                etag: "\"version-one\""
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("WrongRangeStart")
+        let artifacts = partialDownloadArtifacts(
+            repository: repository,
+            remotePath: "/projects/a.txt",
+            expectedSize: 5,
+            destination: destination
+        )
+        defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+        try Data("he".utf8).write(to: artifacts.partURL)
+        try writeResumeMetadata(
+            partURL: artifacts.partURL,
+            identityDigest: artifacts.identityDigest,
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
+
+        do {
+            try await repository.download(
+                remotePath: "/projects/a.txt",
+                to: destination,
+                expectedSize: 5
+            ) { _, _ in }
+            XCTFail("错误起始位置不能被接受。")
+        } catch {}
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.partURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.metadataURL.path))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "Range") }, [
+            "bytes=2-4",
+            "bytes=0-4",
+        ])
+    }
+
+    func test分段下载拒绝长度正确但ContentRange总长错误的响应() async throws {
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data("llo".utf8),
+                start: 2,
+                end: 4,
+                total: 6,
+                etag: "\"version-one\""
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("WrongRangeTotal")
+        let artifacts = partialDownloadArtifacts(
+            repository: repository,
+            remotePath: "/projects/a.txt",
+            expectedSize: 5,
+            destination: destination
+        )
+        defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+        try Data("he".utf8).write(to: artifacts.partURL)
+        try writeResumeMetadata(
+            partURL: artifacts.partURL,
+            identityDigest: artifacts.identityDigest,
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
+
+        do {
+            try await repository.download(
+                remotePath: "/projects/a.txt",
+                to: destination,
+                expectedSize: 5
+            ) { _, _ in }
+            XCTFail("错误 Content-Range 不能被接受。")
+        } catch {}
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.partURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.metadataURL.path))
+    }
+
+    func test分段下载拒绝ContentRange正确但实体长度不符的响应() async throws {
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data("ll".utf8),
+                start: 2,
+                end: 4,
+                total: 5,
+                etag: "\"version-one\""
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("WrongSegmentLength")
+        let artifacts = partialDownloadArtifacts(
+            repository: repository,
+            remotePath: "/projects/a.txt",
+            expectedSize: 5,
+            destination: destination
+        )
+        defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+        try Data("he".utf8).write(to: artifacts.partURL)
+        try writeResumeMetadata(
+            partURL: artifacts.partURL,
+            identityDigest: artifacts.identityDigest,
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
+
+        do {
+            try await repository.download(
+                remotePath: "/projects/a.txt",
+                to: destination,
+                expectedSize: 5
+            ) { _, _ in }
+            XCTFail("实体长度与 Content-Range 不一致时不能续传。")
+        } catch {}
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.partURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.metadataURL.path))
+    }
+
+    func testIfRange失效返回200时从完整新版本开始() async throws {
+        let transport = MockHTTPTransport(responses: [
+            DsmHTTPResponse(
+                data: Data("world".utf8),
+                statusCode: 200,
+                headers: ["content-type": "application/octet-stream"]
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("IfRange200")
+        let artifacts = partialDownloadArtifacts(
+            repository: repository,
+            remotePath: "/projects/a.txt",
+            expectedSize: 5,
+            destination: destination
+        )
+        defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+        try Data("he".utf8).write(to: artifacts.partURL)
+        try writeResumeMetadata(
+            partURL: artifacts.partURL,
+            identityDigest: artifacts.identityDigest,
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
+
+        try await repository.download(
+            remotePath: "/projects/a.txt",
+            to: destination,
+            expectedSize: 5
+        ) { _, _ in }
+
+        XCTAssertEqual(try Data(contentsOf: destination), Data("world".utf8))
+        let recordedRequests = await transport.recordedRequests()
+        let request = try XCTUnwrap(recordedRequests.first)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "If-Range"), "\"version-one\"")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifacts.metadataURL.path))
+    }
+
+    func test416会丢弃旧断点并重新从零请求() async throws {
+        let transport = MockHTTPTransport(responses: [
+            DsmHTTPResponse(
+                data: Data(),
+                statusCode: 416,
+                headers: ["content-type": "application/octet-stream"]
+            ),
+            rangedBinaryResponse(
+                Data("world".utf8),
+                start: 0,
+                end: 4,
+                total: 5,
+                etag: "\"version-two\""
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("Range416")
+        let artifacts = partialDownloadArtifacts(
+            repository: repository,
+            remotePath: "/projects/a.txt",
+            expectedSize: 5,
+            destination: destination
+        )
+        defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+        try Data("he".utf8).write(to: artifacts.partURL)
+        try writeResumeMetadata(
+            partURL: artifacts.partURL,
+            identityDigest: artifacts.identityDigest,
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
+
+        try await repository.download(
+            remotePath: "/projects/a.txt",
+            to: destination,
+            expectedSize: 5
+        ) { _, _ in }
+
+        XCTAssertEqual(try Data(contentsOf: destination), Data("world".utf8))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { $0.value(forHTTPHeaderField: "Range") }, [
+            "bytes=2-4",
+            "bytes=0-4",
+        ])
+        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "If-Range"), "\"version-one\"")
+        XCTAssertNil(requests[1].value(forHTTPHeaderField: "If-Range"))
+    }
+
+    func test缺失或损坏sidecar会安全丢弃旧分片() async throws {
+        for corruptMetadata in [false, true] {
+            let transport = MockHTTPTransport(responses: [
+                rangedBinaryResponse(
+                    Data("hello".utf8),
+                    start: 0,
+                    end: 4,
+                    total: 5,
+                    etag: "\"version-one\""
+                ),
+            ])
+            let repository = try makeRepository(
+                capabilities: CapabilitySet([
+                    DsmAPIName.fileStationDownload: capability(
+                        DsmAPIName.fileStationDownload,
+                        version: 2
+                    )
+                ]),
+                transport: transport
+            )
+            let destination = temporaryDownloadDestination(
+                corruptMetadata ? "CorruptSidecar" : "MissingSidecar"
+            )
+            let artifacts = partialDownloadArtifacts(
+                repository: repository,
+                remotePath: "/projects/a.txt",
+                expectedSize: 5,
+                destination: destination
+            )
+            defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+            try Data("he".utf8).write(to: artifacts.partURL)
+            if corruptMetadata {
+                try Data("not-json".utf8).write(to: artifacts.metadataURL)
+            }
+
+            try await repository.download(
+                remotePath: "/projects/a.txt",
+                to: destination,
+                expectedSize: 5
+            ) { _, _ in }
+
+            XCTAssertEqual(try Data(contentsOf: destination), Data("hello".utf8))
+            let recordedRequests = await transport.recordedRequests()
+            let request = try XCTUnwrap(recordedRequests.first)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=0-4")
+            XCTAssertNil(request.value(forHTTPHeaderField: "If-Range"))
+        }
+    }
+
+    func test校验失败后最终文件哈希保持不变() async throws {
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data("llo".utf8),
+                start: 1,
+                end: 3,
+                total: 5,
+                etag: "\"version-one\""
+            ),
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: transport
+        )
+        let destination = temporaryDownloadDestination("FinalHash")
+        let original = Data("existing-local-file".utf8)
+        try original.write(to: destination)
+        let artifacts = partialDownloadArtifacts(
+            repository: repository,
+            remotePath: "/projects/a.txt",
+            expectedSize: 5,
+            destination: destination
+        )
+        defer { removePartialDownloadArtifacts(artifacts, destination: destination) }
+        try Data("he".utf8).write(to: artifacts.partURL)
+        try writeResumeMetadata(
+            partURL: artifacts.partURL,
+            identityDigest: artifacts.identityDigest,
+            expectedSize: 5,
+            etag: "\"version-one\""
+        )
+        let originalHash = SHA256.hash(data: original)
+
+        do {
+            try await repository.download(
+                remotePath: "/projects/a.txt",
+                to: destination,
+                expectedSize: 5
+            ) { _, _ in }
+            XCTFail("校验失败不能覆盖已有最终文件。")
+        } catch {}
+
+        XCTAssertEqual(
+            SHA256.hash(data: try Data(contentsOf: destination)),
+            originalHash
+        )
+    }
+
+    func test跨NAS分块复制绑定IfRange并校验远端版本() async throws {
+        let chunkSize = 4 * 1_024 * 1_024
+        let expectedSize = Int64(chunkSize + 1)
+        let sourceTransport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data(repeating: 0x41, count: chunkSize),
+                start: 0,
+                end: Int64(chunkSize - 1),
+                total: expectedSize,
+                etag: "\"version-one\""
+            ),
+            rangedBinaryResponse(
+                Data([0x42]),
+                start: Int64(chunkSize),
+                end: Int64(chunkSize),
+                total: expectedSize,
+                etag: "\"version-one\""
+            ),
+        ])
+        let targetTransport = MockHTTPTransport(responses: [
+            response(#"{"success":true}"#),
+            response(#"{"success":true}"#),
+        ])
+        let source = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(
+                    DsmAPIName.fileStationDownload,
+                    version: 2
+                )
+            ]),
+            transport: sourceTransport
+        )
+        let target = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationUpload: capability(
+                    DsmAPIName.fileStationUpload,
+                    version: 2
+                ),
+                DsmAPIName.fileStationCheckPermission: capability(
+                    DsmAPIName.fileStationCheckPermission,
+                    version: 2
+                ),
+            ]),
+            transport: targetTransport
+        )
+
+        try await source.streamFileToNAS(
+            remotePath: "/projects/source.bin",
+            filename: "source.bin",
+            expectedSize: expectedSize,
+            target: target,
+            destinationFolder: "/archive",
+            overwrite: false
+        ) { _, _ in }
+
+        let requests = await sourceTransport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "Range"), "bytes=0-\(chunkSize - 1)")
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "Range"), "bytes=\(chunkSize)-\(chunkSize)")
+        XCTAssertEqual(requests[1].value(forHTTPHeaderField: "If-Range"), "\"version-one\"")
     }
 
     func test分段下载失败后保留已完成分片供下次续传() async throws {
         let chunkSize = 8 * 1_024 * 1_024
-        let response = DsmHTTPResponse(
-            data: Data(repeating: 0x41, count: chunkSize),
-            statusCode: 206,
-            headers: ["content-type": "application/octet-stream"]
-        )
-        let transport = MockHTTPTransport(responses: [response])
+        let defaults = UserDefaults.standard
+        let previousChunkSize = defaults.object(forKey: "LanStash_DownloadChunkSize")
+        defaults.set(8, forKey: "LanStash_DownloadChunkSize")
+        defer {
+            if let previousChunkSize {
+                defaults.set(previousChunkSize, forKey: "LanStash_DownloadChunkSize")
+            } else {
+                defaults.removeObject(forKey: "LanStash_DownloadChunkSize")
+            }
+        }
+        let transport = MockHTTPTransport(responses: [
+            rangedBinaryResponse(
+                Data(repeating: 0x41, count: chunkSize),
+                start: 0,
+                end: Int64(chunkSize - 1),
+                total: Int64(chunkSize + 1),
+                etag: "\"version-one\""
+            )
+        ])
         let repository = try makeRepository(
             capabilities: CapabilitySet([
                 DsmAPIName.fileStationDownload: capability(
@@ -1207,6 +1787,9 @@ final class DsmFileRepositoryTests: XCTestCase {
         defer {
             try? FileManager.default.removeItem(at: destination)
             try? FileManager.default.removeItem(at: partURL)
+            try? FileManager.default.removeItem(
+                at: partURL.appendingPathExtension("metadata")
+            )
         }
 
         do {
@@ -1233,6 +1816,10 @@ final class DsmFileRepositoryTests: XCTestCase {
             requests[1].value(forHTTPHeaderField: "Range"),
             "bytes=\(chunkSize)-\(chunkSize)"
         )
+        XCTAssertEqual(
+            requests[1].value(forHTTPHeaderField: "If-Range"),
+            "\"version-one\""
+        )
     }
 
     func test删除下载任务会清理对应分片() async throws {
@@ -1251,15 +1838,18 @@ final class DsmFileRepositoryTests: XCTestCase {
         let destination = directory.appendingPathComponent("archive.zip")
         let legacyPart = directory.appendingPathComponent(".archive.zip.lanstash.part")
         let isolatedPart = directory.appendingPathComponent(".archive.zip.0123456789abcdef.lanstash.part")
+        let isolatedMetadata = isolatedPart.appendingPathExtension("metadata")
         let unrelatedPart = directory.appendingPathComponent(".other.zip.0123456789abcdef.lanstash.part")
         try Data("legacy".utf8).write(to: legacyPart)
         try Data("isolated".utf8).write(to: isolatedPart)
+        try Data("metadata".utf8).write(to: isolatedMetadata)
         try Data("keep".utf8).write(to: unrelatedPart)
 
         await repository.removePartialDownload(to: destination)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: legacyPart.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: isolatedPart.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: isolatedMetadata.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: unrelatedPart.path))
     }
 
@@ -3975,6 +4565,100 @@ final class DsmFileRepositoryTests: XCTestCase {
             capabilities: CapabilitySet(values),
             transport: transport
         )
+    }
+
+    private func rangedBinaryResponse(
+        _ data: Data,
+        start: Int64,
+        end: Int64,
+        total: Int64,
+        etag: String? = nil,
+        lastModified: String? = nil
+    ) -> DsmHTTPResponse {
+        var headers = [
+            "content-type": "application/octet-stream",
+            "content-range": "bytes \(start)-\(end)/\(total)",
+        ]
+        if let etag {
+            headers["etag"] = etag
+        }
+        if let lastModified {
+            headers["last-modified"] = lastModified
+        }
+        return DsmHTTPResponse(
+            data: data,
+            statusCode: 206,
+            headers: headers
+        )
+    }
+
+    private func temporaryDownloadDestination(_ name: String) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DsmFileRepositoryTests-\(name)-\(UUID().uuidString).bin"
+        )
+    }
+
+    private func partialDownloadArtifacts(
+        repository: DsmFileRepository,
+        remotePath: String,
+        expectedSize: Int64,
+        destination: URL
+    ) -> (
+        partURL: URL,
+        metadataURL: URL,
+        identityDigest: String
+    ) {
+        let identity = "\(repository.profileID.uuidString)|\(remotePath)|\(expectedSize)"
+        let identityDigest = SHA256.hash(data: Data(identity.utf8)).map {
+            String(format: "%02x", $0)
+        }.joined()
+        let partURL = destination.deletingLastPathComponent()
+            .appendingPathComponent(
+                ".\(destination.lastPathComponent).\(identityDigest.prefix(16)).lanstash.part"
+            )
+        return (
+            partURL,
+            partURL.appendingPathExtension("metadata"),
+            identityDigest
+        )
+    }
+
+    private func writeResumeMetadata(
+        partURL: URL,
+        identityDigest: String,
+        expectedSize: Int64,
+        etag: String? = nil,
+        lastModified: String? = nil
+    ) throws {
+        let headers = [
+            "etag": etag,
+            "last-modified": lastModified,
+        ].compactMapValues { $0 }
+        let contentVersion = try XCTUnwrap(
+            DownloadContentVersion(headers: headers)
+        )
+        let metadata = DownloadResumeMetadata(
+            identityDigest: identityDigest,
+            expectedSize: expectedSize,
+            contentVersion: contentVersion
+        )
+        try JSONEncoder().encode(metadata).write(
+            to: partURL.appendingPathExtension("metadata"),
+            options: .atomic
+        )
+    }
+
+    private func removePartialDownloadArtifacts(
+        _ artifacts: (
+            partURL: URL,
+            metadataURL: URL,
+            identityDigest: String
+        ),
+        destination: URL
+    ) {
+        try? FileManager.default.removeItem(at: artifacts.partURL)
+        try? FileManager.default.removeItem(at: artifacts.metadataURL)
+        try? FileManager.default.removeItem(at: destination)
     }
 
     private func makeRepository(

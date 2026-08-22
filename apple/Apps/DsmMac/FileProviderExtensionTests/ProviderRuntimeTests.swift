@@ -420,6 +420,74 @@ final class ProviderRuntimeTests: XCTestCase {
         )
     }
 
+    func test工作集只读取受跟踪项并与根目录日志分离() async throws {
+        let profileID = UUID()
+        let cached = changeItem(
+            profileID: profileID,
+            name: "cached.txt",
+            size: 1,
+            modifiedAt: Date(timeIntervalSince1970: 1)
+        )
+        let pinned = changeItem(
+            profileID: profileID,
+            name: "pinned.txt",
+            size: 2,
+            modifiedAt: Date(timeIntervalSince1970: 2)
+        )
+        let rootOnly = changeItem(
+            profileID: profileID,
+            name: "root-only.txt",
+            size: 3,
+            modifiedAt: Date(timeIntervalSince1970: 3)
+        )
+        let context = try makeContext(
+            cacheEntries: [
+                cacheEntry(
+                    path: cached.path,
+                    kind: .temporary,
+                    bytes: 1,
+                    date: Date(timeIntervalSince1970: 10)
+                )
+            ],
+            pinnedPaths: [pinned.path],
+            listedItems: [rootOnly],
+            infoItems: [cached, pinned]
+        )
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: context.dependencies(capacity: .init(results: []))
+        )
+
+        let workingSet = try await runtime.enumerate(
+            containerIdentifier: .workingSet,
+            offset: 0,
+            limit: 10
+        )
+        XCTAssertEqual(workingSet.items.map(\.filename), [
+            pinned.name,
+            cached.name,
+        ])
+        XCTAssertNil(workingSet.nextOffset)
+        let afterWorkingSet = await context.repository.snapshot()
+        XCTAssertEqual(afterWorkingSet.listedRequestCount, 0)
+        XCTAssertEqual(afterWorkingSet.getInfoRequests, [[pinned.path, cached.path]])
+
+        let workingSetAnchor = try await runtime.currentChangeAnchor(
+            for: .workingSet
+        )
+        let rootAnchor = try await runtime.currentChangeAnchor(
+            for: .rootContainer
+        )
+        XCTAssertNotEqual(workingSetAnchor, rootAnchor)
+        let afterRoot = await context.repository.snapshot()
+        XCTAssertEqual(afterRoot.listedRequestCount, 1)
+        XCTAssertTrue(
+            afterRoot.getInfoRequests.allSatisfy {
+                !$0.contains(rootOnly.path)
+            }
+        )
+    }
+
     func test重启后从磁盘配置快照恢复变更日志() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -466,7 +534,8 @@ final class ProviderRuntimeTests: XCTestCase {
         let repository = ProviderRepositoryStub(
             item: first,
             progressValues: [],
-            listedItems: [first, removed]
+            listedItems: [first, removed],
+            infoItems: [first, removed]
         )
         let initialRuntime = ProviderRuntime(
             mappingIdentifier: mapping.id.uuidString,
@@ -631,7 +700,8 @@ final class ProviderRuntimeTests: XCTestCase {
         pinnedPaths: [String] = [],
         removeCacheEntriesFails: Bool = false,
         downloadGate: ProviderDownloadGate? = nil,
-        listedItems: [FileItem]? = nil
+        listedItems: [FileItem]? = nil,
+        infoItems: [FileItem]? = nil
     ) throws -> ProviderRuntimeTestContext {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -692,7 +762,8 @@ final class ProviderRuntimeTests: XCTestCase {
                 item: file,
                 progressValues: progressValues,
                 downloadGate: downloadGate,
-                listedItems: listedItems ?? [file]
+                listedItems: listedItems ?? [file],
+                infoItems: infoItems ?? [file]
             )
         )
     }
@@ -955,12 +1026,37 @@ private actor ProviderConfigurationStoreStub:
         remotePathValue
     }
 
+    func changeJournalRevision(
+        mappingID: UUID,
+        containerIdentifier: String
+    ) -> DesktopDriveChangeJournalRevision? {
+        guard let journal = changeJournals[containerIdentifier], journal.isValid else {
+            return nil
+        }
+        return .init(
+            generation: journal.generation,
+            revision: journal.currentRevision
+        )
+    }
+
     func refreshChangeJournal(
         mappingID: UUID,
         containerIdentifier: String,
         currentItems: [String: FileItem],
-        maximumEntryCount: Int
-    ) -> DesktopDriveChangeJournal {
+        maximumEntryCount: Int,
+        expectedRevision: DesktopDriveChangeJournalRevision?
+    ) throws -> DesktopDriveChangeJournal {
+        let currentRevision = changeJournals[containerIdentifier].flatMap {
+            $0.isValid
+                ? DesktopDriveChangeJournalRevision(
+                    generation: $0.generation,
+                    revision: $0.currentRevision
+                )
+                : nil
+        }
+        guard currentRevision == expectedRevision else {
+            throw DesktopDriveConfigurationStoreError.staleChangeJournal
+        }
         var journal: DesktopDriveChangeJournal
         if var existing = changeJournals[containerIdentifier], existing.isValid {
             existing.apply(
@@ -1010,6 +1106,9 @@ private actor ProviderRepositoryStub: ProviderRuntimeRepository {
     let progressValues: [Int64]
     let downloadGate: ProviderDownloadGate?
     private var listedItems: [FileItem]
+    private var infoItems: [FileItem]
+    private var listedRequestCount = 0
+    private var getInfoRequests: [[String]] = []
     private(set) var downloadCount = 0
     private(set) var partialCleanupCount = 0
     private(set) var reportedProgressValues: [Int64] = []
@@ -1018,20 +1117,24 @@ private actor ProviderRepositoryStub: ProviderRuntimeRepository {
         item: FileItem,
         progressValues: [Int64],
         downloadGate: ProviderDownloadGate? = nil,
-        listedItems: [FileItem]
+        listedItems: [FileItem],
+        infoItems: [FileItem]
     ) {
         self.item = item
         self.progressValues = progressValues
         self.downloadGate = downloadGate
         self.listedItems = listedItems
+        self.infoItems = infoItems
     }
 
     func listShares(offset: Int, limit: Int) -> FilePage {
-        page(folderPath: "/", offset: offset, limit: limit)
+        listedRequestCount += 1
+        return page(folderPath: "/", offset: offset, limit: limit)
     }
 
     func listFolder(path: String, offset: Int, limit: Int) -> FilePage {
-        page(folderPath: path, offset: offset, limit: limit)
+        listedRequestCount += 1
+        return page(folderPath: path, offset: offset, limit: limit)
     }
 
     func setListedItems(_ items: [FileItem]) {
@@ -1051,7 +1154,11 @@ private actor ProviderRepositoryStub: ProviderRuntimeRepository {
         )
     }
 
-    func getInfo(paths: [String]) -> [FileItem] { [item] }
+    func getInfo(paths: [String]) -> [FileItem] {
+        getInfoRequests.append(paths)
+        let requested = Set(paths)
+        return infoItems.filter { requested.contains($0.path) }
+    }
 
     func download(
         remotePath: String,
@@ -1082,9 +1189,17 @@ private actor ProviderRepositoryStub: ProviderRuntimeRepository {
     func snapshot() -> (
         downloadCount: Int,
         partialCleanupCount: Int,
-        reportedProgressValues: [Int64]
+        reportedProgressValues: [Int64],
+        listedRequestCount: Int,
+        getInfoRequests: [[String]]
     ) {
-        (downloadCount, partialCleanupCount, reportedProgressValues)
+        (
+            downloadCount,
+            partialCleanupCount,
+            reportedProgressValues,
+            listedRequestCount,
+            getInfoRequests
+        )
     }
 }
 

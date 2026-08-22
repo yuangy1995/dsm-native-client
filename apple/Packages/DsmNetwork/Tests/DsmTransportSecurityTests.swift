@@ -29,6 +29,79 @@ final class DsmTransportSecurityTests: XCTestCase {
         XCTAssertEqual(consumedFirst, firstReview)
     }
 
+    func test会话级TLS失败按host归属且取消不消费其他任务错误() throws {
+        let failures = SessionScopedTLSFailureStore()
+        let firstScope = try XCTUnwrap(
+            SessionTLSFailureScope(
+                host: "nas-a.example.invalid",
+                port: 5_001,
+                scheme: "https",
+                expectedHost: "configured.example.invalid"
+            )
+        )
+        let secondScope = try XCTUnwrap(
+            SessionTLSFailureScope(
+                host: "nas-b.example.invalid",
+                port: 5_001,
+                scheme: "https",
+                expectedHost: "configured.example.invalid"
+            )
+        )
+        XCTAssertNotEqual(firstScope, secondScope)
+        let firstReview = review(fingerprint: "AA")
+        let secondReview = DsmCertificateReview(
+            host: "nas-b.example.invalid",
+            subjectSummary: "Synthetic NAS B",
+            sha256Fingerprint: "BB",
+            canBePinned: true
+        )
+        failures.register(taskIdentifier: 11, scope: firstScope)
+        failures.register(taskIdentifier: 22, scope: firstScope)
+        failures.register(taskIdentifier: 33, scope: secondScope)
+
+        // 这里模拟 URLSessionDelegate 的无 taskIdentifier 服务器信任挑战。
+        failures.store(.untrusted(firstReview), scope: firstScope)
+        failures.store(.changed(secondReview), scope: secondScope)
+        failures.remove(taskIdentifier: 11)
+        failures.register(taskIdentifier: 44, scope: firstScope)
+
+        XCTAssertNil(failures.consume(taskIdentifier: 11))
+        XCTAssertNil(failures.consume(taskIdentifier: 44))
+        guard case .untrusted(let consumedFirst)? = failures.consume(taskIdentifier: 22)
+        else {
+            return XCTFail("同 host 的未取消任务应获得结构化 TLS 错误。")
+        }
+        XCTAssertEqual(consumedFirst, firstReview)
+        guard case .changed(let consumedSecond)? = failures.consume(taskIdentifier: 33)
+        else {
+            return XCTFail("不同 host 的失败必须保持隔离。")
+        }
+        XCTAssertEqual(consumedSecond, secondReview)
+    }
+
+    func test会话级TLS失败不会泄漏给挑战后才注册的任务() throws {
+        let failures = SessionScopedTLSFailureStore()
+        let scope = try XCTUnwrap(
+            SessionTLSFailureScope(
+                host: "nas.example.invalid",
+                port: 443,
+                scheme: "https",
+                expectedHost: nil
+            )
+        )
+        let review = review(fingerprint: "CC")
+        failures.register(taskIdentifier: 1, scope: scope)
+        failures.store(.untrusted(review), scope: scope)
+        failures.register(taskIdentifier: 2, scope: scope)
+
+        XCTAssertNil(failures.consume(taskIdentifier: 2))
+        guard case .untrusted(let consumed)? = failures.consume(taskIdentifier: 1)
+        else {
+            return XCTFail("挑战发生时已经在途的任务应保留其 TLS 错误。")
+        }
+        XCTAssertEqual(consumed, review)
+    }
+
     func test同源HTTPS重定向保留请求头但收敛查询凭据() throws {
         var proposed = URLRequest(
             url: try XCTUnwrap(
