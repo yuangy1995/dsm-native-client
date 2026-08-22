@@ -3,6 +3,150 @@ import CryptoKit
 import Foundation
 import DsmLocalization
 
+/// 可恢复下载只保存与当前远端内容版本绑定的最小元数据。远端路径和 profile
+/// 不会以明文写入 sidecar，避免临时文件额外暴露用户的目录信息。
+struct DownloadResumeMetadata: Codable, Equatable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let identityDigest: String
+    let expectedSize: Int64
+    let contentVersion: DownloadContentVersion
+
+    init(
+        identityDigest: String,
+        expectedSize: Int64,
+        contentVersion: DownloadContentVersion
+    ) {
+        schemaVersion = Self.currentSchemaVersion
+        self.identityDigest = identityDigest
+        self.expectedSize = expectedSize
+        self.contentVersion = contentVersion
+    }
+
+    func matches(identityDigest: String, expectedSize: Int64) -> Bool {
+        schemaVersion == Self.currentSchemaVersion
+            && self.identityDigest == identityDigest
+            && self.expectedSize == expectedSize
+    }
+}
+
+/// 用于 If-Range 的远端内容版本。ETag 必须是强校验器；没有强 ETag 时才使用
+/// Last-Modified。每个 206 响应都必须返回完全一致的一组字段，避免拼接不同版本。
+struct DownloadContentVersion: Codable, Equatable {
+    let etag: String?
+    let lastModified: String?
+
+    init?(headers: [String: String]) {
+        let etag = Self.strongETag(
+            Self.headerValue(named: "etag", in: headers)
+        )
+        let lastModified = Self.httpLastModified(
+            Self.headerValue(named: "last-modified", in: headers)
+        )
+        guard etag != nil || lastModified != nil else {
+            return nil
+        }
+        self.etag = etag
+        self.lastModified = lastModified
+    }
+
+    var ifRangeValue: String {
+        // 构造器已确保至少有一个可用校验器。
+        etag ?? lastModified!
+    }
+
+    private static func headerValue(
+        named name: String,
+        in headers: [String: String]
+    ) -> String? {
+        let normalizedName = name.lowercased()
+        return headers.first {
+            $0.key.lowercased() == normalizedName
+        }?.value
+    }
+
+    private static func strongETag(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ),
+            value.count >= 2,
+            !value.lowercased().hasPrefix("w/"),
+            value.first == "\"",
+            value.last == "\"" else {
+            return nil
+        }
+        return value
+    }
+
+    private static func httpLastModified(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ), !value.isEmpty else {
+            return nil
+        }
+        // HTTP-date 的标准 IMF-fixdate 形态。无效日期不能作为 If-Range 条件，
+        // 否则服务端可能静默忽略该条件并让旧分片继续拼接。
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
+        guard formatter.date(from: value) != nil else {
+            return nil
+        }
+        return value
+    }
+}
+
+private struct DownloadContentRange: Equatable {
+    let start: Int64
+    let end: Int64
+    let total: Int64
+
+    init?(_ rawValue: String?) {
+        guard let rawValue = rawValue?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ) else {
+            return nil
+        }
+        let components = rawValue.split(
+            maxSplits: 1,
+            whereSeparator: { $0.isWhitespace }
+        )
+        guard components.count == 2,
+              components[0].lowercased() == "bytes" else {
+            return nil
+        }
+        let rangeAndTotal = components[1].split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        )
+        guard rangeAndTotal.count == 2,
+              let total = Int64(rangeAndTotal[1]),
+              total > 0 else {
+            return nil
+        }
+        let bounds = rangeAndTotal[0].split(
+            separator: "-",
+            omittingEmptySubsequences: false
+        )
+        guard bounds.count == 2,
+              let start = Int64(bounds[0]),
+              let end = Int64(bounds[1]),
+              start >= 0,
+              end >= start else {
+            return nil
+        }
+        self.start = start
+        self.end = end
+        self.total = total
+    }
+}
+
+private enum DownloadResumeValidationError: Error {
+    case invalidCheckpointOrRange
+}
+
 private struct FileListPayload: Decodable, Sendable {
     let offset: Int?
     let total: Int?
@@ -1687,6 +1831,7 @@ public actor DsmFileRepository: FileRepository {
             localURL: localURL,
             expectedSize: expectedSize
         )
+        let metadataURL = Self.partialDownloadMetadataURL(for: partURL)
         
         do {
             try FileManager.default.createDirectory(
@@ -1697,12 +1842,6 @@ public actor DsmFileRepository: FileRepository {
             throw translate(error)
         }
         
-        var completed = Self.fileSize(at: partURL)
-        if let expectedSize, completed > expectedSize {
-            try? FileManager.default.removeItem(at: partURL)
-            completed = 0
-        }
-
         if let expectedSize, expectedSize > 0 {
             let savedChunkSize = UserDefaults.standard.integer(
                 forKey: "LanStash_DownloadChunkSize"
@@ -1710,6 +1849,20 @@ public actor DsmFileRepository: FileRepository {
             let chunkSize: Int64 = (savedChunkSize >= 4 && savedChunkSize <= 64)
                 ? Int64(savedChunkSize) * 1_024 * 1_024
                 : 8 * 1_024 * 1_024
+            let identityDigest = Self.partialDownloadIdentityDigest(
+                profileID: profileID,
+                remotePath: identity,
+                expectedSize: expectedSize
+            )
+            let resumeState = try Self.loadPartialDownloadState(
+                partURL: partURL,
+                metadataURL: metadataURL,
+                identityDigest: identityDigest,
+                expectedSize: expectedSize
+            )
+            var completed = resumeState.completedBytes
+            var contentVersion = resumeState.metadata?.contentVersion
+            var remainingRestartCount = 1
             progress(completed, expectedSize)
 
             do {
@@ -1727,6 +1880,12 @@ public actor DsmFileRepository: FileRepository {
                         "bytes=\(completed)-\(end)",
                         forHTTPHeaderField: "Range"
                     )
+                    if completed > 0, let contentVersion {
+                        request.setValue(
+                            contentVersion.ifRangeValue,
+                            forHTTPHeaderField: "If-Range"
+                        )
+                    }
                     let completedBeforeRequest = completed
                     let response = try await transport.download(request, to: segmentURL) { value, _ in
                         progress(completedBeforeRequest + value, expectedSize)
@@ -1735,19 +1894,84 @@ public actor DsmFileRepository: FileRepository {
                         response: response,
                         fileURL: segmentURL
                     )
+                    if response.statusCode == 416 {
+                        try Self.discardPartialDownloadArtifacts(
+                            partURL: partURL,
+                            metadataURL: metadataURL
+                        )
+                        guard remainingRestartCount > 0 else {
+                            throw Self.resumeIntegrityError()
+                        }
+                        remainingRestartCount -= 1
+                        completed = 0
+                        contentVersion = nil
+                        progress(completed, expectedSize)
+                        continue
+                    }
                     try validateBinaryResponse(response, data: inspectionData)
 
-                    if response.statusCode == 206 {
-                        try Self.appendFile(at: segmentURL, to: partURL)
-                    } else {
-                        // 服务器忽略 Range 时会返回完整文件，直接替换残留片段以避免数据重复。
+                    if response.statusCode == 200 {
+                        // If-Range 失效时服务端按规范返回完整 200。只要正文总长度
+                        // 严格匹配，就从零开始采用这一个完整版本，绝不与旧 part 拼接。
+                        guard Self.fileSize(at: segmentURL) == expectedSize else {
+                            try Self.discardPartialDownloadArtifacts(
+                                partURL: partURL,
+                                metadataURL: metadataURL
+                            )
+                            guard remainingRestartCount > 0 else {
+                                throw Self.resumeIntegrityError()
+                            }
+                            remainingRestartCount -= 1
+                            completed = 0
+                            contentVersion = nil
+                            progress(completed, expectedSize)
+                            continue
+                        }
+                        try Self.discardPartialDownloadArtifacts(
+                            partURL: partURL,
+                            metadataURL: metadataURL
+                        )
                         try Self.safeReplaceFile(from: segmentURL, to: partURL)
-                    }
-                    completed = Self.fileSize(at: partURL)
-                    progress(completed, expectedSize)
-
-                    if response.statusCode != 206 {
+                        completed = expectedSize
+                        contentVersion = nil
+                        progress(completed, expectedSize)
                         break
+                    }
+
+                    do {
+                        let observedVersion = try Self.validateRangeResponse(
+                            response: response,
+                            actualSegmentLength: Self.fileSize(at: segmentURL),
+                            expectedStart: completed,
+                            expectedEnd: end,
+                            expectedTotal: expectedSize,
+                            expectedContentVersion: contentVersion
+                        )
+                        try Self.appendFile(at: segmentURL, to: partURL)
+                        let metadata = DownloadResumeMetadata(
+                            identityDigest: identityDigest,
+                            expectedSize: expectedSize,
+                            contentVersion: observedVersion
+                        )
+                        try Self.savePartialDownloadMetadata(
+                            metadata,
+                            to: metadataURL
+                        )
+                        completed = Self.fileSize(at: partURL)
+                        contentVersion = observedVersion
+                        progress(completed, expectedSize)
+                    } catch is DownloadResumeValidationError {
+                        try Self.discardPartialDownloadArtifacts(
+                            partURL: partURL,
+                            metadataURL: metadataURL
+                        )
+                        guard remainingRestartCount > 0 else {
+                            throw Self.resumeIntegrityError()
+                        }
+                        remainingRestartCount -= 1
+                        completed = 0
+                        contentVersion = nil
+                        progress(completed, expectedSize)
                     }
                 }
 
@@ -1760,6 +1984,7 @@ public actor DsmFileRepository: FileRepository {
                 }
                 try Self.safeReplaceFile(from: partURL, to: localURL)
                 try? FileManager.default.removeItem(at: partURL)
+                try? FileManager.default.removeItem(at: metadataURL)
             } catch {
                 throw translate(error)
             }
@@ -1777,8 +2002,10 @@ public actor DsmFileRepository: FileRepository {
                 try validateBinaryResponse(response, data: inspectionData)
                 try Self.safeReplaceFile(from: partURL, to: localURL)
                 try? FileManager.default.removeItem(at: partURL)
+                try? FileManager.default.removeItem(at: metadataURL)
             } catch {
                 try? FileManager.default.removeItem(at: partURL)
+                try? FileManager.default.removeItem(at: metadataURL)
                 throw translate(error)
             }
         }
@@ -1795,7 +2022,10 @@ public actor DsmFileRepository: FileRepository {
             includingPropertiesForKeys: nil
         )) ?? []
         for url in tempUrls where url.lastPathComponent.hasPrefix(prefix)
-            && url.lastPathComponent.hasSuffix(".lanstash.part") {
+            && Self.isPartialDownloadArtifact(
+                url.lastPathComponent,
+                prefix: prefix
+            ) {
             try? FileManager.default.removeItem(at: url)
         }
         
@@ -1807,7 +2037,10 @@ public actor DsmFileRepository: FileRepository {
         )) ?? []
         for url in targetUrls where url.lastPathComponent == legacyName
             || (url.lastPathComponent.hasPrefix(prefix)
-                && url.lastPathComponent.hasSuffix(".lanstash.part")) {
+                && Self.isPartialDownloadArtifact(
+                    url.lastPathComponent,
+                    prefix: prefix
+                )) {
             try? FileManager.default.removeItem(at: url)
         }
     }
@@ -1817,11 +2050,143 @@ public actor DsmFileRepository: FileRepository {
         localURL: URL,
         expectedSize: Int64?
     ) -> URL {
-        let identity = "\(profileID.uuidString)|\(remotePath)|\(expectedSize ?? -1)"
-        let digest = SHA256.hash(data: Data(identity.utf8))
-        let suffix = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+        let digest = Self.partialDownloadIdentityDigest(
+            profileID: profileID,
+            remotePath: remotePath,
+            expectedSize: expectedSize
+        )
+        let suffix = String(digest.prefix(16))
         return localURL.deletingLastPathComponent()
             .appendingPathComponent(".\(localURL.lastPathComponent).\(suffix).lanstash.part")
+    }
+
+    private static func partialDownloadIdentityDigest(
+        profileID: UUID,
+        remotePath: String,
+        expectedSize: Int64?
+    ) -> String {
+        let identity = "\(profileID.uuidString)|\(remotePath)|\(expectedSize ?? -1)"
+        return SHA256.hash(data: Data(identity.utf8)).map {
+            String(format: "%02x", $0)
+        }.joined()
+    }
+
+    private static func partialDownloadMetadataURL(for partURL: URL) -> URL {
+        partURL.appendingPathExtension("metadata")
+    }
+
+    private static func isPartialDownloadArtifact(
+        _ fileName: String,
+        prefix: String
+    ) -> Bool {
+        fileName.hasPrefix(prefix)
+            && (fileName.hasSuffix(".lanstash.part")
+                || fileName.hasSuffix(".lanstash.part.metadata"))
+    }
+
+    private static func loadPartialDownloadState(
+        partURL: URL,
+        metadataURL: URL,
+        identityDigest: String,
+        expectedSize: Int64
+    ) throws -> (completedBytes: Int64, metadata: DownloadResumeMetadata?) {
+        let manager = FileManager.default
+        let hasPart = manager.fileExists(atPath: partURL.path)
+        let hasMetadata = manager.fileExists(atPath: metadataURL.path)
+        guard hasPart, hasMetadata else {
+            if hasPart || hasMetadata {
+                try discardPartialDownloadArtifacts(
+                    partURL: partURL,
+                    metadataURL: metadataURL
+                )
+            }
+            return (completedBytes: 0, metadata: nil)
+        }
+        guard let metadata = try? JSONDecoder().decode(
+            DownloadResumeMetadata.self,
+            from: Data(contentsOf: metadataURL)
+        ), metadata.matches(
+            identityDigest: identityDigest,
+            expectedSize: expectedSize
+        ) else {
+            try discardPartialDownloadArtifacts(
+                partURL: partURL,
+                metadataURL: metadataURL
+            )
+            return (completedBytes: 0, metadata: nil)
+        }
+        let completed = fileSize(at: partURL)
+        guard completed > 0, completed <= expectedSize else {
+            try discardPartialDownloadArtifacts(
+                partURL: partURL,
+                metadataURL: metadataURL
+            )
+            return (completedBytes: 0, metadata: nil)
+        }
+        return (completed, metadata)
+    }
+
+    private static func savePartialDownloadMetadata(
+        _ metadata: DownloadResumeMetadata,
+        to metadataURL: URL
+    ) throws {
+        try JSONEncoder().encode(metadata).write(
+            to: metadataURL,
+            options: .atomic
+        )
+    }
+
+    private static func discardPartialDownloadArtifacts(
+        partURL: URL,
+        metadataURL: URL
+    ) throws {
+        let manager = FileManager.default
+        for url in [partURL, metadataURL] where manager.fileExists(atPath: url.path) {
+            try manager.removeItem(at: url)
+        }
+        guard !manager.fileExists(atPath: partURL.path),
+              !manager.fileExists(atPath: metadataURL.path) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
+    private static func validateRangeResponse(
+        response: DsmHTTPResponse,
+        actualSegmentLength: Int64,
+        expectedStart: Int64,
+        expectedEnd: Int64,
+        expectedTotal: Int64,
+        expectedContentVersion: DownloadContentVersion?
+    ) throws -> DownloadContentVersion {
+        let span = expectedEnd.subtractingReportingOverflow(expectedStart)
+        let expectedSegmentLength = span.partialValue.addingReportingOverflow(1)
+        guard response.statusCode == 206,
+              let contentRange = DownloadContentRange(
+                response.headers.first {
+                    $0.key.lowercased() == "content-range"
+                }?.value
+              ),
+              contentRange.start == expectedStart,
+              contentRange.end == expectedEnd,
+              contentRange.total == expectedTotal,
+              !span.overflow,
+              !expectedSegmentLength.overflow,
+              expectedSegmentLength.partialValue > 0,
+              actualSegmentLength == expectedSegmentLength.partialValue,
+              let contentVersion = DownloadContentVersion(headers: response.headers),
+              expectedContentVersion == nil
+                || expectedContentVersion == contentVersion else {
+            throw DownloadResumeValidationError.invalidCheckpointOrRange
+        }
+        return contentVersion
+    }
+
+    private static func resumeIntegrityError() -> AppError {
+        AppError(
+            category: .partialFailure,
+            isRetryable: true,
+            safeUserMessage: L10n.string("shared.5e35450bf91845f5")
+        )
     }
 
     private func binaryInspectionData(
@@ -1997,28 +2362,34 @@ public actor DsmFileRepository: FileRepository {
         do {
             try pipe.write(uploadPlan.prefix, countsAsFileData: false)
             var offset: Int64 = 0
+            var contentVersion: DownloadContentVersion?
             let chunkSize: Int64 = 4 * 1_024 * 1_024
             while offset < expectedSize {
                 try Task.checkCancellation()
                 let end = min(expectedSize - 1, offset + chunkSize - 1)
                 var request = baseRequest
                 request.setValue("bytes=\(offset)-\(end)", forHTTPHeaderField: "Range")
-                let response = try await transport.send(request)
-                try validateBinaryResponse(response, data: response.data)
-                guard response.statusCode == 206 else {
-                    throw AppError(
-                        category: .invalidResponse,
-                        isRetryable: false,
-                        safeUserMessage: L10n.string("shared.c51ce9d86ffac125")
+                if offset > 0, let contentVersion {
+                    request.setValue(
+                        contentVersion.ifRangeValue,
+                        forHTTPHeaderField: "If-Range"
                     )
                 }
-                let expectedChunkSize = Int(end - offset + 1)
-                guard response.data.count == expectedChunkSize else {
-                    throw AppError(
-                        category: .partialFailure,
-                        isRetryable: true,
-                        safeUserMessage: L10n.string("shared.b5682d9f261b4a70")
+                let response = try await transport.send(request)
+                try validateBinaryResponse(response, data: response.data)
+                do {
+                    contentVersion = try Self.validateRangeResponse(
+                        response: response,
+                        actualSegmentLength: Int64(response.data.count),
+                        expectedStart: offset,
+                        expectedEnd: end,
+                        expectedTotal: expectedSize,
+                        expectedContentVersion: contentVersion
                     )
+                } catch is DownloadResumeValidationError {
+                    // 跨 NAS 流式复制没有可验证的本地断点。校验器、范围或长度
+                    // 任一不一致时立即取消整条上传，不能把不同远端版本写入目标端。
+                    throw Self.resumeIntegrityError()
                 }
                 try pipe.write(response.data, countsAsFileData: true)
                 progressState.didDownload(response.data.count)

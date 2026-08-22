@@ -301,6 +301,7 @@ public final class URLSessionTransport: DsmBinaryHTTPTransport, @unchecked Senda
                     task.resume()
                 }
             } onCancel: {
+                self.tlsDelegate.markTaskCancelled(task)
                 task.cancel()
             }
         } catch {
@@ -373,6 +374,7 @@ public final class URLSessionTransport: DsmBinaryHTTPTransport, @unchecked Senda
                 task.resume()
             }
         } onCancel: {
+            tlsDelegate.markTaskCancelled(task)
             task.cancel()
         }
     }

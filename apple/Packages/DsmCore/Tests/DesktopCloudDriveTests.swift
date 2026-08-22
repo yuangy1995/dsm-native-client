@@ -182,11 +182,16 @@ final class DesktopCloudDriveTests: XCTestCase {
         let baseline = [
             firstIdentifier: Self.file(path: "/share/projects/first.txt", size: 1)
         ]
+        let initialRevision = try await store.changeJournalRevision(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
         let initial = try await store.refreshChangeJournal(
             mappingID: mapping.id,
             containerIdentifier: "root",
             currentItems: baseline,
-            maximumEntryCount: 10
+            maximumEntryCount: 10,
+            expectedRevision: initialRevision
         )
         XCTAssertEqual(initial.currentRevision, 0)
         XCTAssertTrue(initial.entries.isEmpty)
@@ -194,11 +199,16 @@ final class DesktopCloudDriveTests: XCTestCase {
         let changed = [
             secondIdentifier: Self.file(path: "/share/projects/second.txt", size: 2)
         ]
+        let changedRevision = try await store.changeJournalRevision(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
         let journal = try await store.refreshChangeJournal(
             mappingID: mapping.id,
             containerIdentifier: "root",
             currentItems: changed,
-            maximumEntryCount: 10
+            maximumEntryCount: 10,
+            expectedRevision: changedRevision
         )
         XCTAssertEqual(journal.currentRevision, 2)
         XCTAssertEqual(journal.entries.map(\.kind), [.deleted, .updated])
@@ -219,6 +229,154 @@ final class DesktopCloudDriveTests: XCTestCase {
             containerIdentifier: "root"
         )
         XCTAssertNil(removedJournal)
+    }
+
+    func test慢扫描不能覆盖较快的新扫描结果() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        let store = DesktopDriveConfigurationStore(directoryURL: directoryURL)
+        let profile = try NasProfile(
+            displayName: "NAS",
+            host: "nas.example.test",
+            port: 5001
+        )
+        let mapping = DesktopDriveMapping(
+            profileID: profile.id,
+            displayName: "Projects",
+            scope: .folder(path: "/share/projects")
+        )
+        try await store.saveConnection(profile: profile, capabilities: .init([:]))
+        try await store.saveMapping(mapping)
+
+        let identifier = "item-first"
+        let oldSnapshot = [
+            identifier: Self.file(path: "/share/projects/first.txt", size: 1)
+        ]
+        let initialRevision = try await store.changeJournalRevision(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
+        _ = try await store.refreshChangeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root",
+            currentItems: oldSnapshot,
+            maximumEntryCount: 10,
+            expectedRevision: initialRevision
+        )
+        let scanStartRevision = try await store.changeJournalRevision(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
+        let newSnapshot = [
+            identifier: Self.file(path: "/share/projects/first.txt", size: 2)
+        ]
+        let gate = ChangeJournalCommitGate()
+        let slowCommit = Task {
+            await gate.waitBeforeSlowCommit()
+            return try await store.refreshChangeJournal(
+                mappingID: mapping.id,
+                containerIdentifier: "root",
+                currentItems: oldSnapshot,
+                maximumEntryCount: 10,
+                expectedRevision: scanStartRevision
+            )
+        }
+        await gate.waitUntilSlowScanIsReady()
+
+        let fastJournal = try await store.refreshChangeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root",
+            currentItems: newSnapshot,
+            maximumEntryCount: 10,
+            expectedRevision: scanStartRevision
+        )
+        await gate.allowSlowCommit()
+        do {
+            _ = try await slowCommit.value
+            XCTFail("旧扫描不应覆盖已提交的新快照。")
+        } catch let error as DesktopDriveConfigurationStoreError {
+            XCTAssertEqual(error, .staleChangeJournal)
+        }
+
+        let finalJournal = try await store.changeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
+        XCTAssertEqual(finalJournal, fastJournal)
+        XCTAssertEqual(finalJournal?.snapshot[identifier], newSnapshot[identifier])
+        XCTAssertEqual(finalJournal?.entries.map(\.kind), [.updated])
+    }
+
+    func test工作集收缩不会移除根日志仍引用的路径索引() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        let store = DesktopDriveConfigurationStore(directoryURL: directoryURL)
+        let profile = try NasProfile(
+            displayName: "NAS",
+            host: "nas.example.test",
+            port: 5001
+        )
+        let mapping = DesktopDriveMapping(
+            profileID: profile.id,
+            displayName: "Projects",
+            scope: .folder(path: "/share/projects")
+        )
+        try await store.saveConnection(profile: profile, capabilities: .init([:]))
+        try await store.saveMapping(mapping)
+
+        let path = "/share/projects/first.txt"
+        let identifier = try XCTUnwrap(
+            DesktopDriveItemIdentity.identifier(
+                mappingID: mapping.id,
+                remotePath: path
+            )
+        )
+        let snapshot = [identifier: Self.file(path: path, size: 1)]
+        let rootRevision = try await store.changeJournalRevision(
+            mappingID: mapping.id,
+            containerIdentifier: "root"
+        )
+        _ = try await store.refreshChangeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "root",
+            currentItems: snapshot,
+            maximumEntryCount: 10,
+            expectedRevision: rootRevision
+        )
+        let workingSetRevision = try await store.changeJournalRevision(
+            mappingID: mapping.id,
+            containerIdentifier: "working-set"
+        )
+        _ = try await store.refreshChangeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "working-set",
+            currentItems: snapshot,
+            maximumEntryCount: 10,
+            expectedRevision: workingSetRevision
+        )
+        let emptyWorkingSetRevision = try await store.changeJournalRevision(
+            mappingID: mapping.id,
+            containerIdentifier: "working-set"
+        )
+        _ = try await store.refreshChangeJournal(
+            mappingID: mapping.id,
+            containerIdentifier: "working-set",
+            currentItems: [:],
+            maximumEntryCount: 10,
+            expectedRevision: emptyWorkingSetRevision
+        )
+
+        let resolvedPath = try await store.remotePath(
+            mappingID: mapping.id,
+            itemIdentifier: identifier
+        )
+        XCTAssertEqual(resolvedPath, path)
     }
 
     func test变更日志修订出现缺口时失效以触发完整重新枚举() {
@@ -858,6 +1016,38 @@ final class DesktopCloudDriveTests: XCTestCase {
                 mappingID: mappingID
             )
         }
+    }
+}
+
+private actor ChangeJournalCommitGate {
+    private var slowScanIsReady = false
+    private var isSlowCommitAllowed = false
+    private var readyWaiters: [CheckedContinuation<Void, Never>] = []
+    private var commitWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitBeforeSlowCommit() async {
+        slowScanIsReady = true
+        let waiters = readyWaiters
+        readyWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        guard !isSlowCommitAllowed else { return }
+        await withCheckedContinuation { continuation in
+            commitWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilSlowScanIsReady() async {
+        guard !slowScanIsReady else { return }
+        await withCheckedContinuation { continuation in
+            readyWaiters.append(continuation)
+        }
+    }
+
+    func allowSlowCommit() {
+        isSlowCommitAllowed = true
+        let waiters = commitWaiters
+        commitWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 }
 

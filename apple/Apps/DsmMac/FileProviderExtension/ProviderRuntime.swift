@@ -17,11 +17,16 @@ protocol ProviderRuntimeConfigurationStoring: Sendable {
         mappingID: UUID,
         itemIdentifier: String
     ) async throws -> String?
+    func changeJournalRevision(
+        mappingID: UUID,
+        containerIdentifier: String
+    ) async throws -> DesktopDriveChangeJournalRevision?
     func refreshChangeJournal(
         mappingID: UUID,
         containerIdentifier: String,
         currentItems: [String: FileItem],
-        maximumEntryCount: Int
+        maximumEntryCount: Int,
+        expectedRevision: DesktopDriveChangeJournalRevision?
     ) async throws -> DesktopDriveChangeJournal
     func recordCacheEntry(
         _ entry: DesktopDriveCacheEntry,
@@ -251,7 +256,15 @@ actor ProviderRuntime {
         let runtime = try await configurationStore.runtime(
             mappingID: context.configuration.mapping.id
         )
-        let folderPath = Self.isRootLikeContainer(containerIdentifier)
+        if containerIdentifier == .workingSet {
+            return try await enumerateWorkingSet(
+                context: context,
+                runtime: runtime,
+                offset: offset,
+                limit: limit
+            )
+        }
+        let folderPath = Self.isRootContainer(containerIdentifier)
             ? nil
             : try await remotePath(for: containerIdentifier)
         let pageKey = DesktopDriveMetadataCoordinator.PageKey(
@@ -813,31 +826,154 @@ actor ProviderRuntime {
         journal: DesktopDriveChangeJournal,
         containerIdentifier: String
     ) {
-        let folderPath = try await folderPath(
-            for: containerIdentifier
-        )
-        let items = try await allItems(
-            in: folderPath,
-            context: context
-        )
-        let snapshot = try Self.makeChangeSnapshot(
-            from: items,
-            mappingID: context.configuration.mapping.id
-        )
         let journalContainerIdentifier = Self.journalContainerIdentifier(
             for: containerIdentifier
         )
-        let journal = try await configurationStore.refreshChangeJournal(
-            mappingID: context.configuration.mapping.id,
-            containerIdentifier: journalContainerIdentifier,
-            currentItems: snapshot,
-            maximumEntryCount: dependencies.changeJournalMaximumEntries
+        // 最多重扫一次：慢扫描提交时发现较新 revision 后直接丢弃旧快照，重新从
+        // 最新基线扫描；连续竞争时安全失败，不能写出倒退的更新或删除事件。
+        for attempt in 0...1 {
+            let expectedRevision = try await configurationStore.changeJournalRevision(
+                mappingID: context.configuration.mapping.id,
+                containerIdentifier: journalContainerIdentifier
+            )
+            let scan: (items: [FileItem], invalidationPaths: [String])
+            if containerIdentifier == .workingSet {
+                let runtime = try await configurationStore.runtime(
+                    mappingID: context.configuration.mapping.id
+                )
+                let items = try await workingSetItems(
+                    context: context,
+                    runtime: runtime,
+                    persistTrackedItems: false
+                )
+                scan = (items, items.map(\.path))
+            } else {
+                let folderPath = try await folderPath(
+                    for: containerIdentifier
+                )
+                let items = try await allItems(
+                    in: folderPath,
+                    context: context
+                )
+                scan = (
+                    items,
+                    [folderPath ?? Self.rootPath(for: context.configuration.mapping)]
+                )
+            }
+            let snapshot = try Self.makeChangeSnapshot(
+                from: scan.items,
+                mappingID: context.configuration.mapping.id
+            )
+            do {
+                let journal = try await configurationStore.refreshChangeJournal(
+                    mappingID: context.configuration.mapping.id,
+                    containerIdentifier: journalContainerIdentifier,
+                    currentItems: snapshot,
+                    maximumEntryCount: dependencies.changeJournalMaximumEntries,
+                    expectedRevision: expectedRevision
+                )
+                if containerIdentifier == .workingSet {
+                    try await configurationStore.registerItemPaths(
+                        mappingID: context.configuration.mapping.id,
+                        remotePaths: scan.items.map(\.path)
+                    )
+                    await metadata.remember(scan.items)
+                }
+                // 增量扫描直接读取远端，结果优先于短期元数据缓存。
+                if !scan.invalidationPaths.isEmpty {
+                    await metadata.invalidate(paths: scan.invalidationPaths)
+                }
+                return (journal, journalContainerIdentifier)
+            } catch let error as DesktopDriveConfigurationStoreError
+                where error == .staleChangeJournal && attempt == 0 {
+                continue
+            }
+        }
+        throw DesktopDriveConfigurationStoreError.staleChangeJournal
+    }
+
+    private func enumerateWorkingSet(
+        context: (
+            configuration: DesktopDriveProviderConfiguration,
+            repository: any ProviderRuntimeRepository
+        ),
+        runtime: DesktopDriveMappingRuntime,
+        offset: Int,
+        limit: Int
+    ) async throws -> (items: [ProviderItem], nextOffset: Int?) {
+        let paths = Self.workingSetPaths(
+            runtime: runtime,
+            mapping: context.configuration.mapping
         )
-        // 增量扫描直接读取远端，结果优先于短期元数据缓存。
-        await metadata.invalidate(paths: [
-            folderPath ?? Self.rootPath(for: context.configuration.mapping)
-        ])
-        return (journal, journalContainerIdentifier)
+        let safeOffset = min(max(offset, 0), paths.count)
+        let safeLimit = max(limit, 1)
+        let end = min(safeOffset + safeLimit, paths.count)
+        let requestedPaths = Array(paths[safeOffset..<end])
+        let resolvedItems = try await workingSetItems(
+            context: context,
+            paths: requestedPaths
+        )
+        return (
+            resolvedItems.map {
+                ProviderItem(
+                    fileItem: $0,
+                    mapping: context.configuration.mapping,
+                    keptOffline: runtime.keepsOffline($0.path)
+                )
+            },
+            end < paths.count ? end : nil
+        )
+    }
+
+    private func workingSetItems(
+        context: (
+            configuration: DesktopDriveProviderConfiguration,
+            repository: any ProviderRuntimeRepository
+        ),
+        runtime: DesktopDriveMappingRuntime,
+        persistTrackedItems: Bool = true
+    ) async throws -> [FileItem] {
+        try await workingSetItems(
+            context: context,
+            paths: Self.workingSetPaths(
+                runtime: runtime,
+                mapping: context.configuration.mapping
+            ),
+            persistTrackedItems: persistTrackedItems
+        )
+    }
+
+    private func workingSetItems(
+        context: (
+            configuration: DesktopDriveProviderConfiguration,
+            repository: any ProviderRuntimeRepository
+        ),
+        paths: [String],
+        persistTrackedItems: Bool = true
+    ) async throws -> [FileItem] {
+        guard !paths.isEmpty else { return [] }
+        let requested = Set(paths)
+        let returnedItems = try await context.repository.getInfo(paths: paths)
+        var resolvedByPath: [String: FileItem] = [:]
+        for item in returnedItems {
+            guard let normalized = DesktopDrivePath.normalized(item.path),
+                  requested.contains(normalized) else {
+                continue
+            }
+            if let previous = resolvedByPath[normalized], previous != item {
+                throw NSFileProviderError(.cannotSynchronize)
+            }
+            resolvedByPath[normalized] = item
+        }
+        let items = paths.compactMap { resolvedByPath[$0] }
+        if persistTrackedItems {
+            try await configurationStore.registerItemPaths(
+                mappingID: context.configuration.mapping.id,
+                remotePaths: items.map(\.path)
+            )
+            await metadata.remember(items)
+        }
+        return items
     }
 
     private func allItems(
@@ -894,7 +1030,7 @@ actor ProviderRuntime {
     private func folderPath(
         for containerIdentifier: NSFileProviderItemIdentifier
     ) async throws -> String? {
-        guard !Self.isRootLikeContainer(containerIdentifier) else {
+        guard !Self.isRootContainer(containerIdentifier) else {
             return nil
         }
         return try await remotePath(for: containerIdentifier)
@@ -980,16 +1116,69 @@ actor ProviderRuntime {
         }
     }
 
-    private static func isRootLikeContainer(
+    /// working set 只返回目前可证明已被系统跟踪的项目：已固定路径和已有本地
+    /// 缓存记录。它不触发根目录列表或递归扫描，并且保持有界，防止大 NAS 的
+    /// 全量目录被错误当成工作集。
+    private static func workingSetPaths(
+        runtime: DesktopDriveMappingRuntime,
+        mapping: DesktopDriveMapping
+    ) -> [String] {
+        let pinned = runtime.pinnedPaths.compactMap(DesktopDrivePath.normalized)
+            .filter { isWorkingSetPath($0, in: mapping) }
+            .sorted()
+        let cached = runtime.cacheEntries.values.compactMap {
+            entry -> (path: String, lastAccessedAt: Date)? in
+            guard let path = DesktopDrivePath.normalized(entry.remotePath),
+                  isWorkingSetPath(path, in: mapping) else {
+                return nil
+            }
+            return (path, entry.lastAccessedAt)
+        }.sorted {
+            if $0.lastAccessedAt == $1.lastAccessedAt {
+                return $0.path < $1.path
+            }
+            return $0.lastAccessedAt > $1.lastAccessedAt
+        }.map(\.path)
+
+        var seen = Set<String>()
+        var result: [String] = []
+        for path in pinned + cached where seen.insert(path).inserted {
+            result.append(path)
+            if result.count == 500 {
+                break
+            }
+        }
+        return result
+    }
+
+    private static func isWorkingSetPath(
+        _ path: String,
+        in mapping: DesktopDriveMapping
+    ) -> Bool {
+        switch mapping.scope {
+        case .allShares:
+            return path != "/"
+        case .folder(let rootPath):
+            guard let root = DesktopDrivePath.normalized(rootPath) else {
+                return false
+            }
+            return path != root && DesktopDrivePath.isAncestorOrSame(root, of: path)
+        }
+    }
+
+    private static func isRootContainer(
         _ identifier: NSFileProviderItemIdentifier
     ) -> Bool {
-        identifier == .rootContainer || identifier == .workingSet
+        identifier == .rootContainer
     }
 
     private static func journalContainerIdentifier(
         for identifier: NSFileProviderItemIdentifier
     ) -> String {
-        isRootLikeContainer(identifier)
+        if identifier == .workingSet {
+            return NSFileProviderItemIdentifier.workingSet.rawValue
+        }
+        return isRootContainer(identifier)
             ? NSFileProviderItemIdentifier.rootContainer.rawValue
             : identifier.rawValue
     }
