@@ -2185,6 +2185,7 @@ private struct FileBrowserView: View {
                         .foregroundStyle(model.searchErrorMessage != nil || model.statusIsError ? .red : .secondary)
                 }
                 if let manager = desktopDriveManager,
+                   manager.statusSource == .userAction,
                    let message = manager.statusMessage {
                     Label(
                         message,

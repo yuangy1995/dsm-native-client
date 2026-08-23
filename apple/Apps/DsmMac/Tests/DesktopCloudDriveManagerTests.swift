@@ -63,6 +63,25 @@ final class DesktopCloudDriveManagerTests: XCTestCase {
         XCTAssertEqual(manager.mappings.map(\.id), [context.mapping.id])
         XCTAssertEqual(manager.runtimes[context.mapping.id]?.state, .available)
         XCTAssertTrue(manager.statusIsError)
+        XCTAssertEqual(manager.statusSource, .backgroundLoad)
+    }
+
+    func test用户操作失败状态可在文件浏览器反馈() async throws {
+        let context = try await makeContext(cacheEntryCount: 1)
+        let faultStore = ManagerStoreFaultStub(
+            base: context.store,
+            failRemoveCacheEntries: true
+        )
+        var evictionCount = 0
+        context.operations.evict = { _, _ in evictionCount += 1 }
+        let manager = context.makeManager(store: faultStore)
+        await manager.load()
+
+        await manager.clearCache(context.mapping)
+
+        XCTAssertEqual(evictionCount, 1)
+        XCTAssertTrue(manager.statusIsError)
+        XCTAssertEqual(manager.statusSource, .userAction)
     }
 
     func test清理缓存逐项失败时只移除已释放记录() async throws {

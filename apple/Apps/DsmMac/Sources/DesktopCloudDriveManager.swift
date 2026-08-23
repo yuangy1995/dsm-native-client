@@ -32,6 +32,11 @@ enum DesktopCloudDriveAvailability {
     }
 }
 
+enum DesktopDriveStatusSource: Equatable {
+    case backgroundLoad
+    case userAction
+}
+
 actor DesktopDriveSessionBridge: DesktopDriveSessionBridging {
     private let profileID: UUID
     private let session: AuthSession
@@ -230,6 +235,7 @@ final class DesktopCloudDriveManager {
     private(set) var isAvailable: Bool
     private(set) var statusMessage: String?
     private(set) var statusIsError = false
+    private(set) var statusSource: DesktopDriveStatusSource?
     private(set) var cacheBytes: [UUID: Int64] = [:]
     private(set) var cacheSummaries: [UUID: DesktopDriveCacheSummary] = [:]
     private(set) var runtimes: [UUID: DesktopDriveMappingRuntime] = [:]
@@ -271,8 +277,7 @@ final class DesktopCloudDriveManager {
     func load() async {
         guard isAvailable else {
             mappings = []
-            statusMessage = nil
-            statusIsError = false
+            clearStatus()
             return
         }
         let previousMappings = mappings
@@ -303,12 +308,15 @@ final class DesktopCloudDriveManager {
                     )
                 }
                 await refreshCacheSizes()
-                setError("desktopDrive.error.authenticationRequired")
+                setError(
+                    "desktopDrive.error.authenticationRequired",
+                    source: .backgroundLoad
+                )
                 return
             }
             if sessionResult == .cleanupPending {
                 await refreshCacheSizes()
-                setError("desktopDrive.error.load")
+                setError("desktopDrive.error.load", source: .backgroundLoad)
                 return
             }
             await recoverInterruptedTransactions()
@@ -322,13 +330,16 @@ final class DesktopCloudDriveManager {
             for mapping in mappings {
                 await enforceTemporaryLimit(mapping)
             }
+            if statusSource == .backgroundLoad {
+                clearStatus()
+            }
         } catch {
             // 加载链路失败时保留最后一次完整呈现，避免把瞬时故障误报为映射已消失。
             mappings = previousMappings
             runtimes = previousRuntimes
             cacheBytes = previousCacheBytes
             cacheSummaries = previousCacheSummaries
-            setError("desktopDrive.error.load")
+            setError("desktopDrive.error.load", source: .backgroundLoad)
         }
     }
 
@@ -929,14 +940,28 @@ final class DesktopCloudDriveManager {
     }
 
 
-    private func setSuccess(_ key: String) {
+    private func clearStatus() {
         statusIsError = false
-        statusMessage = L10n.string(key)
+        statusMessage = nil
+        statusSource = nil
     }
 
-    private func setError(_ key: String) {
+    private func setSuccess(
+        _ key: String,
+        source: DesktopDriveStatusSource = .userAction
+    ) {
+        statusIsError = false
+        statusMessage = L10n.string(key)
+        statusSource = source
+    }
+
+    private func setError(
+        _ key: String,
+        source: DesktopDriveStatusSource = .userAction
+    ) {
         statusIsError = true
         statusMessage = L10n.string(key)
+        statusSource = source
     }
 
     private func runKeepOffline(
