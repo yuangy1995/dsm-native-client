@@ -178,6 +178,7 @@ jobs:
         env:
           LANSTASH_NON_INTERACTIVE: 1
           LANSTASH_BUILD_TYPE: Release
+          LANSTASH_BUILD_NUMBER: ${{ github.run_number }}
           LANSTASH_TARGET_ARCH: universal
           LANSTASH_RUN_AFTER_PACKAGE: 0
           LANSTASH_MAC_APP_BUNDLE_ID: ${{ vars.MACOS_APP_BUNDLE_ID }}
@@ -282,7 +283,6 @@ jobs:
         with:
           name: LanStash-macOS-pretest
           path: |
-            apple/Apps/DsmMac/dist/*.app
             apple/Apps/DsmMac/dist/*.dmg
           if-no-files-found: error
 
@@ -292,7 +292,6 @@ jobs:
         with:
           name: LanStash-macOS-release
           path: |
-            apple/Apps/DsmMac/dist/*.app
             apple/Apps/DsmMac/dist/*.dmg
           if-no-files-found: error
 

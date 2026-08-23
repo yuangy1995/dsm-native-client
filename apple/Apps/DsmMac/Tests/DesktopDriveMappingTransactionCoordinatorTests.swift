@@ -6,6 +6,31 @@ import XCTest
 
 @MainActor
 final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
+    nonisolated func test系统回调桥接可从后台队列恢复Continuation() async throws {
+        let value = try await DesktopDriveAsyncCallbackBridge.value {
+            completion in
+            DispatchQueue.global().async {
+                completion(.success(42))
+            }
+        }
+
+        XCTAssertEqual(value, 42)
+    }
+
+    nonisolated func test系统错误回调桥接可从后台队列抛出() async {
+        do {
+            try await DesktopDriveAsyncCallbackBridge.void {
+                completion in
+                DispatchQueue.global().async {
+                    completion(TransactionTestError.injected)
+                }
+            }
+            XCTFail("后台错误回调应被转换为 async throw。")
+        } catch {
+            XCTAssertEqual(error as? TransactionTestError, .injected)
+        }
+    }
+
     func test共享会话保存失败时不会写入映射或注册Domain() async {
         let store = TransactionStoreStub()
         let session = TransactionSessionStub(failPublish: true)
@@ -239,7 +264,7 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         XCTAssertEqual(runtime.state, .available)
     }
 
-    func test启动恢复时可读验证失败会进入Failed且不重复注册Domain() async {
+    func test启动恢复时先更新已注册Domain再执行可读验证() async {
         let store = TransactionStoreStub()
         await store.seed(mapping, state: .preparing)
         let session = TransactionSessionStub()
@@ -262,7 +287,7 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         let runtime = await store.runtime(mappingID: mapping.id)
         XCTAssertEqual(result, .failed)
         XCTAssertEqual(runtime.state, .failed)
-        XCTAssertEqual(domain.addCallCount, 0)
+        XCTAssertEqual(domain.addCallCount, 1)
     }
 
     func test启动恢复最终提交失败会进入Failed并在下次启动恢复() async {
@@ -303,7 +328,7 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         XCTAssertEqual(secondResult, .activated)
         XCTAssertEqual(recoveredRuntime.state, .available)
         XCTAssertEqual(verificationCount, 2)
-        XCTAssertEqual(domain.addCallCount, 0)
+        XCTAssertEqual(domain.addCallCount, 2)
     }
 
     func test启动恢复连续状态提交失败仍保留原状态供下次重试() async {
@@ -343,7 +368,7 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         XCTAssertEqual(secondResult, .activated)
         XCTAssertEqual(recoveredRuntime.state, .available)
         XCTAssertEqual(verificationCount, 2)
-        XCTAssertEqual(domain.addCallCount, 1)
+        XCTAssertEqual(domain.addCallCount, 2)
     }
 
     func testFailed映射在下次启动时会重新验证并恢复可用() async {
@@ -370,7 +395,34 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         let runtime = await store.runtime(mappingID: mapping.id)
         XCTAssertEqual(result, .activated)
         XCTAssertEqual(verificationCount, 1)
+        XCTAssertEqual(domain.addCallCount, 1)
         XCTAssertEqual(runtime.state, .available)
+    }
+
+    func test已注册可用系统Domain启动时刷新属性但不重复验证() async {
+        let store = TransactionStoreStub()
+        await store.seed(mapping, state: .available)
+        let session = TransactionSessionStub()
+        let domain = TransactionDomainControllerStub(
+            registeredIdentifiers: [mapping.id.uuidString]
+        )
+        let coordinator = makeCoordinator(
+            store: store,
+            session: session,
+            domain: domain
+        )
+        var verificationCount = 0
+
+        let result = await coordinator.recover(
+            mapping,
+            registeredDomainIdentifiers: [mapping.id.uuidString]
+        ) { _ in
+            verificationCount += 1
+        }
+
+        XCTAssertEqual(result, .unchanged)
+        XCTAssertEqual(domain.addCallCount, 1)
+        XCTAssertEqual(verificationCount, 0)
     }
 
     func test运行时损坏标记不会在启动时自动覆盖() async {
@@ -470,7 +522,7 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         XCTAssertEqual(sessionCounts.remove, 0)
     }
 
-    func test最后映射会话清理失败时保留Removing并可续清() async {
+    func test删除最后映射时会话清理失败仍移除映射并保留待清理标记() async throws {
         let store = TransactionStoreStub()
         await store.seed(mapping, state: .available)
         let failingSession = TransactionSessionStub(failRemove: true)
@@ -483,14 +535,15 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
             domain: domain
         )
 
-        await XCTAssertThrowsErrorAsync {
-            try await failingCoordinator.remove(self.mapping)
-        }
-        let removingRuntime = await store.runtime(mappingID: mapping.id)
-        let retainedMappings = await store.allMappings()
+        try await failingCoordinator.remove(mapping)
+        let remainingMappingsAfterRemove = await store.allMappings()
+        let pendingAfterFailure = await store.pendingSessionRemovalProfileIDs()
+        let failingSessionCounts = await failingSession.counts()
 
-        XCTAssertEqual(removingRuntime.state, .removing)
-        XCTAssertEqual(retainedMappings.map(\.id), [mapping.id])
+        XCTAssertTrue(remainingMappingsAfterRemove.isEmpty)
+        XCTAssertTrue(pendingAfterFailure.contains(mapping.profileID))
+        XCTAssertEqual(domain.removeCallCount, 1)
+        XCTAssertEqual(failingSessionCounts.remove, 1)
 
         let recoverySession = TransactionSessionStub()
         let recoveryCoordinator = makeCoordinator(
@@ -498,18 +551,41 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
             session: recoverySession,
             domain: domain
         )
-        let result = await recoveryCoordinator.recover(
-            mapping,
-            registeredDomainIdentifiers: []
-        ) { _ in }
-        let remainingMappings = await store.allMappings()
+        let result = await recoveryCoordinator.restoreSharedSession(
+            for: [],
+            profileID: mapping.profileID
+        )
+        let pendingAfterRecovery = await store.pendingSessionRemovalProfileIDs()
         let recoverySessionCounts = await recoverySession.counts()
-        let pendingProfileIDs = await store.pendingSessionRemovalProfileIDs()
 
-        XCTAssertEqual(result, .removed)
-        XCTAssertTrue(remainingMappings.isEmpty)
+        XCTAssertEqual(result, .unused)
+        XCTAssertFalse(pendingAfterRecovery.contains(mapping.profileID))
         XCTAssertEqual(recoverySessionCounts.remove, 1)
-        XCTAssertFalse(pendingProfileIDs.contains(mapping.profileID))
+    }
+
+    func test删除Domain失败会保留Removing和待清理标记供下次重试() async {
+        let store = TransactionStoreStub()
+        await store.seed(mapping, state: .available)
+        let session = TransactionSessionStub()
+        let domain = TransactionDomainControllerStub(failRemove: true)
+        let coordinator = makeCoordinator(
+            store: store,
+            session: session,
+            domain: domain
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            try await coordinator.remove(self.mapping)
+        }
+        let removingRuntime = await store.runtime(mappingID: mapping.id)
+        let retainedMappings = await store.allMappings()
+        let pendingProfileIDs = await store.pendingSessionRemovalProfileIDs()
+        let sessionCounts = await session.counts()
+
+        XCTAssertEqual(removingRuntime.state, .removing)
+        XCTAssertEqual(retainedMappings.map(\.id), [mapping.id])
+        XCTAssertTrue(pendingProfileIDs.contains(mapping.profileID))
+        XCTAssertEqual(sessionCounts.remove, 0)
     }
 
     func test创建回滚会话删除失败会留下配置级待清理标记() async {

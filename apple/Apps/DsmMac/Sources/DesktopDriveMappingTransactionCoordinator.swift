@@ -195,8 +195,14 @@ struct DesktopDriveMappingTransactionCoordinator {
             mappingID: mapping.id,
             successfulCheckAt: nil
         )
+        let shouldRemoveSharedSession =
+            try await beginSharedSessionRemovalIfLastMapping(mapping)
         try await domainController.remove(domainController.domain(for: mapping))
-        try await removeSessionBeforeRemovingLastMapping(mapping)
+        if shouldRemoveSharedSession {
+            await completePendingSharedSessionRemovalBestEffort(
+                profileID: mapping.profileID
+            )
+        }
         try await store.removeMapping(id: mapping.id)
     }
 
@@ -283,6 +289,10 @@ struct DesktopDriveMappingTransactionCoordinator {
                     )
                     return .needsCacheVolume
                 }
+            } else if case .systemDefault = mapping.cachePolicy.location {
+                try await domainController.add(
+                    domainController.domain(for: mapping)
+                )
             }
 
             guard [
@@ -355,21 +365,58 @@ struct DesktopDriveMappingTransactionCoordinator {
     private func removeSessionBeforeRemovingLastMapping(
         _ mapping: DesktopDriveMapping
     ) async throws {
+        guard try await mappingRemovalLeavesProfileUnused(mapping) else {
+            return
+        }
+        try await removeSharedSessionTransaction(profileID: mapping.profileID)
+    }
+
+    private func beginSharedSessionRemovalIfLastMapping(
+        _ mapping: DesktopDriveMapping
+    ) async throws -> Bool {
+        guard try await mappingRemovalLeavesProfileUnused(mapping) else {
+            return false
+        }
+        try await store.setSessionRemovalPending(
+            true,
+            profileID: mapping.profileID
+        )
+        return true
+    }
+
+    private func mappingRemovalLeavesProfileUnused(
+        _ mapping: DesktopDriveMapping
+    ) async throws -> Bool {
         let remainingMappings = try await store.mappings(
             profileID: mapping.profileID
         ).filter { $0.id != mapping.id }
-        guard remainingMappings.isEmpty else { return }
-        try await removeSharedSessionTransaction(profileID: mapping.profileID)
+        return remainingMappings.isEmpty
     }
 
     /// 先持久化待清理标记，再执行可重复的 Keychain 删除；只有两步都成功才清标记。
     private func removeSharedSessionTransaction(profileID: UUID) async throws {
         try await store.setSessionRemovalPending(true, profileID: profileID)
+        try await completePendingSharedSessionRemoval(profileID: profileID)
+    }
+
+    private func completePendingSharedSessionRemoval(
+        profileID: UUID
+    ) async throws {
         guard let sessionBridge else {
             throw DesktopDriveConfigurationStoreError.connectionUnavailable
         }
         try await sessionBridge.remove()
         try await store.setSessionRemovalPending(false, profileID: profileID)
+    }
+
+    private func completePendingSharedSessionRemovalBestEffort(
+        profileID: UUID
+    ) async {
+        do {
+            try await completePendingSharedSessionRemoval(profileID: profileID)
+        } catch {
+            // 待清理标记已经持久化，后续启动或重新登录时继续补清理。
+        }
     }
 
     private func markAuthenticationRequired(

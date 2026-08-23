@@ -118,8 +118,43 @@ final class FileProviderExtension:
             Error?
         ) -> Void
     ) -> Progress {
-        completionHandler(nil, [], false, CocoaError(.featureUnsupported))
-        return Progress(totalUnitCount: 0)
+        let progress = Progress(totalUnitCount: 1)
+        let template = ProviderImportedItemTemplate(item: itemTemplate)
+        let completionBox = UncheckedSendableBox(completionHandler)
+        let operationID = UUID()
+        let operation = Task {
+            defer { operations.remove(operationID) }
+            do {
+                if let item = try await runtime.itemForImportedSystemItem(
+                    template
+                ) {
+                    completionBox.value(item, [], false, nil)
+                } else {
+                    completionBox.value(
+                        nil,
+                        [],
+                        false,
+                        NSFileProviderError(.cannotSynchronize)
+                    )
+                }
+                progress.completedUnitCount = 1
+            } catch {
+                completionBox.value(
+                    nil,
+                    [],
+                    false,
+                    ProviderErrorMapper.map(
+                        error,
+                        itemIdentifier: template.identifier
+                    )
+                )
+            }
+        }
+        operations.insert(operation, id: operationID)
+        progress.cancellationHandler = {
+            operation.cancel()
+        }
+        return progress
     }
 
     func modifyItem(
@@ -136,7 +171,12 @@ final class FileProviderExtension:
             Error?
         ) -> Void
     ) -> Progress {
-        completionHandler(nil, [], false, CocoaError(.featureUnsupported))
+        completionHandler(
+            nil,
+            [],
+            false,
+            NSFileProviderError(.cannotSynchronize)
+        )
         return Progress(totalUnitCount: 0)
     }
 
@@ -147,17 +187,51 @@ final class FileProviderExtension:
         request: NSFileProviderRequest,
         completionHandler: @escaping (Error?) -> Void
     ) -> Progress {
-        completionHandler(CocoaError(.featureUnsupported))
-        return Progress(totalUnitCount: 0)
+        let progress = Progress(totalUnitCount: 1)
+        let completionBox = UncheckedSendableBox(completionHandler)
+        let operationID = UUID()
+        let operation = Task {
+            defer { operations.remove(operationID) }
+            do {
+                let item = try await runtime.item(for: identifier)
+                completionBox.value(
+                    NSError.fileProviderErrorForRejectedDeletion(of: item)
+                )
+                progress.completedUnitCount = 1
+            } catch {
+                let mapped = ProviderErrorMapper.map(
+                    error,
+                    itemIdentifier: identifier
+                ) as NSError
+                if mapped.domain == NSFileProviderErrorDomain,
+                   mapped.code == NSFileProviderError.noSuchItem.rawValue {
+                    completionBox.value(nil)
+                } else {
+                    completionBox.value(mapped)
+                }
+            }
+        }
+        operations.insert(operation, id: operationID)
+        progress.cancellationHandler = {
+            operation.cancel()
+        }
+        return progress
     }
 
     func enumerator(
         for containerItemIdentifier: NSFileProviderItemIdentifier,
         request: NSFileProviderRequest
     ) throws -> NSFileProviderEnumerator {
-        ProviderEnumerator(
+        if containerItemIdentifier == .trashContainer {
+            return ProviderEmptyEnumerator()
+        }
+        return ProviderEnumerator(
             containerIdentifier: containerItemIdentifier,
             runtime: runtime
         )
+    }
+
+    func importDidFinish(completionHandler: @escaping () -> Void) {
+        completionHandler()
     }
 }

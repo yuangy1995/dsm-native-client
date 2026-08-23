@@ -1,7 +1,7 @@
 import AppKit
 import DsmCore
 import DsmLocalization
-import FileProvider
+@preconcurrency import FileProvider
 import Foundation
 import Observation
 
