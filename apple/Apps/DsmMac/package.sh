@@ -104,6 +104,16 @@ validate_xcode_source_membership() {
     fi
 }
 
+set_plist_string() {
+    local plist_path="$1"
+    local key_path="$2"
+    local value="$3"
+
+    if ! "$PLIST_BUDDY" -c "Set :$key_path $value" "$plist_path" 2>/dev/null; then
+        "$PLIST_BUDDY" -c "Add :$key_path string $value" "$plist_path"
+    fi
+}
+
 cleanup_old_packages() {
     local package=""
     local removed=0
@@ -427,6 +437,29 @@ else
     /bin/cp \
         "$FILE_PROVIDER_ENTITLEMENTS" \
         "$EXPANDED_FILE_PROVIDER_ENTITLEMENTS"
+    FILE_PROVIDER_APP="$APP_PATH/Contents/PlugIns/LanStashFileProvider.appex"
+    [[ -d "$FILE_PROVIDER_APP" ]] \
+        || fail "完整签名需要 File Provider 扩展，但构建产物中未找到"
+    set_plist_string \
+        "$APP_PATH/Contents/Info.plist" \
+        "LanStashSharedKeychainAccessGroup" \
+        "$SHARED_KEYCHAIN_GROUP"
+    set_plist_string \
+        "$FILE_PROVIDER_APP/Contents/Info.plist" \
+        "LanStashSharedKeychainAccessGroup" \
+        "$SHARED_KEYCHAIN_GROUP"
+    set_plist_string \
+        "$APP_PATH/Contents/Info.plist" \
+        "LanStashAppGroupIdentifier" \
+        "$MAC_APP_GROUP_ID"
+    set_plist_string \
+        "$FILE_PROVIDER_APP/Contents/Info.plist" \
+        "LanStashAppGroupIdentifier" \
+        "$MAC_APP_GROUP_ID"
+    set_plist_string \
+        "$FILE_PROVIDER_APP/Contents/Info.plist" \
+        "NSExtension:NSExtensionFileProviderDocumentGroup" \
+        "$MAC_APP_GROUP_ID"
     "$PLIST_BUDDY" \
         -c "Set :keychain-access-groups:0 $SHARED_KEYCHAIN_GROUP" \
         "$EXPANDED_APP_ENTITLEMENTS"
@@ -440,9 +473,6 @@ else
         -c "Set :com.apple.security.application-groups:0 $MAC_APP_GROUP_ID" \
         "$EXPANDED_FILE_PROVIDER_ENTITLEMENTS"
 
-    FILE_PROVIDER_APP="$APP_PATH/Contents/PlugIns/LanStashFileProvider.appex"
-    [[ -d "$FILE_PROVIDER_APP" ]] \
-        || fail "完整签名需要 File Provider 扩展，但构建产物中未找到"
     validate_and_embed_profile \
         "$MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH" \
         "$MAC_FILE_PROVIDER_BUNDLE_ID" \

@@ -22,6 +22,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LanStashSharedKeychainAccessGroup</key>
 	<string>$(SHARED_KEYCHAIN_ACCESS_GROUP)</string>
+	<key>LanStashAppGroupIdentifier</key>
+	<string>$(LANSTASH_MAC_APP_GROUP_ID)</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionFileProviderDocumentGroup</key>
