@@ -66,6 +66,29 @@ final class DesktopCloudDriveManagerTests: XCTestCase {
         XCTAssertEqual(manager.statusSource, .backgroundLoad)
     }
 
+    func test新增时接回系统仍注册的Removing映射() async throws {
+        let context = try await makeContext()
+        try await context.store.setMappingState(
+            .removing,
+            mappingID: context.mapping.id
+        )
+        let manager = context.makeManager()
+
+        await manager.addAllShares()
+
+        let runtime = try await context.store.runtime(
+            mappingID: context.mapping.id
+        )
+        XCTAssertEqual(manager.mappings.map(\.id), [context.mapping.id])
+        XCTAssertEqual(
+            manager.mappings.first?.displayName,
+            context.profile.displayName
+        )
+        XCTAssertEqual(manager.mappings.first?.scope, .allShares)
+        XCTAssertEqual(runtime.state, .available)
+        XCTAssertFalse(manager.statusIsError)
+    }
+
     func test用户操作失败状态可在文件浏览器反馈() async throws {
         let context = try await makeContext(cacheEntryCount: 1)
         let faultStore = ManagerStoreFaultStub(

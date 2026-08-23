@@ -893,7 +893,29 @@ final class DesktopCloudDriveManager {
             scope: scope,
             cachePolicy: cachePolicy
         )
-        guard !mappings.contains(where: { $0.overlaps(mapping) }) else {
+        do {
+            try await reloadStoredMappings()
+            let registeredDomainIdentifiers =
+                (try? await transactionCoordinator.registeredDomainIdentifiers())
+                ?? []
+            if let reattached = try await transactionCoordinator
+                .reattachRegisteredRemovingMapping(
+                    for: mapping,
+                    registeredDomainIdentifiers: registeredDomainIdentifiers,
+                    verifyReadable: verifyReadable
+                ) {
+                try await recordStoredMapping(reattached)
+                setSuccess("desktopDrive.status.added")
+                return
+            }
+        } catch {
+            setError("desktopDrive.error.add")
+            return
+        }
+        guard !mappings.contains(where: { existing in
+            runtimes[existing.id]?.state != .removing
+                && existing.overlaps(mapping)
+        }) else {
             setError("desktopDrive.error.overlap")
             return
         }
@@ -902,9 +924,7 @@ final class DesktopCloudDriveManager {
                 mapping,
                 verifyReadable: verifyReadable
             )
-            mappings.append(created)
-            mappings.sort { $0.createdAt < $1.createdAt }
-            runtimes[created.id] = try await store.runtime(mappingID: created.id)
+            try await recordStoredMapping(created)
             setSuccess("desktopDrive.status.added")
         } catch {
             setError("desktopDrive.error.add")
@@ -1316,6 +1336,23 @@ final class DesktopCloudDriveManager {
         if let runtime = try? await store.runtime(mappingID: mapping.id) {
             runtimes[mapping.id] = runtime
         }
+    }
+
+    private func reloadStoredMappings() async throws {
+        mappings = try await store.mappings(profileID: profile.id)
+        runtimes = [:]
+        for mapping in mappings {
+            runtimes[mapping.id] = try await store.runtime(mappingID: mapping.id)
+        }
+    }
+
+    private func recordStoredMapping(
+        _ mapping: DesktopDriveMapping
+    ) async throws {
+        mappings.removeAll { $0.id == mapping.id }
+        mappings.append(mapping)
+        mappings.sort { $0.createdAt < $1.createdAt }
+        runtimes[mapping.id] = try await store.runtime(mappingID: mapping.id)
     }
 
     private func verifyReadable(_ mapping: DesktopDriveMapping) async throws {

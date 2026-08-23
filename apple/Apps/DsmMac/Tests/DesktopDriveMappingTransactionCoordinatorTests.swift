@@ -266,6 +266,48 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         XCTAssertEqual(sessionCounts.remove, 1)
     }
 
+    func test新增时可接回系统仍注册的Removing映射() async throws {
+        let request = DesktopDriveMapping(
+            profileID: mapping.profileID,
+            displayName: "重新添加映射",
+            scope: .allShares
+        )
+        let store = TransactionStoreStub()
+        await store.seed(mapping, state: .removing)
+        let session = TransactionSessionStub()
+        let domain = TransactionDomainControllerStub(
+            registeredIdentifiers: [mapping.id.uuidString]
+        )
+        let coordinator = makeCoordinator(
+            store: store,
+            session: session,
+            domain: domain
+        )
+        var verifiedMappings: [DesktopDriveMapping] = []
+
+        let result = try await coordinator.reattachRegisteredRemovingMapping(
+            for: request,
+            registeredDomainIdentifiers: [mapping.id.uuidString]
+        ) { recovered in
+            verifiedMappings.append(recovered)
+        }
+
+        let recovered = try XCTUnwrap(result)
+        let storedMappings = await store.allMappings()
+        let runtime = await store.runtime(mappingID: mapping.id)
+        let sessionCounts = await session.counts()
+        XCTAssertEqual(recovered.id, mapping.id)
+        XCTAssertEqual(recovered.displayName, "重新添加映射")
+        XCTAssertEqual(recovered.scope, .allShares)
+        XCTAssertEqual(storedMappings, [recovered])
+        XCTAssertEqual(runtime.state, .available)
+        XCTAssertEqual(verifiedMappings, [recovered])
+        XCTAssertEqual(domain.addCallCount, 1)
+        XCTAssertEqual(domain.removeCallCount, 0)
+        XCTAssertEqual(sessionCounts.publish, 1)
+        XCTAssertEqual(sessionCounts.remove, 0)
+    }
+
     func test启动时补注册缺失的系统盘Domain并完成Creating状态() async throws {
         let store = TransactionStoreStub()
         await store.seed(mapping, state: .preparing)

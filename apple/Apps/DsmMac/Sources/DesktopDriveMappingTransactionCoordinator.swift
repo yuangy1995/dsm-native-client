@@ -189,6 +189,83 @@ struct DesktopDriveMappingTransactionCoordinator {
         }
     }
 
+    func reattachRegisteredRemovingMapping(
+        for requestedMapping: DesktopDriveMapping,
+        registeredDomainIdentifiers: Set<String>,
+        verifyReadable: (DesktopDriveMapping) async throws -> Void
+    ) async throws -> DesktopDriveMapping? {
+        guard let sessionBridge else {
+            throw DesktopDriveConfigurationStoreError.connectionUnavailable
+        }
+
+        let storedMappings = try await store.mappings(
+            profileID: requestedMapping.profileID
+        )
+        var retainedMapping: DesktopDriveMapping?
+        for mapping in storedMappings where mapping.overlaps(requestedMapping) {
+            let runtime = try await store.runtime(mappingID: mapping.id)
+            let identifier = mapping.providerDomainIdentifier
+                ?? mapping.id.uuidString
+            guard runtime.state == .removing,
+                  registeredDomainIdentifiers.contains(identifier) else {
+                continue
+            }
+            retainedMapping = mapping
+            break
+        }
+        guard let retainedMapping else {
+            return nil
+        }
+
+        let reattachedMapping = DesktopDriveMapping(
+            id: retainedMapping.id,
+            profileID: requestedMapping.profileID,
+            displayName: requestedMapping.displayName,
+            scope: requestedMapping.scope,
+            accessMode: requestedMapping.accessMode,
+            cachePolicy: requestedMapping.cachePolicy,
+            launchAtLogin: requestedMapping.launchAtLogin,
+            providerDomainIdentifier: retainedMapping.providerDomainIdentifier,
+            createdAt: retainedMapping.createdAt
+        )
+
+        var mappingSaved = false
+        do {
+            try await sessionBridge.publish()
+            try await store.setSessionRemovalPending(
+                false,
+                profileID: reattachedMapping.profileID
+            )
+            try await store.removeMapping(id: retainedMapping.id)
+            try await store.saveMapping(reattachedMapping)
+            mappingSaved = true
+            try await store.setMappingState(
+                .preparing,
+                mappingID: reattachedMapping.id,
+                successfulCheckAt: nil
+            )
+            try await domainController.add(
+                domainController.domain(for: reattachedMapping)
+            )
+            try await verifyReadable(reattachedMapping)
+            try await store.setMappingState(
+                .available,
+                mappingID: reattachedMapping.id,
+                successfulCheckAt: Date()
+            )
+            return reattachedMapping
+        } catch {
+            if mappingSaved {
+                try? await store.setMappingState(
+                    .failed,
+                    mappingID: reattachedMapping.id,
+                    successfulCheckAt: nil
+                )
+            }
+            throw error
+        }
+    }
+
     func remove(_ mapping: DesktopDriveMapping) async throws {
         try await store.setMappingState(
             .removing,
