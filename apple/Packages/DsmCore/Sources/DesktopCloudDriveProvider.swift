@@ -2,8 +2,23 @@ import Darwin
 import Foundation
 
 public enum DesktopDriveSharedContainer {
-    public static let appGroupIdentifier =
+    public static let appGroupInfoDictionaryKey =
+        "LanStashAppGroupIdentifier"
+    public static let fallbackAppGroupIdentifier =
         "group.io.github.qwertyuiop1995.dsmnativeclient"
+    public static var appGroupIdentifier: String {
+        appGroupIdentifier(bundle: .main)
+    }
+
+    static func appGroupIdentifier(bundle: Bundle) -> String {
+        guard let value = bundle.object(
+            forInfoDictionaryKey: appGroupInfoDictionaryKey
+        ) as? String else {
+            return fallbackAppGroupIdentifier
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallbackAppGroupIdentifier : trimmed
+    }
 }
 
 public struct DesktopDriveProviderConnection: Codable, Equatable, Sendable {
@@ -246,7 +261,12 @@ public actor DesktopDriveConfigurationStore {
         fileManager: FileManager = .default
     ) {
         self.fileManager = fileManager
+        #if os(iOS)
         writeOptions = [.atomic, .completeFileProtection]
+        #else
+        // macOS 共享容器依赖沙盒和 App Group 权限保护，避免使用移动端文件保护选项。
+        writeOptions = [.atomic]
+        #endif
         directoryURL = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupIdentifier
         )

@@ -114,6 +114,31 @@ final class DesktopCloudDriveTests: XCTestCase {
         )
     }
 
+    func test共享容器优先使用Bundle内的AppGroup配置() throws {
+        let bundleURL = try makeBundle(
+            info: [
+                DesktopDriveSharedContainer.appGroupInfoDictionaryKey:
+                    "  TEAMID.io.github.lanstash.shared  ",
+            ]
+        )
+        let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+
+        XCTAssertEqual(
+            DesktopDriveSharedContainer.appGroupIdentifier(bundle: bundle),
+            "TEAMID.io.github.lanstash.shared"
+        )
+    }
+
+    func test共享容器配置缺失时使用兼容默认值() throws {
+        let bundleURL = try makeBundle(info: [:])
+        let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+
+        XCTAssertEqual(
+            DesktopDriveSharedContainer.appGroupIdentifier(bundle: bundle),
+            DesktopDriveSharedContainer.fallbackAppGroupIdentifier
+        )
+    }
+
     func test共享配置按连接保存并可恢复映射() async throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -522,6 +547,34 @@ final class DesktopCloudDriveTests: XCTestCase {
         )
         let recoveredRuntime = try await store.runtime(mappingID: first.id)
         XCTAssertEqual(recoveredRuntime.state, .available)
+    }
+
+    private func makeBundle(info: [String: String]) throws -> URL {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let bundleURL = rootURL.appendingPathComponent(
+            "LanStashTest.bundle",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: bundleURL,
+            withIntermediateDirectories: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        var dictionary = info
+        dictionary["CFBundleIdentifier"] = "io.github.lanstash.test"
+        dictionary["CFBundlePackageType"] = "BNDL"
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: dictionary,
+            format: .xml,
+            options: 0
+        )
+        try data.write(
+            to: bundleURL.appendingPathComponent("Info.plist")
+        )
+        return bundleURL
     }
 
     func test读取损坏配置时使用最后成功快照但拒绝覆盖磁盘() async throws {
