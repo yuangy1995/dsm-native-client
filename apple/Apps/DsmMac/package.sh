@@ -393,18 +393,27 @@ else
     CERTIFICATE_PEM="$BUILD_ROOT/signing-certificate.pem"
     EXPANDED_APP_ENTITLEMENTS="$BUILD_ROOT/DsmMac.expanded.entitlements"
     EXPANDED_FILE_PROVIDER_ENTITLEMENTS="$BUILD_ROOT/DsmFileProvider.expanded.entitlements"
-    /usr/bin/security find-certificate \
+    if /usr/bin/security find-certificate \
         -c "$SIGNING_IDENTITY" \
-        -p > "$CERTIFICATE_PEM"
-    TEAM_IDENTIFIER="$(
-        /usr/bin/openssl x509 \
-            -in "$CERTIFICATE_PEM" \
-            -noout \
-            -subject \
-            -nameopt RFC2253 \
-        | /usr/bin/sed -n 's/.*OU=\\([^,]*\\).*/\\1/p'
-    )"
-    [[ -n "$TEAM_IDENTIFIER" ]] \
+        -p > "$CERTIFICATE_PEM" 2>/dev/null; then
+        TEAM_IDENTIFIER="$(
+            /usr/bin/openssl x509 \
+                -in "$CERTIFICATE_PEM" \
+                -noout \
+                -subject \
+                -nameopt RFC2253 \
+            | /usr/bin/sed -n 's/.*OU=\\([^,]*\\).*/\\1/p'
+        )"
+    fi
+    if [[ -z "$TEAM_IDENTIFIER" ]]; then
+        # CI 的临时钥匙串有时可列出签名身份，但 find-certificate 无法按完整显示名称反查。
+        # Apple 签名身份名称固定以十位 Team ID 的括号结尾，作为经过格式校验的后备来源。
+        TEAM_IDENTIFIER="$(
+            printf '%s\n' "$SIGNING_IDENTITY" \
+            | /usr/bin/sed -n 's/.*(\\([A-Z0-9]\\{10\\}\\))$/\\1/p'
+        )"
+    fi
+    [[ "$TEAM_IDENTIFIER" =~ ^[A-Z0-9]{10}$ ]] \
         || fail "无法从签名证书读取团队标识，请改用 Apple 开发或 Developer ID 证书"
     if [[ "$MAC_APP_GROUP_ID" != group.* \
         && "$MAC_APP_GROUP_ID" != "$TEAM_IDENTIFIER".* ]]; then
