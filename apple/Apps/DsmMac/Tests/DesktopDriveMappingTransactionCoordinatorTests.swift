@@ -238,6 +238,34 @@ final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
         XCTAssertEqual(sessionCounts.remove, 1)
     }
 
+    func test启动时清理Removing映射不被会话清理失败阻塞() async {
+        let store = TransactionStoreStub()
+        await store.seed(mapping, state: .removing)
+        let session = TransactionSessionStub(failRemove: true)
+        let domain = TransactionDomainControllerStub(
+            registeredIdentifiers: [mapping.id.uuidString]
+        )
+        let coordinator = makeCoordinator(
+            store: store,
+            session: session,
+            domain: domain
+        )
+
+        let result = await coordinator.recover(
+            mapping,
+            registeredDomainIdentifiers: [mapping.id.uuidString]
+        ) { _ in }
+
+        let storedMappings = await store.allMappings()
+        let pendingProfileIDs = await store.pendingSessionRemovalProfileIDs()
+        let sessionCounts = await session.counts()
+        XCTAssertEqual(result, .removed)
+        XCTAssertEqual(domain.removeCallCount, 1)
+        XCTAssertTrue(storedMappings.isEmpty)
+        XCTAssertTrue(pendingProfileIDs.contains(mapping.profileID))
+        XCTAssertEqual(sessionCounts.remove, 1)
+    }
+
     func test启动时补注册缺失的系统盘Domain并完成Creating状态() async throws {
         let store = TransactionStoreStub()
         await store.seed(mapping, state: .preparing)
