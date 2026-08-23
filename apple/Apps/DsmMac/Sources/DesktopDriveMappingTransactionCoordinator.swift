@@ -261,12 +261,18 @@ struct DesktopDriveMappingTransactionCoordinator {
             let isRegistered = registeredDomainIdentifiers.contains(identifier)
 
             if runtime.state == .removing {
+                let shouldRemoveSharedSession =
+                    try await beginSharedSessionRemovalIfLastMapping(mapping)
                 if isRegistered {
                     try await domainController.remove(
                         domainController.domain(for: mapping)
                     )
                 }
-                try await removeSessionBeforeRemovingLastMapping(mapping)
+                if shouldRemoveSharedSession {
+                    await completePendingSharedSessionRemovalBestEffort(
+                        profileID: mapping.profileID
+                    )
+                }
                 try await store.removeMapping(id: mapping.id)
                 return .removed
             }

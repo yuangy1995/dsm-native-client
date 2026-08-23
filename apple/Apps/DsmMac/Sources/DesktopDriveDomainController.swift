@@ -149,7 +149,10 @@ enum DesktopDriveFileProviderCallbackBridge {
         _ domain: NSFileProviderDomain
     ) async throws {
         try await DesktopDriveAsyncCallbackBridge.void { completion in
-            NSFileProviderManager.remove(domain) { error in
+            NSFileProviderManager.remove(
+                domain,
+                mode: .preserveDownloadedUserData
+            ) { _, error in
                 completion(error)
             }
         }
@@ -189,7 +192,10 @@ enum DesktopDriveFileProviderCallbackBridge {
                     completion(nil)
                     return
                 }
-                NSFileProviderManager.remove(domain) { removeError in
+                NSFileProviderManager.remove(
+                    domain,
+                    mode: .preserveDownloadedUserData
+                ) { _, removeError in
                     completion(removeError)
                 }
             }
