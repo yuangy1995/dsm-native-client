@@ -22,6 +22,7 @@ secrets/
 *.p12
 *.pfx
 *.mobileprovision
+*.provisionprofile
 *.keystore
 *.jks
 

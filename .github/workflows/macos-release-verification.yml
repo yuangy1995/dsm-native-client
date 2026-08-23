@@ -56,37 +56,65 @@ jobs:
         env:
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          MACOS_DEVELOPER_IDENTITY: ${{ secrets.MACOS_DEVELOPER_IDENTITY }}
-          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
-          MACOS_NOTARY_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_SPECIFIC_PASSWORD }}
-          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_PROVISIONING_PROFILE_BASE64 }}
+          MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          LANSTASH_MAC_APP_BUNDLE_ID: ${{ vars.MACOS_APP_BUNDLE_ID }}
+          LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID: ${{ vars.MACOS_FILE_PROVIDER_BUNDLE_ID }}
+          LANSTASH_MAC_APP_GROUP_ID: ${{ vars.MACOS_APP_GROUP_ID }}
+          LANSTASH_SHARED_KEYCHAIN_SUFFIX: ${{ vars.MACOS_SHARED_KEYCHAIN_SUFFIX }}
         run: |
           for name in \
             MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 \
             MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD \
-            MACOS_DEVELOPER_IDENTITY \
-            MACOS_NOTARY_APPLE_ID \
-            MACOS_NOTARY_APP_SPECIFIC_PASSWORD \
-            MACOS_NOTARY_TEAM_ID; do
+            MACOS_APP_PROVISIONING_PROFILE_BASE64 \
+            MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64 \
+            APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            LANSTASH_MAC_APP_BUNDLE_ID \
+            LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID \
+            LANSTASH_MAC_APP_GROUP_ID \
+            LANSTASH_SHARED_KEYCHAIN_SUFFIX; do
             test -n "${!name:-}" || {
-              echo "发布环境缺少必需 Secret：$name" >&2
+              echo "发布环境缺少必需 Secret 或 Variable：$name" >&2
               exit 1
             }
           done
+          [[ "$LANSTASH_MAC_APP_GROUP_ID" == group.* \
+            || "$LANSTASH_MAC_APP_GROUP_ID" =~ ^[A-Z0-9]{10}\. ]] || {
+            echo "MACOS_APP_GROUP_ID 必须使用 group.* 或 <TeamID>.* 格式" >&2
+            exit 1
+          }
 
-      - name: 导入临时 Developer ID 证书并配置公证资料
+      - name: 导入临时 Developer ID 证书并配置 API Key 公证资料
         shell: bash
         env:
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
-          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
-          MACOS_NOTARY_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_NOTARY_APP_SPECIFIC_PASSWORD }}
-          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_PROVISIONING_PROFILE_BASE64 }}
+          MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           release_keychain="$RUNNER_TEMP/lanstash-release.keychain-db"
           certificate_path="$RUNNER_TEMP/lanstash-developer-id.p12"
+          app_profile_path="$RUNNER_TEMP/lanstash-macos-app.provisionprofile"
+          file_provider_profile_path="$RUNNER_TEMP/lanstash-file-provider.provisionprofile"
+          api_key_path="$RUNNER_TEMP/lanstash-notary-api-key.p8"
           keychain_password="$(uuidgen)"
           printf '%s' "$MACOS_DEVELOPER_ID_CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
+          printf '%s' "$MACOS_APP_PROVISIONING_PROFILE_BASE64" | base64 -D > "$app_profile_path"
+          printf '%s' "$MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64" | base64 -D > "$file_provider_profile_path"
+          printf '%s' "$APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64" | base64 -D > "$api_key_path"
+          chmod 600 \
+            "$certificate_path" \
+            "$app_profile_path" \
+            "$file_provider_profile_path" \
+            "$api_key_path"
           security create-keychain -p "$keychain_password" "$release_keychain"
           security set-keychain-settings -lut 21600 "$release_keychain"
           security unlock-keychain -p "$keychain_password" "$release_keychain"
@@ -101,10 +129,21 @@ jobs:
             "$release_keychain"
           security list-keychain -d user -s "$release_keychain"
           security default-keychain -s "$release_keychain"
-          xcrun notarytool store-credentials "$LANSTASH_NOTARY_PROFILE" \
-            --apple-id "$MACOS_NOTARY_APPLE_ID" \
-            --team-id "$MACOS_NOTARY_TEAM_ID" \
-            --password "$MACOS_NOTARY_APP_SPECIFIC_PASSWORD"
+          signing_identities="$(
+            security find-identity -v -p codesigning "$release_keychain" \
+              | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p'
+          )"
+          identity_count="$(printf '%s\n' "$signing_identities" | awk 'NF { count++ } END { print count + 0 }')"
+          test "$identity_count" -eq 1 || {
+            echo "Developer ID .p12 必须且只能包含一张 Developer ID Application 身份" >&2
+            exit 1
+          }
+          echo "LANSTASH_SIGNING_IDENTITY=$signing_identities" >> "$GITHUB_ENV"
+          xcrun notarytool history \
+            --key "$api_key_path" \
+            --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+            --issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
+            --output-format json >/dev/null
 
       - name: 生成 macOS 工程
         working-directory: apple/Apps/DsmMac
@@ -120,11 +159,20 @@ jobs:
           LANSTASH_BUILD_TYPE: Release
           LANSTASH_TARGET_ARCH: universal
           LANSTASH_RUN_AFTER_PACKAGE: 0
-          LANSTASH_SIGNING_IDENTITY: ${{ secrets.MACOS_DEVELOPER_IDENTITY }}
+          LANSTASH_MAC_APP_BUNDLE_ID: ${{ vars.MACOS_APP_BUNDLE_ID }}
+          LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID: ${{ vars.MACOS_FILE_PROVIDER_BUNDLE_ID }}
+          LANSTASH_MAC_APP_GROUP_ID: ${{ vars.MACOS_APP_GROUP_ID }}
+          LANSTASH_SHARED_KEYCHAIN_SUFFIX: ${{ vars.MACOS_SHARED_KEYCHAIN_SUFFIX }}
+          LANSTASH_MAC_APP_PROVISIONING_PROFILE_PATH: ${{ runner.temp }}/lanstash-macos-app.provisionprofile
+          LANSTASH_MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH: ${{ runner.temp }}/lanstash-file-provider.provisionprofile
         run: ./package.sh
 
       - name: 公证、装订并验证正式候选包
         shell: bash
+        env:
+          LANSTASH_NOTARY_API_KEY_PATH: ${{ runner.temp }}/lanstash-notary-api-key.p8
+          LANSTASH_NOTARY_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          LANSTASH_NOTARY_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           shopt -s nullglob
           dmg_paths=(apple/Apps/DsmMac/dist/LanStash-*.dmg)
@@ -147,9 +195,21 @@ jobs:
         run: |
           release_keychain="$RUNNER_TEMP/lanstash-release.keychain-db"
           certificate_path="$RUNNER_TEMP/lanstash-developer-id.p12"
+          app_profile_path="$RUNNER_TEMP/lanstash-macos-app.provisionprofile"
+          file_provider_profile_path="$RUNNER_TEMP/lanstash-file-provider.provisionprofile"
+          api_key_path="$RUNNER_TEMP/lanstash-notary-api-key.p8"
           if [[ -f "$release_keychain" ]]; then
             security delete-keychain "$release_keychain"
           fi
           if [[ -f "$certificate_path" ]]; then
             /bin/rm -f -- "$certificate_path"
+          fi
+          if [[ -f "$app_profile_path" ]]; then
+            /bin/rm -f -- "$app_profile_path"
+          fi
+          if [[ -f "$file_provider_profile_path" ]]; then
+            /bin/rm -f -- "$file_provider_profile_path"
+          fi
+          if [[ -f "$api_key_path" ]]; then
+            /bin/rm -f -- "$api_key_path"
           fi
