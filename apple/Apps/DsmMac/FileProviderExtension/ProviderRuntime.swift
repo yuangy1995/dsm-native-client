@@ -119,6 +119,14 @@ struct ProviderRequestedVersion: Equatable, Sendable {
     let metadata: Data
 }
 
+struct ProviderImportedItemTemplate: Sendable {
+    let identifier: NSFileProviderItemIdentifier
+
+    init(item: NSFileProviderItem) {
+        identifier = item.itemIdentifier
+    }
+}
+
 struct ProviderChangePage: Sendable {
     let updatedItems: [ProviderItem]
     let deletedItemIdentifiers: [NSFileProviderItemIdentifier]
@@ -393,6 +401,27 @@ actor ProviderRuntime {
             deletedItemIdentifiers: deletedItemIdentifiers,
             nextAnchor: nextAnchor,
             moreComing: pending.count > entries.count
+        )
+    }
+
+    func itemForImportedSystemItem(
+        _ template: ProviderImportedItemTemplate
+    ) async throws -> ProviderItem? {
+        if template.identifier == .trashContainer {
+            return ProviderItem.trashContainer()
+        }
+        guard template.identifier == .rootContainer else {
+            return nil
+        }
+        let context = try await makeContext()
+        let runtime = try await configurationStore.runtime(
+            mappingID: context.configuration.mapping.id
+        )
+        return ProviderItem.root(
+            configuration: context.configuration,
+            keptOffline: runtime.keepsOffline(
+                Self.rootPath(for: context.configuration.mapping)
+            )
         )
     }
 
@@ -1186,12 +1215,14 @@ actor ProviderRuntime {
     fileprivate static func domain(
         for mapping: DesktopDriveMapping
     ) -> NSFileProviderDomain {
-        NSFileProviderDomain(
+        let domain = NSFileProviderDomain(
             identifier: NSFileProviderDomainIdentifier(
                 mapping.providerDomainIdentifier ?? mapping.id.uuidString
             ),
             displayName: mapping.displayName
         )
+        domain.supportsSyncingTrash = false
+        return domain
     }
 }
 

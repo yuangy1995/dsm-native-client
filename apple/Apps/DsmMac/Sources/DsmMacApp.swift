@@ -1,7 +1,7 @@
 import AppKit
 import DsmCore
 import DsmLocalization
-import FileProvider
+@preconcurrency import FileProvider
 import Foundation
 import ServiceManagement
 import SwiftUI
@@ -299,43 +299,30 @@ final class DesktopDriveMenuBarController: NSObject, NSMenuDelegate {
     private static func domain(
         for mapping: DesktopDriveMapping
     ) -> NSFileProviderDomain {
-        NSFileProviderDomain(
-            identifier: NSFileProviderDomainIdentifier(
-                mapping.providerDomainIdentifier ?? mapping.id.uuidString
-            ),
-            displayName: mapping.displayName
+        DesktopDriveDomainController.configureDomain(
+            NSFileProviderDomain(
+                identifier: NSFileProviderDomainIdentifier(
+                    mapping.providerDomainIdentifier ?? mapping.id.uuidString
+                ),
+                displayName: mapping.displayName
+            )
         )
     }
 
-    private static func disconnect(
+    nonisolated private static func disconnect(
         _ manager: NSFileProviderManager,
         reason: String
     ) async throws {
-        try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Void, Error>) in
-            manager.disconnect(reason: reason, options: [.temporary]) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
+        try await DesktopDriveFileProviderCallbackBridge.disconnect(
+            manager,
+            reason: reason
+        )
     }
 
-    private static func reconnect(
+    nonisolated private static func reconnect(
         _ manager: NSFileProviderManager
     ) async throws {
-        try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Void, Error>) in
-            manager.reconnect { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
+        try await DesktopDriveFileProviderCallbackBridge.reconnect(manager)
     }
 }
 

@@ -63,6 +63,23 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
         super.init()
     }
 
+    private init(systemContainer identifier: NSFileProviderItemIdentifier) {
+        self.identifier = identifier
+        parentIdentifier = .rootContainer
+        itemName = identifier.rawValue
+        directory = true
+        type = .folder
+        size = nil
+        modifiedAt = nil
+        version = Self.version(
+            path: identifier.rawValue,
+            size: nil,
+            modifiedAt: nil
+        )
+        keptOffline = false
+        super.init()
+    }
+
     static func root(
         configuration: DesktopDriveProviderConfiguration,
         keptOffline: Bool
@@ -71,6 +88,10 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
             root: configuration.mapping,
             keptOffline: keptOffline
         )
+    }
+
+    static func trashContainer() -> ProviderItem {
+        ProviderItem(systemContainer: .trashContainer)
     }
 
     var itemIdentifier: NSFileProviderItemIdentifier { identifier }

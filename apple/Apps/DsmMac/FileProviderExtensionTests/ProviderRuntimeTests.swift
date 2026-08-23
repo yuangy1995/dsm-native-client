@@ -5,6 +5,80 @@ import XCTest
 @testable import DsmFileProviderRuntime
 
 final class ProviderRuntimeTests: XCTestCase {
+    func test系统重导入根目录时返回已有根项目() async throws {
+        let context = try makeContext()
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: context.dependencies(capacity: .init(results: []))
+        )
+        let rootTemplate = ProviderImportedItemTemplate(
+            item: try await runtime.item(for: .rootContainer)
+        )
+
+        let importedItem = try await runtime.itemForImportedSystemItem(
+            rootTemplate
+        )
+
+        XCTAssertEqual(importedItem?.itemIdentifier, .rootContainer)
+        XCTAssertEqual(importedItem?.filename, context.mapping.displayName)
+    }
+
+    func test系统重导入Trash容器时返回空系统容器() async throws {
+        let context = try makeContext()
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: context.dependencies(capacity: .init(results: []))
+        )
+        let trashTemplate = ProviderImportedItemTemplate(
+            item: ProviderItem.trashContainer()
+        )
+
+        let importedItem = try await runtime.itemForImportedSystemItem(
+            trashTemplate
+        )
+
+        XCTAssertEqual(importedItem?.itemIdentifier, .trashContainer)
+        XCTAssertEqual(importedItem?.parentItemIdentifier, .rootContainer)
+        XCTAssertTrue(
+            importedItem?.capabilities.contains(.allowsContentEnumerating)
+                == true
+        )
+    }
+
+    func test空系统容器枚举器返回空页面() async {
+        let completion = expectation(description: "empty-enumeration")
+        let observer = ProviderEnumerationObserverProbe(completion: completion)
+        let enumerator = ProviderEmptyEnumerator()
+
+        enumerator.enumerateItems(
+            for: observer,
+            startingAt: NSFileProviderPage(Data())
+        )
+        await fulfillment(of: [completion], timeout: 1)
+
+        let snapshot = observer.snapshot()
+        XCTAssertTrue(snapshot.items.isEmpty)
+        XCTAssertNil(snapshot.nextPage)
+        XCTAssertNil(snapshot.error)
+    }
+
+    func test普通本地导入不会伪装成系统根目录() async throws {
+        let context = try makeContext()
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: context.dependencies(capacity: .init(results: []))
+        )
+        let fileTemplate = ProviderImportedItemTemplate(
+            item: try await runtime.item(for: .init("item-1"))
+        )
+
+        let importedItem = try await runtime.itemForImportedSystemItem(
+            fileTemplate
+        )
+
+        XCTAssertNil(importedItem)
+    }
+
     func test每次内容下载前都会检查容量() async throws {
         let context = try makeContext()
         let capacity = CapacityProbe(results: [.success, .success])
@@ -915,6 +989,56 @@ private final class ProviderChangeObserverProbe:
                 storedDeletedIdentifiers,
                 storedAnchor,
                 storedMoreComing,
+                storedError
+            )
+        }
+    }
+}
+
+private final class ProviderEnumerationObserverProbe:
+    NSObject,
+    NSFileProviderEnumerationObserver,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let completion: XCTestExpectation
+    private var storedItems: [String] = []
+    private var storedNextPage: NSFileProviderPage?
+    private var storedError: Error?
+
+    init(completion: XCTestExpectation) {
+        self.completion = completion
+    }
+
+    func didEnumerate(_ updatedItems: [NSFileProviderItem]) {
+        lock.withLock {
+            storedItems.append(contentsOf: updatedItems.map(\.filename))
+        }
+    }
+
+    func finishEnumerating(upTo nextPage: NSFileProviderPage?) {
+        lock.withLock {
+            storedNextPage = nextPage
+        }
+        completion.fulfill()
+    }
+
+    func finishEnumeratingWithError(_ error: Error) {
+        lock.withLock {
+            storedError = error
+        }
+        completion.fulfill()
+    }
+
+    func snapshot() -> (
+        items: [String],
+        nextPage: NSFileProviderPage?,
+        error: Error?
+    ) {
+        lock.withLock {
+            (
+                storedItems,
+                storedNextPage,
                 storedError
             )
         }

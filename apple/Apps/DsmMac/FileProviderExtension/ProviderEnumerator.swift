@@ -104,6 +104,42 @@ final class ProviderEnumerator: NSObject, NSFileProviderEnumerator, @unchecked S
     }
 }
 
+final class ProviderEmptyEnumerator:
+    NSObject,
+    NSFileProviderEnumerator,
+    @unchecked Sendable
+{
+    private static let anchor = NSFileProviderSyncAnchor(
+        Data("lanstash-empty-container".utf8)
+    )
+
+    func invalidate() {}
+
+    func enumerateItems(
+        for observer: NSFileProviderEnumerationObserver,
+        startingAt page: NSFileProviderPage
+    ) {
+        observer.didEnumerate([])
+        observer.finishEnumerating(upTo: nil)
+    }
+
+    func enumerateChanges(
+        for observer: NSFileProviderChangeObserver,
+        from anchor: NSFileProviderSyncAnchor
+    ) {
+        observer.finishEnumeratingChanges(
+            upTo: Self.anchor,
+            moreComing: false
+        )
+    }
+
+    func currentSyncAnchor(
+        completionHandler: @escaping (NSFileProviderSyncAnchor?) -> Void
+    ) {
+        completionHandler(Self.anchor)
+    }
+}
+
 final class UncheckedSendableBox<Value>: @unchecked Sendable {
     let value: Value
 
