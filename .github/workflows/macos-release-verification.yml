@@ -2,6 +2,15 @@ name: macOS Release Verification
 
 on:
   workflow_dispatch:
+    inputs:
+      package_mode:
+        description: "macOS package mode"
+        required: true
+        default: "pretest"
+        type: choice
+        options:
+          - "pretest"
+          - "release"
 
 permissions:
   contents: read
@@ -54,6 +63,7 @@ jobs:
       - name: 校验发布凭据配置
         shell: bash
         env:
+          PACKAGE_MODE: ${{ inputs.package_mode }}
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
           MACOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_PROVISIONING_PROFILE_BASE64 }}
@@ -66,18 +76,24 @@ jobs:
           LANSTASH_MAC_APP_GROUP_ID: ${{ vars.MACOS_APP_GROUP_ID }}
           LANSTASH_SHARED_KEYCHAIN_SUFFIX: ${{ vars.MACOS_SHARED_KEYCHAIN_SUFFIX }}
         run: |
-          for name in \
+          required_names=(
             MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 \
             MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD \
             MACOS_APP_PROVISIONING_PROFILE_BASE64 \
             MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64 \
-            APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 \
-            APP_STORE_CONNECT_API_KEY_ID \
-            APP_STORE_CONNECT_API_ISSUER_ID \
             LANSTASH_MAC_APP_BUNDLE_ID \
             LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID \
             LANSTASH_MAC_APP_GROUP_ID \
-            LANSTASH_SHARED_KEYCHAIN_SUFFIX; do
+            LANSTASH_SHARED_KEYCHAIN_SUFFIX
+          )
+          if [[ "$PACKAGE_MODE" == "release" ]]; then
+            required_names+=(
+              APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64
+              APP_STORE_CONNECT_API_KEY_ID
+              APP_STORE_CONNECT_API_ISSUER_ID
+            )
+          fi
+          for name in "${required_names[@]}"; do
             test -n "${!name:-}" || {
               echo "发布环境缺少必需 Secret 或 Variable：$name" >&2
               exit 1
@@ -89,9 +105,10 @@ jobs:
             exit 1
           }
 
-      - name: 导入临时 Developer ID 证书并配置 API Key 公证资料
+      - name: 导入临时 Developer ID 证书与可选公证资料
         shell: bash
         env:
+          PACKAGE_MODE: ${{ inputs.package_mode }}
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
           MACOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_PROVISIONING_PROFILE_BASE64 }}
@@ -109,12 +126,14 @@ jobs:
           printf '%s' "$MACOS_DEVELOPER_ID_CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
           printf '%s' "$MACOS_APP_PROVISIONING_PROFILE_BASE64" | base64 -D > "$app_profile_path"
           printf '%s' "$MACOS_FILE_PROVIDER_PROVISIONING_PROFILE_BASE64" | base64 -D > "$file_provider_profile_path"
-          printf '%s' "$APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64" | base64 -D > "$api_key_path"
           chmod 600 \
             "$certificate_path" \
             "$app_profile_path" \
-            "$file_provider_profile_path" \
-            "$api_key_path"
+            "$file_provider_profile_path"
+          if [[ "$PACKAGE_MODE" == "release" ]]; then
+            printf '%s' "$APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64" | base64 -D > "$api_key_path"
+            chmod 600 "$api_key_path"
+          fi
           security create-keychain -p "$keychain_password" "$release_keychain"
           security set-keychain-settings -lut 21600 "$release_keychain"
           security unlock-keychain -p "$keychain_password" "$release_keychain"
@@ -139,11 +158,13 @@ jobs:
             exit 1
           }
           echo "LANSTASH_SIGNING_IDENTITY=$signing_identities" >> "$GITHUB_ENV"
-          xcrun notarytool history \
-            --key "$api_key_path" \
-            --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
-            --issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
-            --output-format json >/dev/null
+          if [[ "$PACKAGE_MODE" == "release" ]]; then
+            xcrun notarytool history \
+              --key "$api_key_path" \
+              --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+              --issuer "$APP_STORE_CONNECT_API_ISSUER_ID" \
+              --output-format json >/dev/null
+          fi
 
       - name: 生成 macOS 工程
         working-directory: apple/Apps/DsmMac
@@ -168,6 +189,7 @@ jobs:
         run: ./package.sh
 
       - name: 公证、装订并验证正式候选包
+        if: ${{ inputs.package_mode == 'release' }}
         shell: bash
         env:
           LANSTASH_NOTARY_API_KEY_PATH: ${{ runner.temp }}/lanstash-notary-api-key.p8
@@ -180,10 +202,95 @@ jobs:
           test "${#dmg_paths[@]}" -eq 1
           apple/Apps/DsmMac/notarize.sh "${dmg_paths[0]}"
 
-      - name: 上传已验证的正式候选包
+      - name: 校验预测试签名包
+        if: ${{ inputs.package_mode == 'pretest' }}
+        shell: bash
+        env:
+          LANSTASH_MAC_APP_GROUP_ID: ${{ vars.MACOS_APP_GROUP_ID }}
+        run: |
+          app_path="apple/Apps/DsmMac/dist/LanStash.app"
+          file_provider_path="$app_path/Contents/PlugIns/LanStashFileProvider.appex"
+          app_profile_path="$app_path/Contents/embedded.provisionprofile"
+          file_provider_profile_path="$file_provider_path/Contents/embedded.provisionprofile"
+          mount_point=""
+          attached=0
+          cleanup() {
+            if [[ "$attached" -eq 1 ]]; then
+              /usr/bin/hdiutil detach "$mount_point" -quiet || true
+            fi
+            if [[ -n "$mount_point" ]]; then
+              /bin/rmdir "$mount_point" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          shopt -s nullglob
+          dmg_paths=(apple/Apps/DsmMac/dist/LanStash-*.dmg)
+          shopt -u nullglob
+          test "${#dmg_paths[@]}" -eq 1
+          test -d "$app_path"
+          test -d "$file_provider_path" || {
+            echo "预测试包缺少 File Provider 扩展" >&2
+            exit 1
+          }
+          test -f "$app_profile_path"
+          test -f "$file_provider_profile_path"
+          /usr/bin/security cms -D -i "$app_profile_path" >/dev/null
+          /usr/bin/security cms -D -i "$file_provider_profile_path" >/dev/null
+
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$app_path"
+          /usr/bin/codesign --verify --strict --verbose=2 "$file_provider_path"
+          app_signing="$(/usr/bin/codesign -dv --verbose=4 "$app_path" 2>&1)"
+          extension_signing="$(/usr/bin/codesign -dv --verbose=4 "$file_provider_path" 2>&1)"
+          [[ "$app_signing" == *"Authority=Developer ID Application:"* ]] \
+            || { echo "App 不是 Developer ID Application 签名" >&2; exit 1; }
+          [[ "$extension_signing" == *"Authority=Developer ID Application:"* ]] \
+            || { echo "File Provider 扩展不是 Developer ID Application 签名" >&2; exit 1; }
+
+          app_entitlements="$(/usr/bin/codesign -d --entitlements - "$app_path" 2>/dev/null)"
+          extension_entitlements="$(/usr/bin/codesign -d --entitlements - "$file_provider_path" 2>/dev/null)"
+          for entitlement in \
+            "com.apple.security.application-groups" \
+            "keychain-access-groups"; do
+            [[ "$app_entitlements" == *"$entitlement"* ]] \
+              || { echo "App 缺少权限：$entitlement" >&2; exit 1; }
+            [[ "$extension_entitlements" == *"$entitlement"* ]] \
+              || { echo "File Provider 扩展缺少权限：$entitlement" >&2; exit 1; }
+          done
+          [[ "$app_entitlements" == *"$LANSTASH_MAC_APP_GROUP_ID"* ]] \
+            || { echo "App 权限中缺少配置的 App Group" >&2; exit 1; }
+          [[ "$extension_entitlements" == *"$LANSTASH_MAC_APP_GROUP_ID"* ]] \
+            || { echo "File Provider 权限中缺少配置的 App Group" >&2; exit 1; }
+
+          /usr/bin/hdiutil verify "${dmg_paths[0]}" >/dev/null
+          /usr/bin/codesign --verify --strict --verbose=2 "${dmg_paths[0]}"
+          mount_point="$(mktemp -d "${TMPDIR:-/tmp}/lanstash-pretest.XXXXXX")"
+          /usr/bin/hdiutil attach \
+            "${dmg_paths[0]}" \
+            -readonly \
+            -nobrowse \
+            -mountpoint "$mount_point" >/dev/null
+          attached=1
+          mounted_app_path="$mount_point/LanStash.app"
+          test -d "$mounted_app_path/Contents/PlugIns/LanStashFileProvider.appex" \
+            || { echo "DMG 内 App 缺少 File Provider 扩展" >&2; exit 1; }
+          echo "预测试签名包校验通过；此产物未执行公证，不能替代正式发布验收。"
+
+      - name: 上传预测试签名包
+        if: ${{ inputs.package_mode == 'pretest' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: LanStash-macOS-release-verified
+          name: LanStash-macOS-pretest
+          path: |
+            apple/Apps/DsmMac/dist/*.app
+            apple/Apps/DsmMac/dist/*.dmg
+          if-no-files-found: error
+
+      - name: 上传已验证的正式候选包
+        if: ${{ inputs.package_mode == 'release' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: LanStash-macOS-release
           path: |
             apple/Apps/DsmMac/dist/*.app
             apple/Apps/DsmMac/dist/*.dmg
