@@ -413,10 +413,10 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MARKETING_VERSION = 0.2.6;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;
-				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)io.github.qwertyuiop1995.dsmnativeclient.shared";
+				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)";
 				SKIP_INSTALL = YES;
 			};
 			name = Debug;
@@ -472,6 +472,10 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LANSTASH_MAC_APP_BUNDLE_ID = io.github.qwertyuiop1995.dsmnativeclient.macos;
+				LANSTASH_MAC_APP_GROUP_ID = group.io.github.qwertyuiop1995.dsmnativeclient;
+				LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID = io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider;
+				LANSTASH_SHARED_KEYCHAIN_SUFFIX = io.github.qwertyuiop1995.dsmnativeclient.shared;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -501,10 +505,10 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.2.6;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.qwertyuiop1995.dsmnativeclient.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
-				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)io.github.qwertyuiop1995.dsmnativeclient.shared";
+				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)";
 			};
 			name = Debug;
 		};
@@ -524,10 +528,10 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.2.6;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.qwertyuiop1995.dsmnativeclient.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
-				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)io.github.qwertyuiop1995.dsmnativeclient.shared";
+				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)";
 			};
 			name = Release;
 		};
@@ -576,6 +580,10 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LANSTASH_MAC_APP_BUNDLE_ID = io.github.qwertyuiop1995.dsmnativeclient.macos;
+				LANSTASH_MAC_APP_GROUP_ID = group.io.github.qwertyuiop1995.dsmnativeclient;
+				LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID = io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider;
+				LANSTASH_SHARED_KEYCHAIN_SUFFIX = io.github.qwertyuiop1995.dsmnativeclient.shared;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -605,10 +613,10 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MARKETING_VERSION = 0.2.6;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;
-				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)io.github.qwertyuiop1995.dsmnativeclient.shared";
+				SHARED_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)";
 				SKIP_INSTALL = YES;
 			};
 			name = Release;

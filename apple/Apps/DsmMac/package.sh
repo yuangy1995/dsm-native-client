@@ -17,6 +17,12 @@ BUILD_ROOT="$SCRIPT_DIR/build/package"
 DERIVED_DATA="$BUILD_ROOT/DerivedData"
 STAGING_DIR="$BUILD_ROOT/dmg"
 DIST_DIR="$SCRIPT_DIR/dist"
+MAC_APP_BUNDLE_ID="${LANSTASH_MAC_APP_BUNDLE_ID:-io.github.qwertyuiop1995.dsmnativeclient.macos}"
+MAC_FILE_PROVIDER_BUNDLE_ID="${LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID:-io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider}"
+MAC_APP_GROUP_ID="${LANSTASH_MAC_APP_GROUP_ID:-group.io.github.qwertyuiop1995.dsmnativeclient}"
+SHARED_KEYCHAIN_SUFFIX="${LANSTASH_SHARED_KEYCHAIN_SUFFIX:-io.github.qwertyuiop1995.dsmnativeclient.shared}"
+MAC_APP_PROVISIONING_PROFILE_PATH="${LANSTASH_MAC_APP_PROVISIONING_PROFILE_PATH:-}"
+MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH="${LANSTASH_MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH:-}"
 
 CONFIGURATION="Release"
 TARGET_ARCH="native"
@@ -28,6 +34,49 @@ SELECTED_CHOICE=""
 fail() {
     echo "错误：$*" >&2
     exit 1
+}
+
+validate_and_embed_profile() {
+    local profile_path="$1"
+    local expected_bundle_id="$2"
+    local destination_path="$3"
+    local decoded_profile="$4"
+    local profile_team=""
+    local application_identifier=""
+    local profile_keychain_groups=""
+
+    [[ -f "$profile_path" ]] \
+        || fail "找不到 macOS provisioning profile：$profile_path"
+    /usr/bin/security cms -D -i "$profile_path" > "$decoded_profile"
+    profile_team="$(
+        "$PLIST_BUDDY" -c 'Print :TeamIdentifier:0' "$decoded_profile"
+    )"
+    if ! application_identifier="$(
+        "$PLIST_BUDDY" \
+            -c 'Print :Entitlements:com.apple.application-identifier' \
+            "$decoded_profile" 2>/dev/null
+    )"; then
+        application_identifier="$(
+            "$PLIST_BUDDY" \
+                -c 'Print :Entitlements:application-identifier' \
+                "$decoded_profile"
+        )"
+    fi
+    [[ "$profile_team" == "$TEAM_IDENTIFIER" ]] \
+        || fail "macOS profile 与签名证书团队不匹配"
+    [[ "$application_identifier" == "$TEAM_IDENTIFIER.$expected_bundle_id" ]] \
+        || fail "macOS profile 与目标 Bundle ID 不匹配"
+    profile_keychain_groups="$("$PLIST_BUDDY" \
+        -c 'Print :Entitlements:keychain-access-groups' \
+        "$decoded_profile" \
+    )"
+    if ! printf '%s\n' "$profile_keychain_groups" \
+            | /usr/bin/grep -Fq "$SHARED_KEYCHAIN_GROUP" \
+        && ! printf '%s\n' "$profile_keychain_groups" \
+            | /usr/bin/grep -Fq "$TEAM_IDENTIFIER.*"; then
+        fail "macOS profile 未授权共享 Keychain group"
+    fi
+    /bin/cp "$profile_path" "$destination_path"
 }
 
 validate_xcode_source_membership() {
@@ -299,6 +348,10 @@ xcodebuild \
     -derivedDataPath "$DERIVED_DATA" \
     CODE_SIGNING_ALLOWED=NO \
     ONLY_ACTIVE_ARCH=NO \
+    "LANSTASH_MAC_APP_BUNDLE_ID=$MAC_APP_BUNDLE_ID" \
+    "LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID=$MAC_FILE_PROVIDER_BUNDLE_ID" \
+    "LANSTASH_MAC_APP_GROUP_ID=$MAC_APP_GROUP_ID" \
+    "LANSTASH_SHARED_KEYCHAIN_SUFFIX=$SHARED_KEYCHAIN_SUFFIX" \
     "ARCHS=$BUILD_ARCHS" \
     build
 
@@ -353,7 +406,15 @@ else
     )"
     [[ -n "$TEAM_IDENTIFIER" ]] \
         || fail "无法从签名证书读取团队标识，请改用 Apple 开发或 Developer ID 证书"
-    SHARED_KEYCHAIN_GROUP="${TEAM_IDENTIFIER}.io.github.qwertyuiop1995.dsmnativeclient.shared"
+    if [[ "$MAC_APP_GROUP_ID" != group.* \
+        && "$MAC_APP_GROUP_ID" != "$TEAM_IDENTIFIER".* ]]; then
+        fail "macOS Team-ID 风格 App Group 与签名证书团队不匹配"
+    fi
+    SHARED_KEYCHAIN_GROUP="${TEAM_IDENTIFIER}.${SHARED_KEYCHAIN_SUFFIX}"
+    [[ -n "$MAC_APP_PROVISIONING_PROFILE_PATH" ]] \
+        || fail "正式签名缺少主 App 的 macOS provisioning profile"
+    [[ -n "$MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH" ]] \
+        || fail "正式签名缺少 File Provider 的 macOS provisioning profile"
     /bin/cp "$ENTITLEMENTS" "$EXPANDED_APP_ENTITLEMENTS"
     /bin/cp \
         "$FILE_PROVIDER_ENTITLEMENTS" \
@@ -364,10 +425,26 @@ else
     "$PLIST_BUDDY" \
         -c "Set :keychain-access-groups:0 $SHARED_KEYCHAIN_GROUP" \
         "$EXPANDED_FILE_PROVIDER_ENTITLEMENTS"
+    "$PLIST_BUDDY" \
+        -c "Set :com.apple.security.application-groups:0 $MAC_APP_GROUP_ID" \
+        "$EXPANDED_APP_ENTITLEMENTS"
+    "$PLIST_BUDDY" \
+        -c "Set :com.apple.security.application-groups:0 $MAC_APP_GROUP_ID" \
+        "$EXPANDED_FILE_PROVIDER_ENTITLEMENTS"
 
     FILE_PROVIDER_APP="$APP_PATH/Contents/PlugIns/LanStashFileProvider.appex"
     [[ -d "$FILE_PROVIDER_APP" ]] \
         || fail "完整签名需要 File Provider 扩展，但构建产物中未找到"
+    validate_and_embed_profile \
+        "$MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH" \
+        "$MAC_FILE_PROVIDER_BUNDLE_ID" \
+        "$FILE_PROVIDER_APP/Contents/embedded.provisionprofile" \
+        "$BUILD_ROOT/DsmFileProvider.profile.plist"
+    validate_and_embed_profile \
+        "$MAC_APP_PROVISIONING_PROFILE_PATH" \
+        "$MAC_APP_BUNDLE_ID" \
+        "$APP_PATH/Contents/embedded.provisionprofile" \
+        "$BUILD_ROOT/DsmMac.profile.plist"
     /usr/bin/codesign \
         --force \
         --options runtime \

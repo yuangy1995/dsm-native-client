@@ -36,6 +36,7 @@
 - [架构决策记录](architecture/decisions/)
 - [DSM 兼容矩阵](compatibility/DSM_COMPATIBILITY_MATRIX.md)
 - [macOS 桌面云盘发布与升级验收](compatibility/DESKTOP_CLOUD_DRIVE_RELEASE_ACCEPTANCE_ZH.md)
+- [GitHub Actions Apple 签名与发布配置](development/APPLE_GITHUB_ACTIONS_SIGNING_ZH.md)
 - [安全与隐私基线](security/SECURITY_BASELINE.md)
 
 ## 历史归档

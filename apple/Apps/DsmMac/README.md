@@ -49,6 +49,20 @@ OTP 只保留在登录界面的内存状态中。密码默认不保存；只有�
 3. 本机临时签名，或从钥匙串中选择已安装的签名证书。
 4. 打包完成后直接启动，或只生成安装包。
 
+选择 Apple Development 或 Developer ID 正式签名时，主 App 与 File Provider 使用了
+共享 Keychain 权限，因此还必须通过环境变量提供两个与证书团队、Bundle ID 和权限匹配
+的 provisioning profile：
+
+```bash
+LANSTASH_MAC_APP_PROVISIONING_PROFILE_PATH="/安全路径/MacApp.provisionprofile" \
+LANSTASH_MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH="/安全路径/FileProvider.provisionprofile" \
+  ./package.sh
+```
+
+macOS 的 App Group 可使用 Apple 官方支持的 `<TeamID>.<名称>` 格式；这种格式不需要在
+Developer 门户单独注册，脚本会检查 Team ID 前缀必须与签名证书一致。已在门户注册的
+`group.<名称>` 格式也仍受支持。
+
 确认设置后，脚本会生成 `dist/LanStash.app` 和 `dist/LanStash-<版本>-<架构>.dmg`。每一步直接按回车即可使用推荐选项，输入 `q` 可以随时退出。构建前会显示当前分支和提交，并检查主 App 与 File Provider 扩展的 Swift 文件是否全部加入构建目标；产物的 `Info.plist` 会记录 `LanStashSourceCommit`，便于确认安装包对应的源码版本。选择打包后运行时会启动新实例，避免仍在运行的旧版本被误认为新产物。
 
 新 DMG 成功生成并通过完整性验证后，脚本会自动删除 `dist` 中更早版本的安装包；同一版本的不同架构会保留。构建或验证失败时不会清理已有安装包。
@@ -62,6 +76,9 @@ OTP 只保留在登录界面的内存状态中。密码默认不保存；只有�
 LANSTASH_NOTARY_PROFILE="钥匙串配置名" \
   ./notarize.sh ./dist/LanStash-<版本>-<架构>.dmg
 ```
+
+CI 也可设置 `LANSTASH_NOTARY_API_KEY_PATH`、`LANSTASH_NOTARY_API_KEY_ID` 和
+`LANSTASH_NOTARY_API_ISSUER_ID` 直接使用临时 API Key 文件，避免持久化钥匙串凭据。
 
 脚本会等待公证结果、装订票据，并调用
 `tools/release/verify_macos_distribution.sh` 校验 Developer ID 签名、File

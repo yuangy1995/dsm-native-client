@@ -51,6 +51,7 @@ LANSTASH_TARGET_ARCH=native LANSTASH_RUN_AFTER_PACKAGE=0 ./package.sh
 
 ## 相关文档
 
+- [GitHub Actions Apple 签名与发布配置](../docs/development/APPLE_GITHUB_ACTIONS_SIGNING_ZH.md)
 - [Apple 移动端长期计划](../docs/development/APPLE_MOBILE_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)
 - [macOS 对齐总控计划](../docs/development/MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)
 - [当前开发进度](../docs/progress/STATUS.md)

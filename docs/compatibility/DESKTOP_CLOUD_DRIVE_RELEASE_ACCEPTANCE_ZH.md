@@ -12,8 +12,10 @@
 1. 在干净工作区运行全部仓库检查和 Apple 测试。
 2. 使用 `apple/Apps/DsmMac/package.sh` 选择 Developer ID Application 证书生成
    App 与 DMG。临时签名包会移除 File Provider 扩展，不能用于云盘验收。
-3. 事先使用 `xcrun notarytool store-credentials` 将凭据保存到登录钥匙串；仓库、
-   命令行参数和日志中不得出现 Apple 密码、API 私钥或其正文。
+3. 本地发布事先使用 `xcrun notarytool store-credentials` 将 API Key 凭据保存到登录
+   钥匙串；GitHub 发布则由受保护 Environment Secret 在临时钥匙串中配置。仓库、
+   命令行参数和日志中不得出现 API 私钥或其正文。完整变量清单见
+   [GitHub Actions Apple 签名与发布配置](../development/APPLE_GITHUB_ACTIONS_SIGNING_ZH.md)。
 4. 设置 `LANSTASH_NOTARY_PROFILE`，运行
    `apple/Apps/DsmMac/notarize.sh <DMG>`，等待公证、装订票据并完成 Gatekeeper、
    权限和扩展校验。

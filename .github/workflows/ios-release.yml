@@ -1,0 +1,280 @@
+name: iOS Signed IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: App 版本号，例如 1.0.0
+        required: true
+        default: "1.0.0"
+        type: string
+      upload_to_app_store_connect:
+        description: 导出后上传到 App Store Connect / TestFlight
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  XCODE_VERSION: "16.4"
+  XCODE_DEVELOPER_DIR: "/Applications/Xcode_16.4.app/Contents/Developer"
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+
+jobs:
+  archive-export-and-optionally-upload:
+    environment: ios-release
+    runs-on: macos-15
+    steps:
+      - name: 检出仓库
+        # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: 选择锁定的 Xcode 工具链
+        shell: bash
+        run: |
+          test -d "$XCODE_DEVELOPER_DIR"
+          echo "DEVELOPER_DIR=$XCODE_DEVELOPER_DIR" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE_DEVELOPER_DIR"
+          installed_version="$(xcodebuild -version | awk 'NR == 1 { print $2}')"
+          test "$installed_version" = "$XCODE_VERSION"
+          xcodebuild -version
+
+      - name: 安装并校验锁定的 XcodeGen
+        shell: bash
+        run: |
+          xcodegen_archive="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION.zip"
+          xcodegen_root="$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION"
+          curl -fsSL --retry 3 \
+            --output "$xcodegen_archive" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$xcodegen_archive" | shasum -a 256 -c -
+          unzip -q "$xcodegen_archive" -d "$xcodegen_root"
+          echo "$xcodegen_root/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: 校验 iOS 发布配置
+        shell: bash
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_APP_STORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APP_STORE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          LANSTASH_MOBILE_BUNDLE_ID: ${{ vars.IOS_APP_BUNDLE_ID }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          SHOULD_UPLOAD: ${{ inputs.upload_to_app_store_connect }}
+        run: |
+          for name in \
+            IOS_DISTRIBUTION_CERTIFICATE_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD \
+            IOS_APP_STORE_PROVISIONING_PROFILE_BASE64 \
+            APPLE_TEAM_ID \
+            LANSTASH_MOBILE_BUNDLE_ID; do
+            test -n "${!name:-}" || {
+              echo "iOS 发布环境缺少必需 Secret 或 Variable：$name" >&2
+              exit 1
+            }
+          done
+          if [[ "$SHOULD_UPLOAD" == "true" ]]; then
+            for name in \
+              APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 \
+              APP_STORE_CONNECT_API_KEY_ID \
+              APP_STORE_CONNECT_API_ISSUER_ID; do
+              test -n "${!name:-}" || {
+                echo "上传 App Store Connect 缺少必需 Secret：$name" >&2
+                exit 1
+              }
+            done
+          fi
+
+      - name: 导入 Apple Distribution 证书与 App Store profile
+        shell: bash
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_APP_STORE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_APP_STORE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          LANSTASH_MOBILE_BUNDLE_ID: ${{ vars.IOS_APP_BUNDLE_ID }}
+        run: |
+          release_keychain="$RUNNER_TEMP/lanstash-ios-release.keychain-db"
+          certificate_path="$RUNNER_TEMP/lanstash-apple-distribution.p12"
+          profile_path="$RUNNER_TEMP/lanstash-app-store.mobileprovision"
+          profile_plist="$RUNNER_TEMP/lanstash-app-store-profile.plist"
+          certificate_pem="$RUNNER_TEMP/lanstash-apple-distribution.pem"
+          keychain_password="$(uuidgen)"
+
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
+          printf '%s' "$IOS_APP_STORE_PROVISIONING_PROFILE_BASE64" | base64 -D > "$profile_path"
+          chmod 600 "$certificate_path" "$profile_path"
+
+          security create-keychain -p "$keychain_password" "$release_keychain"
+          security set-keychain-settings -lut 21600 "$release_keychain"
+          security unlock-keychain -p "$keychain_password" "$release_keychain"
+          security import "$certificate_path" \
+            -k "$release_keychain" \
+            -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$keychain_password" \
+            "$release_keychain"
+          security list-keychain -d user -s "$release_keychain"
+          security default-keychain -s "$release_keychain"
+
+          signing_identities="$(
+            security find-identity -v -p codesigning "$release_keychain" \
+              | sed -n 's/.*"\(Apple Distribution:.*\)".*/\1/p'
+          )"
+          identity_count="$(printf '%s\n' "$signing_identities" | awk 'NF { count++ } END { print count + 0 }')"
+          test "$identity_count" -eq 1 || {
+            echo "iOS .p12 必须且只能包含一张 Apple Distribution 身份" >&2
+            exit 1
+          }
+          echo "IOS_SIGNING_IDENTITY=$signing_identities" >> "$GITHUB_ENV"
+          security find-certificate \
+            -c "$signing_identities" \
+            -p \
+            "$release_keychain" > "$certificate_pem"
+          certificate_team_id="$(
+            openssl x509 \
+              -in "$certificate_pem" \
+              -noout \
+              -subject \
+              -nameopt RFC2253 \
+              | sed -n 's/.*OU=\([^,]*\).*/\1/p'
+          )"
+          test "$certificate_team_id" = "$APPLE_TEAM_ID" || {
+            echo "Apple Distribution 证书与 APPLE_TEAM_ID 不匹配" >&2
+            exit 1
+          }
+
+          security cms -D -i "$profile_path" > "$profile_plist"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$profile_plist")"
+          profile_name="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$profile_plist")"
+          profile_team_id="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist")"
+          application_identifier="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist")"
+          test "$profile_team_id" = "$APPLE_TEAM_ID" || {
+            echo "Provisioning Profile 与 APPLE_TEAM_ID 不匹配" >&2
+            exit 1
+          }
+          test "$application_identifier" = "$APPLE_TEAM_ID.$LANSTASH_MOBILE_BUNDLE_ID" || {
+            echo "Provisioning Profile 与 IOS_APP_BUNDLE_ID 不匹配" >&2
+            exit 1
+          }
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          echo "IOS_PROFILE_NAME=$profile_name" >> "$GITHUB_ENV"
+          echo "IOS_PROFILE_UUID=$profile_uuid" >> "$GITHUB_ENV"
+
+      - name: 生成 iOS 工程
+        working-directory: apple/Apps/DsmMobile
+        env:
+          LANSTASH_MOBILE_BUNDLE_ID: ${{ vars.IOS_APP_BUNDLE_ID }}
+        run: xcodegen generate
+
+      - name: 运行共享包测试
+        run: swift test --package-path apple
+
+      - name: 归档 iPhone 与 iPad 通用应用
+        working-directory: apple/Apps/DsmMobile
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          LANSTASH_MOBILE_BUNDLE_ID: ${{ vars.IOS_APP_BUNDLE_ID }}
+          MARKETING_VERSION: ${{ inputs.marketing_version }}
+        run: |
+          xcodebuild archive \
+            -project DsmMobile.xcodeproj \
+            -scheme DsmMobile \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/LanStash.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$IOS_SIGNING_IDENTITY" \
+            PROVISIONING_PROFILE="$IOS_PROFILE_UUID" \
+            "LANSTASH_MOBILE_BUNDLE_ID=$LANSTASH_MOBILE_BUNDLE_ID" \
+            "MARKETING_VERSION=$MARKETING_VERSION" \
+            "CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER"
+
+      - name: 导出签名 IPA
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          LANSTASH_MOBILE_BUNDLE_ID: ${{ vars.IOS_APP_BUNDLE_ID }}
+        run: |
+          export_options="$RUNNER_TEMP/ExportOptions.plist"
+          plutil -create xml1 "$export_options"
+          /usr/libexec/PlistBuddy -c 'Add :method string app-store-connect' "$export_options"
+          /usr/libexec/PlistBuddy -c 'Add :destination string export' "$export_options"
+          /usr/libexec/PlistBuddy -c 'Add :signingStyle string manual' "$export_options"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $APPLE_TEAM_ID" "$export_options"
+          /usr/libexec/PlistBuddy -c 'Add :stripSwiftSymbols bool true' "$export_options"
+          /usr/libexec/PlistBuddy -c 'Add :provisioningProfiles dict' "$export_options"
+          /usr/libexec/PlistBuddy -c \
+            "Add :provisioningProfiles:$LANSTASH_MOBILE_BUNDLE_ID string $IOS_PROFILE_NAME" \
+            "$export_options"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/LanStash.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ios-export" \
+            -exportOptionsPlist "$export_options"
+          ipa_count="$(find "$RUNNER_TEMP/ios-export" -maxdepth 1 -name '*.ipa' -type f | wc -l | tr -d ' ')"
+          test "$ipa_count" -eq 1
+
+      - name: 使用 API Key 验证并上传 App Store Connect
+        if: ${{ inputs.upload_to_app_store_connect }}
+        shell: bash
+        env:
+          APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: |
+          private_keys_dir="$RUNNER_TEMP/private_keys"
+          mkdir -p "$private_keys_dir"
+          api_key_path="$private_keys_dir/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_API_PRIVATE_KEY_BASE64" | base64 -D > "$api_key_path"
+          chmod 600 "$api_key_path"
+          ipa_path="$(find "$RUNNER_TEMP/ios-export" -maxdepth 1 -name '*.ipa' -type f -print -quit)"
+          API_PRIVATE_KEYS_DIR="$private_keys_dir" xcrun altool \
+            --validate-app \
+            --type ios \
+            --file "$ipa_path" \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+          API_PRIVATE_KEYS_DIR="$private_keys_dir" xcrun altool \
+            --upload-app \
+            --type ios \
+            --file "$ipa_path" \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+
+      - name: 上传签名 IPA 与 dSYM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: LanStash-iOS-signed
+          path: |
+            ${{ runner.temp }}/ios-export/*.ipa
+            ${{ runner.temp }}/LanStash.xcarchive/dSYMs/*.dSYM
+          if-no-files-found: error
+
+      - name: 清理临时签名材料
+        if: always()
+        shell: bash
+        run: |
+          release_keychain="$RUNNER_TEMP/lanstash-ios-release.keychain-db"
+          profile_path="$HOME/Library/MobileDevice/Provisioning Profiles/${IOS_PROFILE_UUID:-missing}.mobileprovision"
+          if [[ -f "$profile_path" ]]; then
+            /bin/rm -f -- "$profile_path"
+          fi
+          if [[ -f "$release_keychain" ]]; then
+            security delete-keychain "$release_keychain"
+          fi
+          /bin/rm -f -- \
+            "$RUNNER_TEMP/lanstash-apple-distribution.p12" \
+            "$RUNNER_TEMP/lanstash-app-store.mobileprovision" \
+            "$RUNNER_TEMP/lanstash-app-store-profile.plist" \
+            "$RUNNER_TEMP/lanstash-apple-distribution.pem" \
+            "$RUNNER_TEMP"/private_keys/AuthKey_*.p8

@@ -13,6 +13,8 @@ APP_PATH="$1"
 DMG_PATH="$2"
 SOURCE_COMMIT="${3:-}"
 FILE_PROVIDER_PATH="$APP_PATH/Contents/PlugIns/LanStashFileProvider.appex"
+APP_PROFILE_PATH="$APP_PATH/Contents/embedded.provisionprofile"
+FILE_PROVIDER_PROFILE_PATH="$FILE_PROVIDER_PATH/Contents/embedded.provisionprofile"
 MOUNT_POINT=""
 ATTACHED=0
 
@@ -31,7 +33,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command in codesign diff hdiutil mktemp shasum spctl xcrun; do
+for command in codesign diff hdiutil mktemp security shasum spctl xcrun; do
     command -v "$command" >/dev/null 2>&1 \
         || fail "缺少系统命令：$command"
 done
@@ -40,6 +42,14 @@ done
 [[ -f "$DMG_PATH" ]] || fail "找不到 DMG：$DMG_PATH"
 [[ -d "$FILE_PROVIDER_PATH" ]] \
     || fail "正式分发包缺少 File Provider 扩展"
+[[ -f "$APP_PROFILE_PATH" ]] \
+    || fail "正式分发包缺少主 App Developer ID provisioning profile"
+[[ -f "$FILE_PROVIDER_PROFILE_PATH" ]] \
+    || fail "正式分发包缺少 File Provider Developer ID provisioning profile"
+/usr/bin/security cms -D -i "$APP_PROFILE_PATH" >/dev/null \
+    || fail "主 App Developer ID provisioning profile 无效"
+/usr/bin/security cms -D -i "$FILE_PROVIDER_PROFILE_PATH" >/dev/null \
+    || fail "File Provider Developer ID provisioning profile 无效"
 if [[ -n "$SOURCE_COMMIT" ]]; then
     [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
         || fail "来源提交必须是完整 SHA-1"

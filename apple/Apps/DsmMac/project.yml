@@ -14,6 +14,10 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     MACOSX_DEPLOYMENT_TARGET: "14.0"
+    LANSTASH_MAC_APP_BUNDLE_ID: io.github.qwertyuiop1995.dsmnativeclient.macos
+    LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID: io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider
+    LANSTASH_MAC_APP_GROUP_ID: group.io.github.qwertyuiop1995.dsmnativeclient
+    LANSTASH_SHARED_KEYCHAIN_SUFFIX: io.github.qwertyuiop1995.dsmnativeclient.shared
 
 targets:
   DsmMac:
@@ -34,7 +38,7 @@ targets:
         product: DsmNetwork
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.qwertyuiop1995.dsmnativeclient.macos
+        PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MAC_APP_BUNDLE_ID)"
         PRODUCT_NAME: LanStash
         INFOPLIST_FILE: SupportingFiles/Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmMac.entitlements
@@ -43,7 +47,7 @@ targets:
         MARKETING_VERSION: 0.2.6
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
-        SHARED_KEYCHAIN_ACCESS_GROUP: "$(AppIdentifierPrefix)io.github.qwertyuiop1995.dsmnativeclient.shared"
+        SHARED_KEYCHAIN_ACCESS_GROUP: "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)"
 
   DsmFileProvider:
     type: app-extension
@@ -58,7 +62,7 @@ targets:
         product: DsmNetwork
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider
+        PRODUCT_BUNDLE_IDENTIFIER: "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)"
         PRODUCT_NAME: LanStashFileProvider
         INFOPLIST_FILE: SupportingFiles/DsmFileProvider-Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmFileProvider.entitlements
@@ -69,7 +73,7 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
         GENERATE_INFOPLIST_FILE: false
-        SHARED_KEYCHAIN_ACCESS_GROUP: "$(AppIdentifierPrefix)io.github.qwertyuiop1995.dsmnativeclient.shared"
+        SHARED_KEYCHAIN_ACCESS_GROUP: "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)"
 
 schemes:
   DsmMac:
