@@ -402,16 +402,15 @@ else
                 -noout \
                 -subject \
                 -nameopt RFC2253 \
-            | /usr/bin/sed -n 's/.*OU=\\([^,]*\\).*/\\1/p'
+            | /usr/bin/sed -n 's/.*OU=\([^,]*\).*/\1/p'
         )"
     fi
     if [[ -z "$TEAM_IDENTIFIER" ]]; then
         # CI 的临时钥匙串有时可列出签名身份，但 find-certificate 无法按完整显示名称反查。
         # Apple 签名身份名称固定以十位 Team ID 的括号结尾，作为经过格式校验的后备来源。
-        TEAM_IDENTIFIER="$(
-            printf '%s\n' "$SIGNING_IDENTITY" \
-            | /usr/bin/sed -n 's/.*(\\([A-Z0-9]\\{10\\}\\))$/\\1/p'
-        )"
+        if [[ "$SIGNING_IDENTITY" =~ \(([A-Z0-9]{10})\)$ ]]; then
+            TEAM_IDENTIFIER="${BASH_REMATCH[1]}"
+        fi
     fi
     [[ "$TEAM_IDENTIFIER" =~ ^[A-Z0-9]{10}$ ]] \
         || fail "无法从签名证书读取团队标识，请改用 Apple 开发或 Developer ID 证书"
