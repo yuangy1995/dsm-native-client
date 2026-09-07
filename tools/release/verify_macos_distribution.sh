@@ -109,6 +109,7 @@ done
     || fail "File Provider 权限仍包含未展开的签名变量"
 
 echo "==> 校验 Gatekeeper 与 DMG"
+bash "$(dirname "$0")/verify_macos_updater.sh" "$APP_PATH"
 /usr/sbin/spctl --assess --type execute --verbose=2 "$APP_PATH"
 /usr/bin/hdiutil verify "$DMG_PATH" >/dev/null
 /usr/bin/codesign --verify --strict --verbose=2 "$DMG_PATH"

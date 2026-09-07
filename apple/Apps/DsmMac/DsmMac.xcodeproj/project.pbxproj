@@ -8,18 +8,20 @@
 
 /* Begin PBXBuildFile section */
 		04BF49113047E6A5BFDD0565 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = CB5D2FCD484E6C915A3AF4BB /* Localizable.strings */; };
-		0BF65A78DC3488741ACAA862 /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 6A578FB6D5B34A59438162B6 /* DsmNetwork */; };
+		0BF65A78DC3488741ACAA862 /* DsmCore in Frameworks */ = {isa = PBXBuildFile; productRef = CDFB3D25D6035AB51E143261 /* DsmCore */; };
 		108966A1F81EFB36786F3660 /* MediaStreamRedirectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */; };
 		15984B33D2FC6DC271096E4A /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */; };
 		1AEE3A43BA84D08A5688E6D7 /* DesktopDriveMappingTransactionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 749F58346E89043A97184CFB /* DesktopDriveMappingTransactionCoordinator.swift */; };
 		1E07976CF65B26FF6DCC92F7 /* AppContentLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA28F9CA875E65C60C3B1FE /* AppContentLayout.swift */; };
 		3679216DDA49A20D83B8411A /* NasAdministrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */; };
+		3D2E5047C4CC4EA551E248FA /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 6A578FB6D5B34A59438162B6 /* DsmNetwork */; };
 		3F7B3902FFF181AEC9D25BEE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 55636F64951E9DD6841A1586 /* InfoPlist.strings */; };
 		3FCADE45FE1B6CE377E360BA /* DsmMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */; };
 		42BF5B5E814A964E72ED075E /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6244065C1FCDAD42A9B769D5 /* FileProviderExtension.swift */; };
-		4440F05E83E5ED0F48DAC304 /* DsmCore in Frameworks */ = {isa = PBXBuildFile; productRef = CDFB3D25D6035AB51E143261 /* DsmCore */; };
+		4440F05E83E5ED0F48DAC304 /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = 068B0CB217B93D2E04F6CB21 /* DsmLocalization */; };
 		46CE97C3D80547D7061224F2 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9DB7D94AFC947DE39DF8D1 /* LoginView.swift */; };
 		4991FA2CB347811AEB834677 /* PhotoLibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */; };
+		59342F280657F1325F5695BE /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */; };
 		59C06DE7124461270B9173C6 /* ChatWorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2A90B20C76F1C8B23067D1 /* ChatWorkspaceModel.swift */; };
 		6C6EE7AF31CE7819C5075FC2 /* DesktopDriveDomainController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D983F7627104AB0720B16971 /* DesktopDriveDomainController.swift */; };
 		6E494C113B6C2491904BC781 /* ChatWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */; };
@@ -29,7 +31,7 @@
 		836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */; };
 		89BA1323D0D84BB246D213BA /* DsmCore in Frameworks */ = {isa = PBXBuildFile; productRef = 367CFE0D29884F7F90B0E0D6 /* DsmCore */; };
 		9728A7945A860E79C3166107 /* ProviderOperationRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEB908BC08B01E03B6B4BC6 /* ProviderOperationRegistry.swift */; };
-		A8947CF70F1CC5F62D83C33C /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = 068B0CB217B93D2E04F6CB21 /* DsmLocalization */; };
+		A8947CF70F1CC5F62D83C33C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CAE6054DEF2A3BA368025AC9 /* Sparkle */; };
 		AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2578503BB6C863138963CE6B /* ServiceManagementModel.swift */; };
 		AC6936BB386C9A829A221F34 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6DF22565675FC82D7CC686 /* WorkspaceModel.swift */; };
 		B6FA5CB7DA8790CA0A105940 /* NasAdministrationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */; };
@@ -102,6 +104,7 @@
 		AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoFolderDestinationPicker.swift; sourceTree = "<group>"; };
 		B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCloudDriveManager.swift; sourceTree = "<group>"; };
 		BAA28F9CA875E65C60C3B1FE /* AppContentLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContentLayout.swift; sourceTree = "<group>"; };
+		BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasAdministrationModel.swift; sourceTree = "<group>"; };
 		CA993277E25000CAE41B0447 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementView.swift; sourceTree = "<group>"; };
@@ -127,9 +130,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A8947CF70F1CC5F62D83C33C /* DsmLocalization in Frameworks */,
-				4440F05E83E5ED0F48DAC304 /* DsmCore in Frameworks */,
-				0BF65A78DC3488741ACAA862 /* DsmNetwork in Frameworks */,
+				A8947CF70F1CC5F62D83C33C /* Sparkle in Frameworks */,
+				4440F05E83E5ED0F48DAC304 /* DsmLocalization in Frameworks */,
+				0BF65A78DC3488741ACAA862 /* DsmCore in Frameworks */,
+				3D2E5047C4CC4EA551E248FA /* DsmNetwork in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -168,6 +172,7 @@
 			isa = PBXGroup;
 			children = (
 				BAA28F9CA875E65C60C3B1FE /* AppContentLayout.swift */,
+				BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */,
 				FE2A90B20C76F1C8B23067D1 /* ChatWorkspaceModel.swift */,
 				EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */,
 				B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */,
@@ -257,6 +262,7 @@
 			);
 			name = DsmMac;
 			packageProductDependencies = (
+				CAE6054DEF2A3BA368025AC9 /* Sparkle */,
 				068B0CB217B93D2E04F6CB21 /* DsmLocalization */,
 				CDFB3D25D6035AB51E143261 /* DsmCore */,
 				6A578FB6D5B34A59438162B6 /* DsmNetwork */,
@@ -293,6 +299,7 @@
 			mainGroup = BABD61061DEDBD88532CB0CE;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				7FE9266E5FA9BA84C67D0C1A /* XCRemoteSwiftPackageReference "Sparkle" */,
 				38E761BDF931E96A26FD8054 /* XCLocalSwiftPackageReference "../.." */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -339,6 +346,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1E07976CF65B26FF6DCC92F7 /* AppContentLayout.swift in Sources */,
+				59342F280657F1325F5695BE /* AppUpdateController.swift in Sources */,
 				59C06DE7124461270B9173C6 /* ChatWorkspaceModel.swift in Sources */,
 				6E494C113B6C2491904BC781 /* ChatWorkspaceView.swift in Sources */,
 				C9E339D485378E1875A349E6 /* DesktopCloudDriveManager.swift in Sources */,
@@ -403,7 +411,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -412,7 +420,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.6;
+				MARKETING_VERSION = 0.2.8;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;
@@ -496,7 +504,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -504,7 +512,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.6;
+				MARKETING_VERSION = 0.2.8;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -519,7 +527,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -527,7 +535,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.6;
+				MARKETING_VERSION = 0.2.8;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -603,7 +611,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -612,7 +620,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 0.2.6;
+				MARKETING_VERSION = 0.2.8;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;
@@ -660,6 +668,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		7FE9266E5FA9BA84C67D0C1A /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		068B0CB217B93D2E04F6CB21 /* DsmLocalization */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -676,6 +695,11 @@
 		6A578FB6D5B34A59438162B6 /* DsmNetwork */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DsmNetwork;
+		};
+		CAE6054DEF2A3BA368025AC9 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7FE9266E5FA9BA84C67D0C1A /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 		CDFB3D25D6035AB51E143261 /* DsmCore */ = {
 			isa = XCSwiftPackageProductDependency;

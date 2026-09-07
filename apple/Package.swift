@@ -15,6 +15,9 @@ let package = Package(
         .library(name: "DsmLocalization", targets: ["DsmLocalization"]),
         .executable(name: "LanStash", targets: ["DsmMacExecutable"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")
+    ],
     targets: [
         .target(
             name: "DsmLocalization",
@@ -38,7 +41,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "DsmMacExecutable",
-            dependencies: ["DsmCore", "DsmNetwork", "DsmLocalization"],
+            dependencies: [
+                "DsmCore", "DsmNetwork", "DsmLocalization",
+                .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS]))
+            ],
             path: "Apps/DsmMac/Sources",
             linkerSettings: [
                 .linkedFramework("AppKit"),

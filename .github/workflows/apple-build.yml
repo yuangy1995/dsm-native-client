@@ -44,6 +44,9 @@ jobs:
       - name: 运行共享包测试
         run: swift test --package-path apple
 
+      - name: 运行 macOS 发布与升级签名回归
+        run: python3 -m unittest discover -s tools/release -p 'test_*.py'
+
       - name: 安装并校验锁定的 XcodeGen
         shell: bash
         run: |
@@ -63,6 +66,8 @@ jobs:
         run: |
           bash -n tools/release/verify_macos_distribution.sh
           bash -n tools/release/verify_macos_unsigned_ci_artifact.sh
+          bash -n tools/release/verify_macos_updater.sh
+          bash -n tools/release/publish_macos_release.sh
           if tools/release/verify_macos_distribution.sh; then
             echo "正式发布门禁不应在缺少候选产物时通过。" >&2
             exit 1

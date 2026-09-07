@@ -1,6 +1,9 @@
-name: macOS Release Verification
+name: macOS Release
 
 on:
+  push:
+    tags:
+      - "macos/v[0-9]*"
   workflow_dispatch:
     inputs:
       package_mode:
@@ -12,8 +15,28 @@ on:
           - "pretest"
           - "release"
 
+      enable_updates:
+        description: "启用签名候选包的在线升级（需独立更新密钥）"
+        required: true
+        default: false
+        type: boolean
+      publish_to_github:
+        description: "发布到 GitHub Releases（须选择 macos/v版本 标签，且已完成升级验收）"
+        required: true
+        default: false
+        type: boolean
+      publish_validation:
+        description: "发布已公证的升级验收包（仅限 macos-validation/v版本 标签，不更新正式通道）"
+        required: true
+        default: false
+        type: boolean
+
 permissions:
   contents: read
+
+concurrency:
+  group: macos-release
+  cancel-in-progress: false
 
 env:
   XCODE_VERSION: "16.4"
@@ -21,16 +44,50 @@ env:
   XCODEGEN_VERSION: "2.46.0"
   XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
   LANSTASH_NOTARY_PROFILE: "lanstash-release-notary"
+  PACKAGE_MODE: ${{ github.event_name == 'push' && 'release' || inputs.package_mode }}
+  PUBLISH_RELEASE: ${{ github.event_name == 'push' || inputs.publish_to_github }}
+  ENABLE_UPDATES: ${{ github.event_name == 'push' || inputs.publish_to_github || inputs.publish_validation || inputs.enable_updates }}
+  PUBLISH_VALIDATION: ${{ inputs.publish_validation || false }}
+  LANSTASH_UPDATE_CHANNEL: ${{ inputs.publish_validation && 'validation' || 'stable' }}
 
 jobs:
   sign-notarize-and-verify:
     # 此环境应配置人工审批，以及仅供发布使用的证书和公证 Secrets。
     environment: macos-release
+    permissions:
+      contents: write
     runs-on: macos-15
     steps:
       - name: 检出仓库
         # v7.0.0
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: 校验发布范围与升级启用条件
+        shell: bash
+        env:
+          UPDATE_VALIDATED: ${{ vars.MACOS_ONLINE_UPDATE_VALIDATED }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          if [[ "$PUBLISH_VALIDATION" == true ]]; then
+            [[ "$PUBLISH_RELEASE" != true && "$PACKAGE_MODE" == release && "$GITHUB_REF_TYPE" == tag ]] || exit 1
+            [[ "$GITHUB_REF_NAME" =~ ^macos-validation/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+            test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA"
+          fi
+          if [[ "$PUBLISH_RELEASE" == true ]]; then
+            [[ "$PACKAGE_MODE" == release && "$GITHUB_REF_TYPE" == tag ]] || exit 1
+            [[ "$GITHUB_REF_NAME" =~ ^macos/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+            [[ "$UPDATE_VALIDATED" == true ]] || {
+              echo "请先完成正式签名在线升级验收，再启用 MACOS_ONLINE_UPDATE_VALIDATED。" >&2
+              exit 1
+            }
+            test "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA"
+          fi
+          if [[ "$ENABLE_UPDATES" == true ]]; then
+            test -n "$SPARKLE_PUBLIC_ED_KEY"
+            test -n "$SPARKLE_PRIVATE_ED_KEY"
+            echo "LANSTASH_ENABLE_ONLINE_UPDATES=1" >> "$GITHUB_ENV"
+          fi
 
       - name: 选择锁定的 Xcode 工具链
         shell: bash
@@ -60,10 +117,14 @@ jobs:
       - name: 运行共享包测试
         run: swift test --package-path apple
 
+      - name: 运行本地化与发布回归
+        run: |
+          python3 tools/localization/check_localization.py
+          python3 -m unittest discover -s tools/release -p 'test_*.py'
+
       - name: 校验发布凭据配置
         shell: bash
         env:
-          PACKAGE_MODE: ${{ inputs.package_mode }}
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
           MACOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_PROVISIONING_PROFILE_BASE64 }}
@@ -108,7 +169,6 @@ jobs:
       - name: 导入临时 Developer ID 证书与可选公证资料
         shell: bash
         env:
-          PACKAGE_MODE: ${{ inputs.package_mode }}
           MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
           MACOS_APP_PROVISIONING_PROFILE_BASE64: ${{ secrets.MACOS_APP_PROVISIONING_PROFILE_BASE64 }}
@@ -176,9 +236,9 @@ jobs:
       - name: 构建、签名并生成候选包
         working-directory: apple/Apps/DsmMac
         env:
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
           LANSTASH_NON_INTERACTIVE: 1
           LANSTASH_BUILD_TYPE: Release
-          LANSTASH_BUILD_NUMBER: ${{ github.run_number }}
           LANSTASH_TARGET_ARCH: universal
           LANSTASH_RUN_AFTER_PACKAGE: 0
           LANSTASH_MAC_APP_BUNDLE_ID: ${{ vars.MACOS_APP_BUNDLE_ID }}
@@ -190,7 +250,7 @@ jobs:
         run: ./package.sh
 
       - name: 公证、装订并验证正式候选包
-        if: ${{ inputs.package_mode == 'release' }}
+        if: ${{ env.PACKAGE_MODE == 'release' }}
         shell: bash
         env:
           LANSTASH_NOTARY_API_KEY_PATH: ${{ runner.temp }}/lanstash-notary-api-key.p8
@@ -204,7 +264,7 @@ jobs:
           apple/Apps/DsmMac/notarize.sh "${dmg_paths[0]}"
 
       - name: 校验预测试签名包
-        if: ${{ inputs.package_mode == 'pretest' }}
+        if: ${{ env.PACKAGE_MODE == 'pretest' }}
         shell: bash
         env:
           LANSTASH_MAC_APP_GROUP_ID: ${{ vars.MACOS_APP_GROUP_ID }}
@@ -277,8 +337,15 @@ jobs:
             || { echo "DMG 内 App 缺少 File Provider 扩展" >&2; exit 1; }
           echo "预测试签名包校验通过；此产物未执行公证，不能替代正式发布验收。"
 
+      - name: 发布 macOS 安装包与签名更新源
+        if: ${{ env.PUBLISH_RELEASE == 'true' || env.PUBLISH_VALIDATION == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: bash tools/release/publish_macos_release.sh
+
       - name: 上传预测试签名包
-        if: ${{ inputs.package_mode == 'pretest' }}
+        if: ${{ env.PACKAGE_MODE == 'pretest' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LanStash-macOS-pretest
@@ -287,7 +354,7 @@ jobs:
           if-no-files-found: error
 
       - name: 上传已验证的正式候选包
-        if: ${{ inputs.package_mode == 'release' }}
+        if: ${{ env.PACKAGE_MODE == 'release' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: LanStash-macOS-release

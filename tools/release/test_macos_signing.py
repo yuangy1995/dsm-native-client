@@ -14,6 +14,17 @@ PACKAGE = ROOT / "apple/Apps/DsmMac/package.sh"
 
 
 class MacOSSigningTests(unittest.TestCase):
+    def test_updater_architecture_command_accepts_real_binary_and_rejects_missing_slice(self):
+        source = (ROOT / "tools/release/verify_macos_updater.sh").read_text()
+        command = next(line.strip() for line in source.splitlines() if "lipo " in line and "-verify_arch" in line)
+        executable = "/usr/bin/true"
+        arch = subprocess.check_output(["lipo", "-archs", executable], text=True).split()[0]
+        script = 'set -euo pipefail\nexecutable="$1"\narch="$2"\n' + command
+        valid = subprocess.run(["/bin/bash", "-c", script, "arch-test", executable, arch], capture_output=True)
+        self.assertEqual(valid.returncode, 0, valid.stderr.decode())
+        invalid = subprocess.run(["/bin/bash", "-c", script, "arch-test", executable, "ppc"], capture_output=True)
+        self.assertNotEqual(invalid.returncode, 0)
+
     def test_identity_fields_match_each_bundle_without_changing_permissions(self):
         source = PACKAGE.read_text(encoding="utf-8")
         functions = []

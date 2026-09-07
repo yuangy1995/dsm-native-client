@@ -93,3 +93,9 @@ CI 也可设置 `LANSTASH_NOTARY_API_KEY_PATH`、`LANSTASH_NOTARY_API_KEY_ID` �
 脚本会等待公证结果、装订票据，并调用
 `tools/release/verify_macos_distribution.sh` 校验 Developer ID 签名、File
 Provider 扩展、受限权限、Gatekeeper、DMG、DMG 内 App 与待发布 App 的一致性，以及票据。
+
+## GitHub 发布与在线升级
+
+macOS 可独立通过 GitHub Releases 发布，并使用 Sparkle 检查、下载和安装签名更新。
+正式发布保留上述签名与公证流程，首次上线前须完成真实签名升级验收；配置、标签规则、
+独立验收通道和回滚步骤见 [macOS 发布指南](../../../docs/releases/MACOS_GITHUB_RELEASE_ZH.md)。

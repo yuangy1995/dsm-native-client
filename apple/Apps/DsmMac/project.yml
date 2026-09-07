@@ -6,6 +6,9 @@ options:
     macOS: "14.0"
 
 packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.9.6
   DsmShared:
     path: ../..
 
@@ -28,6 +31,7 @@ targets:
       - path: Sources
       - path: Resources
     dependencies:
+      - package: Sparkle
       - target: DsmFileProvider
         embed: true
       - package: DsmShared
@@ -43,8 +47,8 @@ targets:
         INFOPLIST_FILE: SupportingFiles/Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmMac.entitlements
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 7
-        MARKETING_VERSION: 0.2.6
+        CURRENT_PROJECT_VERSION: 9
+        MARKETING_VERSION: 0.2.8
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
         SHARED_KEYCHAIN_ACCESS_GROUP: "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)"
@@ -67,8 +71,8 @@ targets:
         INFOPLIST_FILE: SupportingFiles/DsmFileProvider-Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmFileProvider.entitlements
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 7
-        MARKETING_VERSION: 0.2.6
+        CURRENT_PROJECT_VERSION: 9
+        MARKETING_VERSION: 0.2.8
         ENABLE_HARDENED_RUNTIME: true
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true

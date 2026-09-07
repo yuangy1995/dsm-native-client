@@ -32,6 +32,24 @@
 	<string>$(LANSTASH_MAC_APP_GROUP_ID)</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUSendProfileInfo</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/yuangy1995/dsm-native-client/releases/download/macos-updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>LanStashOnlineUpdatesEnabled</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

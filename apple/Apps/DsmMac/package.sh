@@ -397,6 +397,21 @@ rm -rf "$APP_PATH"
 
 PLIST_BUDDY="/usr/libexec/PlistBuddy"
 [[ -x "$PLIST_BUDDY" ]] || fail "找不到 PlistBuddy"
+if [[ "${LANSTASH_ENABLE_ONLINE_UPDATES:-0}" == "1" ]]; then
+    [[ "$SIGNING_IDENTITY" == "Developer ID Application:"* ]] \
+        || fail "在线升级候选包必须使用项目的 Developer ID 正式签名"
+    python3 -c 'import os, base64; assert len(base64.b64decode(os.environ.get("SPARKLE_PUBLIC_ED_KEY", ""), validate=True)) == 32, "更新公钥无效"'
+    set_plist_string "$APP_PATH/Contents/Info.plist" "SUPublicEDKey" "$SPARKLE_PUBLIC_ED_KEY"
+    case "${LANSTASH_UPDATE_CHANNEL:-stable}" in
+        stable) ;;
+        validation)
+            set_plist_string "$APP_PATH/Contents/Info.plist" "SUFeedURL" \
+                "https://github.com/yuangy1995/dsm-native-client/releases/download/macos-validation-updates/appcast.xml"
+            ;;
+        *) fail "不支持的 macOS 更新通道" ;;
+    esac
+    "$PLIST_BUDDY" -c "Set :LanStashOnlineUpdatesEnabled true" "$APP_PATH/Contents/Info.plist"
+fi
 if ! "$PLIST_BUDDY" -c "Add :LanStashSourceCommit string $SOURCE_COMMIT" "$APP_PATH/Contents/Info.plist" 2>/dev/null; then
     "$PLIST_BUDDY" -c "Set :LanStashSourceCommit $SOURCE_COMMIT" "$APP_PATH/Contents/Info.plist"
 fi
@@ -498,6 +513,12 @@ else
     "$PLIST_BUDDY" \
         -c "Set :com.apple.security.application-groups:0 $MAC_APP_GROUP_ID" \
         "$EXPANDED_FILE_PROVIDER_ENTITLEMENTS"
+    "$PLIST_BUDDY" \
+        -c "Set :com.apple.security.temporary-exception.mach-lookup.global-name:0 $MAC_APP_BUNDLE_ID-spks" \
+        "$EXPANDED_APP_ENTITLEMENTS"
+    "$PLIST_BUDDY" \
+        -c "Set :com.apple.security.temporary-exception.mach-lookup.global-name:1 $MAC_APP_BUNDLE_ID-spki" \
+        "$EXPANDED_APP_ENTITLEMENTS"
 
     validate_and_embed_profile \
         "$MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH" \
@@ -513,6 +534,21 @@ else
         "$EXPANDED_APP_ENTITLEMENTS" "$MAC_APP_BUNDLE_ID"
     set_signing_identity_entitlements \
         "$EXPANDED_FILE_PROVIDER_ENTITLEMENTS" "$MAC_FILE_PROVIDER_BUNDLE_ID"
+    # 手动打包须由内向外重签 Sparkle，不能只签最外层框架。
+    SPARKLE_FRAMEWORK="$APP_PATH/Contents/Frameworks/Sparkle.framework"
+    for component in \
+        "$SPARKLE_FRAMEWORK/Versions/B/XPCServices/Installer.xpc" \
+        "$SPARKLE_FRAMEWORK/Versions/B/XPCServices/Downloader.xpc" \
+        "$SPARKLE_FRAMEWORK/Versions/B/Autoupdate" \
+        "$SPARKLE_FRAMEWORK/Versions/B/Updater.app" \
+        "$SPARKLE_FRAMEWORK"; do
+        [[ -e "$component" ]] || fail "缺少 Sparkle 升级组件"
+        component_options=(--force --options runtime --timestamp)
+        if [[ "$component" == */Downloader.xpc ]]; then
+            component_options+=(--preserve-metadata=entitlements)
+        fi
+        /usr/bin/codesign "${component_options[@]}" --sign "$SIGNING_IDENTITY" "$component"
+    done
     /usr/bin/codesign \
         --force \
         --options runtime \

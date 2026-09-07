@@ -328,6 +328,7 @@ final class DesktopDriveMenuBarController: NSObject, NSMenuDelegate {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var isTerminationPending = false
+    weak var updateController: AppUpdateController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -343,6 +344,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // 安装确认与系统退出请求之间可能又启动文件任务，退出前再次核对。
+        if let driver = updateController?.driver, driver.isRestartRequested, !driver.canRestart() {
+            return .terminateCancel
+        }
         // 自动解除所有附着在窗口上的 Modal Sheet 或弹窗，确保 App 能响应 ⌘Q 和 Dock 菜单退出
         for window in NSApp.windows {
             if let sheet = window.attachedSheet {
@@ -383,9 +388,17 @@ struct DsmMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model: AppModel
     @State private var language = AppLanguageStore.shared
+    @StateObject private var updates: AppUpdateController
 
     init() {
-        _model = State(initialValue: AppModel())
+        let model = AppModel()
+        _model = State(initialValue: model)
+        _updates = StateObject(wrappedValue: AppUpdateController(canRestart: {
+            !model.isPreparingPaste && !model.connectedWorkspaces.contains {
+                AppUpdateController.hasUnfinishedTransfers($0.transfers)
+                    || $0.isEditingText || $0.isSavingText || $0.isMovingItemsByDrag
+            }
+        }))
     }
 
     var body: some Scene {
@@ -395,9 +408,11 @@ struct DsmMacApp: App {
                 .environment(\.locale, language.locale)
                 .task {
                     model.load()
+                    appDelegate.updateController = updates
                 }
         }
         .defaultSize(width: 1_260, height: 780)
         .windowResizability(.contentMinSize)
+        .commands { AppUpdateCommands(controller: updates) }
     }
 }
