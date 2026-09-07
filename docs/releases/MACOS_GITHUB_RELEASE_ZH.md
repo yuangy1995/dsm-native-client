@@ -67,7 +67,7 @@ Apple 发布身份配置保持不变。用户授权后，已为本项目生成�
 - `xcodebuild -project apple/Apps/DsmMac/DsmMac.xcodeproj -scheme DsmMac -configuration Debug -destination 'generic/platform=macOS' -derivedDataPath /tmp/lanstash-updater-build CODE_SIGNING_ALLOWED=NO -jobs 4 build`：arm64、x86_64 构建成功；这是无正式签名的本地构建，不代表分发验收。
 - 本机 Xcode 26.6 曾在新代码闭包的 IR 生成阶段崩溃，显式标注主线程闭包并避免方法引用转换后正常编译；未改变项目或 CI 工具链。
 - 独立复核发现 macOS Bash 3.2 对失败的 `[[ ... ]]` 不会可靠执行 `errexit`，新发布与更新校验均显式退出，入口回归实际在 `/bin/bash` 执行。另修正空数组在 `set -u` 下失败、安装取消遗留退出安装和错误提示不准确的问题。
-- UI/UX Pro Max 的 SwiftUI 指南用于原生按钮、清晰取消路径与可访问性；升级窗口可调整大小并滚动，不加入新的 UI 框架。实际屏幕阅读器和不同文字尺寸仍待人工验收。
+- 升级窗口使用原生按钮并提供清晰取消路径，可调整大小并滚动，不加入新的 UI 框架。实际屏幕阅读器和不同文字尺寸仍待人工验收。
 - 用户已授权使用专用分支 `codex/macos-release-updater` 完成云端验证与签名升级验收；全部通过后整理为单一功能提交，再合入主分支正式发布。成功后删除本任务测试分支、验收标签/发布及对应临时产物，保留正式发布和正式更新源。实际云端与升级验收结果将在完成后补录，不能用本地构建替代。
 
 ## 云端验证进度（2026-09-07）

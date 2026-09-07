@@ -38,7 +38,7 @@ jobs:
             python -m json.tool "$file" >/dev/null
           done < <(find contracts -type f -name '*.json' -print0)
 
-      - name: 校验 Codex Skill 引导脚本
+      - name: 校验仓库质量工具与文档
         run: |
           python -m unittest discover -s tools/codex/tests -p 'test_*.py'
           python tools/codex/generate_android_quality_baseline.py --check

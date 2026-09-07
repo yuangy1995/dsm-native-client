@@ -112,8 +112,7 @@ python3 tools/localization/check_localization.py
 ### 4. Compose 机械拆分
 
 在状态和事件边界稳定后，按“状态输入 / 事件输出”机械拆分 Chat、Files 和 Photos 大型
-页面文件。拆分前运行 `tools/codex/ensure_ui_ux_pro_max.py` 并完整阅读安装后的 Skill；
-拆分不改变布局、文案、动效、导航、可访问性或交互。
+页面文件。拆分不改变布局、文案、动效、导航、可访问性或交互。
 
 每个页面继续覆盖加载、空内容、筛选后为空、错误和正常内容。新增页面、弹窗、自定义点击
 或时间动效必须先更新 JSON 基线与生成报告。

@@ -23,16 +23,12 @@
 - Apple 英语/简体中文资源、macOS README、打包提示：统一挂载名称，覆盖设置、创建、删除确认、状态、菜单、无障碍及兼容性反馈入口；保留稳定资源键与内部类型名称。
 - 对应测试：共享查询选择、发布顺序、保存失败/读回失败、根项目无会话注册、认证恢复后的目录及内容读取、退出/暂停门禁、不存在的映射、错误提示分类和双语名称。
 - `package.sh`：补齐主 App/扩展独立身份；初始化并严格提取签名团队；允许独立输出目录以保留旧包。新增签名字段合成测试与使用真实签名/profile 的双进程合成钥匙串检查。
-- ui-ux-pro-max 仅用于 SwiftUI 表单、标签及错误恢复检查，未引入运行时依赖或视觉框架。
 
 ## 验证
 
 在仓库根目录执行：
 
 ```sh
-python3 tools/codex/ensure_ui_ux_pro_max.py
-python3 ~/.codex/skills/ui-ux-pro-max/scripts/search.py 'error recovery clear labels' --domain ux -n 3
-python3 ~/.codex/skills/ui-ux-pro-max/scripts/search.py 'forms accessibility' --stack swiftui
 swift test --package-path apple --jobs 4 --filter 'SharedKeychainSessionStoreTests|ConnectionFlowTests|ProviderRuntimeTests|DesktopCloudDriveManagerTests|DesktopDriveMappingTransactionCoordinatorTests'
 swift test --package-path apple --jobs 4
 python3 tools/localization/check_localization.py

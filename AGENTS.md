@@ -57,16 +57,11 @@
 - DSM 或套件升级后必须保留旧记录、新建环境快照和升级报告，重新对比 API 路径、版本、必需参数、字段类型、错误码与权限，并同步更新端点文档、脱敏 fixture、Schema、自动化测试、五端适配评估和产品兼容矩阵。
 - 发现产生的临时响应、截图、浏览器导出、代理配置和调试文件必须在完成脱敏记录后删除；只有彻底脱敏且对契约复验必要的 fixture 可以进入仓库。
 
-## UI/UX Pro Max 自动使用
+## 界面与交互规范
 
-- 任何会改变界面外观、布局、组件、导航、交互、动效、可访问性或用户体验的任务，都必须自动使用 `ui-ux-pro-max` Skill，不需要用户重复点名。
-- 开始 UI/UX 任务前，先运行 `python3 tools/codex/ensure_ui_ux_pro_max.py`；Windows 使用 `python tools\codex\ensure_ui_ux_pro_max.py`。
-- 引导脚本仅在全局 Skill 缺失时安装固定版本。安装后必须完整读取 `$CODEX_HOME/skills/ui-ux-pro-max/SKILL.md`；未设置 `CODEX_HOME` 时使用 `~/.codex/skills/ui-ux-pro-max/SKILL.md`。
-- 新页面或整体重设计先生成 design system；局部组件、体验审查和 UI 缺陷按 Skill 路由使用对应领域检索。
-- Apple、Android、Windows 分别使用 `swiftui`、`jetpack-compose`、`winui` 技术栈指南，不接受 Skill 中与本项目实际技术栈冲突的默认值。
+- 界面设计以用户确认的方案和平台原生规范为准；Apple、Android、Windows 分别延续 SwiftUI/AppKit、Jetpack Compose、WinUI 的现有实现。
 - UI 建议必须保持平台原生体验，并满足浅色/深色模式、键盘、触控、VoiceOver/屏幕阅读器、动态文字和降低动态效果要求。
-- Skill 只用于开发期设计支持，不得加入 App 运行时依赖，不得借 UI 修改改变 API、安全策略、Bundle ID、包名、会话存储或业务语义。
-- 纯网络、协议、存储、构建、CI 或其他不影响界面的任务不运行该引导脚本。
+- 不得借 UI 修改改变 API、安全策略、Bundle ID、包名、会话存储或业务语义。
 - macOS 工作区详情根视图必须占满 `NavigationSplitView` 的可用区域；带标题栏、筛选栏或列表的页面采用顶部对齐。
 - SwiftUI 页面级内容统一使用 `fillsAvailableContentArea(alignment:)`；普通空状态居中，标题栏和筛选栏保持 `.topLeading`。
 - 新页面必须分别检查加载、空内容、筛选后为空、错误和正常内容五种状态；空状态提供原因和下一步操作，弹窗状态分支占满标题栏以下的剩余区域。
