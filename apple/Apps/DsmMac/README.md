@@ -10,7 +10,8 @@
 - QuickConnect 会在发送登录信息前依次验证局域网和公网直连候选，失败后建立中继并核对 NAS 身份。
 - `SYNO.API.Info` 能力发现。
 - 账号密码登录与 OTP 状态切换；用户可选择将密码写入应用沙盒内的 AES-GCM 加密文件，并为每台 NAS 单独开启自动登录。
-- 主 App 的 SID、SynoToken 和可选密码写入应用沙盒内的 AES-GCM 加密文件，其主密钥仅保存在应用私有 Keychain。只有用户创建 Finder 云盘映射后，最小必要会话才会共享到系统钥匙串，密码不会写入共享钥匙串。
+- 主 App 的 SID、SynoToken 和可选密码写入应用沙盒内的 AES-GCM 加密文件，其主密钥仅保存在应用私有 Keychain。只有用户添加本地磁盘挂载后，最小必要会话才会共享到 Data Protection Keychain，密码不会写入共享钥匙串。
+- 本地磁盘挂载：在 Finder 中只读浏览 NAS 文件，打开时按需下载，也可选择保留在本机。它不自动下载整个 NAS，也不创建独立的 `/Volumes` 块设备。
 - 自签名证书 SHA-256 指纹审核、钉扎和证书变化阻断。
 - 共享目录、分页目录、文件夹大小统计和文件详情浏览；文件浏览器默认使用图标视图，并可切换列表视图及按类型、时间或大小分组。
 - 当前目录或所有子文件夹搜索、正则筛选、收藏夹、最近访问和已挂载远程位置入口。
@@ -53,6 +54,10 @@ OTP 只保留在登录界面的内存状态中。密码默认不保存；只有�
 共享 Keychain 权限，因此还必须通过环境变量提供两个与证书团队、Bundle ID 和权限匹配
 的 provisioning profile：
 
+开发证书必须使用包含测试 Mac 的 Mac App Development profile，不能混用
+Developer ID profile。手动签名会补齐与 profile 一致的应用和团队身份字段；
+签名验证成功仍不能代替 Finder 的真实挂载验收。
+
 ```bash
 LANSTASH_MAC_APP_PROVISIONING_PROFILE_PATH="/安全路径/MacApp.provisionprofile" \
 LANSTASH_MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH="/安全路径/FileProvider.provisionprofile" \
@@ -64,6 +69,11 @@ Developer 门户单独注册，脚本会检查 Team ID 前缀必须与签名证�
 `group.<名称>` 格式也仍受支持。
 
 确认设置后，脚本会生成 `dist/LanStash.app` 和 `dist/LanStash-<版本>-<架构>.dmg`。每一步直接按回车即可使用推荐选项，输入 `q` 可以随时退出。构建前会显示当前分支和提交，并检查主 App 与 File Provider 扩展的 Swift 文件是否全部加入构建目标；产物的 `Info.plist` 会记录 `LanStashSourceCommit`，便于确认安装包对应的源码版本。选择打包后运行时会启动新实例，避免仍在运行的旧版本被误认为新产物。
+
+本地修复测试可通过 `LANSTASH_DIST_DIR` 指定独立输出目录，保留之前的安装包。
+`python3 tools/release/test_macos_signing.py` 在仓库根目录验证身份字段与原权限保持一致；
+`tools/release/verify_macos_shared_keychain.py` 可对完整签名包做合成双进程共享检查，
+只处理每次新建的合成条目并自动清理，不读取真实 NAS 会话。
 
 新 DMG 成功生成并通过完整性验证后，脚本会自动删除 `dist` 中更早版本的安装包；同一版本的不同架构会保留。构建或验证失败时不会清理已有安装包。
 

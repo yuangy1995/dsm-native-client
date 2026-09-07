@@ -6,6 +6,21 @@ import XCTest
 
 @MainActor
 final class DesktopCloudDriveManagerTests: XCTestCase {
+    func test挂载准备失败按原因提供恢复提示而不显示内部错误() {
+        XCTAssertEqual(
+            DesktopCloudDriveManager.addErrorKey(DesktopDriveSessionBridgeError.connectionUnavailable),
+            "desktopDrive.error.connectionSetup"
+        )
+        XCTAssertEqual(
+            DesktopCloudDriveManager.addErrorKey(DesktopDriveSessionBridgeError.sessionUnavailable),
+            "desktopDrive.error.sessionSetup"
+        )
+        XCTAssertEqual(
+            DesktopCloudDriveManager.addErrorKey(CocoaError(.fileWriteUnknown)),
+            "desktopDrive.error.add"
+        )
+    }
+
     @available(macOS 15.0, *)
     func test外接缓存卷资格检查使用可注入系统边界() async throws {
         let context = try await makeContext()

@@ -16,7 +16,7 @@ FILE_PROVIDER_ENTITLEMENTS="$SCRIPT_DIR/SupportingFiles/DsmFileProvider.entitlem
 BUILD_ROOT="$SCRIPT_DIR/build/package"
 DERIVED_DATA="$BUILD_ROOT/DerivedData"
 STAGING_DIR="$BUILD_ROOT/dmg"
-DIST_DIR="$SCRIPT_DIR/dist"
+DIST_DIR="${LANSTASH_DIST_DIR:-$SCRIPT_DIR/dist}"
 MAC_APP_BUNDLE_ID="${LANSTASH_MAC_APP_BUNDLE_ID:-io.github.qwertyuiop1995.dsmnativeclient.macos}"
 MAC_FILE_PROVIDER_BUNDLE_ID="${LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID:-io.github.qwertyuiop1995.dsmnativeclient.macos.fileprovider}"
 MAC_APP_GROUP_ID="${LANSTASH_MAC_APP_GROUP_ID:-group.io.github.qwertyuiop1995.dsmnativeclient}"
@@ -115,6 +115,17 @@ set_plist_string() {
     fi
 }
 
+set_signing_identity_entitlements() {
+    local entitlements_path="$1"
+    local bundle_id="$2"
+    # 手动重签不会像 Xcode 一样自动补入身份字段。缺少 App ID 时系统
+    # 无法把共享钥匙串权限关联到已嵌入的 profile，即使签名校验成功。
+    set_plist_string "$entitlements_path" \
+        "com.apple.application-identifier" "$TEAM_IDENTIFIER.$bundle_id"
+    set_plist_string "$entitlements_path" \
+        "com.apple.developer.team-identifier" "$TEAM_IDENTIFIER"
+}
+
 cleanup_old_packages() {
     local package=""
     local removed=0
@@ -187,7 +198,7 @@ choose_signing_identity() {
     if [[ ${#identities[@]} -eq 0 ]]; then
         echo
         echo "未在钥匙串中找到可用的代码签名证书。"
-        echo "将继续使用本机临时签名；主应用可以运行，但不会包含云盘映射扩展。"
+        echo "将继续使用本机临时签名；主应用可以运行，但不包含本地磁盘挂载功能。"
         SIGNING_IDENTITY="-"
         return
     fi
@@ -239,7 +250,7 @@ configure_package() {
         esac
 
         ask_choice "3/4 选择签名方式" 1 \
-            "本机临时签名（可启动，但不包含云盘映射）" \
+            "本机临时签名（可启动，但不包含本地磁盘挂载）" \
             "从钥匙串选择签名证书"
         case "$SELECTED_CHOICE" in
             1) SIGNING_IDENTITY="-" ;;
@@ -259,7 +270,7 @@ configure_package() {
         echo "  构建类型：$CONFIGURATION"
         echo "  目标架构：$TARGET_ARCH_DESCRIPTION"
         if [[ "$SIGNING_IDENTITY" == "-" ]]; then
-            echo "  签名方式：本机临时签名（不包含 File Provider 云盘扩展）"
+            echo "  签名方式：本机临时签名（不包含本地磁盘挂载功能）"
         else
             echo "  签名证书：$SIGNING_IDENTITY"
         fi
@@ -410,11 +421,12 @@ if [[ "$SIGNING_IDENTITY" == "-" ]]; then
         --timestamp=none \
         --sign - \
         "$APP_PATH"
-    echo "==> 临时签名包已移除云盘扩展；测试云盘映射请使用 Apple 开发签名证书"
+    echo "==> 临时签名包不包含本地磁盘挂载；测试挂载请使用 Apple 签名证书及配套授权文件"
 else
     CERTIFICATE_PEM="$BUILD_ROOT/signing-certificate.pem"
     EXPANDED_APP_ENTITLEMENTS="$BUILD_ROOT/DsmMac.expanded.entitlements"
     EXPANDED_FILE_PROVIDER_ENTITLEMENTS="$BUILD_ROOT/DsmFileProvider.expanded.entitlements"
+    TEAM_IDENTIFIER=""
     if /usr/bin/security find-certificate \
         -c "$SIGNING_IDENTITY" \
         -p > "$CERTIFICATE_PEM" 2>/dev/null; then
@@ -429,8 +441,10 @@ else
     fi
     if [[ -z "$TEAM_IDENTIFIER" ]]; then
         # CI 的临时钥匙串有时可列出签名身份，但 find-certificate 无法按完整显示名称反查。
-        # Apple 签名身份名称固定以十位 Team ID 的括号结尾，作为经过格式校验的后备来源。
-        if [[ "$SIGNING_IDENTITY" =~ \(([A-Z0-9]{10})\)$ ]]; then
+        # 只有 Developer ID 的括号后缀是团队 ID；Apple Development 的
+        # 显示名称后缀可能是个人标识，不能把它当作团队 ID。
+        if [[ "$SIGNING_IDENTITY" == "Developer ID Application:"* \
+            && "$SIGNING_IDENTITY" =~ \(([A-Z0-9]{10})\)$ ]]; then
             TEAM_IDENTIFIER="${BASH_REMATCH[1]}"
         fi
     fi
@@ -495,6 +509,10 @@ else
         "$MAC_APP_BUNDLE_ID" \
         "$APP_PATH/Contents/embedded.provisionprofile" \
         "$BUILD_ROOT/DsmMac.profile.plist"
+    set_signing_identity_entitlements \
+        "$EXPANDED_APP_ENTITLEMENTS" "$MAC_APP_BUNDLE_ID"
+    set_signing_identity_entitlements \
+        "$EXPANDED_FILE_PROVIDER_ENTITLEMENTS" "$MAC_FILE_PROVIDER_BUNDLE_ID"
     /usr/bin/codesign \
         --force \
         --options runtime \
@@ -559,7 +577,7 @@ echo "  App：$APP_PATH"
 echo "  DMG：$DMG_PATH"
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
-    echo "  签名：本机临时签名（可运行主应用，不包含云盘映射）"
+    echo "  签名：本机临时签名（可运行主应用，不包含本地磁盘挂载）"
 else
     echo "  签名：$SIGNING_IDENTITY"
     echo "  提示：公开分发前仍需完成 Apple 公证。"

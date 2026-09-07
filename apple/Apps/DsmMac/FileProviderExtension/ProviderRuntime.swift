@@ -229,19 +229,15 @@ actor ProviderRuntime {
     func item(
         for identifier: NSFileProviderItemIdentifier
     ) async throws -> ProviderItem {
+        // 系统注册/恢复挂载时先索取根项目。根项目仅来自本地配置，不能依赖
+        // 登录会话或网络就绪；真实目录与文件仍通过 makeContext 检查访问条件。
+        if identifier == .rootContainer {
+            return try await rootItem()
+        }
         let context = try await makeContext()
         let runtime = try await configurationStore.runtime(
             mappingID: context.configuration.mapping.id
         )
-        if identifier == .rootContainer {
-            let rootPath = Self.rootPath(
-                for: context.configuration.mapping
-            )
-            return ProviderItem.root(
-                configuration: context.configuration,
-                keptOffline: runtime.keepsOffline(rootPath)
-            )
-        }
         let path = try await remotePath(for: identifier)
         guard let item = try await metadata.item(path: path, loader: {
             try await context.repository.getInfo(paths: [path]).first
@@ -413,16 +409,7 @@ actor ProviderRuntime {
         guard template.identifier == .rootContainer else {
             return nil
         }
-        let context = try await makeContext()
-        let runtime = try await configurationStore.runtime(
-            mappingID: context.configuration.mapping.id
-        )
-        return ProviderItem.root(
-            configuration: context.configuration,
-            keptOffline: runtime.keepsOffline(
-                Self.rootPath(for: context.configuration.mapping)
-            )
-        )
+        return try await rootItem()
     }
 
     func fetchContents(
@@ -1086,20 +1073,41 @@ actor ProviderRuntime {
         return snapshot
     }
 
-    private func makeContext() async throws -> (
-        configuration: DesktopDriveProviderConfiguration,
-        repository: any ProviderRuntimeRepository
-    ) {
+    private func configuration()
+        async throws -> DesktopDriveProviderConfiguration {
         guard let mappingID,
               let configuration = try await configurationStore.configuration(
             mappingID: mappingID
         ) else {
             throw NSFileProviderError(.noSuchItem)
         }
+        return configuration
+    }
+
+    private func rootItem() async throws -> ProviderItem {
+        let configuration = try await configuration()
+        let runtime = try await configurationStore.runtime(
+            mappingID: configuration.mapping.id
+        )
+        return ProviderItem.root(
+            configuration: configuration,
+            keptOffline: runtime.keepsOffline(
+                Self.rootPath(for: configuration.mapping)
+            )
+        )
+    }
+
+    private func makeContext() async throws -> (
+        configuration: DesktopDriveProviderConfiguration,
+        repository: any ProviderRuntimeRepository
+    ) {
+        let configuration = try await configuration()
         guard try await configurationStore.isProviderAvailable() else {
             throw NSFileProviderError(.serverUnreachable)
         }
-        let runtime = try await configurationStore.runtime(mappingID: mappingID)
+        let runtime = try await configurationStore.runtime(
+            mappingID: configuration.mapping.id
+        )
         guard !runtime.isManuallyPaused else {
             throw NSFileProviderError(.serverUnreachable)
         }

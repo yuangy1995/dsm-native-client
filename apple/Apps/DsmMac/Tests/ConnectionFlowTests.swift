@@ -203,6 +203,12 @@ private actor MemorySessionStore: SessionSecureStoring {
     }
 }
 
+private actor UnreadableMountSessionStore: SessionSecureStoring {
+    func save(_ session: AuthSession, for profileID: UUID) async throws {}
+    func load(for profileID: UUID) async throws -> AuthSession? { nil }
+    func remove(for profileID: UUID) async throws {}
+}
+
 final class ConnectionFlowTests: XCTestCase {
     func test临时签名缺少扩展或共享容器时云盘能力不可用() {
         let containerURL = URL(fileURLWithPath: "/tmp/test-app-group")
@@ -227,7 +233,7 @@ final class ConnectionFlowTests: XCTestCase {
         )
     }
 
-    func test云盘会话桥接只发布并清理当前会话() async throws {
+    func test挂载会话桥接先保存连接再发布并清理当前会话() async throws {
         let profileID = UUID()
         let session = AuthSession(
             sid: "test-session",
@@ -239,7 +245,11 @@ final class ConnectionFlowTests: XCTestCase {
         let bridge = DesktopDriveSessionBridge(
             profileID: profileID,
             session: session,
-            store: store
+            store: store,
+            publishConnection: {
+                let existing = try await store.load(for: profileID)
+                XCTAssertNil(existing)
+            }
         )
 
         try await bridge.publish()
@@ -249,6 +259,40 @@ final class ConnectionFlowTests: XCTestCase {
         try await bridge.remove()
         let removed = try await store.load(for: profileID)
         XCTAssertNil(removed)
+    }
+
+    func test连接资料保存失败不会发布共享登录状态() async throws {
+        let profileID = UUID()
+        let store = MemorySessionStore()
+        let bridge = DesktopDriveSessionBridge(
+            profileID: profileID,
+            session: .init(sid: "test-session", synoToken: nil, did: nil, isPortalPort: false),
+            store: store,
+            publishConnection: { throw CocoaError(.fileWriteOutOfSpace) }
+        )
+        do {
+            try await bridge.publish()
+            XCTFail("连接资料保存失败时不得继续挂载")
+        } catch {
+            XCTAssertEqual(error as? DesktopDriveSessionBridgeError, .connectionUnavailable)
+        }
+        let saved = try await store.load(for: profileID)
+        XCTAssertNil(saved)
+    }
+
+    func test共享登录状态无法读回时不报告发布成功() async throws {
+        let bridge = DesktopDriveSessionBridge(
+            profileID: UUID(),
+            session: .init(sid: "test-session", synoToken: nil, did: nil, isPortalPort: false),
+            store: UnreadableMountSessionStore(),
+            publishConnection: {}
+        )
+        do {
+            try await bridge.publish()
+            XCTFail("无法读回的会话不能视为已就绪")
+        } catch {
+            XCTAssertEqual(error as? DesktopDriveSessionBridgeError, .sessionUnavailable)
+        }
     }
 
     @MainActor

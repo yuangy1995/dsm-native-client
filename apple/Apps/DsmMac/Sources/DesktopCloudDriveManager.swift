@@ -37,23 +37,43 @@ enum DesktopDriveStatusSource: Equatable {
     case userAction
 }
 
+enum DesktopDriveSessionBridgeError: Error, Equatable {
+    case connectionUnavailable
+    case sessionUnavailable
+}
+
 actor DesktopDriveSessionBridge: DesktopDriveSessionBridging {
     private let profileID: UUID
     private let session: AuthSession
     private let store: any SessionSecureStoring
+    private let publishConnection: @Sendable () async throws -> Void
 
     init(
         profileID: UUID,
         session: AuthSession,
-        store: any SessionSecureStoring
+        store: any SessionSecureStoring,
+        publishConnection: @escaping @Sendable () async throws -> Void
     ) {
         self.profileID = profileID
         self.session = session
         self.store = store
+        self.publishConnection = publishConnection
     }
 
     func publish() async throws {
-        try await store.save(session, for: profileID)
+        do {
+            try await publishConnection()
+        } catch {
+            throw DesktopDriveSessionBridgeError.connectionUnavailable
+        }
+        do {
+            try await store.save(session, for: profileID)
+            guard try await store.load(for: profileID) == session else {
+                throw DesktopDriveSessionBridgeError.sessionUnavailable
+            }
+        } catch {
+            throw DesktopDriveSessionBridgeError.sessionUnavailable
+        }
     }
 
     func remove() async throws {
@@ -909,7 +929,7 @@ final class DesktopCloudDriveManager {
                 return
             }
         } catch {
-            setError("desktopDrive.error.add")
+            setError(Self.addErrorKey(error))
             return
         }
         guard !mappings.contains(where: { existing in
@@ -927,8 +947,25 @@ final class DesktopCloudDriveManager {
             try await recordStoredMapping(created)
             setSuccess("desktopDrive.status.added")
         } catch {
-            setError("desktopDrive.error.add")
+            setError(Self.addErrorKey(error))
         }
+    }
+
+    static func addErrorKey(_ error: Error) -> String {
+        if let error = error as? DesktopDriveSessionBridgeError {
+            switch error {
+            case .connectionUnavailable:
+                return "desktopDrive.error.connectionSetup"
+            case .sessionUnavailable:
+                return "desktopDrive.error.sessionSetup"
+            }
+        }
+        if let error = error as? AppError {
+            return error.category == .authenticationRequired
+                ? "desktopDrive.error.authenticationRequired"
+                : "desktopDrive.error.nasAccess"
+        }
+        return "desktopDrive.error.add"
     }
 
     private func refreshCacheSizes() async {

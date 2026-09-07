@@ -5,6 +5,21 @@ import XCTest
 @testable import DsmNetwork
 
 final class SharedKeychainSessionStoreTests: XCTestCase {
+    #if os(macOS)
+    func test共享会话查询始终使用支持访问组的钥匙串() {
+        let profileID = UUID()
+        let store = SharedKeychainSessionStore(accessGroup: "TEST.shared")
+        let query = store.baseQuery(service: "test.session", profileID: profileID)
+
+        XCTAssertEqual(query[kSecUseDataProtectionKeychain as String] as? Bool, true)
+        XCTAssertEqual(query[kSecAttrAccessGroup as String] as? String, "TEST.shared")
+        XCTAssertEqual(query[kSecAttrAccount as String] as? String, profileID.uuidString)
+        XCTAssertEqual(query[kSecAttrService as String] as? String, "test.session")
+        XCTAssertNil(query[kSecAttrSynchronizable as String])
+        XCTAssertNil(query[kSecValueData as String])
+    }
+    #endif
+
     func testUpsert更新成功时不新增也不删除旧会话() throws {
         var updateCount = 0
         var addCount = 0

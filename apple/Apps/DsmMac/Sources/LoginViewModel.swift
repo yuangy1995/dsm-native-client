@@ -828,14 +828,16 @@ final class AppModel {
     ) async throws {
         let desktopDriveSessionBridge: DesktopDriveSessionBridge?
         if DesktopCloudDriveAvailability.isAvailable {
-            try? await desktopDriveStore.saveConnection(
-                profile: connectionProfile,
-                capabilities: capabilities
-            )
             desktopDriveSessionBridge = DesktopDriveSessionBridge(
                 profileID: profile.id,
                 session: session,
-                store: desktopDriveSessionStore
+                store: desktopDriveSessionStore,
+                publishConnection: { [desktopDriveStore] in
+                    try await desktopDriveStore.saveConnection(
+                        profile: connectionProfile,
+                        capabilities: capabilities
+                    )
+                }
             )
         } else {
             desktopDriveSessionBridge = nil

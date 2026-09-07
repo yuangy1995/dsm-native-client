@@ -5,6 +5,100 @@ import XCTest
 @testable import DsmFileProviderRuntime
 
 final class ProviderRuntimeTests: XCTestCase {
+    func test缺少会话时根目录仍可注册但真实文件访问被拒绝() async throws {
+        let context = try makeContext()
+        var dependencies = context.dependencies(capacity: .init(results: []))
+        dependencies.makeRepository = { _ in
+            throw NSFileProviderError(.notAuthenticated)
+        }
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: dependencies
+        )
+
+        let root = try await runtime.item(for: .rootContainer)
+        let importedRoot = try await runtime.itemForImportedSystemItem(.init(item: root))
+        XCTAssertEqual(root.filename, context.mapping.displayName)
+        XCTAssertEqual(importedRoot?.itemIdentifier, .rootContainer)
+
+        let enumerationError = await capturedError {
+            _ = try await runtime.enumerate(containerIdentifier: .rootContainer, offset: 0, limit: 10)
+        }
+        let downloadError = await capturedError {
+            _ = try await runtime.fetchContents(
+                for: .init("item-1"), requestedVersion: nil, progress: { _, _ in }
+            )
+        }
+        XCTAssertEqual((enumerationError as NSError?)?.code, NSFileProviderError.notAuthenticated.rawValue)
+        XCTAssertEqual((downloadError as NSError?)?.code, NSFileProviderError.notAuthenticated.rawValue)
+        XCTAssertEqual((enumerationError as NSError?)?.domain, NSFileProviderErrorDomain)
+        let snapshot = await context.repository.snapshot()
+        XCTAssertEqual(snapshot.downloadCount, 0)
+    }
+
+    func test会话恢复后同一个扩展可以列目录并下载文件() async throws {
+        let context = try makeContext()
+        let authentication = ProviderAuthenticationProbe()
+        var dependencies = context.dependencies(capacity: .init(results: []))
+        dependencies.makeRepository = { _ in
+            try await authentication.check()
+            return context.repository
+        }
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: dependencies
+        )
+        _ = try await runtime.item(for: .rootContainer)
+        let error = await capturedError {
+            _ = try await runtime.enumerate(containerIdentifier: .rootContainer, offset: 0, limit: 10)
+        }
+        XCTAssertEqual((error as NSError?)?.code, NSFileProviderError.notAuthenticated.rawValue)
+
+        await authentication.restore()
+        let page = try await runtime.enumerate(containerIdentifier: .rootContainer, offset: 0, limit: 10)
+        XCTAssertEqual(page.items.count, 1)
+        let identifier = try XCTUnwrap(page.items.first?.itemIdentifier)
+        let result = try await runtime.fetchContents(
+            for: identifier, requestedVersion: nil, progress: { _, _ in }
+        )
+        XCTAssertEqual(result.1.itemIdentifier, identifier)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.0.path))
+        let snapshot = await context.repository.snapshot()
+        XCTAssertEqual(snapshot.downloadCount, 1)
+    }
+
+    func test提供器退出或手动暂停时只允许读取根信息() async throws {
+        let context = try makeContext()
+        let runtime = ProviderRuntime(
+            mappingIdentifier: context.mapping.id.uuidString,
+            dependencies: context.dependencies(capacity: .init(results: []))
+        )
+        for paused in [false, true] {
+            await context.store.setAvailability(available: paused, paused: paused)
+            _ = try await runtime.item(for: .rootContainer)
+            let error = await capturedError {
+                _ = try await runtime.enumerate(
+                    containerIdentifier: .rootContainer, offset: 0, limit: 10
+                )
+            }
+            XCTAssertEqual((error as NSError?)?.domain, NSFileProviderErrorDomain)
+            XCTAssertEqual((error as NSError?)?.code, NSFileProviderError.serverUnreachable.rawValue)
+        }
+    }
+
+    func test不存在的挂载不能伪造根目录() async throws {
+        let context = try makeContext()
+        let runtime = ProviderRuntime(
+            mappingIdentifier: UUID().uuidString,
+            dependencies: context.dependencies(capacity: .init(results: []))
+        )
+        let error = await capturedError {
+            _ = try await runtime.item(for: .rootContainer)
+        }
+        XCTAssertEqual((error as NSError?)?.domain, NSFileProviderErrorDomain)
+        XCTAssertEqual((error as NSError?)?.code, NSFileProviderError.noSuchItem.rawValue)
+    }
+
     func test系统重导入根目录时返回已有根项目() async throws {
         let context = try makeContext()
         let runtime = ProviderRuntime(
@@ -896,7 +990,17 @@ final class ProviderRuntimeTests: XCTestCase {
     }
 }
 
-private struct ProviderRuntimeTestContext {
+private actor ProviderAuthenticationProbe {
+    private var isAuthenticated = false
+
+    func check() throws {
+        guard isAuthenticated else { throw NSFileProviderError(.notAuthenticated) }
+    }
+
+    func restore() { isAuthenticated = true }
+}
+
+private struct ProviderRuntimeTestContext: Sendable {
     let directory: URL
     let mapping: DesktopDriveMapping
     let store: ProviderConfigurationStoreStub
@@ -1121,6 +1225,7 @@ private actor ProviderConfigurationStoreStub:
     private var removedPathValues: [String] = []
     private var changeJournals: [String: DesktopDriveChangeJournal] = [:]
     private let removeCacheEntriesFails: Bool
+    private var providerAvailable = true
 
     init(
         configuration: DesktopDriveProviderConfiguration,
@@ -1218,7 +1323,12 @@ private actor ProviderConfigurationStoreStub:
         }
     }
 
-    func isProviderAvailable() -> Bool { true }
+    func isProviderAvailable() -> Bool { providerAvailable }
+
+    func setAvailability(available: Bool, paused: Bool) {
+        providerAvailable = available
+        runtimeValue.isManuallyPaused = paused
+    }
 
     func recordedEntryCount() -> Int { recordedEntries.count }
 

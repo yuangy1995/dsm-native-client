@@ -66,3 +66,31 @@ import Testing
     #expect(didInvalidate)
     #expect(store.string("settings.language.title") == "语言")
 }
+
+@Test @MainActor func localDiskMountTerminologyAndRecoveryMessagesAreBilingual() {
+    let suite = "L10n.mount.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AppLanguageStore(
+        defaults: defaults,
+        preferredLanguages: { ["en-US"] },
+        observesSystemChanges: false
+    )
+    for language in [AppLanguageSelection.english, .simplifiedChinese] {
+        store.selection = language
+        for key in [
+            "desktopDrive.title", "desktopDrive.add", "desktopDrive.creator.title",
+            "desktopDrive.description", "desktopDrive.menu.tooltip",
+            "desktopDrive.error.connectionSetup", "desktopDrive.error.sessionSetup",
+            "desktopDrive.error.nasAccess", "communityReport.group.desktopDrive",
+        ] {
+            let text = store.string(key)
+            #expect(text != key)
+            #expect(!text.contains("云盘"))
+            #expect(!text.localizedCaseInsensitiveContains("cloud"))
+        }
+        #expect(store.string("desktopDrive.title") == (
+            language == .english ? "Local disk mounts" : "本地磁盘挂载"
+        ))
+    }
+}

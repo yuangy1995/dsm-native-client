@@ -125,7 +125,7 @@ public actor SharedKeychainSessionStore: SessionSecureStoring {
         }
     }
 
-    private func baseQuery(
+    nonisolated func baseQuery(
         service: String,
         profileID: UUID
     ) -> [String: Any] {
@@ -134,6 +134,12 @@ public actor SharedKeychainSessionStore: SessionSecureStoring {
             kSecAttrService as String: service,
             kSecAttrAccount as String: profileID.uuidString,
         ]
+        // macOS 默认的旧式钥匙串不执行 access group 共享。主 App 与扩展的
+        // 增删读写必须一致选择 Data Protection Keychain；不迁移旧凭据，
+        // 由主 App 当前登录会话重新发布，密码仍留在原私有存储。
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
         if let accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
