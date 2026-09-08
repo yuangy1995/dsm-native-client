@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -798,7 +799,7 @@ internal fun ChatComposer(
     onAttach: (() -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(8.dp),
+        modifier = Modifier.fillMaxWidth().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -812,12 +813,12 @@ internal fun ChatComposer(
             onValueChange = { if (it.length <= 10_000) onTextChange(it) },
             modifier = Modifier.weight(1f),
             enabled = enabled,
-            label = { Text(stringResource(R.string.message)) },
+            shape = MaterialTheme.shapes.large,
             placeholder = { Text(stringResource(R.string.write_a_message)) },
             minLines = 1,
             maxLines = 5,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) onSend() }),
+            keyboardActions = KeyboardActions(onSend = { if (enabled && text.isNotBlank()) onSend() }),
         )
         IconButton(
             onClick = onSend,

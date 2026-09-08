@@ -1,5 +1,17 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material3.Button
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import io.github.qwertyuiop1995.dsmnativeclient.ui.navigation.*
+
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -173,15 +185,35 @@ private fun FileBrowserContent(
     val browser = state.fileBrowser
     val mutation = state.fileStationMutationState
     var selected by remember { mutableStateOf<FileItem?>(null) }
+    var details by remember { mutableStateOf<FileItem?>(null) }
     var pendingDownload by rememberSaveable(
         state.profile.id,
         stateSaver = PendingDownloadRequestStateSaver,
     ) { mutableStateOf(PendingDownloadRequestState()) }
     var showNotificationPermission by remember { mutableStateOf(false) }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    var showOptions by remember { mutableStateOf(false) }
+    var showAdd by remember { mutableStateOf(false) }
+    var uploadDestinationMode by rememberSaveable { mutableStateOf(false) }
+    var showShareLinks by remember { mutableStateOf(false) }
+    val entry = LocalClientEntry.current
+    LaunchedEffect(entry?.revision) {
+        when (entry?.action) {
+            ClientEntryAction.SEARCH -> showSearch = true
+            ClientEntryAction.UPLOAD -> uploadDestinationMode = true
+            ClientEntryAction.FAVORITES -> model.loadFileFavorites()
+            ClientEntryAction.RECENT -> model.loadFileRecentLocations()
+            ClientEntryAction.SHARE_LINKS -> { showShareLinks = true; model.loadFileShareLinks() }
+            else -> Unit
+        }
+        entry?.consume()
+    }
+    BackHandler(enabled = showSearch || uploadDestinationMode) {
+        if (showSearch) showSearch = false else uploadDestinationMode = false
+    }
     var showSortMenu by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
     var showUploadOptions by remember { mutableStateOf(false) }
-    var showShareLinks by remember { mutableStateOf(false) }
     var compressTargets by remember { mutableStateOf<List<FileItem>>(emptyList()) }
     var extractTarget by remember { mutableStateOf<FileItem?>(null) }
     val context = LocalContext.current
@@ -260,403 +292,87 @@ private fun FileBrowserContent(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
-        floatingActionButton = {
-            if (!inlinePreview) {
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        if (model.prepareUpload()) showUploadOptions = true
-                    },
-                    icon = {
-                        if (state.isPerformingAction) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Outlined.UploadFile, contentDescription = null)
-                        }
-                    },
-                    text = {
-                        Text(
-                            stringResource(R.string.upload_file),
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    },
-                    shape = MaterialTheme.shapes.medium,
-                    expanded = !state.isPerformingAction,
+        bottomBar = {
+            when {
+                browser.selectedPaths.isNotEmpty() -> ClientFileSelectionBar(
+                    state, model, selectedItems, mutationBlocksWrites,
+                    onCompress = { compressTargets = selectedItems },
                 )
-                if (browser.path.isNotBlank() && !mutationBlocksWrites) {
-                    ExtendedFloatingActionButton(
-                        onClick = { model.openCreateFolderEditor() },
-                        icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
-                        text = {
-                            Text(
-                                stringResource(R.string.new_folder),
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        },
-                        shape = MaterialTheme.shapes.medium,
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        expanded = !state.isPerformingAction,
-                    )
+                uploadDestinationMode -> androidx.compose.material3.Surface {
+                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Text(stringResource(R.string.client_choose_upload_folder), style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = {
+                            if (model.prepareUpload()) { uploadDestinationMode = false; showUploadOptions = true }
+                        }, enabled = browser.path.isNotBlank() && !mutationBlocksWrites && !state.isPerformingAction,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.client_upload_here))
+                        }
+                    }
                 }
-                }
+            }
+        },
+        floatingActionButton = {
+            if (!inlinePreview && browser.selectedPaths.isEmpty() && !uploadDestinationMode) {
+                val label = stringResource(R.string.client_add)
+                ExtendedFloatingActionButton(
+                    onClick = { if (!mutationBlocksWrites && !state.isPerformingAction) showAdd = true },
+                    icon = { Icon(Icons.Outlined.Add, null) }, text = { Text(label) },
+                    modifier = Modifier.semantics { contentDescription = label },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                )
             }
         },
     ) { padding ->
         Row(Modifier.fillMaxSize().padding(padding)) {
-            Column(
-                if (inlinePreview) {
-                    Modifier.width(420.dp).fillMaxHeight()
-                } else {
-                    Modifier.fillMaxSize()
-                },
-            ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (browser.pathHistory.isNotEmpty()) {
-                    IconButton(
-                        onClick = model::goBackDirectory,
-                        modifier = Modifier
-                            .clip(MaterialTheme.shapes.small)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.go_up),
+            Column(if (inlinePreview) Modifier.width(420.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
+                if (showSearch || browser.activeSearchQuery != null) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ClientSearchField(browser.searchQuery, model::updateFileSearchQuery,
+                            stringResource(R.string.client_search_files), Modifier.weight(1f), onSearch = model::searchFiles)
+                        IconButton(onClick = {
+                            showSearch = false
+                            model.updateFileSearchQuery("")
+                            model.searchFiles()
+                        }) { Icon(Icons.Outlined.Close, stringResource(R.string.close)) }
+                    }
+                }
+                if (browser.path.isBlank() && browser.selectedPaths.isEmpty() && state.favoritePaths.isNotEmpty()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        ClientSectionTitle(stringResource(R.string.client_favorite_locations))
+                        SavedLocationTiles(state.favoritePaths.toList().take(6), model::openRecentDirectory)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(if (browser.path.isBlank()) R.string.shared_folders else R.string.client_files),
+                        style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { showOptions = true }) {
+                        Icon(Icons.Outlined.Tune, stringResource(R.string.client_file_options))
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullRefreshState)) {
+                    PageStateContent(
+                        state = pageUiState,
+                        emptyTitle = stringResource(R.string.directory_empty),
+                        emptyMessage = stringResource(R.string.empty_folder_description),
+                        emptyIcon = Icons.Outlined.Folder,
+                        filteredEmptyTitle = stringResource(if (browser.activeSearchQuery != null) R.string.no_file_search_results else R.string.no_items_match_filter),
+                        filteredEmptyMessage = stringResource(if (browser.activeSearchQuery != null) R.string.no_file_search_results_description else R.string.change_file_filter_hint),
+                        filteredEmptyIcon = Icons.Outlined.Search,
+                        onRetry = model::refreshFiles,
+                    ) { page ->
+                        val visibleItems = browser.visibleItems(page.items)
+                        FileItems(
+                            items = visibleItems, state = state, model = model, viewMode = browser.viewMode,
+                            canLoadMore = browser.activeSearchQuery == null && page.offset + page.items.size < page.total,
+                            onOpen = model::openDirectory, onPreview = { model.openPreview(it, visibleItems) },
+                            onSelect = { selected = it }, selectedPaths = browser.selectedPaths,
+                            onToggleSelection = model::toggleFileSelection,
                         )
                     }
+                    PullRefreshIndicator(refreshing, pullRefreshState, Modifier.align(Alignment.TopCenter))
                 }
-                OutlinedTextField(
-                    value = browser.searchQuery,
-                    onValueChange = model::updateFileSearchQuery,
-                    placeholder = { Text(stringResource(R.string.search_files)) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Outlined.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = model::searchFiles) {
-                            Icon(
-                                Icons.Outlined.Search,
-                                contentDescription = stringResource(R.string.submit_file_search),
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { model.searchFiles() }),
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            if (browser.path.isNotBlank()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f))
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val lineage = browser.pathHistory + browser.path
-                    lineage.forEachIndexed { index, path ->
-                        TextButton(
-                            onClick = { model.navigateToFilePath(path) },
-                            enabled = path != browser.path,
-                        ) {
-                            Text(
-                                if (path.isBlank()) {
-                                    stringResource(R.string.shared_folders)
-                                } else {
-                                    path.substringAfterLast('/').ifBlank { path }
-                                },
-                                maxLines = 1,
-                            )
-                        }
-                        if (index < lineage.lastIndex) {
-                            Text(
-                                "/",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                        }
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
-            ) {
-                if (browser.selectedPaths.isNotEmpty()) {
-                    IconButton(onClick = model::clearFileSelection) {
-                        Icon(Icons.Outlined.Close, stringResource(R.string.clear_selection))
-                    }
-                    Text(
-                        stringResource(R.string.items_selected_count, browser.selectedPaths.size),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    IconButton(
-                        onClick = { compressTargets = selectedItems },
-                        enabled = state.supportsCompression && browser.path.isNotBlank() &&
-                            selectedItems.isNotEmpty() && selectedItems.all(FileItem::canRead) &&
-                            !state.isPerformingAction,
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.InsertDriveFile,
-                            stringResource(R.string.create_archive),
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            model.beginFileCopyMove(selectedItems, FileCopyMoveOperation.COPY)
-                        },
-                        enabled = state.supportsCopyMove && selectedItems.isNotEmpty() &&
-                            selectedItems.all(FileItem::canRead) && !state.isPerformingAction &&
-                            !mutationBlocksWrites,
-                    ) {
-                        Icon(Icons.Outlined.FileCopy, stringResource(R.string.copy_selected_items))
-                    }
-                    IconButton(
-                        onClick = {
-                            model.beginFileCopyMove(selectedItems, FileCopyMoveOperation.MOVE)
-                        },
-                        enabled = state.supportsCopyMove && selectedItems.isNotEmpty() &&
-                            selectedItems.all(FileItem::canDelete) && !state.isPerformingAction &&
-                            !mutationBlocksWrites,
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.DriveFileMove,
-                            stringResource(R.string.move_selected_items),
-                        )
-                    }
-                    IconButton(
-                        onClick = { model.addFavorites(selectedItems) },
-                        enabled = state.supportsFavorites && selectedItems.isNotEmpty() &&
-                            selectedItems.all { it.isDirectory && !it.isFavorite } &&
-                            !state.isPerformingAction && !mutationBlocksWrites,
-                    ) {
-                        Icon(Icons.Outlined.StarOutline, stringResource(R.string.add_to_favorites))
-                    }
-                    IconButton(
-                        onClick = { model.deleteFiles(selectedItems) },
-                        enabled = selectedItems.isNotEmpty() && selectedItems.all(FileItem::canDelete) &&
-                            !state.isPerformingAction && !mutationBlocksWrites,
-                    ) {
-                        Icon(
-                            Icons.Outlined.DeleteOutline,
-                            stringResource(R.string.delete_selected_items),
-                            tint = if (selectedItems.isNotEmpty() && selectedItems.all(FileItem::canDelete)) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                            },
-                        )
-                    }
-                } else {
-                if (state.supportsFavorites) {
-                    IconButton(onClick = model::loadFileFavorites) {
-                        Icon(Icons.Outlined.Star, stringResource(R.string.open_favorites))
-                    }
-                }
-                IconButton(onClick = model::loadFileRecentLocations) {
-                    Icon(Icons.Outlined.History, stringResource(R.string.open_recent_locations))
-                }
-                if (state.supportsRemoteLocations) {
-                    IconButton(onClick = model::loadFileRemoteLocations) {
-                        Icon(Icons.Outlined.FolderOpen, stringResource(R.string.open_remote_locations))
-                    }
-                }
-                if (state.supportsSharing) {
-                    IconButton(
-                        onClick = {
-                            showShareLinks = true
-                            model.loadFileShareLinks()
-                        },
-                    ) {
-                        Icon(Icons.Outlined.Link, stringResource(R.string.manage_share_links))
-                    }
-                }
-                Box {
-                    IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.AutoMirrored.Outlined.Sort, stringResource(R.string.sort_files))
-                    }
-                    DropdownMenu(
-                        expanded = showSortMenu,
-                        onDismissRequest = { showSortMenu = false },
-                    ) {
-                        FileSortOption.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        stringResource(
-                                            when (option) {
-                                                FileSortOption.NAME -> R.string.sort_by_name
-                                                FileSortOption.MODIFIED_TIME -> R.string.sort_by_modified
-                                                FileSortOption.SIZE -> R.string.sort_by_size
-                                            },
-                                        ),
-                                    )
-                                },
-                                leadingIcon = if (browser.sortOption == option) {
-                                    {
-                                        Icon(
-                                            if (browser.sortAscending) {
-                                                Icons.Outlined.KeyboardArrowUp
-                                            } else {
-                                                Icons.Outlined.KeyboardArrowDown
-                                            },
-                                            contentDescription = null,
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                onClick = {
-                                    showSortMenu = false
-                                    model.changeFileSort(option)
-                                },
-                            )
-                        }
-                    }
-                }
-                Box {
-                    IconButton(onClick = { showFilterMenu = true }) {
-                        Icon(Icons.Outlined.FilterList, stringResource(R.string.filter_files))
-                    }
-                    DropdownMenu(
-                        expanded = showFilterMenu,
-                        onDismissRequest = { showFilterMenu = false },
-                    ) {
-                        FileTypeFilter.entries.forEach { filter ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        stringResource(
-                                            when (filter) {
-                                                FileTypeFilter.ALL -> R.string.show_all_items
-                                                FileTypeFilter.FOLDERS -> R.string.show_folders_only
-                                                FileTypeFilter.FILES -> R.string.show_files_only
-                                            },
-                                        ),
-                                    )
-                                },
-                                trailingIcon = if (browser.typeFilter == filter) {
-                                    { Text(stringResource(R.string.selected)) }
-                                } else {
-                                    null
-                                },
-                                onClick = {
-                                    showFilterMenu = false
-                                    model.changeFileFilter(filter)
-                                },
-                            )
-                        }
-                    }
-                }
-                IconButton(
-                    onClick = {
-                        model.changeFileViewMode(
-                            if (browser.viewMode == FileViewMode.LIST) {
-                                FileViewMode.GRID
-                            } else {
-                                FileViewMode.LIST
-                            },
-                        )
-                    },
-                ) {
-                    Icon(
-                        if (browser.viewMode == FileViewMode.LIST) {
-                            Icons.Outlined.GridView
-                        } else {
-                            Icons.AutoMirrored.Outlined.List
-                        },
-                        stringResource(
-                            if (browser.viewMode == FileViewMode.LIST) {
-                                R.string.switch_to_grid
-                            } else {
-                                R.string.switch_to_list
-                            },
-                        ),
-                    )
-                }
-                IconButton(onClick = model::refreshFiles) {
-                    Icon(Icons.Outlined.Refresh, stringResource(R.string.refresh))
-                }
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pullRefresh(pullRefreshState),
-            ) {
-                val searchActive = browser.activeSearchQuery != null
-                PageStateContent(
-                    state = pageUiState,
-                    emptyTitle = stringResource(R.string.directory_empty),
-                    emptyMessage = stringResource(R.string.empty_folder_description),
-                    emptyIcon = Icons.Outlined.Folder,
-                    filteredEmptyTitle = stringResource(
-                        if (searchActive) {
-                            R.string.no_file_search_results
-                        } else {
-                            R.string.no_items_match_filter
-                        },
-                    ),
-                    filteredEmptyMessage = stringResource(
-                        if (searchActive) {
-                            R.string.no_file_search_results_description
-                        } else {
-                            R.string.change_file_filter_hint
-                        },
-                    ),
-                    filteredEmptyIcon = if (searchActive) {
-                        Icons.Outlined.Search
-                    } else {
-                        Icons.Outlined.FilterList
-                    },
-                    onRetry = { model.load(Module.FILES) },
-                ) { page ->
-                    val visibleItems = browser.visibleItems(page.items)
-                    FileItems(
-                        items = visibleItems,
-                        state = state,
-                        model = model,
-                        viewMode = browser.viewMode,
-                        canLoadMore = browser.activeSearchQuery == null &&
-                            page.offset + page.items.size < page.total,
-                        onOpen = model::openDirectory,
-                        onPreview = { model.openPreview(it, visibleItems) },
-                        onSelect = { selected = it },
-                        selectedPaths = browser.selectedPaths,
-                        onToggleSelection = model::toggleFileSelection,
-                    )
-                }
-                PullRefreshIndicator(
-                    refreshing = refreshing,
-                    state = pullRefreshState,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                    backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                )
-            }
             }
             if (inlinePreview) {
                 VerticalDivider()
@@ -686,126 +402,87 @@ private fun FileBrowserContent(
             }
         }
     }
+    if (showAdd) ClientSheet(stringResource(R.string.client_add), { showAdd = false }) {
+        ClientRow(stringResource(R.string.upload_file), Icons.Outlined.UploadFile) {
+            showAdd = false
+            if (browser.path.isBlank()) uploadDestinationMode = true
+            else if (model.prepareUpload()) showUploadOptions = true
+        }
+        if (browser.path.isNotBlank()) ClientRow(stringResource(R.string.new_folder), Icons.Outlined.CreateNewFolder,
+            enabled = !mutationBlocksWrites && !state.isPerformingAction) {
+            showAdd = false; model.openCreateFolderEditor()
+        }
+    }
+    if (showOptions) ClientFileOptionsSheet(state, model, onShareLinks = {
+        showOptions = false; showShareLinks = true; model.loadFileShareLinks()
+    }, onDismiss = { showOptions = false })
 
     selected?.let { item ->
-        AlertDialog(
-            onDismissRequest = { selected = null },
-            title = { Text(item.name) },
-            text = {
-                Column {
-                    if (item.isDirectory) {
-                        ActionRow(Icons.Outlined.FolderOpen, stringResource(R.string.open)) {
-                            model.openDirectory(item)
-                            selected = null
-                        }
-                        if (state.supportsFavorites) {
-                            if (item.isFavorite) {
-                                ActionRow(
-                                    Icons.Outlined.Star,
-                                    stringResource(R.string.remove_from_favorites),
-                                ) {
-                                    if (!mutationBlocksWrites) {
-                                        model.removeFavorite(item)
-                                        selected = null
-                                    }
-                                }
-                            } else {
-                                ActionRow(
-                                    Icons.Outlined.StarOutline,
-                                    stringResource(R.string.add_to_favorites),
-                                ) {
-                                    if (!mutationBlocksWrites) {
-                                        model.addFavorite(item)
-                                        selected = null
-                                    }
-                                }
-                            }
-                        }
-                        if (browser.path.isBlank()) {
-                            ActionRow(
-                                Icons.Outlined.RestoreFromTrash,
-                                stringResource(R.string.open_recycle_bin),
-                            ) {
-                                model.openRecycleBin(item)
-                                selected = null
-                            }
-                        }
-                    } else {
-                        ActionRow(Icons.Outlined.Visibility, stringResource(R.string.preview)) {
-                            model.openPreview(item)
-                            selected = null
-                        }
-                        if (state.supportsExtraction && item.canRead && item.isSupportedArchive()) {
-                            ActionRow(
-                                Icons.Outlined.FolderOpen,
-                                stringResource(R.string.extract_archive),
-                            ) {
-                                extractTarget = item
-                                selected = null
-                            }
-                        }
-                    }
-                    if (state.supportsSharing && item.canRead) {
-                        ActionRow(Icons.Outlined.Share, stringResource(R.string.create_share_link)) {
-                            if (model.requestFileShareLinkCreation(item)) selected = null
-                        }
-                    }
-                    if (state.supportsCopyMove && item.path.split('/').contains("#recycle")) {
-                        ActionRow(
-                            Icons.Outlined.RestoreFromTrash,
-                            stringResource(R.string.restore_from_recycle_bin),
-                        ) {
-                            if (model.requestFileRestore(item)) selected = null
-                        }
-                    }
-                    if (item.canRead) {
-                        ActionRow(
-                            Icons.Outlined.Download,
-                            stringResource(
-                                if (item.isDirectory) {
-                                    R.string.download_folder_as_zip
-                                } else {
-                                    R.string.download_item
-                                },
-                            ),
-                        ) {
-                            pendingDownload = PendingDownloadRequestState(
-                                item.toPendingDownloadRequest(state.profile.id),
-                            )
-                            selected = null
-                            if (item.isDirectory) {
-                                folderDownloadLauncher.launch("${item.name}.zip")
-                            } else {
-                                fileDownloadLauncher.launch(item.name)
-                            }
-                        }
-                    } else {
-                        Text(
-                            stringResource(R.string.download_not_allowed),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    ActionRow(Icons.Outlined.Edit, stringResource(R.string.rename)) {
-                        if (model.openRenameFileEditor(item)) selected = null
-                    }
-                    ActionRow(
-                        Icons.Outlined.DeleteOutline,
-                        stringResource(R.string.delete),
-                        destructive = true,
-                    ) {
-                        if (model.deleteFiles(listOf(item))) selected = null
+        ClientSheet(item.name, { selected = null }) {
+            Text(if (item.isDirectory) stringResource(R.string.folder) else formatBytes(item.size),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val writable = !mutationBlocksWrites && !state.isPerformingAction
+            ClientActionGrid(buildList {
+                add(ClientAction(stringResource(if (item.isDirectory) R.string.open else R.string.preview),
+                    if (item.isDirectory) Icons.Outlined.FolderOpen else Icons.Outlined.Visibility) {
+                    if (item.isDirectory) model.openDirectory(item) else model.openPreview(item)
+                    selected = null
+                })
+                if (item.canRead) add(ClientAction(stringResource(if (item.isDirectory) R.string.download_folder_as_zip else R.string.download_item),
+                    Icons.Outlined.Download) {
+                    pendingDownload = PendingDownloadRequestState(item.toPendingDownloadRequest(state.profile.id))
+                    selected = null
+                    if (item.isDirectory) folderDownloadLauncher.launch("${item.name}.zip") else fileDownloadLauncher.launch(item.name)
+                })
+                if (state.supportsSharing && item.canRead) add(ClientAction(stringResource(R.string.create_share_link), Icons.Outlined.Share, writable) {
+                    if (model.requestFileShareLinkCreation(item)) selected = null
+                })
+                add(ClientAction(stringResource(R.string.rename), Icons.Outlined.Edit, writable) {
+                    if (model.openRenameFileEditor(item)) selected = null
+                })
+                if (state.supportsCopyMove && item.canRead) add(ClientAction(stringResource(R.string.copy_selected_items), Icons.Outlined.FileCopy, writable) {
+                    model.beginFileCopyMove(listOf(item), FileCopyMoveOperation.COPY); selected = null
+                })
+                if (state.supportsCopyMove && item.canDelete) add(ClientAction(stringResource(R.string.move_selected_items), Icons.AutoMirrored.Outlined.DriveFileMove, writable) {
+                    model.beginFileCopyMove(listOf(item), FileCopyMoveOperation.MOVE); selected = null
+                })
+            })
+            ClientGroup {
+                ClientRow(stringResource(R.string.select_item), Icons.Outlined.CheckBoxOutlineBlank) {
+                    model.toggleFileSelection(item); selected = null
+                }
+                if (item.isDirectory && state.supportsFavorites) ClientRow(
+                    stringResource(if (item.isFavorite) R.string.remove_from_favorites else R.string.add_to_favorites),
+                    Icons.Outlined.StarOutline, enabled = writable) {
+                    if (item.isFavorite) model.removeFavorite(item) else model.addFavorite(item)
+                    selected = null
+                }
+                if (state.supportsCompression && item.canRead) ClientRow(stringResource(R.string.create_archive),
+                    Icons.AutoMirrored.Outlined.InsertDriveFile, enabled = writable) {
+                    compressTargets = listOf(item); selected = null
+                }
+                if (!item.isDirectory && state.supportsExtraction && item.canRead && item.isSupportedArchive()) {
+                    ClientRow(stringResource(R.string.extract_archive), Icons.Outlined.FolderOpen, enabled = writable) {
+                        extractTarget = item; selected = null
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { selected = null }) {
-                    Text(stringResource(R.string.close))
+                if (item.isDirectory && browser.path.isBlank()) ClientRow(stringResource(R.string.open_recycle_bin),
+                    Icons.Outlined.RestoreFromTrash) { model.openRecycleBin(item); selected = null }
+                if (state.supportsCopyMove && item.path.split('/').contains("#recycle")) ClientRow(
+                    stringResource(R.string.restore_from_recycle_bin), Icons.Outlined.RestoreFromTrash, enabled = writable) {
+                    if (model.requestFileRestore(item)) selected = null
                 }
-            },
-        )
+                ClientRow(stringResource(R.string.file_details), Icons.Outlined.Info) { details = item; selected = null }
+            }
+            if (!item.canRead) Text(stringResource(R.string.download_not_allowed), style = MaterialTheme.typography.bodySmall)
+            ClientRow(stringResource(R.string.delete), Icons.Outlined.DeleteOutline, enabled = writable, destructive = true) {
+                if (model.deleteFiles(listOf(item))) selected = null
+            }
+        }
     }
+    details?.let { item -> ClientSheet(item.name, { details = null }) {
+        PreviewDetails(item, state.preview.takeIf { state.previewItem?.path == item.path } ?: Loadable.Idle)
+    } }
     val shareDeleteConfirmation = mutation.confirmationRequested &&
         mutation.draftTarget?.operation == FileStationMutationOperation.SHARE_DELETE
     val shareDeleteResult = mutation.target?.operation == FileStationMutationOperation.SHARE_DELETE

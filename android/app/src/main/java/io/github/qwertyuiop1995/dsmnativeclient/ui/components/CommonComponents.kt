@@ -120,6 +120,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.annotation.StringRes
@@ -298,7 +299,7 @@ private fun ErrorState(message: String, recovery: String, onRetry: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.padding(32.dp),
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -341,7 +342,7 @@ private fun ErrorState(message: String, recovery: String, onRetry: () -> Unit) {
 internal fun EmptyState(title: String, message: String, icon: ImageVector) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.padding(32.dp),
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -384,10 +385,10 @@ internal fun ActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .heightIn(min = 56.dp)
             .clip(MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -475,7 +476,8 @@ internal fun TextInputDialog(
 internal fun StatusIcon(state: ResourceState) {
     Icon(
         when (state) {
-            ResourceState.RUNNING, ResourceState.HEALTHY -> Icons.Outlined.CheckCircle
+            ResourceState.RUNNING -> Icons.Outlined.PlayArrow
+            ResourceState.HEALTHY -> Icons.Outlined.CheckCircle
             ResourceState.WAITING -> Icons.Outlined.HourglassTop
             ResourceState.WARNING -> Icons.Outlined.WarningAmber
             ResourceState.ERROR -> Icons.Outlined.ErrorOutline
@@ -484,8 +486,8 @@ internal fun StatusIcon(state: ResourceState) {
         },
         contentDescription = state.displayName(),
         tint = when (state) {
-            ResourceState.RUNNING, ResourceState.HEALTHY -> Color(0xFF10B981)
-            ResourceState.WARNING -> Color(0xFFF59E0B)
+            ResourceState.RUNNING, ResourceState.HEALTHY -> MaterialTheme.colorScheme.primary
+            ResourceState.WARNING -> MaterialTheme.colorScheme.tertiary
             ResourceState.ERROR -> MaterialTheme.colorScheme.error
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         },

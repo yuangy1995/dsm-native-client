@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.core.app.ApplicationProvider
@@ -179,10 +180,13 @@ class TransferServerPresentationTest {
             }
         }
 
+        rule.onNodeWithText(context.getString(R.string.client_finished_tasks)).performClick()
+        rule.onNodeWithContentDescription(context.getString(R.string.transfer_filter_source)).performClick()
         rule.onNodeWithText(context.getString(R.string.transfer_filter_all)).assertIsSelected()
         rule.onNodeWithText(context.getString(R.string.transfer_filter_nas_tasks))
             .performClick()
             .assertIsSelected()
+        rule.onNodeWithContentDescription(context.getString(R.string.close)).performClick()
         rule.onNodeWithText("Synthetic NAS task").assertIsDisplayed()
         rule.onAllNodesWithText("Synthetic download").assertCountEquals(0)
         rule.onAllNodesWithText("Synthetic upload").assertCountEquals(0)
@@ -203,7 +207,10 @@ class TransferServerPresentationTest {
             }
         }
 
+        rule.onNodeWithText(context.getString(R.string.client_finished_tasks)).performClick()
+        rule.onNodeWithContentDescription(context.getString(R.string.transfer_filter_source)).performClick()
         rule.onNodeWithText(context.getString(R.string.transfer_filter_nas_tasks)).performClick()
+        rule.onNodeWithContentDescription(context.getString(R.string.close)).performClick()
         rule.onNodeWithText(context.getString(R.string.no_filtered_transfer_tasks))
             .assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.no_filtered_transfer_tasks_description))

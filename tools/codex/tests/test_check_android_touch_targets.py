@@ -87,6 +87,44 @@ Box(
         self.assertTrue(any("高度合约" in error for error in errors))
         self.assertTrue(any("宽度合约" in error for error in errors))
 
+    def reviewed_drag(self, source: str, file: str = "Editor.kt") -> list[str]:
+        review = {
+            "file": "Editor.kt", "source": ".pointerInput(item) {",
+            "requiredMarkers": ["detectDragGesturesAfterLongPress(", "accessibleMoveUp", "accessibleMoveDown"],
+            "evidence": "合成手势审计夹具",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / file).write_text(source, encoding="utf-8")
+            return touch_audit.validate_findings(*touch_audit.scan_ui(root, [review]))
+
+    def drag_source(self, size: int = 48) -> str:
+        return f"""
+IconButton(modifier = Modifier.size({size}.dp)
+    .pointerInput(item) {{
+        detectDragGesturesAfterLongPress(onDrag = {{}})
+    }})
+accessibleMoveUp
+accessibleMoveDown
+"""
+
+    def test_reviewed_drag_keeps_size_and_accessibility_contract(self) -> None:
+        self.assertEqual(self.reviewed_drag(self.drag_source()), [])
+
+    def test_review_does_not_allow_another_file(self) -> None:
+        self.assertTrue(any("手势点击区域" in item for item in self.reviewed_drag(self.drag_source(), "Other.kt")))
+
+    def test_review_does_not_bypass_minimum_size(self) -> None:
+        self.assertTrue(any("高度合约" in item for item in self.reviewed_drag(self.drag_source(40))))
+
+    def test_review_requires_accessible_alternative(self) -> None:
+        errors = self.reviewed_drag(self.drag_source().replace("accessibleMoveDown", ""))
+        self.assertTrue(any("无障碍替代" in item for item in errors))
+
+    def test_duplicate_reviewed_gesture_is_rejected(self) -> None:
+        errors = self.reviewed_drag(self.drag_source() + self.drag_source())
+        self.assertTrue(any("恰好存在一次" in item for item in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1348,8 +1348,21 @@
   ],
   "pageStates": [
     {
-      "file": "ChatScreen.kt",
-      "surface": "会话列表、消息详情及管理弹窗",
+      "file": "ClientHomeScreen.kt",
+      "surface": "首页最近访问、快捷操作与当前任务",
+      "states": {
+        "loading": "不适用",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "不适用",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "本机已有记录与工作区任务投影，不新增异步来源；ApprovedWorkspaceUiTest 覆盖空/正常与快捷入口，错误由目标功能页或原全局提示处理；ApprovedDesignScreenshotTest 覆盖布局。"
+    },
+    {
+      "file": "nas/ClientDeviceScreen.kt",
+      "surface": "设备摘要、四个分类与原十二个管理分区入口",
       "states": {
         "loading": "覆盖",
         "empty": "覆盖",
@@ -1358,7 +1371,46 @@
         "content": "覆盖"
       },
       "automation": "完整",
-      "evidence": "`PrimaryPageStateMatrixTest` 直测加载、源空、失败和会话内容"
+      "evidence": "ApprovedWorkspaceUiTest 覆盖加载、缺少摘要、失败重试、正常信息和全部分区映射；ApprovedDesignScreenshotTest 覆盖浅深色、语言和字号。"
+    },
+    {
+      "file": "navigation/ClientNavigationEditorScreen.kt",
+      "surface": "固定导航编辑、隐藏、替换、排序和本机保存",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "不适用",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "ApprovedNavigationUiTest 覆盖零固定项恢复路径、替换、拖动及可访问排序、保存中、失败重试和取消；PinnedModulesTest 覆盖持久化编码与上限。"
+    },
+    {
+      "file": "transfers/ClientTaskCenterScreen.kt",
+      "surface": "手机传输、NAS 下载、NAS 文件任务的统一入口",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "沿用 TransfersScreen 和 DownloadsScreen 的数据/反馈组件及原五态测试；ClientTaskStatusTest 覆盖待核对结果与未知状态分类，ApprovedDesignScreenshotTest 覆盖主界面。"
+    },
+    {
+      "file": "ChatScreen.kt",
+      "surface": "会话列表、消息详情及管理弹窗",
+      "states": {
+        "loading": "覆盖",
+        "empty": "覆盖",
+        "filteredEmpty": "覆盖",
+        "error": "覆盖",
+        "content": "覆盖"
+      },
+      "automation": "完整",
+      "evidence": "`PrimaryPageStateMatrixTest` 直测加载、源空、失败和会话内容；`ApprovedWorkspaceUiTest` 直测会话搜索无匹配与关闭搜索恢复。"
     },
     {
       "file": "DownloadDestinationDialog.kt",
@@ -1803,6 +1855,19 @@
         "evidence": "静态门禁；调用方既有聚焦测试"
       }
     ],
+    "reviewedGestures": [
+      {
+        "file": "navigation/ClientNavigationEditorScreen.kt",
+        "source": ".pointerInput(destination, saving) {",
+        "requiredMarkers": [
+          "detectDragGesturesAfterLongPress(",
+          "CustomAccessibilityAction(up)",
+          "CustomAccessibilityAction(down)",
+          "IconButton(onClick = { menu = true }, enabled = !saving,"
+        ],
+        "evidence": "用户确认的导航排序；48dp 原生 IconButton 句柄，长按拖动只调整未保存的模块顺序；提供上移/下移菜单与无障碍动作。由 ApprovedNavigationUiTest 验证。"
+      }
+    ],
     "rules": {
       "forbidGestureTapWithoutReview": true,
       "requireNativePressFeedback": true
@@ -1829,7 +1894,7 @@
       {
         "id": "android-app-view-model",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-        "maxLines": 16511,
+        "maxLines": 16475,
         "targetLines": 12000
       },
       {
@@ -1853,7 +1918,7 @@
       {
         "id": "android-file-browser-screen",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt",
-        "maxLines": 1367,
+        "maxLines": 1044,
         "targetLines": 1000
       },
       {
@@ -1871,7 +1936,7 @@
       {
         "id": "android-service-screens",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt",
-        "maxLines": 1142,
+        "maxLines": 1126,
         "targetLines": 1000
       }
     ],

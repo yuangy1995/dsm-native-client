@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.downloads
 
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -187,77 +189,23 @@ internal fun DownloadTaskActionsDialog(
     canEditDestination: Boolean = false,
     onEditDestination: () -> Unit = {},
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(taskTitle) },
-        text = {
-            Column(
-                modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                DownloadTaskActionRow(
-                    Icons.Outlined.Info,
-                    stringResource(R.string.download_task_details),
-                    taskTitle,
-                    true,
-                    false,
-                    onDetails,
-                )
-                if (taskState == ResourceState.RUNNING || taskState == ResourceState.WAITING) {
-                    DownloadTaskActionRow(
-                        Icons.Outlined.Pause,
-                        stringResource(R.string.pause),
-                        taskTitle,
-                        enabled,
-                        false,
-                        onPause,
-                    )
-                }
-                if (taskState == ResourceState.PAUSED) {
-                    DownloadTaskActionRow(
-                        Icons.Outlined.PlayArrow,
-                        stringResource(R.string.resume),
-                        taskTitle,
-                        enabled,
-                        false,
-                        onResume,
-                    )
-                }
-                if (canEditDestination) {
-                    DownloadTaskActionRow(
-                        Icons.Outlined.FolderOpen,
-                        stringResource(R.string.change_download_destination),
-                        taskTitle,
-                        enabled,
-                        false,
-                        onEditDestination,
-                    )
-                }
-                DownloadTaskActionRow(
-                    Icons.Outlined.DeleteOutline,
-                    stringResource(R.string.remove_task),
-                    taskTitle,
-                    enabled,
-                    true,
-                    onRemove,
-                )
-                DownloadTaskActionRow(
-                    Icons.Outlined.DeleteOutline,
-                    stringResource(R.string.remove_task_and_files),
-                    taskTitle,
-                    enabled,
-                    true,
-                    onRemoveWithFiles,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.heightIn(min = 48.dp).semantics { role = Role.Button },
-            ) { Text(stringResource(R.string.close)) }
-        },
-    )
+    ClientSheet(taskTitle, onDismiss) {
+        ClientActionGrid(buildList {
+            add(ClientAction(stringResource(R.string.download_task_details), Icons.Outlined.Info, onClick = onDetails))
+            if (taskState == ResourceState.RUNNING || taskState == ResourceState.WAITING)
+                add(ClientAction(stringResource(R.string.pause), Icons.Outlined.Pause, enabled, onPause))
+            if (taskState == ResourceState.PAUSED)
+                add(ClientAction(stringResource(R.string.resume), Icons.Outlined.PlayArrow, enabled, onResume))
+            if (canEditDestination)
+                add(ClientAction(stringResource(R.string.change_download_destination), Icons.Outlined.FolderOpen, enabled, onEditDestination))
+        })
+        ClientGroup {
+            ClientRow(stringResource(R.string.remove_task), Icons.Outlined.DeleteOutline, enabled = enabled,
+                destructive = true, onClick = onRemove)
+            ClientRow(stringResource(R.string.remove_task_and_files), Icons.Outlined.DeleteOutline, enabled = enabled,
+                destructive = true, onClick = onRemoveWithFiles)
+        }
+    }
 }
 
 @Composable

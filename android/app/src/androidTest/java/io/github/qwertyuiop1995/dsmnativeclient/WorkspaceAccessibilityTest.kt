@@ -5,6 +5,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -64,10 +66,12 @@ class WorkspaceAccessibilityTest {
         }
 
         rule.onAllNodes(
-            hasText(context.getString(R.string.module_chat)) and
+            hasText(context.getString(R.string.client_chat)) and
                 SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, reason),
-        ).assertCountEquals(2)
-        rule.onNodeWithContentDescription(context.getString(R.string.open_navigation)).performClick()
-        rule.onNodeWithText(reason).assertIsDisplayed()
+        ).assertCountEquals(1)
+        rule.onNodeWithContentDescription(context.getString(R.string.client_all_features)).performClick()
+        rule.onNode(hasText(context.getString(R.string.client_chat)) and
+            hasAnyAncestor(hasTestTag("client_all_features")) and
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, reason)).assertIsDisplayed()
     }
 }

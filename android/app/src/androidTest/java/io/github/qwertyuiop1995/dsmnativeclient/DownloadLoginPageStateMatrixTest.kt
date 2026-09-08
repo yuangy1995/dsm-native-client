@@ -192,7 +192,7 @@ class DownloadLoginPageStateMatrixTest {
 
         rule.onNodeWithText(context.getString(R.string.download_detail_files)).performClick()
         rule.onNodeWithText(context.getString(R.string.download_detail_no_files)).assertIsDisplayed()
-        rule.onNodeWithContentDescription(context.getString(R.string.close)).assertIsDisplayed()
+        rule.onNodeWithContentDescription(context.getString(R.string.go_up)).assertIsDisplayed()
     }
 
     @Test
@@ -260,8 +260,8 @@ class DownloadLoginPageStateMatrixTest {
 
         rule.onNodeWithText(context.getString(R.string.status_connecting_nas))
             .performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.connecting))
-            .performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText(context.getString(R.string.client_connecting))
+            .assertIsDisplayed()
     }
 
     @Test
@@ -279,7 +279,7 @@ class DownloadLoginPageStateMatrixTest {
             substring = true,
         )
             .performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText(context.getString(R.string.connect)).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText(context.getString(R.string.connect)).assertIsDisplayed()
     }
 
     @Test
@@ -287,11 +287,11 @@ class DownloadLoginPageStateMatrixTest {
         val context = context()
         showLogin(LoginState(), twoX = true)
 
-        rule.onNodeWithText(context.getString(R.string.connect_synology_nas)).assertIsDisplayed()
+        rule.onNodeWithText(context.getString(R.string.client_connect_nas)).assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.nas_address_or_quickconnect))
             .performScrollTo().assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.connect))
-            .performScrollTo().assertIsDisplayed()
+            .assertIsDisplayed()
     }
 
     @Test

@@ -1,5 +1,14 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.downloads
 
+import androidx.compose.ui.semantics.contentDescription
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import io.github.qwertyuiop1995.dsmnativeclient.ui.navigation.*
+import io.github.qwertyuiop1995.dsmnativeclient.ui.transfers.ClientTaskStatus
+import io.github.qwertyuiop1995.dsmnativeclient.ui.transfers.matches
+import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.runtime.LaunchedEffect
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -90,6 +99,19 @@ import io.github.qwertyuiop1995.dsmnativeclient.ui.formatBytes
 
 @Composable
 internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
+    var query by rememberSaveable(state.profile.id) { mutableStateOf("") }
+    var searchVisible by rememberSaveable { mutableStateOf(false) }
+    var status by rememberSaveable { mutableStateOf(ClientTaskStatus.ACTIVE) }
+    var optionsVisible by remember { mutableStateOf(false) }
+    val entry = LocalClientEntry.current
+    LaunchedEffect(entry?.revision) {
+        when (entry?.action) {
+            ClientEntryAction.DOWNLOAD_CREATE -> model.openDownloadCreationEditor()
+            ClientEntryAction.SEARCH -> searchVisible = true
+            else -> Unit
+        }
+        entry?.consume()
+    }
     var selected by remember { mutableStateOf<DownloadTask?>(null) }
     var settingsUnavailable by rememberSaveable { mutableStateOf(false) }
     val taskFileLauncher = rememberLauncherForActivityResult(
@@ -119,47 +141,46 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
             downloadCreation.pendingDiscoveryUri == null && settingsIdle && rssRefreshIdle
             && destinationEditIdle
         val settingsActionsEnabled = creationActionsEnabled
+        val createLabel = stringResource(R.string.add_download)
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { if (creationActionsEnabled) model.openDownloadCreationEditor() },
                 icon = { Icon(Icons.Outlined.Add, null) },
-                text = { Text(stringResource(R.string.add_download)) },
+                text = { Text(createLabel) },
                 modifier = Modifier
+                    .semantics { contentDescription = createLabel }
                     .alpha(if (creationActionsEnabled) 1f else 0.38f)
                     .then(if (creationActionsEnabled) Modifier else Modifier.semantics { disabled() }),
             )
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                if (state.supportsDownloadRss || state.supportsDownloadBtSearch) {
-                    TextButton(
-                        enabled = creationActionsEnabled,
-                        onClick = { model.openDownloadDiscovery() },
-                    ) {
-                        Icon(Icons.Outlined.Search, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.download_discovery))
-                    }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(status == ClientTaskStatus.ACTIVE, onClick = { status = ClientTaskStatus.ACTIVE },
+                        label = { Text(stringResource(R.string.client_active_tasks)) })
+                    FilterChip(status == ClientTaskStatus.FINISHED, onClick = { status = ClientTaskStatus.FINISHED },
+                        label = { Text(stringResource(R.string.client_finished_tasks)) })
                 }
-                TextButton(
-                    enabled = settingsActionsEnabled,
-                    onClick = {
-                        if (state.supportsDownloadSettings) {
-                            model.openDownloadSettings()
-                        } else {
-                            settingsUnavailable = true
-                        }
-                    },
-                ) {
-                    Icon(Icons.Outlined.Tune, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.download_settings_title))
+                IconButton(onClick = { searchVisible = !searchVisible; if (!searchVisible) query = "" }) {
+                    Icon(Icons.Outlined.Search, stringResource(R.string.client_search))
+                }
+                IconButton(onClick = { optionsVisible = true }) {
+                    Icon(Icons.Outlined.Tune, stringResource(R.string.download_settings_title))
+                }
+            }
+            if (searchVisible) ClientSearchField(query, { query = it }, stringResource(R.string.client_search_downloads),
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            if (optionsVisible) ClientSheet(stringResource(R.string.client_downloads), { optionsVisible = false }) {
+                if (state.supportsDownloadRss || state.supportsDownloadBtSearch) ClientRow(
+                    stringResource(R.string.download_discovery), Icons.Outlined.Search, enabled = creationActionsEnabled) {
+                    optionsVisible = false; model.openDownloadDiscovery()
+                }
+                ClientRow(stringResource(R.string.download_settings_title), Icons.Outlined.Tune, enabled = settingsActionsEnabled) {
+                    optionsVisible = false
+                    if (state.supportsDownloadSettings) model.openDownloadSettings() else settingsUnavailable = true
                 }
             }
             if (downloadControl.mutationResult != null || downloadControl.mutationFailure != null) {
@@ -219,6 +240,7 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
                             selectedTaskId = state.downloadDetailsTask?.id,
                             actionsEnabled = downloadActionsEnabled,
                             onTaskActions = { selected = it },
+                            query = query, status = status,
                             modifier = Modifier.weight(0.42f).fillMaxSize(),
                         )
                         VerticalDivider()
@@ -250,6 +272,7 @@ internal fun DownloadsScreen(state: WorkspaceState, model: AppViewModel) {
                         selectedTaskId = null,
                         actionsEnabled = downloadActionsEnabled,
                         onTaskActions = { selected = it },
+                        query = query, status = status,
                     )
                 }
             }
@@ -481,6 +504,8 @@ private fun DownloadTaskList(
     selectedTaskId: String?,
     actionsEnabled: Boolean,
     onTaskActions: (DownloadTask) -> Unit,
+    query: String,
+    status: ClientTaskStatus,
     modifier: Modifier = Modifier.fillMaxSize(),
 ) {
     Box(modifier) {
@@ -490,37 +515,26 @@ private fun DownloadTaskList(
             emptyMessage = stringResource(R.string.add_download_description),
             onRetry = { model.load(Module.DOWNLOADS) },
         ) { tasks ->
+            val visible = tasks.filter { status.matches(it.status) && it.title.contains(query.trim(), ignoreCase = true) }
+            if (visible.isEmpty()) {
+                EmptyState(stringResource(R.string.client_no_matching_downloads), stringResource(R.string.client_download_filter_recovery), Icons.Outlined.Search)
+                return@LoadableContent
+            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 96.dp),
             ) {
-                items(tasks, key = DownloadTask::id) { task ->
+                items(visible, key = DownloadTask::id) { task ->
                     val isSelected = expanded && selectedTaskId == task.id
-                    val rowModifier = Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (isSelected) {
-                                Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .then(
-                            if (expanded) {
-                                Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .clickable { model.openDownloadTaskDetails(task) }
-                                    .semantics { selected = isSelected }
-                            } else {
-                                Modifier
-                            },
-                        )
+                    val rowModifier = Modifier.fillMaxWidth().heightIn(min = 76.dp)
+                        .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
+                        .clickable { model.openDownloadTaskDetails(task) }
+                        .semantics { selected = isSelected }
                     ListItem(
                         headlineContent = {
                             Text(
                                 task.title.ifBlank { stringResource(R.string.unnamed_download) },
-                                maxLines = if (expanded) 2 else 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         },
@@ -581,16 +595,15 @@ private fun DownloadDialog(
     val creation = state.downloadCreationState
     val uri = creation.uriDraft
     val destination = creation.destinationDraft
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.extraLarge,
-        title = { Text(stringResource(R.string.add_download_task), fontWeight = FontWeight.Bold) },
-        text = {
+    ClientPageDialog(stringResource(R.string.add_download_task), onDismiss) {
+        Column(Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 520.dp)
+                    .weight(1f)
+                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .imePadding(),
+                    .imePadding()
+                    .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 OutlinedTextField(
@@ -629,21 +642,13 @@ private fun DownloadDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(uri, destination.ifBlank { null }) },
+            Button(onClick = { onConfirm(uri, destination.ifBlank { null }) },
                 enabled = uri.isNotBlank() && !state.isPerformingAction,
-                modifier = Modifier.heightIn(min = 48.dp),
-                shape = MaterialTheme.shapes.medium,
-            ) { Text(stringResource(R.string.create_task), fontWeight = FontWeight.Bold) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(stringResource(R.string.cancel))
+                modifier = Modifier.fillMaxWidth().padding(20.dp).heightIn(min = 52.dp)) {
+                Text(stringResource(R.string.create_task))
             }
-        },
-    )
+        }
+    }
     if (state.downloadDestinationPicker != null) {
         DownloadDestinationDialog(
             state = state,

@@ -114,7 +114,7 @@ class DownloadAdaptiveScreenTest {
         rule.waitForIdle()
         rule.onAllNodes(selectedTask).assertCountEquals(0)
         rule.onNodeWithContentDescription(
-            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.close),
+            InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.go_up),
         ).assertIsDisplayed()
     }
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -197,7 +199,7 @@ class PrimaryPageStateMatrixTest {
         update { state = baseState(photos = failure()) }
         assertFailure()
         update { state = baseState(photos = Loadable.Ready(photoPage(listOf(photo())))) }
-        rule.onNodeWithText(PHOTO_NAME).assertIsDisplayed()
+        rule.onNodeWithContentDescription(InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.photo_thumbnail_description, PHOTO_NAME)).assertIsDisplayed()
     }
 
     @Test
@@ -266,19 +268,19 @@ class PrimaryPageStateMatrixTest {
 
     @Test
     fun NasSettingsScreen日志页签覆盖源空和真实筛选空() {
-        val model = model()
-        var state by mutableStateOf(
-            baseState(nasSettings = Loadable.Ready(nasSnapshot())),
+        val initial = baseState(nasSettings = Loadable.Ready(nasSnapshot())).copy(
+            selectedModule = io.github.qwertyuiop1995.dsmnativeclient.domain.Module.NAS_SETTINGS,
+            nasPerformance = NasPerformanceWorkspaceState(selectedTab = NasSettingsTab.LOGS),
         )
-        rule.setContent { LanStashTheme { NasSettingsScreen(state, model) } }
-
-        rule.onNodeWithText(text(R.string.logs)).performScrollTo().performClick()
+        val model = ApprovedUiFixture.model(initial)
+        rule.setContent {
+            val state by model.workspace.collectAsState()
+            LanStashTheme { NasSettingsScreen(state!!, model) }
+        }
         rule.onNodeWithText(text(R.string.no_log_entries))
             .assertIsDisplayed()
         update {
-            state = baseState(
-                nasSettings = Loadable.Ready(nasSnapshot(logs = listOf(logEntry()))),
-            )
+            ApprovedUiFixture.setState(model, initial.copy(nasSettings = Loadable.Ready(nasSnapshot(logs = listOf(logEntry())))))
         }
         rule.onNodeWithText(LOG_EVENT).performScrollTo().assertIsDisplayed()
         rule.onNode(hasSetTextAction()).performTextInput(ABSENT_QUERY)
@@ -354,7 +356,7 @@ class PrimaryPageStateMatrixTest {
         )
         rule.setContent { LanStashTheme { ContainersScreen(state, model) } }
 
-        rule.onNodeWithText(text(R.string.events)).performScrollTo().performClick()
+        rule.onNodeWithText(text(R.string.events)).performClick()
         rule.onNodeWithText(LOG_EVENT).performScrollTo().assertIsDisplayed()
         rule.onNode(hasSetTextAction()).performTextInput(ABSENT_QUERY)
         rule.onNodeWithText(text(R.string.no_matching_log_entries))
@@ -419,15 +421,18 @@ class PrimaryPageStateMatrixTest {
 
     @Test
     fun VirtualMachinesScreen日志页签覆盖日志内容和真实筛选空() {
-        val model = model()
         val state = baseState(
             virtualMachines = Loadable.Ready(
                 virtualMachineOverview(logs = listOf(logEntry())),
             ),
-        )
-        rule.setContent { LanStashTheme { VirtualMachinesScreen(state, model) } }
+        ).copy(selectedModule = io.github.qwertyuiop1995.dsmnativeclient.domain.Module.VIRTUAL_MACHINES)
+        val model = ApprovedUiFixture.model(state)
+        rule.setContent {
+            val current by model.workspace.collectAsState()
+            LanStashTheme { VirtualMachinesScreen(current!!, model) }
+        }
 
-        rule.onNodeWithText(text(R.string.logs)).performScrollTo().performClick()
+        rule.onNodeWithText(text(R.string.logs)).performClick()
         rule.onNodeWithText(LOG_EVENT).performScrollTo().assertIsDisplayed()
         rule.onNode(hasSetTextAction()).performTextInput(ABSENT_QUERY)
         rule.onNodeWithText(text(R.string.no_matching_log_entries))

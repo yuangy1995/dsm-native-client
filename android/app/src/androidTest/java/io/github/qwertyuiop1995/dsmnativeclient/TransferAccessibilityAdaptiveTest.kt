@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onParent
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
@@ -41,7 +42,7 @@ class TransferAccessibilityAdaptiveTest {
             LanStashTheme { TransferTaskDetails(task) }
         }
 
-        rule.onNodeWithText("Synthetic running detail").assert(
+        rule.onNodeWithText("Synthetic running detail").onParent().assert(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.LiveRegion,
                 LiveRegionMode.Polite,
@@ -56,7 +57,7 @@ class TransferAccessibilityAdaptiveTest {
                 errorMessage = "Synthetic failure",
             )
         }
-        rule.onNodeWithText("Synthetic failed detail").assert(
+        rule.onNodeWithText("Synthetic failed detail").onParent().assert(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.LiveRegion,
                 LiveRegionMode.Assertive,
@@ -71,7 +72,7 @@ class TransferAccessibilityAdaptiveTest {
                 requiresRefresh = true,
             )
         }
-        rule.onNodeWithText("Synthetic refresh detail").assert(
+        rule.onNodeWithText("Synthetic refresh detail").onParent().assert(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.LiveRegion,
                 LiveRegionMode.Assertive,

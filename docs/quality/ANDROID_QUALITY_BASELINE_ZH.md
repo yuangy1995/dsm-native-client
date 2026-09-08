@@ -10,7 +10,7 @@
 ## 审计边界
 
 - 写操作：79 个生产调用点，64 个 `Result` 方法。
-- 页面状态：31 个生产页面或弹窗文件。
+- 页面状态：35 个生产页面或弹窗文件。
 - 自定义点击目标：至少 48dp × 48dp，并保留原生按压反馈。
 - 显式时间动效：仅允许 `WorkspaceShell.kt` 中登记的预测返回实现。
 - 本基线只证明源码和自动化门禁；真实 NAS、实体机触控、TalkBack、OEM 行为与危险写副作用均不得由此报告宣称已验收。
@@ -103,7 +103,11 @@
 
 | 文件 | 页面 | 加载 | 空内容 | 筛选空 | 错误 | 正常 | 自动化 | 依据 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ChatScreen.kt` | 会话列表、消息详情及管理弹窗 | 覆盖 | 覆盖 | 不适用 | 覆盖 | 覆盖 | 完整 | `PrimaryPageStateMatrixTest` 直测加载、源空、失败和会话内容 |
+| `ClientHomeScreen.kt` | 首页最近访问、快捷操作与当前任务 | 不适用 | 覆盖 | 不适用 | 不适用 | 覆盖 | 完整 | 本机已有记录与工作区任务投影，不新增异步来源；ApprovedWorkspaceUiTest 覆盖空/正常与快捷入口，错误由目标功能页或原全局提示处理；ApprovedDesignScreenshotTest 覆盖布局。 |
+| `nas/ClientDeviceScreen.kt` | 设备摘要、四个分类与原十二个管理分区入口 | 覆盖 | 覆盖 | 不适用 | 覆盖 | 覆盖 | 完整 | ApprovedWorkspaceUiTest 覆盖加载、缺少摘要、失败重试、正常信息和全部分区映射；ApprovedDesignScreenshotTest 覆盖浅深色、语言和字号。 |
+| `navigation/ClientNavigationEditorScreen.kt` | 固定导航编辑、隐藏、替换、排序和本机保存 | 覆盖 | 覆盖 | 不适用 | 覆盖 | 覆盖 | 完整 | ApprovedNavigationUiTest 覆盖零固定项恢复路径、替换、拖动及可访问排序、保存中、失败重试和取消；PinnedModulesTest 覆盖持久化编码与上限。 |
+| `transfers/ClientTaskCenterScreen.kt` | 手机传输、NAS 下载、NAS 文件任务的统一入口 | 覆盖 | 覆盖 | 覆盖 | 覆盖 | 覆盖 | 完整 | 沿用 TransfersScreen 和 DownloadsScreen 的数据/反馈组件及原五态测试；ClientTaskStatusTest 覆盖待核对结果与未知状态分类，ApprovedDesignScreenshotTest 覆盖主界面。 |
+| `ChatScreen.kt` | 会话列表、消息详情及管理弹窗 | 覆盖 | 覆盖 | 覆盖 | 覆盖 | 覆盖 | 完整 | `PrimaryPageStateMatrixTest` 直测加载、源空、失败和会话内容；`ApprovedWorkspaceUiTest` 直测会话搜索无匹配与关闭搜索恢复。 |
 | `DownloadDestinationDialog.kt` | 下载目的地目录选择 | 覆盖 | 覆盖 | 不适用 | 覆盖 | 覆盖 | 完整 | `DownloadLoginPageStateMatrixTest` 直测四个适用态 |
 | `DownloadSettingsDialog.kt` | 下载设置表单 | 不适用 | 不适用 | 不适用 | 不适用 | 覆盖 | 完整 | 已加载 Workspace 草稿是唯一适用态；`DownloadLoginPageStateMatrixTest` 直测生产表单 |
 | `FileBrowserScreen.kt` | 文件列表与收藏/回收站 | 覆盖 | 覆盖 | 覆盖 | 覆盖 | 覆盖 | 完整 | `PrimaryPageStateMatrixTest` 直测五态 |
@@ -170,14 +174,14 @@
 
 | 稳定 ID | 文件 | 当前 ratchet | 非阻断目标 |
 | --- | --- | ---: | ---: |
-| `android-app-view-model` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16511 | 12000 |
+| `android-app-view-model` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16475 | 12000 |
 | `android-app-view-model-support` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 | 1200 |
 | `android-dsm-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 14934 | 11000 |
 | `android-download-station-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 | 1800 |
-| `android-file-browser-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt` | 1367 | 1000 |
+| `android-file-browser-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt` | 1044 | 1000 |
 | `android-file-preview-dialog` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt` | 1060 | 1000 |
 | `android-nas-service-settings-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt` | 1297 | 1000 |
-| `android-service-screens` | `io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt` | 1142 | 1000 |
+| `android-service-screens` | `io/github/qwertyuiop1995/dsmnativeclient/ui/services/ServiceScreens.kt` | 1126 | 1000 |
 
 已登记例外：
 - `android-chat-feature-model` / `io/github/qwertyuiop1995/dsmnativeclient/ChatFeatureModel.kt`：Chat 读取生命周期、分页所有权与实时协调仍集中在同一特性边界，待后续按已验证职责拆分。

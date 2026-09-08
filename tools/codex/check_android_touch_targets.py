@@ -63,12 +63,20 @@ def _modifier_source(lines: list[str], interaction_index: int) -> str:
     return "\n".join(lines[start : interaction_index + 1])
 
 
-def scan_ui(ui_root: Path = UI_ROOT) -> tuple[list[TouchTargetFinding], list[str]]:
+def scan_ui(ui_root: Path = UI_ROOT, reviewed_gestures: list[dict[str, Any]] | None = None) -> tuple[list[TouchTargetFinding], list[str]]:
     findings: list[TouchTargetFinding] = []
     gesture_errors: list[str] = []
+    reviews = _policy().get("reviewedGestures", []) if reviewed_gestures is None else reviewed_gestures
+    reviewed = {(entry["file"], entry["source"]): entry for entry in reviews}
+    seen: dict[tuple[str, str], int] = {}
+    scanned_files: set[str] = set()
+    if len(reviewed) != len(reviews):
+        gesture_errors.append("已审计手势声明重复，必须保持唯一")
     for path in sorted(ui_root.rglob("*.kt")):
         lines = path.read_text(encoding="utf-8").splitlines()
         relative_path = path.relative_to(ui_root).as_posix()
+        scanned_files.add(relative_path)
+        full_source = "\n".join(lines)
         for index, source in enumerate(lines):
             for match in INTERACTION_PATTERN.finditer(source):
                 findings.append(
@@ -80,9 +88,20 @@ def scan_ui(ui_root: Path = UI_ROOT) -> tuple[list[TouchTargetFinding], list[str
                     )
                 )
             if GESTURE_TAP_PATTERN.search(source):
-                gesture_errors.append(
-                    f"需人工审计的手势点击区域：{relative_path}:{index + 1}: {source.strip()}"
-                )
+                key = (relative_path, source.strip())
+                review = reviewed.get(key)
+                if review and review.get("evidence") and review.get("requiredMarkers") and all(
+                    marker in full_source for marker in review["requiredMarkers"]
+                ):
+                    seen[key] = seen.get(key, 0) + 1
+                    findings.append(TouchTargetFinding(relative_path, index + 1, "reviewed-gesture", _modifier_source(lines, index)))
+                else:
+                    gesture_errors.append(
+                        f"需人工审计的手势点击区域：{relative_path}:{index + 1}: {source.strip()}"
+                    )
+    for key in reviewed:
+        if (key[0] in scanned_files or ui_root == UI_ROOT) and seen.get(key, 0) != 1:
+            gesture_errors.append(f"已审计手势必须恰好存在一次且保留无障碍替代操作：{key[0]}: {key[1]}")
     return findings, gesture_errors
 
 

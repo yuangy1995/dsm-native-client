@@ -168,32 +168,9 @@ fun LanStashApp(model: AppViewModel) {
     if (workspace == null) {
         LoginScreen(login, model)
     } else {
-        WorkspaceScreen(workspace!!, model)
+        ClientWorkspace(workspace!!, model)
     }
 }
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun WorkspaceScreen(state: WorkspaceState, model: AppViewModel) {
-    WorkspaceShell(
-        state = state,
-        onModuleSelected = model::select,
-        onRefresh = model::load,
-        onNavigateUp = { model.navigateUp() },
-        onSwitchNas = model::switchNas,
-        onLogout = model::logout,
-        onMessageShown = model::clearMessage,
-        canCopyPageLink = model.canCopyCurrentPageLink(),
-        onCopyPageLink = { model.copyCurrentPageLink() },
-    ) {
-        WorkspaceModuleSaveableState(
-            profileId = state.profile.id,
-            selectedModule = state.selectedModule,
-        ) {
-            ModuleContent(state, model)
-        }
-    }
-}
-
 @Composable
 internal fun WorkspaceModuleSaveableState(
     profileId: String,
@@ -217,7 +194,7 @@ internal fun isWorkspaceModuleSaveable(module: Module): Boolean = module in setO
 )
 
 @Composable
-private fun ModuleContent(state: WorkspaceState, model: AppViewModel) {
+internal fun ModuleContent(state: WorkspaceState, model: AppViewModel) {
     when (state.selectedModule) {
         Module.FILES -> FileBrowserScreen(state, model)
         Module.PHOTOS -> PhotosScreen(state, model)

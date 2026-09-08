@@ -24,6 +24,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
+import android.view.KeyEvent
+import io.github.qwertyuiop1995.dsmnativeclient.ui.navigation.*
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.Density
@@ -95,10 +98,10 @@ class WorkspaceMediumNavigationTest {
         }
 
         rule.onNode(
-            hasText(context.getString(R.string.module_downloads)) and hasClickAction() and isRailItem,
+            hasText(context.getString(R.string.client_downloads)) and hasClickAction() and isRailItem,
         ).assertIsSelected()
         rule.onAllNodes(
-            hasText(context.getString(R.string.module_chat)) and
+            hasText(context.getString(R.string.client_chat)) and
                 isRailItem and
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
@@ -106,7 +109,7 @@ class WorkspaceMediumNavigationTest {
                 ),
         ).assertCountEquals(1)
         rule.onAllNodes(
-            hasText(context.getString(R.string.module_downloads)) and
+            hasText(context.getString(R.string.client_downloads)) and
                 isRailItem and
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
@@ -115,7 +118,7 @@ class WorkspaceMediumNavigationTest {
         ).assertCountEquals(1)
 
         rule.onNode(
-            hasText(context.getString(R.string.module_photos)) and hasClickAction() and isRailItem,
+            hasText(context.getString(R.string.client_photos)) and hasClickAction() and isRailItem,
         ).performClick()
         rule.runOnIdle { assertEquals(Module.PHOTOS, selectedModule) }
     }
@@ -129,11 +132,11 @@ class WorkspaceMediumNavigationTest {
             onModuleSelected = { selectedModule = it },
         )
 
-        rule.onNodeWithContentDescription(context.getString(R.string.open_navigation))
+        rule.onNodeWithContentDescription(context.getString(R.string.client_all_features))
             .assertIsDisplayed()
             .performClick()
-        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(Module.SETTINGS.ordinal)
-        val settingsMatcher = hasText(context.getString(R.string.module_settings))
+        rule.onNodeWithText(context.getString(R.string.client_app_settings)).performScrollTo()
+        val settingsMatcher = hasText(context.getString(R.string.client_app_settings))
         val settings = rule.onNode(settingsMatcher)
         rule.waitUntil(timeoutMillis = 5_000) {
             runCatching { settings.assertIsDisplayed() }.isSuccess
@@ -147,7 +150,7 @@ class WorkspaceMediumNavigationTest {
     }
 
     @Test
-    fun 中等宽度打开抽屉后跨越展开断点不会复活旧抽屉() {
+    fun 全部功能在宽度改变时保持可用且关闭后不会复活() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         var availableWidth by mutableStateOf(700.dp)
         rule.setContent {
@@ -168,20 +171,21 @@ class WorkspaceMediumNavigationTest {
             }
         }
 
-        rule.onNodeWithContentDescription(context.getString(R.string.open_navigation))
+        rule.onNodeWithContentDescription(context.getString(R.string.client_all_features))
             .performClick()
         rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertIsDisplayed()
 
         rule.runOnIdle { availableWidth = 900.dp }
+        rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertIsDisplayed()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertDoesNotExist()
-
         rule.runOnIdle { availableWidth = 700.dp }
-        rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertIsNotDisplayed()
+        rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertDoesNotExist()
         rule.onNodeWithTag(WORKSPACE_NAVIGATION_RAIL_TEST_TAG).assertIsDisplayed()
     }
 
     @Test
-    fun 抽屉打开动画中跨越展开断点也不会留下旧状态() {
+    fun 打开全部功能期间改变宽度也能正常关闭() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         var availableWidth by mutableStateOf(700.dp)
         rule.setContent {
@@ -202,13 +206,14 @@ class WorkspaceMediumNavigationTest {
             }
         }
 
-        rule.onNodeWithContentDescription(context.getString(R.string.open_navigation))
+        rule.onNodeWithContentDescription(context.getString(R.string.client_all_features))
             .performClick()
         rule.runOnIdle { availableWidth = 900.dp }
+        rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertIsDisplayed()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertDoesNotExist()
-
         rule.runOnIdle { availableWidth = 700.dp }
-        rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertIsNotDisplayed()
+        rule.onNodeWithTag(WORKSPACE_MODAL_DRAWER_TEST_TAG).assertDoesNotExist()
         rule.onNodeWithTag(WORKSPACE_NAVIGATION_RAIL_TEST_TAG).assertIsDisplayed()
     }
 
@@ -226,6 +231,8 @@ class WorkspaceMediumNavigationTest {
                     Box(Modifier.requiredWidth(700.dp).height(720.dp)) {
                         WorkspaceShell(
                             state = state,
+                            pinned = PinnedModules(listOf(ClientDestination.FILES, ClientDestination.PHOTOS, ClientDestination.CHAT,
+                                ClientDestination.DOWNLOADS, ClientDestination.TASKS)),
                             onModuleSelected = onModuleSelected,
                             onRefresh = {},
                             onNavigateUp = {},
@@ -256,11 +263,11 @@ class WorkspaceMediumNavigationTest {
     )
 
     private fun moduleTitle(module: Module): Int = when (module) {
-        Module.FILES -> R.string.module_files
-        Module.PHOTOS -> R.string.module_photos
-        Module.CHAT -> R.string.module_chat
-        Module.DOWNLOADS -> R.string.module_downloads
-        Module.TRANSFERS -> R.string.module_transfers
+        Module.FILES -> R.string.client_files
+        Module.PHOTOS -> R.string.client_photos
+        Module.CHAT -> R.string.client_chat
+        Module.DOWNLOADS -> R.string.client_downloads
+        Module.TRANSFERS -> R.string.client_tasks
         else -> error("本测试只覆盖 Rail 主入口")
     }
 }

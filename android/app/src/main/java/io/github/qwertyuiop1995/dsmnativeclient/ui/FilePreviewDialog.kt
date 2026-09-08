@@ -250,7 +250,7 @@ internal fun FilePreviewDialog(
 }
 
 @Composable
-private fun PreviewDetails(item: FileItem, preview: Loadable<FilePreviewContent>) {
+internal fun PreviewDetails(item: FileItem, preview: Loadable<FilePreviewContent>) {
     val context = LocalContext.current
     Column(
         modifier = Modifier
@@ -268,7 +268,7 @@ private fun PreviewDetails(item: FileItem, preview: Loadable<FilePreviewContent>
             ?.let { epochSeconds ->
             DetailLine(
                 stringResource(R.string.file_detail_modified),
-                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, context.resources.configuration.locales[0])
                     .format(Date(epochSeconds * 1000)),
             )
         }
@@ -298,7 +298,7 @@ private fun PreviewDetails(item: FileItem, preview: Loadable<FilePreviewContent>
         mediaDetails?.capturedAtEpochMillis?.let { capturedAt ->
             DetailLine(
                 stringResource(R.string.file_detail_taken),
-                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, context.resources.configuration.locales[0])
                     .format(Date(capturedAt)),
             )
         }

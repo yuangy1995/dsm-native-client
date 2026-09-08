@@ -9,6 +9,8 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -38,19 +40,20 @@ class WorkspacePageLinkUiTest {
     }
 
     @Test
-    fun 可签发时按钮在刷新前显示并达到原生触控尺寸() {
+    fun 可签发时更多面板保留页面链接和刷新且达到原生触控尺寸() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         var copied = 0
         show(canCopyPageLink = true, onCopyPageLink = { copied += 1 })
 
-        val pageLink = rule.onNodeWithContentDescription(context.getString(R.string.copy_page_link))
+        rule.onNodeWithContentDescription(context.getString(R.string.client_all_features)).performClick()
+        val pageLink = rule.onNodeWithText(context.getString(R.string.copy_page_link)).performScrollTo()
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
-        val refresh = rule.onNodeWithContentDescription(context.getString(R.string.refresh))
+        val refresh = rule.onNodeWithText(context.getString(R.string.refresh))
 
         assertTrue(
-            pageLink.fetchSemanticsNode().boundsInRoot.left <
-                refresh.fetchSemanticsNode().boundsInRoot.left,
+            pageLink.fetchSemanticsNode().boundsInRoot.top >
+                refresh.fetchSemanticsNode().boundsInRoot.top,
         )
         pageLink.performClick()
         rule.runOnIdle {

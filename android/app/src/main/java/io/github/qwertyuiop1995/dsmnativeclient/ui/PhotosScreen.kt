@@ -1,5 +1,15 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ExpandMore
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import io.github.qwertyuiop1995.dsmnativeclient.ui.navigation.*
+
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Build
@@ -156,6 +166,20 @@ private fun PhotosContent(
         availableWidthDp,
         photoPreviewItem != null,
     )
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
+    var showBackup by remember { mutableStateOf(false) }
+    var showSpaces by remember { mutableStateOf(false) }
+    val entry = LocalClientEntry.current
+    LaunchedEffect(entry?.revision) {
+        when (entry?.action) {
+            ClientEntryAction.SEARCH -> showSearch = true
+            ClientEntryAction.PHOTO_BACKUP -> showBackup = true
+            else -> Unit
+        }
+        entry?.consume()
+    }
+    BackHandler(enabled = showSearch) { showSearch = false }
     var selectedPhoto by remember { mutableStateOf<PhotoItem?>(null) }
     var pendingExport by rememberSaveable(
         state.profile.id,
@@ -222,155 +246,31 @@ private fun PhotosContent(
     Column(
         if (inlinePreview) Modifier.width(520.dp).fillMaxHeight() else Modifier.fillMaxSize(),
     ) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(browser.spaces.size) { index ->
-                val space = browser.spaces[index]
-                PhotoSpaceChip(
-                    space = space,
-                    selected = space.id == browser.selectedSpaceId,
-                    access = browser.spaceAccess[space.id] ?: PhotoSpaceAccess.UNKNOWN,
-                    onClick = { model.selectPhotoSpace(space.id) },
-                )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 48.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { showSpaces = true }, modifier = Modifier.weight(1f)) {
+                Text(photoSpaceTitle(browser.selectedSpace), Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Outlined.ExpandMore, null)
+            }
+            IconButton(onClick = { showSpaces = true }) {
+                Icon(if (browser.mode == PhotoBrowseMode.TIMELINE) Icons.Outlined.CalendarMonth else Icons.Outlined.FolderOpen,
+                    stringResource(R.string.client_browse_mode))
+            }
+            IconButton(onClick = { showFilters = true }) {
+                Icon(Icons.Outlined.FilterList, stringResource(R.string.client_photo_filters))
+            }
+            if (state.supportsUploads) IconButton(onClick = { showBackup = true }) {
+                Icon(Icons.Outlined.CloudUpload, stringResource(R.string.client_photo_backup))
             }
         }
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PhotoBrowseMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = browser.mode == mode,
-                    onClick = { model.setPhotoMode(mode) },
-                    label = { Text(photoModeTitle(mode)) },
-                )
-            }
+        if (showSearch) Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            ClientSearchField(browser.searchQuery, model::updatePhotoSearchQuery,
+                stringResource(R.string.client_search_photos), Modifier.weight(1f), onSearch = model::searchPhotos)
+            IconButton(onClick = { showSearch = false }) { Icon(Icons.Outlined.Close, stringResource(R.string.close)) }
         }
-        if (state.supportsUploads) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                Button(
-                    onClick = {
-                        backupPicker.launch(
-                            PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageAndVideo,
-                            ),
-                        )
-                    },
-                ) {
-                    Icon(Icons.Outlined.CloudUpload, contentDescription = null)
-                    Text(
-                        stringResource(R.string.back_up_selected_photos),
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-            }
-            Text(
-                text = stringResource(R.string.photo_backup_conditions),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                if (state.photoBackupSourceEnabled) {
-                    TextButton(onClick = model::disablePhotoBackupSource) {
-                        Text(stringResource(R.string.stop_automatic_photo_discovery))
-                    }
-                } else {
-                    TextButton(onClick = { backupFolderPicker.launch(null) }) {
-                        Icon(Icons.Outlined.FolderOpen, contentDescription = null)
-                        Text(
-                            stringResource(R.string.choose_automatic_backup_folder),
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
-        }
-        if (browser.mode == PhotoBrowseMode.FOLDERS) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = model::goBackPhotoFolder,
-                    enabled = browser.pathHistory.isNotEmpty(),
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.photo_folder_up),
-                    )
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        photoSpaceTitle(browser.selectedSpace),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (browser.pathHistory.isNotEmpty()) {
-                        Text(
-                            browser.folderPath.substringAfterLast('/'),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-        OutlinedTextField(
-            value = browser.searchQuery,
-            onValueChange = model::updatePhotoSearchQuery,
-            label = { Text(stringResource(R.string.search_photos)) },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-            trailingIcon = {
-                TextButton(
-                    onClick = {
-                        model.searchPhotos()
-                        focusManager.clearFocus()
-                    },
-                ) { Text(stringResource(R.string.submit_photo_search)) }
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = {
-                model.searchPhotos()
-                focusManager.clearFocus()
-            }),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(PhotoMediaFilter.entries.size) { index ->
-                val filter = PhotoMediaFilter.entries[index]
-                FilterChip(
-                    selected = browser.filter == filter,
-                    onClick = { model.setPhotoFilter(filter) },
-                    label = { Text(photoFilterTitle(filter)) },
-                )
-            }
-        }
-        if (browser.mode == PhotoBrowseMode.TIMELINE && timeline != null) {
-            PhotoDateFilters(state, model)
+        if (browser.mode == PhotoBrowseMode.FOLDERS && browser.pathHistory.isNotEmpty()) {
+            Text(browser.folderPath.substringAfterLast('/'), style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
         Box(Modifier.fillMaxSize()) {
             if (browser.mode == PhotoBrowseMode.FOLDERS) {
@@ -436,6 +336,108 @@ private fun PhotosContent(
     }
     }
 
+    if (showSpaces) ClientSheet(stringResource(R.string.client_browse_mode), { showSpaces = false }) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(browser.spaces.size) { index ->
+                val space = browser.spaces[index]
+                PhotoSpaceChip(
+                    space = space,
+                    selected = space.id == browser.selectedSpaceId,
+                    access = browser.spaceAccess[space.id] ?: PhotoSpaceAccess.UNKNOWN,
+                    onClick = { model.selectPhotoSpace(space.id) },
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PhotoBrowseMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = browser.mode == mode,
+                    onClick = { model.setPhotoMode(mode) },
+                    label = { Text(photoModeTitle(mode)) },
+                )
+            }
+        }
+    }
+    if (showFilters) ClientSheet(stringResource(R.string.client_photo_filters), { showFilters = false }) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(PhotoMediaFilter.entries.size) { index ->
+                val filter = PhotoMediaFilter.entries[index]
+                FilterChip(
+                    selected = browser.filter == filter,
+                    onClick = { model.setPhotoFilter(filter) },
+                    label = { Text(photoFilterTitle(filter)) },
+                )
+            }
+        }
+        if (browser.mode == PhotoBrowseMode.TIMELINE && timeline != null) {
+            PhotoDateFilters(state, model)
+        }
+
+        TextButton(onClick = model::clearPhotoFilters) { Text(stringResource(R.string.clear_photo_filters)) }
+    }
+    if (showBackup) ClientSheet(stringResource(R.string.client_photo_backup), { showBackup = false }) {
+        if (state.supportsUploads) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Button(
+                    onClick = {
+                        showBackup = false
+                        backupPicker.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+                            ),
+                        )
+                    },
+                ) {
+                    Icon(Icons.Outlined.CloudUpload, contentDescription = null)
+                    Text(
+                        stringResource(R.string.back_up_selected_photos),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.photo_backup_conditions),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                if (state.photoBackupSourceEnabled) {
+                    TextButton(onClick = model::disablePhotoBackupSource) {
+                        Text(stringResource(R.string.stop_automatic_photo_discovery))
+                    }
+                } else {
+                    TextButton(onClick = { showBackup = false; backupFolderPicker.launch(null) }) {
+                        Icon(Icons.Outlined.FolderOpen, contentDescription = null)
+                        Text(
+                            stringResource(R.string.choose_automatic_backup_folder),
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     if (!inlinePreview) photoPreviewItem?.let { item ->
         val viewer = state.photoViewer
         FilePreviewDialog(
@@ -450,10 +452,7 @@ private fun PhotosContent(
         )
     }
     selectedPhoto?.let { item ->
-        AlertDialog(
-            onDismissRequest = { selectedPhoto = null },
-            title = { Text(item.file.name) },
-            text = {
+        ClientSheet(item.file.name, { selectedPhoto = null }) {
                 Column {
                     if (state.supportsFavorites) {
                         val isFavorite = item.file.path in state.favoritePaths
@@ -505,13 +504,7 @@ private fun PhotosContent(
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedPhoto = null }) {
-                    Text(stringResource(R.string.close))
-                }
-            },
-        )
+        }
     }
     if (showNotificationPermission) {
         AlertDialog(
@@ -701,6 +694,7 @@ private fun PhotoTimelineLoading() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun PhotoCard(
     item: PhotoItem,
@@ -710,10 +704,11 @@ internal fun PhotoCard(
     onAction: () -> Unit,
 ) {
     Card(
+        shape = RoundedCornerShape(6.dp),
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClickLabel = stringResource(R.string.more_actions), onLongClick = onAction),
     ) {
         Box(
             modifier = Modifier
@@ -733,7 +728,7 @@ internal fun PhotoCard(
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
-            Text(
+            if (item.kind == PhotoItemKind.FOLDER) Text(
                 item.file.name,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -744,16 +739,7 @@ internal fun PhotoCard(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelMedium,
             )
-            IconButton(
-                onClick = onAction,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)),
-            ) {
-                Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.more_actions))
-            }
+
         }
     }
 }

@@ -1,5 +1,13 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.settings
 
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Tune
+
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,114 +55,57 @@ import io.github.qwertyuiop1995.dsmnativeclient.ui.icon
 import io.github.qwertyuiop1995.dsmnativeclient.ui.titleResource
 
 @Composable
-internal fun SettingsScreen(state: WorkspaceState, model: AppViewModel) {
+internal fun SettingsScreen(state: WorkspaceState, model: AppViewModel, onCustomizeNavigation: (() -> Unit)? = null) {
     val context = LocalContext.current
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { ClientSectionTitle(stringResource(R.string.client_appearance_preferences)) }
         item {
-            Card {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
+            ClientGroup {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.language_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            stringResource(R.string.language_fallback_note),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text(stringResource(R.string.language_title), style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.language_fallback_note), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     LanguageMenu()
+                }
+                if (onCustomizeNavigation != null) {
+                    HorizontalDivider()
+                    ClientRow(stringResource(R.string.client_custom_navigation), Icons.Outlined.Tune, onClick = onCustomizeNavigation)
                 }
             }
         }
         item {
-            Card {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.regenerable_cache),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            stringResource(
-                                R.string.regenerable_cache_usage,
-                                formatBytes(state.regenerableCacheBytes),
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            stringResource(R.string.regenerable_cache_note),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Button(
-                        onClick = model::clearRegenerableCaches,
-                        enabled = state.regenerableCacheBytes > 0,
-                    ) {
+            ClientGroup {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(stringResource(R.string.regenerable_cache), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.regenerable_cache_usage, formatBytes(state.regenerableCacheBytes)))
+                    Text(stringResource(R.string.regenerable_cache_note), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = model::clearRegenerableCaches, enabled = state.regenerableCacheBytes > 0) {
                         Text(stringResource(R.string.clear_cache))
                     }
                 }
             }
         }
+        item { ClientSectionTitle(stringResource(R.string.client_feature_availability)) }
         item {
-            Text(
-                stringResource(R.string.feature_modules),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.semantics { heading() },
-            )
-        }
-        items(state.availability, key = { it.module.name }) { item ->
-            Card {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(item.module.icon(), contentDescription = null)
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(item.module.titleResource()),
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Text(
-                            if (item.isAvailable) {
-                                stringResource(R.string.available)
-                            } else {
-                                item.reason?.localize(context)
-                                    ?: stringResource(R.string.unavailable)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = item.isAvailable, onCheckedChange = null)
+            ClientGroup {
+                state.availability.forEach { item ->
+                    ListItem(
+                        headlineContent = { Text(stringResource(item.module.titleResource())) },
+                        supportingContent = { Text(if (item.isAvailable) stringResource(R.string.available)
+                            else item.reason?.localize(context) ?: stringResource(R.string.unavailable)) },
+                        leadingContent = { Icon(item.module.icon(), null) },
+                        trailingContent = { Icon(if (item.isAvailable) Icons.Outlined.CheckCircle else Icons.Outlined.Info,
+                            null, tint = if (item.isAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+                        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+                    )
                 }
             }
         }
-        item {
-            Text(
-                stringResource(R.string.password_feature_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        item { Text(stringResource(R.string.client_saved_password_note), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 

@@ -1,5 +1,9 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.services
 
+import androidx.activity.compose.BackHandler
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import io.github.qwertyuiop1995.dsmnativeclient.virtualMachineMutationBlocksWorkspaceExit
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -97,10 +101,11 @@ import java.text.DateFormat
 import java.util.Date
 
 internal const val CONTAINER_REGISTRY_SCROLL_TEST_TAG = "container_registry_scroll"
-
 @Composable
 internal fun ContainersScreen(state: WorkspaceState, model: AppViewModel) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var sectionOpen by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = sectionOpen && !state.containerRegistryVisible) { sectionOpen = false; tab = 0 }
     var selected by remember { mutableStateOf<ManagedResource?>(null) }
     val titles = listOf(
         stringResource(R.string.overview),
@@ -111,11 +116,8 @@ internal fun ContainersScreen(state: WorkspaceState, model: AppViewModel) {
         stringResource(R.string.events),
     )
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
-            titles.forEachIndexed { index, title ->
-                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
-            }
-        }
+        if (sectionOpen) ClientToolbar(titles[tab], onBack = { sectionOpen = false; tab = 0 })
+        else if (state.containers is io.github.qwertyuiop1995.dsmnativeclient.Loadable.Ready) ClientServiceSections(titles.drop(1)) { tab = it + 1; sectionOpen = true }
         ListItem(
             headlineContent = { Text(stringResource(R.string.container_management_read_only)) },
             leadingContent = {
@@ -225,6 +227,7 @@ private fun ContainerOverviewSummaryContent(
         summary.otherContainers,
     )
     LazyColumn(Modifier.fillMaxSize()) {
+        item { Text(stringResource(R.string.overview), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp)) }
         item {
             ListItem(
                 headlineContent = {
@@ -487,6 +490,13 @@ private fun ContainerRegistryOfficialSourceLabel() {
 @Composable
 internal fun VirtualMachinesScreen(state: WorkspaceState, model: AppViewModel) {
     val tab = state.virtualMachineMutationState.selectedTab.ordinal
+    var sectionOpen by rememberSaveable { mutableStateOf(tab != 0) }
+    LaunchedEffect(tab) { if (tab != 0) sectionOpen = true }
+    BackHandler(enabled = sectionOpen && state.virtualMachineMutationState.guestDetailsTargetId == null) {
+        if (!virtualMachineMutationBlocksWorkspaceExit(state.virtualMachineMutationState)) {
+            sectionOpen = false; model.selectVirtualMachineTab(VirtualMachineTab.MACHINES)
+        }
+    }
     var protectionTab by rememberSaveable { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf<ManagedResource?>(null) }
     var localImportsVisible by remember { mutableStateOf(false) }
@@ -513,15 +523,11 @@ internal fun VirtualMachinesScreen(state: WorkspaceState, model: AppViewModel) {
         stringResource(R.string.virtual_machine_tasks),
     )
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
-            titles.forEachIndexed { index, title ->
-                Tab(
-                    selected = tab == index,
-                    onClick = { model.selectVirtualMachineTab(VirtualMachineTab.entries[index]) },
-                    text = { Text(title) },
-                )
+        if (sectionOpen) ClientToolbar(titles[tab], onBack = {
+            if (!virtualMachineMutationBlocksWorkspaceExit(state.virtualMachineMutationState)) {
+                sectionOpen = false; model.selectVirtualMachineTab(VirtualMachineTab.MACHINES)
             }
-        }
+        }) else if (state.virtualMachines is io.github.qwertyuiop1995.dsmnativeclient.Loadable.Ready) ClientServiceSections(titles) { sectionOpen = true; model.selectVirtualMachineTab(VirtualMachineTab.entries[it]) }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LoadableContent(
                 value = state.virtualMachines,
@@ -968,28 +974,6 @@ private fun VirtualMachineOverview.resourceName(
     -> networks
     else -> machines
 }.firstOrNull { it.id == id }?.name
-
-@Composable
-private fun ServiceSectionUnavailable(onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
-        Text(
-            stringResource(R.string.service_section_unavailable_title),
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        Text(
-            stringResource(R.string.service_section_unavailable_message),
-            modifier = Modifier.padding(top = 8.dp),
-        )
-        TextButton(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
-            Text(stringResource(R.string.retry))
-        }
-    }
-}
 
 @Composable
 private fun ProtectionContent(

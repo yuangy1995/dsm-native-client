@@ -68,7 +68,7 @@ class DownloadTaskDetailsDialogTest {
             }
         }
 
-        rule.onNodeWithContentDescription(context.getString(R.string.close)).performClick()
+        rule.onNodeWithContentDescription(context.getString(R.string.go_up)).performClick()
         rule.waitForIdle()
         assertEquals(1, dismissCount)
 

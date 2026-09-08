@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.downloads
 
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.ClientPageDialog
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -46,34 +48,12 @@ import java.util.Locale
 
 @Composable
 internal fun DownloadTaskDetailsDialog(task: DownloadTask, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    task.title.ifBlank { stringResource(R.string.unnamed_download) },
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(R.string.close),
-                    )
-                }
-            }
-        },
-        text = {
-            DownloadTaskDetailsContent(
-                task = task,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
-        },
-    )
+    ClientPageDialog(task.title.ifBlank { stringResource(R.string.unnamed_download) }, onDismiss) {
+        Column(Modifier.fillMaxSize()) {
+            DownloadTaskDetailsContent(task, Modifier.weight(1f).fillMaxWidth())
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.close)) }
+        }
+    }
 }
 
 /** 宽屏详情区与窄屏弹窗共享同一套内容，避免两种布局的字段和空状态漂移。 */

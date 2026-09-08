@@ -1,5 +1,10 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui
 
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Refresh
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -84,98 +89,6 @@ internal fun WorkspaceState.chatMutationInProgress(
 }
 
 @Composable
-internal fun ConversationList(
-    state: WorkspaceState,
-    model: AppViewModel,
-    modifier: Modifier = Modifier.fillMaxSize(),
-) {
-    Column(modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.module_chat),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = model::openNewChatConversation) {
-                Icon(Icons.Outlined.PersonAdd, stringResource(R.string.new_conversation))
-            }
-        }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            LoadableContent(
-                value = state.conversations,
-                emptyTitle = stringResource(R.string.no_conversations),
-                emptyMessage = stringResource(R.string.no_conversations_description),
-                onRetry = { model.load(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.CHAT) },
-            ) { conversations ->
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(conversations, key = { it.id }) { conversation ->
-                        ListItem(
-                            headlineContent = {
-                                Text(conversation.title.ifBlank { stringResource(R.string.unnamed_conversation) })
-                            },
-                            supportingContent = {
-                                Text(
-                                    conversation.latestPreview ?: pluralStringResource(
-                                        R.plurals.member_count,
-                                        conversation.memberCount,
-                                        conversation.memberCount,
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            leadingContent = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) },
-                            trailingContent = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    if (conversation.unreadCount > 0) {
-                                        Badge {
-                                            Text(conversation.unreadCount.coerceAtMost(99).toString())
-                                        }
-                                    }
-                                    IconButton(
-                                        onClick = { model.toggleChatConversationPin(conversation.id) },
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.PushPin,
-                                            contentDescription = stringResource(
-                                                if (conversation.isPinnedLocally) {
-                                                    R.string.unpin_conversation
-                                                } else {
-                                                    R.string.pin_conversation
-                                                },
-                                                conversation.title,
-                                            ),
-                                            tint = if (conversation.isPinnedLocally) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            },
-                                        )
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clickable { model.openConversation(conversation) }
-                                .semantics(mergeDescendants = true) {},
-                        )
-                        HorizontalDivider(Modifier.padding(start = 72.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 internal fun ConversationDetail(
     state: WorkspaceState,
     model: AppViewModel,
@@ -188,6 +101,7 @@ internal fun ConversationDetail(
         ChatMutationOperation.REMINDER_SET,
         ChatMutationOperation.REMINDER_DELETE,
     )
+    var optionsVisible by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<Pair<String, ChatAttachment>?>(null) }
     val attachmentPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -222,25 +136,8 @@ internal fun ConversationDetail(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(start = 8.dp).weight(1f),
             )
-            if (conversation.kind == ConversationKind.GROUP) {
-                IconButton(onClick = model::showChatMembers) {
-                    Icon(Icons.Outlined.Group, stringResource(R.string.view_group_members))
-                }
-            }
-            if (state.supportsChatReminders) {
-                IconButton(onClick = model::showChatReminders) {
-                    Icon(Icons.Outlined.Notifications, stringResource(R.string.manage_chat_reminders))
-                }
-            }
-            if (state.supportsChatScheduledMessages) {
-                IconButton(onClick = model::showChatScheduledMessages) {
-                    Icon(Icons.Outlined.Schedule, stringResource(R.string.manage_scheduled_messages))
-                }
-            }
-            if (state.supportsChatPollCreation) {
-                IconButton(onClick = model::openChatPollComposer) {
-                    Icon(Icons.Outlined.Poll, stringResource(R.string.create_chat_poll))
-                }
+            IconButton(onClick = { optionsVisible = true }) {
+                Icon(Icons.Outlined.MoreVert, stringResource(R.string.client_conversation_options))
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -326,6 +223,28 @@ internal fun ConversationDetail(
             onSend = model::sendChatMessage,
             onAttach = { attachmentPicker.launch(arrayOf("image/*", "video/*", "application/*", "text/*", "audio/*")) },
         )
+    }
+    if (optionsVisible) ClientSheet(stringResource(R.string.client_conversation_options), { optionsVisible = false }) {
+        ClientActionGrid(buildList {
+            if (conversation.kind == ConversationKind.GROUP) add(ClientAction(stringResource(R.string.view_group_members), Icons.Outlined.Group) {
+                optionsVisible = false; model.showChatMembers()
+            })
+            if (state.supportsChatReminders) add(ClientAction(stringResource(R.string.manage_chat_reminders), Icons.Outlined.Notifications) {
+                optionsVisible = false; model.showChatReminders()
+            })
+            if (state.supportsChatScheduledMessages) add(ClientAction(stringResource(R.string.manage_scheduled_messages), Icons.Outlined.Schedule) {
+                optionsVisible = false; model.showChatScheduledMessages()
+            })
+            if (state.supportsChatPollCreation) add(ClientAction(stringResource(R.string.create_chat_poll), Icons.Outlined.Poll) {
+                optionsVisible = false; model.openChatPollComposer()
+            })
+        })
+        if (model.canCopyCurrentPageLink()) ClientRow(stringResource(R.string.copy_page_link), Icons.Outlined.Link) {
+            optionsVisible = false; model.copyCurrentPageLink()
+        }
+        ClientRow(stringResource(R.string.refresh), Icons.Outlined.Refresh) {
+            optionsVisible = false; model.load(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.CHAT)
+        }
     }
 }
 

@@ -1,5 +1,7 @@
 package io.github.qwertyuiop1995.dsmnativeclient
 
+import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -52,8 +54,10 @@ class WorkspaceUnavailableNavigationTest {
             }
         }
 
-        rule.onNodeWithContentDescription(context.getString(R.string.open_navigation)).performClick()
-        rule.onAllNodesWithText(context.getString(R.string.module_chat)).assertCountEquals(2)
-        rule.onNodeWithText(context.getString(R.string.module_unavailable_chat)).assertIsDisplayed()
+        rule.onNodeWithContentDescription(context.getString(R.string.client_all_features)).performClick()
+        rule.onAllNodesWithText(context.getString(R.string.client_chat)).assertCountEquals(2)
+        rule.onNode(hasText(context.getString(R.string.client_chat)) and
+            hasAnyAncestor(hasTestTag("client_all_features")) and
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, context.getString(R.string.module_unavailable_chat))).assertIsDisplayed()
     }
 }

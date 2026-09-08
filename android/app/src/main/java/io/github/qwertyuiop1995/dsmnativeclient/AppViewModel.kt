@@ -159,6 +159,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -181,6 +182,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var repository: DsmRepository? = null
     private var workspacePersistenceJob: Job? = null
     private var nasSwitchJob: Job? = null
+    private val loginAttempt = LoginAttemptOwner()
     private var isSwitchingNas = false
     private val transferCoordinator = TransferCoordinator()
     private val crossNasRepositories = mutableMapOf<String, DsmRepository>()
@@ -288,6 +290,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _workspace = MutableStateFlow<WorkspaceState?>(null)
     val workspace: StateFlow<WorkspaceState?> = _workspace.asStateFlow()
+    private val _moduleNavigation = MutableStateFlow<ModuleNavigationSignal?>(null)
+    internal val moduleNavigation: StateFlow<ModuleNavigationSignal?> = _moduleNavigation.asStateFlow()
     private val nasAdministrationFeature = NasAdministrationFeatureModel(
         scope = viewModelScope,
         workspace = _workspace,
@@ -393,7 +397,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             return
         }
-        viewModelScope.launch {
+        loginAttempt.launch(viewModelScope) {
             _login.update {
                 it.copy(
                     isConnecting = true,
@@ -403,15 +407,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             suspendRunCatching {
                 val discovered = connectionResolver.discover(profile) { status ->
-                    _login.update { it.copy(connectionStatus = status) }
-                }
+                    if (isActive) _login.update { it.copy(connectionStatus = status) }
+                }.also { currentCoroutineContext().ensureActive() }
                 val previousSession = store.session(profile.id)
+                _login.update { it.copy(connectionStatus = ConnectionStatus.AUTHENTICATING) }
                 val session = api.login(
                     profile = discovered.profile,
                     password = password,
                     otp = otp.ifBlank { null },
                     deviceId = previousSession?.deviceId,
                 )
+                currentCoroutineContext().ensureActive()
                 store.saveProfile(profile)
                 store.setLastProfileId(profile.id)
                 if (rememberPassword) {
@@ -424,6 +430,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 DsmRepository(discovered.profile, session, api, discovered.capabilities)
             }.onSuccess { repo ->
+                currentCoroutineContext().ensureActive()
+                _moduleNavigation.value = null
                 chatFeature.clearLocalReadMarkers()
                 fileBrowserRequestGeneration.incrementAndGet()
                 downloadListRequestGeneration.incrementAndGet()
@@ -441,50 +449,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val restoredUi = restoredWorkspaceUi(profile.id, availability)
                 val backgroundTaskSnapshot = transferStore.fileBackgroundTaskSnapshot(profile.id)
                 val photoBackupSource = transferStore.photoBackupSource(profile.id)
-                _workspace.value = WorkspaceState(
-                    profile = profile,
-                    selectedModule = restoredUi.first,
-                    availability = availability,
-                    fileBrowser = restoredUi.second,
-                    supportsFavorites = repo.supportsFavorites(),
-                    supportsUploads = repo.supportsUploads(),
-                    supportsThumbnails = repo.supportsThumbnails(),
-                    supportsCopyMove = repo.supportsCopyMove(),
-                    supportsSharing = repo.supportsSharing(),
-                    supportsCompression = repo.supportsCompression(),
-                    supportsExtraction = repo.supportsExtraction(),
-                    supportsRemoteLocations = repo.supportsRemoteLocations(),
-                    supportsDownloadSettings = repo.supportsDownloadSettings(),
-                    supportsDownloadSchedule = repo.supportsDownloadSchedule(),
-                    supportsDownloadTaskDestinationEditing =
-                        repo.supportsDownloadTaskDestinationEditing(),
-                    supportsDownloadRss = repo.supportsDownloadRss(),
-                    supportsDownloadBtSearch = repo.supportsDownloadBtSearch(),
-                    downloadAdvancedRead = DownloadAdvancedReadWorkspaceState(
-                        supportsActivity = repo.supportsDownloadActivity(),
-                    ),
-                    supportsChatReminders = repo.supportsChatReminders(),
-                    supportsChatScheduledMessages = repo.supportsChatScheduledMessages(),
-                    supportsChatPollCreation = repo.supportsChatPollCreation(),
-                    supportsContainerRegistry = repo.supportsContainerRegistry(),
-                    supportsOfficialVirtualMachineCreation = repo.supportsOfficialVirtualMachineCreation(),
-                    supportsOfficialVirtualMachineSettings = repo.supportsOfficialVirtualMachineSettings(),
-                    supportsOfficialVirtualMachineImageImport =
-                        repo.supportsOfficialVirtualMachineImageImport(),
-                    virtualMachineMutationState = VirtualMachineMutationWorkspaceState(
-                        supportsOfficialTasks = repo.supportsOfficialVirtualMachineTasks(),
-                    ),
-                    nasPerformance = NasPerformanceWorkspaceState(
-                        supportsPerformance = repo.supportsPerformance(),
-                    ),
-                    photoBackupSourceEnabled = photoBackupSource?.let(::shouldScanPhotoBackupSource) == true,
-                    message = photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource),
-                    chatPinnedConversationIds = restoredPinnedConversationIds(profile.id),
-                    fileBackgroundTasks = backgroundTaskSnapshot?.toFileBackgroundTaskPage()
-                        ?.let { Loadable.Ready(it) } ?: Loadable.Idle,
-                    fileBackgroundTaskSnapshotObservedAtEpochSeconds =
-                        backgroundTaskSnapshot?.observedAtEpochSeconds,
-                )
+                _workspace.value = connectedWorkspace(profile, repo, availability, restoredUi, backgroundTaskSnapshot, photoBackupSource,
+                    photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource), restoredPinnedConversationIds(profile.id))
                 viewModelScope.launch { refreshFavorites(repo) }
                 when {
                     photoBackupSource?.needsAttention == true ->
@@ -502,7 +468,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 restoreDownloads(profile.id)
                 load(restoredUi.first)
-            }.onFailure { error ->
+            }.onFailure { error -> currentCoroutineContext().ensureActive()
                 val failure = error.asDsmFailure()
                 _login.update {
                     it.copy(
@@ -513,6 +479,43 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+        }
+    }
+
+    internal fun cancelLogin(): Boolean {
+        if (isSwitchingNas || _workspace.value != null || !loginAttempt.cancel()) return false
+        _login.update { it.copy(isConnecting = false, connectionStatus = null, error = null) }
+        return true
+    }
+
+    internal fun recentDirectories(): List<String> =
+        _workspace.value?.profile?.id?.let(store::recentDirectories).orEmpty()
+
+    internal fun requestClientModule(module: Module): WorkspaceNavigationResult {
+        val state = _workspace.value ?: return WorkspaceNavigationResult.DEFERRED
+        if (state.selectedModule != module && state.hasBlockingStructuredNasMutation()) {
+            _workspace.update { it?.copy(message = getApplication<Application>().getString(R.string.switch_nas_blocked_active_operation)) }
+            return WorkspaceNavigationResult.REJECTED
+        }
+        cancelOpaqueExternalNavigation(consumePending = true)
+        return navigateTo(WorkspaceRoute.ModuleRoot(module))
+    }
+
+    internal fun openRecentDirectory(path: String) {
+        val repo = repository ?: return
+        val before = _workspace.value ?: return
+        if (path !in store.recentDirectories(before.profile.id) && path !in before.favoritePaths) return
+        viewModelScope.launch {
+            val result = suspendRunCatching { repo.fileInfo(path) }
+            val current = _workspace.value ?: return@launch
+            if (repository !== repo || current.selectedModule != Module.FILES ||
+                current.fileBrowser.path != before.fileBrowser.path ||
+                fileStationMutationBlocksOrdinaryLoad(current.fileStationMutationState)) return@launch
+            result.onSuccess { item ->
+                if (item?.isDirectory == true) openFileRecentLocation(item)
+                else _workspace.update { it?.copy(message = getApplication<Application>().getString(R.string.client_saved_location_unavailable)) }
+            }
+                .onFailure { error -> _workspace.update { it?.copy(message = error.asDsmFailure().localize(getApplication()).combined) } }
         }
     }
 
@@ -550,7 +553,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (_login.value.isConnecting) return
-        viewModelScope.launch {
+        loginAttempt.launch(viewModelScope) {
             _login.update {
                 it.copy(
                     isConnecting = true,
@@ -560,8 +563,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             suspendRunCatching {
                 val discovered = connectionResolver.discover(profile) { status ->
-                    _login.update { it.copy(connectionStatus = status) }
-                }
+                    if (isActive) _login.update { it.copy(connectionStatus = status) }
+                }.also { currentCoroutineContext().ensureActive() }
                 val repo = DsmRepository(
                     discovered.profile,
                     session,
@@ -571,6 +574,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repo.listShares()
                 repo
             }.onSuccess { repo ->
+                currentCoroutineContext().ensureActive()
+                _moduleNavigation.value = null
                 chatFeature.clearLocalReadMarkers()
                 fileBrowserRequestGeneration.incrementAndGet()
                 downloadListRequestGeneration.incrementAndGet()
@@ -582,50 +587,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val restoredUi = restoredWorkspaceUi(profile.id, availability)
                 val backgroundTaskSnapshot = transferStore.fileBackgroundTaskSnapshot(profile.id)
                 val photoBackupSource = transferStore.photoBackupSource(profile.id)
-                _workspace.value = WorkspaceState(
-                    profile = profile,
-                    selectedModule = restoredUi.first,
-                    availability = availability,
-                    fileBrowser = restoredUi.second,
-                    supportsFavorites = repo.supportsFavorites(),
-                    supportsUploads = repo.supportsUploads(),
-                    supportsThumbnails = repo.supportsThumbnails(),
-                    supportsCopyMove = repo.supportsCopyMove(),
-                    supportsSharing = repo.supportsSharing(),
-                    supportsCompression = repo.supportsCompression(),
-                    supportsExtraction = repo.supportsExtraction(),
-                    supportsRemoteLocations = repo.supportsRemoteLocations(),
-                    supportsDownloadSettings = repo.supportsDownloadSettings(),
-                    supportsDownloadSchedule = repo.supportsDownloadSchedule(),
-                    supportsDownloadTaskDestinationEditing =
-                        repo.supportsDownloadTaskDestinationEditing(),
-                    supportsDownloadRss = repo.supportsDownloadRss(),
-                    supportsDownloadBtSearch = repo.supportsDownloadBtSearch(),
-                    downloadAdvancedRead = DownloadAdvancedReadWorkspaceState(
-                        supportsActivity = repo.supportsDownloadActivity(),
-                    ),
-                    supportsChatReminders = repo.supportsChatReminders(),
-                    supportsChatScheduledMessages = repo.supportsChatScheduledMessages(),
-                    supportsChatPollCreation = repo.supportsChatPollCreation(),
-                    supportsContainerRegistry = repo.supportsContainerRegistry(),
-                    supportsOfficialVirtualMachineCreation = repo.supportsOfficialVirtualMachineCreation(),
-                    supportsOfficialVirtualMachineSettings = repo.supportsOfficialVirtualMachineSettings(),
-                    supportsOfficialVirtualMachineImageImport =
-                        repo.supportsOfficialVirtualMachineImageImport(),
-                    virtualMachineMutationState = VirtualMachineMutationWorkspaceState(
-                        supportsOfficialTasks = repo.supportsOfficialVirtualMachineTasks(),
-                    ),
-                    nasPerformance = NasPerformanceWorkspaceState(
-                        supportsPerformance = repo.supportsPerformance(),
-                    ),
-                    photoBackupSourceEnabled = photoBackupSource?.let(::shouldScanPhotoBackupSource) == true,
-                    message = photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource),
-                    chatPinnedConversationIds = restoredPinnedConversationIds(profile.id),
-                    fileBackgroundTasks = backgroundTaskSnapshot?.toFileBackgroundTaskPage()
-                        ?.let { Loadable.Ready(it) } ?: Loadable.Idle,
-                    fileBackgroundTaskSnapshotObservedAtEpochSeconds =
-                        backgroundTaskSnapshot?.observedAtEpochSeconds,
-                )
+                _workspace.value = connectedWorkspace(profile, repo, availability, restoredUi, backgroundTaskSnapshot, photoBackupSource,
+                    photoBackupCoordinator.sourceRestoreMessage(getApplication(), photoBackupSource), restoredPinnedConversationIds(profile.id))
                 viewModelScope.launch { refreshFavorites(repo) }
                 when {
                     photoBackupSource?.needsAttention == true ->
@@ -643,7 +606,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 restoreDownloads(profile.id)
                 load(restoredUi.first)
-            }.onFailure {
+            }.onFailure { currentCoroutineContext().ensureActive()
                 store.clearSession(profile.id)
                 val savedPassword = fallbackPassword ?: store.password(profile.id)
                 _login.update { it.copy(isConnecting = false, connectionStatus = null) }
@@ -914,6 +877,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         ) {
             stopVirtualMachineTaskPolling()
         }
+        _moduleNavigation.value = ModuleNavigationSignal(state.profile.id, module, (_moduleNavigation.value?.revision ?: 0L) + 1L)
         load(module)
         navigationResult
     }

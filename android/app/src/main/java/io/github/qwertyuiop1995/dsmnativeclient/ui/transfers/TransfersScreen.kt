@@ -1,5 +1,11 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.transfers
 
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.runtime.remember
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -127,40 +133,15 @@ internal fun TransferSourceFilter.matches(direction: TransferDirection): Boolean
 
 @Composable
 internal fun TransfersScreen(state: WorkspaceState, model: AppViewModel) {
-    var page by rememberSaveable(state.profile.id) { mutableStateOf(TransferPage.APP_TRANSFERS) }
-    Column(Modifier.fillMaxSize()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(TransferPage.entries, key = TransferPage::name) { option ->
-                FilterChip(
-                    selected = page == option,
-                    onClick = { page = option },
-                    label = { Text(stringResource(option.labelResource())) },
-                )
-            }
-        }
-        when (page) {
-            TransferPage.APP_TRANSFERS -> AppTransfersContent(state, model)
-            TransferPage.FILE_TASKS -> FileBackgroundTasksContent(
-                tasks = state.fileBackgroundTasks,
-                isLoadingMore = state.fileBackgroundTaskIsLoadingMore,
-                loadMoreFailure = state.fileBackgroundTasksLoadMoreFailure,
-                snapshotObservedAtEpochSeconds =
-                    state.fileBackgroundTaskSnapshotObservedAtEpochSeconds,
-                isRefreshing = state.fileBackgroundTaskRefreshInProgress,
-                refreshFailure = state.fileBackgroundTaskRefreshFailure,
-                onRefresh = model::refreshFileBackgroundTasks,
-                onRetry = model::refreshFileBackgroundTasks,
-                onLoadMore = model::loadMoreFileBackgroundTasks,
-            )
-        }
+    var source by rememberSaveable { mutableStateOf(ClientTaskSource.PHONE) }
+    ClientTaskCenterScreen(state, model, source) {
+        if (it == ClientTaskSource.DOWNLOADS) model.select(io.github.qwertyuiop1995.dsmnativeclient.domain.Module.DOWNLOADS)
+        else source = it
     }
 }
 
 @Composable
-private fun AppTransfersContent(state: WorkspaceState, model: AppViewModel) {
+internal fun AppTransfersContent(state: WorkspaceState, model: AppViewModel) {
     if (state.transfers.isEmpty()) {
         EmptyState(
             stringResource(R.string.no_transfer_tasks),
@@ -173,15 +154,21 @@ private fun AppTransfersContent(state: WorkspaceState, model: AppViewModel) {
     var sourceFilter by rememberSaveable(state.profile.id) {
         mutableStateOf(TransferSourceFilter.ALL)
     }
-    val filteredTransfers = state.transfers.filter { sourceFilter.matches(it.direction) }
+    var statusFilter by rememberSaveable { mutableStateOf(ClientTaskStatus.ACTIVE) }
+    var optionsVisible by remember { mutableStateOf(false) }
+    val filteredTransfers = state.transfers.filter { sourceFilter.matches(it.direction) && statusFilter.matches(it) }
 
     Column(Modifier.fillMaxSize()) {
-        Text(
-            stringResource(R.string.transfer_filter_source),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp),
-        )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(statusFilter == ClientTaskStatus.ACTIVE, onClick = { statusFilter = ClientTaskStatus.ACTIVE },
+                    label = { Text(stringResource(R.string.client_active_tasks)) })
+                FilterChip(statusFilter == ClientTaskStatus.FINISHED, onClick = { statusFilter = ClientTaskStatus.FINISHED },
+                    label = { Text(stringResource(R.string.client_finished_tasks)) })
+            }
+            IconButton(onClick = { optionsVisible = true }) { Icon(Icons.Outlined.Tune, stringResource(R.string.transfer_filter_source)) }
+        }
+        if (optionsVisible) ClientSheet(stringResource(R.string.transfer_filter_source), { optionsVisible = false }) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -211,6 +198,7 @@ private fun AppTransfersContent(state: WorkspaceState, model: AppViewModel) {
                     Text(stringResource(R.string.clear_finished_transfers))
                 }
             }
+        }
         }
         if (filteredTransfers.isEmpty()) {
             Box(
@@ -555,7 +543,8 @@ internal fun TransferTaskCard(
     isRefreshingTarget: Boolean = false,
     onOpenAndRefreshTarget: () -> Unit = {},
 ) {
-    Card {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val actionsAtBottom = maxWidth < 480.dp || LocalDensity.current.fontScale >= 1.5f
             val actions: @Composable () -> Unit = {
@@ -575,7 +564,7 @@ internal fun TransferTaskCard(
             Column(Modifier.fillMaxWidth()) {
                 ListItem(
                     headlineContent = {
-                        Text(task.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(task.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     },
                     supportingContent = { TransferTaskDetails(task) },
                     leadingContent = {

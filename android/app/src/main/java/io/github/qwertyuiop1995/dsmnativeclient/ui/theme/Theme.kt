@@ -3,104 +3,72 @@ package io.github.qwertyuiop1995.dsmnativeclient.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF005AC1),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFD8E2FF),
-    onPrimaryContainer = Color(0xFF001A41),
-    secondary = Color(0xFF435E91),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFD8E2FF),
-    onSecondaryContainer = Color(0xFF001A41),
-    tertiary = Color(0xFF006A6A),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFF70F5F5),
-    onTertiaryContainer = Color(0xFF002020),
-    error = Color(0xFFBA1A1A),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
-    background = Color(0xFFF8FAFC),
-    onBackground = Color(0xFF191C1E),
-    surface = Color(0xFFF8FAFC),
-    onSurface = Color(0xFF191C1E),
-    surfaceVariant = Color(0xFFE1E2EC),
-    onSurfaceVariant = Color(0xFF44474F),
-    outline = Color(0xFF757780),
-    outlineVariant = Color(0xFFC5C6D0),
-    surfaceContainer = Color(0xFFEEF0F5),
-    surfaceContainerHigh = Color(0xFFE8EAF0),
-    surfaceContainerHighest = Color(0xFFE2E4EA),
+    primary = Color(0xFF2455ED), onPrimary = Color.White,
+    primaryContainer = Color(0xFFE9EFFF), onPrimaryContainer = Color(0xFF173788),
+    secondary = Color(0xFF4D5D7B), onSecondary = Color.White,
+    secondaryContainer = Color(0xFFEDF1F8), onSecondaryContainer = Color(0xFF22314B),
+    tertiary = Color(0xFF715315), onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFFEBC0), onTertiaryContainer = Color(0xFF382700),
+    background = Color(0xFFFAFAF8), onBackground = Color(0xFF17201F),
+    surface = Color(0xFFFFFFFF), onSurface = Color(0xFF17201F),
+    surfaceVariant = Color(0xFFF0F1F3), onSurfaceVariant = Color(0xFF59616C),
+    outline = Color(0xFF737C88), outlineVariant = Color(0xFFE0E3E9),
+    surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFF8F9FB),
+    surfaceContainer = Color(0xFFF3F5F8), surfaceContainerHigh = Color(0xFFEBEEF3),
+    surfaceContainerHighest = Color(0xFFE3E7ED),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFAEC6FF),
-    onPrimary = Color(0xFF002E6C),
-    primaryContainer = Color(0xFF004494),
-    onPrimaryContainer = Color(0xFFD8E2FF),
-    secondary = Color(0xFFABC7FF),
-    onSecondary = Color(0xFF102F60),
-    secondaryContainer = Color(0xFF2A4678),
-    onSecondaryContainer = Color(0xFFD8E2FF),
-    tertiary = Color(0xFF4CD8D8),
-    onTertiary = Color(0xFF003737),
-    tertiaryContainer = Color(0xFF004F4F),
-    onTertiaryContainer = Color(0xFF70F5F5),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF101318),
-    onBackground = Color(0xFFE1E2E5),
-    surface = Color(0xFF101318),
-    onSurface = Color(0xFFE1E2E5),
-    surfaceVariant = Color(0xFF44474F),
-    onSurfaceVariant = Color(0xFFC5C6D0),
-    outline = Color(0xFF8F909A),
-    outlineVariant = Color(0xFF44474F),
-    surfaceContainer = Color(0xFF1B1F26),
-    surfaceContainerHigh = Color(0xFF22262E),
-    surfaceContainerHighest = Color(0xFF2B303A),
+    primary = Color(0xFFA5BBFF), onPrimary = Color(0xFF002879),
+    primaryContainer = Color(0xFF253963), onPrimaryContainer = Color(0xFFDDE6FF),
+    secondary = Color(0xFFBAC6E0), onSecondary = Color(0xFF243249),
+    secondaryContainer = Color(0xFF293345), onSecondaryContainer = Color(0xFFDFE6F5),
+    tertiary = Color(0xFFE6C275), onTertiary = Color(0xFF3C2B00),
+    tertiaryContainer = Color(0xFF54431E), onTertiaryContainer = Color(0xFFFFE8B4),
+    background = Color(0xFF11151B), onBackground = Color(0xFFE5E9F1),
+    surface = Color(0xFF171C25), onSurface = Color(0xFFE5E9F1),
+    surfaceVariant = Color(0xFF2A313E), onSurfaceVariant = Color(0xFFB7C0CF),
+    outline = Color(0xFF8D97A8), outlineVariant = Color(0xFF333C4B),
+    surfaceContainerLowest = Color(0xFF0D1117), surfaceContainerLow = Color(0xFF171C25),
+    surfaceContainer = Color(0xFF1C2330), surfaceContainerHigh = Color(0xFF262F3F),
+    surfaceContainerHighest = Color(0xFF303B4E),
 )
 
 val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp),
+    extraSmall = RoundedCornerShape(6.dp), small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(24.dp),
+)
+
+private val AppTypography = Typography(
+    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 22.sp),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
+    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
+    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
 )
 
 @Composable
 fun LanStashTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // 禁用系统随机动态调色，保持一致的定制工程美学
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colors = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColors
-        else -> LightColors
-    }
-    MaterialTheme(
-        colorScheme = colors,
-        shapes = AppShapes,
-        typography = MaterialTheme.typography,
-        content = content,
-    )
+    val colors = if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (darkTheme) dynamicDarkColorScheme(LocalContext.current) else dynamicLightColorScheme(LocalContext.current)
+    } else if (darkTheme) DarkColors else LightColors
+    MaterialTheme(colorScheme = colors, shapes = AppShapes, typography = AppTypography, content = content)
 }
-

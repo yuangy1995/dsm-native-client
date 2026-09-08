@@ -45,15 +45,18 @@ class WorkspaceNasActionsTest {
             }
         }
 
-        rule.onNodeWithContentDescription(context.getString(R.string.open_navigation)).performClick()
+        rule.onNodeWithText("Synthetic").performClick()
         rule.onNodeWithText(context.getString(R.string.switch_nas_description)).assertIsDisplayed()
         rule.onNodeWithText(context.getString(R.string.switch_nas))
             .assertIsDisplayed()
             .performClick()
+        rule.onNodeWithText("Synthetic").performClick()
         rule.onNodeWithText(context.getString(R.string.sign_out_description))
             .assertIsDisplayed()
             .performClick()
 
+        rule.runOnIdle { assertEquals(0, logoutCount) }
+        rule.onNodeWithText(context.getString(R.string.sign_out_description)).performClick()
         rule.runOnIdle {
             assertEquals(1, switchCount)
             assertEquals(1, logoutCount)
@@ -86,7 +89,7 @@ class WorkspaceNasActionsTest {
             }
         }
 
-        rule.onNodeWithContentDescription(context.getString(R.string.open_navigation)).performClick()
+        rule.onNodeWithText("Synthetic busy").performClick()
         rule.onNodeWithText(context.getString(R.string.switch_nas)).assertIsNotEnabled()
         rule.onNodeWithText(context.getString(R.string.sign_out_description)).assertIsNotEnabled()
     }

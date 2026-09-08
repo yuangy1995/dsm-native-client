@@ -1,681 +1,311 @@
 package io.github.qwertyuiop1995.dsmnativeclient.ui.login
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image as FoundationImage
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ListAlt
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AdminPanelSettings
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Dns
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.HourglassTop
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.NetworkCheck
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.outlined.SwapVert
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.UploadFile
-import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.annotation.StringRes
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import io.github.qwertyuiop1995.dsmnativeclient.AppViewModel
-import io.github.qwertyuiop1995.dsmnativeclient.Loadable
 import io.github.qwertyuiop1995.dsmnativeclient.LoginState
 import io.github.qwertyuiop1995.dsmnativeclient.R
-import io.github.qwertyuiop1995.dsmnativeclient.WorkspaceState
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ContainerOverview
-import io.github.qwertyuiop1995.dsmnativeclient.domain.DownloadTask
-import io.github.qwertyuiop1995.dsmnativeclient.domain.FileItem
-import io.github.qwertyuiop1995.dsmnativeclient.domain.LogEntry
-import io.github.qwertyuiop1995.dsmnativeclient.domain.LogLevel
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResource
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ManagedResourceLabel
-import io.github.qwertyuiop1995.dsmnativeclient.domain.Module
 import io.github.qwertyuiop1995.dsmnativeclient.domain.NasProfile
-import io.github.qwertyuiop1995.dsmnativeclient.domain.NasSettingsSnapshot
-import io.github.qwertyuiop1995.dsmnativeclient.domain.ResourceState
-import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferState
-import io.github.qwertyuiop1995.dsmnativeclient.domain.TransferDirection
-import io.github.qwertyuiop1995.dsmnativeclient.domain.VirtualMachineOverview
-import io.github.qwertyuiop1995.dsmnativeclient.network.ConnectionStatus
 import io.github.qwertyuiop1995.dsmnativeclient.localization.localize
-import io.github.qwertyuiop1995.dsmnativeclient.ui.downloads.DownloadsScreen
-import io.github.qwertyuiop1995.dsmnativeclient.ui.nas.NasSettingsScreen
-import io.github.qwertyuiop1995.dsmnativeclient.ui.settings.LanguageMenu
-import io.github.qwertyuiop1995.dsmnativeclient.ui.settings.SettingsScreen
-import io.github.qwertyuiop1995.dsmnativeclient.ui.services.ContainersScreen
-import io.github.qwertyuiop1995.dsmnativeclient.ui.services.VirtualMachinesScreen
-import io.github.qwertyuiop1995.dsmnativeclient.ui.transfers.TransfersScreen
-import java.text.DateFormat
-import java.util.Date
-
-
+import io.github.qwertyuiop1995.dsmnativeclient.network.ConnectionStatus
 import io.github.qwertyuiop1995.dsmnativeclient.ui.ConfirmDialog
 import io.github.qwertyuiop1995.dsmnativeclient.ui.ErrorBanner
+import io.github.qwertyuiop1995.dsmnativeclient.ui.components.*
+import io.github.qwertyuiop1995.dsmnativeclient.ui.settings.LanguageMenu
 
 @Composable
 internal fun LoginScreen(state: LoginState, model: AppViewModel) {
-    val selectedProfileId = state.selectedProfileId
-    val selectedProfile = state.profiles.firstOrNull { it.id == selectedProfileId }
-    var name by rememberSaveable(selectedProfileId) { mutableStateOf(selectedProfile?.name.orEmpty()) }
-    var address by rememberSaveable(selectedProfileId) { mutableStateOf(selectedProfile?.address.orEmpty()) }
-    var port by rememberSaveable(selectedProfileId) {
-        mutableStateOf(selectedProfile?.port?.toString().orEmpty())
+    val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId }
+    var formVisible by rememberSaveable { mutableStateOf(state.profiles.isEmpty()) }
+    var removal by remember { mutableStateOf<NasProfile?>(null) }
+    LaunchedEffect(state.error, state.needsOtp) {
+        if (state.error != null || state.needsOtp) formVisible = true
     }
-    var username by rememberSaveable(selectedProfileId) {
-        mutableStateOf(selectedProfile?.username.orEmpty())
+    BackHandler(enabled = formVisible && state.profiles.isNotEmpty() && !state.isConnecting) { formVisible = false }
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        if (formVisible) {
+            ConnectionForm(
+                state = state, profile = profile,
+                onBack = if (state.profiles.isNotEmpty()) ({ formVisible = false }) else null,
+                onConnect = { name, address, port, username, password, otp, remember, automatic ->
+                    model.connect(state.selectedProfileId, name, address, port, username, password, otp, remember, automatic)
+                },
+            )
+        } else {
+            SavedDevices(
+                state = state,
+                onSelect = { model.selectProfile(it); formVisible = true },
+                onConnect = { model.restore(it) },
+                onRemove = { removal = it },
+                onAdd = { model.newProfile(); formVisible = true },
+            )
+        }
     }
-    // 密码和一次性验证码只保留在当前组合生命周期内，不进入 Activity SavedState。
-    var password by remember(selectedProfileId) { mutableStateOf(state.savedPassword) }
-    var otp by remember(selectedProfileId) { mutableStateOf("") }
-    var rememberPassword by rememberSaveable(selectedProfileId) {
-        mutableStateOf(state.rememberPassword)
+    if (state.isConnecting) LoginConnectionOverlay(
+        status = state.connectionStatus,
+        canCancel = state.connectionStatus != null,
+        onCancel = { model.cancelLogin() },
+    )
+    removal?.let { target ->
+        ConfirmDialog(
+            title = stringResource(R.string.remove_profile_title, target.name),
+            message = stringResource(R.string.remove_profile_message),
+            confirm = stringResource(R.string.remove), destructive = true,
+            onConfirm = { model.removeProfile(target); removal = null },
+            onDismiss = { removal = null },
+        )
     }
-    var autoLoginEnabled by rememberSaveable(selectedProfileId) {
-        mutableStateOf(state.autoLoginEnabled)
-    }
-    var profileToRemove by remember { mutableStateOf<NasProfile?>(null) }
-    val focusManager = LocalFocusManager.current
-    val localizedLoginError = state.error?.localize(LocalContext.current)?.combined
+}
 
-    LaunchedEffect(selectedProfileId, state.savedPassword) {
-        password = state.savedPassword
-        otp = ""
-        rememberPassword = state.rememberPassword
-        autoLoginEnabled = state.autoLoginEnabled
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
-    ) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val wide = maxWidth >= 768.dp
-            val loginWidth = if (wide) 460.dp else maxWidth
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = if (wide) 48.dp else 20.dp, vertical = 24.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (wide) {
-                    Column(
-                        modifier = Modifier.width(320.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
-                    ) {
-                        BrandHeader(large = true)
-                        if (state.profiles.isNotEmpty()) {
-                            Text(
-                                stringResource(R.string.saved_nas_devices),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.semantics { heading() },
-                            )
-                            LazyColumn(
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.weight(1f, fill = false),
-                            ) {
-                                items(state.profiles, key = NasProfile::id) { profile ->
-                                    SavedProfileCard(
-                                        profile = profile,
-                                        selected = profile.id == selectedProfileId,
-                                        onSelect = { model.selectProfile(profile) },
-                                        onConnect = { model.restore(profile) },
-                                        onRemove = { profileToRemove = profile },
-                                    )
-                                }
+@Composable
+private fun SavedDevices(
+    state: LoginState,
+    onSelect: (NasProfile) -> Unit,
+    onConnect: (NasProfile) -> Unit,
+    onRemove: (NasProfile) -> Unit,
+    onAdd: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        ClientToolbar(stringResource(R.string.app_name), actions = { LanguageMenu() })
+        HorizontalDivider()
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            item {
+                Text(stringResource(R.string.client_login_choose), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.client_login_choose_hint), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            }
+            items(state.profiles, key = NasProfile::id) { profile ->
+                var menu by remember { mutableStateOf(false) }
+                ClientGroup {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Dns, null, Modifier.size(40.dp))
+                        TextButton(onClick = { onSelect(profile) }, modifier = Modifier.weight(1f)) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(profile.name, color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.SemiBold)
+                                Text(stringResource(R.string.client_saved_device),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        OutlinedButton(onClick = { onConnect(profile) }, enabled = !state.isConnecting,
+                            contentPadding = PaddingValues(horizontal = 12.dp)) { Text(stringResource(R.string.connect)) }
+                        Box {
+                            IconButton(onClick = { menu = true }) {
+                                Icon(Icons.Outlined.MoreVert, stringResource(R.string.client_device_actions))
+                            }
+                            DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.edit)) },
+                                    onClick = { menu = false; onSelect(profile) })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.remove_saved_nas)) },
+                                    onClick = { menu = false; onRemove(profile) })
                             }
                         }
                     }
-                    Spacer(Modifier.width(56.dp))
                 }
-                LoginForm(
-                    modifier = Modifier.width(loginWidth),
-                    showBrand = !wide,
-                    name = name,
-                    address = address,
-                    port = port,
-                    username = username,
-                    password = password,
-                    otp = otp,
-                    rememberPassword = rememberPassword,
-                    autoLoginEnabled = autoLoginEnabled,
-                    needsOtp = state.needsOtp,
-                    isConnecting = state.isConnecting,
-                    connectionStatus = state.connectionStatus,
-                    error = localizedLoginError,
-                    onName = { name = it },
-                    onAddress = { address = it },
-                    onPort = { port = it.filter(Char::isDigit) },
-                    onUsername = { username = it },
-                    onPassword = { password = it },
-                    onOtp = { otp = it.filter(Char::isDigit) },
-                    onRememberPassword = {
-                        rememberPassword = it
-                        if (!it) autoLoginEnabled = false
-                    },
-                    onAutoLogin = {
-                        autoLoginEnabled = it
-                        if (it) rememberPassword = true
-                    },
-                    onConnect = {
-                        focusManager.clearFocus()
-                        model.connect(
-                            selectedProfileId,
-                            name,
-                            address,
-                            port,
-                            username,
-                            password,
-                            otp,
-                            rememberPassword,
-                            autoLoginEnabled,
-                        )
-                    },
-                )
+            }
+            item {
+                OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Icon(Icons.Outlined.Add, null)
+                    Text(stringResource(R.string.client_add_nas), Modifier.padding(start = 8.dp))
+                }
             }
         }
-        LanguageMenu(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp),
-        )
-    }
-
-    profileToRemove?.let { profile ->
-        ConfirmDialog(
-            title = stringResource(R.string.remove_profile_title, profile.name),
-            message = stringResource(R.string.remove_profile_message),
-            confirm = stringResource(R.string.remove),
-            destructive = true,
-            onConfirm = {
-                model.removeProfile(profile)
-                profileToRemove = null
-            },
-            onDismiss = { profileToRemove = null },
-        )
+        Text(stringResource(R.string.client_saved_password_note), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp))
     }
 }
 
 @Composable
-private fun BrandHeader(large: Boolean = false) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        FoundationImage(
-            painter = painterResource(R.drawable.brand_logo),
-            contentDescription = null,
-            modifier = Modifier
-                .size(if (large) 68.dp else 56.dp)
-                .clip(RoundedCornerShape(if (large) 20.dp else 16.dp)),
-        )
-        Column {
-            Text(
-                stringResource(R.string.app_name),
-                style = if (large) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                stringResource(R.string.brand_tagline),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium,
-            )
-        }
-    }
-}
-
-@Composable
-private fun LoginForm(
-    modifier: Modifier,
-    showBrand: Boolean,
-    name: String,
-    address: String,
-    port: String,
-    username: String,
-    password: String,
-    otp: String,
-    rememberPassword: Boolean,
-    autoLoginEnabled: Boolean,
-    needsOtp: Boolean,
-    isConnecting: Boolean,
-    connectionStatus: ConnectionStatus?,
-    error: String?,
-    onName: (String) -> Unit,
-    onAddress: (String) -> Unit,
-    onPort: (String) -> Unit,
-    onUsername: (String) -> Unit,
-    onPassword: (String) -> Unit,
-    onOtp: (String) -> Unit,
-    onRememberPassword: (Boolean) -> Unit,
-    onAutoLogin: (Boolean) -> Unit,
-    onConnect: () -> Unit,
+private fun ConnectionForm(
+    state: LoginState,
+    profile: NasProfile?,
+    onBack: (() -> Unit)?,
+    onConnect: (String, String, String, String, String, String, Boolean, Boolean) -> Unit,
 ) {
-    var showsAdvancedSettings by rememberSaveable { mutableStateOf(false) }
-    Card(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .imePadding()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            if (showBrand) {
-                BrandHeader()
-                Spacer(Modifier.height(4.dp))
+    val profileId = state.selectedProfileId
+    var name by rememberSaveable(profileId) { mutableStateOf(profile?.name.orEmpty()) }
+    var address by rememberSaveable(profileId) { mutableStateOf(profile?.address.orEmpty()) }
+    var port by rememberSaveable(profileId) { mutableStateOf(profile?.port?.toString().orEmpty()) }
+    var username by rememberSaveable(profileId) { mutableStateOf(profile?.username.orEmpty()) }
+    // 密码与验证码只留在当前组合内，绝不进入 Activity SavedState。
+    var password by remember(profileId) { mutableStateOf(state.savedPassword) }
+    var otp by remember(profileId) { mutableStateOf("") }
+    var remembersPassword by rememberSaveable(profileId) { mutableStateOf(state.rememberPassword) }
+    var automatic by rememberSaveable(profileId) { mutableStateOf(state.autoLoginEnabled) }
+    var advanced by rememberSaveable { mutableStateOf(false) }
+    var passwordVisible by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val otpFocus = remember { FocusRequester() }
+    LaunchedEffect(profileId, state.savedPassword) {
+        password = state.savedPassword
+        otp = ""
+        remembersPassword = state.rememberPassword
+        automatic = state.autoLoginEnabled
+    }
+    val submit: () -> Unit = {
+        if (!state.isConnecting) {
+            focus.clearFocus(); keyboard?.hide()
+            onConnect(name, address, port, username, password, otp, remembersPassword, automatic)
+        }
+    }
+    Scaffold(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(),
+        contentWindowInsets = WindowInsets(0),
+        topBar = { ClientToolbar(stringResource(R.string.client_connect_nas), onBack, actions = { LanguageMenu() }) },
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Button(onClick = submit, enabled = !state.isConnecting,
+                    modifier = Modifier.fillMaxWidth().padding(20.dp).heightIn(min = 52.dp)) {
+                    Text(stringResource(R.string.connect))
+                }
             }
-            Text(
-                stringResource(R.string.connect_synology_nas),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.semantics { heading() },
-            )
-            OutlinedTextField(
-                value = name,
-                onValueChange = onName,
-                label = { Text(stringResource(R.string.display_name)) },
-                singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("login_name"),
-            )
-            OutlinedTextField(
-                value = address,
-                onValueChange = onAddress,
-                label = { Text(stringResource(R.string.nas_address_or_quickconnect)) },
-                supportingText = {
-                    Text(stringResource(R.string.nas_address_example))
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Next,
-                ),
-                singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("login_address"),
-            )
-            OutlinedTextField(
-                value = username,
-                onValueChange = onUsername,
-                label = { Text(stringResource(R.string.account)) },
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            .padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Outlined.Dns, null, Modifier.size(40.dp))
+                Text(name.ifBlank { stringResource(R.string.client_new_nas) },
+                    style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                IconButton(onClick = { advanced = !advanced }) {
+                    Icon(Icons.Outlined.Edit, stringResource(R.string.display_name))
+                }
+            }
+            OutlinedTextField(address, { address = it }, enabled = !state.isConnecting, label = { Text(stringResource(R.string.nas_address_or_quickconnect)) },
+                singleLine = true, shape = MaterialTheme.shapes.small,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+                modifier = Modifier.fillMaxWidth().testTag("login_address"))
+            OutlinedTextField(username, { username = it }, enabled = !state.isConnecting, label = { Text(stringResource(R.string.account)) },
+                singleLine = true, shape = MaterialTheme.shapes.small,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("login_username"),
-            )
-            OutlinedTextField(
-                value = password,
-                onValueChange = onPassword,
-                label = { Text(stringResource(R.string.password)) },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = if (needsOtp) ImeAction.Next else ImeAction.Done,
-                ),
-                keyboardActions = KeyboardActions(onDone = { onConnect() }),
-                singleLine = true,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("login_password"),
-            )
-            if (needsOtp || otp.isNotEmpty()) {
-                OutlinedTextField(
-                    value = otp,
-                    onValueChange = onOtp,
-                    label = { Text(stringResource(R.string.two_factor_code)) },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.NumberPassword,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { onConnect() }),
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("login_otp"),
-                )
-            }
-
-            // 封装漂亮的控制开关卡片
-            Card(
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .clip(MaterialTheme.shapes.small)
-                            .clickable(role = Role.Switch) { onRememberPassword(!rememberPassword) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Switch(checked = rememberPassword, onCheckedChange = null)
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(stringResource(R.string.remember_password), fontWeight = FontWeight.Medium)
-                            Text(
-                                stringResource(R.string.password_keystore_note),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                modifier = Modifier.fillMaxWidth().testTag("login_username"))
+            OutlinedTextField(password, { password = it }, enabled = !state.isConnecting, label = { Text(stringResource(R.string.password)) },
+                singleLine = true, shape = MaterialTheme.shapes.small,
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { passwordVisible = !passwordVisible }, enabled = !state.isConnecting) {
+                        Icon(if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            stringResource(if (passwordVisible) R.string.client_hide_password else R.string.client_show_password))
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .clip(MaterialTheme.shapes.small)
-                            .clickable(role = Role.Switch) { onAutoLogin(!autoLoginEnabled) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Switch(checked = autoLoginEnabled, onCheckedChange = null)
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(stringResource(R.string.auto_login), fontWeight = FontWeight.Medium)
-                            Text(
-                                stringResource(R.string.auto_login_note),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password,
+                    imeAction = if (state.needsOtp) ImeAction.Next else ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+                modifier = Modifier.fillMaxWidth().testTag("login_password"))
+            if (state.needsOtp) {
+                OutlinedTextField(otp, { otp = it.filter(Char::isDigit) }, enabled = !state.isConnecting,
+                label = { Text(stringResource(R.string.two_factor_code)) }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(otpFocus).testTag("login_otp"))
+                // 焦点请求必须在 Scaffold 的内容子组合挂载后执行。
+                LaunchedEffect(state.isConnecting) { if (!state.isConnecting) otpFocus.requestFocus() }
             }
-
-            TextButton(
-                onClick = { showsAdvancedSettings = !showsAdvancedSettings },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (showsAdvancedSettings) stringResource(R.string.collapse_advanced_connection_settings) else stringResource(R.string.advanced_connection_settings))
+            LoginPreference(stringResource(R.string.remember_password), remembersPassword, !state.isConnecting) {
+                remembersPassword = it
+                if (!it) automatic = false
             }
-            if (showsAdvancedSettings) {
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = onPort,
-                    label = { Text(stringResource(R.string.custom_https_port)) },
+            LoginPreference(stringResource(R.string.auto_login), automatic, !state.isConnecting) {
+                automatic = it
+                if (it) remembersPassword = true
+            }
+            TextButton(onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.client_more_connection_options), modifier = Modifier.weight(1f))
+                Icon(if (advanced) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null)
+            }
+            if (advanced) {
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.display_name)) },
+                    singleLine = true, modifier = Modifier.fillMaxWidth().testTag("login_name"))
+                OutlinedTextField(port, { port = it.filter(Char::isDigit) },
+                    label = { Text(stringResource(R.string.custom_https_port)) }, singleLine = true,
                     supportingText = { Text(stringResource(R.string.custom_https_port_note)) },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    singleLine = true,
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth())
             }
-            error?.let { ErrorBanner(it) }
-            if (isConnecting && connectionStatus != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(vertical = 4.dp),
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        connectionStatus.displayText(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    )
-                }
-            }
-            Button(
-                onClick = onConnect,
-                enabled = !isConnecting,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-            ) {
-                if (isConnecting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                }
-                Text(
-                    if (isConnecting) stringResource(R.string.connecting) else stringResource(R.string.connect),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            state.error?.let { ErrorBanner(it.localize(LocalContext.current).combined) }
+            Text(stringResource(R.string.client_saved_password_note), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun ConnectionStatus.displayText(): String = stringResource(
-    when (this) {
-        ConnectionStatus.PREPARING -> R.string.status_preparing_connection
-        ConnectionStatus.CONNECTING_DIRECT -> R.string.status_connecting_nas
-        ConnectionStatus.LOOKING_UP_QUICK_CONNECT -> R.string.status_looking_up_quickconnect
-        ConnectionStatus.TRYING_LOCAL -> R.string.status_trying_local
-        ConnectionStatus.TRYING_EXTERNAL -> R.string.status_trying_external
-        ConnectionStatus.ESTABLISHING_RELAY -> R.string.status_establishing_relay
-        ConnectionStatus.RESTORING_SESSION -> R.string.status_restoring_session
+private fun LoginPreference(title: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, enabled = enabled,
+        role = Role.Switch, onValueChange = onChange), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Switch(checked, onCheckedChange = null, enabled = enabled)
     }
-)
+}
 
 @Composable
-private fun SavedProfileCard(
-    profile: NasProfile,
-    selected: Boolean,
-    onSelect: () -> Unit,
-    onConnect: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onSelect),
-        shape = MaterialTheme.shapes.medium,
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainer
-            }
-        ),
-        border = if (selected) {
-            androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
-        } else null,
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        else MaterialTheme.colorScheme.surfaceContainerHigh
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Outlined.Storage,
-                    contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    profile.name,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    profile.username,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = onConnect) {
-                Icon(
-                    Icons.Outlined.PlayArrow,
-                    contentDescription = stringResource(R.string.connect_saved_login),
-                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Outlined.DeleteOutline,
-                    contentDescription = stringResource(R.string.remove_saved_nas),
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                )
+internal fun LoginConnectionOverlay(status: ConnectionStatus?, canCancel: Boolean, onCancel: () -> Unit) {
+    Dialog(onDismissRequest = { if (canCancel) onCancel() },
+        properties = DialogProperties(dismissOnBackPress = canCancel, dismissOnClickOutside = false)) {
+        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.fillMaxSize(), strokeWidth = 3.dp,
+                        trackColor = MaterialTheme.colorScheme.primaryContainer)
+                    Icon(Icons.Outlined.Dns, null, Modifier.size(28.dp))
+                }
+                Text(stringResource(if (status == null) R.string.client_switching_nas else R.string.client_connecting),
+                    style = MaterialTheme.typography.titleMedium)
+                if (status != null) Text(stringResource(when (status) {
+                    ConnectionStatus.AUTHENTICATING -> R.string.client_authenticating
+                    ConnectionStatus.PREPARING -> R.string.status_preparing_connection
+                    ConnectionStatus.CONNECTING_DIRECT -> R.string.status_connecting_nas
+                    ConnectionStatus.LOOKING_UP_QUICK_CONNECT -> R.string.status_looking_up_quickconnect
+                    ConnectionStatus.TRYING_LOCAL -> R.string.status_trying_local
+                    ConnectionStatus.TRYING_EXTERNAL -> R.string.status_trying_external
+                    ConnectionStatus.ESTABLISHING_RELAY -> R.string.status_establishing_relay
+                    ConnectionStatus.RESTORING_SESSION -> R.string.status_restoring_session
+                }), style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.client_connecting_hint), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (canCancel) TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(stringResource(R.string.client_cancel_connection))
+                }
             }
         }
     }

@@ -65,30 +65,7 @@ import io.github.qwertyuiop1995.dsmnativeclient.ui.services.LogList
 @Composable
 internal fun NasSettingsScreen(state: WorkspaceState, model: AppViewModel) {
     val tab = state.nasPerformance.selectedTab.ordinal
-    val titles = listOf(
-        stringResource(R.string.overview),
-        stringResource(R.string.performance),
-        stringResource(R.string.storage),
-        stringResource(R.string.packages),
-        stringResource(R.string.account),
-        stringResource(R.string.logs),
-        stringResource(R.string.connections),
-        stringResource(R.string.services),
-        stringResource(R.string.region_and_time),
-        stringResource(R.string.networks),
-        stringResource(R.string.security),
-        stringResource(R.string.hardware_and_power),
-    )
     Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
-            titles.forEachIndexed { index, title ->
-                Tab(
-                    selected = tab == index,
-                    onClick = { model.selectNasSettingsTab(NasSettingsTab.entries[index]) },
-                    text = { Text(title) },
-                )
-            }
-        }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LoadableContent(
                 value = state.nasSettings,

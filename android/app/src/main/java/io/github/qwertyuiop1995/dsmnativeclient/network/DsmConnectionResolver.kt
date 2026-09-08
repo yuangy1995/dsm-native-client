@@ -19,6 +19,7 @@ enum class ConnectionStatus {
     TRYING_EXTERNAL,
     ESTABLISHING_RELAY,
     RESTORING_SESSION,
+    AUTHENTICATING,
 }
 
 /**

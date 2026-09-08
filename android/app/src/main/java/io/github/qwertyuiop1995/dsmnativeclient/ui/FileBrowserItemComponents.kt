@@ -24,6 +24,8 @@ import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -128,7 +130,10 @@ internal fun FileItems(
                     FileItemThumbnail(item, state, model)
                 },
                 trailingContent = {
-                    if (!isSelected && selectedPaths.isEmpty()) {
+                    if (selectedPaths.isNotEmpty()) Checkbox(isSelected, onCheckedChange = null)
+                    else if (item.isDirectory && state.fileBrowser.path.isBlank()) {
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null)
+                    } else {
                         IconButton(onClick = { onSelect(item) }) {
                             Icon(
                                 Icons.Outlined.MoreVert,
@@ -157,8 +162,8 @@ internal fun FileItems(
                                 onPreview(item)
                             }
                         },
-                        onLongClickLabel = selectItemLabel,
-                        onLongClick = { onToggleSelection(item) },
+                        onLongClickLabel = stringResource(R.string.more_actions),
+                        onLongClick = { onSelect(item) },
                     ).semantics { selected = isSelected },
             )
             HorizontalDivider(
@@ -199,8 +204,8 @@ internal fun FileGridItem(
                         onPreview(item)
                     }
                 },
-                onLongClickLabel = selectItemLabel,
-                onLongClick = { onToggleSelection(item) },
+                onLongClickLabel = stringResource(R.string.more_actions),
+                onLongClick = { onSelect(item) },
             ).semantics { selected = isSelected },
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
@@ -221,7 +226,8 @@ internal fun FileGridItem(
                 Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) {
                     FileItemThumbnail(item, state, model)
                 }
-                if (state.fileBrowser.selectedPaths.isEmpty()) {
+                if (state.fileBrowser.selectedPaths.isNotEmpty()) Checkbox(isSelected, onCheckedChange = null)
+                else {
                     IconButton(
                         onClick = { onSelect(item) },
                         modifier = Modifier.size(48.dp),
@@ -286,7 +292,7 @@ internal fun FileItemThumbnail(
     val bitmap = if (canLoadThumbnail) model.thumbnail(item.path, state.profile.id) else null
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(44.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(
                 if (item.isDirectory) {

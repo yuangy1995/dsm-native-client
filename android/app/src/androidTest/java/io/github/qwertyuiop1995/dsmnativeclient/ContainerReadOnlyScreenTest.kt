@@ -8,6 +8,9 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.isSelected
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -73,6 +76,7 @@ class ContainerReadOnlyScreenTest {
         rule.onNodeWithText("Synthetic image").assertIsDisplayed()
         rule.onAllNodesWithText(context.getString(R.string.delete)).assertCountEquals(0)
 
+        rule.onNodeWithContentDescription(context.getString(R.string.go_up)).performClick()
         rule.onNodeWithText(context.getString(R.string.networks)).performClick()
         rule.onNodeWithText("Synthetic network").assertIsDisplayed()
         rule.onAllNodesWithText(context.getString(R.string.new_network)).assertCountEquals(0)
@@ -181,7 +185,7 @@ class ContainerReadOnlyScreenTest {
         rule.onNodeWithText("synthetic/image-1")
             .assertIsDisplayed()
             .assertIsSelected()
-        rule.onNodeWithText(context.getString(R.string.container_registry_official))
+        rule.onNode(hasText(context.getString(R.string.container_registry_official)) and hasAnyAncestor(isSelected()), useUnmergedTree = true)
             .assertIsDisplayed()
         rule.onNodeWithTag(CONTAINER_REGISTRY_SCROLL_TEST_TAG)
             .performScrollToNode(hasText(tags.last()))

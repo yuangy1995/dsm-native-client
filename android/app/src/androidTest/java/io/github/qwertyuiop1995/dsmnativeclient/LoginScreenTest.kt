@@ -8,6 +8,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -26,20 +28,20 @@ class LoginScreenTest {
     @Test
     fun 登录页显示完整必要字段和主操作() {
         fun text(id: Int) = rule.activity.getString(id)
-        rule.onNodeWithText(text(R.string.connect_synology_nas)).assertIsDisplayed()
+        rule.onNodeWithText(text(R.string.client_connect_nas)).assertIsDisplayed()
         rule.onNodeWithText(text(R.string.nas_address_or_quickconnect)).assertIsDisplayed()
         rule.onNodeWithText(text(R.string.account)).assertIsDisplayed()
         rule.onNodeWithText(text(R.string.password)).assertIsDisplayed()
-        rule.onNodeWithText(text(R.string.remember_password)).assertIsDisplayed()
+        rule.onNodeWithText(text(R.string.remember_password)).performScrollTo().assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
-        rule.onNodeWithText(text(R.string.auto_login)).assertIsDisplayed()
+        rule.onNodeWithText(text(R.string.auto_login)).performScrollTo().assertIsDisplayed()
         rule.onAllNodesWithText(text(R.string.custom_https_port)).assertCountEquals(0)
-        rule.onNodeWithText(text(R.string.advanced_connection_settings)).performScrollTo().performClick()
+        rule.onNodeWithText(text(R.string.client_more_connection_options)).performScrollTo().performClick()
         rule.waitUntil(timeoutMillis = 5_000) {
             rule.onAllNodesWithText(text(R.string.custom_https_port)).fetchSemanticsNodes().isNotEmpty()
         }
         rule.onNodeWithText(text(R.string.custom_https_port)).performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText(text(R.string.connect)).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText(text(R.string.connect)).assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
     }
 
@@ -47,11 +49,13 @@ class LoginScreenTest {
     fun Activity重建仅恢复非敏感登录字段并清空临时凭据() {
         showSyntheticLoginState(needsOtp = true)
 
-        rule.onNodeWithTag("login_name").performTextInput("Synthetic NAS")
-        rule.onNodeWithTag("login_address").performTextInput("nas.example.invalid")
-        rule.onNodeWithTag("login_username").performTextInput("synthetic-user")
-        rule.onNodeWithTag("login_password").performTextInput("temporary-password")
-        rule.onNodeWithTag("login_otp").performTextInput("123456")
+        rule.onNodeWithText(rule.activity.getString(R.string.client_more_connection_options)).performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        rule.onNodeWithTag("login_name").performScrollTo().performTextInput("Synthetic NAS")
+        rule.onNodeWithTag("login_address").performScrollTo().performTextInput("nas.example.invalid")
+        rule.onNodeWithTag("login_username").performScrollTo().performTextInput("synthetic-user")
+        rule.onNodeWithTag("login_password").performScrollTo().performTextInput("temporary-password")
+        rule.onNodeWithTag("login_otp").performScrollTo().performTextInput("123456")
 
         rule.activityRule.scenario.recreate()
         rule.waitForIdle()
