@@ -993,6 +993,66 @@ final class DsmFileRepositoryTests: XCTestCase {
         }
     }
 
+    func test读取官方ACL权限且显式拒绝优先于旧权限字段() async throws {
+        let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"files":[{"path":"/home/allowed.txt","name":"allowed.txt","isdir":false,"additional":{"perm":{"is_acl_mode":true,"acl":{"read":true,"write":true,"del":true}}}},{"path":"/home/denied.txt","name":"denied.txt","isdir":false,"additional":{"perm":{"is_acl_mode":true,"acl":{"read":true,"write":false,"del":false},"adv_right":{"write":true,"delete":true}}}}]}}"#)])
+        let repository = try makeRepository(capabilities: CapabilitySet([
+            DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+        ]), transport: transport)
+        let items = try await repository.getInfo(paths: ["/home/allowed.txt", "/home/denied.txt"])
+        XCTAssertEqual(items.first?.permissions?.canWrite, true)
+        XCTAssertEqual(items.first?.permissions?.canDelete, true)
+        XCTAssertEqual(items.last?.permissions?.canWrite, false)
+        XCTAssertEqual(items.last?.permissions?.canDelete, false)
+    }
+
+    func test详情整体成功但单项不存在时仍返回其他有效文件() async throws {
+        let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"files":[{"path":"/home/missing.txt","code":408},{"path":"/home/kept.txt","name":"kept.txt","isdir":false}]}}"#)])
+        let repository = try makeRepository(capabilities: CapabilitySet([
+            DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+        ]), transport: transport)
+        let items = try await repository.getInfo(paths: ["/home/missing.txt", "/home/kept.txt"])
+        XCTAssertEqual(items.map(\.path), ["/home/kept.txt"])
+    }
+
+    func test详情单项权限错误不得被当作文件不存在() async throws {
+        let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"files":[{"path":"/home/protected.txt","code":407}]}}"#)])
+        let repository = try makeRepository(capabilities: CapabilitySet([
+            DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+        ]), transport: transport)
+        do {
+            _ = try await repository.getInfo(paths: ["/home/protected.txt"])
+            XCTFail("无权限不能等同不存在")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .permissionDenied)
+        }
+    }
+
+    func test删除任务完成后回读逐项408才能确认已不存在() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"taskid":"delete-test"}}"#),
+            response(#"{"success":true,"data":{"finished":true,"found_dir_num":0,"found_file_num":1,"found_file_size":72,"has_dir":false,"path":"/home/test.txt","processed_num":1,"processing_path":"","progress":1,"total":1}}"#),
+            response(#"{"success":true,"data":{"files":[{"path":"/home/test.txt","code":408}]}}"#)
+        ])
+        let repository = try makeDeleteRepository(transport: transport)
+        let result = try await repository.deleteResult(paths: ["/home/test.txt"], progress: { _, _ in })
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        XCTAssertEqual(result.counts.succeeded, 1)
+        XCTAssertEqual(result.counts.unknown, 0)
+    }
+
+    func test删除任务结束但文件仍存在时不能确认成功() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"taskid":"delete-not-applied"}}"#),
+            response(#"{"success":true,"data":{"finished":true,"progress":1,"total":1}}"#),
+            response(#"{"success":true,"data":{"files":[{"path":"/home/still-here.txt","name":"still-here.txt","isdir":false}]}}"#)
+        ])
+        let repository = try makeDeleteRepository(transport: transport)
+        let result = try await repository.deleteResult(paths: ["/home/still-here.txt"], progress: { _, _ in })
+        XCTAssertEqual(result.status, .confirmedFailure)
+        XCTAssertEqual(result.counts.succeeded, 0)
+        XCTAssertEqual(result.counts.failed, 1)
+    }
+
     func test批量详情使用V2百条分块去重并按首次输入顺序返回() async throws {
         let paths = (0...101).map { "/home/item-\($0)" }
         let input = [paths[2], paths[0], paths[2], paths[1]] + Array(paths[3...])
@@ -3823,6 +3883,16 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(result.counts.failed, 1)
         XCTAssertEqual(result.errorCategory, .permission)
         XCTAssertFalse(result.requiresRefresh)
+    }
+
+    func test删除被文件权限禁止时保留明确拒绝而不是未知错误() async throws {
+        let repository = try makeDeleteRepository(transport: MockHTTPTransport(responses: [
+            response(#"{"success":false,"error":{"code":407}}"#)
+        ]))
+        let result = try await repository.deleteResult(paths: ["/home/protected.txt"], progress: { _, _ in })
+        XCTAssertEqual(result.status, .permissionDenied)
+        XCTAssertEqual(result.counts.failed, 1)
+        XCTAssertEqual(result.counts.unknown, 0)
     }
 
     func test删除提交时连接中断保留未确认语义() async throws {

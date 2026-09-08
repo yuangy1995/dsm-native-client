@@ -4,6 +4,7 @@ import DsmLocalization
 
 enum DsmErrorContext {
     case general
+    case fileStation
     case authentication(otpWasSubmitted: Bool)
 }
 
@@ -109,6 +110,10 @@ enum DsmErrorMapper {
             default:
                 break
             }
+        }
+
+        if case .fileStation = context, code == 407 || code == 411 {
+            return apiError(.permissionDenied, false, L10n.string("shared.b99b8ea54fa7ef76"), code, requestID)
         }
 
         switch code {

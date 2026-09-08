@@ -84,15 +84,36 @@ struct LoginView: View {
     @FocusState private var focusedField: Field?
     @State private var confirmsProfileDeletion = false
     @State private var showsAdvancedConnectionSettings = false
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var palette: MacAppearancePalette {
+        MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased)
+    }
 
     var body: some View {
-        NavigationSplitView {
-            profileSidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
-        } detail: {
-            connectionForm
+        VStack(spacing: 0) {
+            Text(L10n.string("app.name"))
+                .font(.system(size: 13, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .allowsHitTesting(false)
+            HStack(spacing: 12) {
+                profileSidebar.frame(width: 241)
+                connectionForm
+                    .fillsAvailableContentArea(alignment: .topLeading)
+                    .background(palette.content)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.edge, lineWidth: 1))
+                    .padding(.trailing, 12)
+            }
+            .padding(.bottom, 12)
         }
-        .navigationSplitViewStyle(.balanced)
+        .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
+        .background(MacWorkspaceWindowChrome(fullSize: true))
+        .ignoresSafeArea(.container, edges: .top)
+        .navigationTitle("")
+        .toolbar(.visible, for: .windowToolbar)
         .sheet(item: $model.pendingCertificate) { prompt in
             CertificateReviewView(
                 prompt: prompt,
@@ -119,31 +140,73 @@ struct LoginView: View {
 
     private var profileSidebar: some View {
         VStack(spacing: 0) {
-            List(selection: $model.selectedProfileID) {
-                Section("NAS") {
-                    ForEach(model.profiles) { profile in
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(profile.displayName)
-                                Text(profile.portOverride.map { "\(profile.host):\($0)" } ?? profile.host)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+            Text(L10n.string("ui.4084e8707628b196"))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+            ScrollView {
+                VStack(spacing: 10) {
+                    if model.profiles.isEmpty {
+                        Text(L10n.string("login.devices.empty"))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .padding(20)
+                    }
+                    ForEach(Array(model.profiles.enumerated()), id: \.element.id) { index, profile in
+                        let selected = profile.id == model.selectedProfileID
+                        Button { model.selectedProfileID = profile.id } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "externaldrive.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                                    .frame(width: 38, height: 44)
+                                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(profile.displayName).font(.system(size: 14, weight: .medium))
+                                    Text(profile.portOverride.map { "\(profile.host):\($0)" } ?? profile.host)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .lineLimit(1)
+                                Spacer(minLength: 0)
                             }
-                        } icon: {
-                            Image(systemName: "externaldrive.connected.to.line.below")
-                                .foregroundStyle(.blue)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .background(selected ? Color.accentColor.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? Color.accentColor.opacity(0.20) : palette.separator.opacity(0.4), lineWidth: 1))
                         }
-                        .tag(profile.id)
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                         .contextMenu {
+                            Button(L10n.string("workspace.device.moveUp")) {
+                                model.moveProfile(from: IndexSet(integer: index), to: index - 1)
+                            }
+                            .disabled(index == 0)
+                            Button(L10n.string("workspace.device.moveDown")) {
+                                model.moveProfile(from: IndexSet(integer: index), to: index + 2)
+                            }
+                            .disabled(index == model.profiles.count - 1)
+                            Divider()
                             Button(L10n.string("ui.937455cd6b3ade37"), role: .destructive) {
                                 model.selectedProfileID = profile.id
                                 model.selectProfile(id: profile.id)
                                 confirmsProfileDeletion = true
                             }
                         }
+                        .draggable(profile.id.uuidString)
+                        .dropDestination(for: String.self) { ids, _ in
+                            guard let value = ids.first, let id = UUID(uuidString: value),
+                                  let source = model.profiles.firstIndex(where: { $0.id == id }),
+                                  source != index else { return false }
+                            model.moveProfile(from: IndexSet(integer: source), to: source < index ? index + 1 : index)
+                            return true
+                        }
                     }
-                    .onMove(perform: model.moveProfile)
                 }
+                .padding(.horizontal, 14)
             }
             .onChange(of: model.selectedProfileID) { _, id in
                 model.selectProfile(id: id)
@@ -164,19 +227,18 @@ struct LoginView: View {
             }
 
             Divider()
-            HStack {
+            VStack(spacing: 12) {
                 Button {
                     model.newProfile()
                     focusedField = .displayName
                 } label: {
                     Label(L10n.string("ui.8249cd04be30c505"), systemImage: "plus")
                 }
-                .buttonStyle(.borderless)
-                Spacer()
+                .buttonStyle(MacToolbarButtonStyle())
                 AppLanguagePicker()
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    .frame(maxWidth: 130)
+                    .frame(maxWidth: .infinity)
             }
             .padding(12)
         }
@@ -184,7 +246,7 @@ struct LoginView: View {
 
     private var connectionForm: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 12) {
                         Image("BrandLogo")
@@ -196,8 +258,6 @@ struct LoginView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(L10n.string("ui.4aeb6d92cbbff699"))
                                 .font(.largeTitle.weight(.semibold))
-                            Text(L10n.string("ui.ef34bfa7f4e92480"))
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -273,9 +333,6 @@ struct LoginView: View {
                                         TextField(L10n.string("ui.7eb336e42cb5076b"), text: $model.port)
                                             .frame(maxWidth: 140)
                                             .focused($focusedField, equals: .port)
-                                        Text(L10n.string("ui.2f7cc5bbb9a3e968"))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -284,7 +341,7 @@ struct LoginView: View {
                             Label(L10n.string("ui.c6d9285846a8f1b4"), systemImage: "gearshape")
                         }
                     }
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
                     .disabled(model.isBusy)
                     .padding(8)
                 } label: {
@@ -316,7 +373,7 @@ struct LoginView: View {
                             )
                             .frame(minWidth: 112)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(MacToolbarButtonStyle(prominent: true))
                         .controlSize(.large)
                         .keyboardShortcut(.defaultAction)
                         .disabled(
@@ -341,11 +398,11 @@ struct LoginView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
-            .padding(40)
-            .frame(maxWidth: 760, alignment: .leading)
+            .padding(32)
+            .frame(maxWidth: 600, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .background(.background)
+        .background(palette.content)
     }
 
     private func formRow<Content: View>(
@@ -353,10 +410,16 @@ struct LoginView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         GridRow {
-            Text(title)
-                .frame(width: 96, alignment: .trailing)
-            content()
-                .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.callout).foregroundStyle(.secondary)
+                content()
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.searchField, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(palette.separator, lineWidth: 1))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -395,7 +458,9 @@ private struct StatusBanner: View {
     }
 }
 
-private struct CertificateReviewView: View {
+struct CertificateReviewView: View {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
     let prompt: CertificatePrompt
     let onCancel: () -> Void
     let onTrust: () -> Void
@@ -413,6 +478,9 @@ private struct CertificateReviewView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
 
             Text(
                 prompt.isCertificateChange
@@ -449,11 +517,13 @@ private struct CertificateReviewView: View {
                     .keyboardShortcut(.cancelAction)
                 if prompt.review.canBePinned {
                     Button(prompt.isCertificateChange ? L10n.string("ui.ad322e611f3195f0") : L10n.string("ui.1f30f490b6eb4a19"), action: onTrust)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 }
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(28)
         .frame(width: 620)
+        .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).content)
     }
 }

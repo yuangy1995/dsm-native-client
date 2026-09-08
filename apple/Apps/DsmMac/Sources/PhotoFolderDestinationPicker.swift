@@ -40,6 +40,8 @@ struct PhotoFolderDestinationPicker: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -49,16 +51,18 @@ struct PhotoFolderDestinationPicker: View {
                 } label: {
                     Image(systemName: "chevron.backward")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MacToolbarButtonStyle())
                 .disabled(!pickerModel.canGoBack)
+                .accessibilityLabel(L10n.string("ui.572cf45ba43634b3"))
 
                 Button {
                     Task { await pickerModel.goUp() }
                 } label: {
                     Image(systemName: "arrow.turn.up.left")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MacToolbarButtonStyle())
                 .disabled(!pickerModel.canGoUp)
+                .accessibilityLabel(L10n.string("ui.8e7847be62b68c2b"))
 
                 Text(pickerModel.locationTitle)
                     .font(.subheadline)
@@ -69,6 +73,7 @@ struct PhotoFolderDestinationPicker: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+            .background(MacGlassSurface(role: .toolbar))
 
             if pickerModel.isLoading && pickerModel.displayedItems.isEmpty {
                 ProgressView(L10n.string("ui.038b9263cfd8c1a8"))
@@ -97,7 +102,7 @@ struct PhotoFolderDestinationPicker: View {
                 Button(L10n.string("ui.21493a0f78021d9b")) {
                     onSelect(pickerModel.currentPath)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(pickerModel.currentPath.isEmpty)
 
                 Spacer()
@@ -106,8 +111,12 @@ struct PhotoFolderDestinationPicker: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 480, minHeight: 400)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .task { await setupPicker() }
     }
 

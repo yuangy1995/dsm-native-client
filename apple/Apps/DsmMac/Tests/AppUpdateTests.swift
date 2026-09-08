@@ -5,6 +5,87 @@ import XCTest
 
 @MainActor
 final class AppUpdateTests: XCTestCase {
+    func test更新说明只显示文本且新检查清除旧版本资料() {
+        let driver = AppUpdateUserDriver(presentsWindows: false)
+        driver.showAvailable(version: "0.3.0", notes: "<p>修复 &amp; 优化</p><p>第二项</p>") { _ in
+            XCTFail("呈现更新说明不能触发安装")
+        }
+        XCTAssertEqual(driver.version, "0.3.0")
+        XCTAssertEqual(driver.releaseNotes, "修复 & 优化\n第二项")
+        driver.showDownloadInitiated {}
+        XCTAssertEqual(driver.version, "0.3.0")
+        driver.showUserInitiatedUpdateCheck {}
+        XCTAssertNil(driver.version)
+        XCTAssertNil(driver.releaseNotes)
+    }
+
+    func test确认下载后重复点击不清除新阶段取消操作() {
+        let driver = AppUpdateUserDriver(presentsWindows: false)
+        var choices: [SPUUserUpdateChoice] = []
+        var cancellations = 0
+        driver.showAvailable(version: "0.3.0", notes: nil) { choice in
+            choices.append(choice)
+            driver.showDownloadInitiated { cancellations += 1 }
+        }
+        XCTAssertNil(driver.releaseNotes)
+        driver.performPrimaryAction()
+        driver.performPrimaryAction()
+        XCTAssertEqual(choices, [.install])
+        XCTAssertEqual(driver.stage, .downloading)
+        driver.performSecondaryAction()
+        XCTAssertEqual(cancellations, 1)
+    }
+
+    func test检查关闭只取消一次并清理进度() {
+        let driver = AppUpdateUserDriver(presentsWindows: false)
+        var cancellations = 0
+        driver.showUserInitiatedUpdateCheck { cancellations += 1 }
+        XCTAssertEqual(driver.stage, .checking)
+        XCTAssertTrue(driver.canDismiss)
+        driver.dismissByUser()
+        driver.dismissByUser()
+        XCTAssertEqual(cancellations, 1)
+        XCTAssertFalse(driver.isWorking)
+        XCTAssertFalse(driver.canDismiss)
+    }
+
+    func test无主操作时的重复点击不能清除下载取消入口() {
+        let driver = AppUpdateUserDriver(presentsWindows: false)
+        var cancellations = 0
+        driver.showDownloadInitiated { cancellations += 1 }
+        driver.performPrimaryAction()
+        XCTAssertEqual(driver.stage, .downloading)
+        XCTAssertEqual(driver.secondaryKey, "updates.cancel")
+        driver.dismissByUser()
+        XCTAssertEqual(cancellations, 1)
+    }
+
+    func test准备和安装阶段不允许关闭但完成后可确认() {
+        let driver = AppUpdateUserDriver(presentsWindows: false)
+        driver.showDownloadDidStartExtractingUpdate()
+        XCTAssertEqual(driver.stage, .preparing)
+        XCTAssertFalse(driver.canDismiss)
+        driver.dismissByUser()
+        XCTAssertTrue(driver.isWorking)
+        var choices: [SPUUserUpdateChoice] = []
+        driver.showReady { choices.append($0) }
+        XCTAssertEqual(driver.stage, .ready)
+        XCTAssertTrue(driver.canDismiss)
+        driver.performPrimaryAction()
+        XCTAssertEqual(driver.stage, .installing)
+        XCTAssertTrue(driver.isRestartRequested)
+        XCTAssertFalse(driver.canDismiss)
+        driver.dismissByUser()
+        XCTAssertEqual(choices, [.install])
+        var acknowledgements = 0
+        driver.showUpdateInstalledAndRelaunched(true) { acknowledgements += 1 }
+        XCTAssertEqual(driver.stage, .completed)
+        XCTAssertFalse(driver.isWorking)
+        driver.dismissByUser()
+        driver.dismissByUser()
+        XCTAssertEqual(acknowledgements, 1)
+    }
+
     func test在线升级只有显式启用且公钥和来源正确时可用() {
         let valid: [String: Any] = [
             "LanStashOnlineUpdatesEnabled": true,

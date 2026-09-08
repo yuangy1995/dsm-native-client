@@ -11,7 +11,16 @@ final class ChatWorkspaceModel {
     private(set) var availability = ChatAvailability(status: .requiresValidation)
     private(set) var conversations: [ChatConversation] = []
     private(set) var users: [ChatUser] = []
-    private(set) var messages: [ChatMessage] = []
+    private(set) var messages: [ChatMessage] = [] {
+        didSet {
+            if let latest = messages.last(where: { $0.deliveryState == .sent }) {
+                conversationPreviewMessages[latest.conversationID] = latest
+            } else if let selectedConversationID {
+                conversationPreviewMessages.removeValue(forKey: selectedConversationID)
+            }
+        }
+    }
+    private var conversationPreviewMessages: [String: ChatMessage] = [:]
     private(set) var selectedConversationID: String?
     private(set) var isLoading = false
     private(set) var isLoadingMessages = false
@@ -103,6 +112,19 @@ final class ChatWorkspaceModel {
 
     var totalUnreadCount: Int {
         conversations.reduce(0) { $0 + $1.unreadCount }
+    }
+
+    func conversationSummary(_ conversation: ChatConversation) -> String {
+        if let message = conversationPreviewMessages[conversation.id] {
+            if message.encryptionState == .notEncrypted || message.encryptionState == .unlocked {
+                if let text = message.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
+                if let poll = message.poll { return poll.question }
+                if !message.attachments.isEmpty { return L10n.string("chat.preview.attachment") }
+            }
+        }
+        if let summary = conversation.lastMessageSummary, !summary.isEmpty { return summary }
+        // 未提供摘要不代表没有历史消息，不能将缺失字段当作空会话。
+        return L10n.string("chat.preview.open")
     }
 
     var workspaceSyncIntervalSeconds: Int {

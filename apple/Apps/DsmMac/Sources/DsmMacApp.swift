@@ -404,6 +404,8 @@ struct DsmMacApp: App {
     var body: some Scene {
         WindowGroup(language.string("app.name")) {
             RootView(model: model)
+                .macAppearanceRoot()
+                .environmentObject(updates)
                 .environment(language)
                 .environment(\.locale, language.locale)
                 .task {
@@ -412,6 +414,7 @@ struct DsmMacApp: App {
                 }
         }
         .defaultSize(width: 1_260, height: 780)
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .commands { AppUpdateCommands(controller: updates) }
     }

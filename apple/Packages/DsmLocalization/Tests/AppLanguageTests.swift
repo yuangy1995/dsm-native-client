@@ -67,6 +67,25 @@ import Testing
     #expect(store.string("settings.language.title") == "语言")
 }
 
+@Test @MainActor func cachedResourceLocationsKeepLanguageAndArgumentsFresh() {
+    let suite = "L10n.bundle-cache.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = AppLanguageStore(defaults: defaults, preferredLanguages: { ["en-US"] }, observesSystemChanges: false)
+    for _ in 0..<3 {
+        store.selection = .english
+        #expect(store.string("settings.language.title") == "Language")
+        #expect(store.string("item.share.named", "first-synthetic").contains("first-synthetic"))
+        let second = store.string("item.share.named", "second-synthetic")
+        #expect(second.contains("second-synthetic"))
+        #expect(!second.contains("first-synthetic"))
+        store.selection = .simplifiedChinese
+        #expect(store.string("settings.language.title") == "语言")
+        #expect(store.string("item.share.named", "第三个示例").contains("第三个示例"))
+        #expect(store.string("missing.synthetic.key") == "missing.synthetic.key")
+    }
+}
+
 @Test @MainActor func localDiskMountTerminologyAndRecoveryMessagesAreBilingual() {
     let suite = "L10n.mount.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!

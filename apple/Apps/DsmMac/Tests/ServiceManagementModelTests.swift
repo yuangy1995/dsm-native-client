@@ -188,7 +188,10 @@ final class ServiceManagementModelTests: XCTestCase {
     }
 }
 
-private actor ServiceManagementRepositoryStub: ServiceManagementRepository {
+// 共用合成套件数据，供模型与页面回归使用。
+actor ServiceManagementRepositoryStub: ServiceManagementRepository {
+    private let virtualMachineStorages: [VirtualizationResource]
+
     private var downloadTasks = [
         DownloadStationTask(
             id: "task-1",
@@ -248,13 +251,15 @@ private actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         virtualMachineStatus: MutationResultStatus = .confirmedSuccess,
         removeVirtualMachineOnDelete: Bool = false,
         secondaryStatus: MutationResultStatus = .confirmedSuccess,
-        removeSecondaryOnDelete: Bool = false
+        removeSecondaryOnDelete: Bool = false,
+        virtualMachineStorages: [VirtualizationResource] = []
     ) {
         self.containerStatus = containerStatus
         self.virtualMachineStatus = virtualMachineStatus
         self.removeVirtualMachineOnDelete = removeVirtualMachineOnDelete
         self.secondaryStatus = secondaryStatus
         self.removeSecondaryOnDelete = removeSecondaryOnDelete
+        self.virtualMachineStorages = virtualMachineStorages
     }
 
     func loadContainerManager() async throws -> ContainerManagerSnapshot {
@@ -283,7 +288,7 @@ private actor ServiceManagementRepositoryStub: ServiceManagementRepository {
             source: .official,
             machines: machines,
             hosts: [],
-            storages: [],
+            storages: virtualMachineStorages,
             networks: virtualMachineNetworks,
             images: virtualMachineImages,
             protectionPlans: [],

@@ -1486,7 +1486,8 @@ private actor ShareAccessRepositoryStub: NasShareAccessRepository {
     }
 }
 
-private actor NasAdministrationRepositoryStub: NasSettingsRepository {
+// 同一合成数据源供模型回归和页面绘制使用，不连接真实 NAS。
+actor NasAdministrationRepositoryStub: NasSettingsRepository {
     private var systemRequests = 0
     private var packageControlRequests = 0
     private var diskTestRequests = 0

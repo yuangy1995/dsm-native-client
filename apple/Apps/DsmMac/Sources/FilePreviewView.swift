@@ -396,15 +396,27 @@ struct FileDetailView: View {
     @State private var decodedPreview: DecodedImage?
     @State private var previewDecodingFailed = false
     @State private var showFullMetadataPopover = false
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        Group {
-            if windowState.isFullScreen, let item = model.selectedItem, supportsFullScreen {
-                fullScreenPreview(item)
-            } else {
-                standardPreview
+        VStack(spacing: 0) {
+            if !windowState.isFullScreen {
+                Color.clear.frame(height: 40).allowsHitTesting(false)
+            }
+            Group {
+                if windowState.isFullScreen, let item = model.selectedItem, supportsFullScreen {
+                    fullScreenPreview(item)
+                } else {
+                    standardPreview
+                }
             }
         }
+        .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
+        .background(MacWorkspaceWindowChrome(fullSize: true))
+        .ignoresSafeArea(.container, edges: .top)
+        .navigationTitle("")
+        .toolbar(.hidden, for: .windowToolbar)
         .background {
             PreviewSpaceShortcutHandler {
                 requestClose()
@@ -431,42 +443,18 @@ struct FileDetailView: View {
 
     private var standardPreview: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(L10n.string("ui.126689cc9d017c4c"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if supportsFullScreen {
-                    Button {
-                        NSApp.keyWindow?.toggleFullScreen(nil)
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 14, weight: .medium))
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut("f", modifiers: [.command, .control])
-                    .help(L10n.string("ui.16611f4f13b21eaa"))
-                    .accessibilityLabel(L10n.string("ui.967a720c0622734e"))
+            if model.selection.count != 1 || model.selectedItem == nil {
+                HStack {
+                    Text(L10n.string("ui.126689cc9d017c4c"))
+                        .font(.headline)
+                    Spacer()
+                    previewWindowActions
                 }
-                Button {
-                    requestClose()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.secondary)
-                        .padding(4)
-                }
-                .buttonStyle(.plain)
-                .disabled(model.isSavingText)
-                .help(L10n.string("ui.f2873f0def187cc5"))
-                .accessibilityLabel(L10n.string("ui.f2873f0def187cc5"))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(MacGlassSurface(role: .toolbar))
+                Divider()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
-            
-            Divider()
 
             Group {
                 if model.selection.count > 1 {
@@ -486,6 +474,41 @@ struct FileDetailView: View {
                 }
             }
             .fillsAvailableContentArea()
+        }
+        .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).content)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).edge, lineWidth: 1))
+        .padding(12)
+        .background(MacGlassSurface(role: .sidebar))
+    }
+
+    private var previewWindowActions: some View {
+        HStack(spacing: 8) {
+                if supportsFullScreen {
+                    Button {
+                        NSApp.keyWindow?.toggleFullScreen(nil)
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 14, weight: .medium))
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(MacToolbarButtonStyle())
+                    .keyboardShortcut("f", modifiers: [.command, .control])
+                    .help(L10n.string("ui.16611f4f13b21eaa"))
+                    .accessibilityLabel(L10n.string("ui.967a720c0622734e"))
+                }
+                Button {
+                    requestClose()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                        .padding(4)
+                }
+                .buttonStyle(MacToolbarButtonStyle())
+                .disabled(model.isSavingText)
+                .help(L10n.string("ui.f2873f0def187cc5"))
+                .accessibilityLabel(L10n.string("ui.f2873f0def187cc5"))
         }
     }
 
@@ -545,7 +568,7 @@ struct FileDetailView: View {
 
     private func detail(for item: FileItem) -> some View {
         VStack(spacing: 0) {
-            // 单行极简 Header：完美集成图标、文件名、LIVE 标记与收藏按钮
+            // 文件信息与窗口操作合并为一个工具栏，保留原收藏、恢复与关闭保护。
             HStack(spacing: 8) {
                 FileIcon(item: item)
                     .font(.system(size: 16))
@@ -590,9 +613,11 @@ struct FileDetailView: View {
                     .buttonStyle(.plain)
                     .help(isFavorite ? L10n.string("ui.d9eba5226c5df4c4") : L10n.string("ui.0cfc396e4aa347ad"))
                 }
+                previewWindowActions
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -643,7 +668,7 @@ struct FileDetailView: View {
             Group {
                 if let decoded = decodedPreview {
                     ZStack {
-                        FittedImagePreview(cgImage: decoded.cgImage, orientation: decoded.orientation)
+                        FittedImagePreview(cgImage: decoded.cgImage, orientation: decoded.orientation, showsControls: !windowState.isFullScreen)
                             .id(item.id)
                         if livePhotoPlayer != nil {
                             VideoPlayerRepresentable(
@@ -994,8 +1019,9 @@ struct FileDetailView: View {
             Image(systemName: systemImage)
                 .font(.system(size: 18, weight: .semibold))
                 .frame(width: 44, height: 44)
-                .background(.regularMaterial, in: Circle())
-                .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
+                .background {
+                    MacGlassSurface(role: .selectionBar).clipShape(RoundedRectangle(cornerRadius: 12))
+                }
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -1053,7 +1079,7 @@ struct FileDetailView: View {
     }
 }
 
-private struct PreviewSpaceShortcutHandler: NSViewRepresentable {
+struct PreviewSpaceShortcutHandler: NSViewRepresentable {
     let onSpace: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onSpace: onSpace) }
@@ -1089,7 +1115,7 @@ private struct PreviewSpaceShortcutHandler: NSViewRepresentable {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { @MainActor [weak self] event in
                 guard let self,
                       event.window === self.hostView?.window,
-                      !self.isEditingText(in: event.window),
+                      !self.hasControlFocus(in: event.window),
                       event.keyCode == 49,
                       event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else {
                     return event
@@ -1104,8 +1130,9 @@ private struct PreviewSpaceShortcutHandler: NSViewRepresentable {
             monitor = nil
         }
 
-        private func isEditingText(in window: NSWindow?) -> Bool {
-            window?.firstResponder is NSTextView
+        private func hasControlFocus(in window: NSWindow?) -> Bool {
+            // 文本编辑器和原生播放器控件应先处理空格，不能因此关闭整个预览。
+            window?.firstResponder is NSTextView || window?.firstResponder is NSControl
         }
     }
 }
@@ -1113,8 +1140,12 @@ private struct PreviewSpaceShortcutHandler: NSViewRepresentable {
 private struct FittedImagePreview: View {
     let cgImage: CGImage
     let orientation: Image.Orientation
+    var showsControls = true
     @State private var zoom: CGFloat = 1
     @State private var rotation = 0
+    @State private var panOffset: CGSize = .zero
+    @GestureState private var dragOffset: CGSize = .zero
+    @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
 
@@ -1149,6 +1180,8 @@ private struct FittedImagePreview: View {
             let imageHeight = baseHeight * fittedScale * zoom
             let visualWidth = isQuarterTurn ? imageHeight : imageWidth
             let visualHeight = isQuarterTurn ? imageWidth : imageHeight
+            let maxPanX = max(0, (visualWidth - geometry.size.width) / 2)
+            let maxPanY = max(0, (visualHeight - geometry.size.height) / 2)
 
             ZStack(alignment: .center) {
                 Image(decorative: cgImage, scale: displayScale, orientation: orientation)
@@ -1158,9 +1191,24 @@ private struct FittedImagePreview: View {
                     .rotationEffect(.degrees(Double(rotation)))
                     .frame(width: visualWidth, height: visualHeight)
                     .clipped()
+                    .offset(
+                        x: min(maxPanX, max(-maxPanX, panOffset.width + dragOffset.width)),
+                        y: min(maxPanY, max(-maxPanY, panOffset.height + dragOffset.height))
+                    )
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 3)
+                .updating($dragOffset) { value, state, _ in state = value.translation }
+                .onEnded { value in
+                    panOffset = CGSize(
+                        width: min(maxPanX, max(-maxPanX, panOffset.width + value.translation.width)),
+                        height: min(maxPanY, max(-maxPanY, panOffset.height + value.translation.height))
+                    )
+                })
+            .onChange(of: zoom) { _, _ in panOffset = .zero }
+            .onChange(of: geometry.size) { _, _ in panOffset = .zero }
             .background {
                 ImageScrollWheelReader { delta, isPrecise in
                     let step = isPrecise ? delta * 0.012 : delta * 0.08
@@ -1168,7 +1216,38 @@ private struct FittedImagePreview: View {
                 }
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .safeAreaInset(edge: .bottom) {
+            if showsControls {
+                HStack(spacing: 14) {
+                    Button { updateZoom(zoom - 0.25) } label: {
+                        Label(L10n.string("preview.zoom.out"), systemImage: "minus.magnifyingglass")
+                    }
+                    .disabled(zoom <= 0.25)
+                    .keyboardShortcut("-", modifiers: .command)
+                    Text(Double(zoom).formatted(.percent.precision(.fractionLength(0)).locale(L10n.locale)))
+                        .font(.callout.monospacedDigit())
+                        .frame(minWidth: 44)
+                    Button { updateZoom(zoom + 0.25) } label: {
+                        Label(L10n.string("preview.zoom.in"), systemImage: "plus.magnifyingglass")
+                    }
+                    .disabled(zoom >= 5)
+                    .keyboardShortcut("+", modifiers: .command)
+                    Divider().frame(height: 18)
+                    Button { updateZoom(1); panOffset = .zero } label: {
+                        Label(L10n.string("preview.zoom.fit"), systemImage: "arrow.up.left.and.arrow.down.right")
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(MacToolbarButtonStyle())
+                .padding(8)
+                .background {
+                    MacGlassSurface(role: .selectionBar).clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.bottom, 12)
+            }
+        }
+        .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).previewCanvas)
         .accessibilityLabel(L10n.string("ui.288f3d9291737873"))
     }
 
@@ -1270,7 +1349,7 @@ struct VideoPlayerView: View {
 
     var body: some View {
         ZStack {
-            VideoPlayerRepresentable(player: $player)
+            VideoPlayerRepresentable(player: $player, controlsStyle: .inline)
 
             if isPreparing, failureMessage == nil {
                 VStack(spacing: 12) {
@@ -1440,6 +1519,8 @@ struct VideoPlayerRepresentable: NSViewRepresentable {
 
 struct AudioPlayerView: View {
     let source: MediaStreamSource
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var player: AVPlayer?
     @State private var resourceLoaderDelegate: DsmAVAssetResourceLoaderDelegate?
     @State private var playbackGeneration = UUID()
@@ -1457,11 +1538,13 @@ struct AudioPlayerView: View {
         VStack(spacing: 20) {
             Spacer()
             
-            // 音频播放精美图标
-            Image(systemName: "music.note.waveform")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue.gradient)
-                .symbolEffect(.bounce, value: isPlaying)
+            // 静态封面不随播放状态跳动，避免干扰并兼容降低动态效果。
+            Image(systemName: "music.note")
+                .font(.system(size: 60, weight: .light))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 156, height: 156)
+                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 28)))
+                .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).edge))
                 .accessibilityHidden(true)
 
             if isPreparing, failureMessage == nil {
@@ -1512,7 +1595,7 @@ struct AudioPlayerView: View {
                         player?.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600))
                     }
                 }
-                .tint(.blue)
+                .tint(.accentColor)
                 .disabled(isPreparing || failureMessage != nil || duration <= 0)
                 .accessibilityLabel(L10n.string("ui.fc16e2a0fca66884"))
                 
@@ -1521,10 +1604,11 @@ struct AudioPlayerView: View {
                     Spacer()
                     Text(formatTime(duration))
                 }
-                .font(.caption)
+                .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 40)
+            .frame(maxWidth: 560)
             
             // 控制按钮
             HStack(spacing: 24) {
@@ -1533,10 +1617,10 @@ struct AudioPlayerView: View {
                     player?.seek(to: CMTime(seconds: newTime, preferredTimescale: 600))
                     currentTime = newTime
                 } label: {
-                    Image(systemName: "backward.fill")
+                    Image(systemName: "gobackward.10")
                         .font(.title2)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MacToolbarButtonStyle())
                 .disabled(isPreparing || failureMessage != nil)
                 .accessibilityLabel(L10n.string("ui.6ffd3c04b1370caa"))
                 
@@ -1551,7 +1635,7 @@ struct AudioPlayerView: View {
                 } label: {
                     Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.system(size: 48))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
                 .disabled(isPreparing || failureMessage != nil)
@@ -1562,17 +1646,18 @@ struct AudioPlayerView: View {
                     player?.seek(to: CMTime(seconds: newTime, preferredTimescale: 600))
                     currentTime = newTime
                 } label: {
-                    Image(systemName: "forward.fill")
+                    Image(systemName: "goforward.10")
                         .font(.title2)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(MacToolbarButtonStyle())
                 .disabled(isPreparing || failureMessage != nil)
                 .accessibilityLabel(L10n.string("ui.f7d78f76e1921809"))
             }
             
             Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .fillsAvailableContentArea()
+        .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).previewCanvas)
         .onAppear {
             setupPlayer()
         }

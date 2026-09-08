@@ -14,6 +14,15 @@ struct ChatWorkspaceView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            MacPageHeader(title: L10n.string("ui.4da199fae933d4fa")) {
+                Button {
+                    Task { await model.reload() }
+                } label: {
+                    Label(L10n.string("ui.a4d302df47192b25"), systemImage: "arrow.clockwise")
+                }
+                .disabled(model.isLoading)
+                .help(L10n.string("ui.550b0751f537f74e"))
+            }
             if model.canUseMessaging, model.statusIsError, let statusMessage = model.statusMessage {
                 ChatActionStatusBanner(
                     message: statusMessage,
@@ -48,17 +57,6 @@ struct ChatWorkspaceView: View {
         .task {
             await model.loadIfNeeded()
             await model.refreshForegroundChat()
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    Task { await model.reload() }
-                } label: {
-                    Label(L10n.string("ui.a4d302df47192b25"), systemImage: "arrow.clockwise")
-                }
-                .disabled(model.isLoading)
-                .help(L10n.string("ui.550b0751f537f74e"))
-            }
         }
         .sheet(isPresented: $presentsNewConversation) {
             NewChatSheet(model: model)
@@ -105,7 +103,7 @@ struct ChatWorkspaceView: View {
                         .labelStyle(.iconOnly)
                         .frame(width: 24, height: 24)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(MacToolbarButtonStyle())
                 .disabled(!model.canCreateDirectConversation && !model.canCreateGroupConversation)
                 .help(newConversationHelp)
                 .accessibilityLabel(L10n.string("ui.08d90be0bab08c36"))
@@ -116,8 +114,9 @@ struct ChatWorkspaceView: View {
                         .accessibilityLabel(L10n.string("ui.fc34c019b007657d"))
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
             .padding(.vertical, 12)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -145,11 +144,15 @@ struct ChatWorkspaceView: View {
                     ForEach(model.conversations) { conversation in
                         ConversationRow(
                             conversation: conversation,
+                            summary: model.conversationSummary(conversation),
                             users: model.users,
                             currentUserID: model.currentUserID,
                             isPinned: model.isConversationPinned(conversation.id)
                         )
                             .tag(conversation.id)
+                            .padding(.vertical, 6)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                             .contextMenu {
                                 Button {
                                     model.toggleConversationPin(id: conversation.id)
@@ -183,7 +186,7 @@ struct ChatWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(MacGlassSurface(role: .sidebar))
     }
 
     private var conversationSelection: Binding<Set<String>> {
@@ -270,6 +273,7 @@ private struct ChatActionStatusBanner: View {
 
 private struct ConversationRow: View {
     let conversation: ChatConversation
+    let summary: String
     let users: [ChatUser]
     let currentUserID: String?
     let isPinned: Bool
@@ -318,7 +322,7 @@ private struct ConversationRow: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    Text(conversation.lastMessageSummary ?? L10n.string("ui.e29432d115e1ae1a"))
+                    Text(summary)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -724,7 +728,7 @@ private struct ChatConversationView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
-        .background(.bar)
+        .background(MacGlassSurface(role: .toolbar))
     }
 
     private var selectedMessages: [ChatMessage] {
@@ -813,6 +817,7 @@ private struct ChatConversationView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .background(MacGlassSurface(role: .toolbar))
     }
 
     private var emptyConversationState: some View {
@@ -884,6 +889,13 @@ private struct ChatConversationView: View {
                 }
             }
 
+            TextField(L10n.string("ui.a410452649b38b31"), text: draftText, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...5)
+                .focused($isComposerFocused)
+                .disabled(!model.canSendText || model.isPerformingAction)
+                .onSubmit(send)
+
             HStack(alignment: .bottom, spacing: 8) {
                 Button {
                     if model.canSendAttachments {
@@ -936,12 +948,7 @@ private struct ChatConversationView: View {
                 .help(model.canScheduleMessages ? L10n.string("ui.d8c36838861566a9") : L10n.string("ui.91b646fc9336888c"))
                 .accessibilityLabel(L10n.string("ui.d8c36838861566a9"))
 
-                TextField(L10n.string("ui.a410452649b38b31"), text: draftText, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...5)
-                    .focused($isComposerFocused)
-                    .disabled(!model.canSendText || model.isPerformingAction)
-                    .onSubmit(send)
+                Spacer(minLength: 8)
 
                 Button(action: send) {
                     if model.isPerformingAction {
@@ -953,13 +960,14 @@ private struct ChatConversationView: View {
                             .frame(minWidth: 52, minHeight: 28)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(!canSend)
                 .keyboardShortcut(.return, modifiers: .command)
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(12)
-        .background(.bar)
+        .background(MacGlassSurface(role: .toolbar))
     }
 
     private var canSend: Bool {
@@ -1075,45 +1083,48 @@ private struct ChatConversationView: View {
     }
 }
 
-private struct ChatImagePreviewSheet: View {
+struct ChatImagePreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
     let image: NSImage?
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black
-                .ignoresSafeArea()
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(20)
-                    .accessibilityLabel(L10n.string("ui.ba8b49f3fd10b338"))
-            } else {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(.white)
-                    .accessibilityLabel(L10n.string("ui.facec40ad268aefe"))
+        VStack(spacing: 0) {
+            HStack {
+                Text(L10n.string("ui.ba8b49f3fd10b338"))
+                    .font(.headline)
+                Spacer()
+                Button { dismiss() } label: {
+                    Label(L10n.string("ui.1eb05d3115088bdf"), systemImage: "xmark")
+                }
+                .buttonStyle(MacToolbarButtonStyle())
+                .keyboardShortcut(.cancelAction)
+                .help(L10n.string("ui.1eb05d3115088bdf"))
             }
-            Button {
-                dismiss()
-            } label: {
-                Label(L10n.string("ui.1eb05d3115088bdf"), systemImage: "xmark")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .background(.black.opacity(0.55), in: Circle())
             .padding(16)
-            .keyboardShortcut(.cancelAction)
-            .help(L10n.string("ui.1eb05d3115088bdf"))
+            .background(MacGlassSurface(role: .toolbar))
+            Group {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(20)
+                        .accessibilityLabel(L10n.string("ui.ba8b49f3fd10b338"))
+                } else {
+                    ProgressView()
+                        .controlSize(.large)
+                        .accessibilityLabel(L10n.string("ui.facec40ad268aefe"))
+                }
+            }
+            .fillsAvailableContentArea()
+            .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).previewCanvas)
         }
         .frame(minWidth: 720, idealWidth: 960, minHeight: 520, idealHeight: 720)
     }
 }
 
-private struct ForwardMessagesSheet: View {
+struct ForwardMessagesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     let messageIDs: Set<String>
@@ -1174,7 +1185,8 @@ private struct ForwardMessagesSheet: View {
                     .keyboardShortcut(.cancelAction)
             }
             .padding(20)
-
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
             Divider()
 
             TextField(L10n.string("ui.404de5b870b3e6a2"), text: $searchText)
@@ -1271,13 +1283,16 @@ private struct ForwardMessagesSheet: View {
                         Label(L10n.string("ui.02107ba378e21710"), systemImage: "arrowshape.turn.up.right")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(selectedTargetCount == 0 || model.isPerformingAction)
                 .keyboardShortcut(.defaultAction)
             }
             .padding(16)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 480, idealWidth: 520, minHeight: 480, idealHeight: 600)
+        .background(MacGlassSurface(role: .sidebar))
     }
 
     private func recipientSectionTitle(_ title: String) -> some View {
@@ -1354,7 +1369,7 @@ private struct ForwardMessagesSheet: View {
     }
 }
 
-private struct GroupMembersSheet: View {
+struct GroupMembersSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     let conversation: ChatConversation
@@ -1410,6 +1425,8 @@ private struct GroupMembersSheet: View {
             }
         }
         .frame(minWidth: 460, minHeight: 420)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadConversationMembers() }
     }
 
@@ -1427,6 +1444,8 @@ private struct GroupMembersSheet: View {
                 .keyboardShortcut(.cancelAction)
         }
         .padding(16)
+        .buttonStyle(MacToolbarButtonStyle())
+        .background(MacGlassSurface(role: .toolbar))
     }
 
     private func retryState(
@@ -1446,7 +1465,7 @@ private struct GroupMembersSheet: View {
     }
 }
 
-private struct PinnedMessagesSheet: View {
+struct PinnedMessagesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     let conversation: ChatConversation
@@ -1466,6 +1485,8 @@ private struct PinnedMessagesSheet: View {
                     .keyboardShortcut(.cancelAction)
             }
             .padding(16)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
             Divider()
 
             if model.isLoadingPinnedMessages {
@@ -1529,6 +1550,8 @@ private struct PinnedMessagesSheet: View {
             }
         }
         .frame(minWidth: 520, minHeight: 420)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadPinnedMessages() }
     }
 
@@ -1552,7 +1575,7 @@ private struct PinnedMessagesSheet: View {
     }
 }
 
-private struct ScheduledMessageComposerSheet: View {
+struct ScheduledMessageComposerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     let conversation: ChatConversation
@@ -1560,7 +1583,7 @@ private struct ScheduledMessageComposerSheet: View {
     @State private var sendAt = Date().addingTimeInterval(3_600)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.string("ui.33e4b16591ac7cba"))
@@ -1573,22 +1596,31 @@ private struct ScheduledMessageComposerSheet: View {
                 Button(L10n.string("ui.2cd0f3be8738a86c")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
+            .padding(20)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
-            TextField(L10n.string("ui.387278213e791913"), text: $text, axis: .vertical)
-                .lineLimit(3...8)
-                .textFieldStyle(.roundedBorder)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    TextField(L10n.string("ui.387278213e791913"), text: $text, axis: .vertical)
+                        .lineLimit(3...8)
+                        .textFieldStyle(.roundedBorder)
 
-            DatePicker(
-                L10n.string("ui.4b474d377140ad84"),
-                selection: $sendAt,
-                in: Date()...,
-                displayedComponents: [.date, .hourAndMinute]
-            )
-            .datePickerStyle(.field)
+                    DatePicker(
+                        L10n.string("ui.4b474d377140ad84"),
+                        selection: $sendAt,
+                        in: Date()...,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.field)
 
-            Text(L10n.string("ui.8eab5ec981463240"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                    Text(L10n.string("ui.8eab5ec981463240"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             HStack {
                 Spacer()
@@ -1605,7 +1637,7 @@ private struct ScheduledMessageComposerSheet: View {
                         Text(L10n.string("ui.5246400327a69731"))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
                     text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || sendAt <= Date()
@@ -1613,13 +1645,15 @@ private struct ScheduledMessageComposerSheet: View {
                 )
                 .keyboardShortcut(.defaultAction)
             }
+            .padding(16)
+            .background(MacGlassSurface(role: .toolbar))
         }
-        .padding(20)
         .frame(minWidth: 460, minHeight: 300)
+        .background(MacGlassSurface(role: .sidebar))
     }
 }
 
-private struct ScheduledMessageListSheet: View {
+struct ScheduledMessageListSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     @State private var pendingDeletion: ChatScheduledMessage?
@@ -1634,6 +1668,8 @@ private struct ScheduledMessageListSheet: View {
                     .keyboardShortcut(.cancelAction)
             }
             .padding(16)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
             Divider()
 
             if model.isLoadingScheduledMessages {
@@ -1688,6 +1724,8 @@ private struct ScheduledMessageListSheet: View {
             }
         }
         .frame(minWidth: 520, minHeight: 360)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadScheduledMessages() }
         .alert(L10n.string("ui.a4b22aa18e0da772"), isPresented: Binding(
             get: { pendingDeletion != nil },
@@ -1713,14 +1751,14 @@ private struct ScheduledMessageListSheet: View {
     }
 }
 
-private struct ReminderEditorSheet: View {
+struct ReminderEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     let message: ChatMessage
     @State private var remindAt = Date().addingTimeInterval(3_600)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(model.reminder(for: message.id) == nil ? L10n.string("ui.b505f2e67d2915cf") : L10n.string("ui.a1515bb44f9169e6"))
@@ -1734,18 +1772,24 @@ private struct ReminderEditorSheet: View {
                 Button(L10n.string("ui.2cd0f3be8738a86c")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
+            .padding(20)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
-            DatePicker(
-                L10n.string("ui.98b552661af4ee50"),
-                selection: $remindAt,
-                in: Date()...,
-                displayedComponents: [.date, .hourAndMinute]
-            )
-            .datePickerStyle(.field)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    DatePicker(
+                        L10n.string("ui.98b552661af4ee50"),
+                        selection: $remindAt,
+                        in: Date()...,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.field)
 
-            Text(L10n.string("ui.4c1bc957493ad11c"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             HStack {
                 if model.reminder(for: message.id) != nil {
@@ -1772,13 +1816,16 @@ private struct ReminderEditorSheet: View {
                         Text(L10n.string("ui.e1be3a5c3ec6c09b"))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(remindAt <= Date() || model.isPerformingAction)
                 .keyboardShortcut(.defaultAction)
             }
+            .padding(16)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
-        .padding(20)
         .frame(minWidth: 420, minHeight: 220)
+        .background(MacGlassSurface(role: .sidebar))
         .onAppear {
             if let existing = model.reminder(for: message.id) {
                 remindAt = max(existing.remindAt, Date().addingTimeInterval(60))
@@ -1787,7 +1834,7 @@ private struct ReminderEditorSheet: View {
     }
 }
 
-private struct ReminderListSheet: View {
+struct ReminderListSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     @State private var pendingDeletion: ChatReminder?
@@ -1802,6 +1849,8 @@ private struct ReminderListSheet: View {
                     .keyboardShortcut(.cancelAction)
             }
             .padding(16)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
             Divider()
 
             if model.isLoadingReminders {
@@ -1856,6 +1905,8 @@ private struct ReminderListSheet: View {
             }
         }
         .frame(minWidth: 500, minHeight: 360)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadReminders() }
         .alert(L10n.string("ui.b755927d881bc4f6"), isPresented: Binding(
             get: { pendingDeletion != nil },
@@ -1890,7 +1941,7 @@ private struct ReminderListSheet: View {
     }
 }
 
-private struct CreatePollSheet: View {
+struct CreatePollSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ChatWorkspaceModel
     let conversation: ChatConversation
@@ -1901,7 +1952,7 @@ private struct CreatePollSheet: View {
     @FocusState private var focusedField: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.string("ui.54f9e511a851c7da"))
@@ -1914,42 +1965,51 @@ private struct CreatePollSheet: View {
                 Button(L10n.string("ui.2cd0f3be8738a86c")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
+            .padding(20)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
-            TextField(L10n.string("ui.9717eea92267e626"), text: $question, axis: .vertical)
-                .lineLimit(1...3)
-                .textFieldStyle(.roundedBorder)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    TextField(L10n.string("ui.9717eea92267e626"), text: $question, axis: .vertical)
+                        .lineLimit(1...3)
+                        .textFieldStyle(.roundedBorder)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.string("ui.bb7486f4410fd370"))
-                    .font(.headline)
-                ForEach(options.indices, id: \.self) { index in
-                    HStack {
-                        TextField(L10n.string("ui.042274cf3d451290", String(describing: index + 1)), text: $options[index])
-                            .focused($focusedField, equals: index)
-                        if options.count > 2 {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(L10n.string("ui.bb7486f4410fd370"))
+                            .font(.headline)
+                        ForEach(options.indices, id: \.self) { index in
+                            HStack {
+                                TextField(L10n.string("ui.042274cf3d451290", String(describing: index + 1)), text: $options[index])
+                                    .focused($focusedField, equals: index)
+                                if options.count > 2 {
+                                    Button {
+                                        options.remove(at: index)
+                                    } label: {
+                                        Label(L10n.string("ui.c484cd17875d55d1", String(describing: index + 1)), systemImage: "minus.circle")
+                                            .labelStyle(.iconOnly)
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                            }
+                        }
+                        if options.count < 10 {
                             Button {
-                                options.remove(at: index)
+                                options.append("")
+                                focusedField = options.count - 1
                             } label: {
-                                Label(L10n.string("ui.c484cd17875d55d1", String(describing: index + 1)), systemImage: "minus.circle")
-                                    .labelStyle(.iconOnly)
+                                Label(L10n.string("ui.d063937855cf99a7"), systemImage: "plus.circle")
                             }
                             .buttonStyle(.borderless)
                         }
                     }
-                }
-                if options.count < 10 {
-                    Button {
-                        options.append("")
-                        focusedField = options.count - 1
-                    } label: {
-                        Label(L10n.string("ui.d063937855cf99a7"), systemImage: "plus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
 
-            Toggle(L10n.string("ui.1fddd507a67e1366"), isOn: $allowsMultipleSelection)
-            Toggle(L10n.string("ui.55edffe99178b192"), isOn: $isAnonymous)
+                    Toggle(L10n.string("ui.1fddd507a67e1366"), isOn: $allowsMultipleSelection)
+                    Toggle(L10n.string("ui.55edffe99178b192"), isOn: $isAnonymous)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             HStack {
                 Text(L10n.string("ui.83abddba8f54950a"))
@@ -1974,13 +2034,15 @@ private struct CreatePollSheet: View {
                         Text(L10n.string("ui.82c4fa27cdb5f875"))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(!canSubmit || model.isPerformingAction)
                 .keyboardShortcut(.defaultAction)
             }
+            .padding(16)
+            .background(MacGlassSurface(role: .toolbar))
         }
-        .padding(20)
         .frame(minWidth: 460, minHeight: 390)
+        .background(MacGlassSurface(role: .sidebar))
     }
 
     private var canSubmit: Bool {
@@ -2270,7 +2332,8 @@ private struct ChatMessageRow: View {
     private static var fullDateTimeFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = L10n.locale
-        formatter.dateFormat = L10n.string("ui.cd4bf97f70f364c8")
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
         return formatter
     }
 
@@ -2328,12 +2391,12 @@ private struct ChatDateSeparator: View {
     private static var formatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = L10n.locale
-        formatter.dateFormat = L10n.string("ui.cc0c25cb29e0effd")
+        formatter.setLocalizedDateFormatFromTemplate("yMMMMEEEEd")
         return formatter
     }
 }
 
-private struct NewChatSheet: View {
+struct NewChatSheet: View {
     private enum Mode: String, CaseIterable, Identifiable {
         case direct
         case group
@@ -2359,6 +2422,9 @@ private struct NewChatSheet: View {
                 Button(L10n.string("ui.2cd0f3be8738a86c")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
+            .padding(14)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
 
             Picker(L10n.string("ui.4821f9f7af0425b0"), selection: $mode) {
                 ForEach(availableModes) { mode in
@@ -2370,10 +2436,6 @@ private struct NewChatSheet: View {
             if mode == .group {
                 TextField(L10n.string("ui.12633e741c9ab2ed"), text: $groupTitle)
                 Text(L10n.string("ui.b97d05b835c3cfc8"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(L10n.string("ui.06109056bcb05375"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -2410,7 +2472,7 @@ private struct NewChatSheet: View {
                             : L10n.string("ui.4e6788f38e6553a5")
                     )
                 }
-                .frame(minHeight: 260)
+                .frame(minHeight: 80, maxHeight: .infinity)
             } else {
                 List(filteredUsers) { user in
                     Button {
@@ -2434,7 +2496,8 @@ private struct NewChatSheet: View {
                     .accessibilityValue(selectedUserIDs.contains(user.id) ? L10n.string("ui.3f4ebc4aad9793b6") : L10n.string("ui.1182c5454f113db5"))
                 }
                 .listStyle(.inset)
-                .frame(minHeight: 260)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 80, maxHeight: .infinity)
             }
 
             if mode == .group,
@@ -2459,13 +2522,14 @@ private struct NewChatSheet: View {
                         Text(mode == .direct ? L10n.string("ui.b263cff274346402") : L10n.string("ui.675ee6eef7be449d"))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(!canSubmit || model.isPerformingAction)
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
         .frame(minWidth: 460, minHeight: 460)
+        .background(MacGlassSurface(role: .sidebar))
         .onChange(of: mode) { _, _ in
             selectedUserIDs = []
             createsEncryptedConversation = false

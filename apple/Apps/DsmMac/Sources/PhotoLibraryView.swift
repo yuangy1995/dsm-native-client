@@ -14,6 +14,8 @@ struct PhotoLibraryView: View {
 
     @State private var timelineScrollTarget: Date?
     @State private var moveTarget: PhotoLibraryItem?
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private let columns = [
         GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 12, alignment: .top)
@@ -73,21 +75,29 @@ struct PhotoLibraryView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Label(
-                titleText,
-                systemImage: titleIcon
-            )
-            .font(.headline)
-            .lineLimit(1)
-
-            Picker(L10n.string("ui.fe2663358fdbc7f3"), selection: browseModeSelection) {
-                Label(L10n.string("ui.f1241a97b0821a99"), systemImage: "clock").tag(PhotoBrowseMode.timeline)
-                Label(L10n.string("ui.38793c1c1c23437e"), systemImage: "rectangle.stack").tag(PhotoBrowseMode.albums)
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                if model.browseMode == .albums, !isAlbumsRoot {
+                    Label(titleText, systemImage: titleIcon)
+                        .font(.headline)
+                        .lineLimit(1)
+                }
+                MacPageTabs(options: [PhotoBrowseMode.timeline, .albums], selection: browseModeSelection, title: {
+                    $0 == .timeline ? L10n.string("ui.f1241a97b0821a99") : L10n.string("ui.38793c1c1c23437e")
+                })
+                .frame(maxWidth: 240)
+                Spacer(minLength: 8)
+                spacePicker
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
+            filterBar
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(MacGlassSurface(role: .toolbar))
+    }
 
+    private var filterBar: some View {
+        HStack(spacing: 12) {
             mediaStatsBadge
 
             if model.browseMode == .timeline, !timelineYearMonths.isEmpty {
@@ -110,7 +120,7 @@ struct PhotoLibraryView: View {
                     .foregroundStyle(.secondary)
                 TextField(L10n.string("ui.02fd538b5510e8ba"), text: $model.searchText)
                     .textFieldStyle(.plain)
-                    .frame(width: 180)
+                    .frame(minWidth: 100, idealWidth: 180, maxWidth: 240)
                 if !model.searchText.isEmpty {
                     Button(L10n.string("ui.ee32f25f70508f9c"), systemImage: "xmark.circle.fill") {
                         model.searchText = ""
@@ -121,8 +131,9 @@ struct PhotoLibraryView: View {
                 }
             }
             .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+            .frame(height: 36)
+            .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).searchField, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).separator))
 
             Menu {
                 Picker(L10n.string("ui.296225a8ac50bbe9"), selection: $model.mediaFilter) {
@@ -134,24 +145,26 @@ struct PhotoLibraryView: View {
                 Label(mediaFilterTitle, systemImage: "line.3.horizontal.decrease.circle")
             }
             .help(L10n.string("ui.9577c61b76be01e6"))
-
-            if model.spaces.count > 1 {
-                Picker(L10n.string("ui.afbc722b9ad55bef"), selection: spaceSelection) {
-                    ForEach(model.spaces) { space in
-                        Text(space.title).tag(Optional(space.id))
-                    }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .accessibilityHint(L10n.string("ui.3e5a89a799968aab"))
-            } else if let space = model.selectedSpace {
-                Text(space.title)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .buttonStyle(MacToolbarButtonStyle())
+    }
+
+    @ViewBuilder
+    private var spacePicker: some View {
+        if model.spaces.count > 1 {
+            Picker(L10n.string("ui.afbc722b9ad55bef"), selection: spaceSelection) {
+                ForEach(model.spaces) { space in
+                    Text(space.title).tag(Optional(space.id))
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 220)
+            .accessibilityHint(L10n.string("ui.3e5a89a799968aab"))
+        } else if let space = model.selectedSpace {
+            Text(space.title)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var mediaStatsBadge: some View {
@@ -197,9 +210,7 @@ struct PhotoLibraryView: View {
     }
 
     private static func formattedNumber(_ number: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+        number.formatted(.number.locale(L10n.locale))
     }
 
     @ViewBuilder

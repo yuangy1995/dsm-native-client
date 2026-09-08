@@ -7,6 +7,20 @@ import XCTest
 
 @MainActor
 final class ChatWorkspaceModelTests: XCTestCase {
+    func test缺少摘要不显示无消息且载入记录后保留会话预览() async throws {
+        let first = ChatConversation(id: "first", kind: .group, title: "测试群", memberIDs: ["user-1"], lastActivityAt: Date(timeIntervalSince1970: 200))
+        let second = ChatConversation(id: "second", kind: .direct, title: "测试会话", memberIDs: ["user-1"], lastActivityAt: Date(timeIntervalSince1970: 100))
+        let item = ChatMessage(id: "one", conversationID: first.id, senderID: "user-1", sentAt: Date(timeIntervalSince1970: 200), text: "已存在的测试消息")
+        let model = ChatWorkspaceModel(repository: ChatRepositoryStub(conversations: [first, second], messagesByConversation: [first.id: [item]]))
+        XCTAssertEqual(model.conversationSummary(first), L10n.string("chat.preview.open"))
+        await model.loadIfNeeded()
+        XCTAssertEqual(model.conversationSummary(first), item.text)
+        XCTAssertEqual(model.conversationSummary(second), L10n.string("chat.preview.open"))
+        await model.selectConversation(id: second.id)
+        XCTAssertEqual(model.conversationSummary(first), item.text)
+        XCTAssertEqual(model.conversationSummary(second), L10n.string("chat.preview.open"))
+    }
+
     func test关闭消息模块后不读取会话且重新开启后可恢复() async {
         let active = conversation(id: "conversation-1", title: "测试聊天", activity: Date())
         let repository = ChatRepositoryStub(conversations: [active])
@@ -729,7 +743,8 @@ final class ChatWorkspaceModelTests: XCTestCase {
     }
 }
 
-private actor ChatRepositoryStub: ChatRepository {
+// 供模型回归与合成页面共用，不连接真实消息服务。
+actor ChatRepositoryStub: ChatRepository {
     private let availableFeatures: Set<ChatFeature>
     private var storedConversations: [ChatConversation]
     private let users: [ChatUser]

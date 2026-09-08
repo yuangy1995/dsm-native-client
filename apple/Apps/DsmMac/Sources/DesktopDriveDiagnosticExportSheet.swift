@@ -15,6 +15,9 @@ struct DesktopDriveDiagnosticExportSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.string("desktopDrive.diagnostics.title"))
                 .font(.title2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
 
             Text(L10n.string("desktopDrive.diagnostics.description"))
                 .font(.subheadline)
@@ -66,11 +69,14 @@ struct DesktopDriveDiagnosticExportSheet: View {
                     }
                 }
                 .disabled(isExporting)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
         .frame(minWidth: 560, idealWidth: 680, minHeight: 460)
+        .background(MacGlassSurface(role: .sidebar))
     }
 
     private func export() {
@@ -159,6 +165,9 @@ struct CommunityCompatibilitySubmissionSheet: View {
             Text(L10n.string("communityReport.title"))
                 .font(.title2.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
             Text(L10n.string("communityReport.description"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -218,9 +227,11 @@ struct CommunityCompatibilitySubmissionSheet: View {
                 VStack(alignment: .trailing) { actionButtons }
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
         .frame(minWidth: 620, idealWidth: 720, minHeight: 560)
+        .background(MacGlassSurface(role: .sidebar))
         .task {
             await Task.yield()
             isPreparing = false
@@ -250,7 +261,7 @@ struct CommunityCompatibilitySubmissionSheet: View {
                 Text(L10n.string("communityReport.packageHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack {
+                VStack(alignment: .leading, spacing: 12) {
                     Picker(L10n.string("communityReport.connection"), selection: $connectionType) {
                         ForEach(Self.connections, id: \.rawValue) {
                             Text(option("connection", $0.rawValue)).tag($0)
@@ -386,6 +397,7 @@ struct CommunityCompatibilitySubmissionSheet: View {
             }
         }
         .disabled(isPreparing || isExporting || !privacyAttestation)
+        .buttonStyle(MacToolbarButtonStyle(prominent: true))
         .keyboardShortcut(.defaultAction)
     }
 

@@ -279,7 +279,23 @@ private struct BackgroundTaskPayload: Decodable, Sendable {
 }
 
 private struct FileInfoPayload: Decodable, Sendable {
-    let files: [FilePayload]
+    let files: [FileInfoEntryPayload]
+}
+
+// getinfo 可整体成功，但单项只返回 path/code（例如文件不存在的 408）。
+private struct FileInfoEntryPayload: Decodable, Sendable {
+    let path: String
+    let code: Int?
+    let file: FilePayload?
+
+    private enum CodingKeys: String, CodingKey { case path, code }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        path = try container.decode(String.self, forKey: .path)
+        code = try container.decodeIfPresent(Int.self, forKey: .code)
+        file = code == nil || code == 0 ? try FilePayload(from: decoder) : nil
+    }
 }
 
 private struct FileStationInfoPayload: Decodable, Sendable {
@@ -849,10 +865,14 @@ private struct FileOwnerPayload: Decodable, Sendable {
 private struct FilePermissionPayload: Decodable, Sendable {
     let posix: Int?
     let advRight: [String: Bool]?
+    let acl: [String: Bool]?
+    let isACLMode: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case posix
         case advRight = "adv_right"
+        case acl
+        case isACLMode = "is_acl_mode"
     }
 }
 
@@ -1236,15 +1256,19 @@ public actor DsmFileRepository: FileRepository {
                     as: FileInfoPayload.self
                 )
                 let requestedPaths = Set(chunk)
-                for payloadItem in payload.files where requestedPaths.contains(payloadItem.path) {
-                    if itemsByPath[payloadItem.path] == nil {
-                        itemsByPath[payloadItem.path] = makeFileItem(payloadItem)
+                for entry in payload.files where requestedPaths.contains(entry.path) {
+                    if let code = entry.code, code != 0 {
+                        if code == 408 { continue }
+                        throw DsmNetworkError.api(code: code, requestID: UUID())
+                    }
+                    if let file = entry.file, itemsByPath[entry.path] == nil {
+                        itemsByPath[entry.path] = makeFileItem(file)
                     }
                 }
             }
             return orderedPaths.compactMap { itemsByPath[$0] }
         } catch let error as DsmNetworkError {
-            throw DsmErrorMapper.map(error)
+            throw DsmErrorMapper.map(error, context: .fileStation)
         }
     }
 
@@ -3606,10 +3630,11 @@ public actor DsmFileRepository: FileRepository {
         }
 
         let rights = payload.additional?.perm?.advRight ?? [:]
+        let acl = payload.additional?.perm?.isACLMode == true ? payload.additional?.perm?.acl : nil
         let permissions = FilePermissions(
-            canRead: rights["read"] ?? rights["download"] ?? true,
-            canWrite: rights["write"] ?? rights["upload"] ?? false,
-            canDelete: rights["delete"] ?? false,
+            canRead: acl?["read"] ?? rights["read"] ?? rights["download"] ?? true,
+            canWrite: acl?["write"] ?? rights["write"] ?? rights["upload"] ?? false,
+            canDelete: acl?["del"] ?? rights["delete"] ?? false,
             posixMode: payload.additional?.perm?.posix
         )
         let time = payload.additional?.time
@@ -4335,7 +4360,7 @@ public actor DsmFileRepository: FileRepository {
         operation: String,
         itemCount: Int
     ) throws -> MutationResult {
-        let mapped = DsmErrorMapper.map(error)
+        let mapped = DsmErrorMapper.map(error, context: .fileStation)
         switch error {
         case .invalidRequest:
             return try makeMutationResult(

@@ -4,13 +4,13 @@ import DsmLocalization
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum FileViewMode: String, CaseIterable, Identifiable {
+enum FileViewMode: String, CaseIterable, Identifiable {
     case list
     case grid
     var id: Self { self }
 }
 
-private enum FileGrouping: String, CaseIterable, Identifiable {
+enum FileGrouping: String, CaseIterable, Identifiable {
     case none
     case type
     case date
@@ -54,26 +54,74 @@ struct WorkspaceView: View {
     @State private var previewWindowController: FloatingPreviewWindowController?
     @State private var shareTargets: [FileItem] = []
     @State private var isRestoringSectionAfterUnsavedEdit = false
+    @State private var showsFileInspector = true
+    @State private var showsSidebar = true
+    @State private var sidebarWidth: CGFloat = 241
+    @State private var sidebarResizeStart: CGFloat?
+    @Environment(MacAppearanceStore.self) private var appearance
+    @FocusState private var searchIsFocused: Bool
+    @Environment(\.colorScheme) private var appearanceScheme
+    @Environment(\.colorSchemeContrast) private var appearanceContrast
+
+    private var appearancePalette: MacAppearancePalette {
+        MacAppearancePalette(scheme: appearanceScheme, increasedContrast: appearanceContrast == .increased)
+    }
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(
-                model: model,
-                profiles: profiles,
-                selectedProfileID: selectedProfileID,
-                connectionRoute: connectionRoute,
-                onAddNAS: onAddNAS,
-                onSelectNAS: { profile in onSelectNAS(profile.id) },
-                onMoveProfiles: onMoveProfiles,
-                onLogout: onLogout
-            )
-                .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
-        } detail: {
-            contentColumn
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 40).allowsHitTesting(false)
+            HStack(spacing: 0) {
+                SidebarView(
+                    model: model,
+                    profiles: profiles,
+                    selectedProfileID: selectedProfileID,
+                    connectionRoute: connectionRoute,
+                    onAddNAS: onAddNAS,
+                    onSelectNAS: { profile in onSelectNAS(profile.id) },
+                    onMoveProfiles: onMoveProfiles,
+                    onLogout: onLogout
+                )
+                .frame(width: showsSidebar ? sidebarWidth : 0)
+                .clipped()
+                .accessibilityHidden(!showsSidebar)
+
+                if showsSidebar {
+                    Color.clear
+                        .frame(width: 4)
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                        }
+                        .gesture(DragGesture(minimumDistance: 1).onChanged { value in
+                            if sidebarResizeStart == nil { sidebarResizeStart = sidebarWidth }
+                            sidebarWidth = min(280, max(210, (sidebarResizeStart ?? sidebarWidth) + value.translation.width))
+                        }.onEnded { _ in sidebarResizeStart = nil })
+                        .accessibilityHidden(true)
+                }
+                VStack(spacing: 0) {
+                    if isFileSection { fileWorkspaceToolbar }
+                    else if !moduleOwnsPageHeader { nonFileWorkspaceToolbar }
+                    if !moduleOwnsPageHeader { Divider() }
+                    contentColumn
+                        .scrollContentBackground(.hidden)
+                        .environment(\.macPageNavigation, MacPageNavigation(canGoBack: canNavigateBack, canGoUp: canNavigateUp, goBack: { navigateBack() }, goUp: { navigateUp() }))
+                        .fillsAvailableContentArea(alignment: .topLeading)
+                }
                 .fillsAvailableContentArea(alignment: .topLeading)
-                .navigationSplitViewColumnWidth(min: 480, ideal: 680)
+                .background(appearancePalette.content)
+                .clipShape(RoundedRectangle(cornerRadius: MacAppearanceMetrics.surfaceRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: MacAppearanceMetrics.surfaceRadius)
+                        .strokeBorder(appearancePalette.edge, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .padding(.trailing, MacAppearanceMetrics.workspaceInset)
+                .padding(.bottom, MacAppearanceMetrics.workspaceInset)
+            }
         }
-        .navigationSplitViewStyle(.balanced)
+        .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
+        .background(MacWorkspaceWindowChrome(fullSize: true))
+        .ignoresSafeArea(.container, edges: .top)
         .task {
             await model.startEnabledModules()
         }
@@ -130,9 +178,92 @@ struct WorkspaceView: View {
             previewWindowController?.closeFromModel()
             model.dismissPreview()
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                // 固定为单个工具栏项目，避免页面切换时 AppKit 重复插入自动生成的项目标识。
+        .sheet(isPresented: deleteAlertPresented) {
+            ModernDeleteConfirmationDialog(
+                targets: deleteTargets,
+                profileName: model.profile.displayName,
+                currentPath: model.currentPath,
+                onConfirm: {
+                    let targets = deleteTargets
+                    deleteTargets = []
+                    model.deleteItems(targets)
+                },
+                onCancel: {
+                    deleteTargets = []
+                }
+            )
+        }
+        .overlay(alignment: .bottom) {
+            if let toast = model.activeToast {
+                InAppToastOverlayView(toast: toast)
+                    .padding(.bottom, 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(999)
+            }
+        }
+        .alert(L10n.string("ui.9c82d7205cdc6a84"), isPresented: restoreAlertPresented) {
+            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {
+                restoreTarget = nil
+            }
+            Button(L10n.string("ui.e0534b8a4e46a0cb")) {
+                if let item = restoreTarget {
+                    model.restoreToOriginalLocation(item)
+                }
+                restoreTarget = nil
+            }
+        } message: {
+            Text(L10n.string("ui.2c33e68b793e860d"))
+        }
+        .sheet(item: $showingInfoItem) { item in
+            FilePropertiesView(item: item, model: model)
+        }
+        .sheet(isPresented: Binding(
+            get: { !shareTargets.isEmpty },
+            set: { if !$0 { shareTargets = [] } }
+        )) {
+            ShareCreationView(model: model, targets: shareTargets) {
+                shareTargets = []
+            }
+        }
+        .alert(L10n.string("ui.9d8546855ba4a822"), isPresented: $model.requiresReauthentication) {
+            Button(L10n.string("ui.b8784c8dd5636ff2")) {
+                model.requiresReauthentication = false
+                Task { await model.load() }
+            }
+            Button(L10n.string("ui.957244cdb9f232ab")) {
+                let message = model.statusMessage ?? L10n.string("ui.bd0bb959fbb4f47c")
+                Task { await onSessionExpired(message) }
+            }
+        } message: {
+            Text(reauthenticationMessage)
+        }
+        .navigationTitle("")
+        .toolbar(.visible, for: .windowToolbar)
+    }
+
+    private var moduleOwnsPageHeader: Bool {
+        switch model.section {
+        case .chat?, .downloadStation?, .containerManager?, .virtualMachineManager?, .recent?, .remoteLocations?: true
+        default: false
+        }
+    }
+
+    private var nonFilePageTitle: String {
+        switch model.section {
+        case .photos?: L10n.string("workspace.navigation.photos")
+        case .nasSettings?: L10n.string("ui.b1729f4b03c4b97d")
+        case .transfers?: L10n.string("ui.74c2308f64b688ae")
+        case .settings?: L10n.string("appSettings.title")
+        case .favorites?: L10n.string("ui.60a53514eb9228a2")
+        case .recent?: L10n.string("ui.de314b445e076e84")
+        case .remoteLocations?: L10n.string("ui.6727073e65194528")
+        case .sharedLinks?: L10n.string("ui.76cdc4a13d1eecc0")
+        default: L10n.string("app.name")
+        }
+    }
+
+    private var nonFileWorkspaceToolbar: some View {
+        HStack(spacing: 16) {
                 HStack(spacing: 6) {
                     Button {
                         navigateBack()
@@ -151,97 +282,18 @@ struct WorkspaceView: View {
                     .disabled(!canNavigateUp)
                     .help(L10n.string("ui.3f374e18fac0a39b"))
                 }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(nonFilePageTitle).font(.headline).lineLimit(1)
+                if model.section == .nasSettings {
+                    Text(L10n.string("nasSettings.deviceScope", model.profile.displayName))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-
-            ToolbarItemGroup(placement: .primaryAction) {
-                // 页面对应的操作会变化，但 AppKit 始终只维护这一个工具栏项目。
+            Spacer(minLength: 12)
                 HStack(spacing: 8) {
-                    if isFileSection {
-                    Button {
-                        Task { await model.refresh() }
-                    } label: {
-                        Label(L10n.string("ui.aee88743413144a2"), systemImage: "arrow.clockwise")
-                    }
-                    .disabled(model.currentPath.isEmpty || model.isRefreshing)
-                    .keyboardShortcut("r", modifiers: .command)
-
-                    Button {
-                        presentUploadPanel()
-                    } label: {
-                        Label(L10n.string("ui.9e07e3c0532d4976"), systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(!isFileSection)
-                    .help(L10n.string("ui.f7c49cca76cd2166"))
-
-                    Menu {
-                        if model.selectedItems.count > 1 {
-                            Button(L10n.string("ui.b97cad08035a15e2")) {
-                                presentBatchDownloadPanel(model.selectedItems)
-                            }
-                        } else if let item = model.selectedItem {
-                            if item.isDirectory {
-                                Button(L10n.string("ui.f956089b945b92cf")) {
-                                    presentDownloadPanel(item, folderMode: .archive)
-                                }
-                                Button(L10n.string("ui.0f50ddf3fa8bb870")) {
-                                    presentDownloadPanel(item, folderMode: .directory)
-                                }
-                            } else {
-                                Button(L10n.string("ui.29610562f4b1c377")) {
-                                    presentDownloadPanel(item, folderMode: .archive)
-                                }
-                            }
-                        }
-                    } label: {
-                        Label(L10n.string("ui.4673a23061656125"), systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(model.selectedItem == nil)
-                    .help(L10n.string("ui.3d8f89112076525f"))
-
-                    Button {
-                        shareTargets = model.selectedItems
-                    } label: {
-                        Label(L10n.string("ui.7e564575eb7d5eb2"), systemImage: "link")
-                    }
-                    .disabled(model.selectedItems.isEmpty)
-                    .help(L10n.string("ui.bcb4ca87b0024cf4"))
-
-                    Button {
-                        deleteTargets = model.selectedItems
-                    } label: {
-                        Label(L10n.string("ui.2f9daa828907b93f"), systemImage: "trash")
-                    }
-                    .disabled(model.selectedItems.isEmpty)
-                    .help(L10n.string("ui.33006fc9ca3c7e3e"))
-
-                    Button {
-                        onPaste()
-                    } label: {
-                        Label(L10n.string("ui.33517926747180e6"), systemImage: "doc.on.clipboard")
-                    }
-                    .disabled(!hasFileClipboard || !isFileSection)
-                    .help(L10n.string("ui.2246a02a18714b5b"))
-                    .keyboardShortcut("v", modifiers: .command)
-
-                    Button {
-                        model.section = .transfers
-                    } label: {
-                        Label(L10n.string("ui.a2f59f64d2623d19"), systemImage: "arrow.up.arrow.down.circle")
-                    }
-                    .badge(model.activeTransferCount)
-
-                    Picker(L10n.string("ui.9f8f3cc264bae3ce"), selection: $viewMode) {
-                        Label(L10n.string("ui.aedd6814ff8c516c"), systemImage: "list.bullet").tag(FileViewMode.list)
-                        Label(L10n.string("ui.0d720eeea26466dd"), systemImage: "square.grid.3x3").tag(FileViewMode.grid)
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(!isFileSection)
-
-                    if viewMode == .grid {
-                        groupingMenu
-                    }
-
-                } else if isPhotoSection {
+                    if isPhotoSection {
                     Button {
                         presentPhotoUploadPanel()
                     } label: {
@@ -323,68 +375,104 @@ struct WorkspaceView: View {
                         }
                     }
                 }
-            }
         }
-        .sheet(isPresented: deleteAlertPresented) {
-            ModernDeleteConfirmationDialog(
-                targets: deleteTargets,
-                profileName: model.profile.displayName,
-                currentPath: model.currentPath,
-                onConfirm: {
-                    let targets = deleteTargets
-                    deleteTargets = []
-                    model.deleteItems(targets)
-                },
-                onCancel: {
-                    deleteTargets = []
+        .labelStyle(.iconOnly)
+        .buttonStyle(MacToolbarButtonStyle())
+        .padding(.horizontal, 20)
+        .frame(height: 64)
+        .background(MacGlassSurface(role: .toolbar))
+    }
+
+    private var fileWorkspaceToolbar: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 8) {
+                Button {
+                    showsSidebar.toggle()
+                } label: {
+                    Label(L10n.string("workspace.sidebar.toggle"), systemImage: "sidebar.left")
                 }
-            )
-        }
-        .overlay(alignment: .bottom) {
-            if let toast = model.activeToast {
-                InAppToastOverlayView(toast: toast)
-                    .padding(.bottom, 24)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .zIndex(999)
-            }
-        }
-        .alert(L10n.string("ui.9c82d7205cdc6a84"), isPresented: restoreAlertPresented) {
-            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {
-                restoreTarget = nil
-            }
-            Button(L10n.string("ui.e0534b8a4e46a0cb")) {
-                if let item = restoreTarget {
-                    model.restoreToOriginalLocation(item)
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .help(L10n.string("workspace.sidebar.toggle"))
+                Button(action: navigateBack) {
+                    Label(L10n.string("ui.572cf45ba43634b3"), systemImage: "chevron.left")
                 }
-                restoreTarget = nil
+                .disabled(!canNavigateBack)
+                .keyboardShortcut("[", modifiers: .command)
+                .help(L10n.string("ui.265f9b089511054a"))
+                Button(action: navigateUp) {
+                    Label(L10n.string("ui.8e7847be62b68c2b"), systemImage: "arrow.up")
+                }
+                .disabled(!canNavigateUp)
+                .help(L10n.string("ui.3f374e18fac0a39b"))
+                Button { Task { await model.refresh() } } label: {
+                    Label(L10n.string("ui.aee88743413144a2"), systemImage: "arrow.clockwise")
+                }
+                .disabled(model.currentPath.isEmpty || model.isRefreshing)
+                .keyboardShortcut("r", modifiers: .command)
+                .help(L10n.string("ui.aee88743413144a2"))
             }
-        } message: {
-            Text(L10n.string("ui.2c33e68b793e860d"))
-        }
-        .sheet(item: $showingInfoItem) { item in
-            FilePropertiesView(item: item, model: model)
-        }
-        .sheet(isPresented: Binding(
-            get: { !shareTargets.isEmpty },
-            set: { if !$0 { shareTargets = [] } }
-        )) {
-            ShareCreationView(model: model, targets: shareTargets) {
-                shareTargets = []
+            .labelStyle(.iconOnly)
+            .buttonStyle(MacToolbarButtonStyle())
+            Spacer(minLength: 4)
+            Button(action: presentUploadPanel) {
+                Label(L10n.string("ui.9e07e3c0532d4976"), systemImage: "square.and.arrow.up")
             }
-        }
-        .alert(L10n.string("ui.9d8546855ba4a822"), isPresented: $model.requiresReauthentication) {
-            Button(L10n.string("ui.b8784c8dd5636ff2")) {
-                model.requiresReauthentication = false
-                Task { await model.load() }
+            .buttonStyle(MacToolbarButtonStyle(prominent: true))
+            .help(L10n.string("ui.f7c49cca76cd2166"))
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField(L10n.string("ui.9c8bd1565def7849"), text: $model.searchText)
+                    .textFieldStyle(.plain)
+                    .focused($searchIsFocused)
+                    .accessibilityIdentifier("workspace.search")
+                if !model.searchText.isEmpty {
+                    Button { model.searchText = "" } label: {
+                        Label(L10n.string("workspace.search.clear"), systemImage: "xmark.circle.fill")
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
             }
-            Button(L10n.string("ui.957244cdb9f232ab")) {
-                let message = model.statusMessage ?? L10n.string("ui.bd0bb959fbb4f47c")
-                Task { await onSessionExpired(message) }
+            .font(.system(size: 14))
+            .padding(.horizontal, 12)
+            .frame(minWidth: 120, idealWidth: 260, maxWidth: 300)
+            .frame(height: 36)
+            .background(appearancePalette.searchField, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(appearancePalette.separator, lineWidth: 1))
+            .background {
+                Button("") { searchIsFocused = true }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .hidden()
+                    .accessibilityHidden(true)
             }
-        } message: {
-            Text(reauthenticationMessage)
+            HStack(spacing: 4) {
+                Button { viewMode = .grid } label: {
+                    Label(L10n.string("ui.0d720eeea26466dd"), systemImage: "square.grid.2x2.fill")
+                }
+                .buttonStyle(MacToolbarButtonStyle(selected: viewMode == .grid))
+                .help(L10n.string("ui.0d720eeea26466dd"))
+                .accessibilityAddTraits(viewMode == .grid ? .isSelected : [])
+                Button { viewMode = .list } label: {
+                    Label(L10n.string("ui.aedd6814ff8c516c"), systemImage: "list.bullet")
+                }
+                .buttonStyle(MacToolbarButtonStyle(selected: viewMode == .list))
+                .help(L10n.string("ui.aedd6814ff8c516c"))
+                .accessibilityAddTraits(viewMode == .list ? .isSelected : [])
+            }
+            .labelStyle(.iconOnly)
+            Button { showsFileInspector.toggle() } label: {
+                Label(L10n.string("workspace.inspector.title"), systemImage: "info.circle")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(MacToolbarButtonStyle(selected: showsFileInspector))
+            .help(L10n.string("workspace.inspector.toggle"))
+            .accessibilityIdentifier("workspace.inspector.toggle")
         }
-        .navigationTitle(navigationTitle)
+        .padding(.horizontal, 20)
+        .frame(height: 76)
+        .background(MacGlassSurface(role: .toolbar))
+        .accessibilityIdentifier("workspace.toolbar")
     }
 
     private var reauthenticationMessage: String {
@@ -412,19 +500,6 @@ struct WorkspaceView: View {
         return true
     }
 
-    @ViewBuilder
-    private var groupingMenu: some View {
-        Menu {
-            Picker(L10n.string("ui.72148c2201764726"), selection: $fileGrouping) {
-                ForEach(FileGrouping.allCases) { grouping in
-                    Text(grouping.title).tag(grouping)
-                }
-            }
-        } label: {
-            Label(fileGrouping.title, systemImage: "rectangle.3.group")
-        }
-        .help(L10n.string("ui.493a93469c82d2d9"))
-    }
 
     private var navigationTitle: String {
         switch model.section {
@@ -451,7 +526,7 @@ struct WorkspaceView: View {
         case .virtualMachineManager:
             return L10n.string("ui.80c43bd2481c9580")
         case .settings:
-            return L10n.string("ui.df3d58c7d84b85f2")
+            return L10n.string("appSettings.title")
         default:
             return (model.currentPath.isEmpty || model.currentPath == "/") ? model.profile.displayName : (model.currentPath.split(separator: "/").last.map(String.init) ?? model.currentPath)
         }
@@ -545,7 +620,7 @@ struct WorkspaceView: View {
             FileBrowserView(
                 model: model,
                 viewMode: $viewMode,
-                fileGrouping: fileGrouping,
+                fileGrouping: $fileGrouping,
                 showingInfoItem: $showingInfoItem,
                 onDownload: presentDownloadPanel,
                 onDownloadBatch: presentBatchDownloadPanel,
@@ -555,7 +630,8 @@ struct WorkspaceView: View {
                 onCopy: onCopy,
                 onCut: onCut,
                 hasFileClipboard: hasFileClipboard,
-                onPaste: onPaste
+                onPaste: onPaste,
+                showsInspector: $showsFileInspector
             )
         }
     }
@@ -833,6 +909,7 @@ private final class FloatingPreviewWindowController: NSObject, NSWindowDelegate 
                 onDelete: onDelete,
                 onRestore: onRestore
             )
+            .macAppearanceRoot()
         )
         window = previewWindow
         return previewWindow
@@ -885,29 +962,6 @@ private struct TruncationAwareLabel: View {
     }
 }
 
-private struct SidebarModuleLabel: View {
-    let title: String
-    let systemImage: String
-    let tint: Color
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .symbolVariant(.fill)
-                .font(.system(size: 17, weight: .semibold))
-                .frame(width: 22, height: 20, alignment: .center)
-                .accessibilityHidden(true)
-            TruncationAwareText(title: title)
-        }
-        .foregroundStyle(
-            isSelected
-                ? Color(nsColor: .alternateSelectedControlTextColor)
-                : tint
-        )
-        .accessibilityElement(children: .combine)
-    }
-}
 
 private extension PhotoWorkspacePage {
     var title: String {
@@ -925,42 +979,6 @@ private extension PhotoWorkspacePage {
     }
 }
 
-private struct SidebarExpandableSectionHeader: View {
-    @Environment(\.accessibilityReduceMotion) private var reducesMotion
-
-    let title: String
-    @Binding var isExpanded: Bool
-
-    var body: some View {
-        Button {
-            withAnimation(
-                reducesMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)
-            ) {
-                isExpanded.toggle()
-            }
-        } label: {
-            HStack {
-                Text(title)
-                Spacer()
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.tertiary)
-                    .padding(.trailing, 10)
-                    .accessibilityHidden(true)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            L10n.string(
-                isExpanded
-                    ? "sidebar.section.collapse-accessibility"
-                    : "sidebar.section.expand-accessibility",
-                title
-            )
-        )
-    }
-}
 
 private struct SidebarView: View {
     @Bindable var model: WorkspaceModel
@@ -971,375 +989,272 @@ private struct SidebarView: View {
     let onSelectNAS: (NasProfile) -> Void
     let onMoveProfiles: (IndexSet, Int) -> Void
     let onLogout: () async -> Void
-
     @AppStorage("sidebar_file_management_expanded") private var isFileManagementExpanded = false
     @AppStorage("sidebar_photo_management_expanded") private var isPhotoManagementExpanded = false
     @AppStorage("sidebar_container_management_expanded") private var isContainerManagementExpanded = false
     @AppStorage("sidebar_virtual_machine_management_expanded") private var isVirtualMachineManagementExpanded = false
-    @State private var isNasListExpanded = true
-    @State private var connectingProfileID: UUID? = nil
+    @State private var showsDevices = false
+    @State private var connectingProfileID: UUID?
     @State private var confirmsLogout = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        List(selection: $model.section) {
-            Section(L10n.string("ui.4084e8707628b196"), isExpanded: $isNasListExpanded) {
-                ForEach(profiles) { profile in
-                    let isCurrent = profile.id == selectedProfileID
-                    let isConnecting = connectingProfileID == profile.id
-                    
-                    HStack(spacing: 8) {
-                        Image(
-                            systemName: isCurrent
-                                ? "externaldrive.fill.badge.checkmark"
-                                : "externaldrive"
-                        )
-                        .foregroundStyle(isCurrent ? .blue : .secondary)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            TruncationAwareText(title: profile.displayName)
-                                .font(.headline)
-                            TruncationAwareText(
-                                title: isCurrent ? L10n.string("ui.e403ba5798ba13a4") : profile.host
-                            )
-                                .font(.caption)
+        VStack(spacing: 0) {
+            Button { showsDevices.toggle() } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.primary.opacity(0.055))
+                            .frame(width: 48, height: 50)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color(red: 0.23, green: 0.26, blue: 0.28))
+                            .frame(width: 23, height: 29)
+                            .overlay {
+                                VStack(spacing: 9) {
+                                    HStack(spacing: 6) {
+                                        Circle().fill(.green).frame(width: 3, height: 3)
+                                        Circle().fill(.green.opacity(0.6)).frame(width: 3, height: 3)
+                                    }
+                                    Capsule().fill(.white.opacity(0.3)).frame(width: 8, height: 2)
+                                }
+                            }
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(model.profile.displayName)
+                            .font(.system(size: 15, weight: .medium))
+                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Circle().fill(.green).frame(width: 6, height: 6)
+                            Text(L10n.string("workspace.device.connected"))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                         }
-                        
-                        Spacer()
-                        
-                        if isConnecting {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else if isCurrent {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
-                                .font(.system(size: 11, weight: .bold))
-                                .accessibilityLabel(L10n.string("ui.01d5b647f634042d"))
-                        }
                     }
-                    .contentShape(Rectangle())
-                    .padding(.vertical, 4)
-                    .onTapGesture {
-                        guard !isCurrent && connectingProfileID == nil else { return }
-                        connectingProfileID = profile.id
-                        Task {
-                            onSelectNAS(profile)
-                            try? await Task.sleep(nanoseconds: 800_000_000)
-                            connectingProfileID = nil
-                        }
-                    }
-                }
-                .onMove(perform: onMoveProfiles)
-
-                HStack {
-                    TruncationAwareLabel(
-                        title: L10n.string("ui.8249cd04be30c505"),
-                        systemImage: "plus"
-                    )
-                        .foregroundStyle(.blue)
-                    Spacer()
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.system(size: 12))
                 }
                 .contentShape(Rectangle())
-                .padding(.vertical, 4)
-                .onTapGesture {
-                    onAddNAS()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
+            }
+            .buttonStyle(.plain)
+            .help(L10n.string("ui.4084e8707628b196"))
+            .popover(isPresented: $showsDevices) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(L10n.string("ui.4084e8707628b196")).font(.headline)
+                    List {
+                        ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
+                            Button {
+                                guard profile.id != selectedProfileID, connectingProfileID == nil else { return }
+                                connectingProfileID = profile.id
+                                showsDevices = false
+                                Task {
+                                    onSelectNAS(profile)
+                                    try? await Task.sleep(for: .milliseconds(800))
+                                    connectingProfileID = nil
+                                }
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(profile.displayName)
+                                        Text(profile.host).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if profile.id == selectedProfileID { Image(systemName: "checkmark") }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(L10n.string("workspace.device.moveUp")) {
+                                    onMoveProfiles(IndexSet(integer: index), index - 1)
+                                }
+                                .disabled(index == 0)
+                                Button(L10n.string("workspace.device.moveDown")) {
+                                    onMoveProfiles(IndexSet(integer: index), index + 2)
+                                }
+                                .disabled(index == profiles.count - 1)
+                            }
+                        }
+                        .onMove(perform: onMoveProfiles)
+                    }
+                    .frame(width: 280, height: min(260, CGFloat(profiles.count) * 38 + 24))
+                    Button(L10n.string("ui.8249cd04be30c505")) {
+                        showsDevices = false
+                        onAddNAS()
+                    }
                 }
+                .padding(18)
             }
 
+            Button(action: onAddNAS) {
+                Label(L10n.string("ui.8249cd04be30c505"), systemImage: "plus.circle")
+                    .font(.system(size: 15))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Divider().padding(.vertical, 12)
+
+            ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 5) {
+                    if model.isFileModuleEnabled {
+                        moduleRow(model.currentFileSection, title: L10n.string("workspace.navigation.files"), icon: "folder", expanded: $isFileManagementExpanded)
+                        if isFileManagementExpanded || fileChildIsSelected {
+                            childRow(.favorites, title: L10n.string("ui.60a53514eb9228a2"), icon: "star")
+                            childRow(.recent, title: L10n.string("ui.de314b445e076e84"), icon: "clock")
+                            childRow(.remoteLocations, title: L10n.string("ui.6727073e65194528"), icon: "network")
+                            childRow(.sharedLinks, title: L10n.string("ui.76cdc4a13d1eecc0"), icon: "link")
+                        }
+                    }
+                    if model.isPhotosModuleEnabled {
+                        moduleRow(.photos(.timeline), title: L10n.string("workspace.navigation.photos"), icon: "photo", expanded: $isPhotoManagementExpanded)
+                        if isPhotoManagementExpanded || model.section == .photos(.albums) {
+                            childRow(.photos(.albums), title: PhotoWorkspacePage.albums.title, icon: PhotoWorkspacePage.albums.icon)
+                        }
+                    }
+                    if model.isChatModuleEnabled {
+                        moduleRow(.chat, title: L10n.string("ui.4da199fae933d4fa"), icon: "ellipsis.bubble", badge: model.chat.totalUnreadCount)
+                    }
+                    if model.isDownloadStationModuleEnabled {
+                        moduleRow(.downloadStation, title: L10n.string("ui.5248507df52ff455"), icon: "arrow.down.to.line")
+                    }
+                    if model.isContainerManagerModuleEnabled {
+                        moduleRow(.containerManager(.overview), title: L10n.string("workspace.navigation.containers"), icon: "shippingbox", expanded: $isContainerManagementExpanded)
+                        if isContainerManagementExpanded || containerChildIsSelected {
+                            ForEach(ContainerManagerPane.allCases.dropFirst()) { pane in
+                                childRow(.containerManager(pane), title: pane.title, icon: pane.icon)
+                            }
+                        }
+                    }
+                    if model.isVirtualMachineManagerModuleEnabled {
+                        moduleRow(.virtualMachineManager(.machines), title: VirtualMachineManagerPane.machines.title, icon: "desktopcomputer", expanded: $isVirtualMachineManagementExpanded)
+                        if isVirtualMachineManagementExpanded || virtualMachineChildIsSelected {
+                            ForEach(VirtualMachineManagerPane.allCases.dropFirst()) { pane in
+                                childRow(.virtualMachineManager(pane), title: pane.title, icon: pane.icon)
+                            }
+                        }
+                    }
+                    if model.isNasSettingsModuleEnabled {
+                        moduleRow(.nasSettings, title: L10n.string("ui.b1729f4b03c4b97d"), icon: "server.rack")
+                    }
+                    if model.isFileModuleEnabled {
+                        moduleRow(.transfers, title: L10n.string("ui.74c2308f64b688ae"), icon: "arrow.left.arrow.right", badge: model.activeTransferCount)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .onChange(of: model.section, initial: true) { _, section in
+                if let section { proxy.scrollTo(section) }
+            }
+            }
+            Spacer(minLength: 16)
+            Divider().padding(.vertical, 8)
+            moduleRow(.settings, title: L10n.string("appSettings.title"), icon: "gearshape")
+                .accessibilityIdentifier("sidebar.appSettings")
             if model.isFileModuleEnabled {
-                let isFileChildSelected = [
-                    WorkspaceSection.favorites,
-                    .recent,
-                    .remoteLocations,
-                    .sharedLinks
-                ].contains(model.section)
-                let showFileDetails = isFileManagementExpanded || isFileChildSelected
-
-                Section {
-                    NavigationLink(value: model.currentFileSection) {
-                        SidebarModuleLabel(
-                            title: L10n.string("ui.8e8343f9178e476d"),
-                            systemImage: "folder",
-                            tint: .blue,
-                            isSelected: model.section == model.currentFileSection
-                        )
-                    }
-
-                    if showFileDetails {
-                        NavigationLink(value: WorkspaceSection.favorites) {
-                            TruncationAwareLabel(
-                                title: L10n.string("ui.60a53514eb9228a2"),
-                                systemImage: "star.fill"
-                            )
-                        }
-                        NavigationLink(value: WorkspaceSection.recent) {
-                            TruncationAwareLabel(
-                                title: L10n.string("ui.de314b445e076e84"),
-                                systemImage: "clock"
-                            )
-                        }
-                        NavigationLink(value: WorkspaceSection.remoteLocations) {
-                            TruncationAwareLabel(
-                                title: L10n.string("ui.6727073e65194528"),
-                                systemImage: "network"
-                            )
-                        }
-                        NavigationLink(value: WorkspaceSection.sharedLinks) {
-                            TruncationAwareLabel(
-                                title: L10n.string("ui.76cdc4a13d1eecc0"),
-                                systemImage: "link"
-                            )
-                        }
-                    }
-                } header: {
-                    SidebarExpandableSectionHeader(
-                        title: L10n.string("ui.b3bd5ac7cc4d668b"),
-                        isExpanded: Binding(
-                            get: { showFileDetails },
-                            set: { isExpanded in
-                                isFileManagementExpanded = isExpanded
-                                if !isExpanded, isFileChildSelected {
-                                    model.section = model.currentFileSection
-                                }
-                            }
-                        )
-                    )
-                }
+                Divider().padding(.bottom, 8)
+                StorageCapacityView(summary: model.storageSpaceSummary, isLoading: model.isLoadingStorageSpace)
             }
-
-            if model.isPhotosModuleEnabled {
-                let selectedPhotoPage = if case .photos(let page) = model.section {
-                    page
-                } else {
-                    Optional<PhotoWorkspacePage>.none
+            Divider().padding(.top, 10)
+            HStack(spacing: 10) {
+                Image(systemName: "network").font(.system(size: 17))
+                Text(connectionRoute?.title ?? L10n.string("ui.5be0323e8adcaeae"))
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Button {
+                    if model.activeTransferCount > 0 { confirmsLogout = true }
+                    else { Task { await onLogout() } }
+                } label: {
+                    Label(L10n.string("ui.498e1d59b4d787ee"), systemImage: "rectangle.portrait.and.arrow.right")
                 }
-                let showPhotoDetails = isPhotoManagementExpanded || selectedPhotoPage == .albums
-
-                Section {
-                    NavigationLink(value: WorkspaceSection.photos(.timeline)) {
-                        SidebarModuleLabel(
-                            title: PhotoWorkspacePage.timeline.title,
-                            systemImage: "photo.on.rectangle.angled",
-                            tint: .orange,
-                            isSelected: selectedPhotoPage == .timeline
-                        )
-                    }
-
-                    if showPhotoDetails {
-                        NavigationLink(value: WorkspaceSection.photos(.albums)) {
-                            TruncationAwareLabel(
-                                title: PhotoWorkspacePage.albums.title,
-                                systemImage: PhotoWorkspacePage.albums.icon
-                            )
-                        }
-                    }
-                } header: {
-                    SidebarExpandableSectionHeader(
-                        title: L10n.string("ui.67c683672f7ff48d"),
-                        isExpanded: Binding(
-                            get: { showPhotoDetails },
-                            set: { isExpanded in
-                                isPhotoManagementExpanded = isExpanded
-                                if !isExpanded, selectedPhotoPage == .albums {
-                                    model.section = .photos(.timeline)
-                                }
-                            }
-                        )
-                    )
-                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(L10n.string("ui.eee4ecee6e6275ea"))
             }
-
-            if model.isChatModuleEnabled {
-                Section(L10n.string("ui.aadb2d9d805f9164")) {
-                    NavigationLink(value: WorkspaceSection.chat) {
-                        SidebarModuleLabel(
-                            title: L10n.string("ui.4da199fae933d4fa"),
-                            systemImage: "bubble.left.and.bubble.right",
-                            tint: .indigo,
-                            isSelected: model.section == .chat
-                        )
-                        .badge(model.chat.totalUnreadCount)
-                    }
-                }
-            }
-
-            if model.isDownloadStationModuleEnabled {
-                Section(L10n.string("ui.4673a23061656125")) {
-                    NavigationLink(value: WorkspaceSection.downloadStation) {
-                        SidebarModuleLabel(
-                            title: L10n.string("ui.5248507df52ff455"),
-                            systemImage: "arrow.down.circle",
-                            tint: .green,
-                            isSelected: model.section == .downloadStation
-                        )
-                    }
-                }
-            }
-
-            if model.isContainerManagerModuleEnabled {
-                let selectedContainerPane = if case .containerManager(let pane) = model.section {
-                    pane
-                } else {
-                    Optional<ContainerManagerPane>.none
-                }
-                let showContainerDetails = isContainerManagementExpanded
-                    || selectedContainerPane.map { $0 != .overview } == true
-
-                Section {
-                    NavigationLink(value: WorkspaceSection.containerManager(.overview)) {
-                        SidebarModuleLabel(
-                            title: ContainerManagerPane.overview.title,
-                            systemImage: "shippingbox",
-                            tint: .blue,
-                            isSelected: selectedContainerPane == .overview
-                        )
-                    }
-
-                    if showContainerDetails {
-                        ForEach(ContainerManagerPane.allCases.dropFirst()) { pane in
-                            NavigationLink(value: WorkspaceSection.containerManager(pane)) {
-                                TruncationAwareLabel(title: pane.title, systemImage: pane.icon)
-                            }
-                        }
-                    }
-                } header: {
-                    SidebarExpandableSectionHeader(
-                        title: L10n.string("ui.6d23f04b26967d64"),
-                        isExpanded: Binding(
-                            get: { showContainerDetails },
-                            set: { isExpanded in
-                                isContainerManagementExpanded = isExpanded
-                                if !isExpanded,
-                                   selectedContainerPane.map({ $0 != .overview }) == true {
-                                    model.section = .containerManager(.overview)
-                                }
-                            }
-                        )
-                    )
-                }
-            }
-
-            if model.isVirtualMachineManagerModuleEnabled {
-                let selectedVirtualMachinePane = if case .virtualMachineManager(let pane) = model.section {
-                    pane
-                } else {
-                    Optional<VirtualMachineManagerPane>.none
-                }
-                let showVirtualMachineDetails = isVirtualMachineManagementExpanded
-                    || selectedVirtualMachinePane.map { $0 != .machines } == true
-
-                Section {
-                    NavigationLink(value: WorkspaceSection.virtualMachineManager(.machines)) {
-                        SidebarModuleLabel(
-                            title: VirtualMachineManagerPane.machines.title,
-                            systemImage: "desktopcomputer",
-                            tint: .indigo,
-                            isSelected: selectedVirtualMachinePane == .machines
-                        )
-                    }
-
-                    if showVirtualMachineDetails {
-                        ForEach(VirtualMachineManagerPane.allCases.dropFirst()) { pane in
-                            NavigationLink(value: WorkspaceSection.virtualMachineManager(pane)) {
-                                TruncationAwareLabel(title: pane.title, systemImage: pane.icon)
-                            }
-                        }
-                    }
-                } header: {
-                    SidebarExpandableSectionHeader(
-                        title: L10n.string("ui.f3fb4b3a41570007"),
-                        isExpanded: Binding(
-                            get: { showVirtualMachineDetails },
-                            set: { isExpanded in
-                                isVirtualMachineManagementExpanded = isExpanded
-                                if !isExpanded,
-                                   selectedVirtualMachinePane.map({ $0 != .machines }) == true {
-                                    model.section = .virtualMachineManager(.machines)
-                                }
-                            }
-                        )
-                    )
-                }
-            }
-
-            if model.isNasSettingsModuleEnabled {
-                Section(L10n.string("ui.5b50d7c4b5950dc5")) {
-                    NavigationLink(value: WorkspaceSection.nasSettings) {
-                        SidebarModuleLabel(
-                            title: L10n.string("ui.b1729f4b03c4b97d"),
-                            systemImage: "server.rack",
-                            tint: .teal,
-                            isSelected: model.section == .nasSettings
-                        )
-                    }
-                }
-            }
-
-            Section(L10n.string("ui.df3d58c7d84b85f2")) {
-                if model.isFileModuleEnabled {
-                    NavigationLink(value: WorkspaceSection.transfers) {
-                        TruncationAwareLabel(
-                            title: L10n.string("ui.74c2308f64b688ae"),
-                            systemImage: "arrow.up.arrow.down.circle"
-                        )
-                            .badge(model.activeTransferCount)
-                    }
-                }
-                NavigationLink(value: WorkspaceSection.settings) {
-                    TruncationAwareLabel(
-                        title: L10n.string("ui.df3d58c7d84b85f2"),
-                        systemImage: "gearshape"
-                    )
-                }
-            }
+            .padding(.horizontal, 8)
+            .frame(height: 48)
         }
-        .listStyle(.sidebar)
-        .scrollIndicators(.hidden)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                if model.isFileModuleEnabled {
-                    StorageCapacityView(
-                        summary: model.storageSpaceSummary,
-                        isLoading: model.isLoadingStorageSpace
-                    )
-                }
-                Divider()
-                HStack(spacing: 10) {
-                    Image(systemName: connectionRoute?.systemImage ?? "network")
-                        .foregroundStyle(.green)
-                        .frame(width: 20)
-                        .accessibilityHidden(true)
-                    TruncationAwareText(
-                        title: connectionRoute?.title ?? L10n.string("ui.5be0323e8adcaeae")
-                    )
-                        .font(.caption.weight(.medium))
-                    Spacer(minLength: 6)
-                    Button(L10n.string("ui.498e1d59b4d787ee")) {
-                        if model.activeTransferCount > 0 {
-                            confirmsLogout = true
-                        } else {
-                            Task { await onLogout() }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(.red)
-                    .help(L10n.string("ui.eee4ecee6e6275ea"))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-            }
-            .background(.bar)
-        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .fillsAvailableContentArea(alignment: .topLeading)
+        .background(MacGlassSurface(role: .sidebar))
         .alert(L10n.string("ui.d6c03418feb80517"), isPresented: $confirmsLogout) {
             Button(L10n.string("ui.a6474132ac36cbb9"), role: .cancel) {}
-            Button(L10n.string("ui.60c04f5366d555f1"), role: .destructive) {
-                Task { await onLogout() }
-            }
+            Button(L10n.string("ui.60c04f5366d555f1"), role: .destructive) { Task { await onLogout() } }
         } message: {
             Text(L10n.string("ui.32e3ea0fabc36062", String(describing: model.activeTransferCount)))
         }
+    }
+
+    private func moduleRow(_ section: WorkspaceSection, title: String, icon: String, badge: Int = 0, expanded: Binding<Bool>? = nil) -> some View {
+        let selected = model.section == section
+        return HStack(spacing: 0) {
+            Button { model.section = section } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: icon)
+                        .font(.system(size: 19, weight: .regular))
+                        .foregroundStyle(selected ? Color.accentColor : Color.primary.opacity(0.8))
+                        .frame(width: 23)
+                    Text(title).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if badge > 0 {
+                        Text(badge.formatted(.number.locale(L10n.locale)))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.system(size: 15))
+                .padding(.leading, 14)
+                .frame(height: 42)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            if let expanded {
+                let childIsSelected = (section == model.currentFileSection && fileChildIsSelected)
+                    || (section == .photos(.timeline) && model.section == .photos(.albums))
+                    || (section == .containerManager(.overview) && containerChildIsSelected)
+                    || (section == .virtualMachineManager(.machines) && virtualMachineChildIsSelected)
+                let isExpanded = expanded.wrappedValue || childIsSelected
+                Button {
+                    expanded.wrappedValue = !isExpanded
+                    if isExpanded && childIsSelected { model.section = section }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 24, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.string(isExpanded ? "sidebar.section.collapse-accessibility" : "sidebar.section.expand-accessibility", title))
+            } else {
+                Spacer().frame(width: 12)
+            }
+        }
+        .background(selected ? Color.accentColor.opacity(scheme == .dark ? 0.13 : 0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
+        .id(section)
+    }
+
+    private func childRow(_ section: WorkspaceSection, title: String, icon: String) -> some View {
+        moduleRow(section, title: title, icon: icon)
+            .padding(.leading, 16)
+    }
+    private var fileChildIsSelected: Bool {
+        [WorkspaceSection.favorites, .recent, .remoteLocations, .sharedLinks].contains(model.section)
+    }
+    private var containerChildIsSelected: Bool {
+        if case .containerManager(let pane) = model.section { return pane != .overview }
+        return false
+    }
+    private var virtualMachineChildIsSelected: Bool {
+        if case .virtualMachineManager(let pane) = model.section { return pane != .machines }
+        return false
     }
 }
 
@@ -1350,27 +1265,25 @@ private struct StorageCapacityView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let summary {
-                HStack(spacing: 6) {
-                    TruncationAwareLabel(
-                        title: L10n.string("ui.26de3dd933ce00e3"),
-                        systemImage: "internaldrive"
-                    )
-                        .font(.caption.weight(.semibold))
-                    Spacer(minLength: 4)
-                    Text(Self.format(summary.totalBytes))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                Text(L10n.string("ui.26de3dd933ce00e3"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                Text(L10n.string("workspace.storage.fraction", Self.format(summary.usedBytes), Self.format(summary.totalBytes)))
+                    .font(.system(size: 13).monospacedDigit())
+                    .padding(.top, 5)
+                GeometryReader { proxy in
+                    Capsule().fill(Color.primary.opacity(0.1))
+                    Capsule().fill(Color.accentColor)
+                        .frame(width: proxy.size.width * summary.usedFraction)
                 }
-                ProgressView(value: summary.usedFraction)
-                    .progressViewStyle(.linear)
+                    .frame(height: 5)
+                    .padding(.top, 3)
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel(L10n.string("ui.042828ceb40655f9"))
                     .accessibilityValue(
                         L10n.string("ui.d98de69897d983e7", String(describing: Self.format(summary.usedBytes)), String(describing: Self.format(summary.remainingBytes)))
                     )
-                Text(L10n.string("ui.3dd4b9257f2385ec", String(describing: Self.format(summary.usedBytes)), String(describing: Self.format(summary.remainingBytes))))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .help(L10n.string("ui.3dd4b9257f2385ec", Self.format(summary.usedBytes), Self.format(summary.remainingBytes)))
                 if summary.volumeCount > 1 {
                     Text(L10n.string("ui.354a35ab2265ff7b", String(describing: summary.volumeCount)))
                         .font(.caption2)
@@ -1402,7 +1315,7 @@ private struct StorageCapacityView: View {
     }
 }
 
-private struct LocationCollectionView: View {
+struct LocationCollectionView: View {
     let title: String
     let locations: [FavoriteLocation]
     let emptyMessage: String
@@ -1436,6 +1349,7 @@ private struct LocationCollectionView: View {
                         }
                     }
                     .contentShape(Rectangle())
+                    .macDataRowSurface()
                 }
             }
         }
@@ -1444,7 +1358,7 @@ private struct LocationCollectionView: View {
     }
 }
 
-private struct RecentLocationsView: View {
+struct RecentLocationsView: View {
     let locations: [FavoriteLocation]
     let onOpen: (FavoriteLocation) -> Void
     let onRemove: (FavoriteLocation) -> Void
@@ -1479,6 +1393,7 @@ private struct RecentLocationsView: View {
                                 .help(L10n.string("ui.8c22e5562e176879"))
                         }
                         .contentShape(Rectangle())
+                        .macDataRowSurface()
                         .tag(location.id)
                         .onTapGesture(count: 2) { onOpen(location) }
                         .contextMenu {
@@ -1486,13 +1401,14 @@ private struct RecentLocationsView: View {
                         }
                     }
                 }
-                .toolbar {
-                    Button(L10n.string("ui.55f1033fab699842"), systemImage: "trash") { confirmsClearAll = true }
-                        .help(L10n.string("ui.61c7e3ab7996a8ff"))
-                }
             }
         }
         .fillsAvailableContentArea()
+        .macPageActions(title: L10n.string("ui.de314b445e076e84")) {
+            Button(L10n.string("ui.55f1033fab699842"), systemImage: "trash") { confirmsClearAll = true }
+                .disabled(locations.isEmpty)
+                .help(L10n.string("ui.61c7e3ab7996a8ff"))
+        }
         .navigationTitle(L10n.string("ui.de314b445e076e84"))
         .alert(L10n.string("ui.9f192aaa3a4d5330"), isPresented: $confirmsClearAll) {
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
@@ -1503,7 +1419,7 @@ private struct RecentLocationsView: View {
     }
 }
 
-private struct RemoteLocationsView: View {
+struct RemoteLocationsView: View {
     @Bindable var model: WorkspaceModel
     let onOpen: (FileItem) -> Void
     @State private var showsCreate = false
@@ -1546,12 +1462,7 @@ private struct RemoteLocationsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Picker(L10n.string("remote-locations.filter.label"), selection: $filter) {
-                ForEach(RemoteLocationFilter.allCases) { option in
-                    Text(option.title).tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
+            MacPageTabs(options: RemoteLocationFilter.allCases, selection: $filter, title: { $0.title })
             .padding()
 
             if !model.unavailableRemoteLocationProtocols.isEmpty {
@@ -1648,6 +1559,7 @@ private struct RemoteLocationsView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .macDataRowSurface()
                         .accessibilityLabel(remoteLocationAccessibilityLabel(folder))
                         .contextMenu {
                             Button(L10n.string("ui.c771248e511fbf93")) { onOpen(location) }
@@ -1663,7 +1575,7 @@ private struct RemoteLocationsView: View {
         }
         .fillsAvailableContentArea(alignment: .topLeading)
         .navigationTitle(L10n.string("ui.6727073e65194528"))
-        .toolbar {
+        .macPageActions(title: L10n.string("ui.6727073e65194528")) {
             Button {
                 Task { await model.refreshRemoteLocations() }
             } label: {
@@ -1750,7 +1662,7 @@ private struct RemoteLocationsView: View {
     }
 }
 
-private struct RemoteMountEditorView: View {
+struct RemoteMountEditorView: View {
     let existingItem: FileItem?
     let onSave: (RemoteMountConfiguration) async -> String?
 
@@ -1791,9 +1703,6 @@ private struct RemoteMountEditorView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
-                Text(L10n.string("ui.12440134971860f7"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
             }
 
             Form {
@@ -1877,7 +1786,7 @@ private struct RemoteMountEditorView: View {
     }
 }
 
-private struct ShareCreationView: View {
+struct ShareCreationView: View {
     @Bindable var model: WorkspaceModel
     let targets: [FileItem]
     let onClose: () -> Void
@@ -1949,7 +1858,7 @@ private struct ShareCreationView: View {
     }
 }
 
-private struct ShareLinksView: View {
+struct ShareLinksView: View {
     @Bindable var model: WorkspaceModel
     @State private var linkToDelete: FileShareLink?
 
@@ -1985,7 +1894,7 @@ private struct ShareLinksView: View {
                         }
                         Button(L10n.string("ui.21d728b6664ca9bc"), role: .destructive) { linkToDelete = link }
                     }
-                    .padding(.vertical, 4)
+                    .macDataRowSurface()
                 }
             }
         }
@@ -2008,10 +1917,10 @@ private struct ShareLinksView: View {
     }
 }
 
-private struct FileBrowserView: View {
+struct FileBrowserView: View {
     @Bindable var model: WorkspaceModel
     @Binding var viewMode: FileViewMode
-    let fileGrouping: FileGrouping
+    @Binding var fileGrouping: FileGrouping
     @Binding var showingInfoItem: FileItem?
     let onDownload: (FileItem, WorkspaceModel.FolderDownloadMode) -> Void
     let onDownloadBatch: ([FileItem]) -> Void
@@ -2022,6 +1931,7 @@ private struct FileBrowserView: View {
     let onCut: ([FileItem]) -> Void
     let hasFileClipboard: Bool
     let onPaste: () -> Void
+    @Binding var showsInspector: Bool
     
     @State private var sortOrder = [KeyPathComparator<FileItem>]()
     @State private var showsCreateFolderPrompt = false
@@ -2038,13 +1948,20 @@ private struct FileBrowserView: View {
     @State private var marqueeCurrent: CGPoint?
     @State private var marqueeBaseSelection: Set<FileItem.ID> = []
     @State private var desktopDriveManager: DesktopCloudDriveManager?
+    @FocusState private var gridHasKeyboardFocus: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var appearanceScheme
+    @Environment(\.colorSchemeContrast) private var appearanceContrast
+
+    private var palette: MacAppearancePalette {
+        MacAppearancePalette(scheme: appearanceScheme, increasedContrast: appearanceContrast == .increased)
+    }
 
     private struct BreadcrumbItem: Identifiable {
-        let id = UUID()
         let name: String
         let path: String
         let isLast: Bool
+        var id: String { path }
     }
 
     private struct FileGridGroup: Identifiable {
@@ -2058,7 +1975,7 @@ private struct FileBrowserView: View {
         let isRoot = model.currentPath.isEmpty || model.currentPath == "/"
         items.append(
             BreadcrumbItem(
-                name: L10n.string("ui.b3bd5ac7cc4d668b"),
+                name: model.profile.displayName,
                 path: "/",
                 isLast: isRoot
             )
@@ -2101,129 +2018,220 @@ private struct FileBrowserView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Image(systemName: model.currentPath == "/" || model.currentPath.isEmpty ? "server.rack" : (model.currentPath.contains("#recycle") ? "trash" : "folder"))
-                        .foregroundStyle(.secondary)
+        let visibleItems = model.filteredItems
+        let orderedItems = sortOrder.isEmpty ? visibleItems : visibleItems.sorted(using: sortOrder)
+        let groups = viewMode == .grid ? fileGridGroups(for: orderedItems) : []
+        let displayedItems = viewMode == .grid ? groups.flatMap(\.items) : orderedItems
+        let displayedItemIDs = displayedItems.map(\.id)
+        let selectedItems = model.selection.isEmpty ? [] : model.selectedItems
+        let contentState = FileBrowserContentState.resolve(
+            hasItems: !visibleItems.isEmpty,
+            isBusy: model.isLoading || model.isRefreshing || model.isSearching,
+            hasError: model.searchErrorMessage != nil || model.statusIsError,
+            hasQuery: !model.searchText.isEmpty
+        )
+        GeometryReader { availableSpace in
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
                     
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(breadcrumbItems) { item in
-                                if item.path != "/" {
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                
-                                if item.isLast {
-                                    Text(item.name)
-                                        .font(.headline)
-                                        .fontWeight(.bold)
-                                        .foregroundStyle(.primary)
-                                } else {
-                                    Button {
-                                        Task {
-                                            await model.navigate(to: item.path)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(breadcrumbItems) { item in
+                                        if item.path != "/" {
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
                                         }
-                                    } label: {
-                                        Text(item.name)
-                                            .font(.headline)
-                                            .foregroundStyle(.blue)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .onHover { inside in
-                                        if inside {
-                                            NSCursor.pointingHand.push()
+
+                                        if item.isLast {
+                                            Text(item.name)
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(.secondary)
                                         } else {
-                                            NSCursor.pop()
+                                            Button {
+                                                Task {
+                                                    await model.navigate(to: item.path)
+                                                }
+                                            } label: {
+                                                Text(item.name)
+                                                    .font(.system(size: 14))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .onHover { inside in
+                                                if inside {
+                                                    NSCursor.pointingHand.push()
+                                                } else {
+                                                    NSCursor.pop()
+                                                }
+                                            }
                                         }
+                                    }
+                                    if breadcrumbItems.count == 1 {
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                        Text(L10n.string("workspace.navigation.files"))
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
                             }
-                        }
-                    }
-                    Spacer()
-                    if model.isRefreshing {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text(
-                        model.hasMore
-                            ? L10n.string(
-                                "items.loaded_progress",
-                                String(model.items.count),
-                                String(model.totalItemCount)
-                            )
-                            : L10n.string("ui.fca58a18c69c0ffa", String(describing: model.filteredItems.count))
-                    )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if model.hasMore {
-                        Button {
-                            Task { await model.loadMore() }
-                        } label: {
-                            if model.isLoadingMore {
+                            Spacer()
+                            if model.isRefreshing {
                                 ProgressView()
                                     .controlSize(.small)
-                            } else {
-                                Text(L10n.string("ui.af90a08fec8ee28d"))
                             }
+                            if viewMode == .grid { FileSortMenu(sortOrder: $sortOrder) }
+                            Menu {
+                                Picker(L10n.string("ui.72148c2201764726"), selection: $fileGrouping) {
+                                    ForEach(FileGrouping.allCases) { group in
+                                        Text(group.title).tag(group)
+                                    }
+                                }
+                                Picker(L10n.string("workspace.search.scope"), selection: $model.searchScope) {
+                                    ForEach(WorkspaceModel.SearchScope.allCases) { scope in
+                                        Text(scope.title).tag(scope)
+                                    }
+                                }
+                                Divider()
+                                blankAreaContextMenu
+                                if !selectedItems.isEmpty {
+                                    Divider()
+                                    selectionMoreActions(selectedItems)
+                                }
+                            } label: {
+                                Text(L10n.string("workspace.actions.more"))
+                            }
+                            .menuStyle(.borderlessButton)
+                            .tint(.primary)
+                            .fixedSize()
                         }
-                        .buttonStyle(.borderless)
-                        .disabled(model.isLoadingMore)
+                        if let message = model.searchErrorMessage ?? model.statusMessage {
+                            Label(
+                                message,
+                                systemImage: model.searchErrorMessage != nil || model.statusIsError
+                                    ? "exclamationmark.triangle.fill"
+                                    : "info.circle"
+                            )
+                                .font(.caption)
+                                .foregroundStyle(model.searchErrorMessage != nil || model.statusIsError ? .red : .secondary)
+                        }
+                        if let manager = desktopDriveManager,
+                           manager.statusSource == .userAction,
+                           let message = manager.statusMessage {
+                            Label(
+                                message,
+                                systemImage: manager.statusIsError
+                                    ? "exclamationmark.triangle.fill"
+                                    : "externaldrive.badge.checkmark"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(manager.statusIsError ? .red : .secondary)
+                        }
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(palette.content.opacity(0.7))
+
+                    Divider()
+
+                    if contentState == .content {
+                        if viewMode == .list {
+                            fileTable(items: orderedItems)
+                        } else {
+                            fileGrid(groups: groups)
+                        }
+                    } else {
+                        emptyFileContent(for: contentState)
+                            .focusable()
+                            .focused($gridHasKeyboardFocus)
+                            .onTapGesture { gridHasKeyboardFocus = true }
+                    }
+
+                    if !selectedItems.isEmpty {
+                        FileSelectionActionBar(
+                            items: selectedItems,
+                            onDownload: onDownload,
+                            onDownloadBatch: onDownloadBatch,
+                            onShare: onShare,
+                            onClear: { model.selection.removeAll() }
+                        ) {
+                            selectionMoreActions(selectedItems)
+                        }
+                        .padding(12)
+                        .transition(.opacity)
+                    }
+                    Divider()
+                    HStack(spacing: 12) {
+                            Text(
+                                model.hasMore
+                                    ? L10n.string(
+                                        "items.loaded_progress",
+                                        String(model.items.count),
+                                        String(model.totalItemCount)
+                                    )
+                                    : L10n.string("ui.fca58a18c69c0ffa", String(describing: visibleItems.count))
+                            )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if model.hasMore {
+                                Button {
+                                    Task { await model.loadMore() }
+                                } label: {
+                                    if model.isLoadingMore {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    } else {
+                                        Text(L10n.string("ui.af90a08fec8ee28d"))
+                                    }
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(model.isLoadingMore)
+                            }
+
+                        Spacer(minLength: 0)
+                    }
+                    .font(.system(size: 12))
+                    .padding(.horizontal, 24)
+                    .frame(height: 42)
+                    .background(palette.content.opacity(0.7))
                 }
-                if let message = model.searchErrorMessage ?? model.statusMessage {
-                    Label(
-                        message,
-                        systemImage: model.searchErrorMessage != nil || model.statusIsError
-                            ? "exclamationmark.triangle.fill"
-                            : "info.circle"
-                    )
-                        .font(.caption)
-                        .foregroundStyle(model.searchErrorMessage != nil || model.statusIsError ? .red : .secondary)
-                }
-                if let manager = desktopDriveManager,
-                   manager.statusSource == .userAction,
-                   let message = manager.statusMessage {
-                    Label(
-                        message,
-                        systemImage: manager.statusIsError
-                            ? "exclamationmark.triangle.fill"
-                            : "externaldrive.badge.checkmark"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(manager.statusIsError ? .red : .secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if showsInspector, availableSpace.size.width >= MacAppearanceMetrics.inspectorMinimumWidth {
+                    Divider()
+                    FileSelectionInspector(items: selectedItems, profileName: model.profile.displayName) { showingInfoItem = $0 }
+                        .frame(width: MacAppearanceMetrics.inspectorWidth)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            if model.filteredItems.isEmpty {
-                ContentUnavailableView(
-                    model.searchText.isEmpty ? L10n.string("ui.77fa57e99556ca33") : L10n.string("ui.37b2f0bcebfc3490"),
-                    systemImage: model.searchText.isEmpty ? "folder" : "magnifyingglass",
-                    description: Text(model.searchText.isEmpty ? L10n.string("ui.efa74aff15bd0698") : L10n.string("ui.49e7a5872fdd5088"))
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                if viewMode == .list {
-                    fileTable
-                } else {
-                    fileGrid
+            .popover(isPresented: Binding(
+                get: { showsInspector && availableSpace.size.width < MacAppearanceMetrics.inspectorMinimumWidth },
+                set: { showsInspector = $0 }
+            ), arrowEdge: .trailing) {
+                FileSelectionInspector(items: selectedItems, profileName: model.profile.displayName) { showingInfoItem = $0 }
+                    .frame(width: 280, height: 440)
+            }
+            .onChange(of: availableSpace.size.width) { previousWidth, width in
+                if previousWidth >= MacAppearanceMetrics.inspectorMinimumWidth,
+                   width < MacAppearanceMetrics.inspectorMinimumWidth {
+                    showsInspector = false
+                }
+            }
+            .onAppear {
+                if availableSpace.size.width < MacAppearanceMetrics.inspectorMinimumWidth {
+                    showsInspector = false
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(palette.content)
         .overlay {
             if model.isLoading || model.isRefreshing || model.isSearching {
                 ZStack {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .background(Color.primary.opacity(0.035))
+                    palette.content.opacity(0.96)
                     VStack(spacing: 12) {
                         ProgressView()
                             .controlSize(.regular)
@@ -2235,8 +2243,7 @@ private struct FileBrowserView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 18)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
+                    .background(palette.content, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .combine)
@@ -2263,12 +2270,6 @@ private struct FileBrowserView: View {
                 }
             }
         }
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: L10n.string("ui.9c8bd1565def7849"))
-        .searchScopes($model.searchScope) {
-            ForEach(WorkspaceModel.SearchScope.allCases) { scope in
-                Text(scope.title).tag(scope)
-            }
-        }
         .onChange(of: model.searchText) { _, _ in model.updateSearch() }
         .onChange(of: model.searchScope) { _, _ in model.updateSearch() }
         .dropDestination(for: URL.self) { urls, _ in
@@ -2277,6 +2278,7 @@ private struct FileBrowserView: View {
         }
         .background {
             FileKeyboardShortcutHandler(
+                gridHasKeyboardFocus: gridHasKeyboardFocus,
                 onAction: handleFileShortcut
             )
         }
@@ -2304,8 +2306,6 @@ private struct FileBrowserView: View {
                 Task { await model.createEmptyFile(named: name) }
             }
             .disabled(newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        } message: {
-            Text(L10n.string("ui.1479722cc4fda8bf"))
         }
         .alert(L10n.string("ui.0d0cbac2eee54113"), isPresented: Binding(
             get: { renameTarget != nil },
@@ -2380,19 +2380,75 @@ private struct FileBrowserView: View {
             desktopDriveManager = manager
             await manager.load()
         }
-        .navigationTitle(model.currentPath.isEmpty ? L10n.string("ui.39932f24fe11a6ba") : (model.currentPath as NSString).lastPathComponent)
     }
 
-    private var sortedItems: [FileItem] {
-        model.filteredItems.sorted(using: sortOrder)
+    @ViewBuilder
+    private func selectionMoreActions(_ targets: [FileItem]) -> some View {
+        Button(L10n.string("ui.63d90d977348ab1f")) { onCopy(targets) }
+        Button(L10n.string("ui.410a8e8a6bf253ac")) { onCut(targets) }
+        if targets.count == 1, let item = targets.first {
+            Button(L10n.string("ui.ec4cd05f5147b1a9")) { beginRename(item) }
+                .disabled(!canRename(item))
+            Button(L10n.string("ui.e7028601e7da793d")) { showingInfoItem = item }
+            Button(L10n.string(model.favorites.contains(where: { $0.path == item.path }) ? "ui.dca60869e7d26839" : "ui.0cfc396e4aa347ad")) {
+                model.toggleFavorite(item)
+            }
+            if item.isRecyclePath, model.allowsVerifiedRestore {
+                Button(L10n.string("ui.44614f5e3f1bf84d")) { onRestore(item) }
+            }
+            if canCreateItems, !item.isRecyclePath, isSupportedArchive(item) {
+                Button(L10n.string("ui.a79e38aec37eb305")) { extractionTarget = item }
+            }
+        }
+        if canCreateItems, !targets.contains(where: \.isRecyclePath) {
+            Button(L10n.string(targets.count > 1 ? "ui.d7b17fd1aa5a82f8" : "ui.ed3955526cf93b82")) {
+                compressionTargets = targets
+            }
+        }
+        Divider()
+        Button(L10n.string("ui.2f9daa828907b93f"), role: .destructive) { onDelete(targets) }
     }
 
-    private var displayedItems: [FileItem] {
-        viewMode == .grid ? fileGridGroups.flatMap(\.items) : sortedItems
-    }
 
-    private var displayedItemIDs: [FileItem.ID] {
-        displayedItems.map(\.id)
+    @ViewBuilder
+    private func emptyFileContent(for state: FileBrowserContentState) -> some View {
+        if state == .loading {
+            Color.clear.fillsAvailableContentArea()
+        } else if state == .error {
+            ContentUnavailableView {
+                Label(L10n.string("workspace.files.error.title"), systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(model.searchErrorMessage ?? model.statusMessage ?? L10n.string("workspace.files.error.detail"))
+            } actions: {
+                if model.searchErrorMessage != nil {
+                    Button(L10n.string("workspace.files.clearSearch")) { model.searchText = "" }
+                } else {
+                    Button(L10n.string("ui.aee88743413144a2")) { Task { await model.refresh() } }
+                }
+            }
+            .fillsAvailableContentArea()
+        } else {
+            ContentUnavailableView {
+                Label(
+                    model.searchText.isEmpty ? L10n.string("ui.77fa57e99556ca33") : L10n.string("ui.37b2f0bcebfc3490"),
+                    systemImage: model.searchText.isEmpty ? "folder" : "magnifyingglass"
+                )
+            } description: {
+                Text(model.searchText.isEmpty ? L10n.string("ui.efa74aff15bd0698") : L10n.string("ui.49e7a5872fdd5088"))
+            } actions: {
+                if !model.searchText.isEmpty {
+                    Button(L10n.string("workspace.files.clearSearch")) { model.searchText = "" }
+                } else if canCreateItems {
+                    Button(L10n.string("workspace.files.newFolder")) {
+                        newItemName = L10n.string("ui.9e043005fd4d9367")
+                        showsCreateFolderPrompt = true
+                    }
+                } else {
+                    Button(L10n.string("ui.aee88743413144a2")) { Task { await model.refresh() } }
+                }
+            }
+            .fillsAvailableContentArea()
+        }
     }
 
     private func selectIfUnselected(_ item: FileItem) {
@@ -2588,11 +2644,11 @@ private struct FileBrowserView: View {
         !model.currentPath.isEmpty && model.currentPath != "/" && !model.currentPath.split(separator: "/").contains("#recycle")
     }
 
-    private var fileGrid: some View {
+    private func fileGrid(groups: [FileGridGroup]) -> some View {
         GeometryReader { availableSpace in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
-                    ForEach(fileGridGroups) { group in
+                    ForEach(groups) { group in
                         VStack(alignment: .leading, spacing: 12) {
                             if let title = group.title {
                                 HStack(spacing: 8) {
@@ -2606,7 +2662,7 @@ private struct FileBrowserView: View {
                                 .accessibilityElement(children: .combine)
                             }
 
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104, maximum: 104), spacing: 16)], spacing: 16) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: MacAppearanceMetrics.gridMinimumWidth, maximum: MacAppearanceMetrics.gridMaximumWidth), spacing: 18)], spacing: 10) {
                                 ForEach(group.items) { item in
                                     FileGridCell(
                                         model: model,
@@ -2614,6 +2670,7 @@ private struct FileBrowserView: View {
                                         isSelected: model.selection.contains(item.id),
                                         isDropTarget: dropTargetItemID == item.id,
                                         onSelect: {
+                                            gridHasKeyboardFocus = true
                                             if NSEvent.modifierFlags.contains(.command) {
                                                 if model.selection.contains(item.id) {
                                                     model.selection.remove(item.id)
@@ -2650,7 +2707,7 @@ private struct FileBrowserView: View {
                         }
                     }
                 }
-                .frame(minHeight: availableSpace.size.height, alignment: .top)
+                .frame(minHeight: max(0, availableSpace.size.height - 32), alignment: .top)
                 .contentShape(Rectangle())
                 .coordinateSpace(name: "FileGridSelectionSpace")
                 .overlay(alignment: .topLeading) {
@@ -2670,6 +2727,7 @@ private struct FileBrowserView: View {
                 .simultaneousGesture(marqueeSelectionGesture)
                 .simultaneousGesture(
                     SpatialTapGesture().onEnded { value in
+                        gridHasKeyboardFocus = true
                         if !gridItemFrames.values.contains(where: { $0.contains(value.location) }) {
                             model.selection.removeAll()
                         }
@@ -2680,6 +2738,8 @@ private struct FileBrowserView: View {
             }
             .background(Color(NSColor.controlBackgroundColor).opacity(0.2))
         }
+        .focusable()
+        .focused($gridHasKeyboardFocus)
     }
 
     private var marqueeRectangle: CGRect? {
@@ -2697,6 +2757,7 @@ private struct FileBrowserView: View {
             .onChanged { value in
                 if marqueeStart == nil {
                     guard !gridItemFrames.values.contains(where: { $0.contains(value.startLocation) }) else { return }
+                    gridHasKeyboardFocus = true
                     marqueeStart = value.startLocation
                     marqueeBaseSelection = NSEvent.modifierFlags.intersection([.command, .shift]).isEmpty
                         ? []
@@ -2730,7 +2791,7 @@ private struct FileBrowserView: View {
         }
     }
 
-    private var fileGridGroups: [FileGridGroup] {
+    private func fileGridGroups(for sortedItems: [FileItem]) -> [FileGridGroup] {
         guard fileGrouping != .none else {
             return [FileGridGroup(id: "all", title: nil, items: sortedItems)]
         }
@@ -2812,7 +2873,7 @@ private struct FileBrowserView: View {
         return true
     }
 
-    private var fileTable: some View {
+    private func fileTable(items sortedItems: [FileItem]) -> some View {
         Table(sortedItems, selection: $model.selection, sortOrder: $sortOrder) {
             TableColumn(L10n.string("ui.d44e9b3d3b31d37b"), value: \.name) { item in
                 hoverableTableCell(item) {
@@ -2960,15 +3021,16 @@ private struct FileGridFramePreferenceKey: PreferenceKey {
     }
 }
 
-private enum MacFileShortcut {
+enum MacFileShortcut {
     case preview, rename, open, up, selectAll, copy, cut, paste, info, delete, undo
 }
 
-private struct FileKeyboardShortcutHandler: NSViewRepresentable {
+struct FileKeyboardShortcutHandler: NSViewRepresentable {
+    let gridHasKeyboardFocus: Bool
     let onAction: (MacFileShortcut) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onAction: onAction)
+        Coordinator(gridHasKeyboardFocus: gridHasKeyboardFocus, onAction: onAction)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -2979,6 +3041,7 @@ private struct FileKeyboardShortcutHandler: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.onAction = onAction
+        context.coordinator.gridHasKeyboardFocus = gridHasKeyboardFocus
         context.coordinator.attach(to: nsView)
     }
 
@@ -2988,11 +3051,13 @@ private struct FileKeyboardShortcutHandler: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject {
+        var gridHasKeyboardFocus: Bool
         var onAction: (MacFileShortcut) -> Void
         private weak var hostView: NSView?
         private var monitor: Any?
 
-        init(onAction: @escaping (MacFileShortcut) -> Void) {
+        init(gridHasKeyboardFocus: Bool, onAction: @escaping (MacFileShortcut) -> Void) {
+            self.gridHasKeyboardFocus = gridHasKeyboardFocus
             self.onAction = onAction
         }
 
@@ -3003,7 +3068,7 @@ private struct FileKeyboardShortcutHandler: NSViewRepresentable {
                 guard let self,
                       !event.isARepeat,
                       event.window === self.hostView?.window,
-                      !self.isEditingText(in: event.window) else {
+                      self.ownsKeyboardFocus(in: event.window) else {
                     return event
                 }
                 let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
@@ -3041,8 +3106,17 @@ private struct FileKeyboardShortcutHandler: NSViewRepresentable {
             monitor = nil
         }
 
-        private func isEditingText(in window: NSWindow?) -> Bool {
-            window?.firstResponder is NSTextView
+        func ownsKeyboardFocus(in window: NSWindow?) -> Bool {
+            guard let window, window === hostView?.window,
+                  !(window.firstResponder is NSTextView),
+                  !(window.firstResponder is NSButton) else { return false }
+            if gridHasKeyboardFocus { return true }
+            // 原生表格拥有自己的焦点；仅接收当前文件区域中的表格按键。
+            guard let table = window.firstResponder as? NSTableView,
+                  let hostView else { return false }
+            let surface = table.enclosingScrollView ?? table
+            let tableFrame = surface.convert(surface.bounds, to: nil)
+            return hostView.convert(hostView.bounds, to: nil).contains(tableFrame)
         }
     }
 }
@@ -3235,7 +3309,7 @@ private final class BlankTableContextNSView: NSView {
     }
 }
 
-private struct ArchiveCreationView: View {
+struct ArchiveCreationView: View {
     let targets: [FileItem]
     let onCreate: (String, ArchiveFormat, ArchiveCompressionLevel, String?) -> Void
     let onCancel: () -> Void
@@ -3250,7 +3324,7 @@ private struct ArchiveCreationView: View {
         targets: [FileItem],
         onCreate: @escaping (String, ArchiveFormat, ArchiveCompressionLevel, String?) -> Void,
         onCancel: @escaping () -> Void
-    ) {
+            ) {
         self.targets = targets
         self.onCreate = onCreate
         self.onCancel = onCancel
@@ -3317,7 +3391,7 @@ private struct ArchiveCreationView: View {
     }
 }
 
-private struct ArchiveExtractionView: View {
+struct ArchiveExtractionView: View {
     let item: FileItem
     let onExtract: (Bool, Bool, Bool) -> Void
     let onCancel: () -> Void
@@ -3343,9 +3417,6 @@ private struct ArchiveExtractionView: View {
                         .foregroundStyle(.orange)
                 }
             }
-            Text(L10n.string("ui.f61b061246e4390f"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel, action: onCancel)
@@ -3374,7 +3445,7 @@ private struct ArchiveExtractionView: View {
     }
 }
 
-private struct ArchivePasswordView: View {
+struct ArchivePasswordView: View {
     let archiveName: String
     let errorMessage: String?
     let isChecking: Bool
@@ -3469,18 +3540,19 @@ private struct FilterChip: View {
                 .font(.caption)
                 .fontWeight(.medium)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+                .padding(.vertical, 7)
                 .background(
-                    Capsule()
-                        .fill(isSelected ? Color.blue : Color.secondary.opacity(0.12))
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035))
                 )
-                .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.85))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.85))
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
-private struct TransferCenterView: View {
+struct TransferCenterView: View {
     @Bindable var model: WorkspaceModel
     let connectedWorkspaces: [WorkspaceModel]
 
@@ -3640,61 +3712,57 @@ private struct TransferCenterView: View {
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 6)
+            .background(MacGlassSurface(role: .toolbar))
 
             HStack(spacing: 12) {
-                Picker(L10n.string("background-tasks.source-label"), selection: $source) {
-                    Text(TransferSource.app.title).tag(TransferSource.app)
-                    Text(TransferSource.nas.title).tag(TransferSource.nas)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                MacPageTabs(options: [TransferSource.app, .nas], selection: $source, title: { $0.title })
                 .frame(maxWidth: 320)
 
                 if connectedWorkspaces.count > 1 {
                     Divider()
                         .frame(height: 14)
 
-                    Text(L10n.string("label.nas"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    FilterChip(title: L10n.string("ui.5c55a67935af8f45"), isSelected: selectedNasID == nil) {
-                        selectedNasID = nil
-                    }
-
-                    ForEach(connectedWorkspaces, id: \.profile.id) { ws in
-                        FilterChip(title: ws.profile.displayName, isSelected: selectedNasID == ws.profile.id) {
-                            selectedNasID = ws.profile.id
+                    Picker(L10n.string("label.nas"), selection: $selectedNasID) {
+                        Text(L10n.string("ui.5c55a67935af8f45")).tag(Optional<UUID>.none)
+                        ForEach(connectedWorkspaces, id: \.profile.id) { ws in
+                            Text(ws.profile.displayName).tag(Optional(ws.profile.id))
                         }
                     }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 240)
                 }
                 Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
+            .background(MacGlassSurface(role: .toolbar))
 
             if source == .app {
                 let activeFilters = availableFilters
                 if !activeFilters.isEmpty {
-                    HStack(spacing: 6) {
-                        Text(L10n.string("ui.f9082aad585f4fb9"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            Text(L10n.string("ui.f9082aad585f4fb9"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
-                        FilterChip(title: L10n.string("ui.5c55a67935af8f45"), isSelected: currentActiveFilter == nil) {
-                            activeFilter = nil
-                        }
-
-                        ForEach(activeFilters, id: \.self) { filter in
-                            let count = countForFilter(filter)
-                            FilterChip(title: "\(filter.displayName) (\(count))", isSelected: currentActiveFilter == filter) {
-                                activeFilter = activeFilter == filter ? nil : filter
+                            FilterChip(title: L10n.string("ui.5c55a67935af8f45"), isSelected: currentActiveFilter == nil) {
+                                activeFilter = nil
                             }
+
+                            ForEach(activeFilters, id: \.self) { filter in
+                                let count = countForFilter(filter)
+                                FilterChip(title: "\(filter.displayName) (\(count))", isSelected: currentActiveFilter == filter) {
+                                    activeFilter = activeFilter == filter ? nil : filter
+                                }
+                            }
+                            Spacer()
                         }
-                        Spacer()
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(MacGlassSurface(role: .toolbar))
                 }
             }
 
@@ -3749,7 +3817,7 @@ private struct TransferCenterView: View {
     }
 }
 
-private struct NASBackgroundTaskCenter: View {
+struct NASBackgroundTaskCenter: View {
     let workspaces: [WorkspaceModel]
 
     @State private var filter: Filter = .all
@@ -3801,9 +3869,6 @@ private struct NASBackgroundTaskCenter: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.string("background-tasks.title"))
                         .font(.headline)
-                    Text(L10n.string("background-tasks.description"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     Label(L10n.string("background-tasks.read-only"), systemImage: "eye")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -3824,6 +3889,8 @@ private struct NASBackgroundTaskCenter: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
             HStack(spacing: 6) {
                 Text(L10n.string("background-tasks.filter-label"))
@@ -3838,6 +3905,7 @@ private struct NASBackgroundTaskCenter: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -4008,9 +4076,9 @@ private struct NASBackgroundTaskRow: View {
 
     private var detailText: String? {
         if let processed = task.processedBytes {
-            let completed = ByteCountFormatter.string(fromByteCount: processed, countStyle: .file)
+            let completed = processed.formatted(.byteCount(style: .file).locale(L10n.locale))
             if let total = task.totalBytes {
-                let totalText = ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
+                let totalText = total.formatted(.byteCount(style: .file).locale(L10n.locale))
                 return L10n.string("background-tasks.bytes-progress", completed, totalText)
             }
             return L10n.string("background-tasks.bytes-processed", completed)
@@ -4332,7 +4400,7 @@ private struct TransferRow: View {
     }
 
     private func formatBytes(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: max(bytes, 0), countStyle: .file)
+        max(bytes, 0).formatted(.byteCount(style: .file).locale(L10n.locale))
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -4491,7 +4559,7 @@ struct CacheCleanupOptions: OptionSet {
     static let all: CacheCleanupOptions = [.safeTrash, .photoCache]
 }
 
-private struct AppStorageSnapshot {
+struct AppStorageSnapshot {
     let previewCache: Int64
     let photoCache: Int64
     let systemCache: Int64
@@ -4574,11 +4642,14 @@ private enum AppStorageInspector {
     }
 }
 
-private enum SettingsCategory: String, CaseIterable, Identifiable {
+enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case connection
+    case appearance
     case features
     case storage
     case desktopDrive
+    case updates
 
     var id: String { rawValue }
 
@@ -4586,12 +4657,18 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return L10n.string("ui.82479cb6ca73042d")
+        case .connection:
+            return L10n.string("appSettings.connection.title")
+        case .appearance:
+            return L10n.string("appearance.title")
         case .features:
             return L10n.string("ui.25f5ce57a1909740")
         case .storage:
-            return L10n.string("ui.0e41f8e3d59ec47b")
+            return L10n.string("appSettings.storage.title")
         case .desktopDrive:
             return L10n.string("desktopDrive.title")
+        case .updates:
+            return L10n.string("updates.title")
         }
     }
 
@@ -4599,18 +4676,65 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return "gearshape"
+        case .connection:
+            return "network"
+        case .appearance:
+            return "circle.lefthalf.filled"
         case .features:
             return "square.grid.3x3.fill"
         case .storage:
             return "internaldrive.fill"
         case .desktopDrive:
             return "externaldrive.connected.to.line.below"
+        case .updates:
+            return "arrow.down.app"
         }
+    }
+}
+
+struct SettingsCategorySidebar: View {
+    @Binding var selection: SettingsCategory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L10n.string("appSettings.title"))
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+            ForEach(SettingsCategory.allCases) { category in
+                Button { selection = category } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: category.icon)
+                            .font(.system(size: 14))
+                            .foregroundStyle(selection == category ? Color.accentColor : Color.primary)
+                            .frame(width: 20)
+                        Text(category.title)
+                            .font(.body)
+                            .foregroundStyle(Color.primary.opacity(selection == category ? 1.0 : 0.7))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 11)
+                    .contentShape(Rectangle())
+                    .background(RoundedRectangle(cornerRadius: 8).fill(selection == category ? Color.accentColor.opacity(0.09) : Color.clear))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == category ? .isSelected : [])
+                .accessibilityIdentifier("settings.category.\(category.rawValue)")
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .frame(width: 200)
+        .background(MacGlassSurface(role: .sidebar))
     }
 }
 
 private struct SettingsView: View {
     @Bindable var model: WorkspaceModel
+    @EnvironmentObject private var updates: AppUpdateController
     let onRenameNAS: (String) -> String?
     @State private var desktopDriveManager: DesktopCloudDriveManager
     @State private var selectedCategory: SettingsCategory = .general
@@ -4646,7 +4770,7 @@ private struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             // 左侧分类子导航
-            settingsSidebar
+            SettingsCategorySidebar(selection: $selectedCategory)
 
             Divider()
 
@@ -4656,14 +4780,24 @@ private struct SettingsView: View {
                     switch selectedCategory {
                     case .general:
                         generalSettingsSection
+                    case .connection:
+                        connectionProfileSection
+                    case .appearance:
+                        MacAppearanceSettingsView()
                     case .features:
                         featuresSettingsSection
                     case .storage:
                         storageSettingsSection
                     case .desktopDrive:
                         desktopDriveSettingsSection
+                    case .updates:
+                        SettingsSectionCard(title: L10n.string("updates.title"), icon: "arrow.down.app", iconColor: .blue) {
+                            AppUpdateSettingsView(controller: updates)
+                        }
                     }
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("settings.content.\(selectedCategory.rawValue)")
                 .padding(28)
                 .frame(maxWidth: 680, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -4733,8 +4867,8 @@ private struct SettingsView: View {
         .sheet(isPresented: $showsCommunityReport) {
             CommunityCompatibilitySubmissionSheet()
         }
-        .alert(L10n.string("ui.baa1159c128223dd"), isPresented: $showsRenamePrompt) {
-            TextField(L10n.string("ui.65d8f92232ae77b0"), text: $renamedNAS)
+        .alert(L10n.string("appSettings.connection.alias"), isPresented: $showsRenamePrompt) {
+            TextField(L10n.string("appSettings.connection.alias"), text: $renamedNAS)
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
             Button(L10n.string("ui.a3030bf8f16dc63c")) {
                 renameError = onRenameNAS(renamedNAS)
@@ -4743,48 +4877,6 @@ private struct SettingsView: View {
         } message: {
             Text(L10n.string("ui.c0fb0cc138b48413"))
         }
-    }
-
-    // MARK: - Sub-Sidebar
-
-    @ViewBuilder
-    private var settingsSidebar: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L10n.string("ui.df3d58c7d84b85f2"))
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
-            ForEach(SettingsCategory.allCases) { category in
-                Button {
-                    selectedCategory = category
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: category.icon)
-                            .font(.system(size: 14))
-                            .foregroundStyle(selectedCategory == category ? Color.blue : Color.primary)
-                            .frame(width: 20)
-                        Text(category.title)
-                            .font(.body)
-                            .foregroundStyle(Color.primary.opacity(selectedCategory == category ? 1.0 : 0.7))
-                        Spacer()
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(selectedCategory == category ? Color.primary.opacity(0.08) : Color.clear)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 8)
-        .frame(width: 200)
-        .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
     }
 
     // MARK: - Sub-Sections
@@ -4804,18 +4896,35 @@ private struct SettingsView: View {
                     .pickerStyle(.menu)
                     .frame(width: 180)
             }
-            Text(L10n.string("settings.language.footer"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
 
+
         SettingsSectionCard(
-            title: L10n.string("ui.82479cb6ca73042d"),
+            title: L10n.string("communityReport.settings.title"),
+            icon: "checklist.checked",
+            iconColor: .green
+        ) {
+            Text(L10n.string("communityReport.settings.message"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button(L10n.string("communityReport.settings.action")) {
+                    showsCommunityReport = true
+                }
+            }
+        }
+    }
+
+    private var connectionProfileSection: some View {
+        SettingsSectionCard(
+            title: L10n.string("appSettings.connection.title"),
             icon: "server.rack",
             iconColor: .blue
         ) {
             HStack(alignment: .firstTextBaseline) {
-                Text(L10n.string("ui.65d8f92232ae77b0"))
+                Text(L10n.string("appSettings.connection.alias"))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(model.profile.displayName)
@@ -4838,23 +4947,6 @@ private struct SettingsView: View {
             Divider().opacity(0.3)
             SettingsRow(label: L10n.string("ui.b8f945ea49ff3774"), value: L10n.string("ui.39c35b1b42f8d938"))
         }
-
-        SettingsSectionCard(
-            title: L10n.string("communityReport.settings.title"),
-            icon: "checklist.checked",
-            iconColor: .green
-        ) {
-            Text(L10n.string("communityReport.settings.message"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                Button(L10n.string("communityReport.settings.action")) {
-                    showsCommunityReport = true
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -4869,9 +4961,6 @@ private struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.b3bd5ac7cc4d668b"))
                             .font(.body.weight(.medium))
-                        Text(L10n.string("ui.b3ba4f016f790299"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -4884,9 +4973,6 @@ private struct SettingsView: View {
                             Text(L10n.string("ui.67c683672f7ff48d"))
                                 .font(.body.weight(.medium))
                         }
-                        Text(L10n.string("ui.a7b4352894d3f848"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -4897,9 +4983,6 @@ private struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.4da199fae933d4fa"))
                             .font(.body.weight(.medium))
-                        Text(L10n.string("ui.77d90374f41aaf36"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -4908,11 +4991,8 @@ private struct SettingsView: View {
 
                 Toggle(isOn: $model.isNasSettingsModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.string("ui.b1729f4b03c4b97d"))
+                        Text(L10n.string("appSettings.showNAS"))
                             .font(.body.weight(.medium))
-                        Text(L10n.string("ui.ab0dbdbdfe0bfe42"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -4923,9 +5003,6 @@ private struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.5248507df52ff455"))
                             .font(.body.weight(.medium))
-                        Text(L10n.string("ui.476f084918556c4f"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -4936,9 +5013,6 @@ private struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.aaf778d85ce5c2ed"))
                             .font(.body.weight(.medium))
-                        Text(L10n.string("ui.fe5d8ebe107b885f"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -4949,9 +5023,6 @@ private struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.80c43bd2481c9580"))
                             .font(.body.weight(.medium))
-                        Text(L10n.string("ui.81d1084630dcb682"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -4982,11 +5053,6 @@ private struct SettingsView: View {
                     .frame(width: 155)
                 }
 
-                Text(L10n.string("ui.a684d5ddd3cc0bea"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
 
@@ -5002,9 +5068,6 @@ private struct SettingsView: View {
             SettingsRow(label: L10n.string("ui.05ca0d4a5aed9488"), value: ByteCountFormatter.string(fromByteCount: storage.photoCache, countStyle: .file))
             Divider().opacity(0.3)
             SettingsRow(label: L10n.string("ui.5513fba74a6c8c0b"), value: ByteCountFormatter.string(fromByteCount: storage.protectedData, countStyle: .file))
-            Text(L10n.string("ui.fa01182022325b0b"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
             HStack {
                 if let storageMessage {
                     Text(storageMessage).font(.caption).foregroundStyle(.secondary)
@@ -5436,20 +5499,28 @@ struct FileGridCell: View {
     let contextMenuContent: AnyView
     @State private var isHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var appearanceScheme
+    @Environment(\.colorSchemeContrast) private var appearanceContrast
+    @ScaledMetric(relativeTo: .subheadline) private var filenameHeight = 36.0
+    @ScaledMetric(relativeTo: .subheadline) private var filenameFontSize = 15.0
+    @ScaledMetric(relativeTo: .subheadline) private var tileHeight = Double(MacAppearanceMetrics.gridItemHeight)
 
     var body: some View {
-        VStack(spacing: 6) {
+        let palette = MacAppearancePalette(scheme: appearanceScheme, increasedContrast: appearanceContrast == .increased)
+        VStack(spacing: 18) {
             FileGridThumbnail(model: model, item: item)
-                .frame(width: 64, height: 48)
+                .frame(width: 92, height: 82)
             
             Text(item.name)
-                .font(.subheadline)
+                .font(.system(size: filenameFontSize))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .frame(height: 30, alignment: .top)
+                .frame(height: filenameHeight, alignment: .top)
+                .help(item.name)
         }
         .padding(8)
-        .frame(width: 104, height: 104)
+        .frame(maxWidth: .infinity)
+        .frame(height: tileHeight)
         .contentShape(Rectangle())
         .background(
             RightClickDetector {
@@ -5457,28 +5528,40 @@ struct FileGridCell: View {
             }
         )
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(
                     isDropTarget
                         ? Color.accentColor.opacity(0.22)
                         : isSelected
-                        ? Color.accentColor.opacity(0.15)
-                        : (isHovered ? Color.accentColor.opacity(0.10) : Color.clear)
+                        ? palette.selection
+                        : (isHovered ? palette.hover : Color.clear)
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(
                     isDropTarget
                         ? Color.accentColor.opacity(0.90)
                         : isSelected
-                        ? Color.accentColor.opacity(0.35)
-                        : (isHovered ? Color.accentColor.opacity(0.18) : Color.clear),
+                        ? Color.accentColor.opacity(0.85)
+                        : (isHovered ? palette.separator : Color.clear),
                     lineWidth: isDropTarget ? 2 : 1
                 )
         )
+        .overlay(alignment: .topTrailing) {
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.accentColor)
+                    .font(.system(size: 17, weight: .semibold))
+                    .padding(8)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .onHover { isHovered = $0 }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovered)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSelected)
         .onTapGesture {
             onSelect()
         }
@@ -5490,6 +5573,12 @@ struct FileGridCell: View {
         .contextMenu {
             contextMenuContent
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.name)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityAction { onOpen() }
+        .accessibilityAction(named: Text(L10n.string("workspace.selection.select"))) { onSelect() }
     }
 }
 
@@ -5506,7 +5595,7 @@ private struct FileGridThumbnail: View {
                         .resizable()
                         .interpolation(.medium)
                         .scaledToFill()
-                        .frame(width: 64, height: 48)
+                        .frame(width: 84, height: 72)
                         .clipped()
 
                     if PreviewKind.classify(item) == .video {
@@ -5524,7 +5613,7 @@ private struct FileGridThumbnail: View {
                 }
             } else {
                 FileLargeIcon(item: item)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 84, height: 76)
             }
         }
         .task(id: item.id) {
@@ -5534,16 +5623,57 @@ private struct FileGridThumbnail: View {
     }
 }
 
+/// 确认图中的分层蓝色文件夹，以矢量绘制保持各屏幕缩放下的清晰度。
+private struct MacFolderArtwork: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack {
+                Path { p in
+                    p.move(to: CGPoint(x: w * 0.04, y: h * 0.28))
+                    p.addQuadCurve(to: CGPoint(x: w * 0.11, y: h * 0.13), control: CGPoint(x: w * 0.04, y: h * 0.13))
+                    p.addLine(to: CGPoint(x: w * 0.33, y: h * 0.13))
+                    p.addCurve(to: CGPoint(x: w * 0.48, y: h * 0.23), control1: CGPoint(x: w * 0.41, y: h * 0.13), control2: CGPoint(x: w * 0.39, y: h * 0.23))
+                    p.addLine(to: CGPoint(x: w * 0.9, y: h * 0.23))
+                    p.addQuadCurve(to: CGPoint(x: w * 0.96, y: h * 0.3), control: CGPoint(x: w * 0.96, y: h * 0.23))
+                    p.addLine(to: CGPoint(x: w * 0.96, y: h * 0.85))
+                    p.addLine(to: CGPoint(x: w * 0.04, y: h * 0.85))
+                    p.closeSubpath()
+                }
+                .fill(LinearGradient(colors: [Color(red: 0.48, green: 0.69, blue: 1), Color(red: 0.24, green: 0.46, blue: 0.86)], startPoint: .top, endPoint: .bottom))
+                RoundedRectangle(cornerRadius: w * 0.025)
+                    .fill(Color.white.opacity(0.85))
+                    .frame(width: w * 0.82, height: h * 0.2)
+                    .position(x: w * 0.5, y: h * 0.37)
+                RoundedRectangle(cornerRadius: w * 0.055)
+                    .fill(LinearGradient(colors: [Color(red: 0.64, green: 0.79, blue: 1), Color(red: 0.32, green: 0.57, blue: 0.94)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay(RoundedRectangle(cornerRadius: w * 0.055).strokeBorder(.white.opacity(0.24), lineWidth: 0.7))
+                    .frame(width: w * 0.92, height: h * 0.63)
+                    .position(x: w * 0.5, y: h * 0.625)
+            }
+            .shadow(color: .black.opacity(0.16), radius: 2, y: 3)
+        }
+    }
+}
+
 struct FileLargeIcon: View {
     let item: FileItem
+    @Environment(\.colorScheme) private var scheme
     
     var body: some View {
-        Image(systemName: symbol)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(color)
-            .accessibilityHidden(true)
+        Group {
+            if item.isDirectory && item.name != "#recycle" {
+                MacFolderArtwork()
+            } else {
+                Image(systemName: symbol)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(color.gradient)
+            }
+        }
+        .accessibilityHidden(true)
     }
     
     private var symbol: String {
@@ -5565,7 +5695,7 @@ struct FileLargeIcon: View {
     
     private var color: Color {
         if item.name == "#recycle" { return .orange }
-        if item.isDirectory { return .blue }
+        if item.isDirectory { return MacAppearancePalette(scheme: scheme, increasedContrast: false).folderIcon }
         switch PreviewKind.classify(item) {
         case .image: return .teal
         case .pdf: return .red
@@ -5820,7 +5950,7 @@ struct FilePropertiesView: View {
     }
 }
 
-private struct DesktopDriveMappingCreatorSheet: View {
+struct DesktopDriveMappingCreatorSheet: View {
     private enum ScopeChoice: String, CaseIterable, Identifiable {
         case allShares
         case currentFolder
@@ -5855,6 +5985,9 @@ private struct DesktopDriveMappingCreatorSheet: View {
         VStack(alignment: .leading, spacing: 20) {
             Text(L10n.string("desktopDrive.creator.title"))
                 .font(.title2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
             Text(L10n.string("desktopDrive.creator.description"))
                 .foregroundStyle(.secondary)
 
@@ -5905,6 +6038,7 @@ private struct DesktopDriveMappingCreatorSheet: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
 
             Text(cacheHelpText)
             .font(.caption)
@@ -5929,7 +6063,7 @@ private struct DesktopDriveMappingCreatorSheet: View {
                 Button(L10n.string("desktopDrive.creator.create")) {
                     createMapping()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
                     isCreating
                         || displayName.trimmingCharacters(
@@ -5938,9 +6072,11 @@ private struct DesktopDriveMappingCreatorSheet: View {
                         || (scope == .currentFolder && !currentFolderAvailable)
                 )
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
         .frame(width: 560)
+        .background(MacGlassSurface(role: .sidebar))
         .onAppear {
             if displayName.isEmpty {
                 displayName = profileName
@@ -6014,7 +6150,7 @@ private struct DesktopDriveMappingCreatorSheet: View {
     }
 }
 
-private struct SelectiveCacheCleanupSheet: View {
+struct SelectiveCacheCleanupSheet: View {
     let storage: AppStorageSnapshot
     let onClean: (CacheCleanupOptions) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -6031,6 +6167,9 @@ private struct SelectiveCacheCleanupSheet: View {
                 Text(L10n.string("ui.3d10daba847a0695"))
                     .font(.title2.weight(.bold))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
 
             Text(L10n.string("ui.c524c199a5c08251"))
                 .font(.subheadline)
@@ -6043,7 +6182,7 @@ private struct SelectiveCacheCleanupSheet: View {
                             Text(L10n.string("ui.d238ffac2960e8e1"))
                                 .font(.body.weight(.medium))
                             Spacer()
-                            Text(ByteCountFormatter.string(fromByteCount: storage.safeTrash, countStyle: .file))
+                            Text(storage.safeTrash.formatted(.byteCount(style: .file).locale(L10n.locale)))
                                 .foregroundStyle(.secondary)
                         }
                         Text(L10n.string("ui.105156f052acc424"))
@@ -6060,7 +6199,7 @@ private struct SelectiveCacheCleanupSheet: View {
                             Text(L10n.string("ui.996449099693965c"))
                                 .font(.body.weight(.medium))
                             Spacer()
-                            Text(ByteCountFormatter.string(fromByteCount: storage.photoCache, countStyle: .file))
+                            Text(storage.photoCache.formatted(.byteCount(style: .file).locale(L10n.locale)))
                                 .foregroundStyle(.secondary)
                         }
                         Text(L10n.string("ui.cb35276fd56e7db8"))
@@ -6076,6 +6215,7 @@ private struct SelectiveCacheCleanupSheet: View {
                 Spacer()
                 Button(L10n.string("ui.2cd0f3be8738a86c")) { dismiss() }
                     .keyboardShortcut(.escape, modifiers: [])
+                    .buttonStyle(MacToolbarButtonStyle())
                 Button(L10n.string("ui.d395bbae498e085a")) {
                     var selected: CacheCleanupOptions = []
                     if cleanSafeTrash { selected.insert(.safeTrash) }
@@ -6090,6 +6230,7 @@ private struct SelectiveCacheCleanupSheet: View {
         }
         .padding(24)
         .frame(width: 480)
+        .background(MacGlassSurface(role: .sidebar))
     }
 }
 

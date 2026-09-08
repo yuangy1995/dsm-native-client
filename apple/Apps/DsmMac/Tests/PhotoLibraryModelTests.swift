@@ -407,11 +407,13 @@ private actor PhotoThumbnailFallbackStub: PhotoThumbnailFallbackProviding {
     }
 }
 
-private actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
+// 供模型回归与合成页面共用，所有内容均为测试数据。
+actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
     let spaces: [PhotoSpace]
     let pages: [Int: PhotoLibraryPage]
     let retryItem: PhotoLibraryItem?
     let thumbnailDelayNanoseconds: UInt64
+    let fixtureThumbnailData: Data?
     private var offsets: [Int] = []
     private var timelineRoots: [[String]] = []
     private var activeThumbnailRequests = 0
@@ -423,12 +425,14 @@ private actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
         spaces: [PhotoSpace],
         pages: [Int: PhotoLibraryPage],
         retryItem: PhotoLibraryItem? = nil,
-        thumbnailDelayNanoseconds: UInt64 = 0
+        thumbnailDelayNanoseconds: UInt64 = 0,
+        fixtureThumbnailData: Data? = nil
     ) {
         self.spaces = spaces
         self.pages = pages
         self.retryItem = retryItem
         self.thumbnailDelayNanoseconds = thumbnailDelayNanoseconds
+        self.fixtureThumbnailData = fixtureThumbnailData
     }
 
     func discoverSpaces() async throws -> [PhotoSpace] {
@@ -465,7 +469,7 @@ private actor PhotoLibraryRepositoryStub: PhotoLibraryRepository {
                 throw error
             }
         }
-        return Data(item.name.utf8)
+        return fixtureThumbnailData ?? Data(item.name.utf8)
     }
 
     func scanTimeline(

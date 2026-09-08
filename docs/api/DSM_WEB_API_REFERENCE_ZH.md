@@ -403,7 +403,26 @@ macOS 客户端使用公开的 `list_share` 响应中 `additional.volume_status`
 100 条的保守上限分块请求。官方指南没有声明服务端批量上限，因此 100 条只是客户端的
 防御性限制，不代表 DSM 契约。`additional` 只请求当前功能需要的最小字段，不使用
 `volume_status` 等未列入 `getinfo` 官方参数表的字段。上述分块、字段兼容性和不同权限下的
-部分缺失响应尚未在真实 NAS 上验证。
+分块上限和不同权限账号的完整矩阵尚未在真实 NAS 上验证。
+
+2026-09-08 对 DSM `7.2.1-69057 Update 12` / File Station `1.4.1-1559` 的只读核实：
+同一 `getinfo` 响应可以 `success=true`，但不存在条目仅包含 `path` 和 `code=408`，
+有效条目仍包含 `name/path/isdir/additional`。不能把缺少 `name` 当作整个响应损坏；
+408 表示该项不存在，其他错误不得静默当作不存在。目录权限实测使用
+`additional.perm.is_acl_mode=true` 与 `acl.read/write/del`，而不提供 `adv_right`。
+Apple Adapter 在 ACL 模式优先使用这些显式权限，未提供时保留既有字段解析。
+407（不允许操作）与 411（只读文件系统）的含义来自
+[Synology 官方 File Station API 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)，
+只在 File Station 上下文映射，不能套用到登录或其他套件。
+
+首次只读核实没有执行真实上传、删除或覆盖，不能将只读结果当作删除成功证据。
+同日随后获得专用目录授权后，以自生成图片和文本进行受控验证：Upload v3成功，
+Download v2所得内容摘要与原始生成字节一致；旧macOS客户端删除测试图片后，
+NAS的getinfo回读为408不存在，但客户端因该单项缺失响应解析失败而报未确认。
+专用目录清理的Delete.start v2与status v2也成功，最终目录及两个文件均回读不存在。
+本次仅证明合成测试目标的行为；未删除或核实用户原问题照片，不声明其他账号或版本通过。
+公开接口、参数与模型格式不变；macOS、Apple 移动端及 File Provider 共用的解码实现受益，
+Windows/Android 的同类字段处理仅列为复核项，本轮不修改它们。
 
 远程位置浏览使用 `SYNO.FileStation.Info.get` 返回的 `support_virtual_protocol` 决定读取
 范围，再对其中受支持的 `cifs`、`nfs`、`iso` 分别调用

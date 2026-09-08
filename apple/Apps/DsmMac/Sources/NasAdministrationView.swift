@@ -731,15 +731,7 @@ private struct ExternalStorageView: View {
                 .foregroundStyle(.secondary)
             }
 
-            Picker(
-                L10n.string("external-storage.filter-title"),
-                selection: $filter
-            ) {
-                ForEach(Filter.allCases) { item in
-                    Text(filterLabel(item)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
+            MacPageTabs(options: Filter.allCases, selection: $filter, title: filterLabel)
             .frame(maxWidth: 420)
 
             if directory.isTruncated {
@@ -981,12 +973,7 @@ private struct PowerScheduleView: View {
                     .textSelection(.enabled)
             }
 
-            Picker(L10n.string("power-schedule.filter-title"), selection: $filter) {
-                ForEach(Filter.allCases) { item in
-                    Text(filterLabel(item)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
+            MacPageTabs(options: Filter.allCases, selection: $filter, title: filterLabel)
             .frame(maxWidth: 420)
 
             if snapshot.isTruncated {
@@ -1226,9 +1213,8 @@ private struct ProcessActivityView: View {
             }
         }
         .fillsAvailableContentArea(alignment: .topLeading)
-        .searchable(
+        .macInlineSearch(
             text: $searchText,
-            placement: .toolbar,
             prompt: L10n.string("processes.search-prompt")
         )
     }
@@ -1239,10 +1225,6 @@ private struct ProcessActivityView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.string("processes.title"))
                         .font(.title2.weight(.semibold))
-                    Text(L10n.string("processes.privacy-description"))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 12)
@@ -1532,7 +1514,7 @@ private struct EthernetInterfacesView: View {
     }
 }
 
-private struct EthernetInterfaceEditor: View {
+struct EthernetInterfaceEditor: View {
     @State private var draft: NasEthernetInterface
     @State private var isSaving = false
     @State private var isConfirming = false
@@ -1554,6 +1536,11 @@ private struct EthernetInterfaceEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Text(L10n.string("ui.f4964357f24503a7"))
+                .font(.title2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .background(MacGlassSurface(role: .toolbar))
             Form {
                 Section(draft.displayName) {
                     Toggle(L10n.string("ui.6696d7df7fecf6fc"), isOn: $draft.usesDHCP)
@@ -1586,17 +1573,21 @@ private struct EthernetInterfaceEditor: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
             Divider()
             HStack {
                 Spacer()
                 Button(L10n.string("ui.2cd0f3be8738a86c"), action: onCancel)
                 Button(L10n.string("ui.4a0c1b27983768cd")) { isConfirming = true }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
                     .disabled(draft == original || isSaving)
             }
             .padding()
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 560, minHeight: 520)
+        .background(MacGlassSurface(role: .sidebar))
         .confirmationDialog(
             L10n.string("ui.54bd203067659d00"),
             isPresented: $isConfirming,
@@ -1815,7 +1806,7 @@ private struct DDNSSettingsView: View {
     }
 }
 
-private struct DDNSRecordEditor: View {
+struct DDNSRecordEditor: View {
     @State private var draft: NasDDNSDraft
     @State private var isTesting = false
     @State private var isSaving = false
@@ -1844,6 +1835,11 @@ private struct DDNSRecordEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Text(L10n.string("ui.fcea58116389894b"))
+                .font(.title2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                .background(MacGlassSurface(role: .toolbar))
             Form {
                 Section(L10n.string("ui.b6093c02f3fa3a8e")) {
                     Toggle(L10n.string("ui.e6c04a64954aa920"), isOn: $draft.isEnabled)
@@ -1896,6 +1892,7 @@ private struct DDNSRecordEditor: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
             Divider()
             HStack {
                 if isTesting || isSaving {
@@ -1915,12 +1912,15 @@ private struct DDNSRecordEditor: View {
                 Button(L10n.string("ddns.test.action")) { testConnection() }
                     .disabled(isTesting || isSaving || !draft.isValidForSubmission)
                 Button(L10n.string("ui.a3030bf8f16dc63c")) { save() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
                     .disabled(isTesting || isSaving || !hasChanges || !draft.isValidForSubmission)
             }
             .padding()
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 520, minHeight: 420)
+        .background(MacGlassSurface(role: .sidebar))
         .onChange(of: draft) {
             testSucceeded = false
         }
@@ -3021,18 +3021,29 @@ private struct NasAdministrationSplitView<Page: Hashable, Content: View>: View {
     var body: some View {
         HSplitView {
             VStack(alignment: .leading, spacing: 0) {
-                List(pages, id: \.self, selection: $selection) { page in
-                    let item = label(page)
-                    Label(item.0, systemImage: item.1)
-                        .tag(page)
-                        .padding(.vertical, 3)
+                ScrollViewReader { reader in
+                    List(pages, id: \.self, selection: $selection) { page in
+                        let item = label(page)
+                        Label(item.0, systemImage: item.1)
+                            .foregroundStyle(selection == page ? Color.accentColor : Color.primary)
+                            .tag(page)
+                            .id(page)
+                            .font(.system(size: 14))
+                            .padding(.vertical, 7)
+                            .listRowSeparator(.hidden)
+                    }
+                    .listStyle(.sidebar)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .onChange(of: selection) { _, page in reader.scrollTo(page) }
                 }
-                .listStyle(.sidebar)
             }
             .frame(minWidth: 190, idealWidth: 220, maxWidth: 260)
+            .background(MacGlassSurface(role: .sidebar))
 
             content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .fillsAvailableContentArea(alignment: .topLeading)
+                .scrollContentBackground(.hidden)
         }
     }
 }
@@ -3074,6 +3085,7 @@ private struct AdministrationPageContainer<Content: View>: View {
                     .accessibilityLabel(L10n.string("ui.2336147a7f843985"))
             }
         }
+        .fillsAvailableContentArea()
     }
 }
 
@@ -3220,13 +3232,7 @@ private struct UnifiedStorageView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Picker(L10n.string("ui.ceebdfc7f13d0429"), selection: $section) {
-                    ForEach(UnifiedStorageSection.allCases) { item in
-                        Text(L10n.string(item.rawValue)).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                MacPageTabs(options: UnifiedStorageSection.allCases, selection: $section, title: { L10n.string($0.rawValue) })
                 .frame(maxWidth: 520, alignment: .leading)
 
                 Spacer()
@@ -3565,13 +3571,7 @@ private struct StorageAnalysisView: View {
         }
 
         HStack {
-            Picker(L10n.string("ui.cde63c6e590dba29"), selection: $reportSection) {
-                ForEach(StorageReportSection.allCases) { item in
-                    Text(L10n.string(item.rawValue)).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            MacPageTabs(options: StorageReportSection.allCases, selection: $reportSection, title: { L10n.string($0.rawValue) })
             Spacer()
             Text(snapshot.generatedAt.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption)
@@ -3886,7 +3886,7 @@ private enum DisplayMode: String, CaseIterable, Identifiable {
     }
 }
 
-private enum StorageDetailSelection: Identifiable {
+enum StorageDetailSelection: Identifiable {
     case volume(NasVolume)
     case pool(NasStoragePool)
     case disk(NasDisk)
@@ -4007,7 +4007,7 @@ private struct DiskCard: View {
     }
 }
 
-private struct StorageDetailSheet: View {
+struct StorageDetailSheet: View {
     let selection: StorageDetailSelection
     let snapshot: NasStorageSnapshot?
     let testStatus: NasDiskTestStatus?
@@ -4024,7 +4024,18 @@ private struct StorageDetailSheet: View {
     @State private var testStatusError: String?
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+                Button(L10n.string("ui.3fd47edce45b3603")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(MacToolbarButtonStyle())
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(MacGlassSurface(role: .toolbar))
+            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     switch selection {
@@ -4038,15 +4049,9 @@ private struct StorageDetailSheet: View {
                 }
                 .padding(24)
             }
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("ui.3fd47edce45b3603")) { dismiss() }
-                        .keyboardShortcut(.cancelAction)
-                }
-            }
         }
         .frame(minWidth: 560, idealWidth: 600, minHeight: 480, idealHeight: 580)
+        .background(MacGlassSurface(role: .sidebar))
         .confirmationDialog(
             pendingTestType == .extended ? L10n.string("ui.2af894351735b6b2") : L10n.string("ui.4a1b05399e6f67e5"),
             isPresented: Binding(
@@ -4678,8 +4683,9 @@ private struct PerformanceDashboard: View {
                     }
                 }
                 Spacer()
+            }
 
-                HStack(spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), alignment: .leading)], alignment: .leading, spacing: 8) {
                     Button {
                         checkSystemUpdate()
                     } label: {
@@ -4743,7 +4749,6 @@ private struct PerformanceDashboard: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 }
-            }
 
             if let overview {
                 HStack(spacing: 16) {
@@ -4962,14 +4967,8 @@ private struct PackageList: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Picker(L10n.string("ui.9f8f3cc264bae3ce"), selection: $displayModeRaw) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        Label(mode.label, systemImage: mode.icon).tag(mode.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 90)
+                MacPageTabs(options: DisplayMode.allCases, selection: Binding(get: { displayMode }, set: { displayModeRaw = $0.rawValue }), title: { $0.label }, icon: { $0.icon })
+                    .frame(width: 100)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -5011,7 +5010,7 @@ private struct PackageList: View {
             }
         }
         .navigationTitle(title)
-        .searchable(text: $searchText, prompt: L10n.string("ui.30f6e9928347c1d6"))
+        .macInlineSearch(text: $searchText, prompt: L10n.string("ui.30f6e9928347c1d6"))
         .alert(L10n.string("ui.bcdf89eee8276d3f"), isPresented: Binding(
             get: { packageToUninstall != nil },
             set: { if !$0 { packageToUninstall = nil } }
@@ -5438,14 +5437,8 @@ private struct ScheduledTaskList: View {
                     .foregroundStyle(.secondary)
                 Spacer()
 
-                Picker(L10n.string("ui.a9fd468be9c085d6"), selection: $displayMode) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        Label(L10n.string(mode.rawValue), systemImage: mode.icon).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                MacPageTabs(options: DisplayMode.allCases, selection: $displayMode, title: { L10n.string($0.rawValue) }, icon: { $0.icon })
+                    .frame(width: 100)
 
                 Button {
                     openEditor(for: nil, readOnly: false)
@@ -5718,7 +5711,7 @@ private struct ScheduledTaskList: View {
     }
 }
 
-private struct ScheduledTaskResultsSheet: View {
+struct ScheduledTaskResultsSheet: View {
     let task: NasScheduledTask
     let loadResults: () async throws -> [NasScheduledTaskResult]
     let loadOutput: (String) async throws -> NasScheduledTaskResultOutput
@@ -5746,9 +5739,6 @@ private struct ScheduledTaskResultsSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.string("ui.8900caeb81733b85", String(describing: task.name)))
                         .font(.title3.weight(.bold))
-                    Text(L10n.string("ui.73aeeae6e000c78c"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 Spacer()
 
@@ -5757,7 +5747,7 @@ private struct ScheduledTaskResultsSheet: View {
                 } label: {
                     Label(L10n.string("ui.aee88743413144a2"), systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(MacToolbarButtonStyle())
                 .controlSize(.small)
                 .disabled(isLoading || isLoadingOutput)
 
@@ -5768,6 +5758,8 @@ private struct ScheduledTaskResultsSheet: View {
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 16)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -5802,7 +5794,7 @@ private struct ScheduledTaskResultsSheet: View {
                         } label: {
                             Label(L10n.string("ui.df7392cc96bedc51"), systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(MacToolbarButtonStyle(prominent: true))
                         .controlSize(.small)
                     }
                     .padding(32)
@@ -5820,7 +5812,7 @@ private struct ScheduledTaskResultsSheet: View {
                                     Image(systemName: result.exitCode == 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
                                         .foregroundStyle(result.exitCode == 0 ? .green : .red)
                                         .accessibilityHidden(true)
-                                    Text(result.startedAt?.formatted(date: .abbreviated, time: .standard) ?? L10n.string("ui.664939a1fa2ef755"))
+                                    Text(result.startedAt?.formatted(Date.FormatStyle(date: .abbreviated, time: .standard).locale(L10n.locale)) ?? L10n.string("ui.664939a1fa2ef755"))
                                         .font(.body.weight(.medium))
                                 }
                                 HStack {
@@ -5842,6 +5834,8 @@ private struct ScheduledTaskResultsSheet: View {
             }
         }
         .frame(minWidth: 720, idealWidth: 800, minHeight: 480, maxHeight: 680)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .task {
             await refreshResults()
         }
@@ -5858,12 +5852,12 @@ private struct ScheduledTaskResultsSheet: View {
                     DetailSection(title: L10n.string("ui.0020a684697fef9d")) {
                         DetailValueRow(
                             title: L10n.string("ui.6a9906c79f26c0ba"),
-                            value: result.startedAt?.formatted(date: .long, time: .standard) ?? L10n.string("ui.756762e293f2aaff")
+                            value: result.startedAt?.formatted(Date.FormatStyle(date: .long, time: .standard).locale(L10n.locale)) ?? L10n.string("ui.756762e293f2aaff")
                         )
                         Divider().opacity(0.4)
                         DetailValueRow(
                             title: L10n.string("ui.f50276449943286c"),
-                            value: result.stoppedAt?.formatted(date: .long, time: .standard) ?? L10n.string("ui.756762e293f2aaff")
+                            value: result.stoppedAt?.formatted(Date.FormatStyle(date: .long, time: .standard).locale(L10n.locale)) ?? L10n.string("ui.756762e293f2aaff")
                         )
                         Divider().opacity(0.4)
                         DetailValueRow(
@@ -5991,7 +5985,7 @@ private struct TaskOutputSection: View {
     }
 }
 
-private struct ScheduledTaskEditor: View {
+struct ScheduledTaskEditor: View {
     @State private var draft: NasScheduledTaskDraft
     @State private var isSaving = false
     @State private var saveError: String?
@@ -6032,6 +6026,7 @@ private struct ScheduledTaskEditor: View {
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 16)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -6257,7 +6252,7 @@ private struct ScheduledTaskEditor: View {
                             Text(L10n.string("ui.a3030bf8f16dc63c"))
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(
                         isSaving
@@ -6269,9 +6264,11 @@ private struct ScheduledTaskEditor: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 560, idealWidth: 600, minHeight: 520, maxHeight: 720)
+        .background(MacGlassSurface(role: .sidebar))
     }
 }
 
@@ -6363,22 +6360,11 @@ private struct AccountDirectoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker(L10n.string("ui.de90186fc66371a8"), selection: $scope) {
-                    ForEach(Scope.allCases) { scope in
-                        Text("\(L10n.string(scope.rawValue)) \(count(scope))").tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
+                MacPageTabs(options: Scope.allCases, selection: $scope, title: { "\(L10n.string($0.rawValue)) \(count($0))" })
                 .frame(maxWidth: 320)
 
-                Picker(L10n.string("ui.a9fd468be9c085d6"), selection: $displayMode) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        Label(L10n.string(mode.rawValue), systemImage: mode.icon).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                MacPageTabs(options: DisplayMode.allCases, selection: $displayMode, title: { L10n.string($0.rawValue) }, icon: { $0.icon })
+                    .frame(width: 100)
 
                 Spacer()
                 if scope == .users {
@@ -6569,7 +6555,7 @@ private struct AccountDirectoryView: View {
             }
             .accessibilityElement(children: .combine)
         }
-        .searchable(text: $searchText, prompt: L10n.string("ui.0f201cb88b5f99a3", L10n.string(scope.rawValue)))
+        .macInlineSearch(text: $searchText, prompt: L10n.string("ui.0f201cb88b5f99a3", L10n.string(scope.rawValue)))
     }
 
     private var gridContent: some View {
@@ -6640,7 +6626,7 @@ private struct AccountDirectoryView: View {
             }
             .padding(20)
         }
-        .searchable(text: $searchText, prompt: L10n.string("ui.0f201cb88b5f99a3", L10n.string(scope.rawValue)))
+        .macInlineSearch(text: $searchText, prompt: L10n.string("ui.0f201cb88b5f99a3", L10n.string(scope.rawValue)))
     }
 
     @ViewBuilder
@@ -6694,7 +6680,7 @@ private struct AccountDirectoryView: View {
     }
 }
 
-private struct AccountEditor: View {
+struct AccountEditor: View {
     @State private var draft: NasAccountDraft
     @State private var isSaving = false
     @State private var saveError: String?
@@ -6734,6 +6720,7 @@ private struct AccountEditor: View {
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 16)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -6794,6 +6781,7 @@ private struct AccountEditor: View {
                             Toggle("", isOn: $draft.isExpired)
                                 .toggleStyle(.switch)
                                 .controlSize(.small)
+                                .accessibilityLabel(L10n.string("ui.5549fd9845d7fcfc"))
                         }
                     }
                     .padding(14)
@@ -6930,7 +6918,7 @@ private struct AccountEditor: View {
                         Text(L10n.string("ui.a3030bf8f16dc63c"))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     isSaving
@@ -6941,13 +6929,15 @@ private struct AccountEditor: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(width: 540, height: 560)
+        .background(MacGlassSurface(role: .sidebar))
     }
 }
 
-private struct GroupEditor: View {
+struct GroupEditor: View {
     @State private var draft: NasGroupDraft
     @State private var isSaving = false
     @State private var saveError: String?
@@ -6980,6 +6970,7 @@ private struct GroupEditor: View {
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 16)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -7056,7 +7047,7 @@ private struct GroupEditor: View {
                         Text(L10n.string("ui.a3030bf8f16dc63c"))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     isSaving
@@ -7065,9 +7056,11 @@ private struct GroupEditor: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(width: 480, height: 320)
+        .background(MacGlassSurface(role: .sidebar))
     }
 }
 
@@ -7226,7 +7219,7 @@ private struct LogEntryList: View {
                 .padding(.vertical, 5)
                 .accessibilityElement(children: .combine)
             }
-            .searchable(text: $searchText, prompt: L10n.string("ui.1b9b75f51d2061d7"))
+            .macInlineSearch(text: $searchText, prompt: L10n.string("ui.1b9b75f51d2061d7"))
 
             Divider()
             paginationBar
@@ -7384,14 +7377,8 @@ private struct ConnectionList: View {
                     .foregroundStyle(.secondary)
                 Spacer()
 
-                Picker(L10n.string("ui.a9fd468be9c085d6"), selection: $displayMode) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        Label(L10n.string(mode.rawValue), systemImage: mode.icon).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                MacPageTabs(options: DisplayMode.allCases, selection: $displayMode, title: { L10n.string($0.rawValue) }, icon: { $0.icon })
+                    .frame(width: 100)
             }
             .padding()
 

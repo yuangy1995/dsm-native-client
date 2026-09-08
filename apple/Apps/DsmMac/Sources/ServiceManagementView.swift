@@ -56,6 +56,7 @@ extension VirtualMachineManagerPane {
 }
 
 struct ServiceManagementView: View {
+    @Environment(\.accessibilityReduceMotion) private var reducesMotion
     let module: ServiceManagementModel.Module
     @Bindable var model: ServiceManagementModel
     let containerPane: ContainerManagerPane
@@ -113,14 +114,15 @@ struct ServiceManagementView: View {
                 }
             }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: model.message)
+        .animation(reducesMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: model.message)
+        .scrollContentBackground(.hidden)
         .task(id: module) {
             await model.activate(module)
         }
         .task(id: model.message) {
             if model.message != nil {
                 try? await Task.sleep(for: .seconds(3.5))
-                withAnimation {
+                withAnimation(reducesMotion ? nil : .default) {
                     model.message = nil
                 }
             }
@@ -131,24 +133,11 @@ struct ServiceManagementView: View {
 private struct ServiceHeader: View {
     let title: String
     let subtitle: String
-    let icon: String
-    let tint: Color
     let isLoading: Bool
     let refresh: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(tint)
-                .frame(width: 44, height: 44)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.title2.weight(.semibold))
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
-            }
-            Spacer()
+        MacPageHeader(title: title, subtitle: subtitle) {
             if isLoading {
                 ProgressView().controlSize(.small).accessibilityLabel(L10n.string("ui.30fa385526238641"))
             }
@@ -157,6 +146,7 @@ private struct ServiceHeader: View {
             }
             .disabled(isLoading)
             .keyboardShortcut("r", modifiers: .command)
+            .buttonStyle(MacToolbarButtonStyle())
         }
     }
 }
@@ -270,60 +260,68 @@ private struct DownloadStationView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             ServiceHeader(
                 title: L10n.string("ui.5248507df52ff455"),
                 subtitle: speedSummary,
-                icon: "arrow.down.circle.fill",
-                tint: .green,
                 isLoading: model.isLoading
             ) { Task { await model.activate(.downloads, force: true) } }
 
-            HStack {
-                Picker("", selection: $filter) {
-                    ForEach(Filter.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 360)
-                Spacer()
-                Button {
-                    Task { await model.controlDownloads(.resume) }
-                } label: {
-                    Label(L10n.string("ui.7c9691192f1b7340"), systemImage: "play.fill")
-                }
-                .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
-                Button {
-                    Task { await model.controlDownloads(.pause) }
-                } label: {
-                    Label(L10n.string("ui.8d12fc0d4eb26021"), systemImage: "pause.fill")
-                }
-                .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
-                Menu {
-                    Button(L10n.string("ui.3a72267129185266"), role: .destructive) {
-                        deleteChoice = .taskOnly
+            HStack(spacing: 12) {
+                MacPageTabs(options: Filter.allCases, selection: $filter, title: { $0.title })
+                    .frame(maxWidth: 360)
+                Spacer(minLength: 0)
+                HStack {
+                    Button {
+                        Task { await model.controlDownloads(.resume) }
+                    } label: {
+                        Label(L10n.string("ui.7c9691192f1b7340"), systemImage: "play.fill")
                     }
-                    Button(L10n.string("ui.810ad53a1c16de5d"), role: .destructive) {
-                        deleteChoice = .taskAndData
+                    .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
+                    .labelStyle(.iconOnly)
+                    .help(L10n.string("ui.7c9691192f1b7340"))
+                    Button {
+                        Task { await model.controlDownloads(.pause) }
+                    } label: {
+                        Label(L10n.string("ui.8d12fc0d4eb26021"), systemImage: "pause.fill")
                     }
-                } label: {
-                    Label(L10n.string("ui.6135d4159e892541"), systemImage: "trash")
+                    .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
+                    .labelStyle(.iconOnly)
+                    .help(L10n.string("ui.8d12fc0d4eb26021"))
+                    Menu {
+                        Button(L10n.string("ui.3a72267129185266"), role: .destructive) {
+                            deleteChoice = .taskOnly
+                        }
+                        Button(L10n.string("ui.810ad53a1c16de5d"), role: .destructive) {
+                            deleteChoice = .taskAndData
+                        }
+                    } label: {
+                        Label(L10n.string("ui.6135d4159e892541"), systemImage: "trash")
+                    }
+                    .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
+                    .labelStyle(.iconOnly)
+                    Button {
+                        showsSettings = true
+                    } label: {
+                        Label(L10n.string("ui.df3d58c7d84b85f2"), systemImage: "gearshape")
+                    }
+                    .disabled(model.isPerformingAction)
+                    .labelStyle(.iconOnly)
+                    .help(L10n.string("ui.df3d58c7d84b85f2"))
+                    Button {
+                        showsCreate = true
+                    } label: {
+                        Label(L10n.string("ui.52b312406b04b9a7"), systemImage: "plus")
+                    }
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                    .disabled(model.isPerformingAction)
                 }
-                .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
-                Button {
-                    showsSettings = true
-                } label: {
-                    Label(L10n.string("ui.df3d58c7d84b85f2"), systemImage: "gearshape")
-                }
-                .disabled(model.isPerformingAction)
-                Button {
-                    showsCreate = true
-                } label: {
-                    Label(L10n.string("ui.52b312406b04b9a7"), systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.isPerformingAction)
+                .buttonStyle(MacToolbarButtonStyle())
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(MacGlassSurface(role: .toolbar))
+            Divider()
 
             if tasks.isEmpty, !model.isLoading {
                 EmptyServiceState(
@@ -335,6 +333,8 @@ private struct DownloadStationView: View {
                 List(tasks, selection: $model.downloadSelection) { task in
                     DownloadTaskRow(task: task)
                         .tag(task.id)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                         .contextMenu {
                             Button(L10n.string("ui.7c9691192f1b7340")) {
                                 model.downloadSelection = [task.id]
@@ -349,7 +349,6 @@ private struct DownloadStationView: View {
                 .listStyle(.inset)
             }
         }
-        .padding(20)
         .sheet(isPresented: $showsCreate) {
             CreateDownloadSheet(
                 defaultDestination: model.downloads?.defaultDestination,
@@ -454,7 +453,7 @@ private struct DownloadTaskRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 5)
+        .macDataRowSurface()
         .accessibilityElement(children: .combine)
     }
 
@@ -483,7 +482,7 @@ private struct DownloadTaskRow: View {
     }
 }
 
-private struct CreateDownloadSheet: View {
+struct CreateDownloadSheet: View {
     private enum Source: String, CaseIterable, Identifiable {
         case file
         case url
@@ -513,6 +512,9 @@ private struct CreateDownloadSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(L10n.string("ui.52b312406b04b9a7")).font(.title2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
             Picker(L10n.string("ui.1f39096f50fcbc99"), selection: $source) {
                 ForEach(Source.allCases) { source in
                     Text(source.title).tag(source)
@@ -585,12 +587,15 @@ private struct CreateDownloadSheet: View {
                         isSubmitting = false
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(!canSubmit || isSubmitting)
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
         .frame(width: 620)
+        .fillsAvailableContentArea(alignment: .topLeading)
+        .background(MacGlassSurface(role: .sidebar))
         .onAppear { destination = normalizedDefaultDestination }
         .sheet(isPresented: $showsDestinationPicker) {
             DownloadDestinationPicker(
@@ -651,7 +656,7 @@ private struct CreateDownloadSheet: View {
     }
 }
 
-private struct DownloadSettingsSheet: View {
+struct DownloadSettingsSheet: View {
     let loadFolders: (String?) async throws -> [FileItem]
     let load: () async throws -> DownloadStationSettings
     let save: (DownloadStationSettings) async -> Bool
@@ -672,6 +677,8 @@ private struct DownloadSettingsSheet: View {
                     ProgressView().controlSize(.small)
                 }
             }
+            .padding(14)
+            .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
 
             if let settingsBinding {
                 Form {
@@ -713,6 +720,7 @@ private struct DownloadSettingsSheet: View {
                     }
                 }
                 .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
             } else if let errorMessage {
                 ContentUnavailableView(
                     L10n.string("ui.7fdd539ffbe65c3f"),
@@ -735,12 +743,14 @@ private struct DownloadSettingsSheet: View {
                         isSaving = false
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(settings == nil || isLoading || isSaving)
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
         .frame(width: 680, height: 650)
+        .background(MacGlassSurface(role: .sidebar))
         .task {
             do {
                 settings = try await load()
@@ -778,6 +788,9 @@ private struct DownloadSettingsSheet: View {
         LabeledContent(title) {
             HStack(spacing: 6) {
                 TextField("0", value: value, format: .number)
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(title)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 110)
                 Text(L10n.string("unit.kilobytes_per_second")).foregroundStyle(.secondary)
@@ -805,7 +818,7 @@ private struct DownloadSettingsSheet: View {
     }
 }
 
-private struct DownloadDestinationPicker: View {
+struct DownloadDestinationPicker: View {
     private struct Location {
         let path: String?
         let canWrite: Bool
@@ -833,6 +846,8 @@ private struct DownloadDestinationPicker: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -859,6 +874,8 @@ private struct DownloadDestinationPicker: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
 
             Group {
                 if isLoading && folders.isEmpty {
@@ -904,13 +921,17 @@ private struct DownloadDestinationPicker: View {
                     guard let path = location.path else { return }
                     onSelect(Self.downloadStationPath(from: path))
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(location.path == nil || !location.canWrite || isLoading)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 540, minHeight: 440)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .task { await reload() }
     }
 
@@ -1009,19 +1030,17 @@ private struct ContainerManagerView: View {
     @State private var showsCreateNetwork = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             ServiceHeader(
                 title: L10n.string("ui.aaf778d85ce5c2ed"),
                 subtitle: containerSummary,
-                icon: "shippingbox.fill",
-                tint: .blue,
                 isLoading: model.isLoading
             ) { Task { await model.activate(.containers, force: true) } }
-            Picker("", selection: paneSelection) {
-                ForEach(ContainerManagerPane.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            MacPageTabs(options: ContainerManagerPane.allCases, selection: paneSelection, title: { $0.title })
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(MacGlassSurface(role: .toolbar))
+            Divider()
 
             Group {
                 switch pane {
@@ -1033,8 +1052,9 @@ private struct ContainerManagerView: View {
                 case .events: eventList(model.containers?.events ?? [])
                 }
             }
+            .padding(20)
+            .buttonStyle(MacToolbarButtonStyle())
         }
-        .padding(20)
         .confirmationDialog(L10n.string("ui.e63f7b537862f807"), isPresented: $confirmsContainerDelete) {
             Button(L10n.string("ui.60fc3386091b5647"), role: .destructive) {
                 Task { await model.deleteContainers() }
@@ -1142,7 +1162,7 @@ private struct ContainerManagerView: View {
                         .foregroundStyle(.secondary)
                 }
                 .font(.callout)
-                .padding(.vertical, 4)
+                .macDataRowSurface()
                 .tag(item.id)
             }
             .listStyle(.inset)
@@ -1176,7 +1196,7 @@ private struct ContainerManagerView: View {
                             .foregroundStyle(.green)
                     }
                 }
-                .padding(.vertical, 4)
+                .macDataRowSurface()
                 .tag(image.id)
             }
             .listStyle(.inset)
@@ -1205,7 +1225,7 @@ private struct ContainerManagerView: View {
                     Text(L10n.string("ui.9e93c07975ef7973", String(describing: network.connectedContainerCount)))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 4)
+                .macDataRowSurface()
                 .tag(network.id)
             }
             .listStyle(.inset)
@@ -1221,7 +1241,7 @@ private struct ContainerManagerView: View {
                 Text(L10n.string("ui.9e93c07975ef7973", String(describing: project.containerCount))).foregroundStyle(.secondary)
                 Text(ServiceFormat.status(project.status)).foregroundStyle(.secondary)
             }
-            .padding(.vertical, 4)
+            .macDataRowSurface()
         }
         .listStyle(.inset)
     }
@@ -1236,7 +1256,7 @@ private struct ContainerManagerView: View {
                 Text(event.message).textSelection(.enabled)
             }
             .font(.callout)
-            .padding(.vertical, 3)
+            .macDataRowSurface()
         }
         .listStyle(.inset)
     }
@@ -1275,20 +1295,19 @@ private struct VirtualMachineManagerView: View {
     @State private var consoleWindowController: VirtualMachineConsoleWindowController?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             ServiceHeader(
                 title: L10n.string("ui.80c43bd2481c9580"),
                 subtitle: L10n.string("ui.c7892f3db4ba87d6", String(describing: model.virtualMachines?.machines.count ?? 0)),
-                icon: "desktopcomputer",
-                tint: .indigo,
                 isLoading: model.isLoading
             ) { Task { await model.activate(.virtualMachines, force: true) } }
-            Picker("", selection: paneSelection) {
-                ForEach(VirtualMachineManagerPane.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            MacPageTabs(options: VirtualMachineManagerPane.allCases, selection: paneSelection, title: { $0.title })
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(MacGlassSurface(role: .toolbar))
+            Divider()
 
+            Group {
             switch pane {
             case .machines: machineList
             case .hosts:
@@ -1308,8 +1327,10 @@ private struct VirtualMachineManagerView: View {
             case .protection: protectionView
             case .events: eventList
             }
+            }
+            .padding(20)
+            .buttonStyle(MacToolbarButtonStyle())
         }
-        .padding(20)
         .confirmationDialog(
             powerConfirmationTitle,
             isPresented: Binding(
@@ -1413,6 +1434,7 @@ private struct VirtualMachineManagerView: View {
                     Label(L10n.string("ui.50ef2f4cf6a46924"), systemImage: "plus")
                 }
                 .keyboardShortcut("n", modifiers: .command)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
                     model.isPerformingAction
                         || model.virtualMachines?.storages.isEmpty != false
@@ -1454,6 +1476,7 @@ private struct VirtualMachineManagerView: View {
                         || model.isPerformingAction
                 )
                 Divider().frame(height: 18)
+                Group {
                 Button(L10n.string("ui.56410fc65314dfb5")) { pendingPowerAction = .powerOn }
                 Button(L10n.string("ui.0c6d079c4c60bcf5")) { pendingPowerAction = .shutdown }
                 Menu(L10n.string("ui.38844b135cf70dfc")) {
@@ -1464,9 +1487,10 @@ private struct VirtualMachineManagerView: View {
                     }
                     Button(L10n.string("ui.0552e329ccf875fb"), role: .destructive) { confirmsDelete = true }
                 }
+                }
+                .disabled(model.virtualMachineSelection.isEmpty || model.isPerformingAction)
                 Spacer()
             }
-            .disabled(model.virtualMachineSelection.isEmpty || model.isPerformingAction)
 
             let machines = model.virtualMachines?.machines ?? []
             if machines.isEmpty, !model.isLoading {
@@ -1477,7 +1501,13 @@ private struct VirtualMachineManagerView: View {
                 )
             } else {
                 List(machines, selection: $model.virtualMachineSelection) { machine in
-                    HStack {
+                    HStack(spacing: 12) {
+                        Image(systemName: "desktopcomputer")
+                            .font(.title2)
+                            .foregroundStyle(.tint)
+                            .frame(width: 42, height: 42)
+                            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                            .accessibilityHidden(true)
                         StatusDot(status: machine.status)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(machine.name).fontWeight(.medium)
@@ -1491,8 +1521,10 @@ private struct VirtualMachineManagerView: View {
                         Text(ServiceFormat.status(machine.status)).foregroundStyle(.secondary)
                     }
                     .font(.callout)
-                    .padding(.vertical, 4)
+                    .macDataRowSurface()
                     .tag(machine.id)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
                 }
                 .listStyle(.inset)
             }
@@ -1540,7 +1572,7 @@ private struct VirtualMachineManagerView: View {
                             Text(ServiceFormat.status(status)).foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .macDataRowSurface()
                 }
                 .listStyle(.inset)
             }
@@ -1646,7 +1678,7 @@ private struct VirtualMachineManagerView: View {
                         }
                     }
                     .font(.callout)
-                    .padding(.vertical, 4)
+                    .macDataRowSurface()
                     .tag(resource.id)
                     .contextMenu {
                         if let onDelete {
@@ -1673,13 +1705,7 @@ private struct VirtualMachineManagerView: View {
 
     private var protectionView: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker(L10n.string("ui.9bae22005848084c"), selection: $protectionPane) {
-                ForEach(ProtectionPane.allCases) { item in
-                    Text(item.title).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            MacPageTabs(options: ProtectionPane.allCases, selection: $protectionPane, title: { $0.title })
             .frame(maxWidth: 420, alignment: .leading)
 
             if isUnavailable(.protection) {
@@ -1753,7 +1779,7 @@ private struct VirtualMachineManagerView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .font(.callout)
-                    .padding(.vertical, 3)
+                    .macDataRowSurface()
                 }
                 .listStyle(.inset)
             }
@@ -1828,7 +1854,7 @@ private struct VirtualMachineManagerView: View {
     }
 }
 
-private struct EditVirtualMachineNetworkSheet: View {
+struct EditVirtualMachineNetworkSheet: View {
     let network: VirtualizationResource
     let submit: (VirtualMachineNetworkUpdate) async -> Bool
     @Environment(\.dismiss) private var dismiss
@@ -1848,6 +1874,9 @@ private struct EditVirtualMachineNetworkSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             Text(L10n.string("ui.d1650277320baac5"))
                 .font(.title2.bold())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
             Form {
                 TextField(L10n.string("ui.d44e9b3d3b31d37b"), text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -1872,19 +1901,23 @@ private struct EditVirtualMachineNetworkSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
                     isSaving
                         || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
         .frame(width: 440)
+        .fillsAvailableContentArea(alignment: .topLeading)
+        .background(MacGlassSurface(role: .sidebar))
         .interactiveDismissDisabled(isSaving)
     }
 }
 
-private struct CreateVirtualMachineSheet: View {
+struct CreateVirtualMachineSheet: View {
     let snapshot: VirtualMachineManagerSnapshot?
     let submit: (VirtualMachineCreation) async -> Bool
     @Environment(\.dismiss) private var dismiss
@@ -1922,6 +1955,7 @@ private struct CreateVirtualMachineSheet: View {
                     .accessibilityValue(L10n.string("ui.161a76ddf252f824", String(describing: step + 1), String(describing: stepTitles.count)))
             }
             .padding(20)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -1978,6 +2012,7 @@ private struct CreateVirtualMachineSheet: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
@@ -1992,7 +2027,7 @@ private struct CreateVirtualMachineSheet: View {
                 }
                 if step < stepTitles.count - 1 {
                     Button(L10n.string("ui.acfc4e74a650e7df")) { step += 1 }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(MacToolbarButtonStyle(prominent: true))
                         .keyboardShortcut(.defaultAction)
                         .disabled(!canContinue || isSubmitting)
                 } else {
@@ -2005,14 +2040,17 @@ private struct CreateVirtualMachineSheet: View {
                             Text(L10n.string("ui.0dcae6dc6ec16060"))
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canCreate || isSubmitting)
                 }
             }
             .padding(20)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 620, idealWidth: 680, minHeight: 500, idealHeight: 580)
+        .background(MacGlassSurface(role: .sidebar))
         .onAppear {
             storageID = storageID.isEmpty ? snapshot?.storages.first?.id ?? "" : storageID
             networkID = networkID.isEmpty ? snapshot?.networks.first?.id ?? "" : networkID
@@ -2070,7 +2108,7 @@ private struct CreateVirtualMachineSheet: View {
     }
 }
 
-private struct EditVirtualMachineSheet: View {
+struct EditVirtualMachineSheet: View {
     let machine: VirtualMachine
     let submit: (VirtualMachineUpdate) async -> Bool
     @Environment(\.dismiss) private var dismiss
@@ -2106,6 +2144,8 @@ private struct EditVirtualMachineSheet: View {
                 Text(machine.name).font(.callout).foregroundStyle(.secondary)
             }
             .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -2138,6 +2178,7 @@ private struct EditVirtualMachineSheet: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
 
             Divider()
 
@@ -2146,13 +2187,16 @@ private struct EditVirtualMachineSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(L10n.string("ui.5eaaf3264a3f652d")) { confirmsSave = true }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isValid || !hasChanges || isSubmitting)
             }
             .padding(20)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 560, idealWidth: 620, minHeight: 460, idealHeight: 520)
+        .background(MacGlassSurface(role: .sidebar))
         .interactiveDismissDisabled(isSubmitting)
         .confirmationDialog(L10n.string("ui.ae182336517d15ef"), isPresented: $confirmsSave) {
             Button(L10n.string("ui.991bb7cfe5a81550")) {
@@ -2238,6 +2282,7 @@ private final class VirtualMachineConsoleWindowController: NSWindowController, N
                     self?.window?.toggleFullScreen(nil)
                 }
             )
+            .macAppearanceRoot()
         )
     }
 
@@ -2261,7 +2306,8 @@ private final class VirtualMachineConsoleWindowController: NSWindowController, N
     }
 }
 
-private struct VirtualMachineConsoleWindowView: View {
+// 隔离窗口检查复用此外壳；不改变控制台网页的会话配置。
+struct VirtualMachineConsoleWindowView: View {
     let machineName: String
     let session: VirtualMachineConsoleSession
     let close: () -> Void
@@ -2269,6 +2315,7 @@ private struct VirtualMachineConsoleWindowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Color.clear.frame(height: 40).allowsHitTesting(false)
             HStack {
                 Label(machineName, systemImage: "display")
                     .font(.headline)
@@ -2287,11 +2334,17 @@ private struct VirtualMachineConsoleWindowView: View {
                 Button(L10n.string("ui.3fd47edce45b3603")) { close() }
                     .keyboardShortcut("w", modifiers: .command)
             }
-            .padding(12)
+            .buttonStyle(MacToolbarButtonStyle())
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(MacGlassSurface(role: .toolbar))
             Divider()
             VirtualMachineConsoleWebView(session: session)
                 .accessibilityLabel(L10n.string("ui.c3247acb301cfeb0", String(describing: machineName)))
         }
+        .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
+        .background(MacWorkspaceWindowChrome(fullSize: true))
+        .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 720, idealWidth: 1_100, minHeight: 480, idealHeight: 760)
     }
 }
@@ -2380,7 +2433,7 @@ private struct StatusDot: View {
     }
 }
 
-private struct PullImageSheet: View {
+struct PullImageSheet: View {
     let search: (String) async throws -> [ContainerRegistryImage]
     let loadTags: (String) async throws -> [String]
     let submit: (String, String) async -> String?
@@ -2426,7 +2479,7 @@ private struct PullImageSheet: View {
                             Label(L10n.string("ui.44ce7ae909bbb28b"), systemImage: "magnifyingglass")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
                     .disabled(
                         query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             || isSearching
@@ -2436,6 +2489,7 @@ private struct PullImageSheet: View {
                 }
             }
             .padding(18)
+            .background(MacGlassSurface(role: .toolbar))
 
             Divider()
 
@@ -2574,7 +2628,7 @@ private struct PullImageSheet: View {
                         isSubmitting = false
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
                     repository.isEmpty
                         || tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -2586,8 +2640,12 @@ private struct PullImageSheet: View {
                 )
             }
             .padding(16)
+            .buttonStyle(MacToolbarButtonStyle())
+            .background(MacGlassSurface(role: .toolbar))
         }
         .frame(width: 620, height: 540)
+        .scrollContentBackground(.hidden)
+        .background(MacGlassSurface(role: .sidebar))
         .onChange(of: selectedImageID) { _, newValue in
             guard let image = results.first(where: { $0.id == newValue }) else { return }
             repository = image.name
@@ -2651,7 +2709,7 @@ private struct PullImageSheet: View {
     }
 }
 
-private struct CreateNetworkSheet: View {
+struct CreateNetworkSheet: View {
     let submit: (String, String) async -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -2661,6 +2719,9 @@ private struct CreateNetworkSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(L10n.string("ui.49fe5148286aa7f8")).font(.title2.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
             Form {
                 TextField(L10n.string("ui.ac8d90dfa36e5134"), text: $name)
                 Picker(L10n.string("ui.fefbff4b349c9621"), selection: $driver) {
@@ -2678,12 +2739,15 @@ private struct CreateNetworkSheet: View {
                         isSubmitting = false
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(name.isEmpty || isSubmitting)
             }
+            .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
         .frame(width: 440)
+        .fillsAvailableContentArea(alignment: .topLeading)
+        .background(MacGlassSurface(role: .sidebar))
     }
 }
 

@@ -614,7 +614,8 @@ final class WorkspaceModel {
         serviceManagementRepository: any ServiceManagementRepository =
             UnavailableServiceManagementRepository(),
         desktopDriveSessionBridge: DesktopDriveSessionBridge? = nil,
-        transferNotifier: any TransferNotifying = TransferNotifierFactory.makeDefault()
+        transferNotifier: any TransferNotifying = TransferNotifierFactory.makeDefault(),
+        preparePreviewCache: (() -> Void)? = nil
     ) {
         self.profile = profile
         self.repository = repository
@@ -678,7 +679,12 @@ final class WorkspaceModel {
            let saved = try? JSONDecoder().decode([FavoriteLocation].self, from: data) {
             recentLocations = saved
         }
-        Self.purgeStalePreviewCache()
+        // 合成界面测试可注入独立的准备动作，避免清理正在运行的 App 的预览缓存。
+        if let preparePreviewCache {
+            preparePreviewCache()
+        } else {
+            Self.purgeStalePreviewCache()
+        }
         
         // 加载已保存的任务列表
         if let data = UserDefaults.standard.data(forKey: "LanStash_Transfers_\(profile.id.uuidString)"),

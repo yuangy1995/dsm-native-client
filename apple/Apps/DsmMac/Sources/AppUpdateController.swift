@@ -12,10 +12,12 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     @Published private(set) var automaticallyChecksForUpdates = false
     private(set) var updater: SPUUpdater?
     private let configuredFeedURL: String
+    private let installedVersion: String?
     let driver = AppUpdateUserDriver()
 
     init(bundle: Bundle = .main, canRestart: @escaping @MainActor () -> Bool) {
         configuredFeedURL = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String ?? Self.feedURL
+        installedVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         super.init()
         driver.canRestart = canRestart
         guard Self.isConfigured(bundle.infoDictionary ?? [:]) else { return }
@@ -30,6 +32,8 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
             self.updater = nil
         }
     }
+
+    var currentVersion: String { installedVersion ?? L10n.string("updates.versionUnknown") }
 
     static let feedURL = "https://github.com/yuangy1995/dsm-native-client/releases/download/macos-updates/appcast.xml"
     static let validationFeedURL = "https://github.com/yuangy1995/dsm-native-client/releases/download/macos-validation-updates/appcast.xml"
@@ -66,9 +70,35 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 
 @MainActor
 final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
+    enum PresentationStage: Equatable {
+        case information, permission, checking, available, downloading, preparing, ready, installing, upToDate, completed, failed
+
+        var symbol: String {
+            switch self {
+            case .information: "info.circle"
+            case .permission: "bell.badge"
+            case .checking: "arrow.triangle.2.circlepath"
+            case .available, .downloading: "arrow.down.app"
+            case .preparing: "shippingbox"
+            case .ready, .installing: "arrow.clockwise.circle"
+            case .upToDate, .completed: "checkmark.seal"
+            case .failed: "exclamationmark.triangle"
+            }
+        }
+
+        var showsReleaseNotes: Bool {
+            switch self {
+            case .available, .downloading, .ready, .information, .failed, .completed: true
+            default: false
+            }
+        }
+    }
+
+    @Published private(set) var stage: PresentationStage = .information
     @Published private(set) var titleKey = "updates.title"
     @Published private(set) var detailKey = "updates.checking.detail"
     @Published private(set) var version: String?
+    @Published private(set) var releaseNotes: String?
     @Published private(set) var progress: Double?
     @Published private(set) var isWorking = false
     @Published private(set) var primaryKey: String?
@@ -86,12 +116,16 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
         self.presentsWindows = presentsWindows
     }
 
-    private func present(_ title: String, detail: String, working: Bool = false,
+    private func present(_ title: String, detail: String, stage: PresentationStage = .information, working: Bool = false,
                          primary: String? = nil, action: (() -> Void)? = nil,
                          secondary: String? = nil, cancel: (() -> Void)? = nil) {
         titleKey = title
         detailKey = detail
-        version = nil
+        self.stage = stage
+        if [.information, .permission, .checking, .available, .upToDate].contains(stage) {
+            version = nil
+            releaseNotes = nil
+        }
         progress = nil
         isWorking = working
         primaryKey = primary
@@ -100,11 +134,11 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
         secondaryAction = cancel
         guard presentsWindows else { return }
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 340),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 440),
                                   styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-            window.contentMinSize = NSSize(width: 460, height: 320)
+            window.contentMinSize = NSSize(width: 500, height: 400)
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: AppUpdateView(driver: self))
+            window.contentView = NSHostingView(rootView: AppUpdateView(driver: self).macAppearanceRoot())
             window.center()
             self.window = window
         }
@@ -113,32 +147,42 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
     }
 
     func performPrimaryAction() {
-        let action = primaryAction
+        guard let action = primaryAction else { return }
         primaryAction = nil
         secondaryAction = nil
         primaryKey = nil
         secondaryKey = nil
-        action?()
+        if stage == .available {
+            stage = .downloading
+            titleKey = "updates.downloading"
+            detailKey = "updates.downloading.detail"
+            isWorking = true
+        }
+        action()
     }
 
     func performSecondaryAction() {
-        let action = secondaryAction
-        primaryAction = nil
-        secondaryAction = nil
-        primaryKey = nil
-        secondaryKey = nil
-        action?()
+        guard let action = secondaryAction else { return }
+        dismissUpdateInstallation()
+        action()
     }
 
-    func showMessage(_ title: String, detail: String, acknowledgement: @escaping () -> Void) {
-        present(title, detail: detail, primary: "updates.close", action: { [weak self] in
+    var canDismiss: Bool { secondaryKey != nil || primaryKey == "updates.close" }
+
+    func dismissByUser() {
+        if secondaryKey != nil { performSecondaryAction() }
+        else if primaryKey == "updates.close" { performPrimaryAction() }
+    }
+
+    func showMessage(_ title: String, detail: String, stage: PresentationStage = .information, acknowledgement: @escaping () -> Void) {
+        present(title, detail: detail, stage: stage, primary: "updates.close", action: { [weak self] in
             self?.dismissUpdateInstallation()
             acknowledgement()
         })
     }
 
     func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
-        present("updates.automatic", detail: "updates.automatic.detail", primary: "updates.allow", action: { [weak self] in
+        present("updates.automatic", detail: "updates.automatic.detail", stage: .permission, primary: "updates.allow", action: { [weak self] in
             self?.dismissUpdateInstallation()
             reply(SUUpdatePermissionResponse(automaticUpdateChecks: true, sendSystemProfile: false))
         }, secondary: "updates.later", cancel: { [weak self] in
@@ -148,7 +192,7 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
     }
 
     func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
-        present("updates.checking", detail: "updates.checking.detail", working: true,
+        present("updates.checking", detail: "updates.checking.detail", stage: .checking, working: true,
                 secondary: "updates.cancel", cancel: cancellation)
     }
 
@@ -162,28 +206,42 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
             showReady(toInstallAndRelaunch: reply)
             return
         }
-        present("updates.found", detail: "updates.found.detail", primary: "updates.download", action: {
-            reply(.install)
-        }, secondary: "updates.later", cancel: { reply(.dismiss) })
-        version = appcastItem.displayVersionString
+        showAvailable(version: appcastItem.displayVersionString, notes: appcastItem.itemDescription, reply: reply)
     }
 
-    // 发布说明由 GitHub Release 页面提供，不加载第三方 HTML 或底层诊断文字。
+    func showAvailable(version: String, notes: String?, reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        present("updates.found", detail: "updates.found.detail", stage: .available, primary: "updates.download", action: {
+            reply(.install)
+        }, secondary: "updates.later", cancel: { reply(.dismiss) })
+        self.version = version
+        // 只展示更新源内已有的说明文本，不加载网页、图片或执行 HTML。
+        releaseNotes = notes?
+            .replacingOccurrences(of: "(?i)<br\\s*/?>|</(?:p|li|div|h[1-6])>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]*>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // 不额外下载发布说明，完整版本页面仍通过用户点击打开。
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {}
 
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        showMessage("updates.none", detail: "updates.none.detail", acknowledgement: acknowledgement)
+        showMessage("updates.none", detail: "updates.none.detail", stage: .upToDate, acknowledgement: acknowledgement)
     }
 
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        showMessage("updates.failed", detail: "updates.failed.detail", acknowledgement: acknowledgement)
+        showMessage("updates.failed", detail: "updates.failed.detail", stage: .failed, acknowledgement: acknowledgement)
     }
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
         expectedBytes = 0
         receivedBytes = 0
-        present("updates.downloading", detail: "updates.downloading.detail", working: true,
+        present("updates.downloading", detail: "updates.downloading.detail", stage: .downloading, working: true,
                 secondary: "updates.cancel", cancel: cancellation)
     }
 
@@ -197,13 +255,13 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
     }
 
     func showDownloadDidStartExtractingUpdate() {
-        present("updates.preparing", detail: "updates.preparing.detail", working: true)
+        present("updates.preparing", detail: "updates.preparing.detail", stage: .preparing, working: true)
     }
 
     func showExtractionReceivedProgress(_ progress: Double) { self.progress = progress }
 
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-        present("updates.ready", detail: "updates.ready.detail", primary: "updates.install", action: { [weak self] in
+        present("updates.ready", detail: "updates.ready.detail", stage: .ready, primary: "updates.install", action: { [weak self] in
             guard let self else { return }
             guard canRestart() else {
                 showReady(toInstallAndRelaunch: reply)
@@ -211,6 +269,10 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
                 return
             }
             isRestartRequested = true
+            stage = .installing
+            titleKey = "updates.installing"
+            detailKey = "updates.installing.detail"
+            isWorking = true
             reply(.install)
         }, secondary: "updates.cancel", cancel: { reply(.skip) })
         // .dismiss 会留下退出时自动安装的任务；取消必须使用 .skip。
@@ -218,7 +280,7 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
 
     func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool,
                               retryTerminatingApplication: @escaping () -> Void) {
-        present("updates.installing", detail: "updates.installing.detail", working: true,
+        present("updates.installing", detail: "updates.installing.detail", stage: .installing, working: true,
                 primary: applicationTerminated ? nil : "updates.install", action: { [weak self] in
             guard let self else { return }
             if canRestart() { retryTerminatingApplication() }
@@ -231,11 +293,13 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
     }
 
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
-        showMessage("updates.installed", detail: "updates.installed.detail", acknowledgement: acknowledgement)
+        showMessage("updates.installed", detail: "updates.installed.detail", stage: .completed, acknowledgement: acknowledgement)
     }
 
     func dismissUpdateInstallation() {
         isRestartRequested = false
+        isWorking = false
+        progress = nil
         window?.orderOut(nil)
         window = nil
         primaryAction = nil
@@ -251,37 +315,164 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
     }
 }
 
-private struct AppUpdateView: View {
+// 保持模块内可见，供隔离窗口检查复用真实更新界面。
+struct AppUpdateView: View {
     @ObservedObject var driver: AppUpdateUserDriver
     @State private var language = AppLanguageStore.shared
+    @Environment(\.colorScheme) private var scheme
+
+    private var statusColor: Color {
+        switch driver.stage {
+        case .failed: .red
+        case .upToDate, .completed: .green
+        default: .accentColor
+        }
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(language.string(driver.titleKey)).font(.title2.bold()).accessibilityAddTraits(.isHeader)
-                Text(language.string(driver.detailKey)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if let version = driver.version {
-                    Text(language.string("updates.version", version))
-                }
-                if driver.isWorking {
-                    ProgressView(value: driver.progress)
-                        .accessibilityLabel(language.string(driver.titleKey))
-                }
-                Link(language.string("updates.releaseNotes"), destination: URL(string: "https://github.com/yuangy1995/dsm-native-client/releases")!)
-                HStack {
-                    Spacer()
-                    if let key = driver.secondaryKey {
-                        Button(language.string(key), action: driver.performSecondaryAction).keyboardShortcut(.cancelAction)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 40).allowsHitTesting(false)
+            MacPageHeader(title: language.string("updates.title")) {
+                if driver.canDismiss {
+                    Button(action: driver.dismissByUser) {
+                        Label(language.string("updates.close"), systemImage: "xmark")
                     }
-                    if let key = driver.primaryKey {
-                        Button(language.string(key), action: driver.performPrimaryAction).keyboardShortcut(.defaultAction)
-                    }
+                    .labelStyle(.iconOnly)
                 }
             }
-            .padding(24)
+            .environment(\.macPageNavigation, nil)
+
+            VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 16) {
+                        Image(systemName: driver.stage.symbol)
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundStyle(statusColor)
+                            .frame(width: 56, height: 56)
+                            .background(statusColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(language.string(driver.titleKey))
+                                .font(.title2.weight(.semibold))
+                                .accessibilityAddTraits(.isHeader)
+                            if [.information, .permission, .ready, .installing, .failed].contains(driver.stage) {
+                                Text(language.string(driver.detailKey))
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if let version = driver.version {
+                                Text(language.string("updates.version", version))
+                                    .font(.callout.weight(.medium))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if driver.stage == .available {
+                        Text(language.string("updates.notes.title"))
+                            .font(.callout.weight(.semibold))
+                            .accessibilityAddTraits(.isHeader)
+                        ScrollView(.vertical, showsIndicators: true) {
+                            Text(driver.releaseNotes.flatMap { $0.isEmpty ? nil : $0 } ?? language.string("updates.notes.empty"))
+                                .font(.callout)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                        }
+                        .scrollIndicators(.visible)
+                        .accessibilityIdentifier("updates.notes.scroll")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08)))
+                    }
+
+                    if driver.isWorking {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text(language.string(driver.titleKey)).font(.callout)
+                                Spacer()
+                                if let progress = driver.progress {
+                                    Text(progress.formatted(.percent.precision(.fractionLength(0)).locale(language.locale)))
+                                        .font(.callout.monospacedDigit())
+                                }
+                            }
+                            if let progress = driver.progress {
+                                GeometryReader { geometry in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.primary.opacity(0.08))
+                                        Capsule().fill(Color.accentColor)
+                                            .frame(width: geometry.size.width * progress)
+                                    }
+                                }
+                                .frame(height: 6)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(language.string(driver.titleKey))
+                                .accessibilityValue(progress.formatted(.percent.precision(.fractionLength(0)).locale(language.locale)))
+                            } else {
+                                ProgressView()
+                                    .progressViewStyle(.linear)
+                                    .accessibilityLabel(language.string(driver.titleKey))
+                            }
+                        }
+                        .padding(14)
+                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    if driver.stage != .available {
+                        Spacer(minLength: 0)
+                    }
+            }
+            .padding(20)
+            .fillsAvailableContentArea(alignment: .topLeading)
+            .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
+
+            HStack(spacing: 12) {
+                if driver.stage.showsReleaseNotes {
+                    Link(language.string("updates.releaseNotes"), destination: URL(string: "https://github.com/yuangy1995/dsm-native-client/releases")!)
+                        .font(.callout)
+                }
+                Spacer(minLength: 8)
+                if let key = driver.secondaryKey {
+                    Button(language.string(key), action: driver.performSecondaryAction)
+                        .keyboardShortcut(.cancelAction)
+                }
+                if let key = driver.primaryKey {
+                    Button(language.string(key), action: driver.performPrimaryAction)
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                }
+            }
+            .buttonStyle(MacToolbarButtonStyle())
+            .padding(16)
+            .background(MacGlassSurface(role: .toolbar))
         }
         .fillsAvailableContentArea(alignment: .topLeading)
+        .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
+        .background(MacWorkspaceWindowChrome(fullSize: true))
+        .ignoresSafeArea(.container, edges: .top)
         .environment(\.locale, language.locale)
+    }
+}
+
+struct AppUpdateSettingsView: View {
+    @ObservedObject var controller: AppUpdateController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            LabeledContent(L10n.string("updates.currentVersion"), value: controller.currentVersion)
+            Divider()
+            Toggle(L10n.string("updates.automatic"), isOn: Binding(
+                get: { controller.automaticallyChecksForUpdates },
+                set: { controller.setAutomaticChecks($0) }
+            ))
+            .disabled(controller.updater == nil)
+            HStack {
+                Link(L10n.string("updates.releaseNotes"), destination: URL(string: "https://github.com/yuangy1995/dsm-native-client/releases")!)
+                Spacer()
+                Button(L10n.string("updates.check"), action: controller.checkForUpdates)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                    .accessibilityIdentifier("settings.updates.check")
+            }
+        }
     }
 }
 

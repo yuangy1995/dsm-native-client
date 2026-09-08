@@ -131,32 +131,16 @@ public final class AppLanguageStore {
     }
 
     public func string(_ key: String, arguments: [CVarArg]) -> String {
-        let mainValue = Self.localizedBundle(for: resolvedLanguage, in: .main)
+        let mainValue = AppLocalizedBundles.main(for: resolvedLanguage)
             .localizedString(forKey: key, value: key, table: nil)
         let format = mainValue == key
-            ? Self.localizedBundle(for: resolvedLanguage, in: .module)
+            ? AppLocalizedBundles.module(for: resolvedLanguage)
                 .localizedString(forKey: key, value: key, table: nil)
             : mainValue
         guard !arguments.isEmpty else { return format }
         return String(format: format, locale: locale, arguments: arguments)
     }
 
-    fileprivate static func localizedBundle(
-        for language: SupportedAppLanguage,
-        in baseBundle: Bundle
-    ) -> Bundle {
-        let resourceNames = [
-            language.resourceName,
-            language.resourceName.lowercased(),
-        ]
-        guard let path = resourceNames.lazy.compactMap({
-            baseBundle.path(forResource: $0, ofType: "lproj")
-        }).first,
-        let bundle = Bundle(path: path) else {
-            return baseBundle
-        }
-        return bundle
-    }
 }
 
 public enum L10n {
@@ -187,10 +171,10 @@ public enum L10n {
         arguments: [CVarArg],
         language: SupportedAppLanguage
     ) -> String {
-        let mainValue = localizedBundle(for: language, in: .main)
+        let mainValue = AppLocalizedBundles.main(for: language)
             .localizedString(forKey: key, value: key, table: nil)
         let format = mainValue == key
-            ? localizedBundle(for: language, in: .module)
+            ? AppLocalizedBundles.module(for: language)
                 .localizedString(forKey: key, value: key, table: nil)
             : mainValue
         guard !arguments.isEmpty else { return format }
@@ -213,8 +197,31 @@ public enum L10n {
         ).locale
     }
 
-    private static func localizedBundle(
-        for language: SupportedAppLanguage,
+}
+
+/// 随 App 发布的语言目录不会在运行中变化。只缓存资源包位置，语言选择和格式化仍逐次解析。
+private enum AppLocalizedBundles {
+    private static let mainEnglish = resolve(.english, in: .main)
+    private static let mainChinese = resolve(.simplifiedChinese, in: .main)
+    private static let moduleEnglish = resolve(.english, in: .module)
+    private static let moduleChinese = resolve(.simplifiedChinese, in: .module)
+
+    static func main(for language: SupportedAppLanguage) -> Bundle {
+        switch language {
+        case .english: mainEnglish
+        case .simplifiedChinese: mainChinese
+        }
+    }
+
+    static func module(for language: SupportedAppLanguage) -> Bundle {
+        switch language {
+        case .english: moduleEnglish
+        case .simplifiedChinese: moduleChinese
+        }
+    }
+
+    private static func resolve(
+        _ language: SupportedAppLanguage,
         in baseBundle: Bundle
     ) -> Bundle {
         let resourceNames = [
