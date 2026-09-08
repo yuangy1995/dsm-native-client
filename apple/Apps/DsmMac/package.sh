@@ -429,13 +429,7 @@ if [[ "$SIGNING_IDENTITY" == "-" ]]; then
     # App Group 与共享钥匙串属于受限权限，macOS 不允许临时签名携带。
     # 临时包移除 File Provider 扩展并且不附带受限权限，确保主应用可以启动。
     /bin/rm -rf -- "$APP_PATH/Contents/PlugIns/LanStashFileProvider.appex"
-    /usr/bin/codesign \
-        --force \
-        --deep \
-        --options runtime \
-        --timestamp=none \
-        --sign - \
-        "$APP_PATH"
+    bash "$REPO_ROOT/tools/release/sign_macos_local_test.sh" "$APP_PATH"
     echo "==> 临时签名包不包含本地磁盘挂载；测试挂载请使用 Apple 签名证书及配套授权文件"
 else
     CERTIFICATE_PEM="$BUILD_ROOT/signing-certificate.pem"
@@ -565,6 +559,9 @@ else
         "$APP_PATH"
 fi
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+    bash "$REPO_ROOT/tools/release/verify_macos_local_test.sh" "$APP_PATH"
+fi
 
 VERSION="$($PLIST_BUDDY -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
 BUILD_NUMBER="$($PLIST_BUDDY -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")"

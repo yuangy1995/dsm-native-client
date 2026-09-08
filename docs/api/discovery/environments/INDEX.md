@@ -18,3 +18,6 @@
 
 环境 ID 和设备别名都不得替换成设备名、型号、序列号、地址、账号或 QuickConnect ID。
 
+## 待归属观察
+
+- [2026-09-09 非管理员应用权限观察](2026-09-09-nonadmin-permission-observation.md)：DSM 7.2.1-69057 Update 12 已由官方初始化响应核实；尚未确认是否为既有 `lab-a`，不因版本相同推断设备相同，不建立第二个 current 基线。

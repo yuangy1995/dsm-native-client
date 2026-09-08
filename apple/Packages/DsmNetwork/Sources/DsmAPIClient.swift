@@ -63,6 +63,7 @@ public struct DsmAPIClient: Sendable {
         requestFormat: DsmRequestFormat,
         parameters: [String: DsmParameterValue],
         credential: DsmSessionCredential? = nil,
+        httpMethod: String = "POST",
         as payloadType: Payload.Type
     ) async throws -> Payload {
         let requestID = UUID()
@@ -77,7 +78,8 @@ public struct DsmAPIClient: Sendable {
                 method: method,
                 requestFormat: requestFormat,
                 parameters: parameters,
-                credential: credential
+                credential: credential,
+                httpMethod: httpMethod
             )
         } catch {
             throw DsmNetworkError.invalidRequest(requestID: requestID)

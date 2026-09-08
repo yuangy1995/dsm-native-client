@@ -3800,3 +3800,9 @@
 "chat.preview.attachment" = "Attachment";
 "updates.currentVersion" = "Current version";
 "updates.versionUnknown" = "Unavailable";
+"workspace.modules.checking" = "Checking available features…";
+"workspace.modules.refresh" = "Refresh available features";
+"workspace.modules.empty" = "No NAS apps are available for this account.";
+"workspace.modules.unavailable" = "Available apps could not be confirmed. Other apps are hidden for now. Try refreshing the available features later.";
+"connection.session.interrupted" = "Another login interrupted this connection. Please sign in again.";
+"connection.session.rejected" = "The NAS did not accept this sign-in session. Please sign in again.";

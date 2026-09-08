@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		04BF49113047E6A5BFDD0565 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = CB5D2FCD484E6C915A3AF4BB /* Localizable.strings */; };
+		0AF59184A358D65C48DE8148 /* WorkspaceModuleAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF4D2E52FE8FDEB013A449D /* WorkspaceModuleAccess.swift */; };
 		0BF65A78DC3488741ACAA862 /* DsmCore in Frameworks */ = {isa = PBXBuildFile; productRef = CDFB3D25D6035AB51E143261 /* DsmCore */; };
 		108966A1F81EFB36786F3660 /* MediaStreamRedirectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */; };
 		15984B33D2FC6DC271096E4A /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */; };
@@ -108,6 +109,7 @@
 		B9665B8659CF3AEC71209382 /* MacFilePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFilePresentation.swift; sourceTree = "<group>"; };
 		BAA28F9CA875E65C60C3B1FE /* AppContentLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContentLayout.swift; sourceTree = "<group>"; };
 		BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
+		BAF4D2E52FE8FDEB013A449D /* WorkspaceModuleAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceModuleAccess.swift; sourceTree = "<group>"; };
 		BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasAdministrationModel.swift; sourceTree = "<group>"; };
 		CA993277E25000CAE41B0447 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementView.swift; sourceTree = "<group>"; };
@@ -200,6 +202,7 @@
 				2578503BB6C863138963CE6B /* ServiceManagementModel.swift */,
 				CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */,
 				1F6DF22565675FC82D7CC686 /* WorkspaceModel.swift */,
+				BAF4D2E52FE8FDEB013A449D /* WorkspaceModuleAccess.swift */,
 				3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */,
 			);
 			path = Sources;
@@ -376,6 +379,7 @@
 				AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */,
 				7DED1007E77ED31FE27F7E62 /* ServiceManagementView.swift in Sources */,
 				AC6936BB386C9A829A221F34 /* WorkspaceModel.swift in Sources */,
+				0AF59184A358D65C48DE8148 /* WorkspaceModuleAccess.swift in Sources */,
 				15984B33D2FC6DC271096E4A /* WorkspaceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

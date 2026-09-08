@@ -277,6 +277,58 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test更新窗口无系统外框且自带关闭与Escape有效() async throws {
+        let previousMode = MacAppearanceStore.shared.mode
+        defer { MacAppearanceStore.shared.mode = previousMode }
+        for mode in [MacAppearanceMode.fog, .ink] {
+            MacAppearanceStore.shared.mode = mode
+            for usesEscape in [false, true] {
+                let before = Set(NSApp.windows.map(\.windowNumber))
+                let driver = AppUpdateUserDriver()
+                var closes = 0
+                driver.showMessage("updates.none", detail: "updates.none.detail", stage: .upToDate) { closes += 1 }
+                let window = try XCTUnwrap(NSApp.windows.first {
+                    $0 is AppUpdateWindow && !before.contains($0.windowNumber) && $0.isVisible
+                })
+                let host = try XCTUnwrap(window.contentView)
+                defer { driver.dismissUpdateInstallation(); window.contentView = nil; window.close() }
+                try await settle(host)
+                XCTAssertFalse(window.styleMask.contains(.titled))
+                XCTAssertTrue(window.canBecomeKey)
+                XCTAssertTrue(window.isMovableByWindowBackground)
+                for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                    XCTAssertTrue(window.standardWindowButton(kind) == nil || window.standardWindowButton(kind)?.isHidden == true)
+                }
+                XCTAssertEqual(host.bounds.height, window.frame.height, accuracy: 1)
+                XCTAssertLessThanOrEqual(window.frame.height, 210)
+                driver.showUserInitiatedUpdateCheck { XCTFail("绘制不得取消检查") }
+                try await settle(host)
+                try snapshot(host, name: "update-compact-checking-\(mode.rawValue)")
+                driver.showDownloadInitiated { XCTFail("绘制不得取消下载") }
+                driver.showDownloadDidReceiveExpectedContentLength(100)
+                driver.showDownloadDidReceiveData(ofLength: 40)
+                try await settle(host)
+                XCTAssertLessThanOrEqual(window.frame.height, 250)
+                XCTAssertEqual(driver.progress, 0.4)
+                try snapshot(host, name: "update-compact-download-\(mode.rawValue)")
+                driver.showMessage("updates.none", detail: "updates.none.detail", stage: .upToDate) { closes += 1 }
+                try await settle(host)
+                try snapshot(host, name: "update-borderless-\(mode.rawValue)-\(usesEscape ? "escape" : "close")")
+                if usesEscape {
+                    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                        context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+                    if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+                } else {
+                    try click(window, at: NSPoint(x: window.frame.width / 2, y: 43))
+                }
+                try await settle(host)
+                XCTAssertEqual(closes, 1, "\(mode.rawValue), usesEscape=\(usesEscape)")
+                XCTAssertFalse(window.isVisible, "\(mode.rawValue), usesEscape=\(usesEscape)")
+            }
+        }
+    }
+
     func testNAS后台任务双语主题加载空错误与内容() async throws {
         let previousLanguage = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previousLanguage }
@@ -844,6 +896,33 @@ final class WorkspacePresentationTests: XCTestCase {
         XCTAssertTrue(player.showsSharingServiceButton)
     }
 
+    func test视频预览没有外层系统按钮和留白且自带关闭有效() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let fixture = try WorkspaceViewFixture(count: 0)
+            defer { fixture.cleanPreferences() }
+            let item = FileItem(profileID: fixture.model.profile.id, name: "Synthetic.mp4", path: "/synthetic/video.mp4", kind: .file)
+            fixture.model.items = [item]
+            fixture.model.selection = [item.id]
+            fixture.model.resolvedPreviewKind = .video
+            fixture.model.preview = .failed("Synthetic playback state")
+            fixture.model.isPreviewPresented = true
+            let host = NSHostingView(rootView: FileDetailView(model: fixture.model, windowState: PreviewWindowPresentationState(), onDownload: { _, _ in XCTFail("不得自动下载") }, onDelete: { _ in XCTFail("不得删除") }, onRestore: { _ in XCTFail("不得恢复") })
+                .environment(MacAppearanceStore()).environment(AppLanguageStore.shared).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 980, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable])
+            window.makeKeyAndOrderFront(nil)
+            defer { window.contentView = nil; window.close() }
+            try await settle(host)
+            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                XCTAssertTrue(window.standardWindowButton(kind)?.isHidden == true)
+            }
+            XCTAssertTrue(window.isMovableByWindowBackground)
+            try snapshot(host, name: "video-compact-chrome-\(scheme == .dark ? "dark" : "light")")
+            try click(window, at: NSPoint(x: 948, y: 672))
+            try await settle(host)
+            XCTAssertFalse(fixture.model.isPreviewPresented)
+        }
+    }
+
     func test文件五态与双语双主题快照() async throws {
         let previousLanguage = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previousLanguage }
@@ -1315,14 +1394,89 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
-    private func makeWorkspaceHost(fixture: WorkspaceViewFixture, updates: AppUpdateController? = nil) -> NSHostingView<some View> {
+    func test受限账号菜单功能设置与多NAS列表双语主题绘制() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        let previousMode = MacAppearanceStore.shared.mode
+        defer {
+            AppLanguageStore.shared.selection = previousLanguage
+            MacAppearanceStore.shared.mode = previousMode
+        }
+        for language in [AppLanguageSelection.english, .simplifiedChinese] {
+            AppLanguageStore.shared.selection = language
+            for mode in [MacAppearanceMode.fog, .ink] {
+                MacAppearanceStore.shared.mode = mode
+                let fixture = try WorkspaceViewFixture(count: 3, moduleAccessLoader: {
+                    WorkspaceModuleAccessSnapshot(modules: [.files: .available, .photos: .available])
+                })
+                defer { fixture.cleanPreferences() }
+                fixture.model.shares = fixture.model.items
+                await fixture.model.refreshModuleAccess()
+                let second = try NasProfile(displayName: "Synthetic NAS", host: "second.example.invalid", port: 5001)
+                var selectedProfileID: UUID?
+                let host = makeWorkspaceHost(fixture: fixture, profiles: [fixture.model.profile, second], onSelectNAS: { selectedProfileID = $0 })
+                let window = attach(host, size: NSSize(width: 1100, height: 740))
+                window.makeKeyAndOrderFront(nil)
+                defer { window.contentView = nil; window.close() }
+                try await settle(host)
+                try click(window, at: NSPoint(x: 600, y: 350))
+                try await settle(host)
+                let suffix = "\(language.rawValue)-\(mode.rawValue)"
+                try snapshot(host, name: "restricted-files-focus-\(suffix)")
+                XCTAssertFalse(fixture.model.isDownloadStationModuleEnabled)
+                XCTAssertFalse(fixture.model.isContainerManagerModuleEnabled)
+                XCTAssertFalse(fixture.model.isVirtualMachineManagerModuleEnabled)
+                fixture.model.section = .settings
+                try await settle(host)
+                try click(window, at: NSPoint(x: 420, y: 445))
+                try await settle(host)
+                try snapshot(host, name: "restricted-settings-\(suffix)")
+                let existingWindows = Set(NSApp.windows.map(\.windowNumber))
+                try click(window, at: NSPoint(x: 120, y: 655))
+                try await settle(host)
+                let popover = try XCTUnwrap(NSApp.windows.first { !existingWindows.contains($0.windowNumber) && $0.isVisible })
+                try snapshot(try XCTUnwrap(popover.contentView), name: "nas-selector-\(suffix)")
+                try click(popover, at: NSPoint(x: 160, y: 110))
+                try await settle(host)
+                XCTAssertEqual(selectedProfileID, second.id)
+                let writes = await fixture.repository.writeCalls
+                XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func test无应用权限时保留本机设置并隐藏应用入口() async throws {
+        let previousMode = MacAppearanceStore.shared.mode
+        defer { MacAppearanceStore.shared.mode = previousMode }
+        for mode in [MacAppearanceMode.fog, .ink] {
+            MacAppearanceStore.shared.mode = mode
+            let fixture = try WorkspaceViewFixture(count: 0, moduleAccessLoader: { WorkspaceModuleAccessSnapshot(modules: [:]) })
+            defer { fixture.cleanPreferences() }
+            await fixture.model.refreshModuleAccess()
+            let host = makeWorkspaceHost(fixture: fixture)
+            let window = attach(host, size: NSSize(width: 1100, height: 740))
+            window.makeKeyAndOrderFront(nil)
+            defer { window.contentView = nil; window.close() }
+            try await settle(host)
+            XCTAssertEqual(fixture.model.section, .settings)
+            for module in WorkspaceModule.allCases { XCTAssertFalse(fixture.model.isModuleVisible(module)) }
+            try click(window, at: NSPoint(x: 420, y: 445))
+            try await settle(host)
+            try snapshot(host, name: "restricted-no-modules-\(mode.rawValue)")
+            let reads = await fixture.repository.readCalls
+            let writes = await fixture.repository.writeCalls
+            XCTAssertEqual(reads, 0)
+            XCTAssertEqual(writes, 0)
+        }
+    }
+
+    private func makeWorkspaceHost(fixture: WorkspaceViewFixture, updates: AppUpdateController? = nil, profiles: [NasProfile]? = nil, onSelectNAS: @escaping (UUID) -> Void = { _ in }) -> NSHostingView<some View> {
         NSHostingView(rootView: WorkspaceView(
             model: fixture.model,
-            profiles: [fixture.model.profile],
+            profiles: profiles ?? [fixture.model.profile],
             selectedProfileID: fixture.model.profile.id,
             connectedWorkspaces: [fixture.model],
             connectionRoute: .local,
-            onAddNAS: {}, onSelectNAS: { _ in }, onMoveProfiles: { _, _ in },
+            onAddNAS: {}, onSelectNAS: onSelectNAS, onMoveProfiles: { _, _ in },
             hasFileClipboard: false, onCopy: { _ in }, onCut: { _ in }, onPaste: {},
             onRenameNAS: { _ in nil }, onLogout: {}, onSessionExpired: { _ in }
         )
@@ -1356,10 +1510,10 @@ final class WorkspacePresentationTests: XCTestCase {
         .preferredColorScheme(scheme))
     }
 
-    private func attach<Content: View>(_ host: NSHostingView<Content>, size: NSSize) -> NSWindow {
+    private func attach<Content: View>(_ host: NSHostingView<Content>, size: NSSize, styleMask: NSWindow.StyleMask = [.titled, .closable]) -> NSWindow {
         // 用明确的窗口尺寸检查布局，不让测试宿主按组件理想尺寸自行扩大窗口。
         host.sizingOptions = []
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: styleMask, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         host.frame = NSRect(origin: .zero, size: size)
@@ -1432,10 +1586,15 @@ private struct WorkspaceViewFixture {
     let model: WorkspaceModel
     let repository: PresentationFileRepository
 
-    init(count: Int, displayName: String = "Synthetic NAS", chatRepository: any ChatRepository = UnverifiedDsmChatRepository(), nasSettingsRepository: any NasSettingsRepository = UnavailableNasAdministrationRepository(), serviceManagementRepository: any ServiceManagementRepository = UnavailableServiceManagementRepository()) throws {
+    init(count: Int, displayName: String = "Synthetic NAS", chatRepository: any ChatRepository = UnverifiedDsmChatRepository(), nasSettingsRepository: any NasSettingsRepository = UnavailableNasAdministrationRepository(), serviceManagementRepository: any ServiceManagementRepository = UnavailableServiceManagementRepository(), moduleAccessLoader: (@Sendable () async -> WorkspaceModuleAccessSnapshot)? = nil) throws {
         let profile = try NasProfile(displayName: displayName, host: "example.invalid", port: 5001)
         repository = PresentationFileRepository(profileID: profile.id)
-        model = WorkspaceModel(profile: profile, repository: repository, chatRepository: chatRepository, nasSettingsRepository: nasSettingsRepository, serviceManagementRepository: serviceManagementRepository, transferNotifier: NoopTransferNotifier(), preparePreviewCache: {})
+        model = WorkspaceModel(profile: profile, repository: repository, chatRepository: chatRepository, nasSettingsRepository: nasSettingsRepository, serviceManagementRepository: serviceManagementRepository, transferNotifier: NoopTransferNotifier(), preparePreviewCache: {}, moduleAccessLoader: moduleAccessLoader)
+        // 综合界面样例显式开启所测模块；首次默认开关由 WorkspaceModuleAccessTests 单独验证。
+        model.isChatModuleEnabled = true
+        model.isDownloadStationModuleEnabled = true
+        model.isContainerManagerModuleEnabled = true
+        model.isVirtualMachineManagerModuleEnabled = true
         model.currentPath = "/synthetic"
         model.section = .files("/synthetic")
         model.items = (0..<count).map { index in
@@ -1465,14 +1624,44 @@ private actor PresentationAuthentication: AuthRepository, PasswordSecureStoring 
     func remove(for profileID: UUID) { calls += 1 }
 }
 
+@MainActor
+final class WorkspaceConnectionRecoveryTests: XCTestCase {
+    func test已有共享列表时重试仍重新读取当前目录并清除旧认证错误() async throws {
+        let fixture = try WorkspaceViewFixture(count: 1)
+        defer { fixture.cleanPreferences() }
+        fixture.model.isFileModuleEnabled = true
+        fixture.model.shares = fixture.model.items
+        let error = AppError(category: .authenticationRequired, isRetryable: false, safeUserMessage: "合成认证失败", dsmCode: 119)
+        await fixture.repository.failNextFolderRead(error)
+        await fixture.model.navigate(to: "/synthetic/child")
+        XCTAssertTrue(fixture.model.requiresReauthentication)
+        XCTAssertNotNil(fixture.model.statusMessage)
+        let reads = await fixture.repository.readCalls
+        await fixture.model.retryAfterSessionIssue()
+        let finalReads = await fixture.repository.readCalls
+        XCTAssertEqual(finalReads, reads + 1, "不能因为已有共享目录缓存而跳过重试")
+        XCTAssertFalse(fixture.model.requiresReauthentication)
+        XCTAssertFalse(fixture.model.statusIsError)
+        XCTAssertNil(fixture.model.statusMessage)
+        let writes = await fixture.repository.writeCalls
+        XCTAssertEqual(writes, 0)
+    }
+}
+
 private actor PresentationFileRepository: FileRepository {
     let profileID: UUID
     let allowsVerifiedRestore = false
     private(set) var writeCalls = 0
     private(set) var readCalls = 0
+    private var nextFolderError: AppError?
     init(profileID: UUID) { self.profileID = profileID }
     func listShares(offset: Int, limit: Int) -> FilePage { readCalls += 1; return page(path: "/", offset: offset) }
-    func listFolder(path: String, offset: Int, limit: Int) -> FilePage { readCalls += 1; return page(path: path, offset: offset) }
+    func failNextFolderRead(_ error: AppError) { nextFolderError = error }
+    func listFolder(path: String, offset: Int, limit: Int) throws -> FilePage {
+        readCalls += 1
+        if let error = nextFolderError { nextFolderError = nil; throw error }
+        return page(path: path, offset: offset)
+    }
     func getInfo(paths: [String]) -> [FileItem] { readCalls += 1; return [] }
     func getThumbnail(path: String, size: ThumbnailSize) throws -> Data { readCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
     func checkWritePermission(folderPath: String, filename: String, createOnly: Bool) throws { try rejectWrite() }

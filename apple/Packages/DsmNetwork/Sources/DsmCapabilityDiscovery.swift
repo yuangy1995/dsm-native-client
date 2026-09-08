@@ -4,6 +4,8 @@ import DsmLocalization
 
 public enum DsmAPIName {
     public static let authentication = "SYNO.API.Auth"
+    /// DSM 桌面内部权限摘要；只使用 get_user_service，不加载各套件业务数据。
+    public static let desktopInitData = "SYNO.Core.Desktop.Initdata"
     public static let fileStationInfo = "SYNO.FileStation.Info"
     public static let fileStationList = "SYNO.FileStation.List"
     public static let fileStationThumbnail = "SYNO.FileStation.Thumb"
@@ -200,6 +202,7 @@ private struct CapabilityPayload: Decodable, Sendable {
 public struct DsmCapabilityDiscovery: Sendable {
     public static let initialAPIs = [
         DsmAPIName.authentication,
+        DsmAPIName.desktopInitData,
         DsmAPIName.fileStationInfo,
         DsmAPIName.fileStationList,
         DsmAPIName.fileStationThumbnail,
@@ -397,6 +400,7 @@ public struct DsmCapabilityDiscovery: Sendable {
 
     private static let supportedRanges: [String: ClosedRange<Int>] = [
         DsmAPIName.authentication: 3...6,
+        DsmAPIName.desktopInitData: 1...1,
         DsmAPIName.fileStationInfo: 1...2,
         DsmAPIName.fileStationList: 1...2,
         DsmAPIName.fileStationThumbnail: 1...2,

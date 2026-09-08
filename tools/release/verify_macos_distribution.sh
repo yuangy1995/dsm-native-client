@@ -40,6 +40,10 @@ done
 
 [[ -d "$APP_PATH" ]] || fail "找不到 App：$APP_PATH"
 [[ -f "$DMG_PATH" ]] || fail "找不到 DMG：$DMG_PATH"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :LanStashConnectionTracingEnabled' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)" != true ]] \
+    || fail "正式包不得启用本地连接请求排查"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :LanStashDiagnosticFilesOnly' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)" != true ]] \
+    || fail "正式包不得启用文件对照限制"
 [[ -d "$FILE_PROVIDER_PATH" ]] \
     || fail "正式分发包缺少 File Provider 扩展"
 [[ -f "$APP_PROFILE_PATH" ]] \
@@ -95,6 +99,9 @@ APP_ENTITLEMENTS="$(
 EXTENSION_ENTITLEMENTS="$(
     /usr/bin/codesign -d --entitlements - "$FILE_PROVIDER_PATH" 2>/dev/null
 )"
+[[ "$APP_ENTITLEMENTS" != *"com.apple.security.cs.disable-library-validation"* \
+    && "$EXTENSION_ENTITLEMENTS" != *"com.apple.security.cs.disable-library-validation"* ]] \
+    || fail "正式包不得携带本机测试的库验证例外"
 for entitlement in \
     "com.apple.security.application-groups" \
     "keychain-access-groups"; do

@@ -163,8 +163,11 @@ private struct MacAppearanceRoot: ViewModifier {
 /// 让标题栏延续窗口材质；不改系统按钮、窗口尺寸或业务生命周期。
 struct MacWorkspaceWindowChrome: NSViewRepresentable {
     let fullSize: Bool
+    var hidesSystemButtons = false
     final class HostView: NSView {
         var fullSize = false
+        var hidesSystemButtons = false
+        private var didHideSystemButtons = false
         private var titleObservation: NSKeyValueObservation?
         // 仅配置窗口的背景视图不接收鼠标事件。
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -188,6 +191,10 @@ struct MacWorkspaceWindowChrome: NSViewRepresentable {
             window.isMovableByWindowBackground = fullSize
             window.titlebarAppearsTransparent = fullSize
             window.titlebarSeparatorStyle = fullSize ? .none : .automatic
+            if hidesSystemButtons || didHideSystemButtons {
+                setSystemButtonsHidden(hidesSystemButtons, in: window)
+                didHideSystemButtons = hidesSystemButtons
+            }
             // 透明效果由 NSVisualEffectView 在窗口背后模糊，避免透出未模糊的桌面文字。
             window.alphaValue = 1
             window.backgroundColor = fullSize ? .clear : .windowBackgroundColor
@@ -200,6 +207,7 @@ struct MacWorkspaceWindowChrome: NSViewRepresentable {
                 // 登录与工作区交接时，新外壳可能已经接管同一窗口，旧视图不能恢复白色标题栏。
                 let hasNewChrome = window.contentView.map { containsOtherChrome(in: $0, window: window) } ?? false
                 if !hasNewChrome {
+                    if didHideSystemButtons { setSystemButtonsHidden(false, in: window) }
                     window.styleMask.remove(.fullSizeContentView)
                     window.titleVisibility = .visible
                     window.titlebarAppearsTransparent = false
@@ -212,6 +220,12 @@ struct MacWorkspaceWindowChrome: NSViewRepresentable {
             super.viewWillMove(toWindow: newWindow)
         }
 
+        private func setSystemButtonsHidden(_ hidden: Bool, in window: NSWindow) {
+            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                window.standardWindowButton(kind)?.isHidden = hidden
+            }
+        }
+
         private func containsOtherChrome(in view: NSView, window: NSWindow) -> Bool {
             if let chrome = view as? HostView, chrome !== self, chrome.window === window { return true }
             return view.subviews.contains { containsOtherChrome(in: $0, window: window) }
@@ -220,10 +234,12 @@ struct MacWorkspaceWindowChrome: NSViewRepresentable {
     func makeNSView(context: Context) -> HostView {
         let view = HostView()
         view.fullSize = fullSize
+        view.hidesSystemButtons = hidesSystemButtons
         return view
     }
     func updateNSView(_ view: HostView, context: Context) {
         view.fullSize = fullSize
+        view.hidesSystemButtons = hidesSystemButtons
         view.configure()
     }
 }
@@ -330,7 +346,17 @@ private struct MacPageNavigationKey: EnvironmentKey {
     static let defaultValue: MacPageNavigation? = nil
 }
 
+private struct MacContentBackgroundKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
+    /// 工作区内的嵌套页面使用同一底色，不再逐层叠加窗口背后的材质。
+    var macUsesContentBackground: Bool {
+        get { self[MacContentBackgroundKey.self] }
+        set { self[MacContentBackgroundKey.self] = newValue }
+    }
+
     var macPageNavigation: MacPageNavigation? {
         get { self[MacPageNavigationKey.self] }
         set { self[MacPageNavigationKey.self] = newValue }
@@ -436,16 +462,21 @@ struct MacGlassSurface: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reducesTransparency
+    @Environment(\.macUsesContentBackground) private var usesContentBackground
 
     var body: some View {
         let palette = MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased)
         ZStack {
-            if !reducesTransparency {
-                MacVisualEffect(role: role)
+            if usesContentBackground && role != .selectionBar {
+                palette.content
+            } else {
+                if !reducesTransparency {
+                    MacVisualEffect(role: role, scheme: scheme)
+                }
+                palette.glassTint.opacity(
+                    appearance.glassOverlayOpacity(for: scheme, reducesTransparency: reducesTransparency)
+                )
             }
-            palette.glassTint.opacity(
-                appearance.glassOverlayOpacity(for: scheme, reducesTransparency: reducesTransparency)
-            )
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -454,18 +485,22 @@ struct MacGlassSurface: View {
 
 private struct MacVisualEffect: NSViewRepresentable {
     let role: MacGlassRole
+    let scheme: ColorScheme
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.state = .active
         view.material = role.material
         view.blendingMode = role.blendingMode
+        view.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
         return view
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
         if view.material != role.material { view.material = role.material }
         if view.blendingMode != role.blendingMode { view.blendingMode = role.blendingMode }
+        let name: NSAppearance.Name = scheme == .dark ? .darkAqua : .aqua
+        if view.appearance?.name != name { view.appearance = NSAppearance(named: name) }
     }
 }
 

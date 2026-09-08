@@ -171,6 +171,7 @@ final class AppModel {
     private var workspacesByProfileID: [UUID: WorkspaceModel] = [:]
     private var connectionContextsByProfileID: [UUID: ConnectionContext] = [:]
     @ObservationIgnored private var loginTask: Task<Void, Never>?
+    @ObservationIgnored private var connectionGeneration = 0
 
     var connectedWorkspaces: [WorkspaceModel] {
         profiles.compactMap { workspacesByProfileID[$0.id] }
@@ -415,75 +416,96 @@ final class AppModel {
     }
 
     func cancelLogin() {
+        invalidateConnectionAttempt()
+        statusIsError = false
+        statusMessage = L10n.string("ui.56b2a6f3710aedb2")
+    }
+
+    private func invalidateConnectionAttempt() {
+        connectionGeneration += 1
         loginTask?.cancel()
         loginTask = nil
         isBusy = false
-        statusIsError = false
-        statusMessage = L10n.string("ui.56b2a6f3710aedb2")
+    }
+
+    private func checkConnectionAttempt(_ generation: Int) throws {
+        try Task.checkCancellation()
+        guard generation == connectionGeneration else { throw CancellationError() }
     }
 
     func connect() async {
         guard !isBusy else { return }
         loginTask?.cancel()
+        connectionGeneration += 1
+        let generation = connectionGeneration
         let task = Task<Void, Never> { [weak self] in
-            await self?.performConnect()
+            await self?.performConnect(generation: generation)
         }
         loginTask = task
         await task.value
-        loginTask = nil
+        if generation == connectionGeneration { loginTask = nil }
     }
 
-    private func performConnect() async {
-        guard !isBusy else { return }
+    private func performConnect(generation: Int) async {
+        guard !isBusy, generation == connectionGeneration, !Task.isCancelled else { return }
         isBusy = true
         statusIsError = false
         statusMessage = L10n.string("ui.a50211f01216a878")
-        defer { isBusy = false }
+        defer { if generation == connectionGeneration { isBusy = false } }
 
         do {
             if autoLoginEnabled {
                 rememberPassword = true
             }
             let profile = try makeProfile()
+            let submittedAccount = account
             let submittedPassword = password
+            let submittedOTP = requiresOTP ? otpCode : nil
+            let savesPassword = rememberPassword
+            let enablesAutoLogin = autoLoginEnabled
             selectedProfile = profile
             upsertProfile(profile)
 
             let connection = try await discoverConnection(for: profile)
+            try checkConnectionAttempt(generation)
             capabilities = connection.capabilities
             statusMessage = L10n.string("ui.1bdcf10e68a6e8f3")
 
             let authenticated = try await authRepository.login(
                 profile: connection.profile,
                 capabilities: connection.capabilities,
-                account: account,
-                password: password,
-                otpCode: requiresOTP ? otpCode : nil
+                account: submittedAccount,
+                password: submittedPassword,
+                otpCode: submittedOTP
             )
+            try checkConnectionAttempt(generation)
             session = authenticated
             otpCode = ""
             requiresOTP = false
 
-            let updated = try profile.updating(usernameHint: account)
+            let updated = try profile.updating(usernameHint: submittedAccount)
             selectedProfile = updated
             upsertProfile(updated)
             var passwordStorageFailed = false
             do {
-                if rememberPassword {
+                if savesPassword {
                     try await passwordStore.save(submittedPassword, for: updated.id)
+                    try checkConnectionAttempt(generation)
                     password = submittedPassword
                 } else {
                     try await passwordStore.remove(for: updated.id)
+                    try checkConnectionAttempt(generation)
                     password = ""
                 }
             } catch {
+                try checkConnectionAttempt(generation)
                 passwordStorageFailed = true
                 password = ""
                 rememberPassword = false
                 autoLoginEnabled = false
             }
             profileStore.setAutoLoginEnabled(
-                autoLoginEnabled && rememberPassword && !passwordStorageFailed,
+                enablesAutoLogin && savesPassword && !passwordStorageFailed,
                 for: updated.id
             )
             try await openWorkspace(
@@ -499,6 +521,7 @@ final class AppModel {
         } catch is CancellationError {
             return
         } catch let error as DsmCertificateTrustError {
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             certificateRetryMode = .connect
             pendingCertificate = CertificatePrompt(
                 error: error,
@@ -507,23 +530,28 @@ final class AppModel {
             statusIsError = true
             statusMessage = error.localizedDescription
         } catch let error as AppError {
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             handleLoginError(error)
         } catch let error as NasProfileValidationError {
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             statusIsError = true
             statusMessage = error.localizedDescription
             password = ""
             otpCode = ""
         } catch let error as NasAddressInputError {
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             statusIsError = true
             statusMessage = error.localizedDescription
             password = ""
             otpCode = ""
         } catch let error as QuickConnectResolutionError {
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             statusIsError = true
             statusMessage = error.localizedDescription
             password = ""
             otpCode = ""
         } catch {
+            guard generation == connectionGeneration, !Task.isCancelled else { return }
             statusIsError = true
             statusMessage = L10n.string("ui.94c254feea426d90")
             password = ""
@@ -629,7 +657,10 @@ final class AppModel {
         }
     }
 
-    func returnToLoginAfterSessionIssue(message: String) async {
+    func returnToLoginAfterSessionIssue(message: String, from expectedWorkspace: WorkspaceModel? = nil) async {
+        if let expectedWorkspace, workspace !== expectedWorkspace { return }
+        invalidateConnectionAttempt()
+        let generation = connectionGeneration
         let profile = selectedProfile
         workspace?.cancelAllWork()
         if let profile {
@@ -653,6 +684,7 @@ final class AppModel {
             await clearStoredSessions(profileID: profile.id)
         }
 
+        guard generation == connectionGeneration else { return }
         statusIsError = true
         statusMessage = message
     }
@@ -688,13 +720,15 @@ final class AppModel {
             Task { await loadSavedPassword(for: profile) }
             return
         }
+        let generation = connectionGeneration
         Task {
             await loadSavedPassword(for: profile)
-            guard selectedProfile?.id == profile.id, autoLoginEnabled, !password.isEmpty else {
+            guard generation == connectionGeneration,
+                  selectedProfile?.id == profile.id, autoLoginEnabled, !password.isEmpty else {
                 return
             }
             let outcome = await restoreSession(for: profile)
-            if outcome == .credentialsNeeded,
+            if outcome == .credentialsNeeded, generation == connectionGeneration,
                selectedProfile?.id == profile.id,
                autoLoginEnabled,
                !password.isEmpty {
@@ -704,6 +738,7 @@ final class AppModel {
     }
 
     private func closeCurrentWorkspace() {
+        invalidateConnectionAttempt()
         workspace = nil
         activeConnectionProfile = nil
         capabilities = nil
@@ -712,12 +747,13 @@ final class AppModel {
     }
 
     private func loadSavedPassword(for profile: NasProfile) async {
+        let generation = connectionGeneration
         await secureStoreRollbackMigrator?.migrateIfNeeded(
             profileID: profile.id
         )
         do {
             let storedPassword = try await passwordStore.load(for: profile.id)
-            guard selectedProfile?.id == profile.id else {
+            guard generation == connectionGeneration, selectedProfile?.id == profile.id else {
                 return
             }
             password = storedPassword ?? ""
@@ -726,7 +762,7 @@ final class AppModel {
                 setAutoLoginEnabled(false)
             }
         } catch {
-            guard selectedProfile?.id == profile.id else {
+            guard generation == connectionGeneration, selectedProfile?.id == profile.id else {
                 return
             }
             password = ""
@@ -742,27 +778,35 @@ final class AppModel {
         guard !isBusy else {
             return .stopped
         }
+        let generation = connectionGeneration
         isBusy = true
         statusMessage = L10n.string("ui.39887059b5ec8c20")
-        defer { isBusy = false }
+        defer { if generation == connectionGeneration { isBusy = false } }
         do {
             await secureStoreRollbackMigrator?.migrateIfNeeded(
                 profileID: profile.id
             )
-            guard let restored = try await authRepository.restoreSession(for: profile.id) else {
+            try checkConnectionAttempt(generation)
+            let storedSession = try await authRepository.restoreSession(for: profile.id)
+            try checkConnectionAttempt(generation)
+            guard let restored = storedSession else {
                 statusMessage = L10n.string("ui.7eb96b663a116103")
                 return .credentialsNeeded
             }
             let connection = try await discoverConnection(for: profile)
+            try checkConnectionAttempt(generation)
             session = restored
             capabilities = connection.capabilities
 
-            if !(try await validateRestoredSession(
+            let isValid = try await validateRestoredSession(
                 profile: connection.profile,
                 capabilities: connection.capabilities,
                 session: restored
-            )) {
+            )
+            try checkConnectionAttempt(generation)
+            if !isValid {
                 await clearStoredSessions(profileID: profile.id)
+                try checkConnectionAttempt(generation)
                 statusIsError = true
                 statusMessage = L10n.string("ui.5cdb81f9cb8e5cd7")
                 return .credentialsNeeded
@@ -776,7 +820,10 @@ final class AppModel {
                 route: connection.route
             )
             return .connected
+        } catch is CancellationError {
+            return .stopped
         } catch let error as DsmCertificateTrustError {
+            guard generation == connectionGeneration, !Task.isCancelled else { return .stopped }
             certificateRetryMode = .restore
             pendingCertificate = CertificatePrompt(
                 error: error,
@@ -786,14 +833,17 @@ final class AppModel {
             statusMessage = error.localizedDescription
             return .stopped
         } catch let error as QuickConnectResolutionError {
+            guard generation == connectionGeneration, !Task.isCancelled else { return .stopped }
             statusIsError = true
             statusMessage = error.localizedDescription
             return .stopped
         } catch let error as AppError where error.isRetryable || error.category == .tlsUntrusted {
+            guard generation == connectionGeneration, !Task.isCancelled else { return .stopped }
             statusIsError = true
             statusMessage = error.safeUserMessage
             return .stopped
         } catch {
+            guard generation == connectionGeneration, !Task.isCancelled else { return .stopped }
             statusIsError = true
             statusMessage = L10n.string("ui.5cdb81f9cb8e5cd7")
             await clearStoredSessions(profileID: profile.id)
@@ -806,6 +856,22 @@ final class AppModel {
         capabilities: CapabilitySet,
         session: AuthSession
     ) async throws -> Bool {
+        // 恢复登录先读取权限摘要；已知没有文件权限时不能通过访问文件来验证身份。
+        if capabilities[DsmAPIName.desktopInitData]?.selectedVersion == 1 {
+            let transport = URLSessionTransport(
+                expectedHost: profile.host,
+                pinnedCertificateSHA256: profile.pinnedCertificateSHA256,
+                requiresSystemCertificateTrust: DsmQuickConnectResolver.isTrustedRelayHost(profile.host)
+            )
+            let service = try DsmDesktopAppPrivilegesService(profile: profile, transport: transport)
+            do {
+                _ = try await service.read(capabilities: capabilities, session: session)
+                return true
+            } catch let error as AppError where [.apiUnavailable, .versionUnsupported, .invalidResponse,
+                                                 .permissionDenied, .authenticationRequired].contains(error.category) {
+                // 摘要不能读取时，仅用原有文件只读检查确认会话，不访问其他套件。
+            }
+        }
         let probe = try DsmFileRepository(
             profile: profile,
             capabilities: capabilities,
@@ -816,6 +882,10 @@ final class AppModel {
             return true
         } catch let error as AppError where error.category == .authenticationRequired {
             return false
+        } catch let error as AppError where error.category == .permissionDenied
+                    || error.category == .apiUnavailable || error.category == .versionUnsupported {
+            // 文件应用不可用不等于整个账号退出；进入工作区后读取应用权限摘要。
+            return true
         }
     }
 
@@ -862,6 +932,18 @@ final class AppModel {
             capabilities: capabilities,
             session: session
         )
+        let privilegesService = try DsmDesktopAppPrivilegesService(
+            profile: connectionProfile,
+            transport: URLSessionTransport(
+                expectedHost: connectionProfile.host,
+                pinnedCertificateSHA256: connectionProfile.pinnedCertificateSHA256,
+                requiresSystemCertificateTrust: DsmQuickConnectResolver.isTrustedRelayHost(connectionProfile.host)
+            )
+        )
+        let accessReader = WorkspaceModuleAccessReader(
+            files: repository, capabilities: capabilities,
+            readPrivileges: { try await privilegesService.read(capabilities: capabilities, session: session) }
+        )
         activeConnectionProfile = connectionProfile
         let openedWorkspace = WorkspaceModel(
             profile: profile,
@@ -869,7 +951,8 @@ final class AppModel {
             chatRepository: chatRepository,
             nasSettingsRepository: administrationRepository,
             serviceManagementRepository: serviceManagementRepository,
-            desktopDriveSessionBridge: desktopDriveSessionBridge
+            desktopDriveSessionBridge: desktopDriveSessionBridge,
+            moduleAccessLoader: { await accessReader.read() }
         )
         workspacesByProfileID[profile.id] = openedWorkspace
         connectionContextsByProfileID[profile.id] = ConnectionContext(
@@ -920,9 +1003,11 @@ final class AppModel {
     }
 
     private func discoverConnection(for profile: NasProfile) async throws -> DiscoveredConnection {
+        let generation = connectionGeneration
         let parsedAddress = try NasAddressParser.parse(profile.host, defaultPort: profile.port)
         guard parsedAddress.kind == .quickConnect else {
             let discovered = try await authRepository.discover(profile: profile)
+            try checkConnectionAttempt(generation)
             return DiscoveredConnection(
                 profile: profile,
                 capabilities: discovered,
@@ -938,9 +1023,11 @@ final class AppModel {
             // 没有直连候选时仍可继续请求中继，登录信息尚未发送。
             endpoints = []
         }
+        try checkConnectionAttempt(generation)
         var certificateError: DsmCertificateTrustError?
 
         for endpoint in endpoints {
+            try checkConnectionAttempt(generation)
             statusMessage = endpoint.kind == .local
                 ? L10n.string("ui.3b38866d76d21239")
                 : L10n.string("ui.307e0c332a164ea1")
@@ -948,6 +1035,7 @@ final class AppModel {
             let connectionProfile = try profile.updating(host: endpoint.host, port: endpointPort)
             do {
                 let discovered = try await authRepository.discover(profile: connectionProfile)
+                try checkConnectionAttempt(generation)
                 return DiscoveredConnection(
                     profile: connectionProfile,
                     capabilities: discovered,
@@ -963,15 +1051,18 @@ final class AppModel {
             }
         }
 
+        try checkConnectionAttempt(generation)
         statusMessage = L10n.string("ui.85e5d30ce27fc0e5")
         do {
             let relay = try await quickConnectResolver.requestRelay(id: parsedAddress.host)
+            try checkConnectionAttempt(generation)
             let relayProfile = try profile.updating(
                 host: relay.host,
                 port: relay.port,
                 clearCertificatePin: true
             )
             let discovered = try await authRepository.discover(profile: relayProfile)
+            try checkConnectionAttempt(generation)
             return DiscoveredConnection(
                 profile: relayProfile,
                 capabilities: discovered,

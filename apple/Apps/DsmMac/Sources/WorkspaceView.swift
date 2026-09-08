@@ -104,6 +104,7 @@ struct WorkspaceView: View {
                     if !moduleOwnsPageHeader { Divider() }
                     contentColumn
                         .scrollContentBackground(.hidden)
+                        .environment(\.macUsesContentBackground, true)
                         .environment(\.macPageNavigation, MacPageNavigation(canGoBack: canNavigateBack, canGoUp: canNavigateUp, goBack: { navigateBack() }, goUp: { navigateUp() }))
                         .fillsAvailableContentArea(alignment: .topLeading)
                 }
@@ -227,8 +228,7 @@ struct WorkspaceView: View {
         }
         .alert(L10n.string("ui.9d8546855ba4a822"), isPresented: $model.requiresReauthentication) {
             Button(L10n.string("ui.b8784c8dd5636ff2")) {
-                model.requiresReauthentication = false
-                Task { await model.load() }
+                Task { await model.retryAfterSessionIssue() }
             }
             Button(L10n.string("ui.957244cdb9f232ab")) {
                 let message = model.statusMessage ?? L10n.string("ui.bd0bb959fbb4f47c")
@@ -334,12 +334,14 @@ struct WorkspaceView: View {
                     .disabled(model.photoLibrary.selectedItems.isEmpty)
                     .help(L10n.string("ui.33006fc9ca3c7e3e"))
 
+                    if model.isFileModuleEnabled {
                     Button {
                         model.section = .transfers
                     } label: {
                         Label(L10n.string("ui.a2f59f64d2623d19"), systemImage: "arrow.up.arrow.down.circle")
                     }
                     .badge(model.activeTransferCount)
+                    }
 
                     Menu {
                         Button {
@@ -367,7 +369,7 @@ struct WorkspaceView: View {
                     } label: {
                         Label(L10n.string("ui.72225d17027d36c7"), systemImage: "folder")
                     }
-                    } else if model.section == .settings {
+                    } else if model.section == .settings, model.isFileModuleEnabled {
                         Button {
                             restoreFileBrowser()
                         } label: {
@@ -546,6 +548,12 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private var contentColumn: some View {
+        if model.needsModuleAccessCheck && model.section == nil {
+            ProgressView(L10n.string("workspace.modules.checking"))
+                .fillsAvailableContentArea()
+        } else if !model.canActivate(model.section) {
+            SettingsView(model: model, onRenameNAS: onRenameNAS)
+        } else {
         switch model.section {
         case .favorites:
             LocationCollectionView(
@@ -633,6 +641,7 @@ struct WorkspaceView: View {
                 onPaste: onPaste,
                 showsInspector: $showsFileInspector
             )
+        }
         }
     }
 
@@ -994,7 +1003,6 @@ private struct SidebarView: View {
     @AppStorage("sidebar_container_management_expanded") private var isContainerManagementExpanded = false
     @AppStorage("sidebar_virtual_machine_management_expanded") private var isVirtualMachineManagementExpanded = false
     @State private var showsDevices = false
-    @State private var connectingProfileID: UUID?
     @State private var confirmsLogout = false
     @Environment(\.colorScheme) private var scheme
 
@@ -1039,31 +1047,41 @@ private struct SidebarView: View {
             }
             .buttonStyle(.plain)
             .help(L10n.string("ui.4084e8707628b196"))
+            .accessibilityIdentifier("workspace.device.selector")
             .popover(isPresented: $showsDevices) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(L10n.string("ui.4084e8707628b196")).font(.headline)
                     List {
                         ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
                             Button {
-                                guard profile.id != selectedProfileID, connectingProfileID == nil else { return }
-                                connectingProfileID = profile.id
+                                guard profile.id != selectedProfileID else { return }
                                 showsDevices = false
-                                Task {
-                                    onSelectNAS(profile)
-                                    try? await Task.sleep(for: .milliseconds(800))
-                                    connectingProfileID = nil
-                                }
+                                onSelectNAS(profile)
                             } label: {
-                                HStack {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "externaldrive.connected.to.line.below")
+                                        .font(.title3)
+                                        .foregroundStyle(profile.id == selectedProfileID ? Color.accentColor : .secondary)
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(profile.displayName)
-                                        Text(profile.host).font(.caption).foregroundStyle(.secondary)
+                                        Text(profile.displayName).font(.body.weight(.medium)).lineLimit(1)
+                                        Text(profile.host).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                     }
                                     Spacer()
-                                    if profile.id == selectedProfileID { Image(systemName: "checkmark") }
+                                    if profile.id == selectedProfileID {
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+                                    }
                                 }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+                                .background(profile.id == selectedProfileID ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(profile.id == selectedProfileID ? .isSelected : [])
+                            .selectionDisabled()
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                             .contextMenu {
                                 Button(L10n.string("workspace.device.moveUp")) {
                                     onMoveProfiles(IndexSet(integer: index), index - 1)
@@ -1077,13 +1095,16 @@ private struct SidebarView: View {
                         }
                         .onMove(perform: onMoveProfiles)
                     }
-                    .frame(width: 280, height: min(260, CGFloat(profiles.count) * 38 + 24))
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .frame(width: 320, height: min(340, CGFloat(profiles.count) * 68 + 8))
                     Button(L10n.string("ui.8249cd04be30c505")) {
                         showsDevices = false
                         onAddNAS()
                     }
                 }
                 .padding(18)
+                .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
             }
 
             Button(action: onAddNAS) {
@@ -1140,9 +1161,6 @@ private struct SidebarView: View {
                     if model.isNasSettingsModuleEnabled {
                         moduleRow(.nasSettings, title: L10n.string("ui.b1729f4b03c4b97d"), icon: "server.rack")
                     }
-                    if model.isFileModuleEnabled {
-                        moduleRow(.transfers, title: L10n.string("ui.74c2308f64b688ae"), icon: "arrow.left.arrow.right", badge: model.activeTransferCount)
-                    }
                 }
             }
             .scrollIndicators(.hidden)
@@ -1152,6 +1170,8 @@ private struct SidebarView: View {
             }
             Spacer(minLength: 16)
             Divider().padding(.vertical, 8)
+            moduleRow(.transfers, title: L10n.string("ui.74c2308f64b688ae"), icon: "arrow.left.arrow.right", badge: model.activeTransferCount)
+                .accessibilityIdentifier("sidebar.transfers")
             moduleRow(.settings, title: L10n.string("appSettings.title"), icon: "gearshape")
                 .accessibilityIdentifier("sidebar.appSettings")
             if model.isFileModuleEnabled {
@@ -2147,6 +2167,7 @@ struct FileBrowserView: View {
                     } else {
                         emptyFileContent(for: contentState)
                             .focusable()
+                            .focusEffectDisabled()
                             .focused($gridHasKeyboardFocus)
                             .onTapGesture { gridHasKeyboardFocus = true }
                     }
@@ -2739,6 +2760,7 @@ struct FileBrowserView: View {
             .background(Color(NSColor.controlBackgroundColor).opacity(0.2))
         }
         .focusable()
+        .focusEffectDisabled()
         .focused($gridHasKeyboardFocus)
     }
 
@@ -4694,6 +4716,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
 struct SettingsCategorySidebar: View {
     @Binding var selection: SettingsCategory
+    var showsDesktopDrive = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -4703,7 +4726,7 @@ struct SettingsCategorySidebar: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
-            ForEach(SettingsCategory.allCases) { category in
+            ForEach(SettingsCategory.allCases.filter { showsDesktopDrive || $0 != .desktopDrive }) { category in
                 Button { selection = category } label: {
                     HStack(spacing: 10) {
                         Image(systemName: category.icon)
@@ -4752,6 +4775,11 @@ private struct SettingsView: View {
     @State private var diagnosticPreview = ""
     @State private var showsCommunityReport = false
 
+    private var showsDesktopDriveSettings: Bool {
+        // 权限撤销后仍保留已有本机挂载的清理入口。
+        model.isModuleVisible(.files) || !desktopDriveManager.mappings.isEmpty
+    }
+
     init(
         model: WorkspaceModel,
         onRenameNAS: @escaping (String) -> String?
@@ -4770,7 +4798,7 @@ private struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             // 左侧分类子导航
-            SettingsCategorySidebar(selection: $selectedCategory)
+            SettingsCategorySidebar(selection: $selectedCategory, showsDesktopDrive: showsDesktopDriveSettings)
 
             Divider()
 
@@ -4805,6 +4833,9 @@ private struct SettingsView: View {
             .fillsAvailableContentArea(alignment: .topLeading)
         }
         .fillsAvailableContentArea(alignment: .topLeading)
+        .onChange(of: showsDesktopDriveSettings) { _, enabled in
+            if !enabled, selectedCategory == .desktopDrive { selectedCategory = .general }
+        }
         .task {
             storage = AppStorageInspector.snapshot()
             await desktopDriveManager.load()
@@ -4957,6 +4988,16 @@ private struct SettingsView: View {
             iconColor: .blue
         ) {
             VStack(alignment: .leading, spacing: 14) {
+                if model.isCheckingModuleAccess {
+                    ProgressView(L10n.string("workspace.modules.checking"))
+                } else if model.moduleAccessLookupFailed {
+                    Text(L10n.string("workspace.modules.unavailable"))
+                        .foregroundStyle(.secondary)
+                } else if !WorkspaceModule.allCases.contains(where: model.isModuleVisible) {
+                    Text(L10n.string("workspace.modules.empty"))
+                        .foregroundStyle(.secondary)
+                }
+                if model.isModuleVisible(.files) {
                 Toggle(isOn: $model.isFileModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.b3bd5ac7cc4d668b"))
@@ -4966,7 +5007,9 @@ private struct SettingsView: View {
                 .toggleStyle(.switch)
 
                 Divider().opacity(0.3)
+                }
 
+                if model.isModuleVisible(.photos) {
                 Toggle(isOn: $model.isPhotosModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
@@ -4978,7 +5021,9 @@ private struct SettingsView: View {
                 .toggleStyle(.switch)
 
                 Divider().opacity(0.3)
+                }
 
+                if model.isModuleVisible(.chat) {
                 Toggle(isOn: $model.isChatModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.4da199fae933d4fa"))
@@ -4988,7 +5033,9 @@ private struct SettingsView: View {
                 .toggleStyle(.switch)
 
                 Divider().opacity(0.3)
+                }
 
+                if model.isModuleVisible(.nasSettings) {
                 Toggle(isOn: $model.isNasSettingsModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("appSettings.showNAS"))
@@ -4998,7 +5045,9 @@ private struct SettingsView: View {
                 .toggleStyle(.switch)
 
                 Divider().opacity(0.3)
+                }
 
+                if model.isModuleVisible(.downloads) {
                 Toggle(isOn: $model.isDownloadStationModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.5248507df52ff455"))
@@ -5008,7 +5057,9 @@ private struct SettingsView: View {
                 .toggleStyle(.switch)
 
                 Divider().opacity(0.3)
+                }
 
+                if model.isModuleVisible(.containers) {
                 Toggle(isOn: $model.isContainerManagerModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.aaf778d85ce5c2ed"))
@@ -5018,7 +5069,9 @@ private struct SettingsView: View {
                 .toggleStyle(.switch)
 
                 Divider().opacity(0.3)
+                }
 
+                if model.isModuleVisible(.virtualMachines) {
                 Toggle(isOn: $model.isVirtualMachineManagerModuleEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("ui.80c43bd2481c9580"))
@@ -5026,6 +5079,12 @@ private struct SettingsView: View {
                     }
                 }
                 .toggleStyle(.switch)
+                }
+
+                Button(L10n.string("workspace.modules.refresh")) {
+                    Task { await model.refreshModuleAccess() }
+                }
+                .disabled(model.isCheckingModuleAccess)
             }
         }
     }
@@ -5094,6 +5153,7 @@ private struct SettingsView: View {
                 .foregroundStyle(.secondary)
 
             HStack {
+                if model.isFileModuleEnabled {
                 Button(L10n.string("desktopDrive.add")) {
                     showsMappingCreator = true
                 }
@@ -5101,6 +5161,7 @@ private struct SettingsView: View {
                     desktopDriveManager.isBusy
                         || !desktopDriveManager.isAvailable
                 )
+                }
                 Button(
                     L10n.string("desktopDrive.diagnostics.preview")
                 ) {

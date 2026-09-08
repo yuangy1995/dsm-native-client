@@ -3800,3 +3800,9 @@
 "chat.preview.attachment" = "附件消息";
 "updates.currentVersion" = "当前版本";
 "updates.versionUnknown" = "未提供";
+"workspace.modules.checking" = "正在检查可用功能…";
+"workspace.modules.refresh" = "刷新可用功能";
+"workspace.modules.empty" = "当前账号没有可用的 NAS 应用。";
+"workspace.modules.unavailable" = "暂时无法确认可用应用，其他应用已隐藏。请稍后刷新可用功能。";
+"connection.session.interrupted" = "另一处登录使当前连接中断，请重新登录。";
+"connection.session.rejected" = "NAS 没有接受当前登录状态，请重新登录。";

@@ -399,9 +399,14 @@ struct FileDetailView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
 
+    private var isVideoPreview: Bool {
+        guard let item = model.selectedItem else { return false }
+        return (model.resolvedPreviewKind ?? PreviewKind.classify(item)) == .video
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if !windowState.isFullScreen {
+            if !windowState.isFullScreen && !isVideoPreview {
                 Color.clear.frame(height: 40).allowsHitTesting(false)
             }
             Group {
@@ -413,7 +418,7 @@ struct FileDetailView: View {
             }
         }
         .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
-        .background(MacWorkspaceWindowChrome(fullSize: true))
+        .background(MacWorkspaceWindowChrome(fullSize: true, hidesSystemButtons: isVideoPreview))
         .ignoresSafeArea(.container, edges: .top)
         .navigationTitle("")
         .toolbar(.hidden, for: .windowToolbar)
@@ -476,9 +481,9 @@ struct FileDetailView: View {
             .fillsAvailableContentArea()
         }
         .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).content)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).edge, lineWidth: 1))
-        .padding(12)
+        .clipShape(RoundedRectangle(cornerRadius: isVideoPreview ? 0 : 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).edge, lineWidth: isVideoPreview ? 0 : 1))
+        .padding(isVideoPreview ? 0 : 12)
         .background(MacGlassSurface(role: .sidebar))
     }
 

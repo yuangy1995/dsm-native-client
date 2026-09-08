@@ -123,9 +123,11 @@ private actor RecordingAuthRepository: AuthRepository {
     private(set) var logoutCallCount = 0
     private(set) var loginCallCount = 0
     private let failingHosts: Set<String>
+    private let restoredSession: AuthSession?
 
-    init(failingHosts: Set<String> = []) {
+    init(failingHosts: Set<String> = [], restoredSession: AuthSession? = nil) {
         self.failingHosts = failingHosts
+        self.restoredSession = restoredSession
     }
 
     func discover(profile: NasProfile) async throws -> CapabilitySet {
@@ -155,7 +157,7 @@ private actor RecordingAuthRepository: AuthRepository {
     }
 
     func restoreSession(for profileID: UUID) async throws -> AuthSession? {
-        nil
+        restoredSession
     }
 
     func clearSession(for profileID: UUID) async throws {
@@ -184,6 +186,165 @@ private actor MemoryPasswordStore: PasswordSecureStoring {
 
     func remove(for profileID: UUID) async throws {
         passwords[profileID] = nil
+    }
+}
+
+/// 故意不响应取消的延迟返回，用来验证旧连接不能覆盖当前 NAS。
+private actor DelayedConnectionRepository: AuthRepository {
+    enum Phase: Sendable { case discovery, login }
+    struct Submission: Sendable {
+        let host: String
+        let account: String
+        let password: String
+    }
+    let phase: Phase
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var submissions: [Submission] = []
+    private(set) var cleared: [UUID] = []
+    var isSuspended: Bool { continuation != nil }
+
+    init(phase: Phase) { self.phase = phase }
+
+    func resume() { continuation?.resume(); continuation = nil }
+
+    func discover(profile: NasProfile) async -> CapabilitySet {
+        if phase == .discovery, profile.host == "first.example.invalid" {
+            await withCheckedContinuation { continuation = $0 }
+        }
+        return CapabilitySet([:])
+    }
+
+    func login(profile: NasProfile, capabilities: CapabilitySet, account: String, password: String, otpCode: String?) async -> AuthSession {
+        submissions.append(Submission(host: profile.host, account: account, password: password))
+        if phase == .login, profile.host == "first.example.invalid" {
+            await withCheckedContinuation { continuation = $0 }
+        }
+        return AuthSession(sid: "synthetic-session", synoToken: nil, did: nil, isPortalPort: false)
+    }
+
+    func restoreSession(for profileID: UUID) -> AuthSession? { nil }
+    func clearSession(for profileID: UUID) { cleared.append(profileID) }
+    func logout(profile: NasProfile, capabilities: CapabilitySet, session: AuthSession) {}
+}
+
+extension ConnectionFlowTests {
+    @MainActor
+    func test文件应用不可用时保留恢复的账号登录状态() async throws {
+        let suite = "RestoreRestrictedAccountTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let profile = try NasProfile(displayName: "Synthetic NAS", host: "example.invalid", port: 5001, usernameHint: "synthetic-user")
+        let store = NasProfileStore(defaults: defaults)
+        try store.save([profile])
+        store.setAutoLoginEnabled(true, for: profile.id)
+        let passwords = MemoryPasswordStore()
+        try await passwords.save("synthetic-password", for: profile.id)
+        let repository = RecordingAuthRepository(restoredSession: AuthSession(sid: "synthetic-restored-session", synoToken: nil, did: nil, isPortalPort: false))
+        let model = AppModel(profileStore: store, authRepository: repository,
+                             passwordStore: passwords, desktopDriveSessionStore: MemorySessionStore())
+        model.load()
+        for _ in 0..<100 {
+            if model.workspace != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(model.workspace?.profile.id, profile.id)
+        let clears = await repository.clearSessionCallCount
+        let logins = await repository.loginCallCount
+        XCTAssertEqual(clears, 0)
+        XCTAssertEqual(logins, 0)
+        XCTAssertFalse(model.statusIsError)
+    }
+
+    @MainActor
+    func test等待发现时使用提交的账号快照() async throws {
+        let suite = "ConnectionSnapshotTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let repository = DelayedConnectionRepository(phase: .discovery)
+        let model = AppModel(profileStore: NasProfileStore(defaults: defaults), authRepository: repository,
+                             passwordStore: MemoryPasswordStore(), desktopDriveSessionStore: MemorySessionStore())
+        model.host = "first.example.invalid"
+        model.account = "first-user"
+        model.password = "synthetic-first-password"
+        let connection = Task { await model.connect() }
+        for _ in 0..<1_000 {
+            if await repository.isSuspended { break }
+            await Task.yield()
+        }
+        let suspended = await repository.isSuspended
+        XCTAssertTrue(suspended)
+        model.account = "edited-user"
+        model.password = "edited-password"
+        await repository.resume()
+        await connection.value
+        let submissions = await repository.submissions
+        let submission = try XCTUnwrap(submissions.first)
+        XCTAssertEqual(submission.account, "first-user")
+        XCTAssertEqual(submission.password, "synthetic-first-password")
+        XCTAssertEqual(model.workspace?.profile.usernameHint, "first-user")
+    }
+
+    @MainActor
+    func test旧设备迟到结果不能覆盖新设备工作区() async throws {
+        for phase in [DelayedConnectionRepository.Phase.discovery, .login] {
+            let suite = "ConnectionOwnershipTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let repository = DelayedConnectionRepository(phase: phase)
+            let model = AppModel(profileStore: NasProfileStore(defaults: defaults), authRepository: repository,
+                                 passwordStore: MemoryPasswordStore(), desktopDriveSessionStore: MemorySessionStore())
+            model.host = "first.example.invalid"
+            model.account = "first-user"
+            model.password = "synthetic-password"
+            let first = Task { await model.connect() }
+            for _ in 0..<1_000 {
+                if await repository.isSuspended { break }
+                await Task.yield()
+            }
+            let suspended = await repository.isSuspended
+            XCTAssertTrue(suspended)
+            model.newProfile()
+            model.host = "second.example.invalid"
+            model.account = "second-user"
+            model.password = "synthetic-password"
+            await model.connect()
+            let secondWorkspace = try XCTUnwrap(model.workspace)
+            let secondStatus = model.statusMessage
+            await repository.resume()
+            await first.value
+            XCTAssertTrue(model.workspace === secondWorkspace)
+            XCTAssertEqual(model.workspace?.profile.host, "second.example.invalid")
+            XCTAssertEqual(model.workspace?.profile.usernameHint, "second-user")
+            XCTAssertEqual(model.statusMessage, secondStatus)
+            XCTAssertFalse(model.isBusy)
+            XCTAssertFalse(model.statusIsError)
+        }
+    }
+
+    @MainActor
+    func test旧工作区登录弹窗不能退出当前设备() async throws {
+        let suite = "SessionIssueOwnershipTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let repository = RecordingAuthRepository()
+        let model = AppModel(profileStore: NasProfileStore(defaults: defaults), authRepository: repository,
+                             passwordStore: MemoryPasswordStore(), desktopDriveSessionStore: MemorySessionStore())
+        model.host = "first.example.invalid"
+        model.account = "first-user"
+        model.password = "synthetic-password"
+        await model.connect()
+        let firstWorkspace = try XCTUnwrap(model.workspace)
+        model.newProfile()
+        model.host = "second.example.invalid"
+        model.account = "second-user"
+        model.password = "synthetic-password"
+        await model.connect()
+        let secondWorkspace = try XCTUnwrap(model.workspace)
+        await model.returnToLoginAfterSessionIssue(message: "旧设备的合成错误", from: firstWorkspace)
+        XCTAssertTrue(model.workspace === secondWorkspace)
+        let clears = await repository.clearSessionCallCount
+        XCTAssertEqual(clears, 0)
+        XCTAssertFalse(model.statusIsError)
     }
 }
 

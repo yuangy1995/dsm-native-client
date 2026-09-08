@@ -78,7 +78,7 @@ actor UnavailableServiceManagementRepository: ServiceManagementRepository {
 @MainActor
 @Observable
 final class ServiceManagementModel {
-    enum Module: Hashable {
+    enum Module: CaseIterable, Hashable {
         case downloads
         case containers
         case virtualMachines
@@ -89,6 +89,7 @@ final class ServiceManagementModel {
     private(set) var virtualMachines: VirtualMachineManagerSnapshot?
     private(set) var isLoading = false
     private(set) var isPerformingAction = false
+    private var enabledModules = Set(Module.allCases)
     var message: String?
     var messageIsError = false
     var downloadSelection: Set<String> = []
@@ -111,20 +112,38 @@ final class ServiceManagementModel {
         self.fileRepository = fileRepository
     }
 
+    func setEnabledModules(_ modules: Set<Module>) {
+        enabledModules = modules
+        loadedModules.formIntersection(modules)
+        if !modules.contains(.downloads) { downloads = nil; downloadSelection = [] }
+        if !modules.contains(.containers) {
+            containers = nil
+            containerSelection = []; imageSelection = []; networkSelection = []
+        }
+        if !modules.contains(.virtualMachines) {
+            virtualMachines = nil
+            virtualMachineSelection = []; virtualMachineNetworkSelection = []; virtualMachineImageSelection = []
+        }
+    }
+
     func activate(_ module: Module, force: Bool = false) async {
+        guard enabledModules.contains(module) else { return }
         message = nil
         guard force || !loadedModules.contains(module) else { return }
         isLoading = true
         do {
             switch module {
             case .downloads:
-                downloads = try await repository.loadDownloadStation()
+                let value = try await repository.loadDownloadStation()
+                if enabledModules.contains(module), !Task.isCancelled { downloads = value }
             case .containers:
-                containers = try await repository.loadContainerManager()
+                let value = try await repository.loadContainerManager()
+                if enabledModules.contains(module), !Task.isCancelled { containers = value }
             case .virtualMachines:
-                virtualMachines = try await repository.loadVirtualMachineManager()
+                let value = try await repository.loadVirtualMachineManager()
+                if enabledModules.contains(module), !Task.isCancelled { virtualMachines = value }
             }
-            loadedModules.insert(module)
+            if enabledModules.contains(module), !Task.isCancelled { loadedModules.insert(module) }
             isLoading = false
         } catch {
             isLoading = false
@@ -153,7 +172,8 @@ final class ServiceManagementModel {
     }
 
     func loadDownloadSettings() async throws -> DownloadStationSettings {
-        try await repository.loadDownloadStationSettings()
+        guard enabledModules.contains(.downloads) else { throw CancellationError() }
+        return try await repository.loadDownloadStationSettings()
     }
 
     func saveDownloadSettings(_ settings: DownloadStationSettings) async -> Bool {
@@ -163,6 +183,7 @@ final class ServiceManagementModel {
     }
 
     func loadDownloadDestinationFolders(in path: String?) async throws -> [FileItem] {
+        guard enabledModules.contains(.downloads) else { throw CancellationError() }
         guard let fileRepository else {
             throw AppError(
                 category: .apiUnavailable,
@@ -348,7 +369,7 @@ final class ServiceManagementModel {
     }
 
     func openVirtualMachineConsole(id: String) async -> VirtualMachineConsoleSession? {
-        guard !isPerformingAction else { return nil }
+        guard enabledModules.contains(.virtualMachines), !isPerformingAction else { return nil }
         isPerformingAction = true
         message = nil
         do {
@@ -448,7 +469,7 @@ final class ServiceManagementModel {
         success: String,
         operation: () async throws -> Void
     ) async -> Bool {
-        guard !isPerformingAction else { return false }
+        guard enabledModules.contains(module), !isPerformingAction else { return false }
         isPerformingAction = true
         message = nil
         do {
@@ -472,7 +493,7 @@ final class ServiceManagementModel {
         operation: () async throws -> MutationResult,
         isVerified: () -> Bool
     ) async -> Bool {
-        guard !isPerformingAction else { return false }
+        guard enabledModules.contains(module), !isPerformingAction else { return false }
         isPerformingAction = true
         message = nil
         do {

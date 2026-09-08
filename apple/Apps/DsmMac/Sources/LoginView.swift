@@ -32,9 +32,10 @@ struct RootView: View {
                         await model.logout()
                     },
                     onSessionExpired: { message in
-                        await model.returnToLoginAfterSessionIssue(message: message)
+                        await model.returnToLoginAfterSessionIssue(message: message, from: workspace)
                     }
                 )
+                .id(ObjectIdentifier(workspace))
             } else {
                 LoginView(model: model)
             }

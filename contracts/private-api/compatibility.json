@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-08-05",
+  "updatedAt": "2026-09-09",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -61,6 +61,21 @@
     }
   ],
   "endpoints": [
+    {
+      "id": "dsm-desktop-app-privileges",
+      "componentId": "dsm-core",
+      "scope": "DSM",
+      "capability": "当前账号应用权限摘要（macOS 已接入，App 实机待验证）",
+      "classification": "internal",
+      "operation": "read",
+      "risk": "medium",
+      "apiNames": ["SYNO.Core.Desktop.Initdata"],
+      "paths": ["/webapi/entry.cgi"],
+      "methods": ["GET"],
+      "fallback": "摘要失败只保留文件只读会话确认，其他模块保持关闭；有效空表不额外试探。用户确认 NAS 设置与容器要求管理员，独立应用要求明确授权，false 不被管理员覆盖；不加载组件业务数据判断权限。App 会话待验证，设备匿名归属待确认，verifications 不冒用旧基线。",
+      "documentRef": "docs/api/discovery/endpoints/dsm-desktop-app-privileges.md",
+      "verifications": []
+    },
     {
       "id": "quickconnect-relay-control",
       "componentId": "dsm-core",

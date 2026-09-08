@@ -4,6 +4,27 @@ import XCTest
 
 @MainActor
 final class MacAppearanceTests: XCTestCase {
+    func test视频窗口隐藏系统按钮但保留全屏和缩放并可恢复() {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 500), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.contentView = nil; window.close() }
+        let host = MacWorkspaceWindowChrome.HostView()
+        host.fullSize = true
+        host.hidesSystemButtons = true
+        window.contentView = host
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            XCTAssertTrue(window.standardWindowButton(kind)?.isHidden == true)
+        }
+        XCTAssertTrue(window.styleMask.contains(.titled))
+        XCTAssertTrue(window.styleMask.contains(.resizable))
+        XCTAssertTrue(window.isMovableByWindowBackground)
+        host.hidesSystemButtons = false
+        host.configure()
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            XCTAssertFalse(window.standardWindowButton(kind)?.isHidden ?? true)
+        }
+    }
     func test文件快捷键只接受文件区域焦点() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled, .closable], backing: .buffered, defer: false)

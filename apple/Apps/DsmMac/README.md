@@ -79,6 +79,12 @@ Developer 门户单独注册，脚本会检查 Team ID 前缀必须与签名证�
 
 临时签名产物适合在本机开发测试，不应作为公开下载版本发布。使用 Developer ID 正式签名后，公开分发前仍需完成 Apple 公证。
 
+本机临时签名没有 Team ID，因此仅主 App 使用独立的
+`SupportingFiles/DsmMacLocalTest.entitlements` 添加库验证例外，以加载包内 Sparkle；
+保留其他 Hardened Runtime 保护，不修改系统安全设置。该例外不进入正式主 App 或扩展权限。
+临时打包会运行 `tools/release/verify_macos_local_test.sh`，在不启动真实 App、不读取账号和 NAS
+资料的隔离进程中，用包内实际权限验证 Sparkle 加载。正式分发校验会拒绝携带该本地例外的包。
+
 正式签名的 DMG 可使用以下流程提交公证。公证凭据必须预先保存在钥匙串中，不得
 写入仓库或命令行历史：
 

@@ -105,10 +105,10 @@ enum WorkspaceSection: Hashable, Identifiable {
 
     var belongsToFileModule: Bool {
         switch self {
-        case .files, .recycle, .favorites, .recent, .remoteLocations, .sharedLinks, .transfers:
+        case .files, .recycle, .favorites, .recent, .remoteLocations, .sharedLinks:
             true
         case .photos, .chat, .nasSettings, .downloadStation, .containerManager,
-             .virtualMachineManager, .settings:
+             .virtualMachineManager, .transfers, .settings:
             false
         }
     }
@@ -453,11 +453,53 @@ final class WorkspaceModel {
     var isCheckingArchivePassword = false
     var activeToast: ToastMessage?
 
-    // 按 NAS profile 保存的模块开关；切换其他 NAS 时各用各的值。
-    var isFileModuleEnabled: Bool = true {
+    private(set) var moduleAccess: [WorkspaceModule: WorkspaceModuleAccess] = [:]
+    private(set) var isCheckingModuleAccess = false
+    @ObservationIgnored private let moduleAccessLoader: (@Sendable () async -> WorkspaceModuleAccessSnapshot)?
+    private(set) var moduleAccessLookupFailed = false
+    @ObservationIgnored private var hasStartedModules = false
+    private var hasCheckedModuleAccess = false
+
+    var needsModuleAccessCheck: Bool { moduleAccessLoader != nil && !hasCheckedModuleAccess }
+
+    func isModuleVisible(_ module: WorkspaceModule) -> Bool {
+        return moduleAccess[module]?.isVisible ?? (moduleAccessLoader == nil)
+    }
+
+    var isFileModuleEnabled: Bool {
+        get { prefersFileModule && isModuleVisible(.files) }
+        set { prefersFileModule = newValue }
+    }
+    var isPhotosModuleEnabled: Bool {
+        get { prefersPhotosModule && isModuleVisible(.photos) }
+        set { prefersPhotosModule = newValue }
+    }
+    var isChatModuleEnabled: Bool {
+        get { prefersChatModule && isModuleVisible(.chat) }
+        set { prefersChatModule = newValue }
+    }
+    var isNasSettingsModuleEnabled: Bool {
+        get { prefersNasSettingsModule && isModuleVisible(.nasSettings) }
+        set { prefersNasSettingsModule = newValue }
+    }
+    var isDownloadStationModuleEnabled: Bool {
+        get { prefersDownloadStationModule && isModuleVisible(.downloads) }
+        set { prefersDownloadStationModule = newValue }
+    }
+    var isContainerManagerModuleEnabled: Bool {
+        get { prefersContainerManagerModule && isModuleVisible(.containers) }
+        set { prefersContainerManagerModule = newValue }
+    }
+    var isVirtualMachineManagerModuleEnabled: Bool {
+        get { prefersVirtualMachineManagerModule && isModuleVisible(.virtualMachines) }
+        set { prefersVirtualMachineManagerModule = newValue }
+    }
+
+    // 按 NAS profile 保存用户偏好，权限变化不写入这些值。
+    private var prefersFileModule: Bool = true {
         didSet {
-            Self.saveModuleEnabled(isFileModuleEnabled, for: profile.id, module: "FileStation")
-            guard oldValue != isFileModuleEnabled else { return }
+            Self.saveModuleEnabled(prefersFileModule, for: profile.id, module: "FileStation")
+            guard oldValue != prefersFileModule else { return }
             if !isFileModuleEnabled {
                 suspendFileModule()
                 if section?.belongsToFileModule == true {
@@ -466,68 +508,71 @@ final class WorkspaceModel {
             }
         }
     }
-    var isPhotosModuleEnabled: Bool = true {
+    private var prefersPhotosModule: Bool = true {
         didSet {
-            Self.saveModuleEnabled(isPhotosModuleEnabled, for: profile.id, module: "Photos")
-            guard oldValue != isPhotosModuleEnabled else { return }
+            Self.saveModuleEnabled(prefersPhotosModule, for: profile.id, module: "Photos")
+            guard oldValue != prefersPhotosModule else { return }
             photoLibrary.setModuleEnabled(isPhotosModuleEnabled)
             if !isPhotosModuleEnabled, section?.belongsToPhotosModule == true {
                 section = .settings
             }
         }
     }
-    var isChatModuleEnabled: Bool = true {
+    private var prefersChatModule: Bool = true {
         didSet {
-            Self.saveModuleEnabled(isChatModuleEnabled, for: profile.id, module: "Chat")
-            guard oldValue != isChatModuleEnabled else { return }
+            Self.saveModuleEnabled(prefersChatModule, for: profile.id, module: "Chat")
+            guard oldValue != prefersChatModule else { return }
             chat.setModuleEnabled(isChatModuleEnabled)
             if !isChatModuleEnabled, section == .chat {
                 section = .settings
             }
         }
     }
-    var isNasSettingsModuleEnabled: Bool = false {
+    private var prefersNasSettingsModule: Bool = false {
         didSet {
-            Self.saveModuleEnabled(isNasSettingsModuleEnabled, for: profile.id, module: "NASSettings")
-            guard oldValue != isNasSettingsModuleEnabled else { return }
+            Self.saveModuleEnabled(prefersNasSettingsModule, for: profile.id, module: "NASSettings")
+            guard oldValue != prefersNasSettingsModule else { return }
             nasSettings.setModuleEnabled(isNasSettingsModuleEnabled)
             if !isNasSettingsModuleEnabled, section == .nasSettings {
                 section = .settings
             }
         }
     }
-    var isDownloadStationModuleEnabled: Bool = true {
+    private var prefersDownloadStationModule: Bool = true {
         didSet {
             Self.saveModuleEnabled(
-                isDownloadStationModuleEnabled,
+                prefersDownloadStationModule,
                 for: profile.id,
                 module: "DownloadStation"
             )
+            synchronizeModuleAvailability()
             if !isDownloadStationModuleEnabled, section == .downloadStation {
                 section = .settings
             }
         }
     }
-    var isContainerManagerModuleEnabled: Bool = true {
+    private var prefersContainerManagerModule: Bool = true {
         didSet {
             Self.saveModuleEnabled(
-                isContainerManagerModuleEnabled,
+                prefersContainerManagerModule,
                 for: profile.id,
                 module: "ContainerManager"
             )
+            synchronizeModuleAvailability()
             if !isContainerManagerModuleEnabled,
                section?.belongsToContainerManagerModule == true {
                 section = .settings
             }
         }
     }
-    var isVirtualMachineManagerModuleEnabled: Bool = true {
+    private var prefersVirtualMachineManagerModule: Bool = true {
         didSet {
             Self.saveModuleEnabled(
-                isVirtualMachineManagerModuleEnabled,
+                prefersVirtualMachineManagerModule,
                 for: profile.id,
                 module: "VirtualMachineManager"
             )
+            synchronizeModuleAvailability()
             if !isVirtualMachineManagerModuleEnabled,
                section?.belongsToVirtualMachineManagerModule == true {
                 section = .settings
@@ -581,7 +626,7 @@ final class WorkspaceModel {
         repository
     }
 
-    // 读取按 NAS 保存的模块开关；不存在时回退到旧全局 key，保持老用户已有选择。
+    // 首次初始化沿用现有按 NAS 的键保存结果；旧 NAS 可继承旧全局选择，新 NAS 不继承。
     private static func moduleEnabledKey(for profileID: UUID, module: String) -> String {
         "LanStash_Module_\(module)_\(profileID.uuidString)"
     }
@@ -590,16 +635,17 @@ final class WorkspaceModel {
         for profileID: UUID,
         module: String,
         legacyKey: String,
-        defaultValue: Bool = true
+        defaultValue: Bool = true,
+        inheritLegacy: Bool = true
     ) -> Bool {
         let key = moduleEnabledKey(for: profileID, module: module)
         if UserDefaults.standard.object(forKey: key) != nil {
             return UserDefaults.standard.bool(forKey: key)
         }
-        if UserDefaults.standard.object(forKey: legacyKey) != nil {
-            return UserDefaults.standard.bool(forKey: legacyKey)
-        }
-        return defaultValue
+        let value = inheritLegacy && UserDefaults.standard.object(forKey: legacyKey) != nil
+            ? UserDefaults.standard.bool(forKey: legacyKey) : defaultValue
+        UserDefaults.standard.set(value, forKey: key)
+        return value
     }
 
     private static func saveModuleEnabled(_ value: Bool, for profileID: UUID, module: String) {
@@ -615,9 +661,11 @@ final class WorkspaceModel {
             UnavailableServiceManagementRepository(),
         desktopDriveSessionBridge: DesktopDriveSessionBridge? = nil,
         transferNotifier: any TransferNotifying = TransferNotifierFactory.makeDefault(),
-        preparePreviewCache: (() -> Void)? = nil
+        preparePreviewCache: (() -> Void)? = nil,
+        moduleAccessLoader: (@Sendable () async -> WorkspaceModuleAccessSnapshot)? = nil
     ) {
         self.profile = profile
+        self.moduleAccessLoader = moduleAccessLoader
         self.repository = repository
         self.transferNotifier = transferNotifier
         self.desktopDriveSessionBridge = desktopDriveSessionBridge
@@ -641,39 +689,45 @@ final class WorkspaceModel {
             repository: serviceManagementRepository,
             fileRepository: repository
         )
-        self.isFileModuleEnabled = Self.loadModuleEnabled(for: profile.id, module: "FileStation", legacyKey: "LanStash_Module_FileStation")
-        self.isPhotosModuleEnabled = Self.loadModuleEnabled(for: profile.id, module: "Photos", legacyKey: "LanStash_Module_Photos")
-        self.isChatModuleEnabled = Self.loadModuleEnabled(for: profile.id, module: "Chat", legacyKey: "LanStash_Module_Chat")
-        self.isNasSettingsModuleEnabled = Self.loadModuleEnabled(
+        // 旧版每次建立工作区都保存 NASSettings，因此也能识别未手动切换过其他开关的旧 NAS。
+        let hasExistingSettings = ["FileStation", "Photos", "Chat", "NASSettings", "ServicesMonitor",
+                                   "DownloadStation", "ContainerManager", "VirtualMachineManager"].contains {
+            UserDefaults.standard.object(forKey: Self.moduleEnabledKey(for: profile.id, module: $0)) != nil
+        }
+        self.prefersFileModule = Self.loadModuleEnabled(for: profile.id, module: "FileStation", legacyKey: "LanStash_Module_FileStation", inheritLegacy: hasExistingSettings)
+        self.prefersPhotosModule = Self.loadModuleEnabled(for: profile.id, module: "Photos", legacyKey: "LanStash_Module_Photos", inheritLegacy: hasExistingSettings)
+        self.prefersChatModule = Self.loadModuleEnabled(for: profile.id, module: "Chat", legacyKey: "LanStash_Module_Chat", defaultValue: hasExistingSettings, inheritLegacy: hasExistingSettings)
+        let legacyMonitorEnabled = hasExistingSettings && (
+            UserDefaults.standard.bool(forKey: Self.moduleEnabledKey(for: profile.id, module: "ServicesMonitor"))
+                || UserDefaults.standard.bool(forKey: "LanStash_Module_ServicesMonitor")
+        )
+        self.prefersNasSettingsModule = Self.loadModuleEnabled(
             for: profile.id,
             module: "NASSettings",
             legacyKey: "LanStash_Module_NASSettings",
-            defaultValue: false
-        ) || Self.loadModuleEnabled(
-            for: profile.id,
-            module: "ServicesMonitor",
-            legacyKey: "LanStash_Module_ServicesMonitor",
-            defaultValue: false
+            defaultValue: legacyMonitorEnabled,
+            inheritLegacy: hasExistingSettings
         )
-        Self.saveModuleEnabled(
-            self.isNasSettingsModuleEnabled,
-            for: profile.id,
-            module: "NASSettings"
-        )
-        self.isDownloadStationModuleEnabled = Self.loadModuleEnabled(
+        self.prefersDownloadStationModule = Self.loadModuleEnabled(
             for: profile.id,
             module: "DownloadStation",
-            legacyKey: "LanStash_Module_DownloadStation"
+            legacyKey: "LanStash_Module_DownloadStation",
+            defaultValue: hasExistingSettings,
+            inheritLegacy: hasExistingSettings
         )
-        self.isContainerManagerModuleEnabled = Self.loadModuleEnabled(
+        self.prefersContainerManagerModule = Self.loadModuleEnabled(
             for: profile.id,
             module: "ContainerManager",
-            legacyKey: "LanStash_Module_ContainerManager"
+            legacyKey: "LanStash_Module_ContainerManager",
+            defaultValue: hasExistingSettings,
+            inheritLegacy: hasExistingSettings
         )
-        self.isVirtualMachineManagerModuleEnabled = Self.loadModuleEnabled(
+        self.prefersVirtualMachineManagerModule = Self.loadModuleEnabled(
             for: profile.id,
             module: "VirtualMachineManager",
-            legacyKey: "LanStash_Module_VirtualMachineManager"
+            legacyKey: "LanStash_Module_VirtualMachineManager",
+            defaultValue: hasExistingSettings,
+            inheritLegacy: hasExistingSettings
         )
         if let data = UserDefaults.standard.data(forKey: "LanStash_RecentLocations_\(profile.id.uuidString)"),
            let saved = try? JSONDecoder().decode([FavoriteLocation].self, from: data) {
@@ -706,9 +760,7 @@ final class WorkspaceModel {
            let savedRestartable = try? JSONDecoder().decode([UUID: RestartableTransfer].self, from: data) {
             self.restartableTransfers = savedRestartable
         }
-        photoLibrary.setModuleEnabled(isPhotosModuleEnabled)
-        chat.setModuleEnabled(isChatModuleEnabled)
-        nasSettings.setModuleEnabled(isNasSettingsModuleEnabled)
+        synchronizeModuleAvailability()
     }
 
     private func saveTransfers() {
@@ -810,10 +862,21 @@ final class WorkspaceModel {
 
     /// 只启动已启用的首个模块；所有功能都关闭时停留在设置页。
     func startEnabledModules() async {
+        if needsModuleAccessCheck { await refreshModuleAccess(startsWorkspace: true) }
+        guard !Task.isCancelled, !requiresReauthentication else { return }
+        if hasStartedModules {
+            await activate(section)
+            return
+        }
+        await startInitialModule()
+    }
+
+    private func startInitialModule() async {
+        defer { if !Task.isCancelled { hasStartedModules = true } }
         if isFileModuleEnabled {
-            await load()
-            guard isFileModuleEnabled else { return }
             section = .files("/")
+            await load()
+            guard isFileModuleEnabled, !requiresReauthentication else { return }
             await navigate(to: "/", recordingHistory: false)
             return
         }
@@ -850,8 +913,56 @@ final class WorkspaceModel {
         section = .settings
     }
 
+    func refreshModuleAccess(startsWorkspace: Bool = false) async {
+        guard let moduleAccessLoader, !isCheckingModuleAccess else { return }
+        isCheckingModuleAccess = true
+        defer { isCheckingModuleAccess = false }
+        let snapshot = await moduleAccessLoader()
+        guard !Task.isCancelled else { return }
+        // 整体替换，权限移除不能遗留上次的授权；缺项默认不显示。
+        moduleAccess = snapshot.modules
+        moduleAccessLookupFailed = snapshot.lookupFailed
+        hasCheckedModuleAccess = true
+        synchronizeModuleAvailability()
+        if case .authenticationRequired(let error) = moduleAccess[.files] {
+            show(error)
+            if section == nil { section = .files("/") }
+            return
+        }
+        if startsWorkspace, !hasStartedModules {
+            await startInitialModule()
+        } else if !canActivate(section) {
+            section = .settings
+        }
+    }
+
+    private func synchronizeModuleAvailability() {
+        photoLibrary.setModuleEnabled(isPhotosModuleEnabled)
+        chat.setModuleEnabled(isChatModuleEnabled)
+        nasSettings.setModuleEnabled(isNasSettingsModuleEnabled)
+        var services: Set<ServiceManagementModel.Module> = []
+        if isDownloadStationModuleEnabled { services.insert(.downloads) }
+        if isContainerManagerModuleEnabled { services.insert(.containers) }
+        if isVirtualMachineManagerModuleEnabled { services.insert(.virtualMachines) }
+        serviceManagement.setEnabledModules(services)
+    }
+
+    func canActivate(_ destination: WorkspaceSection?) -> Bool {
+        switch destination {
+        case .files, .recycle, .favorites, .recent, .remoteLocations, .sharedLinks:
+            isFileModuleEnabled
+        case .photos: isPhotosModuleEnabled
+        case .chat: isChatModuleEnabled
+        case .nasSettings: isNasSettingsModuleEnabled
+        case .downloadStation: isDownloadStationModuleEnabled
+        case .containerManager: isContainerManagerModuleEnabled
+        case .virtualMachineManager: isVirtualMachineManagerModuleEnabled
+        case .transfers, .settings, nil: true
+        }
+    }
+
     func load() async {
-        guard isFileModuleEnabled, shares.isEmpty else {
+        guard isFileModuleEnabled, shares.isEmpty, !isLoading, !requiresReauthentication else {
             return
         }
         isLoading = true
@@ -859,12 +970,17 @@ final class WorkspaceModel {
         do {
             let page = try await repository.listShares(offset: 0, limit: 200)
             guard isFileModuleEnabled else { return }
+            clearConnectionIssue()
             shares = page.items
+            if currentPath.isEmpty || currentPath == "/" {
+                currentPath = "/"
+                items = shares
+                totalItemCount = shares.count
+                hasMore = false
+                nextOffset = shares.count
+            }
             isLoading = false
-            if let first = shares.first {
-                section = .files(first.path)
-                await navigate(to: first.path, recordingHistory: false)
-            } else {
+            if shares.isEmpty {
                 items = []
                 statusMessage = L10n.string("ui.54febf8015c8e233")
             }
@@ -882,7 +998,27 @@ final class WorkspaceModel {
         }
     }
 
+    func retryAfterSessionIssue() async {
+        requiresReauthentication = false
+        if currentPath.isEmpty {
+            await load()
+        } else {
+            await refresh()
+        }
+        if !requiresReauthentication, !statusIsError {
+            hasStartedModules = true
+            if needsModuleAccessCheck { await refreshModuleAccess() }
+        }
+    }
+
+    private func clearConnectionIssue() {
+        requiresReauthentication = false
+        statusIsError = false
+        statusMessage = nil
+    }
+
     func activate(_ newSection: WorkspaceSection?) async {
+        guard canActivate(newSection) else { section = .settings; return }
         guard let newSection else {
             return
         }
@@ -891,7 +1027,7 @@ final class WorkspaceModel {
             guard isFileModuleEnabled else { return }
             if shares.isEmpty {
                 await load()
-                guard isFileModuleEnabled else { return }
+                guard isFileModuleEnabled, !isLoading, !requiresReauthentication else { return }
             }
             if path != currentPath {
                 history.removeAll()
@@ -972,6 +1108,7 @@ final class WorkspaceModel {
             guard isFileModuleEnabled, generation == navigationGeneration else {
                 return
             }
+            clearConnectionIssue()
             if recordingHistory, !previousPath.isEmpty, previousPath != path {
                 history.append(previousPath)
             }
@@ -1178,6 +1315,7 @@ final class WorkspaceModel {
 
     private func reloadShares() async throws {
         let page = try await repository.listShares(offset: 0, limit: 200)
+        clearConnectionIssue()
         shares = page.items
         if currentPath == "/" {
             items = shares.map { share in
@@ -3415,6 +3553,13 @@ final class WorkspaceModel {
 
     private static func userMessage(for error: Error) -> String {
         if let error = error as? AppError {
+            if error.category == .authenticationRequired {
+                switch error.dsmCode {
+                case 107: return L10n.string("connection.session.interrupted")
+                case 119: return L10n.string("connection.session.rejected")
+                default: break
+                }
+            }
             return error.safeUserMessage
         }
         if let error = error as? DsmCertificateTrustError {

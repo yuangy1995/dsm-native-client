@@ -8,6 +8,13 @@
 
 ## 端点组
 
+### `dsm-desktop-app-privileges`
+
+- 组件：`dsm-core`；内部只读候选 `SYNO.Core.Desktop.Initdata` v1 / `get_user_service`。
+- 2026-09-09 非管理员官方网页成功响应含 `AppPrivilege` 和 `Session.is_admin`；应用授权摘要与官方菜单形成交叉证据。
+- 设备匿名归属尚未确认，不挂靠既有 `lab-a` verification。macOS 已按用户确认的“应用明确授权、管理模块要求管理员”策略接入；App 会话实机待验。有效空表与整个摘要缺失分别处理，不加载组件业务数据试权限。
+- [请求、响应、安全限制及五端影响](dsm-desktop-app-privileges.md)。
+
 ### `quickconnect-relay-control`
 
 - 组件：`dsm-core`

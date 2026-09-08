@@ -92,6 +92,7 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
             default: false
             }
         }
+
     }
 
     @Published private(set) var stage: PresentationStage = .information
@@ -134,13 +135,16 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
         secondaryAction = cancel
         guard presentsWindows else { return }
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 440),
-                                  styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-            window.contentMinSize = NSSize(width: 500, height: 400)
+            let initialSize = NSSize(width: 440, height: 200)
+            let window = AppUpdateWindow(contentRect: NSRect(origin: .zero, size: initialSize),
+                                         styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: AppUpdateView(driver: self).macAppearanceRoot())
-            window.center()
             self.window = window
+            let host = NSHostingView(rootView: AppUpdateView(driver: self).macAppearanceRoot())
+            host.sizingOptions = []
+            host.frame = NSRect(origin: .zero, size: initialSize)
+            window.contentView = host
+            window.center()
         }
         window?.title = L10n.string("updates.title")
         showUpdateInFocus()
@@ -313,9 +317,22 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    func fitWindow(to size: CGSize) {
+        guard let window, size.width > 0, size.height > 0,
+              abs(window.frame.width - size.width) > 0.5 || abs(window.frame.height - size.height) > 0.5 else { return }
+        window.setFrame(NSRect(x: window.frame.midX - size.width / 2,
+                               y: window.frame.maxY - size.height,
+                               width: size.width, height: size.height), display: true)
+    }
 }
 
 // 保持模块内可见，供隔离窗口检查复用真实更新界面。
+/// 无系统标题栏的更新窗口仍须接收键盘焦点，供关闭和主操作快捷键使用。
+final class AppUpdateWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 struct AppUpdateView: View {
     @ObservedObject var driver: AppUpdateUserDriver
     @State private var language = AppLanguageStore.shared
@@ -330,126 +347,116 @@ struct AppUpdateView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: 40).allowsHitTesting(false)
-            MacPageHeader(title: language.string("updates.title")) {
-                if driver.canDismiss {
-                    Button(action: driver.dismissByUser) {
-                        Label(language.string("updates.close"), systemImage: "xmark")
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 15).fill(statusColor.opacity(0.1))
+                    if driver.stage == .checking {
+                        ProgressView().controlSize(.large).tint(statusColor)
+                    } else {
+                        Image(systemName: driver.stage.symbol)
+                            .font(.system(size: 29, weight: .medium))
+                            .foregroundStyle(statusColor)
                     }
-                    .labelStyle(.iconOnly)
+                }
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(language.string(driver.titleKey))
+                        .font(.title3.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text(language.string(driver.detailKey))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let version = driver.version {
+                        Text(language.string("updates.version", version))
+                            .font(.callout.weight(.medium))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if driver.stage == .available {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(language.string("updates.notes.title")).font(.callout.weight(.semibold))
+                    ScrollView(.vertical, showsIndicators: true) {
+                        Text(driver.releaseNotes.flatMap { $0.isEmpty ? nil : $0 } ?? language.string("updates.notes.empty"))
+                            .font(.callout)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                    }
+                    .scrollIndicators(.visible)
+                    .accessibilityIdentifier("updates.notes.scroll")
+                    .frame(height: 140)
+                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
                 }
             }
-            .environment(\.macPageNavigation, nil)
 
-            VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 16) {
-                        Image(systemName: driver.stage.symbol)
-                            .font(.system(size: 28, weight: .medium))
-                            .foregroundStyle(statusColor)
-                            .frame(width: 56, height: 56)
-                            .background(statusColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(language.string(driver.titleKey))
-                                .font(.title2.weight(.semibold))
-                                .accessibilityAddTraits(.isHeader)
-                            if [.information, .permission, .ready, .installing, .failed].contains(driver.stage) {
-                                Text(language.string(driver.detailKey))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            if let version = driver.version {
-                                Text(language.string("updates.version", version))
-                                    .font(.callout.weight(.medium))
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            if driver.isWorking, driver.stage != .checking {
+                VStack(alignment: .trailing, spacing: 6) {
+                    if let progress = driver.progress {
+                        ProgressView(value: progress)
+                            .progressViewStyle(.linear)
+                            .tint(.accentColor)
+                        Text(progress.formatted(.percent.precision(.fractionLength(0)).locale(language.locale)))
+                            .font(.caption.monospacedDigit())
+                    } else {
+                        ProgressView().progressViewStyle(.linear)
                     }
-
-                    if driver.stage == .available {
-                        Text(language.string("updates.notes.title"))
-                            .font(.callout.weight(.semibold))
-                            .accessibilityAddTraits(.isHeader)
-                        ScrollView(.vertical, showsIndicators: true) {
-                            Text(driver.releaseNotes.flatMap { $0.isEmpty ? nil : $0 } ?? language.string("updates.notes.empty"))
-                                .font(.callout)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                        }
-                        .scrollIndicators(.visible)
-                        .accessibilityIdentifier("updates.notes.scroll")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08)))
-                    }
-
-                    if driver.isWorking {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Text(language.string(driver.titleKey)).font(.callout)
-                                Spacer()
-                                if let progress = driver.progress {
-                                    Text(progress.formatted(.percent.precision(.fractionLength(0)).locale(language.locale)))
-                                        .font(.callout.monospacedDigit())
-                                }
-                            }
-                            if let progress = driver.progress {
-                                GeometryReader { geometry in
-                                    ZStack(alignment: .leading) {
-                                        Capsule().fill(Color.primary.opacity(0.08))
-                                        Capsule().fill(Color.accentColor)
-                                            .frame(width: geometry.size.width * progress)
-                                    }
-                                }
-                                .frame(height: 6)
-                                .accessibilityElement(children: .ignore)
-                                .accessibilityLabel(language.string(driver.titleKey))
-                                .accessibilityValue(progress.formatted(.percent.precision(.fractionLength(0)).locale(language.locale)))
-                            } else {
-                                ProgressView()
-                                    .progressViewStyle(.linear)
-                                    .accessibilityLabel(language.string(driver.titleKey))
-                            }
-                        }
-                        .padding(14)
-                        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    if driver.stage != .available {
-                        Spacer(minLength: 0)
-                    }
+                }
+                .accessibilityLabel(language.string(driver.titleKey))
             }
-            .padding(20)
-            .fillsAvailableContentArea(alignment: .topLeading)
-            .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
 
-            HStack(spacing: 12) {
+            VStack(spacing: 8) {
+                if let key = driver.primaryKey {
+                    Button(action: driver.performPrimaryAction) {
+                        Text(language.string(key)).frame(maxWidth: .infinity, minHeight: 24)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                    .accessibilityIdentifier("updates.primary")
+                }
+                if let key = driver.secondaryKey {
+                    Button(action: driver.performSecondaryAction) {
+                        Text(language.string(key)).frame(maxWidth: .infinity, minHeight: 24)
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(MacToolbarButtonStyle())
+                }
                 if driver.stage.showsReleaseNotes {
                     Link(language.string("updates.releaseNotes"), destination: URL(string: "https://github.com/yuangy1995/dsm-native-client/releases")!)
-                        .font(.callout)
-                }
-                Spacer(minLength: 8)
-                if let key = driver.secondaryKey {
-                    Button(language.string(key), action: driver.performSecondaryAction)
-                        .keyboardShortcut(.cancelAction)
-                }
-                if let key = driver.primaryKey {
-                    Button(language.string(key), action: driver.performPrimaryAction)
-                        .keyboardShortcut(.defaultAction)
-                        .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                        .font(.caption)
+                        .frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(MacToolbarButtonStyle())
-            .padding(16)
-            .background(MacGlassSurface(role: .toolbar))
         }
-        .fillsAvailableContentArea(alignment: .topLeading)
-        .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
-        .background(MacWorkspaceWindowChrome(fullSize: true))
+        .padding(24)
+        .frame(width: driver.stage == .available ? 460 : 440)
+        .fixedSize(horizontal: false, vertical: true)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onChange(of: geometry.size, initial: true) { _, size in
+                    driver.fitWindow(to: size)
+                }
+            }
+        }
+        .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .background(MacWorkspaceWindowChrome(fullSize: true, hidesSystemButtons: true))
         .ignoresSafeArea(.container, edges: .top)
         .environment(\.locale, language.locale)
+        .background {
+            if driver.canDismiss {
+                VStack {
+                    Button("") { driver.dismissByUser() }.keyboardShortcut(.cancelAction)
+                    Button("") { driver.dismissByUser() }.keyboardShortcut("w", modifiers: .command)
+                }
+                .hidden()
+                .accessibilityHidden(true)
+            }
+        }
     }
 }
 
