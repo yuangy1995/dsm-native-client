@@ -391,6 +391,7 @@ struct DsmMacApp: App {
     @StateObject private var updates: AppUpdateController
 
     init() {
+        MacAppearanceStore.shared.mode.applyNativeAppearance()
         let model = AppModel()
         _model = State(initialValue: model)
         _updates = StateObject(wrappedValue: AppUpdateController(canRestart: {

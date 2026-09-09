@@ -8,6 +8,30 @@ public struct AppLanguagePicker: View {
     }
 
     public var body: some View {
+        #if os(macOS)
+        Menu {
+            languagePicker
+                .pickerStyle(.inline)
+                .labelsHidden()
+        } label: {
+            Text(store.string(selectionTitleKey))
+        }
+        .accessibilityLabel(store.string("settings.language.title"))
+        .accessibilityValue(store.string(selectionTitleKey))
+        #else
+        languagePicker
+        #endif
+    }
+
+    private var selectionTitleKey: String {
+        switch store.selection {
+        case .system: "language.follow_system"
+        case .english: "language.english"
+        case .simplifiedChinese: "language.simplified_chinese"
+        }
+    }
+
+    private var languagePicker: some View {
         Picker(store.string("settings.language.title"), selection: $store.selection) {
             Text(store.string("language.follow_system"))
                 .tag(AppLanguageSelection.system)

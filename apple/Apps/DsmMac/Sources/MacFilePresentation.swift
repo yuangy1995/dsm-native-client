@@ -48,6 +48,8 @@ struct FileSortMenu: View {
                     Text(criterion.title).tag(criterion)
                 }
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
             Divider()
             Picker(L10n.string("workspace.sort.direction"), selection: Binding(
                 get: { sortOrder.first?.order == .reverse },
@@ -58,10 +60,12 @@ struct FileSortMenu: View {
                 Text(L10n.string("workspace.sort.ascending")).tag(false)
                 Text(L10n.string("workspace.sort.descending")).tag(true)
             }
+            .pickerStyle(.inline)
+            .labelsHidden()
         } label: {
             Text(FileSortCriterion.resolve(sortOrder.first).title)
         }
-        .menuStyle(.button)
+        .macThemedMenu()
         .controlSize(.large)
         .tint(.primary)
         .fixedSize()

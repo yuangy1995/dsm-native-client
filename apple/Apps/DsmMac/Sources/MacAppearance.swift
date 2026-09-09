@@ -25,6 +25,19 @@ enum MacAppearanceMode: String, CaseIterable, Identifiable {
         case .ink: L10n.string("appearance.ink")
         }
     }
+
+    /// 在创建原生控件前同步外观，避免冷启动时缓存系统的浅色按钮样式。
+    @MainActor
+    func applyNativeAppearance() {
+        let name: NSAppearance.Name? = switch self {
+        case .system: nil
+        case .fog: .aqua
+        case .ink: .darkAqua
+        }
+        if NSApplication.shared.appearance?.name != name {
+            NSApplication.shared.appearance = name.flatMap(NSAppearance.init(named:))
+        }
+    }
 }
 
 /// 外观偏好仅保存在本机，不与 NAS 配置或账号绑定。
@@ -165,14 +178,7 @@ private struct MacAppearanceRoot: ViewModifier {
             .toolbarBackground(.hidden, for: .windowToolbar)
             .onChange(of: appearance.mode, initial: true) { _, mode in
                 // 系统文件面板与 AppKit 确认框也跟随 App 外观，不修改系统的全局主题。
-                let name: NSAppearance.Name? = switch mode {
-                case .system: nil
-                case .fog: .aqua
-                case .ink: .darkAqua
-                }
-                if NSApp?.appearance?.name != name {
-                    NSApp?.appearance = name.flatMap(NSAppearance.init(named:))
-                }
+                mode.applyNativeAppearance()
             }
     }
 }
@@ -288,6 +294,15 @@ struct MacToolbarButtonStyle: ButtonStyle {
 }
 
 extension View {
+    /// 保留原生菜单与键盘操作，仅移除系统按钮实色底板。
+    func macThemedMenu() -> some View {
+        self
+            .menuStyle(.borderlessButton)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(MacCardFill(), in: RoundedRectangle(cornerRadius: MacAppearanceMetrics.controlRadius))
+    }
+
     /// 弹窗是独立表面，不能沿用工作区只叠一层透明色的背景假设。
     func macSheetSurface() -> some View {
         self
@@ -707,10 +722,8 @@ struct MacAppearanceSettingsView: View {
                     .accessibilityAddTraits(.isHeader)
             }
 
-            HStack(spacing: 12) {
-                Text(L10n.string("appearance.theme"))
-                MacPageTabs(options: MacAppearanceMode.allCases, selection: $appearance.mode, title: { $0.title })
-            }
+            MacPageTabs(options: MacAppearanceMode.allCases, selection: $appearance.mode, title: { $0.title })
+            .accessibilityLabel(L10n.string("appearance.theme"))
             .accessibilityIdentifier("appearance.theme")
 
             VStack(alignment: .leading, spacing: 12) {

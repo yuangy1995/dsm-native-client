@@ -345,21 +345,18 @@ struct WorkspaceView: View {
                     .badge(model.activeTransferCount)
                     }
 
-                    Menu {
-                        Button {
-                            Task { await model.photoLibrary.refreshAll() }
-                        } label: {
-                            Label(L10n.string("ui.049019b1718726b4"), systemImage: "arrow.clockwise")
-                        }
+                    Button {
+                        Task { await model.photoLibrary.refreshAll() }
                     } label: {
-                        Label(L10n.string("ui.ae163cfa2ee91303"), systemImage: "ellipsis.circle")
+                        Label(L10n.string("ui.049019b1718726b4"), systemImage: "arrow.clockwise")
                     }
                     .disabled(
                         model.photoLibrary.isLoading
                             || model.photoLibrary.isLoadingTimeline
                             || model.photoLibrary.isRetryingTimelineFolders
                     )
-                    .help(L10n.string("ui.ae163cfa2ee91303"))
+                    .help(L10n.string("ui.049019b1718726b4"))
+                    .accessibilityIdentifier("photos.rescan")
                 } else if model.section == .transfers {
                     Button(L10n.string("ui.349c4b7eb1f36c5a")) {
                         clearCompleted()
@@ -2140,7 +2137,7 @@ struct FileBrowserView: View {
                             } label: {
                                 Text(L10n.string("workspace.actions.more"))
                             }
-                            .menuStyle(.button)
+                            .macThemedMenu()
                             .controlSize(.large)
                             .tint(.primary)
                             .fixedSize()
@@ -4967,12 +4964,12 @@ private struct SettingsView: View {
             iconColor: .blue
         ) {
             HStack {
-                Text(L10n.string("settings.language.title"))
-                Spacer()
                 AppLanguagePicker()
                     .labelsHidden()
                     .pickerStyle(.menu)
+                    .macThemedMenu()
                     .frame(width: 180)
+                Spacer()
             }
         }
 

@@ -33,6 +33,67 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test语言与文件排序菜单双语双主题不铺原生白底() async throws {
+        let originalAppearance = NSApp.appearance
+        let originalLanguage = AppLanguageStore.shared.selection
+        defer {
+            NSApp.appearance = originalAppearance
+            AppLanguageStore.shared.selection = originalLanguage
+        }
+        let suite = "MenuAppearanceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let language = AppLanguageStore(defaults: defaults)
+        for selection in [AppLanguageSelection.english, .simplifiedChinese] {
+            language.selection = selection
+            AppLanguageStore.shared.selection = selection
+            for mode in [MacAppearanceMode.ink, .fog] {
+                mode.applyNativeAppearance()
+                let scheme = try XCTUnwrap(mode.colorScheme)
+                let palette = MacAppearancePalette(scheme: scheme, increasedContrast: false)
+                let host = NSHostingView(rootView: HStack(spacing: 20) {
+                    AppLanguagePicker(store: language).macThemedMenu().frame(width: 180)
+                    FileSortMenu(sortOrder: .constant([FileSortCriterion.name.comparator(order: .forward)]))
+                }
+                .padding(20)
+                .frame(width: 400, height: 90)
+                .background(palette.content)
+                .environment(language)
+                .preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 400, height: 90))
+                defer { window.contentView = nil; window.close() }
+                try await settle(host)
+                let buttons = nativeViews(host, of: NSPopUpButton.self)
+                XCTAssertFalse(buttons.isEmpty)
+                XCTAssertTrue(buttons.allSatisfy { !$0.isBordered })
+                window.makeKeyAndOrderFront(nil)
+                for button in buttons {
+                    let inspected = expectation(description: "打开菜单后检查直接选项")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { _ in
+                        MainActor.assumeIsolated {
+                            DispatchQueue.main.async {
+                                guard let menu = button.menu else { return }
+                                let options = menu.items.filter { !$0.isSeparatorItem && !$0.isHidden }
+                                XCTAssertGreaterThanOrEqual(options.count, 3)
+                                XCTAssertTrue(options.allSatisfy { $0.submenu == nil }, "语言和排序选项应直接展开")
+                                XCTAssertFalse(options.contains { $0.title == language.string("settings.language.title") }, "不得保留多余的语言标签")
+                                menu.cancelTrackingWithoutAnimation()
+                                inspected.fulfill()
+                            }
+                        }
+                    }
+                    button.performClick(nil)
+                    await fulfillment(of: [inspected], timeout: 2)
+                    NotificationCenter.default.removeObserver(observer)
+                }
+                XCTAssertTrue(buttons.allSatisfy {
+                    $0.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == (mode == .ink ? .darkAqua : .aqua)
+                })
+                try snapshot(host, name: "theme-menus-\(selection.rawValue)-\(mode.rawValue)")
+            }
+        }
+    }
+
     func test连接卡片与容器统计卡片沿用主题底色而不铺白底() async throws {
         let connections = (0..<6).map { index in
             NasConnection(id: "synthetic-\(index)", account: "Sample \(index)", source: "example.invalid",

@@ -4748,7 +4748,7 @@ private struct PerformanceDashboard: View {
                             )
                         }
                     }
-                    .menuStyle(.borderedButton)
+                    .macThemedMenu()
                     .controlSize(.small)
                     .disabled(isPowerActionBusy || isCheckingSystemUpdate)
 

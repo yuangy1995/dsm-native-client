@@ -141,6 +141,8 @@ struct PhotoLibraryView: View {
                     Label(L10n.string("ui.7b50017ae47eca32"), systemImage: "photo").tag(PhotoMediaFilter.images)
                     Label(L10n.string("ui.c20f7618d330a854"), systemImage: "video").tag(PhotoMediaFilter.videos)
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             } label: {
                 Label(mediaFilterTitle, systemImage: "line.3.horizontal.decrease.circle")
             }

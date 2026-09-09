@@ -4,6 +4,27 @@ import XCTest
 
 @MainActor
 final class MacAppearanceTests: XCTestCase {
+    func test冷启动先恢复外观再创建原生选择框且可切回系统() throws {
+        let application = NSApplication.shared
+        let original = application.appearance
+        defer { application.appearance = original }
+        let suite = "MacAppearanceTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        for (mode, expected) in [(MacAppearanceMode.ink, NSAppearance.Name.darkAqua), (.fog, .aqua)] {
+            let saved = MacAppearanceStore(defaults: defaults)
+            saved.mode = mode
+            application.appearance = NSAppearance(named: mode == .ink ? .aqua : .darkAqua)
+            MacAppearanceStore(defaults: defaults).mode.applyNativeAppearance()
+            let picker = NSPopUpButton(frame: .zero, pullsDown: false)
+            XCTAssertEqual(application.appearance?.name, expected)
+            XCTAssertEqual(picker.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]), expected)
+        }
+        MacAppearanceMode.system.applyNativeAppearance()
+        XCTAssertNil(application.appearance)
+    }
+
     func test卡片底色不使用不透明白底且在两种主题下比选中态更轻() throws {
         for scheme in [ColorScheme.light, .dark] {
             for highContrast in [false, true] {

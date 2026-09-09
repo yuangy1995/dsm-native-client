@@ -241,6 +241,7 @@ struct LoginView: View {
                 AppLanguagePicker()
                     .labelsHidden()
                     .pickerStyle(.menu)
+                    .macThemedMenu()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity)
             }
