@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "chat.create-private-group.synthetic-json",
+  "module": "chat",
+  "operation": "createPrivateGroup",
+  "api": {
+    "name": "SYNO.Chat.Channel.Named",
+    "method": "create",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": { "httpMethod": "POST", "requestFormat": "json" },
+  "parameters": [
+    { "name": "name", "valueType": "string", "encodedValue": "\"Synthetic group\"" },
+    { "name": "type", "valueType": "string", "encodedValue": "\"private\"" }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": { "kind": "synthetic", "evidence": "sourceReviewed" }
+}

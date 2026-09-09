@@ -278,7 +278,7 @@ private struct DownloadStationView: View {
                     } label: {
                         Label(L10n.string("ui.7c9691192f1b7340"), systemImage: "play.fill")
                     }
-                    .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
+                    .disabled(!model.canControlDownloads(.resume))
                     .labelStyle(.iconOnly)
                     .help(L10n.string("ui.7c9691192f1b7340"))
                     Button {
@@ -286,7 +286,7 @@ private struct DownloadStationView: View {
                     } label: {
                         Label(L10n.string("ui.8d12fc0d4eb26021"), systemImage: "pause.fill")
                     }
-                    .disabled(model.downloadSelection.isEmpty || model.isPerformingAction)
+                    .disabled(!model.canControlDownloads(.pause))
                     .labelStyle(.iconOnly)
                     .help(L10n.string("ui.8d12fc0d4eb26021"))
                     Menu {
@@ -337,13 +337,19 @@ private struct DownloadStationView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .contextMenu {
-                            Button(L10n.string("ui.7c9691192f1b7340")) {
-                                model.downloadSelection = [task.id]
-                                Task { await model.controlDownloads(.resume) }
+                            if ServiceManagementModel.supportsDownloadAction(.resume, task: task) {
+                                Button(L10n.string("ui.7c9691192f1b7340")) {
+                                    model.downloadSelection = [task.id]
+                                    Task { await model.controlDownloads(.resume) }
+                                }
+                                .disabled(model.isPerformingAction)
                             }
-                            Button(L10n.string("ui.8d12fc0d4eb26021")) {
-                                model.downloadSelection = [task.id]
-                                Task { await model.controlDownloads(.pause) }
+                            if ServiceManagementModel.supportsDownloadAction(.pause, task: task) {
+                                Button(L10n.string("ui.8d12fc0d4eb26021")) {
+                                    model.downloadSelection = [task.id]
+                                    Task { await model.controlDownloads(.pause) }
+                                }
+                                .disabled(model.isPerformingAction)
                             }
                         }
                 }

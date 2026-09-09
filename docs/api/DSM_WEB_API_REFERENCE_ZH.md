@@ -435,12 +435,14 @@ Windows/Android 的同类字段处理仅列为复核项，本轮不修改它们�
 
 ### 5.4 搜索
 
-1. `start`：传入 `folder_path`、`pattern`、`recursive`、`search_content`、`search_type`，返回 `taskid`。
+1. `start`：传入路径数组 `folder_path`、`pattern`、`recursive`，返回 `taskid`。即使只有一个目录也必须编码为数组；`search_content`、`search_type` 不在当前公开指南的搜索参数表中，基础搜索不发送。
 2. `list`：使用 `taskid`、`offset`、`limit`、`additional` 轮询结果。
 3. `stop`：停止搜索。
 4. `clean`：释放搜索任务。
 
 客户端离开搜索页面时应调用 `stop` 或 `clean`，避免服务器残留任务。
+
+2026-09-09：按[官方 File Station API 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)第 40–41 页修正 Apple 搜索目录的单字符串编码；原有公开方法、版本和 `FileRepository` 接口不变。macOS 文件搜索与空间分析、iPhone/iPad 共用 Adapter 受影响。Windows/Android 的搜索源码仍有同类单字符串调用，已记录后续切片，本轮不改二者。自动化验证与真实 NAS 验证需区分，见[交付记录](../development/MACOS_ENTRY_FIXES_AND_FUNCTION_AUDIT_20260909_ZH.md)。
 
 ### 5.5 收藏、缩略图和校验
 

@@ -872,6 +872,39 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test新建聊天按钮点击可打开表单且不会自动提交() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        AppLanguageStore.shared.selection = .simplifiedChinese
+        let conversation = ChatConversation(id: "sample", kind: .direct, title: "Sample conversation",
+            memberIDs: ["user-1"], lastMessageSummary: nil, lastActivityAt: nil)
+        let repository = ChatRepositoryStub(conversations: [conversation],
+            users: [ChatUser(id: "user-1", displayName: "Synthetic contact")])
+        let model = ChatWorkspaceModel(repository: repository)
+        await model.loadIfNeeded()
+        XCTAssertTrue(model.canCreateDirectConversation)
+        let host = NSHostingView(rootView: ChatWorkspaceView(model: model)
+            .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+            .environment(\.locale, AppLanguageStore.shared.locale).preferredColorScheme(.dark))
+        let window = attach(host, size: NSSize(width: 720, height: 640))
+        defer {
+            model.setModuleEnabled(false)
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            window.contentView = nil
+            window.close()
+        }
+        window.makeKeyAndOrderFront(nil)
+        try await settle(host)
+        // 坐标对应本测试固定中文布局中的“会话”右侧加号。
+        try click(window, at: NSPoint(x: 76, y: 550))
+        try await settle(host)
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        try snapshot(try XCTUnwrap(sheet.contentView), name: "chat-new-button-opened")
+        let sent = await repository.sentTexts()
+        XCTAssertTrue(sent.isEmpty)
+        XCTAssertEqual(model.conversations.map(\.id), ["sample"])
+    }
+
     func test消息页双语主题保留草稿且不自动发送() async throws {
         let previousLanguage = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previousLanguage }

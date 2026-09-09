@@ -563,7 +563,12 @@ final class NasSettingsModel {
             } catch is CancellationError {
                 storageAnalysisError = nil
             } catch let error as AppError {
-                storageAnalysisError = error.safeUserMessage
+                switch error.category {
+                case .unknown, .invalidResponse:
+                    storageAnalysisError = L10n.string("ui.ebf27fffde487252")
+                default:
+                    storageAnalysisError = error.safeUserMessage
+                }
             } catch {
                 storageAnalysisError = L10n.string("ui.ebf27fffde487252")
             }

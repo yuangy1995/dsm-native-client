@@ -92,11 +92,11 @@ public actor DsmChatRepository: ChatRepository {
             return ChatAvailability(status: .unavailable)
         }
         var features: Set<ChatFeature> = [.deleteOwnMessage, .closeConversation]
-        if supportsFormCapability(DsmAPIName.chatChannelAnonymous, version: 2) {
+        if supportsVersion(DsmAPIName.chatChannelAnonymous, version: 2) {
             features.insert(.directConversation)
         }
-        if supportsFormCapability(DsmAPIName.chatChannelNamed, version: 1),
-           supportsFormCapability(DsmAPIName.chatChannelMember, version: 1) {
+        if supportsVersion(DsmAPIName.chatChannelNamed, version: 1),
+           supportsVersion(DsmAPIName.chatChannelMember, version: 1) {
             features.insert(.groupConversation)
         }
         if hasCapability(DsmAPIName.chatPostReminder) {
@@ -381,7 +381,7 @@ public actor DsmChatRepository: ChatRepository {
         if let pending = pendingDirectConversations[clientRequestID] {
             return try await finishPendingDirectConversation(pending)
         }
-        guard supportsFormCapability(DsmAPIName.chatChannelAnonymous, version: 2) else {
+        guard supportsVersion(DsmAPIName.chatChannelAnonymous, version: 2) else {
             return try conversationCreateUnsupported(
                 operation: "chatDirectConversationCreate",
                 requestID: clientRequestID,
@@ -441,7 +441,7 @@ public actor DsmChatRepository: ChatRepository {
                 parameters: [
                     "user_ids": .stringArray([normalizedID]),
                     "encrypted": .boolean(false),
-                    "channel_key_encs": .string("[]")
+                    "channel_key_encs": .objectArray([])
                 ],
                 version: 2
             )
@@ -512,8 +512,8 @@ public actor DsmChatRepository: ChatRepository {
                 tag: "chat.group-create.encryption-unsupported"
             )
         }
-        guard supportsFormCapability(DsmAPIName.chatChannelNamed, version: 1),
-              supportsFormCapability(DsmAPIName.chatChannelMember, version: 1) else {
+        guard supportsVersion(DsmAPIName.chatChannelNamed, version: 1),
+              supportsVersion(DsmAPIName.chatChannelMember, version: 1) else {
             return try conversationCreateUnsupported(
                 operation: "chatGroupCreate",
                 requestID: draft.clientRequestID,
@@ -574,7 +574,7 @@ public actor DsmChatRepository: ChatRepository {
                 api: named.name,
                 version: try selectedVersion(named, requiring: 1),
                 method: "create",
-                requestFormat: .form,
+                requestFormat: named.requestFormat,
                 parameters: ["name": .string(draft.title), "type": .string("private")],
                 credential: credential,
                 as: ChatJSON.self
@@ -596,7 +596,7 @@ public actor DsmChatRepository: ChatRepository {
                     api: named.name,
                     version: 1,
                     method: "join",
-                    requestFormat: .form,
+                    requestFormat: named.requestFormat,
                     parameters: ["channel_id": .string(channelID)],
                     credential: credential
                 )
@@ -613,11 +613,11 @@ public actor DsmChatRepository: ChatRepository {
                     api: named.name,
                     version: 1,
                     method: "invite",
-                    requestFormat: .form,
+                    requestFormat: named.requestFormat,
                     parameters: [
                         "channel_id": .string(channelID),
                         "user_ids": .stringArray(draft.memberIDs),
-                        "channel_key_encs": .string("[]")
+                        "channel_key_encs": .objectArray([])
                     ],
                     credential: credential
                 )
@@ -2342,7 +2342,7 @@ public actor DsmChatRepository: ChatRepository {
             api: capability.name,
             version: try selectedVersion(capability, requiring: version),
             method: method,
-            requestFormat: .form,
+            requestFormat: capability.requestFormat,
             parameters: parameters,
             credential: credential,
             as: ChatJSON.self
@@ -2793,15 +2793,6 @@ public actor DsmChatRepository: ChatRepository {
     private func supportsVersion(_ name: String, version: Int) -> Bool {
         guard let capability = capabilities[name], capability.selectedVersion != nil else { return false }
         return capability.minVersion <= version && capability.maxVersion >= version
-    }
-
-    private func supportsFormCapability(_ name: String, version: Int) -> Bool {
-        guard let capability = capabilities[name], capability.requestFormat == .form else {
-            return false
-        }
-        return capability.selectedVersion != nil
-            && capability.minVersion <= version
-            && capability.maxVersion >= version
     }
 
     private var supportsAttachmentUpload: Bool {

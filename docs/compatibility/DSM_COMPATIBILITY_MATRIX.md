@@ -29,6 +29,8 @@
 
 ## 文件操作验证
 
+2026-09-09 macOS 修复补充：File Station 搜索改为公开指南要求的目录数组；Chat 创建能力兼容当前 NAS 声明的 JSON 参数编码。下载任务菜单按状态开放。浏览器只核实 DSM 7.2.1-69057 Update 12 / Chat 2.4.1-22111 的版本与能力元数据；本轮未在 NAS 创建会话、控制下载或执行空间分析，不能将合成测试或构建通过提升为实机通过。五端影响、自动化与用户验收见[本轮交付记录](../development/MACOS_ENTRY_FIXES_AND_FUNCTION_AUDIT_20260909_ZH.md)。
+
 | 能力 | 使用契约 | macOS 状态 | 实机要求 |
 | --- | --- | --- | --- |
 | 同 NAS 复制/移动 | `SYNO.FileStation.CopyMove` 官方 API | 已实现 | 验证文件夹、冲突、取消和权限不足 |

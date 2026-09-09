@@ -6,6 +6,56 @@ import XCTest
 
 @MainActor
 final class ServiceManagementModelTests: XCTestCase {
+    func test下载操作按实际任务状态开放() {
+        for status in ["finished", "completed", "FINISHED", "unknown"] {
+            let task = DownloadStationTask(id: "task", title: "测试任务", status: status)
+            XCTAssertFalse(ServiceManagementModel.supportsDownloadAction(.resume, task: task))
+            XCTAssertFalse(ServiceManagementModel.supportsDownloadAction(.pause, task: task))
+        }
+        let paused = DownloadStationTask(id: "paused", title: "暂停任务", status: "paused")
+        XCTAssertTrue(ServiceManagementModel.supportsDownloadAction(.resume, task: paused))
+        XCTAssertFalse(ServiceManagementModel.supportsDownloadAction(.pause, task: paused))
+        for status in ["downloading", "waiting", "hash_checking", "seeding", "uploading"] {
+            let task = DownloadStationTask(id: status, title: "活动任务", status: status)
+            XCTAssertFalse(ServiceManagementModel.supportsDownloadAction(.resume, task: task))
+            XCTAssertTrue(ServiceManagementModel.supportsDownloadAction(.pause, task: task))
+        }
+    }
+
+    func test过期下载选择不会提交操作() async {
+        let model = ServiceManagementModel(repository: ServiceManagementRepositoryStub())
+        model.downloadSelection = ["missing-task"]
+        XCTAssertFalse(model.canControlDownloads(.resume))
+        XCTAssertFalse(model.canControlDownloads(.pause))
+        let succeeded = await model.controlDownloads(.pause)
+        XCTAssertFalse(succeeded)
+        XCTAssertNil(model.message)
+    }
+
+    func test混合选择只操作状态允许的下载任务() async {
+        let repository = ServiceManagementRepositoryStub(downloadTasks: [
+            DownloadStationTask(id: "done", title: "已完成", status: "finished"),
+            DownloadStationTask(id: "paused", title: "已暂停", status: "paused"),
+            DownloadStationTask(id: "active", title: "进行中", status: "downloading")
+        ])
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        model.downloadSelection = ["done"]
+        XCTAssertFalse(model.canControlDownloads(.resume))
+        XCTAssertFalse(model.canControlDownloads(.pause))
+        model.downloadSelection = ["done", "paused", "active", "stale"]
+        XCTAssertTrue(model.canControlDownloads(.resume))
+        XCTAssertTrue(model.canControlDownloads(.pause))
+        _ = await model.controlDownloads(.resume)
+        _ = await model.controlDownloads(.pause)
+        let calls = await repository.downloadControlCalls
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls[0].ids, ["paused"])
+        XCTAssertEqual(calls[0].action, .resume)
+        XCTAssertEqual(calls[1].ids, ["active"])
+        XCTAssertEqual(calls[1].action, .pause)
+    }
+
     func test容器删除只有确认成功才显示完成并清空选择() async {
         let repository = ServiceManagementRepositoryStub(
             containerStatus: .confirmedSuccess
@@ -252,7 +302,8 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         removeVirtualMachineOnDelete: Bool = false,
         secondaryStatus: MutationResultStatus = .confirmedSuccess,
         removeSecondaryOnDelete: Bool = false,
-        virtualMachineStorages: [VirtualizationResource] = []
+        virtualMachineStorages: [VirtualizationResource] = [],
+        downloadTasks: [DownloadStationTask]? = nil
     ) {
         self.containerStatus = containerStatus
         self.virtualMachineStatus = virtualMachineStatus
@@ -260,6 +311,7 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         self.secondaryStatus = secondaryStatus
         self.removeSecondaryOnDelete = removeSecondaryOnDelete
         self.virtualMachineStorages = virtualMachineStorages
+        if let downloadTasks { self.downloadTasks = downloadTasks }
     }
 
     func loadContainerManager() async throws -> ContainerManagerSnapshot {
@@ -381,10 +433,14 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
     func saveDownloadStationSettings(_ settings: DownloadStationSettings) async throws {
         throw unavailable()
     }
+    private(set) var downloadControlCalls: [(ids: [String], action: DownloadStationTaskAction)] = []
+
     func controlDownloadTasks(
         ids: [String],
         action: DownloadStationTaskAction
-    ) async throws { throw unavailable() }
+    ) async throws {
+        downloadControlCalls.append((ids, action))
+    }
     func deleteDownloadTasks(ids: [String], removeData: Bool) async throws {
         throw unavailable()
     }

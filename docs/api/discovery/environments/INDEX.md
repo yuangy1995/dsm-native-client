@@ -20,4 +20,6 @@
 
 ## 待归属观察
 
+- [2026-09-09 管理员 Chat 入口观察](2026-09-09-admin-chat-observation.md)：DSM 7.2.1-69057 Update 12、Chat 2.4.1-22111；已核实新建会话 API 声明 JSON 编码，未创建真实会话，不提升写入证据等级。
+
 - [2026-09-09 非管理员应用权限观察](2026-09-09-nonadmin-permission-observation.md)：DSM 7.2.1-69057 Update 12 已由官方初始化响应核实；尚未确认是否为既有 `lab-a`，不因版本相同推断设备相同，不建立第二个 current 基线。

@@ -3132,6 +3132,12 @@ final class DsmFileRepositoryTests: XCTestCase {
         let results = try await repository.search(folderPath: "/home", query: "说明")
 
         XCTAssertEqual(results.map(\.path), ["/home/docs/说明.txt"])
+        let requests = await transport.recordedRequests()
+        let folders = try JSONDecoder().decode(
+            [String].self, from: Data(try XCTUnwrap(requestParameter("folder_path", in: requests[0])).utf8)
+        )
+        XCTAssertEqual(folders, ["/home"])
+        XCTAssertNil(requestParameter("search_content", in: requests[0]))
         let methods = await transport.recordedRequests().compactMap { request in
             if let value = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "method" })?.value {
@@ -3162,6 +3168,37 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertEqual(results.map(\.name), ["一.jpg", "二.jpg"])
         let requests = await transport.recordedRequests()
         XCTAssertEqual(requestParameter("offset", in: requests[2]), "1")
+    }
+
+    func testJSON搜索目录为数组并正确编码通配符和任务标识() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"taskid":"search-task"}}"#),
+            response(#"{"success":true,"data":{"offset":0,"total":0,"finished":true,"files":[]}}"#),
+            response(#"{"success":true}"#)
+        ])
+        let repository = try makeRepository(
+            capabilities: CapabilitySet([
+                DsmAPIName.fileStationSearch: ApiCapability(
+                    name: DsmAPIName.fileStationSearch, path: "entry.cgi",
+                    minVersion: 1, maxVersion: 2, requestFormat: .json, selectedVersion: 2
+                )
+            ]),
+            transport: transport
+        )
+        let results = try await repository.search(folderPath: "/共享目录", query: "*")
+
+        XCTAssertTrue(results.isEmpty)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 3)
+        let folders = try JSONDecoder().decode(
+            [String].self, from: Data(try XCTUnwrap(requestParameter("folder_path", in: requests[0])).utf8)
+        )
+        XCTAssertEqual(folders, ["/共享目录"])
+        XCTAssertEqual(requestParameter("pattern", in: requests[0]), #""*""#)
+        XCTAssertEqual(requestParameter("recursive", in: requests[0]), "true")
+        XCTAssertNil(requestParameter("search_content", in: requests[0]))
+        XCTAssertEqual(requestParameter("taskid", in: requests[1]), #""search-task""#)
+        XCTAssertEqual(requestParameter("method", in: requests[2]), "clean")
     }
 
     func test收藏严格构建全局去重快照后再分页() async throws {

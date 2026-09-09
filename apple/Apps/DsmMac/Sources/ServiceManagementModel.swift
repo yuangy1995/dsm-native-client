@@ -212,8 +212,31 @@ final class ServiceManagementModel {
         }
     }
 
+    static func supportsDownloadAction(_ action: DownloadStationTaskAction, task: DownloadStationTask) -> Bool {
+        let status = task.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch action {
+        case .resume:
+            return status == "paused"
+        case .pause:
+            return ["waiting", "downloading", "uploading", "seeding", "checking", "hash_checking", "filehosting_waiting", "extracting"].contains(status)
+        case .finish:
+            return false
+        }
+    }
+
+    func canControlDownloads(_ action: DownloadStationTaskAction) -> Bool {
+        !isPerformingAction && !downloadActionIDs(action).isEmpty
+    }
+
+    private func downloadActionIDs(_ action: DownloadStationTaskAction) -> [String] {
+        (downloads?.tasks ?? []).filter {
+            downloadSelection.contains($0.id) && Self.supportsDownloadAction(action, task: $0)
+        }.map(\.id)
+    }
+
     func controlDownloads(_ action: DownloadStationTaskAction) async -> Bool {
-        let ids = Array(downloadSelection)
+        let ids = downloadActionIDs(action)
+        guard !ids.isEmpty else { return false }
         return await perform(module: .downloads, success: downloadActionMessage(action)) {
             try await self.repository.controlDownloadTasks(ids: ids, action: action)
         }

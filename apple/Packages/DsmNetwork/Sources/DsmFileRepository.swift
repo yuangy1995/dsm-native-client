@@ -3676,10 +3676,9 @@ public actor DsmFileRepository: FileRepository {
             method: "start",
             requestFormat: capability.requestFormat,
             parameters: [
-                "folder_path": .string(folderPath),
+                "folder_path": .stringArray([folderPath]),
                 "pattern": .string(query),
-                "recursive": .boolean(true),
-                "search_content": .boolean(false)
+                "recursive": .boolean(true)
             ],
             credential: credential,
             as: TaskStartPayload.self

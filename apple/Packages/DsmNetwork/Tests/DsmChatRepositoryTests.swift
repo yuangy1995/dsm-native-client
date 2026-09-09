@@ -529,7 +529,7 @@ final class DsmChatRepositoryTests: XCTestCase {
         XCTAssertEqual(methods, ["list", "list"])
     }
 
-    func test会话创建能力门要求固定版本Member和FORM() async throws {
+    func test会话创建能力门要求固定版本和Member并支持JSON编码声明() async throws {
         let oldAnonymous = try makeRepository(
             transport: MockHTTPTransport(responses: []),
             chatAnonymousVersion: 1
@@ -549,8 +549,76 @@ final class DsmChatRepositoryTests: XCTestCase {
 
         XCTAssertFalse(oldAnonymousAvailability.supportedFeatures.contains(.directConversation))
         XCTAssertFalse(missingMemberAvailability.supportedFeatures.contains(.groupConversation))
-        XCTAssertFalse(jsonAvailability.supportedFeatures.contains(.directConversation))
-        XCTAssertFalse(jsonAvailability.supportedFeatures.contains(.groupConversation))
+        XCTAssertTrue(jsonAvailability.supportedFeatures.contains(.directConversation))
+        XCTAssertTrue(jsonAvailability.supportedFeatures.contains(.groupConversation))
+    }
+
+    func testJSON声明下首次单聊使用数组参数并复查且不重复创建() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"}]}}"#)
+        let transport = MockHTTPTransport(responses: [
+            users, users,
+            response(#"{"success":true,"data":{"channels":[]}}"#),
+            response(#"{"success":true,"data":{"channel_id":"27"}}"#),
+            users,
+            response(#"{"success":true,"data":{"channels":[{"channel_id":"27","type":"anonymous","members":["1","2"],"member_count":2}]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport, chatRequestFormat: .json)
+        let requestID = UUID()
+        let first = try await repository.openDirectConversationResult(userID: "2", clientRequestID: requestID)
+        let second = try await repository.openDirectConversationResult(userID: "2", clientRequestID: requestID)
+
+        XCTAssertEqual(first.result.status, .confirmedSuccess)
+        XCTAssertEqual(first.confirmedConversation?.id, "27")
+        XCTAssertEqual(second, first)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 6)
+        let fields = try decodeForm(requests[3].httpBody)
+        XCTAssertEqual(fields["api"], DsmAPIName.chatChannelAnonymous)
+        XCTAssertEqual(fields["version"], "2")
+        XCTAssertEqual(fields["method"], "initiate")
+        XCTAssertEqual(fields["user_ids"], #"["2"]"#)
+        XCTAssertEqual(fields["encrypted"], "false")
+        XCTAssertEqual(fields["channel_key_encs"], "[]")
+    }
+
+    func testJSON声明下群聊各阶段使用统一编码且完整回读() async throws {
+        let users = response(#"{"success":true,"data":{"current_user_id":"1","users":[{"user_id":"1","is_current_user":true},{"user_id":"2"},{"user_id":"3"}]}}"#)
+        let transport = MockHTTPTransport(responses: [
+            users, users,
+            response(#"{"success":true,"data":{"channels":[]}}"#),
+            response(#"{"success":true,"data":{"channel_id":"42"}}"#),
+            response(#"{"success":true}"#), response(#"{"success":true}"#),
+            users,
+            response(#"{"success":true,"data":{"channels":[{"channel_id":"42","type":"private","name":"项目群","member_count":3}]}}"#),
+            response(#"{"success":true,"data":{"user_ids":[1,2,3]}}"#)
+        ])
+        let repository = try makeRepository(transport: transport, chatRequestFormat: .json)
+        let draft = try ChatGroupDraft(title: "项目群", memberIDs: ["2", "3"], isEncrypted: false)
+        let outcome = try await repository.createGroupResult(draft)
+        let repeated = try await repository.createGroupResult(draft)
+
+        XCTAssertEqual(outcome.result.status, .confirmedSuccess)
+        XCTAssertEqual(outcome.confirmedConversation?.id, "42")
+        XCTAssertEqual(repeated, outcome)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 9)
+        let create = try decodeForm(requests[3].httpBody)
+        XCTAssertEqual(create["api"], DsmAPIName.chatChannelNamed)
+        XCTAssertEqual(create["version"], "1")
+        XCTAssertEqual(create["method"], "create")
+        XCTAssertEqual(create["name"], #""项目群""#)
+        XCTAssertEqual(create["type"], #""private""#)
+        let join = try decodeForm(requests[4].httpBody)
+        XCTAssertEqual(join["method"], "join")
+        XCTAssertEqual(join["channel_id"], #""42""#)
+        let invite = try decodeForm(requests[5].httpBody)
+        XCTAssertEqual(invite["method"], "invite")
+        XCTAssertEqual(invite["channel_id"], #""42""#)
+        XCTAssertEqual(invite["user_ids"], #"["2","3"]"#)
+        XCTAssertEqual(invite["channel_key_encs"], "[]")
+        let members = try decodeForm(requests[8].httpBody)
+        XCTAssertEqual(members["method"], "get")
+        XCTAssertEqual(members["channel_id"], #""42""#)
     }
 
     func test会话创建许可等待期间取消不会发起第二个请求() async throws {
