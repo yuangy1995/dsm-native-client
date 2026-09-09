@@ -58,7 +58,7 @@ struct ChatWorkspaceView: View {
             await model.loadIfNeeded()
             await model.refreshForegroundChat()
         }
-        .sheet(isPresented: $presentsNewConversation) {
+        .macSheet(isPresented: $presentsNewConversation) {
             NewChatSheet(model: model)
         }
         .alert(
@@ -179,7 +179,7 @@ struct ChatWorkspaceView: View {
                     }
                 }
                 .listStyle(.inset)
-                .scrollContentBackground(.hidden)
+                .macThemedScrollContent(selection: selectedConversationIDs)
                 .onDeleteCommand {
                     requestConversationDeletion(ids: selectedConversationIDs)
                 }
@@ -593,7 +593,8 @@ private struct ChatConversationView: View {
                         .padding(.vertical, 16)
                         .frame(maxWidth: .infinity)
                     }
-                    .background(Color(nsColor: .textBackgroundColor))
+                    .macThemedScrollContent()
+                    .background(MacGlassSurface(role: .content))
                     .task(id: conversation.id) {
                         await Task.yield()
                         if let lastID = model.messages.last?.id {
@@ -621,7 +622,7 @@ private struct ChatConversationView: View {
             composer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(MacGlassSurface(role: .content))
         .fileImporter(
             isPresented: $presentsFileImporter,
             allowedContentTypes: [.item],
@@ -631,31 +632,31 @@ private struct ChatConversationView: View {
                 attachmentURLs = Array(urls.prefix(1))
             }
         }
-        .sheet(isPresented: $presentsPollComposer) {
+        .macSheet(isPresented: $presentsPollComposer) {
             CreatePollSheet(model: model, conversation: conversation)
         }
-        .sheet(isPresented: $presentsReminderList) {
+        .macSheet(isPresented: $presentsReminderList) {
             ReminderListSheet(model: model)
         }
-        .sheet(isPresented: $presentsGroupMembers) {
+        .macSheet(isPresented: $presentsGroupMembers) {
             GroupMembersSheet(model: model, conversation: conversation)
         }
-        .sheet(isPresented: $presentsPinnedMessages) {
+        .macSheet(isPresented: $presentsPinnedMessages) {
             PinnedMessagesSheet(model: model, conversation: conversation)
         }
-        .sheet(isPresented: $presentsScheduledMessageComposer) {
+        .macSheet(isPresented: $presentsScheduledMessageComposer) {
             ScheduledMessageComposerSheet(model: model, conversation: conversation)
         }
-        .sheet(isPresented: $presentsScheduledMessageList) {
+        .macSheet(isPresented: $presentsScheduledMessageList) {
             ScheduledMessageListSheet(model: model)
         }
-        .sheet(item: $reminderMessage) { message in
+        .macSheet(item: $reminderMessage) { message in
             ReminderEditorSheet(model: model, message: message)
         }
-        .sheet(isPresented: $presentsImagePreview) {
+        .macSheet(isPresented: $presentsImagePreview) {
             ChatImagePreviewSheet(image: previewedImage)
         }
-        .sheet(isPresented: $presentsForwardSheet) {
+        .macSheet(isPresented: $presentsForwardSheet) {
             ForwardMessagesSheet(
                 model: model,
                 messageIDs: selectedMessageIDs
@@ -1335,10 +1336,7 @@ struct ForwardMessagesSheet: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .contentShape(Rectangle())
-            .background(
-                isSelected ? Color.accentColor.opacity(0.10) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-            )
+            .background(MacSelectionSurface(isSelected: isSelected, cornerRadius: 9))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
@@ -1425,7 +1423,7 @@ struct GroupMembersSheet: View {
             }
         }
         .frame(minWidth: 460, minHeight: 420)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadConversationMembers() }
     }
@@ -1550,7 +1548,7 @@ struct PinnedMessagesSheet: View {
             }
         }
         .frame(minWidth: 520, minHeight: 420)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadPinnedMessages() }
     }
@@ -1724,7 +1722,7 @@ struct ScheduledMessageListSheet: View {
             }
         }
         .frame(minWidth: 520, minHeight: 360)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadScheduledMessages() }
         .alert(L10n.string("ui.a4b22aa18e0da772"), isPresented: Binding(
@@ -1905,7 +1903,7 @@ struct ReminderListSheet: View {
             }
         }
         .frame(minWidth: 500, minHeight: 360)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .task { await model.loadReminders() }
         .alert(L10n.string("ui.b755927d881bc4f6"), isPresented: Binding(
@@ -2098,10 +2096,7 @@ private struct ChatMessageRow: View {
         .frame(maxWidth: .infinity, alignment: isCurrentUser ? .trailing : .leading)
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .background(
-            isSelected ? Color.accentColor.opacity(0.09) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
+        .background(MacSelectionSurface(isSelected: isSelected, cornerRadius: 12))
         .overlay(alignment: isCurrentUser ? .topLeading : .topTrailing) {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
@@ -2426,12 +2421,8 @@ struct NewChatSheet: View {
             .buttonStyle(MacToolbarButtonStyle())
             .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
 
-            Picker(L10n.string("ui.4821f9f7af0425b0"), selection: $mode) {
-                ForEach(availableModes) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
+            MacPageTabs(options: availableModes, selection: $mode, title: { $0.title })
+                .accessibilityLabel(L10n.string("ui.4821f9f7af0425b0"))
 
             if mode == .group {
                 TextField(L10n.string("ui.12633e741c9ab2ed"), text: $groupTitle)
@@ -2496,7 +2487,7 @@ struct NewChatSheet: View {
                     .accessibilityValue(selectedUserIDs.contains(user.id) ? L10n.string("ui.3f4ebc4aad9793b6") : L10n.string("ui.1182c5454f113db5"))
                 }
                 .listStyle(.inset)
-                .scrollContentBackground(.hidden)
+                .macThemedScrollContent()
                 .frame(minHeight: 80, maxHeight: .infinity)
             }
 

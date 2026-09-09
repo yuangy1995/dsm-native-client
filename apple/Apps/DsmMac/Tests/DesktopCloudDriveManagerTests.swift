@@ -6,6 +6,74 @@ import XCTest
 
 @MainActor
 final class DesktopCloudDriveManagerTests: XCTestCase {
+    func test存储页汇总所有NAS的实际分配缓存字节而不恢复挂载() async throws {
+        let context = try await makeContext(cacheEntryCount: 2)
+        let otherProfile = try NasProfile(displayName: "另一台测试NAS", host: "other.invalid", port: 5001)
+        let otherMapping = DesktopDriveMapping(profileID: otherProfile.id, displayName: "另一个挂载", scope: .folder(path: "/test"))
+        try await context.store.saveConnection(profile: otherProfile, capabilities: CapabilitySet([:]))
+        try await context.store.saveMapping(otherMapping)
+        try await context.store.saveRuntime(.init(state: .available, cacheEntries: [
+            "/test/temporary": .init(remotePath: "/test/temporary", kind: .temporary, logicalSizeBytes: 100, allocatedSizeBytes: 6),
+            "/test/offline": .init(remotePath: "/test/offline", kind: .keptOffline, logicalSizeBytes: 200, allocatedSizeBytes: 24)
+        ]), mappingID: otherMapping.id)
+        var operations = 0
+        context.operations.evict = { _, _ in operations += 1 }
+        context.operations.requestDownload = { _, _ in operations += 1 }
+        let manager = context.makeManager()
+        let summary = try await manager.allMountedCacheSummary()
+        XCTAssertEqual(summary.temporaryBytes, 26)
+        XCTAssertEqual(summary.keptOfflineBytes, 24)
+        XCTAssertEqual(summary.totalBytes, 50)
+        XCTAssertEqual(operations, 0)
+        XCTAssertTrue(manager.mappings.isEmpty)
+    }
+
+    func test批量清理保护离线目录和未上传内容且失败不删记录() async throws {
+        let context = try await makeContext()
+        let entries: [String: DesktopDriveCacheEntry] = [
+            "/test/clean": .init(remotePath: "/test/clean", kind: .temporary, logicalSizeBytes: 10, allocatedSizeBytes: 10),
+            "/test/offline/a": .init(remotePath: "/test/offline/a", kind: .temporary, logicalSizeBytes: 20, allocatedSizeBytes: 20),
+            "/test/kept": .init(remotePath: "/test/kept", kind: .keptOffline, logicalSizeBytes: 30, allocatedSizeBytes: 30),
+            "/test/dirty": .init(remotePath: "/test/dirty", kind: .temporary, logicalSizeBytes: 40, allocatedSizeBytes: 40)
+        ]
+        try await context.store.saveRuntime(.init(state: .available, pinnedPaths: ["/test/offline"], cacheEntries: entries), mappingID: context.mapping.id)
+        let dirtyID = DesktopDriveItemIdentity.identifier(mappingID: context.mapping.id, remotePath: "/test/dirty")
+        var requested: [String] = []
+        context.operations.evict = { identifier, _ in
+            requested.append(identifier.rawValue)
+            if identifier.rawValue == dirtyID {
+                throw NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.unsyncedEdits.rawValue)
+            }
+        }
+        let manager = context.makeManager()
+        let succeeded = await manager.clearAllTemporaryCaches()
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(requested.count, 2)
+        let remaining = try await context.store.runtime(mappingID: context.mapping.id)
+        XCTAssertNil(remaining.cacheEntries["/test/clean"])
+        XCTAssertEqual(Set(remaining.cacheEntries.keys), ["/test/offline/a", "/test/kept", "/test/dirty"])
+        let summary = try await manager.allMountedCacheSummary()
+        XCTAssertEqual(summary.temporaryBytes, 40)
+        XCTAssertEqual(summary.keptOfflineBytes, 50)
+        XCTAssertTrue(manager.statusIsError)
+    }
+
+    func test批量清理期间拒绝重复提交() async throws {
+        let context = try await makeContext(cacheEntryCount: 1)
+        var manager: DesktopCloudDriveManager!
+        var calls = 0
+        context.operations.evict = { _, _ in
+            calls += 1
+            let repeated = await manager.clearAllTemporaryCaches()
+            XCTAssertFalse(repeated)
+        }
+        manager = context.makeManager()
+        let succeeded = await manager.clearAllTemporaryCaches()
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(calls, 1)
+        XCTAssertFalse(manager.isBusy)
+    }
+
     func test挂载准备失败按原因提供恢复提示而不显示内部错误() {
         XCTAssertEqual(
             DesktopCloudDriveManager.addErrorKey(DesktopDriveSessionBridgeError.connectionUnavailable),

@@ -204,7 +204,7 @@ final class AppModel {
         self.desktopDriveSessionStore =
             desktopDriveSessionStore ?? sharedSessionStore
         self.secureStoreRollbackMigrator = secureStoreRollbackMigrator
-            ?? (usesProductionSecureStore
+            ?? (usesProductionSecureStore && !AppStorageNamespace.isLocalTest
                 ? DesktopSecureStoreRollbackMigrator(
                     localStore: localSecureStore,
                     sharedSessionStore: sharedSessionStore,

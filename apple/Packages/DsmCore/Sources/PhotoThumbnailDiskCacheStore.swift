@@ -11,7 +11,7 @@ public struct PhotoThumbnailDiskCacheStore: Sendable {
         } else {
             let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
-            self.baseURL = cachesDir.appendingPathComponent("lanstash-photo-thumbnails", isDirectory: true)
+            self.baseURL = cachesDir.appendingPathComponent(AppStorageNamespace.name("lanstash-photo-thumbnails"), isDirectory: true)
         }
     }
 

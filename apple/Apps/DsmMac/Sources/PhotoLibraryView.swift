@@ -58,7 +58,7 @@ struct PhotoLibraryView: View {
         }
         .fillsAvailableContentArea(alignment: .topLeading)
         .task { await model.loadIfNeeded() }
-        .sheet(item: $moveTarget) { item in
+        .macSheet(item: $moveTarget) { item in
             PhotoFolderDestinationPicker(
                 repository: model.photoRepository,
                 profileID: model.activeProfileID,
@@ -524,6 +524,8 @@ struct PhotoLibraryView: View {
 
 private struct PhotoLibraryCell: View {
     @Bindable var model: PhotoLibraryModel
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
     let item: PhotoLibraryItem
     let isSelected: Bool
     let onPreview: (PhotoLibraryItem) -> Void
@@ -656,14 +658,13 @@ private struct PhotoLibraryCell: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+                        MacSelectionSurface(isSelected: isSelected, cornerRadius: 10)
                             .padding(-6)
                     )
                     .overlay {
                         RoundedRectangle(cornerRadius: 8)
                             .strokeBorder(
-                                isSelected ? (model.selection.count > 1 ? Color.accentColor : Color.accentColor.opacity(0.6)) : Color(nsColor: .separatorColor).opacity(0.55),
+                                isSelected ? MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).selectionBorder : Color(nsColor: .separatorColor).opacity(0.55),
                                 lineWidth: isSelected ? (model.selection.count > 1 ? 3 : 1.5) : 0.5
                             )
                     }

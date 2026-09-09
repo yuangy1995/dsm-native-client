@@ -111,11 +111,11 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          dmg_paths=(apple/Apps/DsmMac/dist/LanStash-*.dmg)
+          dmg_paths=(apple/Apps/DsmMac/dist/local-test/LanStash-*.dmg)
           shopt -u nullglob
           test "${#dmg_paths[@]}" -eq 1
           tools/release/verify_macos_unsigned_ci_artifact.sh \
-            apple/Apps/DsmMac/dist/LanStash.app \
+            "apple/Apps/DsmMac/dist/local-test/LanStash Test.app" \
             "${dmg_paths[0]}" \
             "$GITHUB_SHA"
 
@@ -125,6 +125,6 @@ jobs:
         with:
           name: LanStash-macOS
           path: |
-            apple/Apps/DsmMac/dist/*.app
-            apple/Apps/DsmMac/dist/*.dmg
+            apple/Apps/DsmMac/dist/local-test/*.app
+            apple/Apps/DsmMac/dist/local-test/*.dmg
           if-no-files-found: error

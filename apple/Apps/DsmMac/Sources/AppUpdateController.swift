@@ -69,7 +69,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 }
 
 @MainActor
-final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
+final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWindowDelegate {
     enum PresentationStage: Equatable {
         case information, permission, checking, available, downloading, preparing, ready, installing, upToDate, completed, failed
 
@@ -137,8 +137,10 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
         if window == nil {
             let initialSize = NSSize(width: 440, height: 200)
             let window = AppUpdateWindow(contentRect: NSRect(origin: .zero, size: initialSize),
-                                         styleMask: [.borderless], backing: .buffered, defer: false)
+                                         styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.hasShadow = true
             self.window = window
             let host = NSHostingView(rootView: AppUpdateView(driver: self).macAppearanceRoot())
             host.sizingOptions = []
@@ -176,6 +178,11 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
     func dismissByUser() {
         if secondaryKey != nil { performSecondaryAction() }
         else if primaryKey == "updates.close" { performPrimaryAction() }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        dismissByUser()
+        return false
     }
 
     func showMessage(_ title: String, detail: String, stage: PresentationStage = .information, acknowledgement: @escaping () -> Void) {
@@ -319,16 +326,22 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver {
     }
 
     func fitWindow(to size: CGSize) {
-        guard let window, size.width > 0, size.height > 0,
-              abs(window.frame.width - size.width) > 0.5 || abs(window.frame.height - size.height) > 0.5 else { return }
-        window.setFrame(NSRect(x: window.frame.midX - size.width / 2,
-                               y: window.frame.maxY - size.height,
-                               width: size.width, height: size.height), display: true)
+        guard let window, size.width > 0, size.height > 0 else { return }
+        // 内容已延伸到标题栏，几何尺寸包含系统按钮所在的顶部留白。
+        let frameSize = size
+        guard abs(window.frame.width - frameSize.width) > 0.5 || abs(window.frame.height - frameSize.height) > 0.5 else { return }
+        window.setFrame(NSRect(x: window.frame.midX - frameSize.width / 2,
+                               y: window.frame.maxY - frameSize.height,
+                               width: frameSize.width, height: frameSize.height), display: true)
+    }
+
+    func refreshWindowControls() {
+        window?.standardWindowButton(.closeButton)?.isEnabled = canDismiss
     }
 }
 
 // 保持模块内可见，供隔离窗口检查复用真实更新界面。
-/// 无系统标题栏的更新窗口仍须接收键盘焦点，供关闭和主操作快捷键使用。
+/// 系统关闭按钮沿用更新流程的取消语义，安装中不能绕过关闭限制。
 final class AppUpdateWindow: NSWindow {
     override var canBecomeKey: Bool { true }
 }
@@ -388,6 +401,7 @@ struct AppUpdateView: View {
                             .padding(12)
                     }
                     .scrollIndicators(.visible)
+                    .macThemedScrollContent()
                     .accessibilityIdentifier("updates.notes.scroll")
                     .frame(height: 140)
                     .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
@@ -433,6 +447,7 @@ struct AppUpdateView: View {
             }
         }
         .padding(24)
+        .padding(.top, 28)
         .frame(width: driver.stage == .available ? 460 : 440)
         .fixedSize(horizontal: false, vertical: true)
         .background {
@@ -442,10 +457,10 @@ struct AppUpdateView: View {
                 }
             }
         }
-        .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
-        .background(MacWorkspaceWindowChrome(fullSize: true, hidesSystemButtons: true))
+        .background(MacGlassSurface(role: .content))
+        .background(MacWorkspaceWindowChrome(fullSize: true))
         .ignoresSafeArea(.container, edges: .top)
+        .onChange(of: driver.canDismiss, initial: true) { _, _ in driver.refreshWindowControls() }
         .environment(\.locale, language.locale)
         .background {
             if driver.canDismiss {

@@ -115,7 +115,8 @@ struct ServiceManagementView: View {
             }
         }
         .animation(reducesMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: model.message)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent(selection: [model.downloadSelection, model.containerSelection, model.imageSelection,
+            model.networkSelection, model.virtualMachineSelection, model.virtualMachineNetworkSelection, model.virtualMachineImageSelection])
         .task(id: module) {
             await model.activate(module)
         }
@@ -349,7 +350,7 @@ private struct DownloadStationView: View {
                 .listStyle(.inset)
             }
         }
-        .sheet(isPresented: $showsCreate) {
+        .macSheet(isPresented: $showsCreate) {
             CreateDownloadSheet(
                 defaultDestination: model.downloads?.defaultDestination,
                 loadFolders: { path in
@@ -371,7 +372,7 @@ private struct DownloadStationView: View {
                 }
             )
         }
-        .sheet(isPresented: $showsSettings) {
+        .macSheet(isPresented: $showsSettings) {
             DownloadSettingsSheet(
                 loadFolders: { path in
                     try await model.loadDownloadDestinationFolders(in: path)
@@ -515,13 +516,8 @@ struct CreateDownloadSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
                 .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
-            Picker(L10n.string("ui.1f39096f50fcbc99"), selection: $source) {
-                ForEach(Source.allCases) { source in
-                    Text(source.title).tag(source)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            MacPageTabs(options: Source.allCases, selection: $source, title: { $0.title })
+                .accessibilityLabel(L10n.string("ui.1f39096f50fcbc99"))
             Form {
                 if source == .file {
                     LabeledContent(L10n.string("ui.00a38e1c717a7a03")) {
@@ -597,7 +593,7 @@ struct CreateDownloadSheet: View {
         .fillsAvailableContentArea(alignment: .topLeading)
         .background(MacGlassSurface(role: .sidebar))
         .onAppear { destination = normalizedDefaultDestination }
-        .sheet(isPresented: $showsDestinationPicker) {
+        .macSheet(isPresented: $showsDestinationPicker) {
             DownloadDestinationPicker(
                 selectedDestination: destination,
                 loadFolders: loadFolders,
@@ -720,7 +716,7 @@ struct DownloadSettingsSheet: View {
                     }
                 }
                 .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
+                .macThemedScrollContent()
             } else if let errorMessage {
                 ContentUnavailableView(
                     L10n.string("ui.7fdd539ffbe65c3f"),
@@ -761,7 +757,7 @@ struct DownloadSettingsSheet: View {
             }
             isLoading = false
         }
-        .sheet(isPresented: $showsDestinationPicker) {
+        .macSheet(isPresented: $showsDestinationPicker) {
             DownloadDestinationPicker(
                 selectedDestination: settings?.defaultDestination ?? "",
                 loadFolders: loadFolders,
@@ -930,7 +926,7 @@ struct DownloadDestinationPicker: View {
             .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 540, minHeight: 440)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .task { await reload() }
     }
@@ -1079,7 +1075,7 @@ private struct ContainerManagerView: View {
         } message: {
             Text(L10n.string("ui.cd8a980b07eec901"))
         }
-        .sheet(isPresented: $showsPullImage) {
+        .macSheet(isPresented: $showsPullImage) {
             PullImageSheet(
                 search: { try await model.searchImages(query: $0) },
                 loadTags: { try await model.loadImageTags(repositoryName: $0) },
@@ -1093,7 +1089,7 @@ private struct ContainerManagerView: View {
                 }
             )
         }
-        .sheet(isPresented: $showsCreateNetwork) {
+        .macSheet(isPresented: $showsCreateNetwork) {
             CreateNetworkSheet { name, driver in
                 let succeeded = await model.createNetwork(name: name, driver: driver)
                 if succeeded { showsCreateNetwork = false }
@@ -1391,19 +1387,19 @@ private struct VirtualMachineManagerView: View {
                 Text(L10n.string("ui.44af5924ab3698a1"))
             }
         }
-        .sheet(isPresented: $showsCreation) {
+        .macSheet(isPresented: $showsCreation) {
             CreateVirtualMachineSheet(
                 snapshot: model.virtualMachines,
                 submit: { await model.createVirtualMachine($0) }
             )
         }
-        .sheet(item: $editingMachine) { machine in
+        .macSheet(item: $editingMachine) { machine in
             EditVirtualMachineSheet(
                 machine: machine,
                 submit: { await model.updateVirtualMachine(id: machine.id, configuration: $0) }
             )
         }
-        .sheet(item: $editingNetwork) { network in
+        .macSheet(item: $editingNetwork) { network in
             EditVirtualMachineNetworkSheet(
                 network: network,
                 submit: {
@@ -2012,7 +2008,7 @@ struct CreateVirtualMachineSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .macThemedScrollContent()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
@@ -2178,7 +2174,7 @@ struct EditVirtualMachineSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .macThemedScrollContent()
 
             Divider()
 
@@ -2380,7 +2376,7 @@ private struct VirtualMachineConsoleWebView: NSViewRepresentable {
     }
 }
 
-private struct SummaryCard: View {
+struct SummaryCard: View {
     let title: String
     let value: String
     let icon: String
@@ -2401,7 +2397,7 @@ private struct SummaryCard: View {
         }
         .padding(14)
         .background(
-            Color(nsColor: .controlBackgroundColor),
+            MacCardFill(),
             in: RoundedRectangle(cornerRadius: 12)
         )
         .overlay(
@@ -2559,6 +2555,7 @@ struct PullImageSheet: View {
                         .accessibilityElement(children: .combine)
                     }
                     .listStyle(.inset)
+                    .macThemedScrollContent(selection: selectedImageID)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2644,7 +2641,7 @@ struct PullImageSheet: View {
             .background(MacGlassSurface(role: .toolbar))
         }
         .frame(width: 620, height: 540)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .onChange(of: selectedImageID) { _, newValue in
             guard let image = results.first(where: { $0.id == newValue }) else { return }

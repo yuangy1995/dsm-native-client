@@ -14,6 +14,55 @@ PACKAGE = ROOT / "apple/Apps/DsmMac/package.sh"
 
 
 class MacOSSigningTests(unittest.TestCase):
+    def test_daily_ci_checks_and_uploads_isolated_test_artifacts(self):
+        source = (ROOT / ".github/workflows/apple-build.yml").read_text()
+        self.assertIn('"apple/Apps/DsmMac/dist/local-test/LanStash Test.app"', source)
+        self.assertIn("apple/Apps/DsmMac/dist/local-test/LanStash-*.dmg", source)
+        self.assertIn("apple/Apps/DsmMac/dist/local-test/*.app", source)
+        self.assertIn("apple/Apps/DsmMac/dist/local-test/*.dmg", source)
+        self.assertNotIn("apple/Apps/DsmMac/dist/LanStash.app", source)
+
+    def test_local_packaging_has_fixed_isolated_identity_and_never_auto_launches(self):
+        source = PACKAGE.read_text()
+        start = source.index('if [[ "$SIGNING_IDENTITY" == "-" ]]; then\n    # 本地临时包')
+        branch = source[start:source.index("\nfi\n", start) + 4]
+        setup = '''
+set -euo pipefail
+SCRIPT_DIR=/synthetic
+SIGNING_IDENTITY="$1"
+MAC_APP_BUNDLE_ID=formal-app
+MAC_FILE_PROVIDER_BUNDLE_ID=formal-extension
+MAC_APP_GROUP_ID=formal-group
+SHARED_KEYCHAIN_SUFFIX=formal-keychain
+DIST_DIR=/formal-output
+BUILD_ROOT=/formal-build
+RUN_AFTER_PACKAGE=1
+'''
+        output = '\nprintf "%s\\n" "$MAC_APP_BUNDLE_ID" "$DIST_DIR" "$RUN_AFTER_PACKAGE"\n'
+        local = subprocess.check_output(["bash", "-c", setup + branch + output, "probe", "-"], text=True)
+        self.assertEqual(local.splitlines(), ["io.github.qwertyuiop1995.dsmnativeclient.macos.localtest", "/synthetic/dist/local-test", "0"])
+        formal = subprocess.check_output(["bash", "-c", setup + branch + output, "probe", "Developer ID Application: Synthetic"], text=True)
+        self.assertEqual(formal.splitlines(), ["formal-app", "/formal-output", "1"])
+
+    def test_test_bundle_resource_preparation_rejects_formal_app(self):
+        with tempfile.TemporaryDirectory(prefix="lanstash-isolation-test-") as directory:
+            app = Path(directory) / "Test.app"
+            (app / "Contents").mkdir(parents=True)
+            plist = app / "Contents/Info.plist"
+            original = {"CFBundleIdentifier": "formal-app", "CFBundleName": "LanStash", "CFBundleDisplayName": "LanStash"}
+            plist.write_bytes(plistlib.dumps(original))
+            command = ["bash", str(ROOT / "tools/release/prepare_macos_local_test.sh"), str(app)]
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            self.assertEqual(plistlib.loads(plist.read_bytes()), original)
+            original["CFBundleIdentifier"] = "io.github.qwertyuiop1995.dsmnativeclient.macos.localtest"
+            plist.write_bytes(plistlib.dumps(original))
+            subprocess.run(command, check=True, capture_output=True)
+            self.assertEqual(plistlib.loads(plist.read_bytes())["CFBundleName"], "LanStash Test")
+            for locale, name in [("en", "LanStash Test"), ("zh-Hans", "岚仓测试版")]:
+                resource = app / f"Contents/Resources/{locale}.lproj/InfoPlist.strings"
+                data = subprocess.check_output(["plutil", "-convert", "xml1", "-o", "-", str(resource)])
+                self.assertEqual(plistlib.loads(data)["CFBundleDisplayName"], name)
+
     def test_packager_does_not_inject_removed_diagnostic_flags(self):
         source = PACKAGE.read_text()
         for marker in ["LANSTASH_CONNECTION_TRACE", "LANSTASH_DIAGNOSTIC_FILES_ONLY",

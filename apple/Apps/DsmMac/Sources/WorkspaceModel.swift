@@ -3287,7 +3287,7 @@ final class WorkspaceModel {
 
     private func temporaryPreviewURL(for item: FileItem) -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LanStashPreview", isDirectory: true)
+            .appendingPathComponent(AppStorageNamespace.name("LanStashPreview"), isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let ext = item.fileExtension.map { ".\($0)" } ?? ""
         return directory.appendingPathComponent("\(UUID().uuidString)\(ext)")
@@ -3353,7 +3353,7 @@ final class WorkspaceModel {
         isSavingText = true
         textEditingMessage = nil
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LanStashTextEdit", isDirectory: true)
+            .appendingPathComponent(AppStorageNamespace.name("LanStashTextEdit"), isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let localURL = directory.appendingPathComponent(item.name)
         defer {
@@ -3583,7 +3583,7 @@ final class WorkspaceModel {
 
     private static func purgeStalePreviewCache() {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LanStashPreview", isDirectory: true)
+            .appendingPathComponent(AppStorageNamespace.name("LanStashPreview"), isDirectory: true)
         try? FileManager.default.removeItem(at: directory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }

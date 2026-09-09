@@ -5,6 +5,9 @@ set -euo pipefail
 app_path="$1"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 [[ -d "$app_path" ]] || exit 1
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Contents/Info.plist")" == io.github.qwertyuiop1995.dsmnativeclient.macos.localtest ]] || exit 1
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :LanStashAppGroupIdentifier' "$app_path/Contents/Info.plist")" == group.io.github.qwertyuiop1995.dsmnativeclient.localtest ]] || exit 1
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :LanStashSharedKeychainAccessGroup' "$app_path/Contents/Info.plist")" == io.github.qwertyuiop1995.dsmnativeclient.localtest.shared ]] || exit 1
 signing="$(/usr/bin/codesign -dv --verbose=4 "$app_path" 2>&1)"
 [[ "$signing" == *"Signature=adhoc"* && "$signing" == *"runtime"* ]] || exit 1
 [[ ! -e "$app_path/Contents/PlugIns/LanStashFileProvider.appex" ]] || exit 1

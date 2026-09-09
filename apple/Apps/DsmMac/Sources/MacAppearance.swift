@@ -82,7 +82,7 @@ final class MacAppearanceStore {
     /// 在原生背景模糊上调节遮罩浓度，不降低文字和控件的不透明度。
     func glassOverlayOpacity(for scheme: ColorScheme, reducesTransparency: Bool) -> Double {
         guard !reducesTransparency else { return 1 }
-        return 0.72 - transparency(for: scheme) * 0.60
+        return 0.96 - transparency(for: scheme) * 0.80
     }
 }
 
@@ -113,11 +113,22 @@ struct MacAppearancePalette {
     }
 
     var searchField: Color { scheme == .dark ? .black.opacity(0.26) : .white.opacity(0.42) }
+    /// 卡片只在当前主题上增加轻量层次，不再铺系统控件的白色底。
+    var card: Color {
+        Color(red: 0.36, green: 0.48, blue: 0.62)
+            .opacity(increasedContrast ? 0.14 : (scheme == .dark ? 0.10 : 0.055))
+    }
     var previewCanvas: Color {
         scheme == .dark ? Color(red: 0.06, green: 0.075, blue: 0.095) : Color(red: 0.92, green: 0.94, blue: 0.97)
     }
 
-    var selection: Color { Color.accentColor.opacity(scheme == .dark ? 0.12 : 0.055) }
+    var nativeSelection: NSColor {
+        NSColor(red: 0.36, green: 0.48, blue: 0.62, alpha: increasedContrast ? 0.30 : (scheme == .dark ? 0.24 : 0.16))
+    }
+    var selection: Color { Color(nsColor: nativeSelection) }
+    var selectionBorder: Color {
+        Color(red: 0.36, green: 0.48, blue: 0.62).opacity(increasedContrast ? 0.9 : 0.5)
+    }
     var hover: Color { Color.primary.opacity(scheme == .dark ? 0.055 : 0.035) }
     var folderIcon: Color {
         scheme == .dark
@@ -126,13 +137,17 @@ struct MacAppearancePalette {
     }
 }
 
+struct MacCardFill: ShapeStyle {
+    func resolve(in environment: EnvironmentValues) -> Color {
+        MacAppearancePalette(scheme: environment.colorScheme,
+                             increasedContrast: environment.colorSchemeContrast == .increased).card
+    }
+}
+
 enum MacAppearanceMetrics {
     static let workspaceInset: CGFloat = 12
     static let surfaceRadius: CGFloat = 16
     static let controlRadius: CGFloat = 8
-    static let gridMinimumWidth: CGFloat = 150
-    static let gridMaximumWidth: CGFloat = 170
-    static let gridItemHeight: CGFloat = 188
     static let inspectorMinimumWidth: CGFloat = 800
     static let inspectorWidth: CGFloat = 210
 }
@@ -145,6 +160,8 @@ private struct MacAppearanceRoot: ViewModifier {
             .environment(appearance)
             .preferredColorScheme(appearance.mode.colorScheme)
             .tint(.blue)
+            .accentColor(.blue)
+            .scrollContentBackground(.hidden)
             .toolbarBackground(.hidden, for: .windowToolbar)
             .onChange(of: appearance.mode, initial: true) { _, mode in
                 // 系统文件面板与 AppKit 确认框也跟随 App 外观，不修改系统的全局主题。
@@ -248,8 +265,11 @@ struct MacToolbarButtonStyle: ButtonStyle {
     var prominent = false
     var selected = false
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     func makeBody(configuration: Configuration) -> some View {
+        let palette = MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased)
         configuration.label
             .font(.system(size: 16, weight: prominent ? .medium : .regular))
             .foregroundStyle(prominent ? Color.white : configuration.role == .destructive ? Color.red : selected ? Color.accentColor : Color.primary)
@@ -257,17 +277,52 @@ struct MacToolbarButtonStyle: ButtonStyle {
             .frame(minWidth: 34, minHeight: 36)
             .background {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(prominent ? (configuration.role == .destructive ? Color.red : Color.accentColor) : selected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(configuration.isPressed ? 0.10 : 0.025))
+                    .fill(prominent ? (configuration.role == .destructive ? Color.red : Color.accentColor) : selected ? palette.selection : Color.primary.opacity(configuration.isPressed ? 0.10 : 0.025))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(selected ? Color.accentColor.opacity(0.25) : Color.clear, lineWidth: 1)
+                    .strokeBorder(selected ? palette.selectionBorder : Color.clear, lineWidth: 1)
             }
             .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
     }
 }
 
 extension View {
+    /// 弹窗是独立表面，不能沿用工作区只叠一层透明色的背景假设。
+    func macSheetSurface() -> some View {
+        self
+            .macThemedScrollContent()
+            .background(MacGlassSurface(role: .content).environment(\.macUsesContentBackground, false))
+            .environment(\.macUsesContentBackground, true)
+            .presentationBackground(.clear)
+    }
+
+    func macSheet<SheetContent: View>(
+        isPresented: Binding<Bool>,
+        onDismiss: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping () -> SheetContent
+    ) -> some View {
+        sheet(isPresented: isPresented, onDismiss: onDismiss) {
+            content().macSheetSurface()
+        }
+    }
+
+    func macSheet<Item: Identifiable, SheetContent: View>(
+        item: Binding<Item?>,
+        onDismiss: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping (Item) -> SheetContent
+    ) -> some View {
+        sheet(item: item, onDismiss: onDismiss) { item in
+            content(item).macSheetSurface()
+        }
+    }
+
+    /// 仅作用于当前滚动区域，清除传统滚动条轨道的实色底；保留滚动与可见性设置。
+    func macThemedScrollContent(selection: AnyHashable? = nil) -> some View {
+        scrollContentBackground(.hidden)
+            .background(MacScrollBackground(selection: selection))
+    }
+
     func macPageActions<Actions: View>(title: String = "", @ViewBuilder _ actions: @escaping () -> Actions) -> some View {
         VStack(spacing: 0) {
             MacPageHeader(title: title, actions: actions)
@@ -290,6 +345,140 @@ extension View {
 
     func macAppearanceRoot() -> some View {
         modifier(MacAppearanceRoot())
+    }
+}
+
+struct MacSelectionSurface: View {
+    let isSelected: Bool
+    var cornerRadius: CGFloat = 8
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(isSelected ? MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).selection : .clear)
+            .allowsHitTesting(false)
+    }
+}
+
+struct MacScrollBackground: NSViewRepresentable {
+    var selection: AnyHashable? = nil
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    final class HostView: NSView {
+        var selectionColor = MacAppearancePalette(scheme: .light, increasedContrast: false).nativeSelection
+        private let observedTables = NSHashTable<NSTableView>.weakObjects()
+        private let rowColorObservations = NSMapTable<NSTableRowView, NSKeyValueObservation>.weakToStrongObjects()
+        private var observers: [NSObjectProtocol] = []
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // SwiftUI 挂载背景时，滚动视图可能仍未加入同级容器。
+            DispatchQueue.main.async { [weak self] in self?.configure() }
+        }
+
+        override func layout() {
+            super.layout()
+            configure()
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if window !== newWindow {
+                observers.forEach(NotificationCenter.default.removeObserver)
+                observers.removeAll()
+                observedTables.removeAllObjects()
+                rowColorObservations.removeAllObjects()
+            }
+            super.viewWillMove(toWindow: newWindow)
+        }
+
+        func configure() {
+            guard window != nil else { return }
+            var ancestor = superview
+            while let container = ancestor {
+                if Self.configureScrollViews(in: container, configureTable: configureTable) { return }
+                ancestor = container.superview
+            }
+        }
+
+        @discardableResult
+        static func configureScrollViews(in view: NSView, configureTable: ((NSTableView) -> Void)? = nil) -> Bool {
+            if let scroll = view as? NSScrollView {
+                scroll.drawsBackground = false
+                scroll.contentView.drawsBackground = false
+                if scroll.scrollerStyle != .overlay { scroll.scrollerStyle = .overlay }
+                if let table = scroll.documentView as? NSTableView { configureTable?(table) }
+                return true
+            }
+            var found = false
+            for child in view.subviews {
+                if configureScrollViews(in: child, configureTable: configureTable) { found = true }
+            }
+            return found
+        }
+
+        private func configureTable(_ table: NSTableView) {
+            table.selectionHighlightStyle = .none
+            applySelection(to: table)
+            guard !observedTables.contains(table) else { return }
+            observedTables.add(table)
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSTableView.selectionDidChangeNotification, object: table, queue: .main
+            ) { [weak self, weak table] _ in
+                DispatchQueue.main.async {
+                    if let table {
+                        table.layoutSubtreeIfNeeded()
+                        self?.applySelection(to: table)
+                    }
+                }
+            })
+            if let clip = table.enclosingScrollView?.contentView {
+                clip.postsBoundsChangedNotifications = true
+                observers.append(NotificationCenter.default.addObserver(
+                    forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
+                ) { [weak self, weak table] _ in
+                    DispatchQueue.main.async {
+                        if let table { self?.applySelection(to: table) }
+                    }
+                })
+            }
+        }
+
+        private func applySelection(to table: NSTableView) {
+            // 不改 List/Table 的选择模型、焦点和快捷键，只替换原生蓝/灰色高亮。
+            let visible = table.rows(in: table.visibleRect)
+            guard visible.location != NSNotFound else { return }
+            for index in visible.location..<NSMaxRange(visible) {
+                guard let row = table.rowView(atRow: index, makeIfNecessary: true) else { continue }
+                if table.selectedRowIndexes.contains(index) {
+                    if rowColorObservations.object(forKey: row) == nil {
+                        let observation = row.observe(\.backgroundColor, options: [.new]) { [weak self, weak table] row, _ in
+                            MainActor.assumeIsolated {
+                                guard let self, let table else { return }
+                                let index = table.row(for: row)
+                                guard index >= 0, table.isRowSelected(index),
+                                      row.backgroundColor != self.selectionColor else { return }
+                                row.backgroundColor = self.selectionColor
+                            }
+                        }
+                        rowColorObservations.setObject(observation, forKey: row)
+                    }
+                    row.selectionHighlightStyle = .none
+                    if row.backgroundColor != selectionColor { row.backgroundColor = selectionColor }
+                } else {
+                    rowColorObservations.removeObject(forKey: row)
+                    if row.backgroundColor != .clear { row.backgroundColor = .clear }
+                }
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> HostView { HostView() }
+    func updateNSView(_ view: HostView, context: Context) {
+        view.selectionColor = MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).nativeSelection
+        DispatchQueue.main.async { [weak view] in view?.configure() }
     }
 }
 
@@ -351,7 +540,7 @@ private struct MacContentBackgroundKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// 工作区内的嵌套页面使用同一底色，不再逐层叠加窗口背后的材质。
+    /// 工作区内只叠加轻量主题色，共用外壳的一层背景模糊。
     var macUsesContentBackground: Bool {
         get { self[MacContentBackgroundKey.self] }
         set { self[MacContentBackgroundKey.self] = newValue }
@@ -442,11 +631,11 @@ enum MacGlassRole {
     case sidebar
     case toolbar
     case selectionBar
+    case content
 
     var material: NSVisualEffectView.Material {
         switch self {
-        case .sidebar: .hudWindow
-        case .toolbar: .hudWindow
+        case .sidebar, .toolbar, .content: .sidebar
         case .selectionBar: .popover
         }
     }
@@ -467,12 +656,12 @@ struct MacGlassSurface: View {
     var body: some View {
         let palette = MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased)
         ZStack {
-            if usesContentBackground && role != .selectionBar {
+            if reducesTransparency {
                 palette.content
+            } else if usesContentBackground {
+                palette.glassTint.opacity(role == .selectionBar ? 0.16 : 0.06)
             } else {
-                if !reducesTransparency {
-                    MacVisualEffect(role: role, scheme: scheme)
-                }
+                MacVisualEffect(role: role, scheme: scheme)
                 palette.glassTint.opacity(
                     appearance.glassOverlayOpacity(for: scheme, reducesTransparency: reducesTransparency)
                 )
@@ -518,12 +707,10 @@ struct MacAppearanceSettingsView: View {
                     .accessibilityAddTraits(.isHeader)
             }
 
-            Picker(L10n.string("appearance.theme"), selection: $appearance.mode) {
-                ForEach(MacAppearanceMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
+            HStack(spacing: 12) {
+                Text(L10n.string("appearance.theme"))
+                MacPageTabs(options: MacAppearanceMode.allCases, selection: $appearance.mode, title: { $0.title })
             }
-            .pickerStyle(.segmented)
             .accessibilityIdentifier("appearance.theme")
 
             VStack(alignment: .leading, spacing: 12) {
@@ -560,6 +747,7 @@ struct MacAppearanceSettingsView: View {
             HStack {
                 Spacer()
                 Button(L10n.string("appearance.reset")) { appearance.reset() }
+                    .buttonStyle(MacToolbarButtonStyle())
             }
         }
         .frame(maxWidth: 580, alignment: .leading)

@@ -33,6 +33,155 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test连接卡片与容器统计卡片沿用主题底色而不铺白底() async throws {
+        let connections = (0..<6).map { index in
+            NasConnection(id: "synthetic-\(index)", account: "Sample \(index)", source: "example.invalid",
+                location: nil, protocolName: "HTTPS", type: nil, connectedAt: nil,
+                description: "Synthetic connection", isCurrentConnection: false, canDisconnect: true)
+        }
+        for scheme in [ColorScheme.light, .dark] {
+            let palette = MacAppearancePalette(scheme: scheme, increasedContrast: false)
+            let summary = NSHostingView(rootView: SummaryCard(title: "Synthetic", value: "2", icon: "shippingbox", tint: .blue)
+                .frame(width: 240, height: 100).background(palette.glassTint).preferredColorScheme(scheme))
+            let summaryWindow = attach(summary, size: NSSize(width: 240, height: 100))
+            defer { summaryWindow.contentView = nil; summaryWindow.close() }
+            try await settle(summary)
+            let bitmap = try XCTUnwrap(summary.bitmapImageRepForCachingDisplay(in: summary.bounds))
+            summary.cacheDisplay(in: summary.bounds, to: bitmap)
+            let sample = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide * 9 / 10, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
+            XCTAssertLessThan(sample.redComponent, scheme == .dark ? 0.3 : 0.94)
+            try snapshot(summary, name: "card-summary-\(scheme == .dark ? "dark" : "light")")
+
+            let host = NSHostingView(rootView: ConnectionList(page: .init(connections: connections, total: connections.count), busyConnectionIDs: [], onDisconnect: { _ in XCTFail("切换卡片不能断开连接") })
+                .environment(MacAppearanceStore()).environment(\.macUsesContentBackground, true)
+                .background(palette.glassTint).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 900, height: 600))
+            defer { window.contentView = nil; window.close() }
+            window.makeKeyAndOrderFront(nil)
+            try await settle(host)
+            XCTAssertFalse(nativeViews(host, of: NSTableView.self).isEmpty)
+            try click(window, at: NSPoint(x: 841, y: 566))
+            try await settle(host)
+            XCTAssertTrue(nativeViews(host, of: NSTableView.self).isEmpty)
+            let cardsBitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: cardsBitmap)
+            let cardSample = try XCTUnwrap(cardsBitmap.colorAt(x: cardsBitmap.pixelsWide * 3 / 10, y: cardsBitmap.pixelsHigh / 5)?.usingColorSpace(.deviceRGB))
+            XCTAssertLessThan(cardSample.redComponent, scheme == .dark ? 0.3 : 0.94)
+            try snapshot(host, name: "card-connections-\(scheme == .dark ? "dark" : "light")")
+        }
+    }
+
+    func test文件夹详情自动统计且重新打开会刷新结果() async throws {
+        let fixture = try WorkspaceViewFixture(count: 1)
+        defer { fixture.cleanPreferences() }
+        fixture.model.isFileModuleEnabled = true
+        let item = try XCTUnwrap(fixture.model.items.first)
+        for (index, scheme) in [ColorScheme.light, .dark].enumerated() {
+            let host = NSHostingView(rootView: FilePropertiesView(item: item, model: fixture.model)
+                .macSheetSurface().environment(MacAppearanceStore()).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 560, height: 420))
+            defer { window.contentView = nil; window.close() }
+            try await settle(host)
+            XCTAssertEqual(fixture.model.folderStatisticsResults[item.id]?.sizeBytes, Int64(index + 1) * 125_000)
+            let requests = await fixture.repository.directorySizeCalls
+            XCTAssertEqual(requests, index + 1)
+            XCTAssertFalse(fixture.model.calculatingFolderStatisticsIDs.contains(item.id))
+            try snapshot(host, name: "properties-compact-auto-\(scheme == .dark ? "dark" : "light")")
+        }
+        let writes = await fixture.repository.writeCalls
+        XCTAssertEqual(writes, 0)
+    }
+
+    func test三档文件网格保持选择且文件与文件夹共同缩放() async throws {
+        let previousSize = UserDefaults.standard.object(forKey: "LanStash_FileGridSize")
+        defer {
+            if let previousSize { UserDefaults.standard.set(previousSize, forKey: "LanStash_FileGridSize") }
+            else { UserDefaults.standard.removeObject(forKey: "LanStash_FileGridSize") }
+        }
+        let fixture = try WorkspaceViewFixture(count: 12)
+        defer { fixture.cleanPreferences() }
+        fixture.model.items[1] = FileItem(profileID: fixture.model.profile.id, name: "Document.pdf", path: "/synthetic/Document.pdf", kind: .file, sizeBytes: 1234)
+        fixture.model.items[2] = FileItem(profileID: fixture.model.profile.id, name: "Photo.jpg", path: "/synthetic/Photo.jpg", kind: .file, sizeBytes: 4321)
+        let selected = Set(fixture.model.items.prefix(3).map(\.id))
+        fixture.model.selection = selected
+        for scheme in [ColorScheme.light, .dark] {
+            let host = makeHost(fixture: fixture, mode: .grid, scheme: scheme)
+            let window = attach(host, size: NSSize(width: 900, height: 560))
+            defer { window.contentView = nil; window.close() }
+            for size in FileGridSize.allCases {
+                UserDefaults.standard.set(size.rawValue, forKey: "LanStash_FileGridSize")
+                try await settle(host)
+                XCTAssertEqual(fixture.model.selection, selected)
+                XCTAssertEqual(fixture.model.currentPath, "/synthetic")
+                try snapshot(host, name: "grid-size-\(size.rawValue)-\(scheme == .dark ? "dark" : "light")")
+            }
+        }
+    }
+
+    func test下载与虚拟机选中行使用低饱和主题色并保留原生选择() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for module in [ServiceManagementModel.Module.downloads, .virtualMachines] {
+                let model = ServiceManagementModel(repository: ServiceManagementRepositoryStub())
+                await model.activate(module)
+                let palette = MacAppearancePalette(scheme: scheme, increasedContrast: false)
+                let host = NSHostingView(rootView: ServiceManagementView(module: module, model: model)
+                    .environment(MacAppearanceStore()).environment(\.macUsesContentBackground, true)
+                    .background(palette.glassTint).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 900, height: 620))
+                defer { window.contentView = nil; window.close() }
+                window.makeKeyAndOrderFront(nil)
+                try await settle(host)
+                if module == .downloads { model.downloadSelection = [try XCTUnwrap(model.downloads?.tasks.first?.id)] }
+                else { model.virtualMachineSelection = [try XCTUnwrap(model.virtualMachines?.machines.first?.id)] }
+                try await settle(host)
+                let table = try XCTUnwrap(nativeViews(host, of: NSTableView.self).first)
+                window.makeFirstResponder(table)
+                try await settle(host)
+                XCTAssertEqual(table.selectionHighlightStyle, .none)
+                let index = try XCTUnwrap(table.selectedRowIndexes.first)
+                let row = try XCTUnwrap(table.rowView(atRow: index, makeIfNecessary: false))
+                XCTAssertEqual(row.backgroundColor, palette.nativeSelection)
+                try snapshot(host, name: "selection-\(module == .downloads ? "downloads" : "virtual-machine")-\(scheme == .dark ? "dark" : "light")")
+                window.makeFirstResponder(nil)
+                try await settle(host)
+                XCTAssertEqual(row.backgroundColor, palette.nativeSelection)
+                if module == .downloads { model.downloadSelection.removeAll() }
+                else { model.virtualMachineSelection.removeAll() }
+                try await settle(host)
+                XCTAssertTrue(table.selectedRowIndexes.isEmpty)
+                XCTAssertEqual(row.backgroundColor, .clear)
+            }
+        }
+    }
+
+    func test原生弹窗不继承工作区透明叠色且取消不清理缓存() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for isCache in [true, false] {
+                let presentation = PageTabSelectionProbe()
+                let sheet = isCache
+                    ? AnyView(SelectiveCacheCleanupSheet(storage: .init(previewCache: 10, photoCache: 20, systemCache: 30, protectedData: 40, mountedCache: .init(temporaryBytes: 50, keptOfflineBytes: 60))) { _ in XCTFail("不得自动清理缓存"); return false })
+                    : AnyView(CreateVirtualMachineSheet(snapshot: nil) { _ in XCTFail("不得自动创建虚拟机"); return false })
+                let host = NSHostingView(rootView: Color.clear
+                    .macSheet(isPresented: Binding(get: { presentation.value == 1 }, set: { presentation.value = $0 ? 1 : 0 })) { sheet }
+                    .environment(MacAppearanceStore()).environment(\.macUsesContentBackground, true)
+                    .preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 900, height: 780))
+                defer { window.contentView = nil; window.close() }
+                window.makeKeyAndOrderFront(nil)
+                presentation.value = 1
+                try await settle(host)
+                let modal = try XCTUnwrap(window.attachedSheet)
+                let content = try XCTUnwrap(modal.contentView)
+                try await settle(content)
+                XCTAssertTrue(nativeViews(content, of: NSVisualEffectView.self).contains { $0.blendingMode == .behindWindow })
+                try snapshot(content, name: "modal-\(isCache ? "cache" : "virtual-machine")-\(scheme == .dark ? "dark" : "light")")
+                presentation.value = 0
+                try await settle(host)
+                if window.attachedSheet != nil { window.endSheet(modal) }
+            }
+        }
+    }
+
     func test虚拟机资源可用时无需先选择旧机器即可打开新建() async throws {
         let repository = ServiceManagementRepositoryStub(virtualMachineStorages: [VirtualizationResource(id: "synthetic-storage", name: "Synthetic storage")])
         let model = ServiceManagementModel(repository: repository)
@@ -277,7 +426,7 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
-    func test更新窗口无系统外框且自带关闭与Escape有效() async throws {
+    func test更新窗口原生外框系统关闭与Escape有效() async throws {
         let previousMode = MacAppearanceStore.shared.mode
         defer { MacAppearanceStore.shared.mode = previousMode }
         for mode in [MacAppearanceMode.fog, .ink] {
@@ -293,14 +442,20 @@ final class WorkspacePresentationTests: XCTestCase {
                 let host = try XCTUnwrap(window.contentView)
                 defer { driver.dismissUpdateInstallation(); window.contentView = nil; window.close() }
                 try await settle(host)
-                XCTAssertFalse(window.styleMask.contains(.titled))
+                XCTAssertTrue(window.styleMask.contains(.titled))
                 XCTAssertTrue(window.canBecomeKey)
-                XCTAssertTrue(window.isMovableByWindowBackground)
-                for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-                    XCTAssertTrue(window.standardWindowButton(kind) == nil || window.standardWindowButton(kind)?.isHidden == true)
+                XCTAssertTrue(window.isMovable)
+                for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton] {
+                    let button = try XCTUnwrap(window.standardWindowButton(kind))
+                    XCTAssertFalse(button.isHidden)
+                    XCTAssertTrue(button.isEnabled)
                 }
+                XCTAssertEqual(window.titleVisibility, .hidden)
+                XCTAssertTrue(window.titlebarAppearsTransparent)
+                XCTAssertEqual(window.titlebarSeparatorStyle, .none)
+                XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
                 XCTAssertEqual(host.bounds.height, window.frame.height, accuracy: 1)
-                XCTAssertLessThanOrEqual(window.frame.height, 210)
+                XCTAssertLessThanOrEqual(host.bounds.height - 28, 210)
                 driver.showUserInitiatedUpdateCheck { XCTFail("绘制不得取消检查") }
                 try await settle(host)
                 try snapshot(host, name: "update-compact-checking-\(mode.rawValue)")
@@ -308,19 +463,19 @@ final class WorkspacePresentationTests: XCTestCase {
                 driver.showDownloadDidReceiveExpectedContentLength(100)
                 driver.showDownloadDidReceiveData(ofLength: 40)
                 try await settle(host)
-                XCTAssertLessThanOrEqual(window.frame.height, 250)
+                XCTAssertLessThanOrEqual(host.bounds.height - 28, 250)
                 XCTAssertEqual(driver.progress, 0.4)
                 try snapshot(host, name: "update-compact-download-\(mode.rawValue)")
                 driver.showMessage("updates.none", detail: "updates.none.detail", stage: .upToDate) { closes += 1 }
                 try await settle(host)
-                try snapshot(host, name: "update-borderless-\(mode.rawValue)-\(usesEscape ? "escape" : "close")")
+                try snapshot(host, name: "update-titled-\(mode.rawValue)-\(usesEscape ? "escape" : "close")")
                 if usesEscape {
                     let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
                         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                         context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
                     if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
                 } else {
-                    try click(window, at: NSPoint(x: window.frame.width / 2, y: 43))
+                    window.standardWindowButton(.closeButton)?.performClick(nil)
                 }
                 try await settle(host)
                 XCTAssertEqual(closes, 1, "\(mode.rawValue), usesEscape=\(usesEscape)")
@@ -1025,9 +1180,23 @@ final class WorkspacePresentationTests: XCTestCase {
         let selection = fixture.model.selection
         let currentPath = fixture.model.currentPath
         let reads = await fixture.repository.readCalls
+        func descendants<T: NSView>(_ view: NSView, of type: T.Type) -> [T] {
+            ((view as? T).map { [$0] } ?? [])
+                + view.subviews.flatMap { descendants($0, of: type) }
+        }
         for mode in [MacAppearanceMode.fog, .ink, .system] {
             appearance.mode = mode
             try await settle(host)
+            let scrolls = descendants(host, of: NSScrollView.self)
+            XCTAssertFalse(scrolls.isEmpty)
+            for scroll in scrolls {
+                XCTAssertFalse(scroll.drawsBackground)
+                XCTAssertFalse(scroll.contentView.drawsBackground)
+                XCTAssertEqual(scroll.scrollerStyle, .overlay)
+            }
+            let effects = descendants(host, of: NSVisualEffectView.self).filter { $0.blendingMode == .behindWindow }
+            XCTAssertEqual(effects.count, NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? 0 : 1)
+            XCTAssertEqual(window.alphaValue, 1)
             XCTAssertEqual(fixture.model.selection, selection)
             XCTAssertEqual(fixture.model.currentPath, currentPath)
             let currentReads = await fixture.repository.readCalls
@@ -1260,7 +1429,7 @@ final class WorkspacePresentationTests: XCTestCase {
                     ("photo-destination-empty", AnyView(PhotoFolderDestinationPicker(repository: PhotoLibraryRepositoryStub(spaces: [.personal], pages: [0: PhotoLibraryPage(folderPath: "/home/Photos", items: [], offset: 0, nextOffset: 0, sourceTotal: 0, hasMore: false)]), profileID: nil, sourcePath: "/home/Photos/Synthetic.jpg", onSelect: { _ in XCTFail("不能自动选择移动位置") }, onCancel: { XCTFail("不能自动取消") }))),
                     ("photo-destination-error", AnyView(PhotoFolderDestinationPicker(repository: PhotoLibraryRepositoryStub(spaces: [.personal], pages: [:]), profileID: nil, sourcePath: "/home/Photos/Synthetic.jpg", onSelect: { _ in XCTFail("不能自动选择移动位置") }, onCancel: { XCTFail("不能自动取消") }))),
                     ("mapping-create", AnyView(DesktopDriveMappingCreatorSheet(manager: mappingManager, profileName: "Synthetic NAS", currentPath: "/synthetic"))),
-                    ("cache-cleanup", AnyView(SelectiveCacheCleanupSheet(storage: AppStorageSnapshot(previewCache: 200_000, photoCache: 800_000, systemCache: 100_000, protectedData: 20_000), onClean: { _ in XCTFail("不能自动清理缓存") }))),
+                    ("cache-cleanup", AnyView(SelectiveCacheCleanupSheet(storage: AppStorageSnapshot(previewCache: 200_000, photoCache: 800_000, systemCache: 100_000, protectedData: 20_000), onClean: { _ in XCTFail("不能自动清理缓存"); return false }))),
                     ("certificate-new", AnyView(CertificateReviewView(prompt: CertificatePrompt(error: .untrusted(DsmCertificateReview(host: "example.invalid", subjectSummary: "Synthetic certificate", sha256Fingerprint: String(repeating: "A", count: 64), canBePinned: true)), previousFingerprint: nil), onCancel: { XCTFail("不能自动取消核对") }, onTrust: { XCTFail("不能自动信任证书") }))),
                     ("certificate-changed", AnyView(CertificateReviewView(prompt: CertificatePrompt(error: .changed(DsmCertificateReview(host: "example.invalid", subjectSummary: "Synthetic certificate", sha256Fingerprint: String(repeating: "B", count: 64), canBePinned: true)), previousFingerprint: String(repeating: "A", count: 64)), onCancel: { XCTFail("不能自动取消核对") }, onTrust: { XCTFail("不能自动信任变化证书") }))),
                     ("certificate-rejected", AnyView(CertificateReviewView(prompt: CertificatePrompt(error: .invalid(DsmCertificateReview(host: "example.invalid", subjectSummary: "Synthetic certificate", sha256Fingerprint: String(repeating: "C", count: 64), canBePinned: false)), previousFingerprint: nil), onCancel: { XCTFail("不能自动取消核对") }, onTrust: { XCTFail("不能信任无效证书") }))),
@@ -1521,6 +1690,10 @@ final class WorkspacePresentationTests: XCTestCase {
         return window
     }
 
+    private func nativeViews<T: NSView>(_ view: NSView, of type: T.Type) -> [T] {
+        ((view as? T).map { [$0] } ?? []) + view.subviews.flatMap { nativeViews($0, of: type) }
+    }
+
     private func settle(_ view: NSView) async throws {
         view.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(80))
@@ -1653,6 +1826,7 @@ private actor PresentationFileRepository: FileRepository {
     let allowsVerifiedRestore = false
     private(set) var writeCalls = 0
     private(set) var readCalls = 0
+    private(set) var directorySizeCalls = 0
     private var nextFolderError: AppError?
     init(profileID: UUID) { self.profileID = profileID }
     func listShares(offset: Int, limit: Int) -> FilePage { readCalls += 1; return page(path: "/", offset: offset) }
@@ -1663,6 +1837,11 @@ private actor PresentationFileRepository: FileRepository {
         return page(path: path, offset: offset)
     }
     func getInfo(paths: [String]) -> [FileItem] { readCalls += 1; return [] }
+    func calculateDirectorySize(path: String) -> FileDirectorySizeSummary {
+        readCalls += 1
+        directorySizeCalls += 1
+        return .init(totalBytes: Int64(directorySizeCalls) * 125_000, fileCount: 10, directoryCount: 2)
+    }
     func getThumbnail(path: String, size: ThumbnailSize) throws -> Data { readCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
     func checkWritePermission(folderPath: String, filename: String, createOnly: Bool) throws { try rejectWrite() }
     func mediaStreamSource(remotePath: String, fileExtension: String?, expectedContentLength: Int64?) throws -> MediaStreamSource { throw PresentationRepositoryError.unexpectedOperation }

@@ -3806,3 +3806,14 @@
 "workspace.modules.unavailable" = "暂时无法确认可用应用，其他应用已隐藏。请稍后刷新可用功能。";
 "connection.session.interrupted" = "另一处登录使当前连接中断，请重新登录。";
 "connection.session.rejected" = "NAS 没有接受当前登录状态，请重新登录。";
+"workspace.grid.size" = "图标大小";
+"workspace.grid.size.small" = "小";
+"workspace.grid.size.medium" = "中";
+"workspace.grid.size.large" = "大";
+"file.properties.minimumSize" = "至少 %@";
+"file.properties.device" = "设备";
+"storage.mountCache" = "挂载盘缓存";
+"storage.mountCache.description" = "释放临时下载的缓存，保留离线文件及尚未上传的修改。";
+"storage.mountCache.clear" = "清理挂载盘缓存";
+"storage.mountCache.confirm" = "清理此 App 所有挂载盘的临时缓存？不会删除 NAS 文件或离线保留的文件，正在使用及尚未上传的内容会保留。";
+"storage.mountCache.readFailed" = "暂时无法读取，请重新计算。";

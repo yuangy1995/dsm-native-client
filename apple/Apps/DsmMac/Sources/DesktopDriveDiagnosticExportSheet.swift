@@ -31,7 +31,8 @@ struct DesktopDriveDiagnosticExportSheet: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(12)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .macThemedScrollContent()
+            .background(MacGlassSurface(role: .content))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -376,7 +377,8 @@ struct CommunityCompatibilitySubmissionSheet: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(10)
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .macThemedScrollContent()
+            .background(MacGlassSurface(role: .content))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityLabel(L10n.string("communityReport.previewAccessibility"))
             .padding(.top, 8)

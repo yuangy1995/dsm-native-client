@@ -19,10 +19,15 @@ protocol LocalFileSecureStoreKeyStoring: Sendable {
     func loadOrCreate(_ candidate: Data) throws -> Data
 }
 
-private struct LocalFileSecureStoreKeychain: LocalFileSecureStoreKeyStoring {
-    private let service =
-        "io.github.qwertyuiop1995.dsmnativeclient.local-secure-store.master-key.v1"
+struct LocalFileSecureStoreKeychain: LocalFileSecureStoreKeyStoring {
+    private let service: String
     private let account = "master-key"
+
+    init(service: String = AppStorageNamespace.name(
+        "io.github.qwertyuiop1995.dsmnativeclient.local-secure-store.master-key.v1"
+    )) {
+        self.service = service
+    }
 
     func loadOrCreate(_ candidate: Data) throws -> Data {
         if let existing = try load() {
@@ -130,7 +135,7 @@ public actor LocalFileSecureStore: SessionSecureStoring, PasswordSecureStoring {
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first?.appendingPathComponent(
-            "LanStashSecureStore",
+            AppStorageNamespace.name("LanStashSecureStore"),
             isDirectory: true
         )
     }

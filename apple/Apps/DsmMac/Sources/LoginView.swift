@@ -103,11 +103,12 @@ struct LoginView: View {
                 profileSidebar.frame(width: 241)
                 connectionForm
                     .fillsAvailableContentArea(alignment: .topLeading)
-                    .background(palette.content)
+                    .background(MacGlassSurface(role: .content))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.edge, lineWidth: 1))
                     .padding(.trailing, 12)
             }
+            .environment(\.macUsesContentBackground, true)
             .padding(.bottom, 12)
         }
         .background(MacGlassSurface(role: .sidebar).ignoresSafeArea())
@@ -115,7 +116,7 @@ struct LoginView: View {
         .ignoresSafeArea(.container, edges: .top)
         .navigationTitle("")
         .toolbar(.visible, for: .windowToolbar)
-        .sheet(item: $model.pendingCertificate) { prompt in
+        .macSheet(item: $model.pendingCertificate) { prompt in
             CertificateReviewView(
                 prompt: prompt,
                 onCancel: model.cancelCertificateReview,
@@ -176,8 +177,8 @@ struct LoginView: View {
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
-                            .background(selected ? Color.accentColor.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? Color.accentColor.opacity(0.20) : palette.separator.opacity(0.4), lineWidth: 1))
+                            .background(MacSelectionSurface(isSelected: selected, cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? palette.selectionBorder : palette.separator.opacity(0.4), lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -228,17 +229,19 @@ struct LoginView: View {
             }
 
             Divider()
-            VStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Button {
                     model.newProfile()
                     focusedField = .displayName
                 } label: {
                     Label(L10n.string("ui.8249cd04be30c505"), systemImage: "plus")
+                        .font(.callout)
                 }
                 .buttonStyle(MacToolbarButtonStyle())
                 AppLanguagePicker()
                     .labelsHidden()
                     .pickerStyle(.menu)
+                    .controlSize(.small)
                     .frame(maxWidth: .infinity)
             }
             .padding(12)
@@ -403,7 +406,7 @@ struct LoginView: View {
             .frame(maxWidth: 600, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .background(palette.content)
+        .background(MacGlassSurface(role: .content))
     }
 
     private func formRow<Content: View>(
@@ -525,6 +528,6 @@ struct CertificateReviewView: View {
         }
         .padding(28)
         .frame(width: 620)
-        .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).content)
+        .background(MacGlassSurface(role: .content))
     }
 }

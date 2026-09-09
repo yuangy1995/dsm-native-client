@@ -1496,7 +1496,7 @@ private struct EthernetInterfacesView: View {
             }
             .padding(.vertical, 5)
         }
-        .sheet(isPresented: Binding(
+        .macSheet(isPresented: Binding(
             get: { editing != nil },
             set: { if !$0 { editing = nil } }
         )) {
@@ -1573,7 +1573,7 @@ struct EthernetInterfaceEditor: View {
                 }
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .macThemedScrollContent()
             Divider()
             HStack {
                 Spacer()
@@ -1717,7 +1717,7 @@ private struct DDNSSettingsView: View {
                 }
             }
         }
-        .sheet(isPresented: draftPresentation) {
+        .macSheet(isPresented: draftPresentation) {
             if let draft = presentedDraft {
                 DDNSRecordEditor(
                     draft: draft,
@@ -1892,7 +1892,7 @@ struct DDNSRecordEditor: View {
                 }
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .macThemedScrollContent()
             Divider()
             HStack {
                 if isTesting || isSaving {
@@ -3022,20 +3022,40 @@ private struct NasAdministrationSplitView<Page: Hashable, Content: View>: View {
         HSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 ScrollViewReader { reader in
-                    List(pages, id: \.self, selection: $selection) { page in
-                        let item = label(page)
-                        Label(item.0, systemImage: item.1)
-                            .foregroundStyle(selection == page ? Color.accentColor : Color.primary)
-                            .tag(page)
-                            .id(page)
-                            .font(.system(size: 14))
-                            .padding(.vertical, 7)
-                            .listRowSeparator(.hidden)
+                    ScrollView {
+                        VStack(spacing: 4) {
+                            ForEach(pages, id: \.self) { page in
+                                let item = label(page)
+                                Button { selection = page } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: item.1)
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(selection == page ? Color.accentColor : Color.primary)
+                                            .frame(width: 20)
+                                        Text(item.0)
+                                            .font(.body)
+                                            .foregroundStyle(Color.primary.opacity(selection == page ? 1 : 0.7))
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 11)
+                                    .contentShape(Rectangle())
+                                    .background(MacSelectionSurface(isSelected: selection == page))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(selection == page ? .isSelected : [])
+                                .id(page)
+                            }
+                        }
                     }
-                    .listStyle(.sidebar)
-                    .scrollContentBackground(.hidden)
+                    .macThemedScrollContent()
                     .padding(8)
                     .onChange(of: selection) { _, page in reader.scrollTo(page) }
+                    .onMoveCommand { direction in
+                        guard let index = pages.firstIndex(of: selection) else { return }
+                        if direction == .up, index > 0 { selection = pages[index - 1] }
+                        if direction == .down, index + 1 < pages.count { selection = pages[index + 1] }
+                    }
                 }
             }
             .frame(minWidth: 190, idealWidth: 220, maxWidth: 260)
@@ -3043,7 +3063,7 @@ private struct NasAdministrationSplitView<Page: Hashable, Content: View>: View {
 
             content()
                 .fillsAvailableContentArea(alignment: .topLeading)
-                .scrollContentBackground(.hidden)
+                .macThemedScrollContent()
         }
     }
 }
@@ -3139,7 +3159,7 @@ private struct PerformanceChartCard<ChartContent: View>: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 215, maxHeight: 215, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
@@ -3184,7 +3204,7 @@ private struct MetricCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 76, maxHeight: 76, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.8), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
@@ -3853,7 +3873,7 @@ private struct StorageView: View {
                 .padding(24)
             }
         }
-        .sheet(item: $selection) { selection in
+        .macSheet(item: $selection) { selection in
             StorageDetailSheet(
                 selection: selection,
                 snapshot: snapshot,
@@ -4379,7 +4399,7 @@ struct StorageDetailSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                .fill(MacCardFill())
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -4511,7 +4531,7 @@ private struct DetailSection<Content: View>: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                    .fill(MacCardFill())
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -5225,7 +5245,7 @@ private struct PackageCard: View {
             }
         }
         .padding(12)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(MacGlassSurface(role: .selectionBar))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -5457,7 +5477,7 @@ private struct ScheduledTaskList: View {
                 gridContent
             }
         }
-        .sheet(
+        .macSheet(
             isPresented: Binding(
                 get: { editorDraft != nil },
                 set: { if !$0 { editorDraft = nil } }
@@ -5483,7 +5503,7 @@ private struct ScheduledTaskList: View {
                 )
             }
         }
-        .sheet(item: $resultsTask) { task in
+        .macSheet(item: $resultsTask) { task in
             ScheduledTaskResultsSheet(
                 task: task,
                 loadResults: { try await loadResults(task) },
@@ -5636,7 +5656,7 @@ private struct ScheduledTaskList: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -5801,7 +5821,7 @@ struct ScheduledTaskResultsSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                            .fill(MacCardFill())
                     )
                     .padding(24)
                 } else {
@@ -5826,6 +5846,7 @@ struct ScheduledTaskResultsSheet: View {
                             .padding(.vertical, 4)
                         }
                         .frame(minWidth: 230, idealWidth: 250, maxWidth: 290)
+                        .macThemedScrollContent(selection: selectedResultID)
 
                         resultDetails
                             .frame(minWidth: 430, maxWidth: .infinity, maxHeight: .infinity)
@@ -5834,7 +5855,7 @@ struct ScheduledTaskResultsSheet: View {
             }
         }
         .frame(minWidth: 720, idealWidth: 800, minHeight: 480, maxHeight: 680)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .task {
             await refreshResults()
@@ -5974,7 +5995,7 @@ private struct TaskOutputSection: View {
             .frame(minHeight: 80, maxHeight: 180)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: .textBackgroundColor))
+                    .fill(MacCardFill())
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(Color.primary.opacity(0.12), lineWidth: 1)
@@ -6061,7 +6082,7 @@ struct ScheduledTaskEditor: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -6113,7 +6134,7 @@ struct ScheduledTaskEditor: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -6134,7 +6155,7 @@ struct ScheduledTaskEditor: View {
 
                         ZStack(alignment: .topLeading) {
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(nsColor: .textBackgroundColor))
+                                .fill(MacCardFill())
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(Color.primary.opacity(0.12), lineWidth: 1)
@@ -6142,7 +6163,7 @@ struct ScheduledTaskEditor: View {
 
                             TextEditor(text: $draft.script)
                                 .font(.system(.body, design: .monospaced))
-                                .scrollContentBackground(.hidden)
+                                .macThemedScrollContent()
                                 .padding(8)
                                 .frame(minHeight: 120, maxHeight: 200)
 
@@ -6181,7 +6202,7 @@ struct ScheduledTaskEditor: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(Color.primary.opacity(0.06), lineWidth: 1)
@@ -6306,11 +6327,9 @@ private struct WeekdaySelector: View {
                     Text(day.1)
                         .font(.system(size: 13, weight: isSelected ? .bold : .medium))
                         .frame(width: 32, height: 32)
-                        .background(
-                            Circle()
-                                .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.06))
-                        )
-                        .foregroundColor(isSelected ? .white : .primary)
+                        .background(MacSelectionSurface(isSelected: isSelected, cornerRadius: 16))
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                        .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(day.2)
@@ -6399,7 +6418,7 @@ private struct AccountDirectoryView: View {
                 gridContent
             }
         }
-        .sheet(
+        .macSheet(
             isPresented: Binding(
                 get: { editorDraft != nil },
                 set: { if !$0 { editorDraft = nil } }
@@ -6425,7 +6444,7 @@ private struct AccountDirectoryView: View {
                 )
             }
         }
-        .sheet(
+        .macSheet(
             isPresented: Binding(
                 get: { groupEditorDraft != nil },
                 set: { if !$0 { groupEditorDraft = nil } }
@@ -6612,7 +6631,7 @@ private struct AccountDirectoryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -6788,7 +6807,7 @@ struct AccountEditor: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -6827,7 +6846,7 @@ struct AccountEditor: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                                .fill(MacCardFill())
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(Color.primary.opacity(0.06), lineWidth: 1)
@@ -6875,7 +6894,7 @@ struct AccountEditor: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -7003,7 +7022,7 @@ struct GroupEditor: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                        .fill(MacCardFill())
                         .overlay(
                             RoundedRectangle(cornerRadius: 10)
                                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -7147,7 +7166,7 @@ private struct ActiveConnectionsCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 215, maxHeight: 215, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.8), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
@@ -7271,7 +7290,7 @@ private struct LogEntryList: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+        .background(MacGlassSurface(role: .toolbar))
     }
 
     private var paginationBar: some View {
@@ -7324,7 +7343,7 @@ private struct LogEntryList: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        .background(MacGlassSurface(role: .toolbar))
     }
 
     private func isError(_ level: String?) -> Bool {
@@ -7345,23 +7364,21 @@ private struct FilterChipButton: View {
             HStack(spacing: 5) {
                 Image(systemName: icon)
                     .font(.caption2)
-                    .foregroundStyle(isSelected ? .white : badgeColor)
+                    .foregroundStyle(badgeColor)
                 Text(title)
                     .font(.caption.weight(isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? .white : .primary)
+                    .foregroundStyle(.primary)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(
-                isSelected ? badgeColor : Color.primary.opacity(0.05),
-                in: Capsule()
-            )
+            .background(MacSelectionSurface(isSelected: isSelected, cornerRadius: 100))
+            .background(Color.primary.opacity(0.05), in: Capsule())
         }
         .buttonStyle(.plain)
     }
 }
 
-private struct ConnectionList: View {
+struct ConnectionList: View {
     let page: NasConnectionPage?
     let busyConnectionIDs: Set<String>
     let onDisconnect: (NasConnection) async throws -> Void
@@ -7543,7 +7560,7 @@ private struct ConnectionList: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                            .fill(MacCardFill())
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)

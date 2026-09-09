@@ -11,9 +11,10 @@ REPO_ROOT="$(cd "$APPLE_DIR/.." && pwd)"
 WORKSPACE="$APPLE_DIR/DsmNativeClient.xcworkspace"
 SCHEME="DsmMac"
 PRODUCT_NAME="LanStash"
+APP_BUNDLE_NAME="$PRODUCT_NAME"
 ENTITLEMENTS="$SCRIPT_DIR/SupportingFiles/DsmMac.entitlements"
 FILE_PROVIDER_ENTITLEMENTS="$SCRIPT_DIR/SupportingFiles/DsmFileProvider.entitlements"
-BUILD_ROOT="$SCRIPT_DIR/build/package"
+BUILD_ROOT="${LANSTASH_BUILD_ROOT:-$SCRIPT_DIR/build/package}"
 DERIVED_DATA="$BUILD_ROOT/DerivedData"
 STAGING_DIR="$BUILD_ROOT/dmg"
 DIST_DIR="${LANSTASH_DIST_DIR:-$SCRIPT_DIR/dist}"
@@ -316,6 +317,20 @@ else
     configure_package
 fi
 
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+    # 本地临时包与正式版完全分开；正式签名分支保持原有标识和目录。
+    MAC_APP_BUNDLE_ID="io.github.qwertyuiop1995.dsmnativeclient.macos.localtest"
+    APP_BUNDLE_NAME="LanStash Test"
+    MAC_FILE_PROVIDER_BUNDLE_ID="$MAC_APP_BUNDLE_ID.fileprovider"
+    MAC_APP_GROUP_ID="group.io.github.qwertyuiop1995.dsmnativeclient.localtest"
+    SHARED_KEYCHAIN_SUFFIX="io.github.qwertyuiop1995.dsmnativeclient.localtest.shared"
+    DIST_DIR="${LANSTASH_DIST_DIR:-$SCRIPT_DIR/dist/local-test}"
+    BUILD_ROOT="${LANSTASH_BUILD_ROOT:-$SCRIPT_DIR/build/local-test}"
+    DERIVED_DATA="$BUILD_ROOT/DerivedData"
+    STAGING_DIR="$BUILD_ROOT/dmg"
+    RUN_AFTER_PACKAGE=0
+fi
+
 for command in xcodebuild codesign hdiutil ditto lipo open; do
     command -v "$command" >/dev/null 2>&1 || fail "未找到命令 ${command}，请先安装完整 Xcode"
 done
@@ -391,7 +406,7 @@ xcodebuild \
 BUILT_APP="$DERIVED_DATA/Build/Products/$CONFIGURATION/$PRODUCT_NAME.app"
 [[ -d "$BUILT_APP" ]] || fail "构建完成但找不到应用：$BUILT_APP"
 
-APP_PATH="$DIST_DIR/$PRODUCT_NAME.app"
+APP_PATH="$DIST_DIR/$APP_BUNDLE_NAME.app"
 rm -rf "$APP_PATH"
 /usr/bin/ditto "$BUILT_APP" "$APP_PATH"
 
@@ -429,6 +444,7 @@ if [[ "$SIGNING_IDENTITY" == "-" ]]; then
     # App Group 与共享钥匙串属于受限权限，macOS 不允许临时签名携带。
     # 临时包移除 File Provider 扩展并且不附带受限权限，确保主应用可以启动。
     /bin/rm -rf -- "$APP_PATH/Contents/PlugIns/LanStashFileProvider.appex"
+    bash "$REPO_ROOT/tools/release/prepare_macos_local_test.sh" "$APP_PATH"
     bash "$REPO_ROOT/tools/release/sign_macos_local_test.sh" "$APP_PATH"
     echo "==> 临时签名包不包含本地磁盘挂载；测试挂载请使用 Apple 签名证书及配套授权文件"
 else
@@ -573,7 +589,7 @@ echo "==> 校验架构：$(/usr/bin/lipo -archs "$EXECUTABLE")"
 DMG_PATH="$DIST_DIR/$PRODUCT_NAME-$VERSION-$ARCH_LABEL.dmg"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
-/usr/bin/ditto "$APP_PATH" "$STAGING_DIR/$PRODUCT_NAME.app"
+/usr/bin/ditto "$APP_PATH" "$STAGING_DIR/$APP_BUNDLE_NAME.app"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 echo "==> 生成 DMG"

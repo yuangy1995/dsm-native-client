@@ -3806,3 +3806,14 @@
 "workspace.modules.unavailable" = "Available apps could not be confirmed. Other apps are hidden for now. Try refreshing the available features later.";
 "connection.session.interrupted" = "Another login interrupted this connection. Please sign in again.";
 "connection.session.rejected" = "The NAS did not accept this sign-in session. Please sign in again.";
+"workspace.grid.size" = "Icon Size";
+"workspace.grid.size.small" = "Small";
+"workspace.grid.size.medium" = "Medium";
+"workspace.grid.size.large" = "Large";
+"file.properties.minimumSize" = "At least %@";
+"file.properties.device" = "NAS";
+"storage.mountCache" = "Mounted Drive Cache";
+"storage.mountCache.description" = "Releases temporary downloads. Files kept offline and changes not yet uploaded are retained.";
+"storage.mountCache.clear" = "Clear Mounted Drive Cache";
+"storage.mountCache.confirm" = "Clear temporary cache for all drives mounted by this app? NAS files and files kept offline will not be deleted. Open files and changes not yet uploaded are retained.";
+"storage.mountCache.readFailed" = "Unable to read. Recalculate to try again.";

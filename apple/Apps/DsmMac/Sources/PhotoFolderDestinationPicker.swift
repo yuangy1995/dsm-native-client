@@ -115,7 +115,7 @@ struct PhotoFolderDestinationPicker: View {
             .background(MacGlassSurface(role: .toolbar))
         }
         .frame(minWidth: 480, minHeight: 400)
-        .scrollContentBackground(.hidden)
+        .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
         .task { await setupPicker() }
     }

@@ -41,7 +41,7 @@ public actor SharedKeychainSessionStore: SessionSecureStoring {
         accessGroup: String? = Bundle.main.object(
             forInfoDictionaryKey: "LanStashSharedKeychainAccessGroup"
         ) as? String,
-        servicePrefix: String = "io.github.qwertyuiop1995.dsmnativeclient.shared"
+        servicePrefix: String = AppStorageNamespace.name("io.github.qwertyuiop1995.dsmnativeclient.shared")
     ) {
         self.accessGroup = accessGroup
         self.servicePrefix = servicePrefix

@@ -84,6 +84,7 @@ struct WorkspaceView: View {
                 .frame(width: showsSidebar ? sidebarWidth : 0)
                 .clipped()
                 .accessibilityHidden(!showsSidebar)
+                .environment(\.macUsesContentBackground, true)
 
                 if showsSidebar {
                     Color.clear
@@ -103,13 +104,14 @@ struct WorkspaceView: View {
                     else if !moduleOwnsPageHeader { nonFileWorkspaceToolbar }
                     if !moduleOwnsPageHeader { Divider() }
                     contentColumn
-                        .scrollContentBackground(.hidden)
+                        .macThemedScrollContent()
                         .environment(\.macUsesContentBackground, true)
                         .environment(\.macPageNavigation, MacPageNavigation(canGoBack: canNavigateBack, canGoUp: canNavigateUp, goBack: { navigateBack() }, goUp: { navigateUp() }))
                         .fillsAvailableContentArea(alignment: .topLeading)
                 }
                 .fillsAvailableContentArea(alignment: .topLeading)
-                .background(appearancePalette.content)
+                .background(MacGlassSurface(role: .content))
+                .environment(\.macUsesContentBackground, true)
                 .clipShape(RoundedRectangle(cornerRadius: MacAppearanceMetrics.surfaceRadius))
                 .overlay {
                     RoundedRectangle(cornerRadius: MacAppearanceMetrics.surfaceRadius)
@@ -179,7 +181,7 @@ struct WorkspaceView: View {
             previewWindowController?.closeFromModel()
             model.dismissPreview()
         }
-        .sheet(isPresented: deleteAlertPresented) {
+        .macSheet(isPresented: deleteAlertPresented) {
             ModernDeleteConfirmationDialog(
                 targets: deleteTargets,
                 profileName: model.profile.displayName,
@@ -215,10 +217,10 @@ struct WorkspaceView: View {
         } message: {
             Text(L10n.string("ui.2c33e68b793e860d"))
         }
-        .sheet(item: $showingInfoItem) { item in
+        .macSheet(item: $showingInfoItem) { item in
             FilePropertiesView(item: item, model: model)
         }
-        .sheet(isPresented: Binding(
+        .macSheet(isPresented: Binding(
             get: { !shareTargets.isEmpty },
             set: { if !$0 { shareTargets = [] } }
         )) {
@@ -1073,7 +1075,7 @@ private struct SidebarView: View {
                                 }
                                 .padding(10)
                                 .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-                                .background(profile.id == selectedProfileID ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                                .background(MacSelectionSurface(isSelected: profile.id == selectedProfileID, cornerRadius: 10))
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -1096,7 +1098,7 @@ private struct SidebarView: View {
                         .onMove(perform: onMoveProfiles)
                     }
                     .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    .macThemedScrollContent()
                     .frame(width: 320, height: min(340, CGFloat(profiles.count) * 68 + 8))
                     Button(L10n.string("ui.8249cd04be30c505")) {
                         showsDevices = false
@@ -1104,7 +1106,7 @@ private struct SidebarView: View {
                     }
                 }
                 .padding(18)
-                .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
+                .background(MacGlassSurface(role: .selectionBar))
             }
 
             Button(action: onAddNAS) {
@@ -1164,6 +1166,7 @@ private struct SidebarView: View {
                 }
             }
             .scrollIndicators(.hidden)
+            .macThemedScrollContent()
             .onChange(of: model.section, initial: true) { _, section in
                 if let section { proxy.scrollTo(section) }
             }
@@ -1174,6 +1177,7 @@ private struct SidebarView: View {
                 .accessibilityIdentifier("sidebar.transfers")
             moduleRow(.settings, title: L10n.string("appSettings.title"), icon: "gearshape")
                 .accessibilityIdentifier("sidebar.appSettings")
+                .padding(.bottom, 8)
             if model.isFileModuleEnabled {
                 Divider().padding(.bottom, 8)
                 StorageCapacityView(summary: model.storageSpaceSummary, isLoading: model.isLoadingStorageSpace)
@@ -1257,7 +1261,7 @@ private struct SidebarView: View {
                 Spacer().frame(width: 12)
             }
         }
-        .background(selected ? Color.accentColor.opacity(scheme == .dark ? 0.13 : 0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
+        .background(MacSelectionSurface(isSelected: selected, cornerRadius: 10))
         .id(section)
     }
 
@@ -1429,6 +1433,7 @@ struct RecentLocationsView: View {
                 .disabled(locations.isEmpty)
                 .help(L10n.string("ui.61c7e3ab7996a8ff"))
         }
+        .macThemedScrollContent(selection: selection)
         .navigationTitle(L10n.string("ui.de314b445e076e84"))
         .alert(L10n.string("ui.9f192aaa3a4d5330"), isPresented: $confirmsClearAll) {
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
@@ -1615,7 +1620,7 @@ struct RemoteLocationsView: View {
                     : L10n.string("ui.0b41577c05d286f3")
             )
         }
-        .sheet(isPresented: $showsCreate) {
+        .macSheet(isPresented: $showsCreate) {
             RemoteMountEditorView(
                 existingItem: nil,
                 initialMountPoint: defaultMountPoint
@@ -1624,7 +1629,7 @@ struct RemoteLocationsView: View {
                 return succeeded ? nil : (model.statusMessage ?? L10n.string("ui.b6a766fd18efca46"))
             }
         }
-        .sheet(item: $editingItem) { item in
+        .macSheet(item: $editingItem) { item in
             RemoteMountEditorView(
                 existingItem: item,
                 initialMountPoint: item.path
@@ -1952,6 +1957,8 @@ struct FileBrowserView: View {
     let hasFileClipboard: Bool
     let onPaste: () -> Void
     @Binding var showsInspector: Bool
+    @AppStorage("LanStash_FileGridSize") private var gridSize: FileGridSize = .medium
+    @ScaledMetric(relativeTo: .body) private var gridScale = 1.0
     
     @State private var sortOrder = [KeyPathComparator<FileItem>]()
     @State private var showsCreateFolderPrompt = false
@@ -2106,6 +2113,14 @@ struct FileBrowserView: View {
                             }
                             if viewMode == .grid { FileSortMenu(sortOrder: $sortOrder) }
                             Menu {
+                                if viewMode == .grid {
+                                    Picker(L10n.string("workspace.grid.size"), selection: $gridSize) {
+                                        ForEach(FileGridSize.allCases) { size in
+                                            Text(size.title).tag(size)
+                                        }
+                                    }
+                                    Divider()
+                                }
                                 Picker(L10n.string("ui.72148c2201764726"), selection: $fileGrouping) {
                                     ForEach(FileGrouping.allCases) { group in
                                         Text(group.title).tag(group)
@@ -2125,7 +2140,8 @@ struct FileBrowserView: View {
                             } label: {
                                 Text(L10n.string("workspace.actions.more"))
                             }
-                            .menuStyle(.borderlessButton)
+                            .menuStyle(.button)
+                            .controlSize(.large)
                             .tint(.primary)
                             .fixedSize()
                         }
@@ -2154,7 +2170,7 @@ struct FileBrowserView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 16)
-                    .background(palette.content.opacity(0.7))
+                    .background(MacGlassSurface(role: .toolbar))
 
                     Divider()
 
@@ -2218,7 +2234,7 @@ struct FileBrowserView: View {
                     .font(.system(size: 12))
                     .padding(.horizontal, 24)
                     .frame(height: 42)
-                    .background(palette.content.opacity(0.7))
+                    .background(MacGlassSurface(role: .toolbar))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -2248,11 +2264,11 @@ struct FileBrowserView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(palette.content)
+        .background(MacGlassSurface(role: .content))
         .overlay {
             if model.isLoading || model.isRefreshing || model.isSearching {
                 ZStack {
-                    palette.content.opacity(0.96)
+                    palette.glassTint.opacity(0.94)
                     VStack(spacing: 12) {
                         ProgressView()
                             .controlSize(.regular)
@@ -2264,7 +2280,7 @@ struct FileBrowserView: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.vertical, 18)
-                    .background(palette.content, in: RoundedRectangle(cornerRadius: 12))
+                    .background(palette.glassTint, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .combine)
@@ -2346,7 +2362,7 @@ struct FileBrowserView: View {
         } message: {
             Text(L10n.string("ui.709941435c31f938"))
         }
-        .sheet(isPresented: showsCompressionSheet) {
+        .macSheet(isPresented: showsCompressionSheet) {
             ArchiveCreationView(targets: compressionTargets) { name, format, level, password in
                 let targets = compressionTargets
                 compressionTargets = []
@@ -2361,7 +2377,7 @@ struct FileBrowserView: View {
                 compressionTargets = []
             }
         }
-        .sheet(item: $extractionTarget) { item in
+        .macSheet(item: $extractionTarget) { item in
             ArchiveExtractionView(item: item) { createSubfolder, keepDirectoryStructure, overwrite in
                 extractionTarget = nil
                 Task {
@@ -2376,7 +2392,7 @@ struct FileBrowserView: View {
                 extractionTarget = nil
             }
         }
-        .sheet(item: archivePasswordBinding) { request in
+        .macSheet(item: archivePasswordBinding) { request in
             ArchivePasswordView(
                 archiveName: request.item.name,
                 errorMessage: request.errorMessage,
@@ -2683,11 +2699,12 @@ struct FileBrowserView: View {
                                 .accessibilityElement(children: .combine)
                             }
 
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: MacAppearanceMetrics.gridMinimumWidth, maximum: MacAppearanceMetrics.gridMaximumWidth), spacing: 18)], spacing: 10) {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: gridSize.minimumWidth * gridScale, maximum: gridSize.maximumWidth * gridScale), spacing: gridSize.spacing)], spacing: 10) {
                                 ForEach(group.items) { item in
                                     FileGridCell(
                                         model: model,
                                         item: item,
+                                        gridSize: gridSize,
                                         isSelected: model.selection.contains(item.id),
                                         isDropTarget: dropTargetItemID == item.id,
                                         onSelect: {
@@ -2757,7 +2774,7 @@ struct FileBrowserView: View {
                 .onPreferenceChange(FileGridFramePreferenceKey.self) { gridItemFrames = $0 }
                 .padding(16)
             }
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.2))
+            .macThemedScrollContent()
         }
         .focusable()
         .focusEffectDisabled()
@@ -2958,6 +2975,7 @@ struct FileBrowserView: View {
             .width(min: 80, ideal: 100)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
+        .macThemedScrollContent(selection: model.selection)
         .accessibilityLabel(L10n.string("ui.b37e64a8db35fd15", String(describing: model.currentPath)))
         .background {
             TableDoubleClickHandler(items: sortedItems) { itemID in
@@ -3563,10 +3581,8 @@ private struct FilterChip: View {
                 .fontWeight(.medium)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035))
-                )
+                .background(MacSelectionSurface(isSelected: isSelected))
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.85))
         }
         .buttonStyle(.plain)
@@ -4242,7 +4258,7 @@ private struct TransferRow: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(NSColor.controlBackgroundColor))
+                .fill(MacCardFill())
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -4545,7 +4561,7 @@ private struct SettingsSectionCard<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                .fill(MacCardFill())
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -4574,22 +4590,24 @@ private struct SettingsRow: View {
     }
 }
 
-struct CacheCleanupOptions: OptionSet {
+struct CacheCleanupOptions: OptionSet, Sendable {
     let rawValue: Int
     static let safeTrash = CacheCleanupOptions(rawValue: 1 << 0)
     static let photoCache = CacheCleanupOptions(rawValue: 1 << 1)
-    static let all: CacheCleanupOptions = [.safeTrash, .photoCache]
+    static let mountedCache = CacheCleanupOptions(rawValue: 1 << 2)
+    static let all: CacheCleanupOptions = [.safeTrash, .photoCache, .mountedCache]
 }
 
-struct AppStorageSnapshot {
+struct AppStorageSnapshot: Sendable {
     let previewCache: Int64
     let photoCache: Int64
     let systemCache: Int64
     let protectedData: Int64
+    var mountedCache: DesktopDriveCacheSummary? = nil
 
     var safeTrash: Int64 { previewCache + systemCache }
-    var reclaimable: Int64 { safeTrash + photoCache }
-    var total: Int64 { reclaimable + protectedData }
+    var reclaimable: Int64 { safeTrash + photoCache + (mountedCache?.temporaryBytes ?? 0) }
+    var total: Int64 { reclaimable + protectedData + (mountedCache?.keptOfflineBytes ?? 0) }
 }
 
 private enum AppStorageInspector {
@@ -4604,30 +4622,30 @@ private enum AppStorageInspector {
 
     static func clearReclaimableData(options: CacheCleanupOptions = .safeTrash) throws {
         if options.contains(.safeTrash) {
-            try removeContents(of: previewDirectory, expectedLastComponent: "LanStashPreview")
+            try removeContents(of: previewDirectory, expectedLastComponent: AppStorageNamespace.name("LanStashPreview"))
             if let bundleID = Bundle.main.bundleIdentifier {
                 try removeContents(of: cacheDirectory, expectedLastComponent: bundleID)
             }
             URLCache.shared.removeAllCachedResponses()
         }
         if options.contains(.photoCache) {
-            try removeContents(of: photoCacheDirectory, expectedLastComponent: "lanstash-photo-cache")
-            try removeContents(of: photoThumbnailDirectory, expectedLastComponent: "lanstash-photo-thumbnails")
+            try removeContents(of: photoCacheDirectory, expectedLastComponent: AppStorageNamespace.name("lanstash-photo-cache"))
+            try removeContents(of: photoThumbnailDirectory, expectedLastComponent: AppStorageNamespace.name("lanstash-photo-thumbnails"))
         }
     }
 
     private static var photoCacheDirectory: URL {
         let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        return root.appendingPathComponent("lanstash-photo-cache", isDirectory: true)
+        return root.appendingPathComponent(AppStorageNamespace.name("lanstash-photo-cache"), isDirectory: true)
     }
 
     private static var photoThumbnailDirectory: URL {
         let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        return root.appendingPathComponent("lanstash-photo-thumbnails", isDirectory: true)
+        return root.appendingPathComponent(AppStorageNamespace.name("lanstash-photo-thumbnails"), isDirectory: true)
     }
 
     private static var previewDirectory: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("LanStashPreview", isDirectory: true)
+        FileManager.default.temporaryDirectory.appendingPathComponent(AppStorageNamespace.name("LanStashPreview"), isDirectory: true)
     }
 
     private static var cacheDirectory: URL {
@@ -4637,7 +4655,7 @@ private enum AppStorageInspector {
 
     private static var secureDataDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("LanStashSecureStore", isDirectory: true)
+            .appendingPathComponent(AppStorageNamespace.name("LanStashSecureStore"), isDirectory: true)
     }
 
     private static func size(of root: URL) -> Int64 {
@@ -4741,7 +4759,7 @@ struct SettingsCategorySidebar: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 11)
                     .contentShape(Rectangle())
-                    .background(RoundedRectangle(cornerRadius: 8).fill(selection == category ? Color.accentColor.opacity(0.09) : Color.clear))
+                    .background(MacSelectionSurface(isSelected: selection == category))
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selection == category ? .isSelected : [])
@@ -4767,6 +4785,8 @@ private struct SettingsView: View {
     @AppStorage("LanStash_DownloadChunkSize") private var chunkSizeSetting = 8
     @State private var storage = AppStorageInspector.snapshot()
     @State private var confirmsCacheCleanup = false
+    @State private var confirmsMountedCacheCleanup = false
+    @State private var isCleaningCache = false
     @State private var showsSelectiveCleanupSheet = false
     @State private var storageMessage: String?
     @State private var mappingToRemove: DesktopDriveMapping?
@@ -4830,6 +4850,7 @@ private struct SettingsView: View {
                 .frame(maxWidth: 680, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .macThemedScrollContent()
             .fillsAvailableContentArea(alignment: .topLeading)
         }
         .fillsAvailableContentArea(alignment: .topLeading)
@@ -4839,6 +4860,9 @@ private struct SettingsView: View {
         .task {
             storage = AppStorageInspector.snapshot()
             await desktopDriveManager.load()
+        }
+        .task(id: selectedCategory) {
+            if selectedCategory == .storage { await refreshStorage() }
         }
         .alert(
             L10n.string("desktopDrive.remove.confirm.title"),
@@ -4861,41 +4885,35 @@ private struct SettingsView: View {
         .alert(L10n.string("ui.536d12618defa1a3"), isPresented: $confirmsCacheCleanup) {
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
             Button(L10n.string("ui.9d2998cca5172319"), role: .destructive) {
-                model.dismissPreview()
-                do {
-                    try AppStorageInspector.clearReclaimableData(options: .safeTrash)
-                    storage = AppStorageInspector.snapshot()
-                    storageMessage = L10n.string("ui.6b4d085770642d6b")
-                } catch {
-                    storageMessage = L10n.string("ui.1ca55c6d7f531f67")
-                }
+                Task { await cleanCache(.safeTrash) }
             }
         } message: {
             Text(L10n.string("ui.d547ad40c1fb9469"))
         }
-        .sheet(isPresented: $showsSelectiveCleanupSheet) {
+        .macSheet(isPresented: $showsSelectiveCleanupSheet) {
             SelectiveCacheCleanupSheet(storage: storage) { options in
-                model.dismissPreview()
-                do {
-                    try AppStorageInspector.clearReclaimableData(options: options)
-                    storage = AppStorageInspector.snapshot()
-                    storageMessage = L10n.string("ui.ea80daed400569fc")
-                } catch {
-                    storageMessage = L10n.string("ui.1ca55c6d7f531f67")
-                }
+                await cleanCache(options)
             }
         }
-        .sheet(isPresented: $showsMappingCreator) {
+        .alert(L10n.string("storage.mountCache.clear"), isPresented: $confirmsMountedCacheCleanup) {
+            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
+            Button(L10n.string("storage.mountCache.clear"), role: .destructive) {
+                Task { await cleanCache(.mountedCache) }
+            }
+        } message: {
+            Text(L10n.string("storage.mountCache.confirm"))
+        }
+        .macSheet(isPresented: $showsMappingCreator) {
             DesktopDriveMappingCreatorSheet(
                 manager: desktopDriveManager,
                 profileName: model.profile.displayName,
                 currentPath: model.currentPath
             )
         }
-        .sheet(isPresented: $showsDiagnosticPreview) {
+        .macSheet(isPresented: $showsDiagnosticPreview) {
             DesktopDriveDiagnosticExportSheet(preview: diagnosticPreview)
         }
-        .sheet(isPresented: $showsCommunityReport) {
+        .macSheet(isPresented: $showsCommunityReport) {
             CommunityCompatibilitySubmissionSheet()
         }
         .alert(L10n.string("appSettings.connection.alias"), isPresented: $showsRenamePrompt) {
@@ -4908,6 +4926,35 @@ private struct SettingsView: View {
         } message: {
             Text(L10n.string("ui.c0fb0cc138b48413"))
         }
+    }
+
+    private func refreshStorage() async {
+        var snapshot = await Task.detached { AppStorageInspector.snapshot() }.value
+        do {
+            snapshot.mountedCache = try await desktopDriveManager.allMountedCacheSummary()
+        } catch {
+            storageMessage = L10n.string("storage.mountCache.readFailed")
+        }
+        storage = snapshot
+    }
+
+    @discardableResult
+    private func cleanCache(_ options: CacheCleanupOptions) async -> Bool {
+        guard !isCleaningCache, !desktopDriveManager.isBusy else { return false }
+        isCleaningCache = true
+        defer { isCleaningCache = false }
+        if options.contains(.safeTrash) { model.dismissPreview() }
+        var succeeded = true
+        do {
+            try await Task.detached { try AppStorageInspector.clearReclaimableData(options: options) }.value
+        } catch { succeeded = false }
+        if options.contains(.mountedCache) {
+            let cleared = await desktopDriveManager.clearAllTemporaryCaches()
+            succeeded = succeeded && cleared
+        }
+        await refreshStorage()
+        storageMessage = L10n.string(succeeded ? "ui.ea80daed400569fc" : "ui.1ca55c6d7f531f67")
+        return succeeded
     }
 
     // MARK: - Sub-Sections
@@ -5120,23 +5167,41 @@ private struct SettingsView: View {
             icon: "internaldrive.fill",
             iconColor: .teal
         ) {
-            SettingsRow(label: L10n.string("ui.f47f13394910cbaa"), value: ByteCountFormatter.string(fromByteCount: storage.total, countStyle: .file))
+            SettingsRow(label: L10n.string("ui.f47f13394910cbaa"), value: storage.mountedCache == nil
+                ? L10n.string("file.properties.minimumSize", storage.total.formatted(.byteCount(style: .file).locale(L10n.locale)))
+                : storage.total.formatted(.byteCount(style: .file).locale(L10n.locale)))
             Divider().opacity(0.3)
             SettingsRow(label: L10n.string("ui.f19c6c4c2cf77247"), value: ByteCountFormatter.string(fromByteCount: storage.safeTrash, countStyle: .file))
             Divider().opacity(0.3)
             SettingsRow(label: L10n.string("ui.05ca0d4a5aed9488"), value: ByteCountFormatter.string(fromByteCount: storage.photoCache, countStyle: .file))
             Divider().opacity(0.3)
             SettingsRow(label: L10n.string("ui.5513fba74a6c8c0b"), value: ByteCountFormatter.string(fromByteCount: storage.protectedData, countStyle: .file))
+            Divider().opacity(0.3)
+            SettingsRow(label: L10n.string("storage.mountCache"), value: storage.mountedCache.map {
+                $0.totalBytes.formatted(.byteCount(style: .file).locale(L10n.locale))
+            } ?? L10n.string("storage.mountCache.readFailed"))
+            if let cache = storage.mountedCache, cache.totalBytes > 0 {
+                Text(L10n.string("desktopDrive.cache.breakdown",
+                    cache.temporaryBytes.formatted(.byteCount(style: .file).locale(L10n.locale)),
+                    cache.keptOfflineBytes.formatted(.byteCount(style: .file).locale(L10n.locale))))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 if let storageMessage {
                     Text(storageMessage).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(L10n.string("ui.99a713a1340efda3")) { storage = AppStorageInspector.snapshot() }
+                Button(L10n.string("ui.99a713a1340efda3")) { Task { await refreshStorage() } }
                 Button(L10n.string("ui.4499f757f9894ee7")) { showsSelectiveCleanupSheet = true }
                     .disabled(storage.reclaimable == 0)
                 Button(L10n.string("ui.1079be00e4efe07d")) { confirmsCacheCleanup = true }
                     .disabled(storage.safeTrash == 0)
+            }
+            .disabled(isCleaningCache || desktopDriveManager.isBusy)
+            if desktopDriveManager.isAvailable {
+                Button(L10n.string("storage.mountCache.clear")) { confirmsMountedCacheCleanup = true }
+                    .buttonStyle(MacToolbarButtonStyle())
+                    .disabled(isCleaningCache || desktopDriveManager.isBusy || (storage.mountedCache?.temporaryBytes ?? 0) == 0)
             }
         }
     }
@@ -5553,6 +5618,7 @@ extension FileItem {
 struct FileGridCell: View {
     @Bindable var model: WorkspaceModel
     let item: FileItem
+    var gridSize: FileGridSize = .medium
     let isSelected: Bool
     let isDropTarget: Bool
     let onSelect: () -> Void
@@ -5562,26 +5628,24 @@ struct FileGridCell: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var appearanceScheme
     @Environment(\.colorSchemeContrast) private var appearanceContrast
-    @ScaledMetric(relativeTo: .subheadline) private var filenameHeight = 36.0
-    @ScaledMetric(relativeTo: .subheadline) private var filenameFontSize = 15.0
-    @ScaledMetric(relativeTo: .subheadline) private var tileHeight = Double(MacAppearanceMetrics.gridItemHeight)
+    @ScaledMetric(relativeTo: .body) private var scale = 1.0
 
     var body: some View {
         let palette = MacAppearancePalette(scheme: appearanceScheme, increasedContrast: appearanceContrast == .increased)
-        VStack(spacing: 18) {
+        VStack(spacing: gridSize.spacing) {
             FileGridThumbnail(model: model, item: item)
-                .frame(width: 92, height: 82)
+                .frame(width: gridSize.iconWidth * scale, height: gridSize.iconHeight * scale)
             
             Text(item.name)
-                .font(.system(size: filenameFontSize))
+                .font(.system(size: gridSize.fontSize * scale))
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .frame(height: filenameHeight, alignment: .top)
+                .frame(height: gridSize.fontSize * 2.6 * scale, alignment: .top)
                 .help(item.name)
         }
         .padding(8)
         .frame(maxWidth: .infinity)
-        .frame(height: tileHeight)
+        .frame(height: gridSize.itemHeight * scale)
         .contentShape(Rectangle())
         .background(
             RightClickDetector {
@@ -5604,7 +5668,7 @@ struct FileGridCell: View {
                     isDropTarget
                         ? Color.accentColor.opacity(0.90)
                         : isSelected
-                        ? Color.accentColor.opacity(0.85)
+                        ? palette.selectionBorder
                         : (isHovered ? palette.separator : Color.clear),
                     lineWidth: isDropTarget ? 2 : 1
                 )
@@ -5655,9 +5719,7 @@ private struct FileGridThumbnail: View {
                     Image(decorative: decoded.cgImage, scale: 1, orientation: decoded.orientation)
                         .resizable()
                         .interpolation(.medium)
-                        .scaledToFill()
-                        .frame(width: 84, height: 72)
-                        .clipped()
+                        .scaledToFit()
 
                     if PreviewKind.classify(item) == .video {
                         Image(systemName: "play.circle.fill")
@@ -5674,7 +5736,6 @@ private struct FileGridThumbnail: View {
                 }
             } else {
                 FileLargeIcon(item: item)
-                    .frame(width: 84, height: 76)
             }
         }
         .task(id: item.id) {
@@ -5773,241 +5834,121 @@ struct FilePropertiesView: View {
     let model: WorkspaceModel
     @Environment(\.dismiss) private var dismiss
 
-    private var folderStatistics: FolderStatistics? {
-        model.folderStatisticsResults[item.id]
-    }
-
-    private var isCalculatingFolderSize: Bool {
-        model.calculatingFolderStatisticsIDs.contains(item.id)
-    }
-
-    private var isCancellingFolderSize: Bool {
-        model.cancellingFolderStatisticsIDs.contains(item.id)
-    }
-
-    private var folderSizeError: String? {
-        model.folderStatisticsErrors[item.id]
-    }
+    private var folderStatistics: FolderStatistics? { model.folderStatisticsResults[item.id] }
+    private var isCalculating: Bool { model.calculatingFolderStatisticsIDs.contains(item.id) }
+    private var isCancelling: Bool { model.cancellingFolderStatisticsIDs.contains(item.id) }
+    private var sizeError: String? { model.folderStatisticsErrors[item.id] }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text(L10n.string("ui.a748cc074f78de00"))
-                    .font(.headline.weight(.semibold))
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                FileLargeIcon(item: item).frame(width: 42, height: 38)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name).font(.headline).textSelection(.enabled).lineLimit(2)
+                    Text(item.fileTypeDisplay).font(.callout).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                Spacer(minLength: 12)
+                Button { dismiss() } label: {
+                    Label(L10n.string("ui.2cd0f3be8738a86c"), systemImage: "xmark")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(MacToolbarButtonStyle())
+                .keyboardShortcut(.cancelAction)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-            .background(Color(NSColor.windowBackgroundColor))
-            
+            .padding(16)
+            .background(MacGlassSurface(role: .toolbar))
             Divider()
 
             ScrollView {
-                VStack(spacing: 20) {
-                    // 大图标与名称
-                    VStack(spacing: 12) {
-                        FileLargeIcon(item: item)
-                            .frame(width: 64, height: 64)
-                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                        
-                        Text(item.name)
-                            .font(.title3.weight(.bold))
-                            .multilineTextAlignment(.center)
-                            .textSelection(.enabled)
-                    }
-                    .padding(.top, 16)
-                    
-                    // 1. 基本信息卡片
-                    SettingsSectionCard(
-                        title: L10n.string("ui.e8df058725699a17"),
-                        icon: "info.circle",
-                        iconColor: .blue
-                    ) {
-                        SettingsRow(label: L10n.string("ui.a28cf187c617333f"), value: item.fileTypeDisplay)
-                        Divider().opacity(0.3)
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(L10n.string("ui.50db7447b966f5ef"))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            if isCalculatingFolderSize, folderStatistics == nil {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text(
-                                    L10n.string(
-                                        isCancellingFolderSize
-                                            ? "dirsize.cancelling"
-                                            : "dirsize.calculating"
-                                    )
-                                )
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text(sizeDisplayValue)
-                                    .monospacedDigit()
-                                    .multilineTextAlignment(.trailing)
-                                if isCalculatingFolderSize {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .accessibilityLabel(L10n.string("dirsize.calculating"))
-                                }
-                            }
-                        }
-                        if let folderStatistics {
-                            Divider().opacity(0.3)
-                            SettingsRow(
-                                label: L10n.string("ui.7a688306423bec17"),
-                                value: L10n.string("ui.1455e4d7dd9068d4", String(describing: folderStatistics.fileCount), String(describing: folderStatistics.folderCount))
-                            )
-                        }
-                        if let folderSizeError {
-                            Text(folderSizeError)
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                        if item.isDirectory {
-                            Divider().opacity(0.3)
-                            HStack(spacing: 10) {
-                                if isCalculatingFolderSize {
-                                    Button {
+                VStack(alignment: .leading, spacing: 16) {
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
+                        GridRow(alignment: .top) {
+                            fieldLabel("ui.50db7447b966f5ef")
+                            HStack(spacing: 8) {
+                                if isCalculating { ProgressView().controlSize(.small) }
+                                Text(sizeDisplayValue).monospacedDigit()
+                                Spacer(minLength: 0)
+                                if isCalculating {
+                                    Button(L10n.string(isCancelling ? "dirsize.cancelling" : "dirsize.cancel")) {
                                         model.cancelFolderStatistics(for: item.id)
-                                    } label: {
-                                        Text(
-                                            L10n.string(
-                                                isCancellingFolderSize
-                                                    ? "dirsize.cancelling"
-                                                    : "dirsize.cancel"
-                                            )
-                                        )
                                     }
-                                    .disabled(isCancellingFolderSize)
-                                } else {
-                                    Button {
-                                        model.startFolderStatistics(for: item)
-                                    } label: {
-                                        Text(
-                                            L10n.string(
-                                                folderStatistics == nil
-                                                    ? "dirsize.calculate"
-                                                    : "dirsize.recalculate"
-                                            )
-                                        )
-                                    }
+                                    .disabled(isCancelling)
+                                    .buttonStyle(.borderless)
                                 }
-                                Spacer()
-                            }
-                            if isCalculatingFolderSize {
-                                Text(L10n.string("dirsize.background-note"))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-                        Divider().opacity(0.3)
-                        SettingsRow(label: L10n.string("ui.1fb4d574da92f1c1"), value: item.path, isMonospaced: true)
+                        if let statistics = folderStatistics {
+                            propertyRow("ui.7a688306423bec17", value: L10n.string("ui.1455e4d7dd9068d4",
+                                statistics.fileCount.formatted(.number.locale(L10n.locale)),
+                                statistics.folderCount.formatted(.number.locale(L10n.locale))))
+                        }
+                        propertyRow("ui.1fb4d574da92f1c1", value: item.path)
                     }
-
-                    // 2. 时间卡片
-                    SettingsSectionCard(
-                        title: L10n.string("ui.a229d4f9ee0e4dfa"),
-                        icon: "calendar",
-                        iconColor: .purple
-                    ) {
-                        SettingsRow(label: L10n.string("ui.257bbcc44c839db4"), value: formatDateString(item.times?.modifiedAt))
+                    if let sizeError {
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(sizeError).font(.callout).foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Button(L10n.string("dirsize.recalculate")) { model.startFolderStatistics(for: item) }
+                                .buttonStyle(MacToolbarButtonStyle())
+                        }
+                    }
+                    Divider()
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
+                        propertyRow("ui.257bbcc44c839db4", value: dateText(item.times?.modifiedAt))
                         if let createdAt = item.times?.createdAt {
-                            Divider().opacity(0.3)
-                            SettingsRow(label: L10n.string("ui.07ec86e0f1d44f91"), value: formatDateString(createdAt))
+                            propertyRow("ui.07ec86e0f1d44f91", value: dateText(createdAt))
                         }
                         if let accessedAt = item.times?.accessedAt {
-                            Divider().opacity(0.3)
-                            SettingsRow(label: L10n.string("ui.92cfc7de2e886725"), value: formatDateString(accessedAt))
+                            propertyRow("ui.92cfc7de2e886725", value: dateText(accessedAt))
                         }
                     }
-
-                    // 3. 所有权卡片
-                    SettingsSectionCard(
-                        title: L10n.string("ui.15157c55c392d1e4"),
-                        icon: "person.badge.key",
-                        iconColor: .green
-                    ) {
-                        SettingsRow(label: L10n.string("ui.43a7f4b4c5c88a2a"), value: item.owner ?? "—")
-                        Divider().opacity(0.3)
-                        SettingsRow(label: L10n.string("ui.963ead08d78d597c"), value: item.group ?? "—")
-                        Divider().opacity(0.3)
-                        SettingsRow(label: L10n.string("ui.281d3a306f2dc6cd"), value: item.permissions?.posixMode != nil ? String(format: "%o", item.permissions!.posixMode!) : "—")
+                    Divider()
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
+                        propertyRow("ui.43a7f4b4c5c88a2a", value: item.owner ?? "—")
+                        propertyRow("ui.963ead08d78d597c", value: item.group ?? "—")
+                        propertyRow("ui.281d3a306f2dc6cd", value: item.permissions?.posixMode.map { String($0, radix: 8) } ?? "—")
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 20)
+                .font(.callout)
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .macThemedScrollContent()
+            .fillsAvailableContentArea(alignment: .topLeading)
         }
-        .frame(width: 520, height: 540)
+        .frame(width: 560, height: 420)
+        .background(MacGlassSurface(role: .content))
+        .accessibilityLabel(L10n.string("ui.a748cc074f78de00"))
+        .task(id: item.id) { model.startFolderStatistics(for: item) }
+    }
+
+    private func fieldLabel(_ key: String) -> some View {
+        Text(L10n.string(key)).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+    }
+
+    private func propertyRow(_ key: String, value: String) -> some View {
+        GridRow(alignment: .top) {
+            fieldLabel(key)
+            Text(value).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var sizeDisplayValue: String {
         if item.isDirectory {
-            guard let statistics = folderStatistics else { return "—" }
-            return formatBytesDetailed(statistics.sizeBytes, isComplete: statistics.isComplete)
+            if let statistics = folderStatistics {
+                let size = statistics.sizeBytes.formatted(.byteCount(style: .file).locale(L10n.locale))
+                return statistics.isComplete ? size : L10n.string("file.properties.minimumSize", size)
+            }
+            return isCalculating ? L10n.string("dirsize.calculating") : "—"
         }
-        if let size = item.sizeBytes {
-            return formatBytesDetailed(size, isComplete: true)
-        }
-        return "—"
+        return item.sizeBytes.map { $0.formatted(.byteCount(style: .file).locale(L10n.locale)) } ?? "—"
     }
 
-    private func formatBytesDetailed(_ bytes: Int64, isComplete: Bool) -> String {
-        let prefix = isComplete ? "" : L10n.string("ui.7f99164ef0aac2fc")
-        if bytes < 0 {
-            return L10n.string("ui.698c80932fdc228e", String(describing: prefix))
-        }
-        if bytes < 1024 {
-            return L10n.string("ui.08d75ecb4e667a28", String(describing: prefix), String(describing: bytes))
-        }
-
-        let doubleBytes = Double(bytes)
-        let formattedSize: String
-
-        if bytes < 1024 * 1024 {
-            let kb = doubleBytes / 1024.0
-            formattedSize = "\(trimTrailingZeros(kb)) KB"
-        } else if bytes < 1024 * 1024 * 1024 {
-            let mb = doubleBytes / (1024.0 * 1024.0)
-            formattedSize = "\(trimTrailingZeros(mb)) MB"
-        } else if bytes < 1024 * 1024 * 1024 * 1024 {
-            let gb = doubleBytes / (1024.0 * 1024.0 * 1024.0)
-            formattedSize = "\(trimTrailingZeros(gb)) GB"
-        } else {
-            let tb = doubleBytes / (1024.0 * 1024.0 * 1024.0 * 1024.0)
-            formattedSize = "\(trimTrailingZeros(tb)) TB"
-        }
-
-        return "\(prefix)\(formattedSize)"
-    }
-
-    private func trimTrailingZeros(_ value: Double) -> String {
-        var str = String(format: "%.2f", value)
-        while str.hasSuffix("0") {
-            str.removeLast()
-        }
-        if str.hasSuffix(".") {
-            str.removeLast()
-        }
-        return str
-    }
-
-    private func formatDateString(_ date: Date?) -> String {
-        guard let date = date else { return "—" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
-        return formatter.string(from: date)
+    private func dateText(_ date: Date?) -> String {
+        date?.formatted(.dateTime.year().month().day().hour().minute().locale(L10n.locale)) ?? "—"
     }
 }
 
@@ -6099,7 +6040,7 @@ struct DesktopDriveMappingCreatorSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .macThemedScrollContent()
 
             Text(cacheHelpText)
             .font(.caption)
@@ -6213,11 +6154,14 @@ struct DesktopDriveMappingCreatorSheet: View {
 
 struct SelectiveCacheCleanupSheet: View {
     let storage: AppStorageSnapshot
-    let onClean: (CacheCleanupOptions) -> Void
+    let onClean: (CacheCleanupOptions) async -> Bool
     @Environment(\.dismiss) private var dismiss
 
     @State private var cleanSafeTrash = true
     @State private var cleanPhotoCache = false
+    @State private var cleanMountedCache = false
+    @State private var isCleaning = false
+    @State private var showsFailure = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -6268,11 +6212,29 @@ struct SelectiveCacheCleanupSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if let cache = storage.mountedCache, cache.totalBytes > 0 {
+                    Divider()
+                    Toggle(isOn: $cleanMountedCache) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(L10n.string("storage.mountCache")).font(.body.weight(.medium))
+                                Spacer()
+                                Text(cache.temporaryBytes.formatted(.byteCount(style: .file).locale(L10n.locale)))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(L10n.string("storage.mountCache.description"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(cache.temporaryBytes == 0)
+                }
             }
+            .disabled(isCleaning)
             .padding(14)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
 
             HStack {
+                if isCleaning { ProgressView().controlSize(.small) }
                 Spacer()
                 Button(L10n.string("ui.2cd0f3be8738a86c")) { dismiss() }
                     .keyboardShortcut(.escape, modifiers: [])
@@ -6281,17 +6243,27 @@ struct SelectiveCacheCleanupSheet: View {
                     var selected: CacheCleanupOptions = []
                     if cleanSafeTrash { selected.insert(.safeTrash) }
                     if cleanPhotoCache { selected.insert(.photoCache) }
-                    onClean(selected)
-                    dismiss()
+                    if cleanMountedCache { selected.insert(.mountedCache) }
+                    isCleaning = true
+                    showsFailure = false
+                    Task {
+                        let success = await onClean(selected)
+                        isCleaning = false
+                        if success { dismiss() } else { showsFailure = true }
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(!cleanSafeTrash && !cleanPhotoCache)
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                .disabled(!cleanSafeTrash && !cleanPhotoCache && !cleanMountedCache)
+            }
+            .disabled(isCleaning)
+            if showsFailure {
+                Text(L10n.string("ui.1ca55c6d7f531f67")).font(.callout).foregroundStyle(.red)
             }
         }
         .padding(24)
         .frame(width: 480)
         .background(MacGlassSurface(role: .sidebar))
+        .interactiveDismissDisabled(isCleaning)
     }
 }
 

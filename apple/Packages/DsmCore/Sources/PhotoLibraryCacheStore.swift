@@ -30,7 +30,7 @@ public struct PhotoLibraryCacheStore: Sendable {
         } else {
             let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
                 ?? FileManager.default.temporaryDirectory
-            self.baseURL = cachesDir.appendingPathComponent("lanstash-photo-cache", isDirectory: true)
+            self.baseURL = cachesDir.appendingPathComponent(AppStorageNamespace.name("lanstash-photo-cache"), isDirectory: true)
         }
     }
 

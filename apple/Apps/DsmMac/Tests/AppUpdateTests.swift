@@ -1,3 +1,4 @@
+import AppKit
 import DsmCore
 @testable import DsmMacExecutable
 import Sparkle
@@ -5,6 +6,31 @@ import XCTest
 
 @MainActor
 final class AppUpdateTests: XCTestCase {
+    func test更新窗口保留标题栏系统按钮且系统关闭只取消一次() {
+        _ = NSApplication.shared
+        let driver = AppUpdateUserDriver(presentsWindows: false)
+        var cancellations = 0
+        driver.showUserInitiatedUpdateCheck { cancellations += 1 }
+        let window = AppUpdateWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 200),
+                                     styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.delegate = driver
+        defer { window.close() }
+        XCTAssertTrue(window.isMovable)
+        XCTAssertNotNil(window.standardWindowButton(.closeButton))
+        XCTAssertNotNil(window.standardWindowButton(.miniaturizeButton))
+        XCTAssertGreaterThan(window.frame.height, 200)
+        window.performClose(nil)
+        window.performClose(nil)
+        XCTAssertEqual(cancellations, 1)
+
+        driver.showDownloadDidStartExtractingUpdate()
+        window.performClose(nil)
+        XCTAssertEqual(driver.stage, .preparing)
+        XCTAssertTrue(driver.isWorking)
+        XCTAssertEqual(cancellations, 1)
+    }
+
     func test更新说明只显示文本且新检查清除旧版本资料() {
         let driver = AppUpdateUserDriver(presentsWindows: false)
         driver.showAvailable(version: "0.3.0", notes: "<p>修复 &amp; 优化</p><p>第二项</p>") { _ in

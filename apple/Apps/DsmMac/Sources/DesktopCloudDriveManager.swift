@@ -106,7 +106,7 @@ struct DesktopDriveOfflineProgress: Equatable {
     var volumeName: String?
 }
 
-struct DesktopDriveCacheSummary: Equatable {
+struct DesktopDriveCacheSummary: Equatable, Sendable {
     var temporaryBytes: Int64 = 0
     var keptOfflineBytes: Int64 = 0
     var temporaryItemCount = 0
@@ -114,6 +114,20 @@ struct DesktopDriveCacheSummary: Equatable {
 
     var totalBytes: Int64 {
         temporaryBytes + keptOfflineBytes
+    }
+
+    static func summarize(_ runtime: DesktopDriveMappingRuntime) -> Self {
+        var summary = Self()
+        for entry in runtime.cacheEntries.values {
+            if entry.kind == .keptOffline || runtime.keepsOffline(entry.remotePath) {
+                summary.keptOfflineBytes += entry.allocatedSizeBytes
+                summary.keptOfflineItemCount += 1
+            } else {
+                summary.temporaryBytes += entry.allocatedSizeBytes
+                summary.temporaryItemCount += 1
+            }
+        }
+        return summary
     }
 }
 
@@ -468,28 +482,7 @@ final class DesktopCloudDriveManager {
         isBusy = true
         defer { isBusy = false }
         do {
-            let runtime = try await store.runtime(mappingID: mapping.id)
-            let paths = runtime.cacheEntries.values
-                .filter { $0.kind == .temporary }
-                .map(\.remotePath)
-            var released: [String] = []
-            var failureCount = 0
-            for path in paths {
-                do {
-                    try await systemOperations.evict(
-                        itemIdentifier(path: path, mapping: mapping),
-                        mapping
-                    )
-                    released.append(path)
-                } catch {
-                    failureCount += 1
-                }
-            }
-            try await store.removeCacheEntries(
-                remotePaths: released,
-                mappingID: mapping.id
-            )
-            await refreshCacheSize(mapping)
+            let failureCount = try await clearTemporaryCacheEntries(mapping)
             if failureCount == 0 {
                 setSuccess("desktopDrive.status.cacheCleared")
             } else {
@@ -498,6 +491,67 @@ final class DesktopCloudDriveManager {
         } catch {
             setError("desktopDrive.error.clearCache")
         }
+    }
+
+    /// 应用存储页汇总所有 NAS 的挂载缓存；仅读取元数据，不触发挂载恢复或下载。
+    func allMountedCacheSummary() async throws -> DesktopDriveCacheSummary {
+        guard isAvailable else { return .init() }
+        var total = DesktopDriveCacheSummary()
+        for mapping in try await store.mappings() {
+            let summary = DesktopDriveCacheSummary.summarize(try await store.runtime(mappingID: mapping.id))
+            total.temporaryBytes += summary.temporaryBytes
+            total.keptOfflineBytes += summary.keptOfflineBytes
+            total.temporaryItemCount += summary.temporaryItemCount
+            total.keptOfflineItemCount += summary.keptOfflineItemCount
+        }
+        return total
+    }
+
+    func clearAllTemporaryCaches() async -> Bool {
+        guard isAvailable, !isBusy else { return false }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            var failures = 0
+            for mapping in try await store.mappings() {
+                do { failures += try await clearTemporaryCacheEntries(mapping) }
+                catch { failures += 1 }
+            }
+            if failures == 0 {
+                setSuccess("desktopDrive.status.cacheCleared")
+                return true
+            }
+            setError("desktopDrive.error.cachePartiallyCleared")
+        } catch {
+            setError("desktopDrive.error.clearCache")
+        }
+        return false
+    }
+
+    private func clearTemporaryCacheEntries(_ mapping: DesktopDriveMapping) async throws -> Int {
+        let runtime = try await store.runtime(mappingID: mapping.id)
+        let paths = runtime.cacheEntries.values
+            .filter { $0.kind == .temporary && !runtime.keepsOffline($0.remotePath) }
+            .map(\.remotePath).sorted()
+        guard !paths.isEmpty else { return 0 }
+        guard systemOperations.hasDomain(mapping), runtime.state != .recoveryRequired,
+              runtime.state != .removing else { throw CocoaError(.fileReadNoPermission) }
+        var failures = 0
+        for path in paths {
+            try Task.checkCancellation()
+            let current = try await store.runtime(mappingID: mapping.id)
+            guard current.cacheEntries[path]?.kind == .temporary,
+                  !current.keepsOffline(path) else { continue }
+            do {
+                // 系统拒绝未上传、被占用或不可释放的文件；不直接删除本地挂载目录。
+                try await systemOperations.evict(itemIdentifier(path: path, mapping: mapping), mapping)
+                try await store.removeCacheEntries(remotePaths: [path], mappingID: mapping.id)
+            } catch {
+                failures += 1
+            }
+        }
+        await refreshCacheSize(mapping)
+        return failures
     }
 
     func setTemporaryCacheLimit(
@@ -980,17 +1034,7 @@ final class DesktopCloudDriveManager {
             cacheSummaries[mapping.id] = .init()
             return
         }
-        var summary = DesktopDriveCacheSummary()
-        for entry in runtime.cacheEntries.values {
-            switch entry.kind {
-            case .temporary:
-                summary.temporaryBytes += entry.allocatedSizeBytes
-                summary.temporaryItemCount += 1
-            case .keptOffline:
-                summary.keptOfflineBytes += entry.allocatedSizeBytes
-                summary.keptOfflineItemCount += 1
-            }
-        }
+        let summary = DesktopDriveCacheSummary.summarize(runtime)
         cacheSummaries[mapping.id] = summary
         cacheBytes[mapping.id] = summary.totalBytes
         runtimes[mapping.id] = runtime

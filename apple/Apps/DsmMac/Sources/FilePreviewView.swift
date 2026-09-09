@@ -480,7 +480,8 @@ struct FileDetailView: View {
             }
             .fillsAvailableContentArea()
         }
-        .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).content)
+        .background(MacGlassSurface(role: .content))
+        .environment(\.macUsesContentBackground, true)
         .clipShape(RoundedRectangle(cornerRadius: isVideoPreview ? 0 : 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).edge, lineWidth: isVideoPreview ? 0 : 1))
         .padding(isVideoPreview ? 0 : 12)
@@ -801,9 +802,9 @@ struct FileDetailView: View {
                 if model.isEditingText {
                     TextEditor(text: $model.editableText)
                         .font(.system(.callout, design: .monospaced))
-                        .scrollContentBackground(.hidden)
+                        .macThemedScrollContent()
                         .padding(10)
-                        .background(Color(nsColor: .textBackgroundColor))
+                        .background(MacGlassSurface(role: .content))
                         .accessibilityLabel(L10n.string("ui.5d5903894506eb80", String(describing: item.name)))
                 } else {
                     ScrollView([.horizontal, .vertical]) {

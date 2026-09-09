@@ -4,6 +4,95 @@ import XCTest
 
 @MainActor
 final class MacAppearanceTests: XCTestCase {
+    func test卡片底色不使用不透明白底且在两种主题下比选中态更轻() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for highContrast in [false, true] {
+                let palette = MacAppearancePalette(scheme: scheme, increasedContrast: highContrast)
+                let color = try XCTUnwrap(NSColor(palette.card).usingColorSpace(.deviceRGB))
+                XCTAssertLessThan(color.alphaComponent, palette.nativeSelection.alphaComponent)
+                XCTAssertLessThan(color.redComponent, 0.5)
+                XCTAssertGreaterThan(color.alphaComponent, 0)
+                var environment = EnvironmentValues()
+                environment.colorScheme = scheme
+                let resolvedPalette = MacAppearancePalette(scheme: scheme, increasedContrast: environment.colorSchemeContrast == .increased)
+                XCTAssertEqual(NSColor(MacCardFill().resolve(in: environment)), NSColor(resolvedPalette.card))
+            }
+        }
+    }
+
+    func test选中底色低饱和且浅深主题和增强对比度均可区分() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for highContrast in [false, true] {
+                let color = try XCTUnwrap(MacAppearancePalette(scheme: scheme, increasedContrast: highContrast).nativeSelection.usingColorSpace(.deviceRGB))
+                XCTAssertLessThan(color.saturationComponent, 0.5)
+                XCTAssertGreaterThanOrEqual(color.alphaComponent, 0.15)
+                XCTAssertLessThanOrEqual(color.alphaComponent, 0.31)
+            }
+        }
+    }
+
+    func test三档网格同步缩放图标单元格和文字且中档小于旧默认() {
+        XCTAssertEqual(FileGridSize.allCases, [.small, .medium, .large])
+        for (smaller, larger) in [(FileGridSize.small, FileGridSize.medium), (.medium, .large)] {
+            XCTAssertLessThan(smaller.iconWidth, larger.iconWidth)
+            XCTAssertLessThan(smaller.iconHeight, larger.iconHeight)
+            XCTAssertLessThan(smaller.minimumWidth, larger.minimumWidth)
+            XCTAssertLessThan(smaller.maximumWidth, larger.maximumWidth)
+            XCTAssertLessThan(smaller.itemHeight, larger.itemHeight)
+            XCTAssertLessThan(smaller.fontSize, larger.fontSize)
+        }
+        XCTAssertEqual(FileGridSize.large.itemHeight, 188)
+        XCTAssertLessThan(FileGridSize.medium.itemHeight, 188)
+    }
+
+    func test本机存储总量包含挂载缓存但可清理量不包含离线文件() {
+        let snapshot = AppStorageSnapshot(previewCache: 10, photoCache: 20, systemCache: 30, protectedData: 40,
+            mountedCache: .init(temporaryBytes: 50, keptOfflineBytes: 60))
+        XCTAssertEqual(snapshot.total, 210)
+        XCTAssertEqual(snapshot.reclaimable, 110)
+        XCTAssertEqual(snapshot.safeTrash, 40)
+        XCTAssertTrue(CacheCleanupOptions.all.contains(.mountedCache))
+        XCTAssertFalse(CacheCleanupOptions.safeTrash.contains(.mountedCache))
+    }
+
+    func test滚动区域去掉实色轨道且保留可见性和滚动内容() {
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 200, height: 160))
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = false
+        scroll.scrollerStyle = .legacy
+        scroll.drawsBackground = true
+        scroll.contentView.drawsBackground = true
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 800))
+        scroll.documentView = document
+
+        XCTAssertTrue(MacScrollBackground.HostView.configureScrollViews(in: scroll))
+        XCTAssertEqual(scroll.scrollerStyle, .overlay)
+        XCTAssertFalse(scroll.drawsBackground)
+        XCTAssertFalse(scroll.contentView.drawsBackground)
+        XCTAssertFalse(scroll.autohidesScrollers)
+        XCTAssertTrue(scroll.hasVerticalScroller)
+        XCTAssertTrue(scroll.hasHorizontalScroller)
+        XCTAssertTrue(scroll.documentView === document)
+        XCTAssertNil(MacScrollBackground.HostView().hitTest(.zero))
+    }
+
+    func test浅深主题透明度都降低主题遮罩而不是正文透明度() {
+        let store = MacAppearanceStore()
+        for scheme in [ColorScheme.light, .dark] {
+            var previous = 1.0
+            for value in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                store.setTransparency(value, for: scheme)
+                let opacity = store.glassOverlayOpacity(for: scheme, reducesTransparency: false)
+                XCTAssertLessThan(opacity, previous)
+                XCTAssertGreaterThanOrEqual(opacity, 0.15)
+                previous = opacity
+            }
+        }
+        XCTAssertEqual(MacGlassRole.sidebar.material, .sidebar)
+        XCTAssertEqual(MacGlassRole.content.blendingMode, .behindWindow)
+    }
+
     func test视频窗口隐藏系统按钮但保留全屏和缩放并可恢复() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 500), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -231,8 +320,8 @@ final class MacAppearanceTests: XCTestCase {
         store.setTransparency(1, for: .light)
         let clear = store.glassOverlayOpacity(for: .light, reducesTransparency: false)
         XCTAssertGreaterThan(solid, clear)
-        XCTAssertEqual(solid, 0.72, accuracy: 0.001)
-        XCTAssertEqual(clear, 0.12, accuracy: 0.001)
+        XCTAssertEqual(solid, 0.96, accuracy: 0.001)
+        XCTAssertEqual(clear, 0.16, accuracy: 0.001)
         XCTAssertEqual(store.glassOverlayOpacity(for: .light, reducesTransparency: true), 1)
     }
 

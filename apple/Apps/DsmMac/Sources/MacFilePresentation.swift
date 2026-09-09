@@ -3,6 +3,38 @@ import DsmLocalization
 import Foundation
 import SwiftUI
 
+enum FileGridSize: String, CaseIterable, Identifiable {
+    case small, medium, large
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .small: L10n.string("workspace.grid.size.small")
+        case .medium: L10n.string("workspace.grid.size.medium")
+        case .large: L10n.string("workspace.grid.size.large")
+        }
+    }
+
+    var minimumWidth: CGFloat {
+        switch self { case .small: 90; case .medium: 120; case .large: 150 }
+    }
+    var maximumWidth: CGFloat {
+        switch self { case .small: 106; case .medium: 138; case .large: 170 }
+    }
+    var itemHeight: CGFloat {
+        switch self { case .small: 104; case .medium: 140; case .large: 188 }
+    }
+    var iconWidth: CGFloat {
+        switch self { case .small: 44; case .medium: 64; case .large: 92 }
+    }
+    var iconHeight: CGFloat { iconWidth * 0.89 }
+    var spacing: CGFloat {
+        switch self { case .small: 8; case .medium: 12; case .large: 18 }
+    }
+    var fontSize: CGFloat {
+        switch self { case .small: 12; case .medium: 13; case .large: 15 }
+    }
+}
+
 struct FileSortMenu: View {
     @Binding var sortOrder: [KeyPathComparator<FileItem>]
 
@@ -29,7 +61,8 @@ struct FileSortMenu: View {
         } label: {
             Text(FileSortCriterion.resolve(sortOrder.first).title)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .controlSize(.large)
         .tint(.primary)
         .fixedSize()
         .foregroundStyle(.secondary)
@@ -144,17 +177,12 @@ struct FileSelectionInspector: View {
     let items: [FileItem]
     let profileName: String
     let onShowProperties: (FileItem) -> Void
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(L10n.string("workspace.inspector.selection"))
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 28)
-                .accessibilityAddTraits(.isHeader)
+                .font(.callout).foregroundStyle(.secondary)
+                .padding(16).accessibilityAddTraits(.isHeader)
             if items.isEmpty {
                 ContentUnavailableView(
                     L10n.string("workspace.inspector.empty.title"),
@@ -164,61 +192,31 @@ struct FileSelectionInspector: View {
                 .fillsAvailableContentArea()
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HStack {
-                            Spacer()
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 10) {
                             if let item = items.first {
-                                ZStack {
-                                    if items.count > 1 {
-                                        FileLargeIcon(item: item)
-                                            .frame(width: 86, height: 78)
-                                            .offset(x: -26, y: -5)
-                                    }
-                                    FileLargeIcon(item: item)
-                                        .frame(width: 86, height: 78)
-                                        .offset(x: items.count > 1 ? 22 : 0)
-                                }
-                                .frame(height: 100)
+                                FileLargeIcon(item: item).frame(width: 36, height: 34)
                             }
-                            Spacer()
-                        }
-                        .padding(.top, 8)
-                        Text(items.count == 1 ? items[0].name : L10n.string(items.allSatisfy(\.isDirectory) ? "workspace.inspector.folderCount" : "workspace.selection.count", items.count))
-                            .font(.title3.weight(.semibold))
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if items.count > 1 {
-                            Text(items.prefix(5).map(\.name).formatted(.list(type: .and).locale(L10n.locale)))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
+                            Text(items.count == 1 ? items[0].name : L10n.string("workspace.selection.count", items.count))
+                                .font(.callout.weight(.semibold)).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Divider()
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(L10n.string("workspace.inspector.location")).foregroundStyle(.secondary)
-                            Label(profileName, systemImage: "externaldrive")
-                        }
+                        valueRow("file.properties.device", value: profileName)
                         if items.count == 1, let item = items.first {
                             valueRow("ui.ba40014ff496f64e", value: item.fileTypeDisplay)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(L10n.string("workspace.inspector.location"))
-                                    .foregroundStyle(.secondary)
-                                Text(item.path)
-                                    .textSelection(.enabled)
-                                    .lineLimit(4)
-                                    .truncationMode(.middle)
-                                    .help(item.path)
-                            }
-                            if let size = item.sizeBytes, !item.isDirectory {
+                            if !item.isDirectory, let size = item.sizeBytes {
                                 valueRow("ui.50db7447b966f5ef", value: size.formatted(.byteCount(style: .file).locale(L10n.locale)))
                             }
-                            if let modifiedAt = item.times?.modifiedAt {
-                                valueRow("ui.2cbced881b2df35a", value: modifiedAt.formatted(.dateTime.year().month().day().hour().minute().locale(L10n.locale)))
+                            valueRow("workspace.inspector.location", value: item.path)
+                            if let date = item.times?.modifiedAt {
+                                valueRow("ui.2cbced881b2df35a", value: date.formatted(.dateTime.year().month().day().hour().minute().locale(L10n.locale)))
                             }
                             Button(L10n.string("workspace.inspector.properties")) { onShowProperties(item) }
-                                .buttonStyle(.bordered)
-                                .controlSize(.large)
+                                .buttonStyle(MacToolbarButtonStyle())
                         } else {
+                            Text(items.prefix(5).map(\.name).formatted(.list(type: .and).locale(L10n.locale)))
+                                .foregroundStyle(.secondary).lineLimit(5)
                             if items.count > 5 {
                                 Text(L10n.string("workspace.inspector.remaining", items.count - 5))
                                     .foregroundStyle(.secondary)
@@ -226,20 +224,24 @@ struct FileSelectionInspector: View {
                         }
                     }
                     .font(.callout)
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 20)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
                 }
+                .macThemedScrollContent()
             }
         }
         .fillsAvailableContentArea(alignment: .topLeading)
-        .background(MacAppearancePalette(scheme: scheme, increasedContrast: contrast == .increased).content)
+        .background(MacGlassSurface(role: .content))
         .accessibilityIdentifier("workspace.inspector")
     }
 
     private func valueRow(_ key: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.string(key)).foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 8) {
+            Text(L10n.string(key)).foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
             Text(value).textSelection(.enabled)
+                .lineLimit(4).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(value)
         }
     }
 }
