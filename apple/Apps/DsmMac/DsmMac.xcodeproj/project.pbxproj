@@ -18,6 +18,7 @@
 		3D2E5047C4CC4EA551E248FA /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 6A578FB6D5B34A59438162B6 /* DsmNetwork */; };
 		3F7B3902FFF181AEC9D25BEE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 55636F64951E9DD6841A1586 /* InfoPlist.strings */; };
 		3FCADE45FE1B6CE377E360BA /* DsmMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */; };
+		427786CD64BD31B101EF1648 /* SynologyPhotosModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */; };
 		42BF5B5E814A964E72ED075E /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6244065C1FCDAD42A9B769D5 /* FileProviderExtension.swift */; };
 		4440F05E83E5ED0F48DAC304 /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = 068B0CB217B93D2E04F6CB21 /* DsmLocalization */; };
 		46CE97C3D80547D7061224F2 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9DB7D94AFC947DE39DF8D1 /* LoginView.swift */; };
@@ -40,6 +41,7 @@
 		B748536108879BA2D705F5CE /* MacAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */; };
 		C3AFE337248691D6883C0CE7 /* FilePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852694B5E54505BB153EF98A /* FilePreviewView.swift */; };
 		C9E339D485378E1875A349E6 /* DesktopCloudDriveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */; };
+		CBFAB4666A25432A38C382B6 /* SynologyPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */; };
 		CCC4CD40C42D47613EAA8E2C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CA993277E25000CAE41B0447 /* Assets.xcassets */; };
 		D21ED85020993A9A901C5539 /* DesktopDriveDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D050EA6A48E7A390E1A89BE /* DesktopDriveDiagnostics.swift */; };
 		D5668FBDA5A5683EEC686044 /* ProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6499C1A22746CC05B3929D4F /* ProviderEnumerator.swift */; };
@@ -86,6 +88,7 @@
 		21F2702AC3558C7DD3F3EA25 /* LanStashFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LanStashFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		226606003B75B91F9FA03683 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		2578503BB6C863138963CE6B /* ServiceManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementModel.swift; sourceTree = "<group>"; };
+		2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynologyPhotosView.swift; sourceTree = "<group>"; };
 		27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryView.swift; sourceTree = "<group>"; };
 		3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasAdministrationView.swift; sourceTree = "<group>"; };
@@ -104,6 +107,7 @@
 		9C86C1E7AC50E2616225F51D /* apple */ = {isa = PBXFileReference; lastKnownFileType = folder; name = apple; path = ../..; sourceTree = SOURCE_ROOT; };
 		9D89D62711D2351506A6E681 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A56B3E5F2DD3A282E12BA4A6 /* ProviderRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRuntime.swift; sourceTree = "<group>"; };
+		AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynologyPhotosModel.swift; sourceTree = "<group>"; };
 		AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoFolderDestinationPicker.swift; sourceTree = "<group>"; };
 		B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCloudDriveManager.swift; sourceTree = "<group>"; };
 		B9665B8659CF3AEC71209382 /* MacFilePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFilePresentation.swift; sourceTree = "<group>"; };
@@ -201,6 +205,8 @@
 				8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */,
 				2578503BB6C863138963CE6B /* ServiceManagementModel.swift */,
 				CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */,
+				AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */,
+				2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */,
 				1F6DF22565675FC82D7CC686 /* WorkspaceModel.swift */,
 				BAF4D2E52FE8FDEB013A449D /* WorkspaceModuleAccess.swift */,
 				3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */,
@@ -316,8 +322,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A4FE15DAB3C35747621D9326 /* DsmMac */,
 				6E7F102405CE46BF9FADEA71 /* DsmFileProvider */,
+				A4FE15DAB3C35747621D9326 /* DsmMac */,
 			);
 		};
 /* End PBXProject section */
@@ -378,6 +384,8 @@
 				D733D79BB2B46B2F6E5C06E9 /* PhotoMetadataExtractor.swift in Sources */,
 				AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */,
 				7DED1007E77ED31FE27F7E62 /* ServiceManagementView.swift in Sources */,
+				427786CD64BD31B101EF1648 /* SynologyPhotosModel.swift in Sources */,
+				CBFAB4666A25432A38C382B6 /* SynologyPhotosView.swift in Sources */,
 				AC6936BB386C9A829A221F34 /* WorkspaceModel.swift in Sources */,
 				0AF59184A358D65C48DE8148 /* WorkspaceModuleAccess.swift in Sources */,
 				15984B33D2FC6DC271096E4A /* WorkspaceView.swift in Sources */,

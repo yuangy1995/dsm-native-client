@@ -315,7 +315,7 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.coreSecurityFirewall,
         DsmAPIName.coreSecurityFirewallConf,
         DsmAPIName.coreSecurityFirewallProfileApply
-    ]
+    ] + SynologyPhotosRepository.discoveryAPIs
 
     private let client: DsmAPIClient
     private let apiNames: [String]

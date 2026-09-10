@@ -178,8 +178,9 @@ def validate_active_metadata(
 
 def validate_status_line_count(path: Path = STATUS_PATH) -> list[str]:
     lines = len(path.read_text(encoding="utf-8").splitlines())
-    if not 150 <= lines <= 250:
-        return [f"STATUS.md 必须为 150 至 250 行，当前 {lines} 行"]
+    # 状态页允许精简，不为满足最低行数重复专项文档；仍禁止空页与过长流水。
+    if not path.read_text(encoding="utf-8").strip() or lines > 250:
+        return [f"STATUS.md 不得为空或超过 250 行，当前 {lines} 行"]
     return []
 
 

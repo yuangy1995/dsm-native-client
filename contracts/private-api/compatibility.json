@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-09-09",
+  "updatedAt": "2026-09-10",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -61,6 +61,36 @@
     }
   ],
   "endpoints": [
+    {
+      "id": "photos-item-deletion",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "单项原件删除；合成 PNG 单次删除及刷新回读已验证，macOS 按用户授权跨 DSM／Photos 版本依接口能力开放个人空间供测试，App 与异常路径待验",
+      "classification": "internal",
+      "operation": "write",
+      "risk": "critical",
+      "apiNames": ["SYNO.Foto.BackgroundTask.File"],
+      "paths": ["/webapi/entry.cgi"],
+      "methods": ["POST"],
+      "fallback": "接口不支持或权限不足时不发送删除；不按 DSM／Photos 版本白名单拦截；未知结果只核对，不重放，不回退 File Station。",
+      "documentRef": "docs/api/discovery/endpoints/photos-item-deletion.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-library-read",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "个人照片库、12 类标准筛选、共享只读列表与媒体读取；共享排序已修正；无转换版视频改读原件、其他转换质量按实际列表选择，App 格式兼容待验",
+      "classification": "internal",
+      "operation": "read",
+      "risk": "high",
+      "apiNames": ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace", "SYNO.Foto.Browse.Timeline", "SYNO.Foto.Browse.Item", "SYNO.Foto.Browse.Folder", "SYNO.Foto.Browse.RecentlyAdded", "SYNO.Foto.Browse.Person", "SYNO.Foto.Browse.Concept", "SYNO.Foto.Browse.Geocoding", "SYNO.Foto.Browse.GeneralTag", "SYNO.Foto.Browse.Album", "SYNO.Foto.Browse.Category", "SYNO.Foto.Search.Filter", "SYNO.Foto.Search.Search", "SYNO.Foto.Streaming", "SYNO.Foto.Download", "SYNO.Foto.Browse.Unit", "SYNO.Foto.Sharing.Misc", "SYNO.Foto.PhotoRequest"],
+      "paths": ["/webapi/entry.cgi", "/synofoto/api/v2/p/Thumbnail/get"],
+      "methods": ["POST", "GET"],
+      "fallback": "照片不可用时提示恢复步骤，不回退 File Station 扫描。共享空间正向权限和全部写操作未验证；浏览器观察环境与 lab-a 关系待确认，verifications 不冒用旧环境。",
+      "documentRef": "docs/api/discovery/endpoints/photos-library-read.md",
+      "verifications": []
+    },
     {
       "id": "dsm-desktop-app-privileges",
       "componentId": "dsm-core",

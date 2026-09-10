@@ -51,6 +51,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     func checkForUpdates() {
         guard let updater else {
             driver.showMessage("updates.unavailable", detail: "updates.manual", acknowledgement: {})
+            driver.loadPublicReleaseNotes()
             return
         }
         guard canCheckForUpdates else { driver.showUpdateInFocus(); return }
@@ -107,6 +108,9 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
     private var primaryAction: (() -> Void)?
     private var secondaryAction: (() -> Void)?
     private var window: NSWindow?
+    private var notesTask: Task<Void, Never>?
+    private var notesGeneration = UUID()
+    @Published private(set) var isLoadingNotes = false
     private var expectedBytes: UInt64 = 0
     private var receivedBytes: UInt64 = 0
     private(set) var isRestartRequested = false
@@ -120,6 +124,9 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
     private func present(_ title: String, detail: String, stage: PresentationStage = .information, working: Bool = false,
                          primary: String? = nil, action: (() -> Void)? = nil,
                          secondary: String? = nil, cancel: (() -> Void)? = nil) {
+        notesTask?.cancel()
+        notesGeneration = UUID()
+        isLoadingNotes = false
         titleKey = title
         detailKey = detail
         self.stage = stage
@@ -141,6 +148,8 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.hasShadow = true
+            window.isOpaque = false
+            window.backgroundColor = .clear
             self.window = window
             let host = NSHostingView(rootView: AppUpdateView(driver: self).macAppearanceRoot())
             host.sizingOptions = []
@@ -165,6 +174,42 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
             isWorking = true
         }
         action()
+    }
+
+    /// 手动更新不可用时仍可查看发布方的公开说明；不会下载或安装更新包。
+    func loadPublicReleaseNotes() {
+        notesTask?.cancel()
+        notesGeneration = UUID()
+        let generation = notesGeneration
+        isLoadingNotes = true
+        notesTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if generation == self.notesGeneration { self.isLoadingNotes = false } }
+            do {
+                var request = URLRequest(url: URL(string: "https://api.github.com/repos/yuangy1995/dsm-native-client/releases?per_page=20")!)
+                request.timeoutInterval = 15
+                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard !Task.isCancelled, generation == self.notesGeneration, (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1_048_576 else { return }
+                if let notes = try Self.macReleaseNotes(from: data) {
+                    self.version = notes.version
+                    self.releaseNotes = notes.body
+                }
+            } catch {
+                // 保留明确的无说明状态和手动版本页面，不显示网络内部错误。
+            }
+        }
+    }
+
+    nonisolated static func macReleaseNotes(from data: Data) throws -> (version: String, body: String)? {
+        struct Release: Decodable {
+            let tag_name: String; let body: String?; let draft: Bool; let prerelease: Bool
+            let assets: [Asset]
+            struct Asset: Decodable { let name: String }
+        }
+        let releases = try JSONDecoder().decode([Release].self, from: data)
+        guard let release = releases.first(where: { !$0.draft && !$0.prerelease && $0.assets.contains(where: { $0.name.lowercased().hasSuffix(".dmg") }) }) else { return nil }
+        return (release.tag_name, release.body ?? "")
     }
 
     func performSecondaryAction() {
@@ -308,6 +353,7 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
     }
 
     func dismissUpdateInstallation() {
+        notesTask?.cancel()
         isRestartRequested = false
         isWorking = false
         progress = nil
@@ -389,10 +435,11 @@ struct AppUpdateView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if driver.stage == .available {
+            if driver.stage == .available || driver.stage == .information || (driver.stage.showsReleaseNotes && driver.releaseNotes?.isEmpty == false) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(language.string("updates.notes.title")).font(.callout.weight(.semibold))
                     ScrollView(.vertical, showsIndicators: true) {
+                        if driver.isLoadingNotes { ProgressView() }
                         Text(driver.releaseNotes.flatMap { $0.isEmpty ? nil : $0 } ?? language.string("updates.notes.empty"))
                             .font(.callout)
                             .textSelection(.enabled)
@@ -458,6 +505,7 @@ struct AppUpdateView: View {
             }
         }
         .background(MacGlassSurface(role: .content))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .background(MacWorkspaceWindowChrome(fullSize: true))
         .ignoresSafeArea(.container, edges: .top)
         .onChange(of: driver.canDismiss, initial: true) { _, _ in driver.refreshWindowControls() }

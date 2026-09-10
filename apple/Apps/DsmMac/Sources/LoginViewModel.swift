@@ -948,6 +948,9 @@ final class AppModel {
         let openedWorkspace = WorkspaceModel(
             profile: profile,
             repository: repository,
+            photosRepository: try SynologyPhotosRepository(profile: connectionProfile, capabilities: capabilities, session: session,
+                // 按接口能力与实际权限开放，不按 DSM 或套件版本白名单拦截。
+                deletionEnabled: true),
             chatRepository: chatRepository,
             nasSettingsRepository: administrationRepository,
             serviceManagementRepository: serviceManagementRepository,

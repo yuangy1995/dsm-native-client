@@ -4,10 +4,12 @@ import XCTest
 
 final class WorkspaceNavigationTests: XCTestCase {
     func test照片子页面与浏览模式保持一一对应() {
-        XCTAssertEqual(PhotoWorkspacePage(.timeline), .timeline)
-        XCTAssertEqual(PhotoWorkspacePage(.albums), .albums)
-        XCTAssertEqual(PhotoWorkspacePage.timeline.browseMode, .timeline)
-        XCTAssertEqual(PhotoWorkspacePage.albums.browseMode, .albums)
+        XCTAssertEqual(PhotoWorkspacePage(rawValue: "timeline"), .timeline)
+        XCTAssertEqual(PhotoWorkspacePage(rawValue: "albums"), .albums)
+        XCTAssertEqual(PhotoWorkspacePage(rawValue: "folders"), .folders)
+        XCTAssertEqual(PhotoWorkspacePage.timeline.photosSection, .timeline)
+        XCTAssertEqual(PhotoWorkspacePage.albums.photosSection, .albums)
+        XCTAssertEqual(PhotoWorkspacePage.folders.photosSection, .folders)
     }
 
     func test工作区子页面使用稳定且唯一的导航标识() {

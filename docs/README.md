@@ -1,5 +1,5 @@
 <!-- doc-role: documentation-index -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-09-10 -->
 
 # 项目文档
 
@@ -23,7 +23,7 @@
 - [macOS 对齐总控计划](development/MACOS_PARITY_REPLICATION_MASTER_PLAN_ZH.md)
 - [桌面端 NAS 云盘映射与按需缓存计划](development/NATIVE_DSM_DESKTOP_CLOUD_DRIVE_DEVELOPMENT_PLAN_ZH.md)
 - [请求契约与写操作结果模型计划](development/REQUEST_CONTRACT_AND_MUTATION_RESULT_PLAN_ZH.md)
-- [照片管理计划](development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)
+- [Synology Photos 当前实现与迁移计划](development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)
 - [Synology Chat 开发计划](development/NATIVE_DSM_CHAT_DEVELOPMENT_PLAN_ZH.md)
 - [DSM 套件管理计划](development/NATIVE_DSM_SERVICE_MANAGEMENT_PLAN_ZH.md)
 - [统一存储管理计划](development/NATIVE_DSM_STORAGE_MANAGEMENT_PLAN_ZH.md)
@@ -45,5 +45,6 @@
 - [Android 对齐历史](archive/2026-h2/ANDROID_ALIGNMENT_HISTORY_82_89.md)
 - [发布与手工验收历史](archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)
 - [第一阶段开发文档](archive/NATIVE_DSM_FILE_APP_DEVELOPMENT_PLAN_V1_ARCHIVE_ZH.md)
+- [已被替代的 File Station 照片方案与跨端记录](archive/2026-h2/PHOTOS_FILE_STATION_PLAN_HISTORY.md)
 
 归档只用于追溯，不作为当前状态、发布结论或新的实现范围来源。

@@ -115,10 +115,14 @@ class DocumentationCheckTests(unittest.TestCase):
     def test_status_line_count_range(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "STATUS.md"
-            path.write_text("\n".join("状态" for _ in range(149)), encoding="utf-8")
+            path.write_text("", encoding="utf-8")
             self.assertTrue(documentation.validate_status_line_count(path))
-            path.write_text("\n".join("状态" for _ in range(150)), encoding="utf-8")
+            path.write_text("# 当前开发进度\n\n简明状态。", encoding="utf-8")
             self.assertEqual(documentation.validate_status_line_count(path), [])
+            path.write_text("\n".join("状态" for _ in range(250)), encoding="utf-8")
+            self.assertEqual(documentation.validate_status_line_count(path), [])
+            path.write_text("\n".join("状态" for _ in range(251)), encoding="utf-8")
+            self.assertTrue(documentation.validate_status_line_count(path))
 
 
 if __name__ == "__main__":

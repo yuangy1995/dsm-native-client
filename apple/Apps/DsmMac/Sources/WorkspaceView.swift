@@ -245,7 +245,7 @@ struct WorkspaceView: View {
 
     private var moduleOwnsPageHeader: Bool {
         switch model.section {
-        case .chat?, .downloadStation?, .containerManager?, .virtualMachineManager?, .recent?, .remoteLocations?: true
+        case .photos?, .chat?, .downloadStation?, .containerManager?, .virtualMachineManager?, .recent?, .remoteLocations?: true
         default: false
         }
     }
@@ -296,66 +296,10 @@ struct WorkspaceView: View {
             Spacer(minLength: 12)
                 HStack(spacing: 8) {
                     if isPhotoSection {
-                    Button {
-                        presentPhotoUploadPanel()
-                    } label: {
-                        Label(L10n.string("ui.9e07e3c0532d4976"), systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(model.photoLibrary.currentPath.isEmpty)
-                    .help(L10n.string("ui.05bbc74c43b8bd85"))
-
-                    Button {
-                        presentBatchDownloadPanel(model.photoLibrary.selectedItems.map(\.fileItem))
-                    } label: {
-                        Label(L10n.string("ui.4673a23061656125"), systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(model.photoLibrary.selectedItems.isEmpty)
-                    .help(L10n.string("ui.9c859eb557775b37"))
-
-                    Button {
-                        shareTargets = model.photoLibrary.selectedItems.map(\.fileItem)
-                    } label: {
-                        Label(L10n.string("ui.7e564575eb7d5eb2"), systemImage: "link")
-                    }
-                    .disabled(model.photoLibrary.selectedItems.isEmpty)
-                    .help(L10n.string("ui.bcb4ca87b0024cf4"))
-
-                    Button {
-                        showingInfoItem = model.photoLibrary.selectedItems.first?.fileItem
-                    } label: {
-                        Label(L10n.string("ui.e7028601e7da793d"), systemImage: "info.circle")
-                    }
-                    .disabled(model.photoLibrary.selectedItems.count != 1)
-                    .help(L10n.string("ui.e8e8050316db3857"))
-
-                    Button {
-                        deleteTargets = model.photoLibrary.selectedItems.map(\.fileItem)
-                    } label: {
-                        Label(L10n.string("ui.2f9daa828907b93f"), systemImage: "trash")
-                    }
-                    .disabled(model.photoLibrary.selectedItems.isEmpty)
-                    .help(L10n.string("ui.33006fc9ca3c7e3e"))
-
-                    if model.isFileModuleEnabled {
-                    Button {
-                        model.section = .transfers
-                    } label: {
-                        Label(L10n.string("ui.a2f59f64d2623d19"), systemImage: "arrow.up.arrow.down.circle")
-                    }
-                    .badge(model.activeTransferCount)
-                    }
-
-                    Button {
-                        Task { await model.photoLibrary.refreshAll() }
-                    } label: {
+                    Button { Task { await model.photoLibrary.refresh() } } label: {
                         Label(L10n.string("ui.049019b1718726b4"), systemImage: "arrow.clockwise")
                     }
-                    .disabled(
-                        model.photoLibrary.isLoading
-                            || model.photoLibrary.isLoadingTimeline
-                            || model.photoLibrary.isRetryingTimelineFolders
-                    )
-                    .help(L10n.string("ui.049019b1718726b4"))
+                    .disabled(model.photoLibrary.isLoading)
                     .accessibilityIdentifier("photos.rescan")
                 } else if model.section == .transfers {
                     Button(L10n.string("ui.349c4b7eb1f36c5a")) {
@@ -574,31 +518,14 @@ struct WorkspaceView: View {
         case .sharedLinks:
             ShareLinksView(model: model)
         case .photos:
-            PhotoLibraryView(
-                model: model.photoLibrary,
-                onPreview: { item in
-                    let previewItems = model.photoLibrary.displayedItems
-                        .filter { !$0.isFolder }
-                        .map(\.fileItem)
-                    model.preparePhotoPreview(items: previewItems, selected: item.fileItem)
-                    presentFloatingPreview()
-                },
-                onDownload: presentPhotoDownload,
-                onDelete: { deleteTargets = $0.map(\.fileItem) },
-                onRestore: { restoreTarget = $0.fileItem },
-                onMove: { item, destinationPath in
-                    let destination = FileItem(
-                        profileID: model.profile.id,
-                        name: (destinationPath as NSString).lastPathComponent,
-                        path: destinationPath,
-                        kind: .directory
-                    )
-                    model.moveByDragging([item.fileItem], to: destination)
-                },
-                onBrowseModeChange: { browseMode in
-                    model.section = .photos(PhotoWorkspacePage(browseMode))
+            SynologyPhotosView(model: model.photoLibrary, onSectionChange: { section in
+                switch section {
+                case .timeline: model.section = .photos(.timeline)
+                case .folders: model.section = .photos(.folders)
+                case .albums: model.section = .photos(.albums)
+                case .sharing: model.section = .photos(.sharing)
                 }
-            )
+            })
         case .transfers:
             TransferCenterView(model: model, connectedWorkspaces: connectedWorkspaces)
         case .chat:
@@ -666,12 +593,12 @@ struct WorkspaceView: View {
     }
 
     private var canNavigateUp: Bool {
-        isPhotoSection ? model.photoLibrary.canGoUp : model.canGoUp
+        isPhotoSection ? model.photoLibrary.canGoBack : model.canGoUp
     }
 
     private func navigateUp() {
         if isPhotoSection {
-            Task { await model.photoLibrary.goUp() }
+            Task { await model.photoLibrary.goBack() }
         } else {
             Task { await model.goUp() }
         }
@@ -693,7 +620,7 @@ struct WorkspaceView: View {
     }
 
     private var shouldShowFloatingPreview: Bool {
-        guard (isFileSection || isPhotoSection),
+        guard isFileSection,
               model.isPreviewPresented,
               let item = model.selectedItem,
               !item.isDirectory else {
@@ -742,23 +669,6 @@ struct WorkspaceView: View {
         panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {
             model.enqueueUploads(panel.urls, overwrite: false)
-        }
-    }
-
-    private func presentPhotoUploadPanel() {
-        let panel = NSOpenPanel()
-        panel.title = L10n.string("ui.4ac6bc668684aba4")
-        panel.message = L10n.string("ui.61f2a0f5010d37cf")
-        panel.prompt = L10n.string("ui.9e07e3c0532d4976")
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        if panel.runModal() == .OK {
-            model.enqueueUploads(
-                panel.urls,
-                to: model.photoLibrary.currentPath,
-                overwrite: false
-            )
         }
     }
 
@@ -975,7 +885,9 @@ private extension PhotoWorkspacePage {
     var title: String {
         switch self {
         case .timeline: L10n.string("ui.f1241a97b0821a99")
-        case .albums: L10n.string("ui.38793c1c1c23437e")
+        case .albums: L10n.string("photos.library.albums")
+        case .folders: L10n.string("photos.library.folders")
+        case .sharing: L10n.string("photos.sharing")
         }
     }
 
@@ -983,6 +895,8 @@ private extension PhotoWorkspacePage {
         switch self {
         case .timeline: "clock"
         case .albums: "rectangle.stack"
+        case .folders: "folder"
+        case .sharing: "person.2"
         }
     }
 }
@@ -1133,6 +1047,8 @@ private struct SidebarView: View {
                         moduleRow(.photos(.timeline), title: L10n.string("workspace.navigation.photos"), icon: "photo", expanded: $isPhotoManagementExpanded)
                         if isPhotoManagementExpanded || model.section == .photos(.albums) {
                             childRow(.photos(.albums), title: PhotoWorkspacePage.albums.title, icon: PhotoWorkspacePage.albums.icon)
+                            childRow(.photos(.folders), title: PhotoWorkspacePage.folders.title, icon: PhotoWorkspacePage.folders.icon)
+                            childRow(.photos(.sharing), title: PhotoWorkspacePage.sharing.title, icon: PhotoWorkspacePage.sharing.icon)
                         }
                     }
                     if model.isChatModuleEnabled {

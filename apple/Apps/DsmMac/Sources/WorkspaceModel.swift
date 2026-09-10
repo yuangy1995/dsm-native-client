@@ -25,22 +25,14 @@ struct ToastMessage: Identifiable, Sendable {
 }
 
 enum PhotoWorkspacePage: String, CaseIterable, Hashable, Identifiable {
-    case timeline
-    case albums
-
+    case timeline, folders, albums, sharing
     var id: Self { self }
-
-    var browseMode: PhotoBrowseMode {
+    var photosSection: SynologyPhotosSection {
         switch self {
         case .timeline: .timeline
+        case .folders: .folders
         case .albums: .albums
-        }
-    }
-
-    init(_ browseMode: PhotoBrowseMode) {
-        switch browseMode {
-        case .timeline: self = .timeline
-        case .albums: self = .albums
+        case .sharing: .sharing
         }
     }
 }
@@ -390,7 +382,7 @@ final class WorkspaceModel {
     private(set) var profile: NasProfile
     let allowsVerifiedRestore: Bool
     let allowsRemoteMountManagement: Bool
-    let photoLibrary: PhotoLibraryModel
+    let photoLibrary: SynologyPhotosModel
     let chat: ChatWorkspaceModel
     let nasSettings: NasSettingsModel
     let serviceManagement: ServiceManagementModel
@@ -655,6 +647,7 @@ final class WorkspaceModel {
     init(
         profile: NasProfile,
         repository: any FileRepository,
+        photosRepository: (any SynologyPhotosServing)? = nil,
         chatRepository: any ChatRepository = UnverifiedDsmChatRepository(),
         nasSettingsRepository: any NasSettingsRepository = UnavailableNasAdministrationRepository(),
         serviceManagementRepository: any ServiceManagementRepository =
@@ -671,11 +664,7 @@ final class WorkspaceModel {
         self.desktopDriveSessionBridge = desktopDriveSessionBridge
         self.allowsVerifiedRestore = repository.allowsVerifiedRestore
         self.allowsRemoteMountManagement = repository.allowsRemoteMountManagement
-        self.photoLibrary = PhotoLibraryModel(
-            repository: FileStationPhotoRepository(files: repository),
-            profileID: profile.id,
-            thumbnailFallback: LocalPhotoThumbnailFallback(files: repository)
-        )
+        self.photoLibrary = SynologyPhotosModel(repository: photosRepository)
         self.chat = ChatWorkspaceModel(
             repository: chatRepository,
             currentAccountName: profile.usernameHint,
@@ -802,7 +791,7 @@ final class WorkspaceModel {
 
     private var defaultPreviewSourceItems: [FileItem] {
         if section?.belongsToPhotosModule == true {
-            return photoLibrary.displayedItems.map(\.fileItem)
+            return []
         }
         return filteredItems
     }
@@ -1035,7 +1024,7 @@ final class WorkspaceModel {
             }
         case .photos(let page):
             guard isPhotosModuleEnabled else { return }
-            await photoLibrary.setBrowseMode(page.browseMode)
+            await photoLibrary.selectSection(page.photosSection)
             await photoLibrary.loadIfNeeded()
         case .chat:
             guard isChatModuleEnabled else { return }
@@ -1719,11 +1708,6 @@ final class WorkspaceModel {
         previewProgressEstimator = TransferProgressEstimator()
         previewTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            // 先异步读取内存/磁盘缩略图缓存，快速显示已有缩略图
-            if let photoItem = photoLibrary.displayedItems.first(where: { $0.id == item.id }),
-               let cachedData = await photoLibrary.cachedThumbnailData(for: photoItem) {
-                preview = .image(cachedData)
-            }
             do {
                 let kind = try await resolvedKindForPreview(item)
                 try Task.checkCancellation()
@@ -2803,11 +2787,7 @@ final class WorkspaceModel {
                         progress: progressHandler(for: taskID)
                     )
                     finishTransfer(taskID)
-                    if photoLibrary.currentPath == folderPath {
-                        await photoLibrary.refreshAll()
-                    } else {
-                        await refresh()
-                    }
+                    await refresh()
                     statusIsError = false
                     statusMessage = L10n.string("ui.c2fc5b99b068fa2b", String(describing: url.lastPathComponent))
                 } catch is CancellationError {
@@ -2853,10 +2833,7 @@ final class WorkspaceModel {
                     || result.status == .confirmedSuccess
                     || result.status == .partialSuccess {
                     if deletingFromPhotos {
-                        if result.status == .confirmedSuccess {
-                            photoLibrary.removeDeletedItems(at: paths)
-                        }
-                        await photoLibrary.refreshAll()
+                        await photoLibrary.refresh()
                     } else {
                         await refresh()
                     }
@@ -3214,7 +3191,7 @@ final class WorkspaceModel {
 
     func cancelAllWork() {
         suspendFileModule()
-        photoLibrary.cancelAllWork()
+        photoLibrary.cancel()
         chat.cancelAllWork()
     }
 

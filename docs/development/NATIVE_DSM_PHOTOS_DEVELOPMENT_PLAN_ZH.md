@@ -1,248 +1,76 @@
-# 岚仓照片管理开发计划
+# Synology Photos 开发与迁移计划
 
-> 最后更新：2026-08-12
-> 当前状态：PH0 进行中；macOS PH1–PH3 基础能力已实现；Apple 移动 PH6-A 与 Windows PH8 已完成文件夹/时间线/缩略图/主动导入和普通媒体同 NAS 移动等精选主流程，Windows 已补入 1～20 项有界批量移动并通过 Windows 分支门禁；Windows PH8 本地媒体元数据白名单、沉浸式查看器体验、单项分享链接创建，以及单项分享链接管理源码闭环也已完成；Apple 移动本次切片已通过 Apple Build 与 Repository Check；各端仍待真实设备/NAS 验收；PH6-B 自动备份保持后续
-> 首个参考平台：macOS
-> 后续平台：iPhone、iPad、Android、Windows
+> 更新：2026-09-10。本文合并旧照片计划与替换账本，作为当前照片范围、实现位置和剩余工作的唯一入口。[旧 File Station 方案](../archive/2026-h2/PHOTOS_FILE_STATION_PLAN_HISTORY.md)仅用于迁移追溯，不再作为新实现要求。
 
-## 1. 产品目标
+## 当前决策
 
-在岚仓中提供原生照片管理能力，让用户无需频繁打开 DSM 网页或 Synology Photos 客户端，即可浏览、查找、整理、分享和备份 NAS 中的照片与视频。
+- 照片模块直接使用 Synology Photos，不保留 File Station 扫描库作为降级；套件不可用时提供恢复操作，不伪造空图库。
+- macOS 已接入新读取主流程和个人空间单项删除；iPhone、iPad、Android、Windows 尚未迁移，五端完整替换未完成。
+- 用户明确授权个人空间删除不按 DSM／Photos 版本白名单拦截：按接口支持、实际权限和目标一致性开放；未测版本仍标为未验证。此授权不扩展到共享空间或其他危险写操作。
+- 保留原生 UI、现有主题、双语资源、会话隔离和证书校验；不改变应用标识、依赖、权限或持久化结构。
+- 旧照片专用源码在所有调用方迁移后删除；文件管理仍使用的通用实现必须保留。
 
-首阶段不重建 NAS 端照片服务，也不要求用户卸载 Synology Photos。NAS 上的 Synology Photos 套件继续负责媒体索引、缩略图、转码以及可用时的人物、主题和地点识别；岚仓负责跨平台原生界面、传输、缓存和安全降级。
+## macOS 功能对齐账本
 
-## 2. 核心方案
+| 用户能力 | 当前实现与证据位置 | 状态与边界 |
+| --- | --- | --- |
+| 照片身份、空间 | `DsmCore/SynologyPhotos.swift`、`DsmNetwork/SynologyPhotosRepository.swift` | 账号＋空间＋项目 ID；个人空间启用，共享空间未开放；管理员不等于共享权限 |
+| 时间线、分页、刷新 | `SynologyPhotosModel.swift`、`SynologyPhotosView.swift` | NAS 日期分组、自动分页、刷新替换与迟到结果隔离；右侧年月点击／拖动／方向键定位，不预载全部照片 |
+| 搜索与筛选 | Repository 与 `PhotoFilterPanel` | 12 类标准条件：类型、日期、人物、位置、标签、评分、相机、镜头、焦距、曝光、光圈、ISO；不以当前已加载页面代替全库搜索 |
+| 相册、分类、目录 | Repository 与照片视图 | 普通相册、最近添加、人物、主题、位置、标签、视频及根目录，依 NAS 实际分类显示 |
+| 预览、属性、下载 | `SynologyPhotoPreview`、Repository | 大图、视频、实况独立视频单元、元数据和普通原件保存；Live Photo 组合 ZIP 导出未完成 |
+| 共享读取 | Repository 的 `sharedEntries` | 与我共享、与他人共享、照片请求；非空共享和 App 行为待验证；创建／撤销／权限修改未实现 |
+| 单项原件删除 | Repository 的 `prepareDeletion/deletePhoto/reviewDeletion` | 个人空间已开放；确认后重核目标和权限、只提交一次、未知只核对，成功空回读才更新列表 |
+| UI 与入口 | `LoginViewModel`、`WorkspaceModel/View`、照片视图 | 正式路由不再实例化旧扫描库；统一背景、原生等宽筛选、五态和双语；年月轴禁用整块焦点框，保留局部月份提示和键盘／读屏 |
 
-照片模块采用两级能力模型，两级共用相同的领域模型和用户界面，不向普通用户暴露接口差异。
+路径基准：领域与网络位于 `apple/Packages/DsmCore/Sources/`、`apple/Packages/DsmNetwork/Sources/`，macOS 文件位于 `apple/Apps/DsmMac/Sources/`。回归为网络包的 `SynologyPhotosRepositoryTests.swift` 和 App 的 `SynologyPhotosModelTests.swift`、`WorkspacePresentationTests.swift`。
 
-### 2.1 基础照片库
+## 接口事实与验证等级
 
-基础照片库只依赖官方 DSM 登录与 File Station API，在 Synology Photos 套件缺失、停用或内部接口不兼容时仍应可用。
+- [照片读取接口](../api/discovery/endpoints/photos-library-read.md)：参数、响应、媒体凭据边界、排序与筛选修正。
+- [单项原件删除](../api/discovery/endpoints/photos-item-deletion.md)：写前检查、重复提交保护、异步任务与缺失语义。
+- [环境索引](../api/discovery/environments/INDEX.md)、[兼容矩阵](../compatibility/DSM_COMPATIBILITY_MATRIX.md)：精确版本与证据归属，不在计划重复维护。
+- 已有真实证据：个人空间一张新增合成 PNG 单次删除完成，刷新后原件回读为空；不是所有媒体、账号或版本的完整验收。
+- App 重启／断网／权限变化和恢复仍未验证；待核对状态仅在会话内，结果不明先核对，不重复删除。
+- 视频选源已修正：普通视频和实况只选择实际存在的转换版；没有转换版时读取对应项目／视频单元原件。两个 MP4 的失败原因已真实对照，其他格式有合成选源回归；实际播放与编码兼容待用户验收。
+- 构建与合成绘制不替代实际 App 会话、NAS 或 VoiceOver 验收。历史测试包见[发布验证记录](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md#photos-测试包与受控删除2026-09)。
 
-- 个人空间读取 `/home/Photos`。
-- 共享空间读取 `/photo`，并严格遵循当前账号权限。
-- 支持文件夹浏览、缩略图、预览、上传、下载、移动、删除和回收站恢复。
-- 时间轴通过渐进式扫描与本地索引生成；首次扫描期间允许用户继续按文件夹浏览。
-- NAS 文件是事实来源，本地数据库只保存可重建的索引、分页状态和缓存。
+## 五端迁移顺序与非目标
 
-### 2.2 智能照片库
+| 平台 | 下一步 | 保留的边界 |
+| --- | --- | --- |
+| macOS | 按反馈修复读取／删除，再拆分上传、整理和分享写切片 | 不把相册移除当原件删除，不把 File Station 操作当 Photos 分享 |
+| iPhone | 迁移共享模型／网络、触控入口和系统选择器／分享 | 仅移动专项计划批准的核心／受限能力，不复制桌面悬停、右键和常驻进程 |
+| iPad | 与 iPhone 同一业务范围，验证双栏、宽屏和键盘 | 不以通用 iOS 编译代替 iPad 验收，不暗中增加桌面能力 |
+| Android | 单独授权波次迁移 Kotlin Repository、Compose 及现有备份依赖 | 高负载构建交托管 Runner；本轮不改 Android 代码或后台语义 |
+| Windows | 迁移 Repository 与 WinUI，保留文件管理通用能力 | Windows Runner 完成目标构建，不以 macOS 测试代替 |
 
-智能照片库在能力发现、套件版本和真实 NAS 契约验证全部通过后启用 Synology Photos 内部 Adapter。
+iPhone/iPad 自动备份及释放设备空间仍是后续独立决策，不是本次替换的隐含范围；Android 遵循自身已批准计划。不修改 NAS 数据库、不自建识别模型、不自动更改套件／索引／共享权限，不引入完整照片编辑器。
 
-- 复用 NAS 时间轴、相册、最近添加、标签、人物、主题和地点结果。
-- 复用 NAS 已生成的照片缩略图和视频转码结果。
-- 内部接口失败时回退到基础照片库，不阻止照片访问。
-- 不把 `_sid`、SynoToken 或其他会话信息放入 URL、缓存键、播放器日志或诊断信息。
-- 每个已支持的 DSM build 和 Synology Photos 套件版本都必须在兼容矩阵中有记录。
+每个切片先交付主流程与聚焦自动化，设备条件后置；新增写能力单独核实契约与授权。全部调用及测试迁移后，最后清理旧照片专用组件、资源和失效引用。
 
-## 3. 功能范围
+## 可重跑检查
 
-### 3.1 首个可用版本
-
-- 识别并切换个人空间、共享空间。
-- 按文件夹浏览照片和视频。
-- 按年、月、日浏览时间轴，支持快速定位日期。
-- 分页、渐进缩略图、预取、取消加载和缓存清理。
-- 全屏查看图片和播放视频；支持前后切换、缩放、旋转和键盘操作。
-- 展示拍摄时间、分辨率、大小、格式、相机、镜头和位置信息；缺失字段不显示空占位。
-- 按日期、媒体类型、文件名和文件夹筛选。
-- 上传、下载和多选导出。
-- 删除前确认、权限检查、重复提交保护、任务结果校验和回收站恢复。
-- 加载、空内容、无权限、离线、会话过期和部分失败状态。
-
-### 3.2 日常管理版本
-
-- 收藏、手动相册、相册封面和自定义排序。
-- 向相册添加或移除项目。
-- 最近添加、视频、标签、地点和条件相册。
-- 创建、复制、修改和取消照片或相册分享。
-- RAW+JPEG、Live Photo 和连拍组合展示。
-- 修改描述、标签和拍摄时间时先确认权限，并校验 NAS 端结果。
-
-### 3.3 移动备份候选（各平台独立范围）
-
-iPhone/iPad 自动备份不属于当前 Apple 移动精选交付，列为 `MOBILE_FUTURE`；Android 是否实施继续以 Android 专项计划和范围账本为准，不能用一端决策替代另一端。任一平台未来正式纳入后，至少覆盖：
-
-- 系统照片库授权、增量扫描和授权撤销。
-- 仅 Wi-Fi、充电时、是否包含视频/RAW/截图等备份规则。
-- 后台上传、任务恢复、失败重试、同名处理和重复检测。
-- 清楚区分“等待备份”“正在备份”“已安全保存”“需要处理”。
-- “释放设备空间”必须逐项确认 NAS 原件可访问，并再次向用户确认后才能删除本地副本。
-
-### 3.4 智能整理版本
-
-- 人物、主题、地点和相似项目。
-- 人物命名、合并和隐藏。
-- 重复、模糊、截图和连拍筛选。
-- 智能搜索与组合筛选。
-- 批量清理默认只提供建议；任何删除仍走统一危险操作流程。
-
-## 4. 明确不在首版实现
-
-- 不自行训练或部署人脸、物体识别模型。
-- 不直接读取或修改 Synology Photos 数据库。
-- 不承诺在未验证的 DSM 或套件版本上启用内部接口。
-- 不把本地相册数据库宣传为可跨设备同步的 NAS 相册。
-- 不实现完整照片编辑器；旋转等查看状态默认不改写原文件。
-- 不自动修改共享空间、用户主目录、索引服务、防火墙或套件设置。
-- 不仿制 Synology Photos 名称、花朵图标或品牌资产。
-
-## 5. 模块与契约设计
-
-```text
-DsmPhotoCore
-  PhotoItem / PhotoSpace / PhotoAlbum / PhotoMetadata
-  PhotoPage / PhotoFilter / PhotoCapability / PhotoRepository
-
-DsmPhotoNetwork
-  FileStationPhotoAdapter              官方基础能力
-  SynologyPhotosAdapter                内部增强能力
-  PhotoCapabilityDiscovery
-
-DsmPhotoCache
-  MetadataIndex / ThumbnailCache / OfflineState
-
-DsmPhotoFeature
-  Timeline / FolderBrowser / Albums / Viewer
-  Inspector / Search / Sharing / Backup
+```sh
+swift test --package-path apple --jobs 4 --filter SynologyPhotos
+swift test --package-path apple --jobs 4
+python3 tools/localization/check_localization.py
+python3 tools/request-contract/validate_contracts.py
+python3 tools/contract-validation/validate_fixtures.py
+python3 tools/codex/check_documentation.py
+git diff --check
 ```
 
-实施要求：
+合成 UI 使用 `tools/codex/run_macos_ui_checks.sh <独立临时目录>`，通过 `LANSTASH_UI_TEST_FILTER` 聚焦照片用例；覆盖浅深主题、双语、五态与焦点。测试包按既有 `apple/Apps/DsmMac/package.sh` 独立生成，不自动安装或启动，不含本地磁盘挂载扩展。
 
-- 照片领域模型不得直接依赖 SwiftUI、Jetpack Compose 或 WinUI。
-- Apple 三端共享 Swift 领域层和网络 Adapter；Android 与 Windows 按 `contracts/` 独立实现。
-- 新增照片契约时同步更新三套原生实现计划、平台矩阵和兼容矩阵。
-- Synology Photos 内部 Adapter 必须与 File Station Adapter 隔离，并由能力开关控制。
-- 资源标识需要同时容纳内部照片项目 ID 和文件路径；不得假设移动后路径仍是稳定 ID。
-- 本地索引按 NAS、账号和照片空间隔离，退出或移除 NAS 时提供清理入口。
+## PENDING_USER_VALIDATION
 
-## 6. macOS 信息架构与体验要求
+| 前置条件 | 操作 | 预期及影响范围 |
+| --- | --- | --- |
+| 测试包与授权 NAS | 浏览、切换日期／搜索／筛选，刷新及重开 App | 与官方图库一致；涵盖长列表、跨 NAS 隔离、大图库分页 |
+| 可丢弃照片 | 先取消删除，再确认一次，刷新和重启核对；未知先查官方页面 | 取消无写入，确认后原件消失；不保证回收站可恢复 |
+| 合成／授权媒体 | JPEG、PNG、HEIC、RAW、GIF、视频、Live Photo 查看与保存 | 可用格式正确显示／播放，不支持的组合明确提示 |
+| 键盘、VoiceOver、不同主题与显示设置 | 操作工具栏、年月轴、预览、筛选 | 无整块蓝框，当前月份可辨认，方向键与读屏可定位 |
+| 后续共享／写切片 | 另行明确目标、权限和允许副作用 | 不把当前只读证据当新增写操作批准 |
 
-侧边栏照片区域：
-
-```text
-照片
-  时光轴
-  相册
-  人物与地点
-  共享
-```
-
-主窗口采用适合 macOS 的内容区和可收起详情检查器：
-
-- 工具栏提供个人/共享空间切换、搜索、筛选、缩略图大小和导入。
-- 时间轴按日期分组并保持滚动位置，切换详情检查器不得重建整个照片墙。
-- 支持 Command/Shift 多选、方向键、空格预览、Command-F、拖入上传、拖出下载和右键菜单。
-- 大量项目使用惰性容器或等效虚拟化方案；缩略图请求必须限流、可取消并避免快速滚动时堆积。
-- 加载超过 300 毫秒显示骨架或进度；失败状态说明发生了什么和下一步操作。
-- 支持浅色/深色模式、键盘、触控板、VoiceOver、动态文字和降低动态效果。
-- 照片网格与文字对比度、焦点和选中状态不能只依赖颜色表达。
-
-默认用户文案不得出现 API、HTTP、build、SID、SynoToken、内部接口或能力发现等实现术语。增强能力不可用时使用：
-
-> 此 NAS 暂时无法显示智能相册，你仍然可以按时间或文件夹浏览照片。
-
-## 7. 开发里程碑
-
-工作量按一名熟悉现有 Swift 工程的开发者、可持续使用专用测试 NAS 估算；不包含等待外部测试环境、商店审核和重大兼容返工的时间。
-
-| 里程碑 | 建议批次 | 主要交付 | 完成门槛 |
-| --- | --- | --- | --- |
-| PH0 契约与实机探测 | 1 周 | 照片领域模型草案、能力清单、脱敏 fixture 规则、测试数据集 | 明确个人/共享空间权限；至少一个 DSM 7 build 和照片套件版本完成只读探测 |
-| PH1 基础照片库 | 1–2 周 | `PhotoRepository`、File Station Adapter、文件夹浏览、缓存骨架 | 套件缺失时仍可浏览；分页、取消、会话过期和无权限测试通过 |
-| PH2 时间轴与查看器 | 2 周 | 年/月/日时间轴、渐进索引、虚拟化照片墙、全屏查看、视频播放、详情 | 1 千/1 万/10 万项目数据集完成性能验证；滚动、返回和筛选保留状态 |
-| PH3 管理与分享 | 1–2 周 | 上传、导出、移动、删除、恢复、收藏、基础相册和分享 | 所有危险写操作具备确认、权限检查、重复提交保护和结果校验 |
-| PH4 智能照片库 | 2–3 周 | Photos 内部 Adapter、NAS 时间轴、相册、最近添加、标签、人物和地点 | 每项能力可独立降级；兼容矩阵记录真实 DSM 与套件版本 |
-| PH5 macOS 发布验收 | 1–2 周 | 性能、弱网、缓存、隐私、键盘、VoiceOver、深色模式和打包验证 | 自动化、实机、安全与可访问性出口全部通过 |
-| PH6-A iPhone/iPad 精选照片体验 | 2–3 周 | 触控原生 NAS 照片 UI、PhotosPicker 主动导入、导出/分享和有上限的 NAS 内管理 | iPhone/iPad 当前范围五态、缓存、主动选择、临时文件和危险写自动化通过；真机项后测 |
-| PH6-B iPhone/iPad 自动备份（后续） | 待独立决策 | 整库权限、增量游标、后台准备/传输、去重和空间释放保护 | 不阻塞 PH6-A；只有范围、权限、schema 与真机验收方案获批后再估算和实施 |
-| PH7 Android 对齐 | 3–5 周 | Compose 照片 UI、系统媒体库和后台备份 | 与照片契约和危险操作语义一致，完成 Android 设备验收 |
-| PH8 Windows 对齐 | 2–4 周 | WinUI 照片浏览、查看和桌面导入导出 | 与照片浏览、缓存、分享和管理契约一致 |
-
-PH0–PH5 是 macOS 照片管理首轮，建议投入约 9–12 个有效开发周。内部接口兼容问题不能通过压缩验收时间解决；PH4 可延后发布，不得阻塞 PH1–PH3 的基础照片库。PH6-A 是 Apple 移动当前交付，PH6-B 是独立后续候选，二者不得再合并为同一完成门槛。
-
-第 2 波已交付 PH6-A/PH8 的首个主动导入闭环：Apple 只用 PhotosPicker 选择一项图片或视频，Windows 只用 FileOpenPicker 选择一项图片或视频；两端都复用既有上传与 Activity，不申请整库权限、不建立平行上传实现，并在完成时重新核对当前目标后才刷新。最终提交 `1c7ee4851feb00903327b0599a0d29ea421be8c9` 已通过 Apple Build、Windows Build、Android Build 与 Repository Check；真实选择器、iCloud-only 媒体、Narrator/VoiceOver 与真实 NAS 写入统一记为 `PENDING_USER_VALIDATION`。
-
-当前累计状态不止上述导入切片：Apple 移动已完成个人/共享空间、文件夹浏览、可见优先缩略图、用户主动有硬上限的 PHOTO-01 时间线、当前快照本地搜索、PHOTO-02 冻结可见快照查看/基础元数据、导出/分享、单项普通媒体同 NAS 移动、单项普通媒体移入回收站和受限回收站恢复；Windows 已完成同义文件夹浏览、公开 List v2 有界时间线、本地搜索/筛选、缩略图、保存副本、PHOTO-03A 导入、单项普通媒体同 NAS 移动、单项普通媒体移入回收站和受限回收站恢复，并已补入 PHOTO-02 文件夹/时间线查看器、本地媒体元数据白名单、页面内沉浸式查看和系统级 `AppWindow` 全屏。Apple 移动的移动入口复用 FILE-05 共享协调器和原生目标 Sheet，固定单项、同 NAS、无覆盖，提交未知只回读不重放；移入回收站复用既有 FILE-02 位置发现、FILE-09 协调器和双语确认 Sheet，Photos 并发加载按 Repository 身份绑定的回收站白名单而不阻塞照片首屏，重连先清旧入口，发现失败零入口，确认回调也精确匹配 Repository；不新增 API 契约或照片专用写请求。本机 Photos/Recycle/Locations 聚焦 43/43、DsmMobile 全量 429/429、共享包 685 项 XCTest（2 跳过）+ 10 项 Swift Testing、双架构模拟器构建、本地化与仓库门禁均已通过；GitHub Apple Build run `31527045156` 与 Repository Check run `31527045155` 已通过。多窗口预览、相册/人物/地点/标签、批量照片管理和高级照片管理仍不在当前精选切片；两端真实大图库、格式、选择器、辅助功能和 NAS 行为仍待验收。系统照片库自动备份不因这些完成项自动进入 PH6-A。
-
-Windows PH8/PHOTO-03 现已具备五条有界批量主流程：文件夹网格和主动时间线均可选择 1～20 个普通图片或视频，时间线只接受当前照片空间根的严格后代并允许跨文件夹选择。批量移入回收站继续复用 FILE-09，已通过 Windows Build run `31537462070` 与 Repository Check run `31537463067`；批量同 NAS 移动复用 FILE-05，Windows Build run `31540041995` 与 Repository Check run `31540042025` 已通过；批量同 NAS 复制同样复用 FILE-05，不要求删除权限且不刷新来源，Windows Build run `31541423773` 与 Repository Check run `31541423774` 已通过。批量保存副本复用 `BoundedFileDownloadBatch` 与 `WindowsTransferPickerService`，Windows Build run `31546988775` 与 Repository Check run `31546988693` 已通过。新增批量恢复只接受规范 `#recycle` 来源并复用 FILE-09 typed 链，固定恢复原位置、不覆盖、严格串行，未知结果停止余项且不重放；本机聚焦 63/63、Release xUnit 1199/1199、本地化、XML 与差异检查已通过，Windows Build run `31548672121` 与 Repository Check run `31548672132` 已通过。相册、人物、地点、标签、系统图库删除和后台整库处理仍是独立后续能力。
-
-## 8. 每阶段开发顺序
-
-每个里程碑按以下顺序执行：
-
-1. 先更新领域模型、接口边界和兼容假设。
-2. 为成功、空结果、无权限、接口不存在、会话过期和未知字段准备正式测试。
-3. 实现 Repository 与缓存，不让 UI 直接调用 DSM API。
-4. 实现平台原生界面并审查全部可见文案。
-5. 验证弱网、取消、重复点击、切换 NAS 和应用退出。
-6. 使用专用测试照片完成真实 NAS 验收，不使用个人照片。
-7. 更新状态、路线图、平台矩阵、兼容矩阵和变更记录。
-
-## 9. 测试数据与验收
-
-### 9.1 正式测试数据集
-
-- 使用生成或明确授权的照片、视频和元数据，不使用真实家庭照片。
-- 覆盖 JPEG、PNG、HEIC、GIF、TIFF、常见 RAW、MP4、MOV 和不支持格式。
-- 覆盖无拍摄时间、错误时区、相同文件名、相同内容、超大图片和损坏文件。
-- 准备 1 千、1 万和 10 万条脱敏元数据索引；大规模测试可使用生成缩略图和模拟响应。
-- 一次性抓包和原始响应在生成脱敏 fixture 后删除。
-
-### 9.2 性能与体验出口
-
-- 首屏优先显示可见缩略图，后台工作不得阻塞滚动和选择。
-- 快速滚动后取消离屏请求，不持续占用网络和内存。
-- 返回时间轴恢复日期、滚动位置、空间、筛选和选中状态。
-- 切换 NAS 时缓存和任务不串用。
-- 缓存达到配置上限时按最近最少使用策略回收，并提供用户可控清理。
-- 10 万项目规模下不得一次性把所有原图或缩略图载入内存。
-
-### 9.3 安全与写操作出口
-
-- 日志不记录文件名、完整路径、相册名、人物、地点、查询串或照片元数据正文。
-- 分享链接创建前显示访问范围、密码和有效期。
-- 删除、覆盖、修改元数据和释放设备空间必须进行权限检查、确认、幂等保护和结果复查。
-- 删除结果部分成功时逐项反馈，并保留可恢复项目的信息。
-- 内部接口未知或返回结构变化时关闭对应增强能力，不猜测写入参数。
-
-## 10. 当前实现与下一步
-
-### 10.1 已实现的 macOS 基础功能
-
-- 个人/共享照片空间、文件夹扫描、分页、缩略图、刷新和错误恢复。
-- 文件夹与时间线两种浏览方式；时间线为默认入口，通过官方 File Station 目录分页逐层扫描，并在扫描过程中增量显示结果。
-- 时间线允许单个无权限、已删除或返回异常的子文件夹独立失败；其余照片继续显示，并可只重试本次失败的文件夹。全量重新扫描作为低频操作保留在更多菜单中。
-- 缩略图以当前真实视窗为最高优先级，滚出视窗的排队和进行中请求立即取消；视窗项目全部完成后，按时间线或文件夹显示顺序预取后续 48 项，新的视窗请求可立即中断预取。照片墙右键菜单复用正式下载和删除确认流程。
-- HEIC 与 MOV 仍优先读取 NAS 缩略图；NAS 无法生成时，macOS 为当前可见项目限流生成缩略图。MOV 复用安全媒体分段读取生成首帧，HEIC 仅在安全大小范围内临时下载，完成后立即清理原文件。
-- 按文件名搜索，并按全部、照片、视频筛选；时间线按天分组。
-- 单选、Command/Shift 多选、双击预览、图片前后切换、视频播放和全屏查看。
-- 查看基础文件详情；上传、批量下载、分享、删除确认、权限检查、任务结果复查和传输中心。
-- 照片操作复用文件管理的正式传输与危险操作链路，不新增内部写接口。
-- 删除完成后逐项复查目标是否仍存在，并只更新受影响的本地时间线和文件夹集合；普通删除不得触发全量照片扫描。
-
-### 10.2 尚未完成的出口
-
-1. 使用专用测试 NAS 完成个人/共享空间、连续分页、HEIC/MOV 本机缩略图兜底、时间线、大图库、权限错误和弱网验收，并记录脱敏版本信息。
-2. 已补充 EXIF 详情（尺寸、拍摄时间、相机、镜头、ISO、光圈、快门、焦距、位置）和时间线年/月快速定位菜单；待 1 千/1 万/10 万项目性能验证和实机元数据读取验证。
-3. 照片页与预览窗口已增加回收站恢复入口（识别 `#recycle` 路径并调用恢复流程）；照片页的收藏、分享、恢复、单项移动和删除均使用 File Station Workspace 持久结果，移动目的地选择器支持取得公开可写基线的空间根；基础相册入口仍待实现。
-4. PH4 智能相册、人物、主题、地点与标签仅在真实版本证据充分时启用，不以内部接口阻塞基础照片库。
-5. Android PH7 基础照片库切片已实现独立 Kotlin 状态与 Repository、个人/共享空间、文件夹源分页、渐进时间轴、子目录失败降级、年/月定位、名称/媒体/日期筛选、图片/视频真实缩略图、图片缩放/前后查看、本机媒体详情、256 MiB 上限内的临时视频系统播放、单项 SAF 导出和安全删除；移动与删除均复用正式 File Station 完整基线、权限检查、确认、重叠目标防重复、任务取消、八态持久结果、模糊提交只回读不重放和相册专项刷新，确认取消会返回目的地选择器，明确丢弃会清理草稿。缩略图按真实可见窗口优先加载并预取后续最多 4 个媒体项，滚动、NAS 资料切换、数据变化、能力关闭和离页会释放旧引用，磁盘缓存与预览临时文件具备并发和失败清理保护。基础浏览只使用公开 File Station API，日期暂用文件修改时间，不支持的 HEIC/HEIF/MOV 编码提供保存后用其他应用打开的降级说明，尚未完成真实设备/NAS、大图库和格式矩阵验收。收藏、移动、分享、恢复和用户授权来源后台备份已接入；释放设备空间只建立了五项全真的 fail-closed 领域门禁，仍无 UI、媒体权限或本机删除执行器，功能本身未实现。基础相册继续按 PH3 推进；Apple PH6-A 与 Windows PH8 的当前精选主流程已落地。Windows PH8 已具本地媒体元数据白名单、系统级全屏、单项及有界批量普通媒体同 NAS 移动、单项及有界批量移入回收站闭环；批量移动本机聚焦 56/56、完整 xUnit 1193/1193，Windows Build run `31540041995` 与 Repository Check run `31540042025` 已通过。相册、人物、地点、标签和其他高级批量照片管理仍未完成，格式矩阵、辅助功能和实机出口见 `STATUS.md`；iPhone/iPad 自动备份保留在 PH6-B 后续决策。
-
-6. Windows PHOTO-03 已补齐 1～20 项普通媒体同 NAS 批量移动源码闭环：文件夹与时间线共用单一原生多选会话，时间线支持照片空间根内的混合父目录；同一无覆盖目标下的跨目录同名项目会拒绝。批量层严格串行复用 FILE-05，一次提交、未知结果停止余项且不重放，提交前重核 profile、空间、模式、完整版本和选择。本机聚焦 56/56、Release xUnit 1193/1193、本地化与 XML 通过；macOS WinUI App 不记为通过，Windows Build run `31540041995` 与 Repository Check run `31540042025` 已通过。真实 Windows/NAS 与辅助功能为 `PENDING_USER_VALIDATION`，跨 NAS、覆盖、自动改名、撤销、后台恢复和系统图库移动继续关闭。
-7. Windows PHOTO-03 已补齐 1～20 项普通媒体同 NAS 批量复制源码闭环：复制、移动和回收共用单一原生多选会话；复制不要求删除权限，也不刷新来源，其余照片空间根、跨目录同名、可写目标、无覆盖、严格串行、一次提交、最终回读和未知不重放语义继续复用 FILE-05。本机聚焦 57/57、Release xUnit 1194/1194、本地化与 XML 通过；Windows Build run `31541423773` 与 Repository Check run `31541423774` 已通过。真实 Windows/NAS 与辅助功能为 `PENDING_USER_VALIDATION`，跨 NAS、覆盖、自动改名、撤销、后台恢复和系统图库复制继续关闭。
-8. Windows PHOTO-03 已补齐 1～20 项普通媒体批量保存副本源码闭环：文件夹与时间线复用原生多选，提交前重核 profile、照片空间、媒体类型、非负大小、完整选择版本和当前选择；项目映射为 `FileDownloadBatchItem` 后复用 `BoundedFileDownloadBatch` 与 `WindowsTransferPickerService`，一次选择本地文件夹并由 Activity 跟踪，不新增 NAS 请求。大小写不敏感同名、Windows 非法名或本地已有同名整批拒绝且零下载，目标全部先预留并保持不覆盖；严格串行中单项失败继续，取消停止后续并保留已保存项目。本机聚焦 xUnit 50/50、Release 全量 xUnit 1196/1196、本地化、XML 与差异检查已通过；macOS WinUI App 构建停在不可执行的 Windows `XamlCompiler.exe`，不记为通过。Windows Build run `31546988775` 已通过 1196/1196 与 WinUI x64/ARM64 构建，Repository Check run `31546988693` 已通过。真实 Windows/NAS、Narrator、高对比、200% 缩放、窄窗口、键鼠/触控、系统文件夹选择器和取消时机为 `PENDING_USER_VALIDATION`。
-9. Windows PHOTO-03 已补齐 1～20 项普通媒体批量恢复源码闭环：文件夹与时间线复用原生多选和 FILE-09，只接受规范 `#recycle` 路径，提交前重核 profile、空间、模式、完整版本、当前选择和可解析原目的地。恢复固定不覆盖，重复目的地整批拒绝；严格串行中明确失败继续，未知、异常或提交后取消停止余项、进入复核门且不重放。本机聚焦 63/63、Release xUnit 1199/1199、本地化、23 个 XAML/RESW XML 与差异检查已通过；macOS WinUI App 不记为通过。Windows Build run `31548672121` 与 Repository Check run `31548672132` 已通过。真实 Windows/NAS、Narrator、高对比、200% 缩放、窄窗口和键鼠/触控为 `PENDING_USER_VALIDATION`；覆盖/改名恢复、跨 NAS、并行、后台恢复和系统图库恢复继续关闭。
-10. Windows PHOTO-03 已补入单个普通媒体共享链接创建与复制源码闭环：文件夹、主动时间线和查看器复用公开 File Station Sharing v3，支持可选密码和到期时间；每次只提交一次并在提交后回读确认，提交未知按 profile+path 阻断重放。照片基线严格核对 profile、规范路径、名称、非目录、大小、修改时间和可读权限；Photos 列表未提供的 owner/write/delete 不会被伪造为照片选择基线，也不参与照片基线比较，共享预检仍沿用 File Station `getinfo` 读取完整目标信息。批量共享、链接管理/撤销、系统分享和 Synology Photos 私有分享不在本切片。本地 Release xUnit 1485/1485、Application 构建、本地化、XAML/RESW XML 与差异检查已通过；macOS 无法执行 WinUI `XamlCompiler.exe`。GitHub Windows Build run `31679774447` 已通过 1485/1485 与 WinUI x64/ARM64 0 警告、0 错误构建，Repository Check run `31679774474` 已通过。真实 NAS、Narrator、高对比和 200% 缩放为 `PENDING_USER_VALIDATION`。
-11. Windows PHOTO-03 已补入单个普通媒体共享链接管理源码闭环：文件夹、主动时间线和查看器可打开当前媒体专属管理弹窗，列表仅包含路径与当前媒体完整路径精确相等的链接，用户可复制链接或二次确认撤销单条链接。实现复用 Files 的 Sharing v3 `list`/`delete`、稳定 ID 与完整链接基线、防重复、一次提交、未知结果只回读不重放和删除后列表回读；不新增 NAS 请求，不展示密码，不按前缀、名称、目录或 Synology Photos 私有字段猜测归属。本机 Release xUnit 1497/1497、Repository Check 可跑脚本、本地化、XAML/RESW XML 与差异检查已通过；功能分支 Windows Build run `31684348377` 已通过 1497/1497 项 xUnit 与 WinUI x64/ARM64 构建，Repository Check run `31684348386` 已通过。批量共享、批量撤销、编辑密码/到期日和系统分享继续关闭；真实 NAS、Narrator、高对比、200% 缩放、窄窗口、键盘、鼠标和触控为 `PENDING_USER_VALIDATION`。
-
-## 11. 关联文档
-
-- [当前文件客户端开发与验收计划](NATIVE_DSM_FILE_APP_DEVELOPMENT_PLAN_ZH.md)
-- [DSM Web API 参考](../api/DSM_WEB_API_REFERENCE_ZH.md)
-- [当前开发进度](../progress/STATUS.md)
-- [产品路线图](../progress/ROADMAP.md)
-- [平台功能矩阵](../progress/PLATFORM_MATRIX.md)
-- [DSM 兼容矩阵](../compatibility/DSM_COMPATIBILITY_MATRIX.md)
-- [总体架构](../architecture/ARCHITECTURE.md)
-- [安全与隐私基线](../security/SECURITY_BASELINE.md)
+反馈只需平台／App／DSM／Photos 版本、权限类别、步骤和脱敏错误；不提交凭据、主机、真实照片、路径或原始响应。

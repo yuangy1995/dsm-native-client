@@ -6,6 +6,13 @@ import XCTest
 
 @MainActor
 final class AppUpdateTests: XCTestCase {
+    func test手动更新说明只选正式macOS发布且保留详情() throws {
+        let data = Data(###"[{"tag_name":"android-9","body":"Android only","draft":false,"prerelease":false,"assets":[{"name":"app.apk"}]},{"tag_name":"macos-preview","body":"Preview","draft":false,"prerelease":true,"assets":[{"name":"Preview.dmg"}]},{"tag_name":"macos-1.0.3","body":"## Changes\n- Updated Photos","draft":false,"prerelease":false,"assets":[{"name":"LanStash.dmg"}]}]"###.utf8)
+        let notes = try XCTUnwrap(AppUpdateUserDriver.macReleaseNotes(from: data))
+        XCTAssertEqual(notes.version, "macos-1.0.3")
+        XCTAssertTrue(notes.body.contains("Updated Photos"))
+        XCTAssertTrue(AppUpdateUserDriver.PresentationStage.information.showsReleaseNotes)
+    }
     func test更新窗口保留标题栏系统按钮且系统关闭只取消一次() {
         _ = NSApplication.shared
         let driver = AppUpdateUserDriver(presentsWindows: false)

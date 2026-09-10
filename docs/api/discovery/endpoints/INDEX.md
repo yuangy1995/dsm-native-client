@@ -8,6 +8,20 @@
 
 ## 端点组
 
+### `photos-item-deletion`
+
+- 内部危险写接口，已完成单张合成 PNG 的真实删除与刷新回读；macOS 按接口能力跨 DSM／Photos 版本开放个人空间供测试，共享空间关闭。
+- [删除边界、版本门禁及待验证事项](photos-item-deletion.md)。
+
+### `photos-library-read`
+
+- 2026-09-10 已补入系统分类、服务端筛选、共享三个只读列表与实况视频单元；共享创建／撤销仍未启用，详见端点最新补充。
+
+- 组件：`synology-photos`；2026-09-09 Photos 1.8.2-10090 个人空间时间线、项目、文件夹、搜索和分类读取结构已有官方网页成功响应证据。
+- 设备匿名归属未确认；App 会话与共享空间未验证，全部写入口保持关闭。
+- 完整替换正在实施，macOS 个人空间只读入口已切换至 Photos；共享空间、写操作与其他端迁移仍未完成。
+- [请求结构、版本、实现与限制](photos-library-read.md)。
+
 ### `dsm-desktop-app-privileges`
 
 - 组件：`dsm-core`；内部只读候选 `SYNO.Core.Desktop.Initdata` v1 / `get_user_service`。

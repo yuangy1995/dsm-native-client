@@ -17,6 +17,196 @@ final class WorkspacePresentationTests: XCTestCase {
     private var artifacts: URL!
     private static var preparedApplication = false
 
+    func test照片时间轴获得焦点不显示整框且保留方向键() async throws {
+        let months = (2012...2026).reversed().flatMap { year in
+            (1...12).reversed().map { SynologyPhotoMonth(year: year, month: $0) }
+        }
+        for scheme in [ColorScheme.light, .dark] {
+            var selected: SynologyPhotoMonth?
+            let host = NSHostingView(rootView: PhotoTimelineRail(months: months, selectedID: months[0].id) { selected = $0 }
+                .padding(8).background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 108, height: 680))
+            defer { window.contentView = nil; window.close() }
+            window.makeKeyAndOrderFront(nil)
+            try await settle(host)
+            window.selectNextKeyView(nil)
+            try await settle(host)
+            let down = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                characters: "\u{f701}", charactersIgnoringModifiers: "\u{f701}", isARepeat: false, keyCode: 125))
+            window.sendEvent(down)
+            try await settle(host)
+            XCTAssertEqual(selected?.id, months[1].id, "取消整块焦点框不能禁用方向键定位")
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / host.bounds.width
+            for x in Int(4 * scale)...Int(10 * scale) {
+                let bluePixels = (0..<bitmap.pixelsHigh).filter { y in
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
+                    return color.blueComponent > color.redComponent + 0.15 && color.blueComponent > color.greenComponent + 0.05
+                }.count
+                XCTAssertLessThan(bluePixels, bitmap.pixelsHigh / 3, "时间轴左边缘不应出现贯穿高度的蓝色焦点框")
+            }
+            try snapshot(host, name: "photos-rail-focused-\(scheme)")
+        }
+    }
+
+    func test照片背景复用工作区并显示完整年月侧轴() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.english, .simplifiedChinese] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = SynologyPhotosPresentationFixture(image: Data(), empty: true)
+                let emptyModel = SynologyPhotosModel(repository: fixture)
+                await emptyModel.refresh()
+                let host = NSHostingView(rootView: HStack(spacing: 0) {
+                    Color.clear.frame(width: 180).background(MacGlassSurface(role: .content))
+                    SynologyPhotosView(model: emptyModel)
+                }.background(MacGlassSurface(role: .sidebar))
+                    .environment(MacAppearanceStore()).environment(\.macUsesContentBackground, true).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1120, height: 680))
+                defer { window.contentView = nil; window.close() }
+                try await settle(host)
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let reference = try XCTUnwrap(bitmap.colorAt(x: 40, y: bitmap.pixelsHigh - 24)?.usingColorSpace(.deviceRGB))
+                let photoBackground = try XCTUnwrap(bitmap.colorAt(x: 420, y: bitmap.pixelsHigh - 24)?.usingColorSpace(.deviceRGB))
+                XCTAssertEqual(reference.redComponent, photoBackground.redComponent, accuracy: 0.015)
+                XCTAssertEqual(reference.greenComponent, photoBackground.greenComponent, accuracy: 0.015)
+                XCTAssertEqual(reference.blueComponent, photoBackground.blueComponent, accuracy: 0.015)
+                try snapshot(host, name: "photos-workspace-background-\(language.rawValue)-\(scheme)")
+
+                let months = (2012...2026).reversed().flatMap { year in (1...12).reversed().map { SynologyPhotoMonth(year: year, month: $0) } }
+                let rail = NSHostingView(rootView: PhotoTimelineRail(months: months, selectedID: 202510, onSelect: { _ in XCTFail("绘制不得跳转") })
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let railWindow = attach(rail, size: NSSize(width: 92, height: 680))
+                defer { railWindow.contentView = nil; railWindow.close() }
+                try await settle(rail)
+                try snapshot(rail, name: "photos-year-month-rail-\(language.rawValue)-\(scheme)")
+            }
+        }
+    }
+
+    func test照片筛选详情与更新弹窗圆角双语主题() async throws {
+        let oldLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = oldLanguage }
+        let image = NSImage(size: NSSize(width: 300, height: 200), flipped: false) { rect in
+            NSColor.systemTeal.setFill(); rect.fill(); return true
+        }
+        let data = try XCTUnwrap(image.tiffRepresentation)
+        for language in [AppLanguageSelection.english, .simplifiedChinese] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let model = SynologyPhotosModel(repository: SynologyPhotosPresentationFixture(image: data))
+                await model.refresh()
+                let photo = try XCTUnwrap(model.items.first)
+                model.showPreview(photo)
+                for _ in 0..<50 where model.isPreparingPreview { await Task.yield() }
+                XCTAssertNotNil(model.previewData)
+                let driver = AppUpdateUserDriver(presentsWindows: false)
+                driver.showMessage("updates.unavailable", detail: "updates.manual") { XCTFail("绘制不能确认更新") }
+                let views: [(String, AnyView, NSSize)] = [
+                    ("details", AnyView(SynologyPhotoPreview(model: model, showsInfo: true)), NSSize(width: 1000, height: 720)),
+                    ("filters", AnyView(PhotoFilterPanel(model: model, draft: SynologyPhotoFilter())), NSSize(width: 460, height: 600)),
+                    ("update-rounded", AnyView(AppUpdateView(driver: driver)), NSSize(width: 500, height: 520))
+                ]
+                for (name, view, size) in views {
+                    let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).environment(AppLanguageStore.shared).preferredColorScheme(scheme))
+                    let window = attach(host, size: size)
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host)
+                    try snapshot(host, name: "photos-feedback-\(name)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                    if name == "filters" {
+                        let popups = nativeViews(host, of: NSPopUpButton.self)
+                        XCTAssertGreaterThanOrEqual(popups.count, 11)
+                        let width = try XCTUnwrap(popups.first).bounds.width
+                        XCTAssertGreaterThan(width, 200)
+                        for popup in popups { XCTAssertEqual(popup.bounds.width, width, accuracy: 1) }
+                        let scroll = try XCTUnwrap(nativeViews(host, of: NSScrollView.self).first)
+                        let document = try XCTUnwrap(scroll.documentView)
+                        XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height)
+                        scroll.contentView.scroll(to: NSPoint(x: 0, y: document.bounds.height - scroll.contentView.bounds.height))
+                        scroll.reflectScrolledClipView(scroll.contentView)
+                        try await settle(host)
+                        try snapshot(host, name: "photos-feedback-filters-capture-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                    }
+                }
+                model.cancel()
+            }
+        }
+    }
+
+    func test新增Photos加载空内容筛选为空和错误状态() async throws {
+        let language = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = language }
+        for selection in [AppLanguageSelection.english, .simplifiedChinese] {
+            AppLanguageStore.shared.selection = selection
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["loading", "empty", "filtered", "error"] {
+                    let model = SynologyPhotosModel(repository: SynologyPhotosPresentationFixture(image: Data(),
+                        empty: state == "empty", fails: state == "error", waits: state == "loading"))
+                    if state == "filtered" { model.searchText = "no-match" }
+                    let load = Task { await model.loadIfNeeded() }
+                    if state == "loading" {
+                        for _ in 0..<20 where !model.isLoading { await Task.yield() }
+                        XCTAssertTrue(model.isLoading)
+                    } else { await load.value }
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                        .environment(MacAppearanceStore())
+                        .environment(AppLanguageStore.shared)
+                        .environment(\.locale, L10n.locale)
+                        .preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 900, height: 660))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-service-\(selection.rawValue)-\(scheme == .dark ? "dark" : "light")-\(state)")
+                    XCTAssertTrue(model.items.isEmpty)
+                    if state == "error" { XCTAssertNotNil(model.errorMessage) }
+                    if state == "filtered" { XCTAssertTrue(model.isFiltering) }
+                    load.cancel()
+                    model.cancel()
+                    window.contentView = nil
+                    window.close()
+                }
+            }
+        }
+    }
+
+    func test新增Photos双语主题和三种浏览入口() async throws {
+        let language = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = language }
+        let image = NSImage(size: NSSize(width: 160, height: 120), flipped: false) { rect in
+            NSColor.systemTeal.setFill()
+            rect.fill()
+            return true
+        }
+        let data = try XCTUnwrap(image.tiffRepresentation)
+        for selection in [AppLanguageSelection.english, .simplifiedChinese] {
+            AppLanguageStore.shared.selection = selection
+            for scheme in [ColorScheme.light, .dark] {
+                for section in SynologyPhotosSection.allCases {
+                    let model = SynologyPhotosModel(repository: SynologyPhotosPresentationFixture(image: data))
+                    await model.selectSection(section)
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                        .environment(MacAppearanceStore())
+                        .environment(AppLanguageStore.shared)
+                        .environment(\.locale, L10n.locale)
+                        .preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 900, height: 660))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host)
+                    try snapshot(host, name: "photos-service-\(selection.rawValue)-\(scheme == .dark ? "dark" : "light")-\(section)")
+                    XCTAssertEqual(host.bounds.width, 900, accuracy: 1)
+                    XCTAssertEqual(model.section, section)
+                    XCTAssertNil(model.errorMessage)
+                    if section == .albums { XCTAssertEqual(model.collections.count, 1) }
+                    else if section == .sharing { XCTAssertEqual(model.sharedEntries.count, 1) }
+                    else { XCTAssertEqual(model.items.count, 1) }
+                }
+            }
+        }
+    }
+
     override func setUp() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["LANSTASH_UI_TEST_ISOLATED"] == "1",
@@ -1958,4 +2148,54 @@ private actor PresentationFileRepository: FileRepository {
     func deleteShareLinks(ids: [String]) throws { try rejectWrite() }
     private func rejectWrite() throws { writeCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
     private func page(path: String, offset: Int) -> FilePage { FilePage(folderPath: path, items: [], offset: offset, total: 0, hasMore: false) }
+}
+private struct SynologyPhotosPresentationFixture: SynologyPhotosServing {
+    let image: Data
+    var empty = false
+    var fails = false
+    var waits = false
+    func categories() async throws -> Set<SynologyPhotoCategory> { Set(SynologyPhotoCategory.allCases) }
+    func details(for photo: SynologyPhoto) async throws -> SynologyPhoto {
+        var result = photo
+        result.camera = "Sample camera"; result.lens = "Sample lens"; result.aperture = "2.8"
+        result.exposureTime = "1/125"; result.focalLength = "35"; result.iso = "100"; result.rating = 4
+        return result
+    }
+    func previewImage(for photo: SynologyPhoto) async throws -> Data { image }
+    func filterOptions(in space: SynologyPhotoSpace) async throws -> SynologyPhotoFilterOptions {
+        SynologyPhotoFilterOptions(people: [SynologyPhotoCollection(id: 8, name: "Sample person")],
+            locations: [SynologyPhotoLocation(id: 9, name: "Sample place", level: 1)],
+            tags: [.init(id: 1, name: "Sample tag")], cameras: [.init(id: 2, name: "Sample camera")],
+            lenses: [.init(id: 3, name: "Sample lens")], isoValues: [.init(id: 4, name: "100")],
+            apertures: [.init(id: 5, name: "2.8")], focalRanges: [.init(start: 22, end: 35)],
+            exposureRanges: [.init(start: .init(num: 1, den: 500), end: .init(num: 1, den: 60))])
+    }
+    func sharedEntries(_ scope: SynologyPhotoShareScope, offset: Int, limit: Int) async throws -> [SynologyPhotoSharedEntry] {
+        [SynologyPhotoSharedEntry(id: "sample", title: "Sample shared album", albumID: 71)]
+    }
+    private let profileID = UUID()
+    func access() async throws -> SynologyPhotosAccess {
+        if fails { throw URLError(.notConnectedToInternet) }
+        if waits { try await Task.sleep(for: .seconds(30)) }
+        return SynologyPhotosAccess(spaces: [.personal], packageVersion: "1.8.2-10090")
+    }
+    func timeline(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay] {
+        empty ? [] : [SynologyPhotoDay(year: 2026, month: 1, day: 1, itemCount: 1)]
+    }
+    func searchTimeline(in space: SynologyPhotoSpace, keyword: String) async throws -> [SynologyPhotoDay] { [] }
+    func photos(in space: SynologyPhotoSpace, query: SynologyPhotoQuery, offset: Int, limit: Int) async throws -> SynologyPhotoPage {
+        let photo = SynologyPhoto(id: SynologyPhotoID(profileID: profileID, space: space, unitID: 1),
+            filename: "Sample.jpg", sizeBytes: 128, takenAt: Date(timeIntervalSince1970: 100),
+            indexedAt: Date(timeIntervalSince1970: 100), folderID: 42, mediaType: "photo",
+            thumbnail: SynologyPhotoThumbnail(unitID: 1, revision: "fixture"))
+        return SynologyPhotoPage(items: [photo], offset: offset, nextOffset: offset + 1, hasMore: false)
+    }
+    func thumbnail(for photo: SynologyPhoto) async throws -> Data { image }
+    func rootFolder(in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection { SynologyPhotoCollection(id: 42, name: "/") }
+    func folders(in space: SynologyPhotoSpace, parentID: Int, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
+        [SynologyPhotoCollection(id: 43, name: "Sample folder", parentID: 42)]
+    }
+    func albums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
+        [SynologyPhotoCollection(id: 71, name: "Sample album", itemCount: 1)]
+    }
 }

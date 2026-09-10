@@ -552,12 +552,6 @@ struct FileDetailView: View {
     }
 
     private func livePhotoVideoPath(for item: FileItem) -> String? {
-        if model.section?.belongsToPhotosModule == true {
-            if let photoItem = model.photoLibrary.displayedItems.first(where: { $0.id == item.id }),
-               let videoPath = photoItem.livePhotoVideoPath {
-                return videoPath
-            }
-        }
         let directory = (item.path as NSString).deletingLastPathComponent
         let stem = ((item.name as NSString).deletingPathExtension).lowercased()
         for candidate in model.filteredItems {
@@ -1143,10 +1137,11 @@ struct PreviewSpaceShortcutHandler: NSViewRepresentable {
     }
 }
 
-private struct FittedImagePreview: View {
+struct FittedImagePreview: View {
     let cgImage: CGImage
     let orientation: Image.Orientation
     var showsControls = true
+    var isZoomEnabled = true
     @State private var zoom: CGFloat = 1
     @State private var rotation = 0
     @State private var panOffset: CGSize = .zero
@@ -1217,6 +1212,7 @@ private struct FittedImagePreview: View {
             .onChange(of: geometry.size) { _, _ in panOffset = .zero }
             .background {
                 ImageScrollWheelReader { delta, isPrecise in
+                    guard isZoomEnabled else { return }
                     let step = isPrecise ? delta * 0.012 : delta * 0.08
                     updateZoom(zoom + step)
                 }
