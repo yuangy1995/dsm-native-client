@@ -247,7 +247,16 @@ jobs:
           LANSTASH_SHARED_KEYCHAIN_SUFFIX: ${{ vars.MACOS_SHARED_KEYCHAIN_SUFFIX }}
           LANSTASH_MAC_APP_PROVISIONING_PROFILE_PATH: ${{ runner.temp }}/lanstash-macos-app.provisionprofile
           LANSTASH_MAC_FILE_PROVIDER_PROVISIONING_PROFILE_PATH: ${{ runner.temp }}/lanstash-file-provider.provisionprofile
-        run: ./package.sh
+        run: |
+          if [[ "$PACKAGE_MODE" == release ]]; then
+            for arch in arm64 x86_64; do
+              LANSTASH_TARGET_ARCH="$arch" \
+              LANSTASH_BUILD_ROOT="$RUNNER_TEMP/lanstash-package-$arch" \
+              LANSTASH_DIST_DIR="$PWD/dist/$arch" ./package.sh
+            done
+          else
+            ./package.sh
+          fi
 
       - name: 公证、装订并验证正式候选包
         if: ${{ env.PACKAGE_MODE == 'release' }}
@@ -257,11 +266,13 @@ jobs:
           LANSTASH_NOTARY_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           LANSTASH_NOTARY_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
-          shopt -s nullglob
-          dmg_paths=(apple/Apps/DsmMac/dist/LanStash-*.dmg)
-          shopt -u nullglob
-          test "${#dmg_paths[@]}" -eq 1
-          apple/Apps/DsmMac/notarize.sh "${dmg_paths[0]}"
+          for arch in arm64 x86_64; do
+            shopt -s nullglob
+            dmg_paths=(apple/Apps/DsmMac/dist/"$arch"/LanStash-*-"$arch".dmg)
+            shopt -u nullglob
+            test "${#dmg_paths[@]}" -eq 1
+            apple/Apps/DsmMac/notarize.sh "${dmg_paths[0]}"
+          done
 
       - name: 校验预测试签名包
         if: ${{ env.PACKAGE_MODE == 'pretest' }}
@@ -359,7 +370,8 @@ jobs:
         with:
           name: LanStash-macOS-release
           path: |
-            apple/Apps/DsmMac/dist/*.dmg
+            apple/Apps/DsmMac/dist/arm64/*.dmg
+            apple/Apps/DsmMac/dist/x86_64/*.dmg
           if-no-files-found: error
 
       - name: 清理临时发布钥匙串

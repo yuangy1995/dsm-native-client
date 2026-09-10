@@ -22,15 +22,13 @@ case "${LANSTASH_UPDATE_CHANNEL:-stable}" in
 esac
 [[ "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" == "$GITHUB_SHA" ]] || exit 1
 [[ -n "${SPARKLE_PRIVATE_ED_KEY:-}" ]] || exit 1
-app="apple/Apps/DsmMac/dist/LanStash.app"
+app="apple/Apps/DsmMac/dist/arm64/LanStash.app"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 release_title="macOS $version"
 if [[ "$prerelease" == true ]]; then
     release_title="$release_title 升级验收版"
 fi
 [[ "$GITHUB_REF_NAME" == "$release_prefix$version" ]] || exit 1
-archive="apple/Apps/DsmMac/dist/LanStash-$version-universal.dmg"
-tools/release/verify_macos_distribution.sh "$app" "$archive" "$GITHUB_SHA"
 public_key="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist")"
 sign_tool="apple/.build/artifacts/sparkle/Sparkle/bin/sign_update"
 [[ -x "$sign_tool" ]] || exit 1
@@ -60,10 +58,18 @@ if jq -e --arg tag "$feed_tag" 'flatten | any(.tag_name == $tag)' "$release_tmp/
     sign_update --verify "$release_tmp/previous/appcast.xml"
     previous_feed="$release_tmp/previous/appcast.xml"
 fi
-signature="$(sign_update -p "$archive")"
-swift tools/release/verify_update_signature.swift "$archive" "$public_key" "$signature"
-feed_arguments=(--app "$app" --archive "$archive" --tag "$GITHUB_REF_NAME"
-    --signature "$signature" --output "$release_tmp/appcast.xml")
+feed_arguments=(--tag "$GITHUB_REF_NAME" --output "$release_tmp/appcast.xml")
+archives=()
+for arch in arm64 x86_64; do
+    app="apple/Apps/DsmMac/dist/$arch/LanStash.app"
+    archive="apple/Apps/DsmMac/dist/$arch/LanStash-$version-$arch.dmg"
+    tools/release/verify_macos_distribution.sh "$app" "$archive" "$GITHUB_SHA"
+    signature="$(sign_update -p "$archive")"
+    swift tools/release/verify_update_signature.swift "$archive" "$public_key" "$signature"
+    feed_arguments+=(--app "$app" --archive "$archive" --signature "$signature")
+    cp "$archive" "$release_tmp/"
+    archives+=("$release_tmp/$(basename "$archive")")
+done
 if [[ -n "$previous_feed" ]]; then
     feed_arguments+=(--previous "$previous_feed")
 fi
@@ -73,14 +79,13 @@ fi
 python3 tools/release/macos_appcast.py "${feed_arguments[@]}"
 sign_update "$release_tmp/appcast.xml"
 sign_update --verify "$release_tmp/appcast.xml"
-cp "$archive" "$release_tmp/"
 (
     cd "$release_tmp"
-    shasum -a 256 "$(basename "$archive")" appcast.xml > SHA256SUMS.txt
+    shasum -a 256 "LanStash-$version-arm64.dmg" "LanStash-$version-x86_64.dmg" appcast.xml > SHA256SUMS.txt
 )
 gh release create "$GITHUB_REF_NAME" --verify-tag --draft --latest=false --prerelease="$prerelease" \
     --title "$release_title" --notes-file docs/releases/MACOS_RELEASE_NOTES.md \
-    "$release_tmp/$(basename "$archive")" "$release_tmp/appcast.xml" "$release_tmp/SHA256SUMS.txt"
+    "${archives[@]}" "$release_tmp/appcast.xml" "$release_tmp/SHA256SUMS.txt"
 # 回读 GitHub 上的安装包与更新源，确认上传没有损坏，再把草稿公开。
 mkdir "$release_tmp/downloaded"
 gh release download "$GITHUB_REF_NAME" --dir "$release_tmp/downloaded"

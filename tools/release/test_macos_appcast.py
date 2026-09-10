@@ -12,8 +12,10 @@ class MacOSAppcastTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.archive = Path(self.directory.name) / "LanStash-0.2.6-universal.dmg"
+        self.archive = Path(self.directory.name) / "LanStash-0.2.6-arm64.dmg"
         self.archive.write_bytes(b"synthetic archive")
+        self.intel = Path(self.directory.name) / "LanStash-0.2.6-x86_64.dmg"
+        self.intel.write_bytes(b"synthetic intel archive")
         self.info = {
             "CFBundleShortVersionString": "0.2.6", "CFBundleVersion": "7",
             "LSMinimumSystemVersion": "14.0", "LanStashOnlineUpdatesEnabled": True,
@@ -23,7 +25,11 @@ class MacOSAppcastTests(unittest.TestCase):
         self.signature = base64.b64encode(bytes(range(64))).decode()
 
     def feed(self, previous=None, tag="macos/v0.2.6"):
-        return create_feed(self.info, self.archive, tag, self.signature, previous)
+        return create_feed(self.packages(), tag, previous)
+
+    def packages(self):
+        return {"arm64": (self.info, self.archive, self.signature),
+                "x86_64": (self.info, self.intel, self.signature)}
 
     def test_valid_feed_is_platform_specific_and_signed(self):
         item = ET.fromstring(self.feed()).find("./channel/item")
@@ -44,11 +50,11 @@ class MacOSAppcastTests(unittest.TestCase):
         self.info["SUFeedURL"] = VALIDATION_FEED_URL
         with self.assertRaises(ValueError):
             self.feed()
-        feed = create_feed(self.info, self.archive, "macos-validation/v0.2.6", self.signature, validation=True)
+        feed = create_feed(self.packages(), "macos-validation/v0.2.6", validation=True)
         self.assertIn("/macos-validation/v0.2.6/", ET.fromstring(feed).find("./channel/item/enclosure").get("url"))
         self.info["SUFeedURL"] = FEED_URL
         with self.assertRaises(ValueError):
-            create_feed(self.info, self.archive, "macos-validation/v0.2.6", self.signature, validation=True)
+            create_feed(self.packages(), "macos-validation/v0.2.6", validation=True)
 
     def test_disabled_or_wrong_feed_is_rejected(self):
         for key, value in [("LanStashOnlineUpdatesEnabled", False), ("SUFeedURL", "https://example.invalid/feed")]:
@@ -80,8 +86,9 @@ class MacOSAppcastTests(unittest.TestCase):
             ("0.2.5", "7", False), ("0.2.7", "6", False), ("0.2.5", "8", False),
         ]:
             root = ET.fromstring(self.feed())
-            root.find(f"./channel/item/{{{SPARKLE}}}version").text = old_build
-            root.find(f"./channel/item/{{{SPARKLE}}}shortVersionString").text = old_version
+            for item in root.findall("./channel/item"):
+                item.find(f"{{{SPARKLE}}}version").text = old_build
+                item.find(f"{{{SPARKLE}}}shortVersionString").text = old_version
             previous.write_bytes(ET.tostring(root))
             with self.subTest(version=old_version, build=old_build):
                 if allowed:
@@ -102,6 +109,47 @@ class MacOSAppcastTests(unittest.TestCase):
         self.assertEqual(version_tuple("7"), version_tuple("7.0.0"))
         with self.assertRaises(ValueError):
             version_tuple("7-beta")
+
+    def test_architecture_order_supports_native_intel_and_rosetta(self):
+        items = ET.fromstring(self.feed()).findall("./channel/item")
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].findtext(f"{{{SPARKLE}}}hardwareRequirements"), "arm64")
+        self.assertIsNone(items[1].find(f"{{{SPARKLE}}}hardwareRequirements"))
+        for hardware, rosetta, expected in [("arm64", False, "arm64"), ("x86_64", False, "x86_64"), ("arm64", True, "arm64")]:
+            # Sparkle 2.9.6 按实际硬件过滤，同版本取首个匹配项；不是运行进程架构。
+            matches = [item for item in items if hardware == "arm64" or
+                       item.findtext(f"{{{SPARKLE}}}hardwareRequirements") != "arm64"]
+            self.assertTrue(matches[0].find("enclosure").get("url").endswith(f"-{expected}.dmg"), (hardware, rosetta))
+        self.assertEqual(items[1].find("enclosure").get("length"), str(self.intel.stat().st_size))
+
+    def test_missing_mismatched_or_unsigned_second_package_is_rejected(self):
+        packages = self.packages()
+        del packages["x86_64"]
+        with self.assertRaises(ValueError):
+            create_feed(packages, "macos/v0.2.6")
+        for key in ["CFBundleVersion", "CFBundleIdentifier", "LanStashSourceCommit", "SUPublicEDKey", "SUFeedURL", "LSMinimumSystemVersion"]:
+            packages = self.packages()
+            packages["x86_64"] = ({**self.info, key: "different"}, self.intel, self.signature)
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                create_feed(packages, "macos/v0.2.6")
+        for archive, signature in [(self.archive, self.signature), (self.intel, "invalid")]:
+            packages = self.packages()
+            packages["x86_64"] = (self.info, archive, signature)
+            with self.assertRaises(ValueError):
+                create_feed(packages, "macos/v0.2.6")
+
+    def test_legacy_universal_feed_migrates_without_changing_feed_url(self):
+        root = ET.fromstring(self.feed())
+        channel = root.find("channel")
+        channel.remove(channel.findall("item")[1])
+        item = channel.find("item")
+        item.remove(item.find(f"{{{SPARKLE}}}hardwareRequirements"))
+        item.find(f"{{{SPARKLE}}}version").text = "6"
+        item.find(f"{{{SPARKLE}}}shortVersionString").text = "0.2.5"
+        item.find("enclosure").set("url", "https://example.invalid/LanStash-0.2.5-universal.dmg")
+        previous = Path(self.directory.name) / "legacy.xml"
+        previous.write_bytes(ET.tostring(root))
+        self.assertEqual(len(ET.fromstring(self.feed(previous)).findall("./channel/item")), 2)
 
 
 if __name__ == "__main__":

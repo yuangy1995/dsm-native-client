@@ -46,6 +46,18 @@ done
     || fail "正式包不得启用文件对照限制"
 [[ -d "$FILE_PROVIDER_PATH" ]] \
     || fail "正式分发包缺少 File Provider 扩展"
+case "$DMG_PATH" in
+    *-arm64.dmg) expected_arch=arm64 ;;
+    *-x86_64.dmg) expected_arch=x86_64 ;;
+    *-universal.dmg) expected_arch="" ;;
+    *) fail "安装包文件名缺少支持的架构标识" ;;
+esac
+if [[ -n "$expected_arch" ]]; then
+    for executable in "$APP_PATH/Contents/MacOS/LanStash" "$FILE_PROVIDER_PATH/Contents/MacOS/LanStashFileProvider"; do
+        [[ "$(/usr/bin/lipo -archs "$executable")" == "$expected_arch" ]] \
+            || fail "应用或扩展架构与安装包标识不一致"
+    done
+fi
 [[ -f "$APP_PROFILE_PATH" ]] \
     || fail "正式分发包缺少主 App Developer ID provisioning profile"
 [[ -f "$FILE_PROVIDER_PROFILE_PATH" ]] \

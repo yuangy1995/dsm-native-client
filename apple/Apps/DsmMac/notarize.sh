@@ -62,7 +62,7 @@ echo "==> 装订并验证公证票据"
 /usr/bin/xcrun stapler staple "$DMG_PATH"
 /usr/bin/xcrun stapler validate "$DMG_PATH"
 
-APP_PATH="$SCRIPT_DIR/dist/LanStash.app"
+APP_PATH="$(dirname "$DMG_PATH")/LanStash.app"
 [[ -d "$APP_PATH" ]] \
     || fail "找不到与 DMG 同批生成的 App：$APP_PATH"
 SOURCE_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD)"

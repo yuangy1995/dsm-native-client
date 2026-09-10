@@ -14,6 +14,31 @@ PACKAGE = ROOT / "apple/Apps/DsmMac/package.sh"
 
 
 class MacOSSigningTests(unittest.TestCase):
+    def test_distribution_architecture_matches_both_app_and_extension(self):
+        source = (ROOT / "tools/release/verify_macos_distribution.sh").read_text()
+        gate = source.split('case "$DMG_PATH" in\n', 1)[1].split('[[ -f "$APP_PROFILE_PATH" ]]', 1)[0]
+        gate = 'case "$DMG_PATH" in\n' + gate
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            code = root / "probe.c"
+            code.write_text("int main(void) { return 0; }\n")
+            app = root / "LanStash.app"
+            extension = app / "Contents/PlugIns/LanStashFileProvider.appex"
+            main = app / "Contents/MacOS/LanStash"
+            helper = extension / "Contents/MacOS/LanStashFileProvider"
+            main.parent.mkdir(parents=True)
+            helper.parent.mkdir(parents=True)
+            for arch in ["arm64", "x86_64"]:
+                subprocess.run(["xcrun", "clang", "-arch", arch, str(code), "-o", str(main)], check=True, capture_output=True)
+                subprocess.run(["xcrun", "clang", "-arch", arch, str(code), "-o", str(helper)], check=True, capture_output=True)
+                script = 'set -euo pipefail\nfail() { exit 1; }\nAPP_PATH="$1"\nFILE_PROVIDER_PATH="$2"\nDMG_PATH="$3"\n' + gate
+                for label, expected in [(arch, 0), ("x86_64" if arch == "arm64" else "arm64", 1)]:
+                    result = subprocess.run(["/bin/bash", "-c", script, "arch", str(app), str(extension), f"LanStash-1.0.3-{label}.dmg"], capture_output=True)
+                    self.assertEqual(result.returncode, expected)
+                helper.write_bytes(b"not an executable")
+                result = subprocess.run(["/bin/bash", "-c", script, "arch", str(app), str(extension), f"LanStash-1.0.3-{arch}.dmg"], capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+
     def test_daily_ci_checks_and_uploads_isolated_test_artifacts(self):
         source = (ROOT / ".github/workflows/apple-build.yml").read_text()
         self.assertIn('"apple/Apps/DsmMac/dist/local-test/LanStash Test.app"', source)

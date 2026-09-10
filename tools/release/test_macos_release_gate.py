@@ -7,6 +7,22 @@ import unittest
 
 
 class MacOSReleaseGateTests(unittest.TestCase):
+    def test_formal_packaging_builds_both_architectures_in_separate_directories(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github/workflows/macos-release-verification.yml").read_text()
+        section = workflow.split("      - name: 构建、签名并生成候选包\n", 1)[1]
+        script = section.split("        run: |\n", 1)[1].split("\n      - name:", 1)[0]
+        script = "set -euo pipefail\n" + "\n".join(line[10:] for line in script.splitlines())
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "package.sh"
+            package.write_text('#!/bin/bash\nprintf "%s|%s|%s\\n" "$LANSTASH_TARGET_ARCH" "${LANSTASH_BUILD_ROOT:-default}" "${LANSTASH_DIST_DIR:-default}"\n')
+            package.chmod(0o700)
+            env = {**os.environ, "PACKAGE_MODE": "release", "RUNNER_TEMP": directory, "LANSTASH_TARGET_ARCH": "universal"}
+            lines = subprocess.check_output(["/bin/bash", "-c", script], cwd=directory, env=env, text=True).splitlines()
+            self.assertEqual(lines, [f"{arch}|{directory}/lanstash-package-{arch}|{Path(directory).resolve()}/dist/{arch}" for arch in ["arm64", "x86_64"]])
+            env["PACKAGE_MODE"] = "pretest"
+            self.assertEqual(subprocess.check_output(["/bin/bash", "-c", script], cwd=directory, env=env, text=True).strip(), "universal|default|default")
+
     def run_gate(self, **overrides):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / ".github/workflows/macos-release-verification.yml").read_text()

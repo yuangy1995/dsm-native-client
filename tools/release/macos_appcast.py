@@ -25,8 +25,11 @@ def version_tuple(value: str) -> tuple[int, ...]:
     return parts + (0,) * (3 - len(parts))
 
 
-def create_feed(info: dict, archive: Path, tag: str, signature: str,
+def create_feed(packages: dict[str, tuple[dict, Path, str]], tag: str,
                 previous: Path | None = None, validation: bool = False) -> bytes:
+    if set(packages) != {"arm64", "x86_64"}:
+        raise ValueError("发布必须同时提供 Apple Silicon 与 Intel 安装包")
+    info = packages["arm64"][0]
     version = info["CFBundleShortVersionString"]
     build = info["CFBundleVersion"]
     prefix = "macos-validation/v" if validation else "macos/v"
@@ -38,10 +41,16 @@ def create_feed(info: dict, archive: Path, tag: str, signature: str,
         raise ValueError("候选包未启用正确的 macOS 更新源")
     if len(base64.b64decode(info.get("SUPublicEDKey", ""), validate=True)) != 32:
         raise ValueError("候选包更新公钥无效")
-    if len(base64.b64decode(signature, validate=True)) != 64:
-        raise ValueError("更新签名无效")
-    if archive.name != f"LanStash-{version}-universal.dmg" or archive.stat().st_size == 0:
-        raise ValueError("正式发布须提供对应版本的通用 DMG")
+    identity_keys = ("CFBundleShortVersionString", "CFBundleVersion", "CFBundleIdentifier",
+                     "LSMinimumSystemVersion", "LanStashOnlineUpdatesEnabled", "SUFeedURL",
+                     "SUPublicEDKey", "LanStashSourceCommit")
+    for arch, (package_info, archive, signature) in packages.items():
+        if any(package_info.get(key) != info.get(key) for key in identity_keys):
+            raise ValueError("两种架构的版本、身份、来源和更新配置必须一致")
+        if len(base64.b64decode(signature, validate=True)) != 64:
+            raise ValueError("更新签名无效")
+        if archive.name != f"LanStash-{version}-{arch}.dmg" or archive.stat().st_size == 0:
+            raise ValueError("安装包版本或架构标识不匹配")
     if previous is not None:
         items = ET.parse(previous).findall("./channel/item")
         if not items:
@@ -58,36 +67,45 @@ def create_feed(info: dict, archive: Path, tag: str, signature: str,
     channel = ET.SubElement(root, "channel")
     ET.SubElement(channel, "title").text = "LanStash macOS"
     ET.SubElement(channel, "link").text = f"{BASE_URL}/releases"
-    item = ET.SubElement(channel, "item")
-    ET.SubElement(item, "title").text = f"LanStash {version}"
-    ET.SubElement(item, "pubDate").text = format_datetime(datetime.now(timezone.utc))
-    ET.SubElement(item, f"{{{SPARKLE}}}version").text = build
-    ET.SubElement(item, f"{{{SPARKLE}}}shortVersionString").text = version
-    ET.SubElement(item, f"{{{SPARKLE}}}minimumSystemVersion").text = info["LSMinimumSystemVersion"]
-    ET.SubElement(item, "enclosure", {
-        "url": f"{BASE_URL}/releases/download/{tag}/{archive.name}",
-        "length": str(archive.stat().st_size),
-        "type": "application/octet-stream",
-        f"{{{SPARKLE}}}edSignature": signature,
-        f"{{{SPARKLE}}}os": "macos",
-    })
+    # Sparkle 2.9.6 同版本取首个匹配项；Intel 排除 arm64 要求，Rosetta 按实际硬件匹配。
+    for arch, label in [("arm64", "Apple Silicon"), ("x86_64", "Intel")]:
+        _, archive, signature = packages[arch]
+        item = ET.SubElement(channel, "item")
+        ET.SubElement(item, "title").text = f"LanStash {version} — {label}"
+        ET.SubElement(item, "pubDate").text = format_datetime(datetime.now(timezone.utc))
+        ET.SubElement(item, f"{{{SPARKLE}}}version").text = build
+        ET.SubElement(item, f"{{{SPARKLE}}}shortVersionString").text = version
+        ET.SubElement(item, f"{{{SPARKLE}}}minimumSystemVersion").text = info["LSMinimumSystemVersion"]
+        if arch == "arm64":
+            ET.SubElement(item, f"{{{SPARKLE}}}hardwareRequirements").text = "arm64"
+        ET.SubElement(item, "enclosure", {
+            "url": f"{BASE_URL}/releases/download/{tag}/{archive.name}",
+            "length": str(archive.stat().st_size),
+            "type": "application/octet-stream",
+            f"{{{SPARKLE}}}edSignature": signature,
+            f"{{{SPARKLE}}}os": "macos",
+        })
     ET.indent(root)
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--app", required=True, type=Path)
-    parser.add_argument("--archive", required=True, type=Path)
+    parser.add_argument("--app", required=True, type=Path, action="append")
+    parser.add_argument("--archive", required=True, type=Path, action="append")
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--signature", required=True)
+    parser.add_argument("--signature", required=True, action="append")
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--validation", action="store_true")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    with (args.app / "Contents/Info.plist").open("rb") as source:
-        info = plistlib.load(source)
-    args.output.write_bytes(create_feed(info, args.archive, args.tag, args.signature, args.previous, args.validation))
+    if not len(args.app) == len(args.archive) == len(args.signature) == 2:
+        parser.error("按 arm64、x86_64 顺序分别提供两组 app、archive 和 signature")
+    packages = {}
+    for arch, app, archive, signature in zip(("arm64", "x86_64"), args.app, args.archive, args.signature):
+        with (app / "Contents/Info.plist").open("rb") as source:
+            packages[arch] = (plistlib.load(source), archive, signature)
+    args.output.write_bytes(create_feed(packages, args.tag, args.previous, args.validation))
 
 
 if __name__ == "__main__":
