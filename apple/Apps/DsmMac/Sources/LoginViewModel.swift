@@ -931,7 +931,7 @@ final class AppModel {
             profile: connectionProfile,
             capabilities: capabilities,
             session: session,
-            containerNetworkCreationEnabled: AppStorageNamespace.isLocalTest
+            containerNetworkCreationEnabled: true
         )
         let privilegesService = try DsmDesktopAppPrivilegesService(
             profile: connectionProfile,

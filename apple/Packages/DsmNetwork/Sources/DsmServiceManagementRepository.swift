@@ -220,7 +220,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
         let baseURL = try DsmEndpoint.baseURL(for: profile)
         self.capabilities = capabilities
-        // 正式调用默认关闭；用户明确授权的独立本地测试包由组合根开启，用于受控验收。
+        // 由客户端组合根显式启用；实际提交仍检查接口能力、配置与同名操作状态。
         self.containerNetworkCreationEnabled = containerNetworkCreationEnabled
         credential = DsmSessionCredential(sid: session.sid, synoToken: session.synoToken)
         self.baseURL = baseURL

@@ -371,6 +371,17 @@ private actor UnreadableMountSessionStore: SessionSecureStoring {
 }
 
 final class ConnectionFlowTests: XCTestCase {
+    func test正式版与测试版使用相同的网络创建接线() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LoginViewModel.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "let serviceManagementRepository = try DsmServiceManagementRepository("))
+        let end = try XCTUnwrap(source.range(of: "let privilegesService", range: start.upperBound..<source.endIndex))
+        let composition = source[start.lowerBound..<end.lowerBound]
+        XCTAssertTrue(composition.contains("containerNetworkCreationEnabled: true"))
+        XCTAssertFalse(composition.contains("AppStorageNamespace.isLocalTest"), "创建能力不得被包类型再次关闭")
+    }
     func test临时签名缺少扩展或共享容器时云盘能力不可用() {
         let containerURL = URL(fileURLWithPath: "/tmp/test-app-group")
 
