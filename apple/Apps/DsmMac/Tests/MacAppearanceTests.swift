@@ -3,6 +3,19 @@ import XCTest
 @testable import DsmMacExecutable
 
 @MainActor
+private final class ChromeReentrantWindow: NSWindow {
+    var onStyleChange: (() -> Void)?
+    override var styleMask: NSWindow.StyleMask {
+        didSet {
+            // 单次回调模拟系统修改窗口样式时同步更新 SwiftUI 视图。
+            let callback = onStyleChange
+            onStyleChange = nil
+            callback?()
+        }
+    }
+}
+
+@MainActor
 final class MacAppearanceTests: XCTestCase {
     func test冷启动先恢复外观再创建原生选择框且可切回系统() throws {
         let application = NSApplication.shared
@@ -246,6 +259,58 @@ final class MacAppearanceTests: XCTestCase {
         XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
         XCTAssertEqual(window.titleVisibility, .visible)
         XCTAssertTrue(window.isOpaque)
+    }
+
+    func test窗口销毁时保留外壳也不会重新观察旧窗口() {
+        _ = NSApplication.shared
+        let host = MacWorkspaceWindowChrome.HostView()
+        host.fullSize = true
+        weak var releasedWindow: NSWindow?
+        autoreleasepool {
+            let window = ChromeReentrantWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            releasedWindow = window
+            window.contentView = host
+            window.onStyleChange = { [weak host] in host?.configure() }
+            // 不提前移除内容，覆盖 NSWindow 销毁过程中主动拆除视图的路径。
+        }
+        XCTAssertNil(releasedWindow)
+        XCTAssertNil(host.window)
+    }
+
+    func test窗口外壳离开时忽略同步布局重入并可接入新窗口() {
+        _ = NSApplication.shared
+        let window = ChromeReentrantWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let nextWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        nextWindow.isReleasedWhenClosed = false
+        defer {
+            window.onStyleChange = nil
+            window.contentView = nil
+            nextWindow.contentView = nil
+            window.close()
+            nextWindow.close()
+        }
+        let host = MacWorkspaceWindowChrome.HostView()
+        host.fullSize = true
+        window.contentView = host
+        var reentryCount = 0
+        window.onStyleChange = { [weak host] in
+            reentryCount += 1
+            host?.configure()
+        }
+        window.contentView = NSView()
+        XCTAssertGreaterThan(reentryCount, 0)
+        XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
+        XCTAssertEqual(window.titleVisibility, .visible)
+        window.titleVisibility = .hidden
+        window.titleVisibility = .visible
+        XCTAssertEqual(window.titleVisibility, .visible, "离开时不能重新注册旧窗口的标题监听")
+
+        nextWindow.contentView = host
+        XCTAssertTrue(nextWindow.styleMask.contains(.fullSizeContentView))
+        nextWindow.titleVisibility = .visible
+        XCTAssertEqual(nextWindow.titleVisibility, .hidden, "接入新窗口后应恢复正常配置与监听")
     }
 
     func test外观偏好重新创建后保留且恢复默认只移除三个键() throws {

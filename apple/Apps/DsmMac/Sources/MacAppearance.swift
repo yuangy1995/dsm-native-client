@@ -192,14 +192,16 @@ struct MacWorkspaceWindowChrome: NSViewRepresentable {
         var hidesSystemButtons = false
         private var didHideSystemButtons = false
         private var titleObservation: NSKeyValueObservation?
+        private var isMovingToWindow = false
         // 仅配置窗口的背景视图不接收鼠标事件。
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            isMovingToWindow = false
             configure()
         }
         func configure() {
-            guard let window else { return }
+            guard !isMovingToWindow, let window else { return }
             if titleObservation == nil {
                 titleObservation = window.observe(\.titleVisibility, options: [.new]) { [weak self] window, _ in
                     MainActor.assumeIsolated {
@@ -224,6 +226,8 @@ struct MacWorkspaceWindowChrome: NSViewRepresentable {
             window.isOpaque = !fullSize
         }
         override func viewWillMove(toWindow newWindow: NSWindow?) {
+            // 恢复标题栏会同步触发布局；离开期间不能重新配置或观察正在销毁的旧窗口。
+            isMovingToWindow = true
             if let window, window !== newWindow {
                 titleObservation?.invalidate()
                 titleObservation = nil
