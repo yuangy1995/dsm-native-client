@@ -22,7 +22,7 @@ struct SynologyPhotoMonth: Identifiable, Hashable {
     var date: Date? { Calendar(identifier: .gregorian).date(from: DateComponents(year: year, month: month, day: 1)) }
 }
 
-/// 单一串行分页状态。刷新建立新代次，迟到结果不得覆盖当前图库。
+/// 单一图库的双向分页状态，每个方向禁止重复请求；刷新后迟到结果不得覆盖当前图库。
 @MainActor
 @Observable
 final class SynologyPhotosModel {
@@ -69,6 +69,11 @@ final class SynologyPhotosModel {
     private(set) var hasLoaded = false
     private(set) var isPlayingMotion = false
     private(set) var selectedTimelineMonthID: Int?
+    private(set) var previousMonthID: Int?
+    private(set) var previousPageErrorMessage: String?
+    private(set) var isLoadingPrevious = false
+    var hasPrevious: Bool { previousMonthID.map { current in timelineMonths.contains { $0.id > current } } ?? false }
+    var previousPaginationIdentity: String { "\(generation):\(previousMonthID ?? 0)" }
     @ObservationIgnored private var timelineBaseQuery: SynologyPhotoQuery?
     var searchText = ""
     private(set) var isFiltering = false
@@ -125,6 +130,9 @@ final class SynologyPhotosModel {
         generation += 1
         let current = generation
         query = destination
+        previousMonthID = month.id
+        previousPageErrorMessage = nil
+        isLoadingPrevious = false
         selectedTimelineMonthID = month.id
         items = []; nextOffset = 0; hasMore = false
         isLoading = true; isLoadingMore = false; errorMessage = nil
@@ -135,6 +143,63 @@ final class SynologyPhotosModel {
             try accept(page, requestedOffset: 0)
             hasLoaded = true
         } catch { if current == generation { present(error) } }
+    }
+
+    /// 向较新月份读取完整时间区间，再整体补入，避免月内分页制造日期缺口。
+    func loadPreviousPage() async {
+        guard isModuleEnabled, !isDeleting, hasPrevious, !isLoading, !isLoadingPrevious,
+              let monthID = previousMonthID,
+              let month = timelineMonths.last(where: { $0.id > monthID }),
+              let base = timelineBaseQuery,
+              let lowerMonth = timelineMonths.first(where: { $0.id == monthID })?.date,
+              let upperMonth = month.date,
+              let startDate = Calendar(identifier: .gregorian).date(byAdding: .month, value: 1, to: lowerMonth),
+              let endDate = Calendar(identifier: .gregorian).date(byAdding: .month, value: 1, to: upperMonth) else { return }
+        let start = Int(startDate.timeIntervalSince1970)
+        let end = Int(endDate.timeIntervalSince1970) - 1
+        let previousQuery: SynologyPhotoQuery
+        switch base {
+        case .timeline(let lower, let upper):
+            previousQuery = .timeline(startTime: max(lower, start), endTime: min(upper, end))
+        case .search(let keyword, let lower, let upper):
+            previousQuery = .search(keyword: keyword, startTime: max(lower, start), endTime: min(upper, end))
+        case .filtered(var filter, let lower, let upper):
+            if let filterStart = filter.startTime { filter.startTime = max(filterStart, start) }
+            if let filterEnd = filter.endTime { filter.endTime = min(filterEnd, end) }
+            previousQuery = .filtered(filter, startTime: max(lower, start), endTime: min(upper, end))
+        case .category(let category, let id, let lower, let upper):
+            previousQuery = .category(category, id: id, startTime: max(lower, start), endTime: min(upper, end))
+        default: return
+        }
+        let current = generation
+        isLoadingPrevious = true
+        previousPageErrorMessage = nil
+        defer { if current == generation { isLoadingPrevious = false } }
+        do {
+            var offset = 0
+            var additions: [SynologyPhoto] = []
+            var seen = Set(items.map(\.id))
+            while true {
+                let page = try await service().photos(in: selectedSpace, query: previousQuery, offset: offset, limit: pageSize)
+                guard current == generation, !Task.isCancelled else { return }
+                guard page.offset == offset, page.nextOffset == offset + page.items.count,
+                      !page.hasMore || !page.items.isEmpty else {
+                    throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("photos.service.invalidResponse"))
+                }
+                let newItems = page.items.filter { seen.insert($0.id).inserted && !confirmedDeletedIDs.contains($0.id) }
+                guard !page.hasMore || !newItems.isEmpty else {
+                    throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("photos.service.invalidResponse"))
+                }
+                additions.append(contentsOf: newItems)
+                if !page.hasMore { break }
+                offset = page.nextOffset
+            }
+            items.insert(contentsOf: additions, at: 0)
+            previousMonthID = month.id
+        } catch {
+            guard current == generation, !(error is CancellationError) else { return }
+            previousPageErrorMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.service.invalidResponse")
+        }
     }
 
     /// 仅在列表尾部进入预取区域时调用；失败停住，由明确重试恢复。
@@ -165,6 +230,9 @@ final class SynologyPhotosModel {
         let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         selectedTimelineMonthID = nil
         timelineBaseQuery = nil
+        previousMonthID = nil
+        previousPageErrorMessage = nil
+        isLoadingPrevious = false
         isFiltering = !keyword.isEmpty || filter.isActive
         isLoading = true
         hasLoaded = false
@@ -306,6 +374,7 @@ final class SynologyPhotosModel {
 
     func cancel() {
         generation += 1
+        isLoadingPrevious = false
         hasLoaded = false
         isLoading = false
         isLoadingMore = false
@@ -575,6 +644,7 @@ final class SynologyPhotosModel {
         deletionCandidate = nil
         isDeleting = true
         generation += 1
+        isLoadingPrevious = false
         isLoading = false
         isLoadingMore = false
         Task {

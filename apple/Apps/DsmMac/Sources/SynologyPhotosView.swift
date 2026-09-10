@@ -109,7 +109,7 @@ struct SynologyPhotosView: View {
     @ViewBuilder private var galleryContent: some View {
             if model.isLoading {
                 ProgressView().fillsAvailableContentArea()
-            } else if model.items.isEmpty && model.collections.isEmpty && !model.showsCategories && model.sharedEntries.isEmpty {
+            } else if model.items.isEmpty && model.collections.isEmpty && !model.showsCategories && model.sharedEntries.isEmpty && !model.hasPrevious {
                 ContentUnavailableView {
                     Label(L10n.string(model.errorMessage == nil ? "photos.empty.title" : "photos.error.title"), systemImage: "photo.on.rectangle")
                 } description: {
@@ -119,8 +119,21 @@ struct SynologyPhotosView: View {
                 }
                 .fillsAvailableContentArea()
             } else {
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
+                        if model.hasPrevious {
+                            if let message = model.previousPageErrorMessage {
+                                Text(message).foregroundStyle(.secondary)
+                                Button(L10n.string("photos.retry")) {
+                                    Task { await loadPreviousPage(using: proxy) }
+                                }.buttonStyle(MacToolbarButtonStyle())
+                            } else {
+                                ProgressView().frame(maxWidth: .infinity).padding()
+                                    .id(model.previousPaginationIdentity)
+                                    .task { await loadPreviousPage(using: proxy) }
+                            }
+                        }
                         if model.showsCategories {
                             LazyVGrid(columns: columns, spacing: 8) {
                                 ForEach(SynologyPhotoCategory.allCases.filter { model.availableCategories.contains($0) }, id: \.self) { category in
@@ -183,16 +196,29 @@ struct SynologyPhotosView: View {
                         }
                     }.padding(16)
                 }
+                .macThemedScrollContent()
+                }
             }
 
     }
 
     private var columns: [GridItem] { [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 8)] }
 
+    private func loadPreviousPage(using proxy: ScrollViewProxy) async {
+        let anchor = model.items.first?.id
+        let month = model.selectedTimelineMonthID
+        let previousMonth = model.previousMonthID
+        await model.loadPreviousPage()
+        if month == model.selectedTimelineMonthID, model.previousMonthID != previousMonth, let anchor {
+            proxy.scrollTo(anchor, anchor: .top)
+        }
+    }
+
     private func photoGrid(_ photos: [SynologyPhoto]) -> some View {
         LazyVGrid(columns: columns, spacing: 8) {
             ForEach(photos) { photo in
                 Button { model.showPreview(photo) } label: { SynologyPhotoCell(photo: photo, model: model) }
+                    .id(photo.id)
                     .buttonStyle(.plain)
                     .contextMenu {
                         Button(L10n.string("photos.media.open")) { model.showPreview(photo) }

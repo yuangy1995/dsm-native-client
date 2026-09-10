@@ -396,12 +396,24 @@ public struct ContainerNetwork: Identifiable, Equatable, Sendable {
     public let name: String
     public let driver: String
     public let connectedContainerCount: Int
+    public let subnet: String?
+    public let gateway: String?
+    public let isIPv6Enabled: Bool?
+    public let connectedContainerNames: [String]?
 
-    public init(id: String, name: String, driver: String, connectedContainerCount: Int = 0) {
+    public init(
+        id: String, name: String, driver: String, connectedContainerCount: Int = 0,
+        subnet: String? = nil, gateway: String? = nil, isIPv6Enabled: Bool? = nil,
+        connectedContainerNames: [String]? = nil
+    ) {
         self.id = id
         self.name = name
         self.driver = driver
         self.connectedContainerCount = connectedContainerCount
+        self.subnet = subnet
+        self.gateway = gateway
+        self.isIPv6Enabled = isIPv6Enabled
+        self.connectedContainerNames = connectedContainerNames
     }
 }
 
@@ -450,6 +462,7 @@ public struct ContainerManagerSnapshot: Equatable, Sendable {
     public let events: [ServiceEvent]
     public let unavailableSections: Set<ContainerManagerSection>
     public let failedSections: Set<ContainerManagerSection>
+    public let canCreateNetworks: Bool
 
     public init(
         containers: [ContainerInstance],
@@ -458,7 +471,8 @@ public struct ContainerManagerSnapshot: Equatable, Sendable {
         projects: [ContainerProject],
         events: [ServiceEvent],
         unavailableSections: Set<ContainerManagerSection> = [],
-        failedSections: Set<ContainerManagerSection> = []
+        failedSections: Set<ContainerManagerSection> = [],
+        canCreateNetworks: Bool = false
     ) {
         self.containers = containers
         self.images = images
@@ -467,6 +481,7 @@ public struct ContainerManagerSnapshot: Equatable, Sendable {
         self.events = events
         self.unavailableSections = unavailableSections
         self.failedSections = failedSections
+        self.canCreateNetworks = canCreateNetworks
     }
 }
 
@@ -754,7 +769,7 @@ public protocol ServiceManagementRepository: Sendable {
     func pullContainerImage(repository: String, tag: String) async throws
     func deleteContainerImages(ids: [String]) async throws
     func deleteContainerImagesResult(ids: [String]) async throws -> MutationResult
-    func createContainerNetwork(name: String, driver: String) async throws
+    func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws
     func deleteContainerNetworks(ids: [String]) async throws
     func deleteContainerNetworksResult(ids: [String]) async throws -> MutationResult
 

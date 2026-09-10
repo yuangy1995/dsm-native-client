@@ -6,6 +6,25 @@ import XCTest
 
 @MainActor
 final class ServiceManagementModelTests: XCTestCase {
+    func test测试包开放能力后填写名称会进入创建流程() async {
+        let repository = ServiceManagementRepositoryStub(containerSnapshot: .init(
+            containers: [], images: [], networks: [], projects: [], events: [], canCreateNetworks: true))
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.containers)
+        _ = await model.createNetwork(.init(name: "test"))
+        let calls = await repository.networkCreationRequests
+        XCTAssertEqual(calls, [.init(name: "test")])
+    }
+    func test网络创建能力关闭时模型不调用创建接口() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.containers)
+        let result = await model.createNetwork(.init(name: "synthetic-network"))
+        XCTAssertFalse(result)
+        let calls = await repository.networkCreationRequests
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertTrue(model.messageIsError)
+    }
     func test下载操作按实际任务状态开放() {
         for status in ["finished", "completed", "FINISHED", "unknown"] {
             let task = DownloadStationTask(id: "task", title: "测试任务", status: status)
@@ -240,7 +259,9 @@ final class ServiceManagementModelTests: XCTestCase {
 
 // 共用合成套件数据，供模型与页面回归使用。
 actor ServiceManagementRepositoryStub: ServiceManagementRepository {
+    private(set) var networkCreationRequests: [ContainerNetworkCreation] = []
     private let virtualMachineStorages: [VirtualizationResource]
+    private let containerSnapshot: ContainerManagerSnapshot?
 
     private var downloadTasks = [
         DownloadStationTask(
@@ -303,7 +324,8 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         secondaryStatus: MutationResultStatus = .confirmedSuccess,
         removeSecondaryOnDelete: Bool = false,
         virtualMachineStorages: [VirtualizationResource] = [],
-        downloadTasks: [DownloadStationTask]? = nil
+        downloadTasks: [DownloadStationTask]? = nil,
+        containerSnapshot: ContainerManagerSnapshot? = nil
     ) {
         self.containerStatus = containerStatus
         self.virtualMachineStatus = virtualMachineStatus
@@ -311,11 +333,13 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         self.secondaryStatus = secondaryStatus
         self.removeSecondaryOnDelete = removeSecondaryOnDelete
         self.virtualMachineStorages = virtualMachineStorages
+        self.containerSnapshot = containerSnapshot
         if let downloadTasks { self.downloadTasks = downloadTasks }
     }
 
     func loadContainerManager() async throws -> ContainerManagerSnapshot {
-        ContainerManagerSnapshot(
+        if let containerSnapshot { return containerSnapshot }
+        return ContainerManagerSnapshot(
             containers: containers,
             images: containerImages,
             networks: containerNetworks,
@@ -481,7 +505,8 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
             count: ids.count
         )
     }
-    func createContainerNetwork(name: String, driver: String) async throws {
+    func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws {
+        networkCreationRequests.append(configuration)
         throw unavailable()
     }
     func deleteContainerNetworks(ids: [String]) async throws { throw unavailable() }

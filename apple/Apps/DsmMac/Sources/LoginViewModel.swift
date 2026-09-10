@@ -930,7 +930,8 @@ final class AppModel {
         let serviceManagementRepository = try DsmServiceManagementRepository(
             profile: connectionProfile,
             capabilities: capabilities,
-            session: session
+            session: session,
+            containerNetworkCreationEnabled: AppStorageNamespace.isLocalTest
         )
         let privilegesService = try DsmDesktopAppPrivilegesService(
             profile: connectionProfile,

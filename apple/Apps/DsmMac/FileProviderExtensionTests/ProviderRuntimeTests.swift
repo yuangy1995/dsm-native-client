@@ -5,6 +5,21 @@ import XCTest
 @testable import DsmFileProviderRuntime
 
 final class ProviderRuntimeTests: XCTestCase {
+    func test服务保持可用时新扩展实例不依赖主应用即可枚举和下载() async throws {
+        let context = try makeContext()
+        let dependencies = context.dependencies(capacity: .init(results: []))
+        let first = ProviderRuntime(mappingIdentifier: context.mapping.id.uuidString, dependencies: dependencies)
+        _ = try await first.enumerate(containerIdentifier: .rootContainer, offset: 0, limit: 10)
+        await first.invalidate()
+
+        let restored = ProviderRuntime(mappingIdentifier: context.mapping.id.uuidString, dependencies: dependencies)
+        let page = try await restored.enumerate(containerIdentifier: .rootContainer, offset: 0, limit: 10)
+        let identifier = try XCTUnwrap(page.items.first?.itemIdentifier)
+        let file = try await restored.fetchContents(for: identifier, requestedVersion: nil, progress: { _, _ in })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.0.path))
+        let snapshot = await context.repository.snapshot()
+        XCTAssertEqual(snapshot.downloadCount, 1)
+    }
     func test缺少会话时根目录仍可注册但真实文件访问被拒绝() async throws {
         let context = try makeContext()
         var dependencies = context.dependencies(capacity: .init(results: []))

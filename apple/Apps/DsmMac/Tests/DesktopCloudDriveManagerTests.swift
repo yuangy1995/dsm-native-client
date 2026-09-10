@@ -6,6 +6,34 @@ import XCTest
 
 @MainActor
 final class DesktopCloudDriveManagerTests: XCTestCase {
+    func test退出主应用保留挂载可用状态映射与连接配置() async throws {
+        let context = try await makeContext(cacheEntryCount: 1)
+        try await context.store.setProviderAvailable(true)
+        let before = try await context.store.configuration(mappingID: context.mapping.id)
+        let runtimeBefore = try await context.store.runtime(mappingID: context.mapping.id)
+        let controller = DesktopDriveMenuBarController(store: context.store)
+        await controller.prepareForTermination()
+
+        let reopenedStore = DesktopDriveConfigurationStore(directoryURL: context.directoryURL)
+        let available = try await reopenedStore.isProviderAvailable()
+        let after = try await reopenedStore.configuration(mappingID: context.mapping.id)
+        let runtimeAfter = try await reopenedStore.runtime(mappingID: context.mapping.id)
+        XCTAssertTrue(available)
+        XCTAssertEqual(after, before)
+        XCTAssertEqual(runtimeAfter, runtimeBefore)
+    }
+
+    func test退出主应用不恢复用户已手动暂停的挂载() async throws {
+        let context = try await makeContext()
+        try await context.store.setProviderAvailable(true)
+        try await context.store.setMappingPaused(true, mappingID: context.mapping.id)
+        let controller = DesktopDriveMenuBarController(store: context.store)
+        await controller.prepareForTermination()
+        let runtime = try await context.store.runtime(mappingID: context.mapping.id)
+        let available = try await context.store.isProviderAvailable()
+        XCTAssertTrue(runtime.isManuallyPaused)
+        XCTAssertTrue(available)
+    }
     func test存储页汇总所有NAS的实际分配缓存字节而不恢复挂载() async throws {
         let context = try await makeContext(cacheEntryCount: 2)
         let otherProfile = try NasProfile(displayName: "另一台测试NAS", host: "other.invalid", port: 5001)

@@ -6,6 +6,11 @@ import XCTest
 
 @MainActor
 final class AppUpdateTests: XCTestCase {
+    func test关于面板只显示对外版本且显式隐藏构建号() {
+        let controller = AppUpdateController(bundle: Bundle(for: Self.self), canRestart: { true })
+        XCTAssertEqual(controller.aboutPanelOptions[.applicationVersion] as? String, controller.currentVersion)
+        XCTAssertEqual(controller.aboutPanelOptions[.version] as? String, "")
+    }
     func test手动更新说明只选正式macOS发布且保留详情() throws {
         let data = Data(###"[{"tag_name":"android-9","body":"Android only","draft":false,"prerelease":false,"assets":[{"name":"app.apk"}]},{"tag_name":"macos-preview","body":"Preview","draft":false,"prerelease":true,"assets":[{"name":"Preview.dmg"}]},{"tag_name":"macos-1.0.3","body":"## Changes\n- Updated Photos","draft":false,"prerelease":false,"assets":[{"name":"LanStash.dmg"}]}]"###.utf8)
         let notes = try XCTUnwrap(AppUpdateUserDriver.macReleaseNotes(from: data))

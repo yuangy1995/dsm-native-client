@@ -35,6 +35,11 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
 
     var currentVersion: String { installedVersion ?? L10n.string("updates.versionUnknown") }
 
+    var aboutPanelOptions: [NSApplication.AboutPanelOptionKey: Any] {
+        // 构建号保留给升级与签名流程，不在面向用户的版本信息中展示。
+        [.applicationVersion: currentVersion, .version: ""]
+    }
+
     static let feedURL = "https://github.com/yuangy1995/dsm-native-client/releases/download/macos-updates/appcast.xml"
     static let validationFeedURL = "https://github.com/yuangy1995/dsm-native-client/releases/download/macos-validation-updates/appcast.xml"
 
@@ -551,6 +556,11 @@ struct AppUpdateCommands: Commands {
     @State private var language = AppLanguageStore.shared
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button(language.string("app.about", Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? language.string("app.name"))) {
+                NSApplication.shared.orderFrontStandardAboutPanel(options: controller.aboutPanelOptions)
+            }
+        }
         CommandGroup(after: .appInfo) {
             Button(language.string("updates.check"), action: controller.checkForUpdates)
             Toggle(language.string("updates.automatic"), isOn: Binding(

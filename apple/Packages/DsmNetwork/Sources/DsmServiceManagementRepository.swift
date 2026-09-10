@@ -202,12 +202,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var activeContainerDeletionIDs: Set<String> = []
     private var activeVirtualMachineDeletionIDs: Set<String> = []
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
+    private let containerNetworkCreationEnabled: Bool
+    private var activeNetworkCreationNames: Set<String> = []
+    private var pendingNetworkCreations: [String: ContainerNetworkCreation] = [:]
 
     public init(
         profile: NasProfile,
         capabilities: CapabilitySet,
         session: AuthSession,
-        transport: (any DsmHTTPTransport)? = nil
+        transport: (any DsmHTTPTransport)? = nil,
+        containerNetworkCreationEnabled: Bool = false
     ) throws {
         let resolvedTransport = transport ?? URLSessionTransport(
             expectedHost: profile.host,
@@ -216,6 +220,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
         let baseURL = try DsmEndpoint.baseURL(for: profile)
         self.capabilities = capabilities
+        // 正式调用默认关闭；用户明确授权的独立本地测试包由组合根开启，用于受控验收。
+        self.containerNetworkCreationEnabled = containerNetworkCreationEnabled
         credential = DsmSessionCredential(sid: session.sid, synoToken: session.synoToken)
         self.baseURL = baseURL
         self.transport = resolvedTransport
@@ -748,11 +754,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         async let imagesValue = supplementaryCall(DsmAPIName.dockerImage, methods: ["list"])
         async let networksValue = supplementaryCall(DsmAPIName.dockerNetwork, methods: ["list"])
         async let projectsValue = supplementaryCall(DsmAPIName.dockerProject, methods: ["list"])
-        async let eventsValue = supplementaryCall(
-            DsmAPIName.dockerLog,
-            methods: ["list"],
-            parameters: ["offset": .integer(0), "limit": .integer(200)]
-        )
+        async let eventsValue = containerActivityLogs()
         let (containerJSON, imageResult, networkResult, projectResult, eventResult) =
             try await (containersValue, imagesValue, networksValue, projectsValue, eventsValue)
 
@@ -787,13 +789,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             failedSection: .networks,
             failedSections: &failedSections
         )
-        let projects: [ContainerProject] = Self.strictSupplementaryItems(
-            projectResult,
-            keys: ["projects", "project"],
-            parser: Self.project,
-            failedSection: .projects,
-            failedSections: &failedSections
-        )
+        let projects = Self.containerProjects(projectResult, failedSections: &failedSections)
         let events = Self.strictSupplementaryEvents(
             eventResult,
             keys: ["logs", "events"],
@@ -808,8 +804,38 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             projects: projects,
             events: events,
             unavailableSections: unavailableSections,
-            failedSections: failedSections
+            failedSections: failedSections,
+            canCreateNetworks: containerNetworkCreationEnabled && capabilities[DsmAPIName.dockerNetwork]?.selectedVersion == 1
         )
+    }
+
+    /// 官方日志页使用 load 动作；按返回总数读取后续页，避免活动记录被静默截断。
+    private func containerActivityLogs() async throws -> SupplementaryServiceResult {
+        var records: [ServiceJSON] = []
+        let pageSize = 1000
+        while true {
+            let offset = records.count
+            let result = try await supplementaryCall(
+                DsmAPIName.dockerLog,
+                methods: ["list"],
+                parameters: [
+                    "action": .string("load"), "offset": .integer(offset), "limit": .integer(pageSize),
+                    "sort_by": .string("time"), "sort_dir": .string("DESC"),
+                    "loglevel": .string(""), "filter_content": .string(""),
+                    "datefrom": .integer(0), "dateto": .integer(0)
+                ]
+            )
+            guard case .available(let value) = result else { return result }
+            let page: [[String: ServiceJSON]]
+            do { page = try Self.strictRootObjects(value, keys: ["logs", "events"]) }
+            catch { return .failed }
+            if let returnedOffset = value.firstInteger(["offset"]), returnedOffset != offset { return .failed }
+            records.append(contentsOf: page.map(ServiceJSON.object))
+            guard let total = value.firstInteger(["total"]), records.count < total else {
+                return .available(.object(["logs": .array(records)]))
+            }
+            guard !page.isEmpty else { return .failed }
+        }
     }
 
     /// 移动端首个 Container Manager 闭环固定使用已记录的内部 Container.list v1。
@@ -1078,34 +1104,74 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
     }
 
-    public func createContainerNetwork(name: String, driver: String) async throws {
-        let name = try validatedName(name, message: L10n.string("shared.1750af3117ab4301"))
-        let driver = try validatedName(driver, message: L10n.string("shared.a3a649e40dd55868"))
-        try await callVoid(
-            DsmAPIName.dockerNetwork,
-            method: "create",
-            parameters: ["name": .string(name), "driver": .string(driver)]
-        )
-        let networks = try await loadContainerManager().networks
-        guard networks.contains(where: { $0.name == name }) else {
-            throw verificationError(L10n.string("shared.ab9474d0616d3198"))
+    public func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws {
+        guard containerNetworkCreationEnabled, capabilities[DsmAPIName.dockerNetwork]?.selectedVersion == 1 else {
+            throw validationError(L10n.string("container.network.creation.unavailable"))
+        }
+        if let issue = configuration.validationIssue { throw validationError(L10n.string(issue.rawValue)) }
+        let name = configuration.name
+        guard activeNetworkCreationNames.insert(name).inserted else {
+            throw validationError(L10n.string("container.network.creation.inProgress"))
+        }
+        defer { activeNetworkCreationNames.remove(name) }
+        if let pending = pendingNetworkCreations[name] {
+            guard pending == configuration else { throw verificationError(L10n.string("container.network.creation.review")) }
+            try await verifyCreatedNetwork(configuration)
+            pendingNetworkCreations.removeValue(forKey: name)
+            return
+        }
+        // 先核对读取权限与名称占用；创建权限仍由 NAS 在写入时裁决。
+        let before = try await call(DsmAPIName.dockerNetwork, method: "list")
+        let networks = try Self.strictRootObjects(before, keys: ["networks", "network"])
+        guard !networks.contains(where: { ServiceJSON.object($0).firstString(["name", "Name"]) == name }) else {
+            throw validationError(L10n.string("container.network.creation.nameTaken"))
+        }
+        try Task.checkCancellation()
+        var parameters: [String: DsmParameterValue] = [
+            "name": .string(name), "enable_ipv6": .boolean(configuration.isIPv6Enabled),
+            "disable_masquerade": .boolean(configuration.disableMasquerade)
+        ]
+        if configuration.usesManualIPv4 {
+            parameters["subnet"] = .string(configuration.subnet)
+            parameters["iprange"] = .string(configuration.ipRange)
+            parameters["gateway"] = .string(configuration.gateway)
+        }
+        if configuration.isIPv6Enabled {
+            parameters["ipv6_subnet"] = .string(configuration.ipv6Subnet)
+            parameters["ipv6_iprange"] = .string(configuration.ipv6Range)
+            parameters["ipv6_gateway"] = .string(configuration.ipv6Gateway)
+        }
+        pendingNetworkCreations[name] = configuration
+        do {
+            try await callVoid(DsmAPIName.dockerNetwork, method: "create", parameters: parameters)
+            try await verifyCreatedNetwork(configuration)
+            pendingNetworkCreations.removeValue(forKey: name)
+        } catch {
+            // 写入后结果不明只允许再次回读；不得因超时或取消自动重放创建。
+            if let error = error as? AppError,
+               [.authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged, .permissionDenied, .cancelled].contains(error.category) {
+                throw error
+            }
+            throw verificationError(L10n.string("container.network.creation.review"))
+        }
+    }
+
+    private func verifyCreatedNetwork(_ configuration: ContainerNetworkCreation) async throws {
+        let value = try await call(DsmAPIName.dockerNetwork, method: "list")
+        let networks = try Self.strictRootObjects(value, keys: ["network", "networks"])
+        guard let raw = networks.first(where: { ServiceJSON.object($0).firstString(["name", "Name"]) == configuration.name }),
+              let network = Self.containerNetwork(raw), network.driver == "bridge",
+              network.isIPv6Enabled == configuration.isIPv6Enabled,
+              !configuration.usesManualIPv4 || (network.subnet == configuration.subnet && network.gateway == configuration.gateway
+                  && (ServiceJSON.object(raw).firstString(["iprange"]) ?? "") == configuration.ipRange) else {
+            throw verificationError(L10n.string("container.network.creation.review"))
         }
     }
 
     public func deleteContainerNetworks(ids: [String]) async throws {
         let ids = try validatedIDs(ids)
-        let currentIDs = Set(try await loadContainerManager().networks.map(\.id))
-        guard ids.allSatisfy(currentIDs.contains) else {
-            throw validationError(L10n.string("shared.d7cae8f9ca59d2d3"))
-        }
-        for id in ids {
-            try await callVoid(
-                DsmAPIName.dockerNetwork,
-                method: "remove",
-                parameters: ["id": .string(id)]
-            )
-        }
-        let remaining = Set(try await loadContainerManager().networks.map(\.id))
+        try await removeContainerNetworks(ids)
+        let remaining = try await loadContainerNetworkIDs()
         guard ids.allSatisfy({ !remaining.contains($0) }) else {
             throw verificationError(L10n.string("shared.3f7da50cab7bd49a"))
         }
@@ -1121,18 +1187,53 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             ),
             isSupported: capabilities[DsmAPIName.dockerNetwork]?.selectedVersion != nil,
             loadCurrentIDs: {
-                Set(try await self.loadContainerManager().networks.map(\.id))
+                try await self.loadContainerNetworkIDs()
             },
             submit: { targets in
-                for id in targets {
-                    try await self.callVoid(
-                        DsmAPIName.dockerNetwork,
-                        method: "remove",
-                        parameters: ["id": .string(id)]
-                    )
-                }
+                try await self.removeContainerNetworks(targets)
             }
         )
+    }
+
+    private func loadContainerNetworkIDs() async throws -> Set<String> {
+        let value = try await call(DsmAPIName.dockerNetwork, method: "list")
+        let networks = try Self.strictMappedItems(value, keys: ["network", "networks"], parser: Self.containerNetwork)
+        return Set(networks.map(\.id))
+    }
+
+    /// 官方 remove 接收所选网络对象数组，而不是单个 id；只复制已观察的字段。
+    private func removeContainerNetworks(_ ids: [String]) async throws {
+        let value = try await call(DsmAPIName.dockerNetwork, method: "list")
+        let objects = try Self.strictRootObjects(value, keys: ["network", "networks"])
+        var targets: [[String: DsmJSONValue]] = []
+        for id in ids {
+            guard let raw = objects.first(where: { ServiceJSON.object($0).firstString(["id", "network_id", "Id"]) == id }),
+                  let network = Self.containerNetwork(raw) else {
+                throw validationError(L10n.string("shared.d7cae8f9ca59d2d3"))
+            }
+            guard !["bridge", "host", "none"].contains(network.name) else {
+                throw validationError(L10n.string("container.network.delete.protected"))
+            }
+            guard network.connectedContainerCount == 0 else {
+                throw validationError(L10n.string("container.network.delete.inUse"))
+            }
+            let source = ServiceJSON.object(raw)
+            var target: [String: DsmJSONValue] = [
+                "id": .string(id), "_key": .string(id), "name": .string(network.name),
+                "driver": .string(network.driver), "containers": .array([]),
+                "enable_ipv6": .boolean(network.isIPv6Enabled ?? false),
+                "disable_masquerade": .boolean(source.firstBoolean(["disable_masquerade"]) ?? false)
+            ]
+            for key in ["subnet", "gateway", "iprange", "ipv6_subnet", "ipv6_gateway", "ipv6_iprange"] {
+                target[key] = .string(source.firstString([key]) ?? "")
+            }
+            targets.append(target)
+        }
+        try Task.checkCancellation()
+        let result = try await call(DsmAPIName.dockerNetwork, method: "remove", parameters: ["networks": .objectArray(targets)])
+        guard let failed = result["failed"]?.array, failed.isEmpty else {
+            throw verificationError(L10n.string("shared.3f7da50cab7bd49a"))
+        }
     }
 
     public func loadVirtualMachineManager() async throws -> VirtualMachineManagerSnapshot {
@@ -3906,13 +4007,57 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     ) -> ContainerNetwork? {
         let value = ServiceJSON.object(object)
         guard let id = value.firstString(["id", "network_id", "Id"]) else { return nil }
+        let count: Int
+        if let connections = value["containers"] {
+            guard let names = connections.array, names.allSatisfy({ if case .string = $0 { return true }; return false }) else { return nil }
+            count = names.count
+        } else if let reported = value.firstInteger(["container_count", "containers_count", "using"]), reported >= 0 {
+            count = Int(reported)
+        } else {
+            // 缺少关联数据不等于没有容器；交由分区失败状态提示刷新。
+            return nil
+        }
+        let ipv6: Bool?
+        if case .boolean(let enabled)? = value["enable_ipv6"] { ipv6 = enabled }
+        else { ipv6 = nil }
         return ContainerNetwork(
             id: id,
             name: value.firstString(["name", "Name"]) ?? String(id.prefix(12)),
             driver: value.firstString(["driver", "Driver", "type"]) ?? "—",
-            connectedContainerCount: Int(value.firstInteger([
-                "container_count", "containers_count", "using"
-            ]) ?? 0)
+            connectedContainerCount: count,
+            subnet: value.firstString(["subnet"]),
+            gateway: value.firstString(["gateway"]),
+            isIPv6Enabled: ipv6,
+            connectedContainerNames: value["containers"]?.array?.compactMap(\.stringValue)
+        )
+    }
+
+    /// 官方项目列表是以项目 ID 为键的对象，空对象表示没有项目；不影响其他分区的严格解析。
+    private static func containerProjects(
+        _ result: SupplementaryServiceResult,
+        failedSections: inout Set<ContainerManagerSection>
+    ) -> [ContainerProject] {
+        guard case .available(let value) = result else { return [] }
+        if let dictionary = value.object,
+           ["projects", "project", "data", "result", "items"].allSatisfy({ dictionary[$0] == nil }) {
+            var projects: [ContainerProject] = []
+            for id in dictionary.keys.sorted() {
+                guard !id.isEmpty, var object = dictionary[id]?.object else {
+                    failedSections.insert(.projects)
+                    return []
+                }
+                object["id"] = .string(id)
+                guard let item = project(object) else {
+                    failedSections.insert(.projects)
+                    return []
+                }
+                projects.append(item)
+            }
+            return projects
+        }
+        return strictSupplementaryItems(
+            result, keys: ["projects", "project"], parser: project,
+            failedSection: .projects, failedSections: &failedSections
         )
     }
 
@@ -3924,7 +4069,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             id: id,
             name: name,
             status: value.firstString(["status", "state"]) ?? "unknown",
-            containerCount: Int(value.firstInteger(["container_count", "services"]) ?? 0)
+            containerCount: value["containerIds"]?.array?.count
+                ?? Int(value.firstInteger(["container_count", "services"]) ?? 0)
         )
     }
 

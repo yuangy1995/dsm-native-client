@@ -5,22 +5,91 @@ import XCTest
 
 @MainActor
 final class SynologyPhotosModelTests: XCTestCase {
-    func test时间轴直接定位且可从较早月份返回较新月份() async {
+    func test时间轴按日期定位且不依赖时间轴数量() async {
+        let repository = DatePhotoServiceStub()
+        let model = SynologyPhotosModel(repository: repository, pageSize: 2)
+        await model.refresh()
+        await model.jumpToMonth(.init(year: 2014, month: 8))
+        XCTAssertEqual(model.items.map(\.id.unitID), [4, 5])
+        await model.jumpToMonth(.init(year: 2026, month: 9))
+        XCTAssertEqual(model.items.map(\.id.unitID), [1, 2])
+        let requests = await repository.requests
+        XCTAssertEqual(requests.map(\.offset), [0, 0, 0])
+        XCTAssertEqual(requests[1].end, Self.timestamp(2014, 9, 1) - 1)
+        XCTAssertFalse(model.hasPrevious)
+    }
+
+    func test向上按时间补齐同月多页且向下继续原来的分页() async {
+        let repository = DatePhotoServiceStub()
+        let model = SynologyPhotosModel(repository: repository, pageSize: 2)
+        await model.refresh()
+        await model.jumpToMonth(.init(year: 2014, month: 8))
+        await model.loadPreviousPage()
+        XCTAssertEqual(model.items.map(\.id.unitID), [1, 2, 3, 4, 5])
+        XCTAssertFalse(model.hasPrevious)
+        await model.loadMore()
+        XCTAssertEqual(model.items.map(\.id.unitID), [1, 2, 3, 4, 5, 6])
+        let requests = await repository.requests
+        XCTAssertEqual(requests.map(\.offset), [0, 0, 0, 2, 2])
+        XCTAssertEqual(requests[2].start, Self.timestamp(2014, 9, 1))
+        XCTAssertEqual(requests[2].end, min(requests[0].end, Self.timestamp(2026, 10, 1) - 1))
+        XCTAssertEqual(requests[4].end, requests[1].end)
+    }
+
+    func test搜索跳转与向上加载保留关键词() async {
+        let repository = DatePhotoServiceStub()
+        let model = SynologyPhotosModel(repository: repository, pageSize: 2)
+        model.searchText = "sample"
+        await model.refresh()
+        await model.jumpToMonth(.init(year: 2014, month: 8))
+        XCTAssertEqual(model.items.first?.id.unitID, 4)
+        await model.loadPreviousPage()
+        let requests = await repository.requests
+        XCTAssertTrue(requests.allSatisfy { $0.keyword == "sample" })
+        XCTAssertEqual(model.items.map(\.id.unitID), [1, 2, 3, 4, 5])
+    }
+
+    func test向前失败保留时间边界且重试不重复照片() async {
+        let repository = DatePhotoServiceStub()
+        let model = SynologyPhotosModel(repository: repository, pageSize: 2)
+        await model.refresh()
+        await model.jumpToMonth(.init(year: 2014, month: 8))
+        await repository.failNextPage()
+        await model.loadPreviousPage()
+        XCTAssertNotNil(model.previousPageErrorMessage)
+        XCTAssertEqual(model.previousMonthID, 201408)
+        XCTAssertEqual(model.items.map(\.id.unitID), [4, 5])
+        await model.loadPreviousPage()
+        XCTAssertNil(model.previousPageErrorMessage)
+        XCTAssertEqual(model.items.map(\.id.unitID), [1, 2, 3, 4, 5])
+    }
+
+    func test向前分页迟到不能覆盖刷新结果且并发触发只请求一次() async {
         let repository = PhotoServiceStub(pages: [[Self.photo], [], []], days: [
             .init(year: 2026, month: 9, day: 1, itemCount: 1),
-            .init(year: 2025, month: 10, day: 1, itemCount: 1)
+            .init(year: 2013, month: 1, day: 1, itemCount: 1)
         ])
-        let model = SynologyPhotosModel(repository: repository)
+        let model = SynologyPhotosModel(repository: repository, pageSize: 1)
         await model.refresh()
-        XCTAssertEqual(model.timelineMonths.map(\.id), [202609, 202510])
-        await model.jumpToMonth(.init(year: 2025, month: 10))
-        await model.jumpToMonth(.init(year: 2026, month: 9))
-        let queries = await repository.requestedQueries
-        XCTAssertEqual(queries.count, 3)
-        guard case .timeline(_, let older) = queries[1], case .timeline(_, let newer) = queries[2] else { return XCTFail("应直接按时间查询") }
-        XCTAssertGreaterThan(newer, older)
-        XCTAssertEqual(model.timelineMonths.count, 2)
+        await model.jumpToMonth(.init(year: 2013, month: 1))
+        await repository.holdNextPage()
+        let request = Task { await model.loadPreviousPage() }
+        await repository.waitForHeldPage()
+        await model.loadPreviousPage()
+        let count = await repository.pageRequestCount
+        XCTAssertEqual(count, 3)
+        await model.refresh()
+        await repository.releasePage([Self.photo])
+        await request.value
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertFalse(model.hasPrevious)
+        XCTAssertFalse(model.isLoadingPrevious)
     }
+
+    private static func timestamp(_ year: Int, _ month: Int, _ day: Int) -> Int {
+        Int(Calendar(identifier: .gregorian).date(from: DateComponents(year: year, month: month, day: day))!.timeIntervalSince1970)
+    }
+
     func test筛选候选失败不污染照片列表的错误状态() async {
         let repository = PhotoServiceStub(pages: [[Self.photo]])
         let model = SynologyPhotosModel(repository: repository)
@@ -144,6 +213,51 @@ final class SynologyPhotosModelTests: XCTestCase {
     )
 }
 
+/// 根据实际时间区间和页内偏移筛选，数量故意不等于列表条数，防止再次按数量定位。
+private actor DatePhotoServiceStub: SynologyPhotosServing {
+    struct Request {
+        let start: Int
+        let end: Int
+        let offset: Int
+        let keyword: String?
+    }
+    var requests: [Request] = []
+    private var failsNext = false
+    private let profileID = UUID()
+    func failNextPage() { failsNext = true }
+    func access() async throws -> SynologyPhotosAccess {
+        .init(spaces: [.personal], packageVersion: "1.8.2-10090")
+    }
+    func timeline(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay] {
+        [.init(year: 2026, month: 9, day: 1, itemCount: 9000),
+         .init(year: 2014, month: 8, day: 1, itemCount: 8000)]
+    }
+    func searchTimeline(in space: SynologyPhotoSpace, keyword: String) async throws -> [SynologyPhotoDay] {
+        try await timeline(in: space)
+    }
+    func photos(in space: SynologyPhotoSpace, query: SynologyPhotoQuery, offset: Int, limit: Int) async throws -> SynologyPhotoPage {
+        if failsNext { failsNext = false; throw URLError(.notConnectedToInternet) }
+        let start: Int, end: Int, keyword: String?
+        switch query {
+        case .timeline(let lower, let upper): (start, end, keyword) = (lower, upper, nil)
+        case .search(let text, let lower, let upper): (start, end, keyword) = (lower, upper, text)
+        default: throw URLError(.badURL)
+        }
+        requests.append(.init(start: start, end: end, offset: offset, keyword: keyword))
+        let calendar = Calendar(identifier: .gregorian)
+        let all = (1...6).map { index in
+            let date = calendar.date(from: DateComponents(year: index <= 3 ? 2026 : 2014, month: index <= 3 ? 9 : 8, day: 1, hour: 12))!
+            return SynologyPhoto(id: .init(profileID: profileID, space: .personal, unitID: index),
+                                 filename: "sample-\(index).jpg", sizeBytes: 128,
+                                 takenAt: date, indexedAt: date, folderID: 9, mediaType: "photo")
+        }
+        let matches = all.filter { (start...end).contains(Int($0.takenAt.timeIntervalSince1970)) }
+        let page = Array(matches.dropFirst(offset).prefix(limit))
+        return .init(items: page, offset: offset, nextOffset: offset + page.count, hasMore: page.count == limit)
+    }
+    func thumbnail(for photo: SynologyPhoto) async throws -> Data { Data() }
+}
+
 private actor PhotoServiceStub: SynologyPhotosServing {
     var pageRequestCount = 0
     var requestedOffsets: [Int] = []
@@ -203,6 +317,8 @@ private actor PhotoServiceStub: SynologyPhotosServing {
         if held != nil { return }
         await withCheckedContinuation { ready = $0 }
     }
+
+    func holdNextPage() { holdsFirstPage = true }
 
     func releasePage(_ items: [SynologyPhoto]) {
         held?.resume(returning: items)

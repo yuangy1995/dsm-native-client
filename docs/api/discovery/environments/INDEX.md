@@ -20,6 +20,8 @@
 
 ## 待归属观察
 
+- [2026-09-10 Container Manager 日志与网络读取观察](2026-09-10-container-read-observation.md)：官方日志 `load` 参数和网络关联数组已核对；版本与设备关系未重新确认，不归入历史基线；没有执行写操作。
+
 - [2026-09-10 Photos 单项删除受控验证](2026-09-10-photos-deletion-observation.md)：唯一合成图已单次删除，任务完成，刷新后原件回读为空；macOS 按用户要求跨版本依接口能力开放供测试，App 重启和异常路径待验证。
 
 - [2026-09-10 Photos 分类、筛选、共享与实况观察](2026-09-10-photos-filter-share-observation.md)：DSM/Photos 版本再次核对；系统分类、只读筛选／共享与独立实况视频单元已记录，未进行分享写入。

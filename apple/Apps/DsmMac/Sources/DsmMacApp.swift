@@ -117,11 +117,16 @@ final class SystemTransferNotifier: TransferNotifying {
 final class DesktopDriveMenuBarController: NSObject, NSMenuDelegate {
     static let shared = DesktopDriveMenuBarController()
 
-    private let store = DesktopDriveConfigurationStore()
+    private let store: DesktopDriveConfigurationStore
     private var statusItem: NSStatusItem?
     private var mappings: [DesktopDriveMapping] = []
     private var runtimes: [UUID: DesktopDriveMappingRuntime] = [:]
     private var operationInProgress = false
+
+    init(store: DesktopDriveConfigurationStore = .init()) {
+        self.store = store
+        super.init()
+    }
 
     func start() {
         guard statusItem == nil else { return }
@@ -199,20 +204,7 @@ final class DesktopDriveMenuBarController: NSObject, NSMenuDelegate {
 
     func prepareForTermination() async {
         operationInProgress = true
-        guard DesktopCloudDriveAvailability.isAvailable else {
-            statusItem = nil
-            return
-        }
-        try? await store.setProviderAvailable(false)
-        for mapping in mappings {
-            guard let manager = NSFileProviderManager(for: Self.domain(for: mapping)) else {
-                continue
-            }
-            try? await Self.disconnect(
-                manager,
-                reason: L10n.string("desktopDrive.quit.reason")
-            )
-        }
+        // 退出仅结束主应用；已有挂载由系统扩展继续处理，不改可用状态、暂停状态或共享会话。
         statusItem = nil
     }
 

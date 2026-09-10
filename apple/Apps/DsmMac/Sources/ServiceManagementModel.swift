@@ -44,7 +44,7 @@ actor UnavailableServiceManagementRepository: ServiceManagementRepository {
     }
     func pullContainerImage(repository: String, tag: String) async throws { throw unavailable() }
     func deleteContainerImages(ids: [String]) async throws { throw unavailable() }
-    func createContainerNetwork(name: String, driver: String) async throws { throw unavailable() }
+    func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws { throw unavailable() }
     func deleteContainerNetworks(ids: [String]) async throws { throw unavailable() }
     func loadVirtualMachineManager() async throws -> VirtualMachineManagerSnapshot {
         throw unavailable()
@@ -340,13 +340,26 @@ final class ServiceManagementModel {
         return succeeded
     }
 
-    func createNetwork(name: String, driver: String) async -> Bool {
-        await perform(module: .containers, success: L10n.string("ui.61d332338cf142a9")) {
-            try await self.repository.createContainerNetwork(name: name, driver: driver)
+    func createNetwork(_ configuration: ContainerNetworkCreation) async -> Bool {
+        guard containers?.canCreateNetworks == true else {
+            message = L10n.string("container.network.creation.unavailable")
+            messageIsError = true
+            return false
+        }
+        return await perform(module: .containers, success: L10n.string("ui.61d332338cf142a9")) {
+            try await self.repository.createContainerNetwork(configuration)
+        }
+    }
+
+    var canDeleteNetworks: Bool {
+        guard !networkSelection.isEmpty, !isPerformingAction, let networks = containers?.networks else { return false }
+        return networkSelection.allSatisfy { id in
+            networks.contains { $0.id == id && $0.connectedContainerCount == 0 && !["bridge", "host", "none"].contains($0.name) }
         }
     }
 
     func deleteNetworks() async -> Bool {
+        guard canDeleteNetworks else { return false }
         let ids = Array(networkSelection)
         let succeeded = await performDeletion(
             module: .containers,

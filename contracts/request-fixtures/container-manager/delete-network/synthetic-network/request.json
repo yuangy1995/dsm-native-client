@@ -16,9 +16,9 @@
   },
   "parameters": [
     {
-      "name": "id",
-      "valueType": "string",
-      "encodedValue": "<synthetic-container-network>"
+      "name": "networks",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"id\":\"<synthetic-container-network>\",\"_key\":\"<synthetic-container-network>\",\"name\":\"<synthetic-network-name>\",\"driver\":\"bridge\",\"containers\":[],\"enable_ipv6\":false,\"disable_masquerade\":false,\"subnet\":\"\",\"gateway\":\"\",\"iprange\":\"\",\"ipv6_subnet\":\"\",\"ipv6_gateway\":\"\",\"ipv6_iprange\":\"\"}]"
     }
   ],
   "authentication": {

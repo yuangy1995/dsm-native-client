@@ -1078,6 +1078,288 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(requestValue("type", in: request), "all")
     }
 
+    func test官方容器日志参数和斜线日期用户事件解析() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: [response(containerListResponse(ids: []))],
+            DsmAPIName.dockerLog: [response(#"{"success":true,"data":{"offset":0,"limit":1000,"total":1,"logs":[{"time":"2026/07/02 21:17:09","level":"info","log_type":"container","user":"synthetic-user","event":"Synthetic container started."}]}}"#)]
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerLog], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.events.first?.message, "Synthetic container started.")
+        XCTAssertEqual(snapshot.events.first?.user, "synthetic-user")
+        XCTAssertNotNil(snapshot.events.first?.timestamp)
+        XCTAssertFalse(snapshot.failedSections.contains(.logs))
+        let requests = await transport.recordedRequests()
+        let logRequest = try XCTUnwrap(requests.first { requestValue("api", in: $0) == DsmAPIName.dockerLog })
+        for (key, expected) in ["action": "load", "sort_by": "time", "sort_dir": "DESC", "offset": "0",
+                                "limit": "1000", "datefrom": "0", "dateto": "0", "loglevel": "", "filter_content": ""] {
+            XCTAssertEqual(requestValue(key, in: logRequest), expected, key)
+        }
+    }
+
+    func test日志按返回总数读取后页且同秒事件身份不冲突() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: [response(containerListResponse(ids: []))],
+            DsmAPIName.dockerLog: [
+                response(#"{"success":true,"data":{"offset":0,"total":2,"logs":[{"time":100,"level":"info","event":"Synthetic first"}]}}"#),
+                response(#"{"success":true,"data":{"offset":1,"total":2,"logs":[{"time":100,"level":"info","event":"Synthetic second"}]}}"#)
+            ]
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerLog], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertEqual(snapshot.events.map(\.message), ["Synthetic first", "Synthetic second"])
+        XCTAssertEqual(Set(snapshot.events.map(\.id)).count, 2)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("api", in: $0) == DsmAPIName.dockerLog }.map { requestValue("offset", in: $0) }, ["0", "1"])
+    }
+
+    func test日志后页空缺时报告分区失败而不是返回不完整日志() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: [response(containerListResponse(ids: ["container-1"]))],
+            DsmAPIName.dockerLog: [
+                response(#"{"success":true,"data":{"offset":0,"total":2,"logs":[{"time":100,"level":"info","event":"Synthetic first"}]}}"#),
+                response(#"{"success":true,"data":{"offset":1,"total":2,"logs":[]}}"#)
+            ]
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerLog], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertEqual(snapshot.containers.count, 1)
+        XCTAssertTrue(snapshot.failedSections.contains(.logs))
+        XCTAssertTrue(snapshot.events.isEmpty)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("api", in: $0) == DsmAPIName.dockerLog }.count, 2)
+    }
+
+    func test网络数量取真实关联数组且缺失不冒充零() async throws {
+        for (payload, expectedCount) in [
+            (#"{"id":"synthetic-network","name":"demo","driver":"bridge","containers":["synthetic-a","synthetic-b"]}"#, 2),
+            (#"{"id":"synthetic-network","name":"demo","driver":"host","containers":[]}"#, 0),
+            (#"{"id":"synthetic-network","name":"demo","driver":"bridge"}"#, -1),
+            (#"{"id":"synthetic-network","name":"demo","driver":"bridge","containers":[42]}"#, -1)
+        ] {
+            let transport = ServiceRoutingTransport(responses: [
+                DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
+                DsmAPIName.dockerNetwork: response("{\"success\":true,\"data\":{\"network\":[\(payload)]}}")
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerNetwork], transport: transport)
+            let snapshot = try await repository.loadContainerManager()
+            if expectedCount >= 0 {
+                XCTAssertEqual(snapshot.networks.first?.connectedContainerCount, expectedCount)
+                XCTAssertFalse(snapshot.failedSections.contains(.networks))
+            } else {
+                XCTAssertTrue(snapshot.networks.isEmpty)
+                XCTAssertTrue(snapshot.failedSections.contains(.networks))
+            }
+        }
+    }
+
+    func test网络只读详情映射且旧构造保持兼容() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: [response(containerListResponse(ids: []))],
+            DsmAPIName.dockerNetwork: [response(#"{"success":true,"data":{"network":[{"id":"synthetic-bridge","name":"Synthetic bridge","driver":"bridge","containers":["Synthetic A","Synthetic B"],"enable_ipv6":false,"subnet":"192.0.2.0/24","gateway":"192.0.2.1","iprange":""},{"id":"synthetic-host","name":"Synthetic host","driver":"host","containers":[],"enable_ipv6":true,"subnet":"","gateway":""}]}}"#)]
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerNetwork], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        let network = try XCTUnwrap(snapshot.networks.first)
+        XCTAssertEqual(network.subnet, "192.0.2.0/24")
+        XCTAssertEqual(network.gateway, "192.0.2.1")
+        XCTAssertEqual(network.isIPv6Enabled, false)
+        XCTAssertEqual(network.connectedContainerNames, ["Synthetic A", "Synthetic B"])
+        XCTAssertEqual(network.connectedContainerCount, 2)
+        XCTAssertNil(snapshot.networks[1].subnet)
+        XCTAssertNil(snapshot.networks[1].gateway)
+        XCTAssertEqual(snapshot.networks[1].isIPv6Enabled, true)
+        XCTAssertEqual(snapshot.networks[1].connectedContainerNames, [])
+        let old = ContainerNetwork(id: "old", name: "Old caller", driver: "bridge", connectedContainerCount: 2)
+        XCTAssertNil(old.subnet)
+        XCTAssertNil(old.gateway)
+        XCTAssertNil(old.isIPv6Enabled)
+        XCTAssertNil(old.connectedContainerNames)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertTrue(requests.allSatisfy { requestValue("method", in: $0) == "list" })
+    }
+
+    func test官方项目空对象是正常空列表而不是加载失败() async throws {
+        let transport = ServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
+            DsmAPIName.dockerProject: response(#"{"success":true,"data":{}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerProject], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertTrue(snapshot.projects.isEmpty)
+        XCTAssertFalse(snapshot.failedSections.contains(.projects))
+        XCTAssertFalse(snapshot.unavailableSections.contains(.projects))
+    }
+
+    func test网络创建默认能力关闭时零请求() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], transport: transport)
+        do { try await repository.createContainerNetwork(.init(name: "synthetic-network")); XCTFail("未验证的创建能力必须关闭") }
+        catch { XCTAssertNotNil(error as? AppError) }
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test测试包创建开关传递至界面快照且默认仍关闭() async throws {
+        for enabled in [false, true] {
+            let transport = ServiceRoutingTransport(responses: [
+                DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
+                DsmAPIName.dockerNetwork: response(#"{"success":true,"data":{"network":[]}}"#)
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerNetwork],
+                containerNetworkCreationEnabled: enabled, transport: transport)
+            let snapshot = try await repository.loadContainerManager()
+            XCTAssertEqual(snapshot.canCreateNetworks, enabled)
+        }
+    }
+
+    func test网络自动创建只提交官方默认参数并回读确认() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [DsmAPIName.dockerNetwork: [
+            response(#"{"success":true,"data":{"network":[]}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"network":[{"id":"synthetic-id","name":"synthetic-network","driver":"bridge","containers":[],"enable_ipv6":false}]}}"#)
+        ]])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], containerNetworkCreationEnabled: true, transport: transport)
+        var configuration = ContainerNetworkCreation(name: "synthetic-network")
+        configuration.subnet = "unused-draft"
+        configuration.ipv6Gateway = "unused-draft"
+        try await repository.createContainerNetwork(configuration)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list", "create", "list"])
+        let create = requests[1]
+        XCTAssertEqual(requestValue("name", in: create), "synthetic-network")
+        XCTAssertEqual(requestValue("enable_ipv6", in: create), "false")
+        XCTAssertEqual(requestValue("disable_masquerade", in: create), "false")
+        for key in ["driver", "subnet", "iprange", "gateway", "ipv6_subnet", "ipv6_iprange", "ipv6_gateway"] {
+            XCTAssertNil(requestValue(key, in: create), key)
+        }
+    }
+
+    func test网络手动IPv4IPv6和伪装选项按官方字段提交() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [DsmAPIName.dockerNetwork: [
+            response(#"{"success":true,"data":{"network":[]}}"#), response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"network":[{"id":"synthetic-id","name":"synthetic-network","driver":"bridge","containers":[],"enable_ipv6":true,"subnet":"192.0.2.0/24","iprange":"192.0.2.128/25","gateway":"192.0.2.1"}]}}"#)
+        ]])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], containerNetworkCreationEnabled: true, transport: transport)
+        var configuration = ContainerNetworkCreation(name: "synthetic-network")
+        configuration.usesManualIPv4 = true
+        configuration.subnet = "192.0.2.0/24"
+        configuration.ipRange = "192.0.2.128/25"
+        configuration.gateway = "192.0.2.1"
+        configuration.isIPv6Enabled = true
+        configuration.ipv6Subnet = "2001:db8::/64"
+        configuration.ipv6Gateway = "2001:db8::1"
+        configuration.disableMasquerade = true
+        try await repository.createContainerNetwork(configuration)
+        let requests = await transport.recordedRequests()
+        let create = requests[1]
+        for (key, expected) in ["subnet": configuration.subnet, "iprange": configuration.ipRange, "gateway": configuration.gateway,
+                                "ipv6_subnet": configuration.ipv6Subnet, "ipv6_gateway": configuration.ipv6Gateway,
+                                "ipv6_iprange": "", "enable_ipv6": "true", "disable_masquerade": "true"] {
+            XCTAssertEqual(requestValue(key, in: create), expected, key)
+        }
+        XCTAssertNil(requestValue("driver", in: create))
+    }
+
+    func test网络创建同名拦截且无效地址不发送请求() async throws {
+        let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"network":[{"id":"synthetic-id","name":"synthetic-network","driver":"bridge","containers":[]}]}}"#)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], containerNetworkCreationEnabled: true, transport: transport)
+        var invalid = ContainerNetworkCreation(name: "synthetic-network")
+        invalid.usesManualIPv4 = true
+        do { try await repository.createContainerNetwork(invalid); XCTFail("无效地址不得提交") } catch {}
+        let before = await transport.recordedRequests()
+        XCTAssertTrue(before.isEmpty)
+        do { try await repository.createContainerNetwork(.init(name: "synthetic-network")); XCTFail("同名网络不得创建") } catch {}
+        let after = await transport.recordedRequests()
+        XCTAssertEqual(after.count, 1)
+        XCTAssertEqual(requestValue("method", in: after[0]), "list")
+    }
+
+    func test网络创建回读不一致后只核对不重复提交() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [DsmAPIName.dockerNetwork: [
+            response(#"{"success":true,"data":{"network":[]}}"#), response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"network":[]}}"#),
+            response(#"{"success":true,"data":{"network":[{"id":"synthetic-id","name":"synthetic-network","driver":"bridge","containers":[],"enable_ipv6":false}]}}"#)
+        ]])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], containerNetworkCreationEnabled: true, transport: transport)
+        let configuration = ContainerNetworkCreation(name: "synthetic-network")
+        do { try await repository.createContainerNetwork(configuration); XCTFail("未回读到目标不得报告成功") } catch {}
+        try await repository.createContainerNetwork(configuration)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list", "create", "list", "list"])
+    }
+
+    func test同名网络创建并发只发送一次写入() async throws {
+        let base = SequencedServiceRoutingTransport(responses: [DsmAPIName.dockerNetwork: [
+            response(#"{"success":true,"data":{"network":[]}}"#), response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"network":[{"id":"synthetic-id","name":"synthetic-network","driver":"bridge","containers":[],"enable_ipv6":false}]}}"#)
+        ]])
+        let transport = HoldingServiceReadTransport(base: base)
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], containerNetworkCreationEnabled: true, transport: transport)
+        let configuration = ContainerNetworkCreation(name: "synthetic-network")
+        let first = Task { try await repository.createContainerNetwork(configuration) }
+        await transport.waitForRead()
+        do { try await repository.createContainerNetwork(configuration); XCTFail("重复创建应被拦截") } catch {}
+        await transport.release()
+        try await first.value
+        let requests = await base.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list", "create", "list"])
+    }
+
+    func test创建前取消不发送网络写入() async throws {
+        let base = SequencedServiceRoutingTransport(responses: [DsmAPIName.dockerNetwork: [response(#"{"success":true,"data":{"network":[]}}"#)]])
+        let transport = HoldingServiceReadTransport(base: base)
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], containerNetworkCreationEnabled: true, transport: transport)
+        let task = Task { try await repository.createContainerNetwork(.init(name: "synthetic-network")) }
+        await transport.waitForRead()
+        task.cancel()
+        await transport.release()
+        do { try await task.value; XCTFail("取消后不得创建") } catch {}
+        let requests = await base.recordedRequests()
+        XCTAssertTrue(requests.allSatisfy { requestValue("method", in: $0) == "list" })
+    }
+
+    func test项目键值列表提取稳定身份和关联容器数量() async throws {
+        let transport = ServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
+            DsmAPIName.dockerProject: response(#"{"success":true,"data":{"synthetic-project":{"name":"Synthetic project","status":"running","containerIds":["synthetic-a","synthetic-b"]}}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerProject], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertEqual(snapshot.projects, [.init(id: "synthetic-project", name: "Synthetic project", status: "running", containerCount: 2)])
+        XCTAssertFalse(snapshot.failedSections.contains(.projects))
+    }
+
+    func test项目畸形对象仍报告失败且原数组格式保留兼容() async throws {
+        for (data, expectedFailure) in [(#"{"unexpected":"not-a-project"}"#, true),
+                                         (#"{"projects":[{"id":"synthetic-project","name":"Synthetic project","container_count":1}]}"#, false)] {
+            let transport = ServiceRoutingTransport(responses: [
+                DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
+                DsmAPIName.dockerProject: response("{\"success\":true,\"data\":\(data)}")
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerProject], transport: transport)
+            let snapshot = try await repository.loadContainerManager()
+            XCTAssertEqual(snapshot.failedSections.contains(.projects), expectedFailure)
+            XCTAssertEqual(snapshot.projects.count, expectedFailure ? 0 : 1)
+        }
+    }
+
+    func test网络详情缺失或IPv6类型不符不推断为停用() async throws {
+        let transport = ServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
+            DsmAPIName.dockerNetwork: response(#"{"success":true,"data":{"network":[{"id":"synthetic-old","name":"Synthetic old","driver":"bridge","container_count":2},{"id":"synthetic-unknown","name":"Synthetic unknown","driver":"bridge","containers":[],"enable_ipv6":"unexpected"}]}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerNetwork], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertEqual(snapshot.networks.count, 2)
+        XCTAssertNil(snapshot.networks[0].connectedContainerNames)
+        XCTAssertNil(snapshot.networks[0].isIPv6Enabled)
+        XCTAssertNil(snapshot.networks[1].isIPv6Enabled)
+        XCTAssertTrue(snapshot.failedSections.isEmpty)
+    }
+
     func test容器主分区拒绝非根数组坏元素与重复身份() async throws {
         let payloads = [
             #"{"success":true,"data":{"items":[]}}"#,
@@ -1422,9 +1704,10 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             ],
             DsmAPIName.dockerNetwork: [
                 response(
-                    #"{"success":true,"data":{"networks":[{"id":"network-1","name":"isolated","driver":"bridge"}]}}"#
+                    #"{"success":true,"data":{"networks":[{"id":"network-1","name":"isolated","driver":"bridge","containers":[]}]}}"#
                 ),
-                response(#"{"success":true}"#),
+                response(#"{"success":true,"data":{"networks":[{"id":"network-1","name":"isolated","driver":"bridge","containers":[]}]}}"#),
+                response(#"{"success":true,"data":{"failed":[]}}"#),
                 response(#"{"success":true,"data":{"networks":[]}}"#),
             ],
         ])
@@ -1442,6 +1725,28 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
 
         XCTAssertEqual(result.status, .confirmedSuccess)
         XCTAssertEqual(result.operation, "containerNetworkDelete")
+        let requests = await transport.recordedRequests()
+        let remove = try XCTUnwrap(requests.first { requestValue("method", in: $0) == "remove" })
+        XCTAssertNil(requestValue("id", in: remove))
+        let encoded = try XCTUnwrap(requestValue("networks", in: remove))
+        let targets = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])
+        XCTAssertEqual(targets.count, 1)
+        XCTAssertEqual(targets[0]["id"] as? String, "network-1")
+        XCTAssertEqual(targets[0]["name"] as? String, "isolated")
+        XCTAssertEqual(targets[0]["_key"] as? String, "network-1")
+        XCTAssertEqual(targets[0]["containers"] as? [String], [])
+    }
+
+    func test默认网络及仍连接容器的网络不提交删除() async throws {
+        for (name, containers) in [("bridge", "[]"), ("host", "[]"), ("none", "[]"), ("synthetic-network", "[\"synthetic-container\"]")] {
+            let payload = "{\"success\":true,\"data\":{\"network\":[{\"id\":\"synthetic-id\",\"name\":\"\(name)\",\"driver\":\"bridge\",\"containers\":\(containers)}]}}"
+            let transport = SequencedServiceRoutingTransport(responses: [DsmAPIName.dockerNetwork: [response(payload)]])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerNetwork], transport: transport)
+            let result = try await repository.deleteContainerNetworksResult(ids: ["synthetic-id"])
+            XCTAssertNotEqual(result.status, .confirmedSuccess)
+            let requests = await transport.recordedRequests()
+            XCTAssertTrue(requests.allSatisfy { requestValue("method", in: $0) == "list" })
+        }
     }
 
     func test虚拟机附属面板失败时仍返回官方主列表并解析官方字段() async throws {
@@ -2089,6 +2394,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
     private func makeRepository(
         apiNames: [String],
         requestFormatOverrides: [String: DsmRequestFormat] = [:],
+        containerNetworkCreationEnabled: Bool = false,
         transport: any DsmHTTPTransport
     ) throws -> DsmServiceManagementRepository {
         let capabilities = Dictionary(uniqueKeysWithValues: apiNames.map { name in
@@ -2117,7 +2423,8 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 did: nil,
                 isPortalPort: false
             ),
-            transport: transport
+            transport: transport,
+            containerNetworkCreationEnabled: containerNetworkCreationEnabled
         )
     }
 
@@ -2181,6 +2488,31 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             .first(where: { $0.name == name })?
             .value
     }
+}
+
+private actor HoldingServiceReadTransport: DsmHTTPTransport {
+    let base: any DsmHTTPTransport
+    private var shouldHold = true
+    private var held: CheckedContinuation<Void, Never>?
+    private var ready: CheckedContinuation<Void, Never>?
+
+    init(base: any DsmHTTPTransport) { self.base = base }
+    func send(_ request: URLRequest) async throws -> DsmHTTPResponse {
+        if shouldHold {
+            shouldHold = false
+            await withCheckedContinuation { continuation in
+                held = continuation
+                ready?.resume()
+                ready = nil
+            }
+        }
+        return try await base.send(request)
+    }
+    func waitForRead() async {
+        if held != nil { return }
+        await withCheckedContinuation { ready = $0 }
+    }
+    func release() { held?.resume(); held = nil }
 }
 
 private actor ServiceRoutingTransport: DsmHTTPTransport {

@@ -531,7 +531,13 @@ final class RequestFixtureContractTests: XCTestCase {
             (
                 "container-manager/delete-network/synthetic-network/request.json",
                 .form,
-                ["id": .string("<synthetic-container-network>")]
+                ["networks": .objectArray([[
+                    "id": .string("<synthetic-container-network>"), "_key": .string("<synthetic-container-network>"),
+                    "name": .string("<synthetic-network-name>"), "driver": .string("bridge"),
+                    "containers": .array([]), "enable_ipv6": .boolean(false), "disable_masquerade": .boolean(false),
+                    "subnet": .string(""), "gateway": .string(""), "iprange": .string(""),
+                    "ipv6_subnet": .string(""), "ipv6_gateway": .string(""), "ipv6_iprange": .string("")
+                ]])]
             ),
             (
                 "vmm/delete-image/synthetic-image/request.json",

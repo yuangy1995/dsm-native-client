@@ -811,7 +811,7 @@ final class WorkspacePresentationTests: XCTestCase {
                     ("create-vm", NSSize(width: 620, height: 500), AnyView(CreateVirtualMachineSheet(snapshot: nil, submit: { _ in XCTFail("不能自动创建虚拟机"); return false }))),
                     ("edit-vm-stopped", NSSize(width: 560, height: 460), AnyView(EditVirtualMachineSheet(machine: VirtualMachine(id: "synthetic-vm", name: "Synthetic virtual machine", status: "stopped", cpuCount: 2, memoryBytes: 2_147_483_648), submit: { _ in XCTFail("不能自动修改虚拟机"); return false }))),
                     ("edit-vm-running", NSSize(width: 560, height: 460), AnyView(EditVirtualMachineSheet(machine: VirtualMachine(id: "synthetic-vm", name: "Synthetic virtual machine", status: "running", cpuCount: 2, memoryBytes: 2_147_483_648), submit: { _ in XCTFail("不能自动修改运行中虚拟机"); return false }))),
-                    ("create-network", NSSize(width: 440, height: 300), AnyView(CreateNetworkSheet(submit: { _, _ in XCTFail("不能自动创建网络"); return false }))),
+                    ("create-network", NSSize(width: 560, height: 540), AnyView(CreateNetworkSheet(submit: { _ in XCTFail("不能自动创建网络"); return nil }))),
                     ("edit-vm-network", NSSize(width: 440, height: 300), AnyView(EditVirtualMachineNetworkSheet(network: VirtualizationResource(id: "synthetic-network", name: "Synthetic network"), submit: { _ in XCTFail("不能自动保存虚拟网络"); return false }))),
                     ("create", NSSize(width: 620, height: 440), AnyView(CreateDownloadSheet(defaultDestination: nil, loadFolders: { _ in [] }, submitURL: { _, _ in XCTFail("不能自动创建下载"); return false }, submitFile: { _, _, _ in XCTFail("不能自动上传任务"); return false }))),
                     ("settings", NSSize(width: 680, height: 650), AnyView(DownloadSettingsSheet(loadFolders: { _ in [] }, load: { DownloadStationSettings() }, save: { _ in XCTFail("不能自动保存设置"); return false }))),
@@ -884,6 +884,137 @@ final class WorkspacePresentationTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func test容器日志网络正常空失败不可用双语主题绘制() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        let normal = ContainerManagerSnapshot(containers: [], images: [],
+            networks: [.init(id: "synthetic-network", name: "Synthetic bridge", driver: "bridge", connectedContainerCount: 2,
+                             subnet: "192.0.2.0/24", gateway: "192.0.2.1", isIPv6Enabled: false,
+                             connectedContainerNames: ["Synthetic A", "Synthetic B"])],
+            projects: [.init(id: "synthetic-project", name: "Synthetic project", status: "running", containerCount: 2)],
+            events: [.init(id: "synthetic-event", timestamp: Date(timeIntervalSince1970: 1_780_000_000),
+                                        level: "info", user: "Synthetic user", message: "Synthetic container started.")])
+        let empty = ContainerManagerSnapshot(containers: [], images: [], networks: [], projects: [], events: [])
+        let failed = ContainerManagerSnapshot(containers: [], images: [], networks: [], projects: [], events: [], failedSections: [.logs, .networks, .projects])
+        let unavailable = ContainerManagerSnapshot(containers: [], images: [], networks: [], projects: [], events: [], unavailableSections: [.logs, .networks, .projects])
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for (name, snapshot) in [("normal", normal), ("empty", empty), ("failed", failed), ("unavailable", unavailable)] {
+                    for pane in [ContainerManagerPane.events, .networks, .projects] {
+                        let model = ServiceManagementModel(repository: ServiceManagementRepositoryStub(containerSnapshot: snapshot))
+                        await model.activate(.containers)
+                        let host = NSHostingView(rootView: ServiceManagementView(module: .containers, model: model, containerPane: pane)
+                            .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                            .environment(\.locale, AppLanguageStore.shared.locale)
+                            .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
+                            .preferredColorScheme(scheme))
+                        let window = attach(host, size: NSSize(width: 900, height: 640))
+                        defer { window.contentView = nil; window.close() }
+                        try await settle(host)
+                        try self.snapshot(host, name: "container-read-\(pane.rawValue)-\(name)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                        XCTAssertEqual(model.containers, snapshot)
+                        XCTAssertTrue(model.networkSelection.isEmpty)
+                        XCTAssertEqual(host.bounds.height, 640, accuracy: 1)
+                        if pane == .networks, name == "normal" {
+                            // 固定尺寸合成窗口中点击已绘制的原生展开箭头，不调用网络配置动作。
+                            window.makeKeyAndOrderFront(nil)
+                            try await settle(host)
+                            try click(window, at: NSPoint(x: 39, y: 423))
+                            try await Task.sleep(for: .milliseconds(350))
+                            try await settle(host)
+                            try self.snapshot(host, name: "container-network-expanded-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                            XCTAssertEqual(model.containers, snapshot)
+                            XCTAssertFalse(model.isPerformingAction)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func test容器网络详情只读字段双语主题绘制() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        let networks = [
+            ContainerNetwork(id: "synthetic-bridge", name: "Synthetic bridge", driver: "bridge", connectedContainerCount: 2,
+                subnet: "192.0.2.0/24", gateway: "192.0.2.1", isIPv6Enabled: false, connectedContainerNames: ["Synthetic A", "Synthetic B"]),
+            ContainerNetwork(id: "synthetic-host", name: "Synthetic host", driver: "host", isIPv6Enabled: true, connectedContainerNames: []),
+            ContainerNetwork(id: "synthetic-unknown", name: "Synthetic unknown", driver: "bridge", connectedContainerCount: 2)
+        ]
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for network in networks {
+                    let host = NSHostingView(rootView: ContainerNetworkDetailsView(network: network).padding(20)
+                        .environment(AppLanguageStore.shared).environment(\.locale, AppLanguageStore.shared.locale)
+                        .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content)
+                        .preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 600, height: 300))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host)
+                    try snapshot(host, name: "container-network-details-\(network.id)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                    XCTAssertEqual(host.bounds.width, 600, accuracy: 1)
+                }
+            }
+        }
+    }
+
+    func test新建网络完整表单自动手动双语主题绘制() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        var manual = ContainerNetworkCreation(name: "synthetic-network")
+        manual.usesManualIPv4 = true
+        manual.subnet = "192.0.2.0/24"
+        manual.gateway = "192.0.2.1"
+        manual.isIPv6Enabled = true
+        manual.ipv6Subnet = "2001:db8::/64"
+        manual.ipv6Gateway = "2001:db8::1"
+        manual.disableMasquerade = true
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for (name, configuration, enabled) in [("automatic", ContainerNetworkCreation(), false),
+                                                      ("automatic-enabled", ContainerNetworkCreation(name: "test"), true),
+                                                      ("manual", manual, true)] {
+                    let host = NSHostingView(rootView: CreateNetworkSheet(canSubmit: enabled, configuration: configuration) { _ in
+                        XCTFail("合成表单不得提交创建")
+                        return nil
+                    }.environment(MacAppearanceStore()).environment(AppLanguageStore.shared).environment(\.locale, AppLanguageStore.shared.locale)
+                        .preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 540))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host)
+                    try snapshot(host, name: "create-network-full-\(name)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                    XCTAssertEqual(host.bounds.height, 540, accuracy: 1)
+                }
+            }
+        }
+    }
+
+    func test关于窗口只显示版本不显示构建次数() async throws {
+        let url = artifacts.appendingPathComponent("SyntheticAbout.bundle", isDirectory: true)
+        let contents = url.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let plist: [String: Any] = ["CFBundleIdentifier": "example.synthetic.about", "CFBundleName": "Synthetic About",
+                                   "CFBundleShortVersionString": "1.0.3", "CFBundleVersion": "14"]
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
+        let controller = AppUpdateController(bundle: try XCTUnwrap(Bundle(url: url)), canRestart: { true })
+        var options = controller.aboutPanelOptions
+        options[.applicationName] = "Synthetic About"
+        let previousWindows = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
+        NSApp.orderFrontStandardAboutPanel(options: options)
+        let panel = try XCTUnwrap(NSApp.windows.first { $0.isVisible && !previousWindows.contains(ObjectIdentifier($0)) })
+        defer { panel.orderOut(nil) }
+        let content = try XCTUnwrap(panel.contentView)
+        try await settle(content)
+        let text = nativeViews(content, of: NSTextField.self).map(\.stringValue).joined(separator: " ")
+        XCTAssertTrue(text.contains("1.0.3"))
+        XCTAssertFalse(text.contains("(14)"))
+        try snapshot(content, name: "about-version-only")
     }
 
     func test原生文件列表焦点保留复制快捷键() async throws {

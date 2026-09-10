@@ -1030,6 +1030,9 @@ private struct ContainerManagerView: View {
     @State private var confirmsNetworkDelete = false
     @State private var showsPullImage = false
     @State private var showsCreateNetwork = false
+    @State private var logSearch = ""
+    @State private var logLevel: String?
+    @State private var networkSearch = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1045,6 +1048,15 @@ private struct ContainerManagerView: View {
             Divider()
 
             Group {
+                if model.isLoading, model.containers == nil {
+                    ProgressView().fillsAvailableContentArea()
+                } else if let section = paneSection, model.containers?.failedSections.contains(section) == true {
+                    containerReadState(title: "container.section.failed", message: "container.section.retry")
+                } else if let section = paneSection, model.containers?.unavailableSections.contains(section) == true {
+                    containerReadState(title: "container.section.unavailable", message: "container.section.unavailable.message")
+                } else if model.containers == nil {
+                    containerReadState(title: "container.section.failed", message: "container.section.retry")
+                } else {
                 switch pane {
                 case .overview: overview
                 case .containers: containerList
@@ -1053,9 +1065,11 @@ private struct ContainerManagerView: View {
                 case .projects: projectList
                 case .events: eventList(model.containers?.events ?? [])
                 }
+                }
             }
             .padding(20)
             .buttonStyle(MacToolbarButtonStyle())
+            .fillsAvailableContentArea(alignment: .topLeading)
         }
         .confirmationDialog(L10n.string("ui.e63f7b537862f807"), isPresented: $confirmsContainerDelete) {
             Button(L10n.string("ui.60fc3386091b5647"), role: .destructive) {
@@ -1096,10 +1110,10 @@ private struct ContainerManagerView: View {
             )
         }
         .macSheet(isPresented: $showsCreateNetwork) {
-            CreateNetworkSheet { name, driver in
-                let succeeded = await model.createNetwork(name: name, driver: driver)
+            CreateNetworkSheet(canSubmit: model.containers?.canCreateNetworks == true) { configuration in
+                let succeeded = await model.createNetwork(configuration)
                 if succeeded { showsCreateNetwork = false }
-                return succeeded
+                return succeeded ? nil : (model.message ?? L10n.string("container.network.creation.review"))
             }
         }
     }
@@ -1111,6 +1125,28 @@ private struct ContainerManagerView: View {
                 Task { @MainActor in onSelectPane(pane) }
             }
         )
+    }
+
+    private var paneSection: ContainerManagerSection? {
+        switch pane {
+        case .images: .images
+        case .networks: .networks
+        case .projects: .projects
+        case .events: .logs
+        case .overview, .containers: nil
+        }
+    }
+
+    private func containerReadState(title: String, message: String) -> some View {
+        ContentUnavailableView {
+            Label(L10n.string(title), systemImage: "shippingbox")
+        } description: {
+            Text(L10n.string(message))
+        } actions: {
+            Button(L10n.string("ui.7bdd5ce1e298a972")) {
+                Task { await model.activate(.containers, force: true) }
+            }.disabled(model.isLoading)
+        }.fillsAvailableContentArea()
     }
 
     private var containerSummary: String {
@@ -1168,6 +1204,11 @@ private struct ContainerManagerView: View {
                 .tag(item.id)
             }
             .listStyle(.inset)
+            .overlay {
+                if model.containers?.containers.isEmpty == true {
+                    EmptyServiceState(title: L10n.string("container.section.empty"), message: L10n.string("container.section.empty.message"), icon: "shippingbox")
+                }
+            }
         }
     }
 
@@ -1202,15 +1243,25 @@ private struct ContainerManagerView: View {
                 .tag(image.id)
             }
             .listStyle(.inset)
+            .overlay {
+                if model.containers?.images.isEmpty == true {
+                    EmptyServiceState(title: L10n.string("container.section.empty"), message: L10n.string("container.section.empty.message"), icon: "square.stack.3d.up")
+                }
+            }
         }
     }
 
     private var networkList: some View {
-        VStack(spacing: 10) {
+        let networks = (model.containers?.networks ?? []).filter {
+            networkSearch.isEmpty || $0.name.localizedCaseInsensitiveContains(networkSearch) || $0.driver.localizedCaseInsensitiveContains(networkSearch)
+        }
+        return VStack(spacing: 10) {
             HStack {
+                TextField(L10n.string("container.network.search"), text: $networkSearch)
+                    .textFieldStyle(.roundedBorder).frame(maxWidth: 280)
                 Spacer()
                 Button(L10n.string("ui.2f9daa828907b93f"), role: .destructive) { confirmsNetworkDelete = true }
-                    .disabled(model.networkSelection.isEmpty || model.isPerformingAction)
+                    .disabled(!model.canDeleteNetworks)
                 Button {
                     showsCreateNetwork = true
                 } label: {
@@ -1218,7 +1269,11 @@ private struct ContainerManagerView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            List(model.containers?.networks ?? [], selection: $model.networkSelection) { network in
+            List(networks, selection: $model.networkSelection) { network in
+                DisclosureGroup {
+                    ContainerNetworkDetailsView(network: network)
+                        .padding(.top, 8)
+                } label: {
                 HStack {
                     Image(systemName: "network").foregroundStyle(.green)
                     Text(network.name).fontWeight(.medium)
@@ -1227,10 +1282,16 @@ private struct ContainerManagerView: View {
                     Text(L10n.string("ui.9e93c07975ef7973", String(describing: network.connectedContainerCount)))
                         .foregroundStyle(.secondary)
                 }
+                }
                 .macDataRowSurface()
                 .tag(network.id)
             }
             .listStyle(.inset)
+            .overlay {
+                if networks.isEmpty {
+                    EmptyServiceState(title: L10n.string("container.section.empty"), message: L10n.string(networkSearch.isEmpty ? "container.section.empty.message" : "container.filter.empty"), icon: "network")
+                }
+            }
         }
     }
 
@@ -1246,21 +1307,112 @@ private struct ContainerManagerView: View {
             .macDataRowSurface()
         }
         .listStyle(.inset)
+        .overlay {
+            if model.containers?.projects.isEmpty == true {
+                EmptyServiceState(title: L10n.string("container.section.empty"), message: L10n.string("container.section.empty.message"), icon: "square.grid.2x2")
+            }
+        }
     }
 
     private func eventList(_ events: [ServiceEvent]) -> some View {
-        List(events) { event in
+        let filtered = events.filter { event in
+            (logLevel == nil || event.level == logLevel) && (logSearch.isEmpty
+                || event.message.localizedCaseInsensitiveContains(logSearch)
+                || event.user?.localizedCaseInsensitiveContains(logSearch) == true)
+        }
+        return VStack(spacing: 10) {
+            HStack {
+                Picker(L10n.string("container.logs.level"), selection: $logLevel) {
+                    Text(L10n.string("ui.5c55a67935af8f45")).tag(String?.none)
+                    ForEach(Array(Set(events.map(\.level))).sorted(), id: \.self) { level in
+                        Text(containerLogLevel(level)).tag(Optional(level))
+                    }
+                }.labelsHidden().frame(width: 170, alignment: .leading)
+                TextField(L10n.string("container.logs.search"), text: $logSearch)
+                    .textFieldStyle(.roundedBorder).frame(maxWidth: 280)
+                Spacer()
+                Text(L10n.string("ui.08f9603e78071336", String(filtered.count))).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 28)
+            HStack {
+                Text(L10n.string("container.logs.time")).frame(width: 170, alignment: .leading)
+                Text(L10n.string("container.logs.level")).frame(width: 80, alignment: .leading)
+                Text(L10n.string("container.logs.user")).frame(width: 120, alignment: .leading)
+                Text(L10n.string("container.logs.event")).frame(maxWidth: .infinity, alignment: .leading)
+            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 28)
+            List(filtered) { event in
             HStack(alignment: .top) {
-                Text(event.timestamp?.formatted(date: .numeric, time: .standard) ?? "—")
+                Text(event.timestamp?.formatted(.dateTime.year().month().day().hour().minute().second().locale(L10n.locale)) ?? "—")
                     .foregroundStyle(.secondary)
-                    .frame(width: 150, alignment: .leading)
-                Text(event.level).frame(width: 72, alignment: .leading)
+                    .frame(width: 170, alignment: .leading)
+                Text(containerLogLevel(event.level)).frame(width: 80, alignment: .leading)
+                Text(event.user ?? "—").frame(width: 120, alignment: .leading)
                 Text(event.message).textSelection(.enabled)
             }
             .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .macDataRowSurface()
         }
         .listStyle(.inset)
+        .overlay {
+            if filtered.isEmpty {
+                EmptyServiceState(title: L10n.string("container.section.empty"), message: L10n.string(events.isEmpty ? "container.logs.empty" : "container.filter.empty"), icon: "list.bullet.rectangle")
+            }
+        }
+        }
+    }
+
+    private func containerLogLevel(_ level: String) -> String {
+        switch level.lowercased() {
+        case "info", "information": L10n.string("container.logs.info")
+        case "warn", "warning": L10n.string("container.logs.warning")
+        case "error": L10n.string("container.logs.error")
+        default: level
+        }
+    }
+}
+
+/// 只展示已读取的网络详情，不提供配置修改入口；缺失字段不推断为关闭或空列表。
+struct ContainerNetworkDetailsView: View {
+    let network: ContainerNetwork
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 10) {
+            if let subnet = network.subnet, !subnet.isEmpty {
+                GridRow {
+                    Text(L10n.string("container.network.subnet")).foregroundStyle(.secondary)
+                    Text(subnet).textSelection(.enabled)
+                }
+            }
+            if let gateway = network.gateway, !gateway.isEmpty {
+                GridRow {
+                    Text(L10n.string("container.network.gateway")).foregroundStyle(.secondary)
+                    Text(gateway).textSelection(.enabled)
+                }
+            }
+            GridRow {
+                Text(L10n.string("container.network.ipv6")).foregroundStyle(.secondary)
+                Text(L10n.string(network.isIPv6Enabled.map { $0 ? "container.network.enabled" : "container.network.disabled" } ?? "container.network.notProvided"))
+            }
+            GridRow(alignment: .top) {
+                Text(L10n.string("container.network.containers")).foregroundStyle(.secondary)
+                if let names = network.connectedContainerNames {
+                    if names.isEmpty {
+                        Text(L10n.string("container.network.noneConnected")).foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(names, id: \.self) { name in
+                                Text(name).textSelection(.enabled)
+                            }
+                        }
+                    }
+                } else {
+                    Text(L10n.string("container.network.notProvided")).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -2713,44 +2865,99 @@ struct PullImageSheet: View {
 }
 
 struct CreateNetworkSheet: View {
-    let submit: (String, String) async -> Bool
+    let canSubmit: Bool
+    let submit: (ContainerNetworkCreation) async -> String?
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var driver = "bridge"
+    @State private var configuration: ContainerNetworkCreation
     @State private var isSubmitting = false
+    @State private var confirmsCreation = false
+    @State private var errorMessage: String?
+
+    init(canSubmit: Bool = false, configuration: ContainerNetworkCreation = .init(),
+         submit: @escaping (ContainerNetworkCreation) async -> String?) {
+        self.canSubmit = canSubmit
+        self.submit = submit
+        _configuration = State(initialValue: configuration)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(L10n.string("ui.49fe5148286aa7f8")).font(.title2.weight(.semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(MacGlassSurface(role: .toolbar).clipShape(RoundedRectangle(cornerRadius: 12)))
-            Form {
-                TextField(L10n.string("ui.ac8d90dfa36e5134"), text: $name)
-                Picker(L10n.string("ui.fefbff4b349c9621"), selection: $driver) {
-                    Text(L10n.string("ui.441caa6812c4d683")).tag("bridge")
-                    Text(L10n.string("ui.e87d9f23a3f5a830")).tag("host")
+            ScrollView {
+                Form {
+                    TextField(L10n.string("ui.ac8d90dfa36e5134"), text: $configuration.name)
+                    Picker(L10n.string("container.network.create.ipv4"), selection: $configuration.usesManualIPv4) {
+                        Text(L10n.string("container.network.create.automatic")).tag(false)
+                        Text(L10n.string("container.network.create.manual")).tag(true)
+                    }
+                    Group {
+                        TextField(L10n.string("container.network.subnet"), text: $configuration.subnet)
+                        TextField(L10n.string("container.network.create.range"), text: $configuration.ipRange)
+                        TextField(L10n.string("container.network.gateway"), text: $configuration.gateway)
+                    }.disabled(!configuration.usesManualIPv4)
+                    Picker(L10n.string("container.network.create.ipv6"), selection: $configuration.isIPv6Enabled) {
+                        Text(L10n.string("container.network.create.off")).tag(false)
+                        Text(L10n.string("container.network.create.manual")).tag(true)
+                    }
+                    Group {
+                        TextField(L10n.string("container.network.create.ipv6Subnet"), text: $configuration.ipv6Subnet)
+                        TextField(L10n.string("container.network.create.ipv6Range"), text: $configuration.ipv6Range)
+                        TextField(L10n.string("container.network.create.ipv6Gateway"), text: $configuration.ipv6Gateway)
+                    }.disabled(!configuration.isIPv6Enabled)
+                    Toggle(L10n.string("container.network.create.disableMasquerade"), isOn: $configuration.disableMasquerade)
+                        .toggleStyle(.checkbox)
                 }
+                .disabled(isSubmitting)
+                .padding(4)
+            }
+            if !canSubmit {
+                Text(L10n.string("container.network.creation.unavailable"))
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
             HStack {
+                if isSubmitting { ProgressView().controlSize(.small) }
                 Spacer()
                 Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { dismiss() }
+                    .disabled(isSubmitting).keyboardShortcut(.cancelAction)
                 Button(L10n.string("ui.c03b2ae791fe7fa1")) {
-                    isSubmitting = true
-                    Task {
-                        _ = await submit(name, driver)
-                        isSubmitting = false
-                    }
+                    errorMessage = nil
+                    if let issue = configuration.validationIssue { errorMessage = L10n.string(issue.rawValue) }
+                    else { confirmsCreation = true }
                 }
                 .buttonStyle(MacToolbarButtonStyle(prominent: true))
-                .disabled(name.isEmpty || isSubmitting)
+                .disabled(!canSubmit || configuration.name.isEmpty || isSubmitting)
+                .keyboardShortcut(.defaultAction)
             }
             .buttonStyle(MacToolbarButtonStyle())
         }
         .padding(24)
-        .frame(width: 440)
-        .fillsAvailableContentArea(alignment: .topLeading)
+        .frame(width: 560, height: 540)
         .background(MacGlassSurface(role: .sidebar))
+        .interactiveDismissDisabled(isSubmitting)
+        .onChange(of: configuration.usesManualIPv4) { _, manual in
+            if !manual { configuration.subnet = ""; configuration.ipRange = ""; configuration.gateway = "" }
+        }
+        .onChange(of: configuration.isIPv6Enabled) { _, enabled in
+            if !enabled { configuration.ipv6Subnet = ""; configuration.ipv6Range = ""; configuration.ipv6Gateway = "" }
+        }
+        .confirmationDialog(L10n.string("container.network.create.confirm.title", configuration.name), isPresented: $confirmsCreation) {
+            Button(L10n.string("ui.c03b2ae791fe7fa1")) {
+                guard canSubmit, !isSubmitting else { return }
+                isSubmitting = true
+                Task {
+                    errorMessage = await submit(configuration)
+                    isSubmitting = false
+                    if errorMessage == nil { dismiss() }
+                }
+            }
+            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
+        } message: {
+            Text(L10n.string("container.network.create.confirm.message"))
+        }
     }
 }
 

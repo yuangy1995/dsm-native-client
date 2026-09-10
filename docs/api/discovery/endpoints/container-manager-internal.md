@@ -43,6 +43,21 @@
 
 `Container.Resource.get`、`Container.Log.get/export`、`Container.stats/get_process` 的完整参数和响应尚未获得脱敏请求证据，不得根据方法名猜测。
 
+### 2026-09-10 读取更正（待归属观察）
+
+见[日志与网络观察](../environments/2026-09-10-container-read-observation.md)。本次观察未确认设备关系与完整版本，不升级下方历史基线的证据等级。
+
+- `SYNO.Docker.Log.list` v1：官方日志页面发送 `action=load, offset=0, limit=1000, sort_by=time, sort_dir=DESC, loglevel="", filter_content="", datefrom=0, dateto=0`。客户端此前只有 offset/limit，与官方请求不一致。
+- 成功响应 `logs` 元素为 `event/level/log_type/time/user`，均为字符串；时间为 `yyyy/MM/dd HH:mm:ss`。顶层 `offset/limit/total` 和分级数量为数字。客户端按返回总数读取后页，不能将首批当作全部。
+- `SYNO.Docker.Network.list` v1 无附加参数，返回 `network` 数组；关联容器为 `containers:[string]`，显示数量应取数组长度。缺失数组且没有已支持计数字段时标记分区失败，不冒充零。
+- 同一网络响应还包含 `enable_ipv6:boolean` 与 `gateway/iprange/subnet:string`；用户已明确批准为共享领域模型增加向后兼容的可选只读字段，macOS 展开显示子网、网关、IPv6 与关联容器名称，不改请求或存储格式。官方 UI 的 IP 伪装显示未在本次响应中找到对应字段，不按界面文案猜契约。
+- 不增加或开放写操作。macOS 修复读取与分区展示；Apple 移动端专用清单、Android、Windows 实现不变，后两端只记录后续适配影响。
+- 后续同日核对 `Project.list` v1 无附加参数：官方无项目返回 `{}`，不是空数组；按 ID 键值解析的非空摘要仅有官方脚本静态证据，字段 `name/status/containerIds`。客户端仅对项目分区兼容这一对象容器。
+- 网络创建表单和静态参数差异见[观察记录](../environments/2026-09-10-container-read-observation.md#项目列表与新建网络后续核对)。实际创建未发送，不能把只读详情授权或表单可见当成写行为验证。
+- 用户后续已批准创建契约同步：默认参数为 `name/enable_ipv6/disable_masquerade`，手动 IPv4 加 `subnet/iprange/gateway`，手动 IPv6 加 `ipv6_subnet/ipv6_iprange/ipv6_gateway`，不传 `driver`。客户端增加确认、校验、同名互斥与读前/读后核对；提交能力默认关闭，只有合成测试显式开启，不升级真实写入证据。五端影响与迁移/回滚见观察记录。
+- 用户再次明确要求可点击测试包后，macOS 独立本地测试包允许手动确认并提交创建；正式版默认关闭不变，真实写入仍待用户验收，不将入口开放升级为行为验证。
+- 同日用户授权单个无关联测试网络的真实删除：`Network.remove` v1 发送 `networks:[所选网络对象]`，响应 `failed:[]`，最终列表目标消失。对象键及限定证据见[删除观察](../environments/2026-09-10-container-read-observation.md#用户授权的单个测试网络删除)。已纠正 Apple 的单 id 参数及共享请求 fixture；不外推到其他网络、权限、版本或其他写操作。
+
 ## 响应与错误
 
 成功响应仅记录稳定外层：
