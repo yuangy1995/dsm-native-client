@@ -46,6 +46,27 @@ class MacOSAppcastTests(unittest.TestCase):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 self.feed(tag=tag)
 
+    def test_release_notes_are_embedded_in_both_architectures_without_executable_html(self):
+        notes = "## macOS 0.2.6\n\n- 修复闪退 & 改善体验\n\n## English — macOS 0.2.6\n\n- Fixed crashes\n<script>unsafe()</script>"
+        feed = create_feed(self.packages(), "macos/v0.2.6", release_notes=notes)
+        items = ET.fromstring(feed).findall("./channel/item")
+        descriptions = [item.findtext("description") for item in items]
+        self.assertEqual(descriptions[0], descriptions[1])
+        self.assertIn("<p>• 修复闪退 &amp; 改善体验</p>", descriptions[0])
+        self.assertIn("<h2>English — macOS 0.2.6</h2>", descriptions[0])
+        self.assertNotIn("<script>", descriptions[0])
+        self.assertIn("&lt;script&gt;", descriptions[0])
+        self.assertEqual(items[0].find(f"{{{SPARKLE}}}version").text, "7")
+
+    def test_explicit_empty_release_notes_cannot_be_published(self):
+        with self.assertRaises(ValueError):
+            create_feed(self.packages(), "macos/v0.2.6", release_notes=" \n")
+
+    def test_publishing_passes_the_same_release_notes_to_the_signed_feed(self):
+        publisher = Path(__file__).with_name("publish_macos_release.sh").read_text()
+        self.assertIn("--release-notes docs/releases/MACOS_RELEASE_NOTES.md", publisher)
+        self.assertIn('--notes-file docs/releases/MACOS_RELEASE_NOTES.md', publisher)
+
     def test_validation_feed_cannot_publish_to_stable_channel(self):
         self.info["SUFeedURL"] = VALIDATION_FEED_URL
         with self.assertRaises(ValueError):

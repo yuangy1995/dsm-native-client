@@ -6,6 +6,47 @@ import XCTest
 
 @MainActor
 final class DesktopDriveMappingTransactionCoordinatorTests: XCTestCase {
+    func test从主线程刷新写入权限时三个系统回调均可在后台执行() async throws {
+        let root = expectation(description: "根目录通知")
+        let workingSet = expectation(description: "工作集通知")
+        let resolved = expectation(description: "恢复通知")
+        try await DesktopDriveFileProviderCallbackBridge.signalWritebackChanges(
+            root: { completion in
+                DispatchQueue.global().async { XCTAssertFalse(Thread.isMainThread); root.fulfill(); completion(nil) }
+            },
+            workingSet: { completion in
+                DispatchQueue.global().async { XCTAssertFalse(Thread.isMainThread); workingSet.fulfill(); completion(nil) }
+            },
+            resolveError: { completion in
+                DispatchQueue.global().async { XCTAssertFalse(Thread.isMainThread); resolved.fulfill(); completion(nil) }
+            }
+        )
+        MainActor.assertIsolated()
+        await fulfillment(of: [root, workingSet, resolved], timeout: 1)
+    }
+
+    func test后台刷新失败回到主线程处理且不撤销已保存权限() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("WritebackSignal-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DesktopDriveWritebackStore(directory: directory)
+        let mappingID = UUID()
+        try store.setEnabled(true, mappingID: mappingID)
+        try store.setDeletionEnabled(true, mappingID: mappingID)
+        do {
+            try await DesktopDriveFileProviderCallbackBridge.signalWritebackChanges(
+                root: { completion in DispatchQueue.global().async { completion(nil) } },
+                workingSet: { completion in DispatchQueue.global().async { completion(nil) } },
+                resolveError: { completion in DispatchQueue.global().async { completion(TransactionTestError.injected) } }
+            )
+            XCTFail("刷新错误必须返回给页面")
+        } catch {
+            MainActor.assertIsolated()
+            XCTAssertEqual(error as? TransactionTestError, .injected)
+        }
+        XCTAssertTrue(try store.isEnabled(mappingID: mappingID))
+        XCTAssertTrue(try store.isDeletionEnabled(mappingID: mappingID))
+    }
+
     nonisolated func test系统回调桥接可从后台队列恢复Continuation() async throws {
         let value = try await DesktopDriveAsyncCallbackBridge.value {
             completion in

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import DsmCore
 @testable import DsmMacExecutable
 import Sparkle
@@ -6,6 +7,177 @@ import XCTest
 
 @MainActor
 final class AppUpdateTests: XCTestCase {
+    private func makeDriver() -> AppUpdateUserDriver {
+        AppUpdateUserDriver(presentsWindows: false, fetchNotes: { _ in throw URLError(.notConnectedToInternet) })
+    }
+
+    private func waitForNotes(_ driver: AppUpdateUserDriver) async {
+        guard driver.isLoadingNotes else { return }
+        let completed = expectation(description: "说明加载结束")
+        let observation = driver.$isLoadingNotes.filter { !$0 }.first().sink { _ in completed.fulfill() }
+        await fulfillment(of: [completed], timeout: 2)
+        withExtendedLifetime(observation) {}
+    }
+
+    private nonisolated static func notesResponse(_ request: URLRequest, status: Int = 200) -> HTTPURLResponse {
+        HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+    }
+
+    private nonisolated static func notesData(version: String = "1.0.8", body: String = "- 修复与改进") -> Data {
+        try! JSONSerialization.data(withJSONObject: ["tag_name": "macos/v" + version, "body": body,
+                                                   "draft": false, "prerelease": false, "assets": []])
+    }
+
+    func test更新源没有正文时自动获取对应版本且不触发下载() async {
+        let requested = expectation(description: "获取指定版本")
+        let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://api.github.com/repos/yuangy1995/dsm-native-client/releases/tags/macos%2Fv1.0.8")
+            XCTAssertFalse(request.httpShouldHandleCookies)
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            requested.fulfill()
+            return (Self.notesData(), Self.notesResponse(request))
+        })
+        driver.showAvailable(version: "1.0.8", notes: nil) { _ in XCTFail("加载日志不能下载更新") }
+        XCTAssertTrue(driver.isLoadingNotes)
+        await waitForNotes(driver)
+        await fulfillment(of: [requested], timeout: 1)
+        XCTAssertEqual(driver.releaseNotes, "- 修复与改进")
+        XCTAssertEqual(driver.version, "1.0.8")
+        XCTAssertEqual(driver.primaryKey, "updates.download")
+        XCTAssertFalse(driver.notesLoadFailed)
+    }
+
+    func test更新源已经附带说明时不再请求网络() async {
+        let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { _ in
+            XCTFail("已有说明不应重复请求")
+            throw URLError(.badURL)
+        })
+        driver.showAvailable(version: "1.0.8", notes: "<p>已附带的说明</p>") { _ in }
+        await Task.yield()
+        XCTAssertEqual(driver.releaseNotes, "已附带的说明")
+        XCTAssertFalse(driver.isLoadingNotes)
+    }
+
+    func test日志加载失败可原位重试且不泄漏错误详情() async {
+        let probe = UpdateNotesAttemptProbe()
+        let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+            if await probe.next() == 1 { throw NSError(domain: "synthetic-private-details", code: 1) }
+            return (Self.notesData(), Self.notesResponse(request))
+        })
+        driver.showAvailable(version: "1.0.8", notes: " ") { _ in XCTFail("重试日志不能安装") }
+        await waitForNotes(driver)
+        XCTAssertTrue(driver.notesLoadFailed)
+        XCTAssertEqual(driver.primaryKey, "updates.download")
+        XCTAssertFalse(driver.releaseNotes?.contains("synthetic-private-details") == true)
+        driver.retryReleaseNotes()
+        await waitForNotes(driver)
+        XCTAssertFalse(driver.notesLoadFailed)
+        XCTAssertEqual(driver.releaseNotes, "- 修复与改进")
+        let attempts = await probe.count
+        XCTAssertEqual(attempts, 2)
+    }
+
+    func test拒绝不匹配版本和错误响应但不修改待安装版本() async {
+        for status in [200, 403] {
+            let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+                (Self.notesData(version: "9.9.9"), Self.notesResponse(request, status: status))
+            })
+            driver.showAvailable(version: "1.0.8", notes: nil) { _ in }
+            await waitForNotes(driver)
+            XCTAssertTrue(driver.notesLoadFailed)
+            XCTAssertNil(driver.releaseNotes)
+            XCTAssertEqual(driver.version, "1.0.8")
+        }
+        XCTAssertNil(AppUpdateUserDriver.releaseNotesRequest(version: "../../other"))
+        XCTAssertNil(AppUpdateUserDriver.releaseNotesRequest(version: "https://example.invalid"))
+        XCTAssertTrue(AppUpdateUserDriver.releaseNotesRequest(version: "1.0.8", validation: true)!.url!.absoluteString.contains("macos-validation%2Fv1.0.8"))
+    }
+
+    func test开始下载安装包不会取消仍在加载的日志() async {
+        let gate = UpdateNotesResponseGate()
+        let started = expectation(description: "说明请求已开始")
+        let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+            started.fulfill()
+            return (await gate.wait(), Self.notesResponse(request))
+        })
+        driver.showAvailable(version: "1.0.8", notes: nil) { _ in }
+        await fulfillment(of: [started], timeout: 1)
+        driver.showDownloadInitiated {}
+        await gate.release(Self.notesData())
+        await waitForNotes(driver)
+        XCTAssertEqual(driver.stage, .downloading)
+        XCTAssertEqual(driver.version, "1.0.8")
+        XCTAssertEqual(driver.releaseNotes, "- 修复与改进")
+    }
+
+    func test旧版本请求晚返回不能覆盖新弹窗的说明() async {
+        let gate = UpdateNotesResponseGate()
+        let started = expectation(description: "旧请求已开始")
+        let returned = expectation(description: "旧请求已返回")
+        let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+            if request.url!.absoluteString.hasSuffix("v1.0.8") {
+                started.fulfill()
+                let data = await gate.wait()
+                returned.fulfill()
+                return (data, Self.notesResponse(request))
+            }
+            return (Self.notesData(version: "1.0.9", body: "新版本说明"), Self.notesResponse(request))
+        })
+        driver.showAvailable(version: "1.0.8", notes: nil) { _ in }
+        await fulfillment(of: [started], timeout: 1)
+        driver.showAvailable(version: "1.0.9", notes: nil) { _ in }
+        await waitForNotes(driver)
+        await gate.release(Self.notesData(body: "旧说明"))
+        await fulfillment(of: [returned], timeout: 1)
+        await Task.yield()
+        XCTAssertEqual(driver.version, "1.0.9")
+        XCTAssertEqual(driver.releaseNotes, "新版本说明")
+    }
+
+    func test关闭弹窗后返回的说明不能恢复已关闭状态() async {
+        let gate = UpdateNotesResponseGate()
+        let started = expectation(description: "说明请求已开始")
+        let returned = expectation(description: "请求返回")
+        let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+            started.fulfill()
+            let data = await gate.wait()
+            returned.fulfill()
+            return (data, Self.notesResponse(request))
+        })
+        driver.showAvailable(version: "1.0.8", notes: nil) { _ in }
+        await fulfillment(of: [started], timeout: 1)
+        driver.dismissUpdateInstallation()
+        await gate.release(Self.notesData())
+        await fulfillment(of: [returned], timeout: 1)
+        await Task.yield()
+        XCTAssertFalse(driver.isLoadingNotes)
+        XCTAssertNil(driver.releaseNotes)
+        XCTAssertNil(driver.primaryKey)
+    }
+
+    func test双语发布说明按当前语言展示且不暴露Markdown标记() {
+        let notes = "## macOS 1.0.8\n\n- 修复闪退\n\n删除默认关闭。\n\n## English — macOS 1.0.8\n\n- Fixed crashes\n\nDeletion is off by default."
+        let chinese = AppUpdateUserDriver.readableNotes(notes, prefersEnglish: false)
+        let english = AppUpdateUserDriver.readableNotes(notes, prefersEnglish: true)
+        XCTAssertTrue(chinese.contains("• 修复闪退"))
+        XCTAssertFalse(chinese.contains("Fixed crashes"))
+        XCTAssertTrue(english.contains("• Fixed crashes"))
+        XCTAssertFalse(english.contains("修复闪退"))
+        XCTAssertFalse(chinese.contains("##"))
+        let embedded = AppUpdateUserDriver.plainNotes("<h2>macOS 1.0.8</h2><p>• 修复闪退</p><h2>English — macOS 1.0.8</h2><p>• Fixed crashes</p><script>unsafe()</script>")
+        XCTAssertEqual(AppUpdateUserDriver.readableNotes(embedded, prefersEnglish: true), "• Fixed crashes")
+    }
+
+    func test预发布说明不能混入正式更新且草稿不展示() throws {
+        let preview = try JSONSerialization.data(withJSONObject: ["tag_name": "macos-validation/v1.0.8",
+            "body": "Preview", "draft": false, "prerelease": true, "assets": []])
+        XCTAssertNil(try AppUpdateUserDriver.macReleaseNotes(from: preview, expectedTag: "macos/v1.0.8"))
+        XCTAssertNotNil(try AppUpdateUserDriver.macReleaseNotes(from: preview, expectedTag: "macos-validation/v1.0.8"))
+        let draft = try JSONSerialization.data(withJSONObject: ["tag_name": "macos/v1.0.8",
+            "body": "Draft", "draft": true, "prerelease": false, "assets": []])
+        XCTAssertNil(try AppUpdateUserDriver.macReleaseNotes(from: draft, expectedTag: "macos/v1.0.8"))
+    }
+
     func test关于面板只显示对外版本且显式隐藏构建号() {
         let controller = AppUpdateController(bundle: Bundle(for: Self.self), canRestart: { true })
         XCTAssertEqual(controller.aboutPanelOptions[.applicationVersion] as? String, controller.currentVersion)
@@ -20,7 +192,7 @@ final class AppUpdateTests: XCTestCase {
     }
     func test更新窗口保留标题栏系统按钮且系统关闭只取消一次() {
         _ = NSApplication.shared
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var cancellations = 0
         driver.showUserInitiatedUpdateCheck { cancellations += 1 }
         let window = AppUpdateWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 200),
@@ -44,7 +216,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test更新说明只显示文本且新检查清除旧版本资料() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         driver.showAvailable(version: "0.3.0", notes: "<p>修复 &amp; 优化</p><p>第二项</p>") { _ in
             XCTFail("呈现更新说明不能触发安装")
         }
@@ -58,7 +230,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test确认下载后重复点击不清除新阶段取消操作() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var choices: [SPUUserUpdateChoice] = []
         var cancellations = 0
         driver.showAvailable(version: "0.3.0", notes: nil) { choice in
@@ -75,7 +247,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test检查关闭只取消一次并清理进度() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var cancellations = 0
         driver.showUserInitiatedUpdateCheck { cancellations += 1 }
         XCTAssertEqual(driver.stage, .checking)
@@ -88,7 +260,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test无主操作时的重复点击不能清除下载取消入口() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var cancellations = 0
         driver.showDownloadInitiated { cancellations += 1 }
         driver.performPrimaryAction()
@@ -99,7 +271,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test准备和安装阶段不允许关闭但完成后可确认() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         driver.showDownloadDidStartExtractingUpdate()
         XCTAssertEqual(driver.stage, .preparing)
         XCTAssertFalse(driver.canDismiss)
@@ -148,7 +320,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test准备安装时取消不得留下退出后自动安装() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var choices: [SPUUserUpdateChoice] = []
         driver.showReady { choices.append($0) }
         driver.performSecondaryAction()
@@ -158,7 +330,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test未完成工作阻止安装且完成后必须再次确认() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var choices: [SPUUserUpdateChoice] = []
         driver.canRestart = { false }
         driver.showReady { choices.append($0) }
@@ -173,7 +345,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test重试重启同样不能中断工作() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         driver.canRestart = { false }
         var retries = 0
         driver.showInstallingUpdate(withApplicationTerminated: false) { retries += 1 }
@@ -183,7 +355,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test下载进度和准备阶段不会沿用取消回调() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var cancellations = 0
         driver.showDownloadInitiated { cancellations += 1 }
         driver.showDownloadDidReceiveExpectedContentLength(100)
@@ -199,7 +371,7 @@ final class AppUpdateTests: XCTestCase {
     }
 
     func test检查和错误确认只执行一次且不泄漏底层错误() {
-        let driver = AppUpdateUserDriver(presentsWindows: false)
+        let driver = makeDriver()
         var acknowledgements = 0
         driver.showUpdaterError(NSError(domain: "test", code: 1, userInfo: [
             NSLocalizedDescriptionKey: "SID=synthetic-secret /private/example"
@@ -217,5 +389,24 @@ final class AppUpdateTests: XCTestCase {
                            ![.succeeded, .failed, .cancelled].contains(state))
         }
         XCTAssertFalse(AppUpdateController.hasUnfinishedTransfers([]))
+    }
+}
+
+private actor UpdateNotesAttemptProbe {
+    private(set) var count = 0
+    func next() -> Int { count += 1; return count }
+}
+
+private actor UpdateNotesResponseGate {
+    private var value: Data?
+    private var continuation: CheckedContinuation<Data, Never>?
+    func wait() async -> Data {
+        if let value { return value }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+    func release(_ data: Data) {
+        value = data
+        continuation?.resume(returning: data)
+        continuation = nil
     }
 }

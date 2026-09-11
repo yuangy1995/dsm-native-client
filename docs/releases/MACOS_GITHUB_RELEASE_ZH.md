@@ -1,5 +1,49 @@
 # macOS GitHub 发布与在线升级
 
+## 更新说明与挂载刷新修正（2026-09-11）
+
+用户已明确要求发布本轮修复，按既有稳定通道准备 1.0.9，主 App 与扩展构建号均为 19。
+先在专用分支完成云端门禁，再将单一修复提交合入主分支，沿用双架构签名、公证与更新源回读校验流程。
+以下保留开发阶段的实际验证记录；真实 Finder 回调和用户系统上的安装后验收不因发版准备而视为通过。
+
+### 改动与边界
+
+- 用户反馈 1.0.8 更新弹窗没有日志：原生成器没有 `description`，普通更新只读内嵌文本且不启动已存在的公开日志获取。
+  现在优先显示更新源正文，缺失时从固定 GitHub 仓库按弹窗中的精确版本获取对应发布说明。
+  稳定与验收标签分别匹配，不使用其他平台、草稿或错误版本的内容替换当前候选版本。
+- 获取仅限公开文字，使用无 Cookie／凭据存储的短期会话、请求超时和响应大小检查。
+  窗口内呈现加载、正文、空说明或重试；开始下载安装包不会中断日志读取，关闭或新版本到来会废弃旧请求。
+  正文只作为文本显示，不执行 HTML、不加载图片；按当前 App 语言选择发布文件的中英段落。
+- 发布流程把同一份 `MACOS_RELEASE_NOTES.md` 同时用于 GitHub 发布正文和两个架构条目的内嵌说明。
+  采用 Sparkle 已支持的 [description 字段](https://sparkle-project.org/documentation/publishing/)，转换标题／列表并转义正文，
+  随更新源一起签名。因此旧客户端在下一次发布时也能读取内嵌日志，不需要先具备自动补取逻辑。
+  没有修改已经公开的 1.0.8 安装包或已签名更新源。
+- 挂载设置修正后台回调误继承主线程隔离的崩溃，使用现有异步回调桥接而非关闭隔离检查。
+  依据为用户提供的必要崩溃栈与 [Swift 的回调迁移说明](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/incrementaladoption/)。
+  已保存的权限不会因刷新通知失败而撤销；不改变任何 NAS 写入门禁。
+- 界面沿用原生控件和现有窗口，`ui-ux-pro-max` 仅用于状态、重试与双语主题检查，不新增常驻说明小字。
+  不改依赖、最低系统版本、Bundle ID、签名、权限、会话存储或更新密钥；其他平台实现不变。
+
+### 已运行验证
+
+- `swift test --package-path apple --jobs 4`：1062 项 XCTest，1005 通过、57 项条件跳过、0 失败，另 12 项 Swift Testing 通过。
+  55 项合成界面需显式开启，另两项仍是既有元数据基准与真实 QuickConnect 条件检查；未降低原有断言。
+- `python3 -m unittest discover -s tools/release -p 'test_*.py'`：30 项通过；`bash -n tools/release/publish_macos_release.sh` 通过。
+- `LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/test更新弹窗内日志加载结果双语主题|WorkspacePresentationTests/test更新窗口双语主题各阶段不自动下载或重启|WorkspacePresentationTests/test挂载写回设置双语主题状态绘制' bash tools/codex/run_macos_ui_checks.sh /tmp/lanstash-update-fix.phuhTt/ui`：
+  三项测试通过，96 组绘制，包括 16 组日志加载状态、36 组更新流程和 44 组挂载设置；已检查中英文、浅深色及重试布局。
+- `xcodebuild -quiet -jobs 4 -workspace apple/DsmNativeClient.xcworkspace -scheme DsmMac -configuration Debug -destination 'generic/platform=macOS' -derivedDataPath /tmp/lanstash-update-fix.phuhTt/build CODE_SIGNING_ALLOWED=NO build`：
+  完整未签名构建通过，主 App 和扩展均核对包含 arm64、x86_64；不代表正式签名或实机验收。
+- 对 `https://api.github.com/repos/yuangy1995/dsm-native-client/releases/tags/macos%2Fv1.0.8` 做不附加认证参数的只读 GET，
+  返回 200；核对标签、非草稿、非预发布及正文存在。该结果不替代 App 在所有网络环境中的实际请求验证。
+- `python3 tools/localization/check_localization.py`：4018 个 Apple 资源键的双语、参数、引用和硬编码扫描通过。
+- 开发验证阶段没有提交、推送、发布、安装或启动主 App；没有操作真实 NAS 文件，原始用户报告与截图保留在用户提供的位置。
+- 最后独立复核了具体版本／稳定与验收通道匹配、晚返回请求隔离、文本展示及挂载回调线程边界，未修改签名或安装保护。
+  `python3 tools/codex/check_documentation.py --strict-release` 与 `git diff --check` 通过。
+  本轮独立构建、日志、公开接口响应及合成截图已在核验后移入系统废纸篓，可恢复；项目已有测试和缓存保留。
+
+`PENDING_USER_VALIDATION`：正式签名修复版中检查对应版本日志的获取、断网重试和语言显示，以及挂载开关确认后的持续运行。
+当前已安装的 1.0.8 不会被源码修改直接替换；须发布并安装后再做系统集成验收。已有更新包签名、下载与安装确认机制保持不变。
+
 ## 范围与关键决策
 
 - 仅发布 macOS；Android、Windows、iPhone、iPad 不参加本次发布流程。

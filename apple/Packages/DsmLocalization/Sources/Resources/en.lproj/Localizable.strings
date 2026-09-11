@@ -2525,6 +2525,7 @@
 "desktopDrive.writeback.allow" = "Allow adding and editing NAS files";
 "desktopDrive.writeback.pendingTitle" = "Pending changes";
 "desktopDrive.writeback.refresh" = "Refresh";
+"desktopDrive.writeback.refreshError" = "Your settings were saved, but Finder could not refresh. Reopen this mount in a moment.";
 "desktopDrive.writeback.empty" = "Files that need your attention will appear here.";
 "desktopDrive.writeback.sheetTitle" = "Read & write";
 "desktopDrive.writeback.emptyTitle" = "No pending changes";
@@ -3899,7 +3900,10 @@
 "appSettings.showNAS" = "Show NAS Settings Entry";
 "nasSettings.deviceScope" = "Manage device: %@";
 "updates.notes.title" = "What's New";
-"updates.notes.empty" = "Open the release page to see what's new in this version.";
+"updates.notes.empty" = "No release notes are available for this version.";
+"updates.notes.loading" = "Loading what's new…";
+"updates.notes.failed" = "Couldn't load what's new. Please try again.";
+"updates.notes.retry" = "Try again";
 "chat.preview.open" = "Open conversation";
 "chat.preview.attachment" = "Attachment";
 "updates.currentVersion" = "Current version";

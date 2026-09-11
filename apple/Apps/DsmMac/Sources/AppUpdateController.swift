@@ -20,6 +20,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
         installedVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         super.init()
         driver.canRestart = canRestart
+        driver.isValidationChannel = configuredFeedURL == Self.validationFeedURL
         guard Self.isConfigured(bundle.infoDictionary ?? [:]) else { return }
         let updater = SPUUpdater(hostBundle: bundle, applicationBundle: bundle, userDriver: driver, delegate: self)
         do {
@@ -116,26 +117,32 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
     private var notesTask: Task<Void, Never>?
     private var notesGeneration = UUID()
     @Published private(set) var isLoadingNotes = false
+    @Published private(set) var notesLoadFailed = false
+    var isValidationChannel = false
+    typealias NotesFetcher = @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    private let fetchNotes: NotesFetcher
     private var expectedBytes: UInt64 = 0
     private var receivedBytes: UInt64 = 0
     private(set) var isRestartRequested = false
     var canRestart: @MainActor () -> Bool = { true }
     private let presentsWindows: Bool
 
-    init(presentsWindows: Bool = true) {
+    init(presentsWindows: Bool = true, fetchNotes: @escaping NotesFetcher = AppUpdateUserDriver.fetchPublicNotes) {
         self.presentsWindows = presentsWindows
+        self.fetchNotes = fetchNotes
     }
 
     private func present(_ title: String, detail: String, stage: PresentationStage = .information, working: Bool = false,
                          primary: String? = nil, action: (() -> Void)? = nil,
                          secondary: String? = nil, cancel: (() -> Void)? = nil) {
-        notesTask?.cancel()
-        notesGeneration = UUID()
-        isLoadingNotes = false
         titleKey = title
         detailKey = detail
         self.stage = stage
         if [.information, .permission, .checking, .available, .upToDate].contains(stage) {
+            notesTask?.cancel()
+            notesGeneration = UUID()
+            isLoadingNotes = false
+            notesLoadFailed = false
             version = nil
             releaseNotes = nil
         }
@@ -181,36 +188,82 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
         action()
     }
 
-    /// 手动更新不可用时仍可查看发布方的公开说明；不会下载或安装更新包。
-    func loadPublicReleaseNotes() {
+    /// 只获取发布方的公开文字，不携带 NAS 会话，也不加载网页或安装更新。
+    func loadPublicReleaseNotes(for expectedVersion: String? = nil) {
         notesTask?.cancel()
         notesGeneration = UUID()
         let generation = notesGeneration
+        notesLoadFailed = false
+        guard let request = Self.releaseNotesRequest(version: expectedVersion, validation: isValidationChannel) else {
+            isLoadingNotes = false
+            notesLoadFailed = true
+            return
+        }
+        let expectedTag = expectedVersion.map { (isValidationChannel ? "macos-validation/v" : "macos/v") + $0 }
         isLoadingNotes = true
         notesTask = Task { [weak self] in
             guard let self else { return }
             defer { if generation == self.notesGeneration { self.isLoadingNotes = false } }
             do {
-                var request = URLRequest(url: URL(string: "https://api.github.com/repos/yuangy1995/dsm-native-client/releases?per_page=20")!)
-                request.timeoutInterval = 15
-                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard !Task.isCancelled, generation == self.notesGeneration, (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1_048_576 else { return }
-                if let notes = try Self.macReleaseNotes(from: data) {
-                    self.version = notes.version
-                    self.releaseNotes = notes.body
+                let (data, response) = try await self.fetchNotes(request)
+                guard !Task.isCancelled, generation == self.notesGeneration else { return }
+                guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 1_048_576 else {
+                    self.notesLoadFailed = true
+                    return
+                }
+                if let notes = try Self.macReleaseNotes(from: data, expectedTag: expectedTag) {
+                    if expectedVersion == nil { self.version = notes.version }
+                    self.releaseNotes = Self.plainNotes(notes.body)
+                } else {
+                    self.notesLoadFailed = true
                 }
             } catch {
-                // 保留明确的无说明状态和手动版本页面，不显示网络内部错误。
+                guard !Task.isCancelled, generation == self.notesGeneration else { return }
+                self.notesLoadFailed = true
             }
         }
     }
 
-    nonisolated static func macReleaseNotes(from data: Data) throws -> (version: String, body: String)? {
+    func retryReleaseNotes() {
+        loadPublicReleaseNotes(for: stage == .information ? nil : version)
+    }
+
+    nonisolated static func releaseNotesRequest(version: String?, validation: Bool = false) -> URLRequest? {
+        let base = "https://api.github.com/repos/yuangy1995/dsm-native-client/releases"
+        let address: String
+        if let version {
+            guard version.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil else { return nil }
+            let tag = (validation ? "macos-validation/v" : "macos/v") + version
+            let encoded = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/")))!
+            address = base + "/tags/" + encoded
+        } else { address = base + "?per_page=20" }
+        var request = URLRequest(url: URL(string: address)!)
+        request.timeoutInterval = 15
+        request.httpShouldHandleCookies = false
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    nonisolated static func fetchPublicNotes(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        return try await session.data(for: request)
+    }
+
+    nonisolated static func macReleaseNotes(from data: Data, expectedTag: String? = nil) throws -> (version: String, body: String)? {
         struct Release: Decodable {
             let tag_name: String; let body: String?; let draft: Bool; let prerelease: Bool
             let assets: [Asset]
             struct Asset: Decodable { let name: String }
+        }
+        if let expectedTag {
+            let release = try JSONDecoder().decode(Release.self, from: data)
+            guard release.tag_name == expectedTag, !release.draft,
+                  release.prerelease == expectedTag.hasPrefix("macos-validation/") else { return nil }
+            return (release.tag_name, release.body ?? "")
         }
         let releases = try JSONDecoder().decode([Release].self, from: data)
         guard let release = releases.first(where: { !$0.draft && !$0.prerelease && $0.assets.contains(where: { $0.name.lowercased().hasSuffix(".dmg") }) }) else { return nil }
@@ -275,8 +328,13 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
             reply(.install)
         }, secondary: "updates.later", cancel: { reply(.dismiss) })
         self.version = version
-        // 只展示更新源内已有的说明文本，不加载网页、图片或执行 HTML。
-        releaseNotes = notes?
+        releaseNotes = notes.map(Self.plainNotes)
+        if releaseNotes?.isEmpty != false { loadPublicReleaseNotes(for: version) }
+    }
+
+    nonisolated static func plainNotes(_ notes: String) -> String {
+        notes
+            .replacingOccurrences(of: "(?is)<(?:script|style)\\b[^>]*>.*?</(?:script|style)>", with: "", options: .regularExpression)
             .replacingOccurrences(of: "(?i)<br\\s*/?>|</(?:p|li|div|h[1-6])>", with: "\n", options: .regularExpression)
             .replacingOccurrences(of: "<[^>]*>", with: "", options: .regularExpression)
             .replacingOccurrences(of: "&lt;", with: "<")
@@ -287,7 +345,21 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // 不额外下载发布说明，完整版本页面仍通过用户点击打开。
+    nonisolated static func readableNotes(_ notes: String, prefersEnglish: Bool) -> String {
+        var text = notes
+        // 发布文件使用中英两段；按当前 App 语言取对应正文，不翻译或修改发布内容。
+        if let marker = text.range(of: #"(?im)^(?:#{1,6}\s+)?English\s*[—–-][^\n]*\n?"#, options: .regularExpression) {
+            let selected = prefersEnglish ? String(text[marker.upperBound...]) : String(text[..<marker.lowerBound])
+            if !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { text = selected }
+        }
+        return text
+            .replacingOccurrences(of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?m)^[-*]\s+"#, with: "• ", options: .regularExpression)
+            .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // 说明由上面的公开文字请求补取；不另行加载 Sparkle 的网页说明。
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {}
 
@@ -359,6 +431,8 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
 
     func dismissUpdateInstallation() {
         notesTask?.cancel()
+        notesGeneration = UUID()
+        isLoadingNotes = false
         isRestartRequested = false
         isWorking = false
         progress = nil
@@ -440,17 +514,27 @@ struct AppUpdateView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if driver.stage == .available || driver.stage == .information || (driver.stage.showsReleaseNotes && driver.releaseNotes?.isEmpty == false) {
+            if driver.stage == .available || driver.stage == .information ||
+                (driver.stage.showsReleaseNotes && (driver.releaseNotes?.isEmpty == false || driver.isLoadingNotes || driver.notesLoadFailed)) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(language.string("updates.notes.title")).font(.callout.weight(.semibold))
                     ScrollView(.vertical, showsIndicators: true) {
-                        if driver.isLoadingNotes { ProgressView() }
-                        Text(driver.releaseNotes.flatMap { $0.isEmpty ? nil : $0 } ?? language.string("updates.notes.empty"))
-                            .font(.callout)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
+                        VStack(alignment: .leading, spacing: 10) {
+                            if driver.isLoadingNotes {
+                                ProgressView(language.string("updates.notes.loading"))
+                            } else if driver.notesLoadFailed {
+                                Text(language.string("updates.notes.failed"))
+                                Button(language.string("updates.notes.retry")) { driver.retryReleaseNotes() }
+                            } else {
+                                Text(driver.releaseNotes.flatMap { $0.isEmpty ? nil : AppUpdateUserDriver.readableNotes($0, prefersEnglish: language.resolvedLanguage == .english) }
+                                     ?? language.string("updates.notes.empty"))
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
                     }
                     .scrollIndicators(.visible)
                     .macThemedScrollContent()

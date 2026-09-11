@@ -291,11 +291,12 @@ struct DesktopDriveWritebackSettingsSheet: View {
     }
 
     private func signalChanges() {
-        guard let manager = NSFileProviderManager(for: DesktopDriveDomainController().domain(for: mapping)) else { return }
-        manager.signalEnumerator(for: .rootContainer) { _ in }
-        manager.signalEnumerator(for: .workingSet) { _ in }
-        manager.signalErrorResolved(NSFileProviderError(.cannotSynchronize)) { error in
-            if error != nil { Task { @MainActor in message = L10n.string("desktopDrive.writeback.loadError") } }
+        Task { @MainActor in
+            do {
+                try await DesktopDriveFileProviderCallbackBridge.signalWritebackChanges(for: mapping)
+            } catch {
+                message = L10n.string("desktopDrive.writeback.refreshError")
+            }
         }
     }
 

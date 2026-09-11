@@ -5,6 +5,7 @@ import argparse
 import base64
 from datetime import datetime, timezone
 from email.utils import format_datetime
+from html import escape
 from pathlib import Path
 import plistlib
 import re
@@ -26,7 +27,8 @@ def version_tuple(value: str) -> tuple[int, ...]:
 
 
 def create_feed(packages: dict[str, tuple[dict, Path, str]], tag: str,
-                previous: Path | None = None, validation: bool = False) -> bytes:
+                previous: Path | None = None, validation: bool = False,
+                release_notes: str | None = None) -> bytes:
     if set(packages) != {"arm64", "x86_64"}:
         raise ValueError("发布必须同时提供 Apple Silicon 与 Intel 安装包")
     info = packages["arm64"][0]
@@ -63,6 +65,24 @@ def create_feed(packages: dict[str, tuple[dict, Path, str]], tag: str,
             if version_tuple(build) <= version_tuple(old_build) or version_tuple(version) <= version_tuple(old_version):
                 raise ValueError("版本号和构建号都必须高于已发布的 macOS 版本")
 
+    description = None
+    if release_notes is not None:
+        if not release_notes.strip():
+            raise ValueError("发布说明不能为空")
+        # 仅转换项目发布说明使用的标题和列表，所有正文转义，不引入网页或图片。
+        lines = []
+        for raw_line in release_notes.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            heading = re.match(r"^#{1,6}\s+(.+)$", line)
+            if heading:
+                lines.append(f"<h2>{escape(heading.group(1))}</h2>")
+            else:
+                line = re.sub(r"^[-*]\s+", "• ", line)
+                lines.append(f"<p>{escape(line)}</p>")
+        description = "\n".join(lines)
+
     root = ET.Element("rss", version="2.0")
     channel = ET.SubElement(root, "channel")
     ET.SubElement(channel, "title").text = "LanStash macOS"
@@ -73,6 +93,8 @@ def create_feed(packages: dict[str, tuple[dict, Path, str]], tag: str,
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = f"LanStash {version} — {label}"
         ET.SubElement(item, "pubDate").text = format_datetime(datetime.now(timezone.utc))
+        if description is not None:
+            ET.SubElement(item, "description").text = description
         ET.SubElement(item, f"{{{SPARKLE}}}version").text = build
         ET.SubElement(item, f"{{{SPARKLE}}}shortVersionString").text = version
         ET.SubElement(item, f"{{{SPARKLE}}}minimumSystemVersion").text = info["LSMinimumSystemVersion"]
@@ -97,6 +119,7 @@ def main() -> None:
     parser.add_argument("--signature", required=True, action="append")
     parser.add_argument("--previous", type=Path)
     parser.add_argument("--validation", action="store_true")
+    parser.add_argument("--release-notes", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     if not len(args.app) == len(args.archive) == len(args.signature) == 2:
@@ -105,7 +128,8 @@ def main() -> None:
     for arch, app, archive, signature in zip(("arm64", "x86_64"), args.app, args.archive, args.signature):
         with (app / "Contents/Info.plist").open("rb") as source:
             packages[arch] = (plistlib.load(source), archive, signature)
-    args.output.write_bytes(create_feed(packages, args.tag, args.previous, args.validation))
+    notes = args.release_notes.read_text(encoding="utf-8") if args.release_notes else None
+    args.output.write_bytes(create_feed(packages, args.tag, args.previous, args.validation, notes))
 
 
 if __name__ == "__main__":

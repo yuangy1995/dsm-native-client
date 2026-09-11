@@ -5,7 +5,7 @@ import Foundation
 /// 集中封装文件提供器域的生命周期和系统回调，避免界面状态管理器承担平台适配细节。
 @MainActor
 struct DesktopDriveDomainController: DesktopDriveDomainRegistrationControlling {
-    func domain(for mapping: DesktopDriveMapping) -> NSFileProviderDomain {
+    nonisolated func domain(for mapping: DesktopDriveMapping) -> NSFileProviderDomain {
         Self.configureDomain(
             NSFileProviderDomain(
                 identifier: NSFileProviderDomainIdentifier(
@@ -45,7 +45,7 @@ struct DesktopDriveDomainController: DesktopDriveDomainRegistrationControlling {
         }
     }
 
-    static func configureDomain(
+    nonisolated static func configureDomain(
         _ domain: NSFileProviderDomain
     ) -> NSFileProviderDomain {
         domain.supportsSyncingTrash = false
@@ -251,6 +251,28 @@ enum DesktopDriveFileProviderCallbackBridge {
                 completion(error)
             }
         }
+    }
+
+    /// File Provider 会在后台队列完成通知，回调不能继承设置页面的 MainActor 隔离。
+    nonisolated static func signalWritebackChanges(for mapping: DesktopDriveMapping) async throws {
+        guard let manager = NSFileProviderManager(for: DesktopDriveDomainController().domain(for: mapping)) else {
+            throw NSFileProviderError(.providerNotFound)
+        }
+        try await signalWritebackChanges(
+            root: { manager.signalEnumerator(for: .rootContainer, completionHandler: $0) },
+            workingSet: { manager.signalEnumerator(for: .workingSet, completionHandler: $0) },
+            resolveError: { manager.signalErrorResolved(NSFileProviderError(.cannotSynchronize), completionHandler: $0) }
+        )
+    }
+
+    nonisolated static func signalWritebackChanges(
+        root: @Sendable (@escaping DesktopDriveAsyncCallbackBridge.VoidCompletion) -> Void,
+        workingSet: @Sendable (@escaping DesktopDriveAsyncCallbackBridge.VoidCompletion) -> Void,
+        resolveError: @Sendable (@escaping DesktopDriveAsyncCallbackBridge.VoidCompletion) -> Void
+    ) async throws {
+        try await DesktopDriveAsyncCallbackBridge.void(root)
+        try await DesktopDriveAsyncCallbackBridge.void(workingSet)
+        try await DesktopDriveAsyncCallbackBridge.void(resolveError)
     }
 
     nonisolated static func disconnect(

@@ -2525,6 +2525,7 @@
 "desktopDrive.writeback.allow" = "允许添加和修改 NAS 文件";
 "desktopDrive.writeback.pendingTitle" = "待处理修改";
 "desktopDrive.writeback.refresh" = "刷新";
+"desktopDrive.writeback.refreshError" = "设置已保存，但 Finder 暂未刷新。请稍后重新打开此挂载。";
 "desktopDrive.writeback.empty" = "这里会显示需要你处理的文件。";
 "desktopDrive.writeback.sheetTitle" = "读写设置";
 "desktopDrive.writeback.emptyTitle" = "没有待处理修改";
@@ -3899,7 +3900,10 @@
 "appSettings.showNAS" = "显示 NAS 设置入口";
 "nasSettings.deviceScope" = "管理设备：%@";
 "updates.notes.title" = "更新内容";
-"updates.notes.empty" = "可前往版本发布页面查看本次更新的详细内容。";
+"updates.notes.empty" = "此版本暂未提供更新说明。";
+"updates.notes.loading" = "正在获取更新内容…";
+"updates.notes.failed" = "暂时无法获取更新内容，请重试。";
+"updates.notes.retry" = "重新获取";
 "chat.preview.open" = "查看聊天记录";
 "chat.preview.attachment" = "附件消息";
 "updates.currentVersion" = "当前版本";

@@ -58,7 +58,7 @@ if jq -e --arg tag "$feed_tag" 'flatten | any(.tag_name == $tag)' "$release_tmp/
     sign_update --verify "$release_tmp/previous/appcast.xml"
     previous_feed="$release_tmp/previous/appcast.xml"
 fi
-feed_arguments=(--tag "$GITHUB_REF_NAME" --output "$release_tmp/appcast.xml")
+feed_arguments=(--tag "$GITHUB_REF_NAME" --release-notes docs/releases/MACOS_RELEASE_NOTES.md --output "$release_tmp/appcast.xml")
 archives=()
 for arch in arm64 x86_64; do
     app="apple/Apps/DsmMac/dist/$arch/LanStash.app"

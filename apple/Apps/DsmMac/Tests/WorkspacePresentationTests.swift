@@ -649,7 +649,10 @@ final class WorkspacePresentationTests: XCTestCase {
         for language in [AppLanguageSelection.simplifiedChinese, .english] {
             AppLanguageStore.shared.selection = language
             for scheme in [ColorScheme.light, .dark] {
-                let driver = AppUpdateUserDriver(presentsWindows: false)
+                let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+                    let data = Data(#"{"tag_name":"macos/v0.3.0","body":"","draft":false,"prerelease":false,"assets":[]}"#.utf8)
+                    return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                })
                 let host = NSHostingView(rootView: AppUpdateView(driver: driver)
                     .environment(MacAppearanceStore())
                     .preferredColorScheme(scheme))
@@ -778,6 +781,39 @@ final class WorkspacePresentationTests: XCTestCase {
                 try await settle(host)
                 XCTAssertEqual(closes, 1, "\(mode.rawValue), usesEscape=\(usesEscape)")
                 XCTAssertFalse(window.isVisible, "\(mode.rawValue), usesEscape=\(usesEscape)")
+            }
+        }
+    }
+
+    func test更新弹窗内日志加载结果双语主题() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["loading", "loaded", "empty", "failed"] {
+                    let driver = AppUpdateUserDriver(presentsWindows: false, fetchNotes: { request in
+                        if state == "loading" {
+                            try await Task.sleep(for: .seconds(30))
+                            throw CancellationError()
+                        }
+                        if state == "failed" { throw URLError(.notConnectedToInternet) }
+                        let body = state == "empty" ? "" : "## macOS 0.3.0\n\n- 修复挂载设置闪退\n- 完善文件操作\n\n## English — macOS 0.3.0\n\n- Fixed a crash in mount settings\n- Improved file operations"
+                        let data = try JSONSerialization.data(withJSONObject: ["tag_name": "macos/v0.3.0", "body": body,
+                            "draft": false, "prerelease": false, "assets": []])
+                        return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                    })
+                    driver.showAvailable(version: "0.3.0", notes: nil) { _ in XCTFail("读取说明不能安装更新") }
+                    let host = NSHostingView(rootView: AppUpdateView(driver: driver)
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 500, height: 460))
+                    defer { driver.dismissUpdateInstallation(); window.contentView = nil; window.close() }
+                    try await settle(host)
+                    XCTAssertEqual(driver.isLoadingNotes, state == "loading")
+                    XCTAssertEqual(driver.notesLoadFailed, state == "failed")
+                    XCTAssertEqual(driver.primaryKey, "updates.download")
+                    try snapshot(host, name: "update-inline-\(state)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                }
             }
         }
     }
