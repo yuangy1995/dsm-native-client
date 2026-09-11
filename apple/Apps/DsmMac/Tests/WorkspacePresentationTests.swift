@@ -812,6 +812,30 @@ final class WorkspacePresentationTests: XCTestCase {
                     XCTAssertEqual(driver.isLoadingNotes, state == "loading")
                     XCTAssertEqual(driver.notesLoadFailed, state == "failed")
                     XCTAssertEqual(driver.primaryKey, "updates.download")
+                    if state == "loaded" {
+                        let rendered = nativeViews(host, of: NSTextField.self).map(\.stringValue).joined(separator: " ")
+                        if language == .simplifiedChinese {
+                            XCTAssertFalse(rendered.contains("English"))
+                            XCTAssertFalse(rendered.contains("Fixed a crash"))
+                            XCTAssertTrue(rendered.contains("修复挂载设置闪退"))
+                        } else {
+                            XCTAssertFalse(rendered.contains("修复挂载设置闪退"))
+                            XCTAssertTrue(rendered.contains("Fixed a crash"))
+                        }
+                        driver.showDownloadInitiated {}
+                        driver.showDownloadDidReceiveExpectedContentLength(100)
+                        driver.showDownloadDidReceiveData(ofLength: 9)
+                        try await settle(host)
+                        let downloading = nativeViews(host, of: NSTextField.self).map(\.stringValue).joined(separator: " ")
+                        if language == .simplifiedChinese {
+                            XCTAssertFalse(downloading.contains("English"))
+                            XCTAssertFalse(downloading.contains("Fixed a crash"))
+                            XCTAssertTrue(downloading.contains("修复挂载设置闪退"))
+                        } else {
+                            XCTAssertFalse(downloading.contains("修复挂载设置闪退"))
+                            XCTAssertTrue(downloading.contains("Fixed a crash"))
+                        }
+                    }
                     try snapshot(host, name: "update-inline-\(state)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
                 }
             }

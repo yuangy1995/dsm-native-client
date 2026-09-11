@@ -342,15 +342,31 @@ final class AppUpdateUserDriver: NSObject, ObservableObject, SPUUserDriver, NSWi
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&nbsp;", with: " ")
             .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&mdash;", with: "—")
+            .replacingOccurrences(of: "&ndash;", with: "–")
+            .replacingOccurrences(of: "&#x2014;", with: "—")
+            .replacingOccurrences(of: "&#x2013;", with: "–")
+            .replacingOccurrences(of: "&#8212;", with: "—")
+            .replacingOccurrences(of: "&#8211;", with: "–")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     nonisolated static func readableNotes(_ notes: String, prefersEnglish: Bool) -> String {
         var text = notes
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
         // 发布文件使用中英两段；按当前 App 语言取对应正文，不翻译或修改发布内容。
-        if let marker = text.range(of: #"(?im)^(?:#{1,6}\s+)?English\s*[—–-][^\n]*\n?"#, options: .regularExpression) {
+        let markerPattern = #"(?im)(?:^|\n)[\t ]*(?:#{1,6}[\t ]*)?English\b[^\n]{0,80}\bmacOS\b[^\n]*(?:\n|$)"#
+        if let marker = text.range(of: markerPattern, options: .regularExpression) {
             let selected = prefersEnglish ? String(text[marker.upperBound...]) : String(text[..<marker.lowerBound])
-            if !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { text = selected }
+            if !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                text = selected
+            }
+        } else if let marker = text.range(of: #"(?i)(?:^|\n)[\t ]*English[\t ]*(?:&mdash;|&ndash;|&#x2014;|&#8212;)[^\n]*(?:\n|$)"#, options: .regularExpression) {
+            let selected = prefersEnglish ? String(text[marker.upperBound...]) : String(text[..<marker.lowerBound])
+            if !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                text = selected
+            }
         }
         return text
             .replacingOccurrences(of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)

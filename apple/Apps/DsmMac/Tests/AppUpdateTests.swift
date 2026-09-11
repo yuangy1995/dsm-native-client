@@ -168,6 +168,24 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(AppUpdateUserDriver.readableNotes(embedded, prefersEnglish: true), "• Fixed crashes")
     }
 
+    func test真实更新源HTML和换行格式下中文下载阶段不显示英文() {
+        let html = "<h2>macOS 1.0.9</h2>\r\n<p>• 修复挂载设置闪退。</p>\r\n<h2>English &mdash; macOS 1.0.9</h2>\r\n<p>• Fixed the mount settings crash.</p>"
+        let plain = AppUpdateUserDriver.plainNotes(html)
+        let chinese = AppUpdateUserDriver.readableNotes(plain, prefersEnglish: false)
+        let english = AppUpdateUserDriver.readableNotes(plain, prefersEnglish: true)
+        XCTAssertTrue(chinese.contains("修复挂载设置闪退"))
+        XCTAssertFalse(chinese.contains("English"))
+        XCTAssertFalse(chinese.contains("Fixed the mount settings crash"))
+        XCTAssertFalse(english.contains("English"))
+        XCTAssertTrue(english.contains("Fixed the mount settings crash"))
+    }
+
+    func test标题使用其他连接符时仍按语言切分日志() {
+        let notes = "macOS 1.0.9\n• 中文修改\nEnglish - macOS 1.0.9\n• English change"
+        XCTAssertEqual(AppUpdateUserDriver.readableNotes(notes, prefersEnglish: false), "macOS 1.0.9\n• 中文修改")
+        XCTAssertEqual(AppUpdateUserDriver.readableNotes(notes, prefersEnglish: true), "• English change")
+    }
+
     func test预发布说明不能混入正式更新且草稿不展示() throws {
         let preview = try JSONSerialization.data(withJSONObject: ["tag_name": "macos-validation/v1.0.8",
             "body": "Preview", "draft": false, "prerelease": true, "assets": []])
