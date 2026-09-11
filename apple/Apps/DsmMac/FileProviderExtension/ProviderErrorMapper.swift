@@ -4,6 +4,22 @@ import Foundation
 import DsmLocalization
 
 enum ProviderErrorMapper {
+    static func mapDeletion(_ error: Error, itemIdentifier: NSFileProviderItemIdentifier) -> Error {
+        guard let writeback = error as? DesktopDriveWritebackError else {
+            return map(error, itemIdentifier: itemIdentifier)
+        }
+        let key: String
+        switch writeback {
+        case .disabled: key = "desktopDrive.delete.disabled"
+        case .invalidItem: key = "desktopDrive.delete.invalid"
+        case .conflict: key = "desktopDrive.delete.conflict"
+        case .outcomeUnknown: key = "desktopDrive.delete.unknown"
+        default: return map(error, itemIdentifier: itemIdentifier)
+        }
+        return NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.cannotSynchronize.rawValue,
+                       userInfo: [NSLocalizedDescriptionKey: L10n.string(key)])
+    }
+
     static func map(
         _ error: Error,
         itemIdentifier: NSFileProviderItemIdentifier

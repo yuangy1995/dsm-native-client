@@ -143,16 +143,23 @@ final class WorkspacePresentationTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("WritebackPresentation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = DesktopDriveWritebackStore(directory: directory)
-        for state in ["empty", "conflict", "submitted", "error", "multiple", "readOnly"] {
-            let mapping = DesktopDriveMapping(profileID: UUID(), displayName: "My NAS", scope: .folder(path: "/share/test"))
-            try store.setEnabled(!["empty", "error", "readOnly"].contains(state), mappingID: mapping.id)
+        for state in ["empty", "conflict", "submitted", "error", "multiple", "readOnly", "allShares", "allSharesReadOnly",
+                      "deleteConflict", "deleteSubmitted", "allSharesDelete"] {
+            let scope: DesktopDriveScope = state.hasPrefix("allShares") ? .allShares : .folder(path: "/share/test")
+            let mapping = DesktopDriveMapping(profileID: UUID(), displayName: "My NAS", scope: scope)
+            try store.setEnabled(!["empty", "error", "readOnly", "allSharesReadOnly"].contains(state), mappingID: mapping.id)
+            if state.hasPrefix("delete") || state == "allSharesDelete" {
+                try store.setDeletionEnabled(true, mappingID: mapping.id)
+            }
             if state == "error" {
                 let path = directory.appendingPathComponent("desktop-drive-writeback-v1").appendingPathComponent(mapping.id.uuidString).appendingPathComponent("broken.json")
                 try Data("invalid".utf8).write(to: path)
-            } else if state != "empty" {
+            } else if state != "empty", !state.hasPrefix("allShares") {
                 var record = DesktopDriveWritebackRecord(mappingID: mapping.id, itemIdentifier: "synthetic", sourcePath: nil,
-                    destinationPath: "/share/test/旅行计划.md", isDirectory: false, contentHash: String(repeating: "0", count: 64), contentSize: 0, baseContentVersion: nil)
-                record.phase = state == "conflict" ? .conflict : .submitted
+                    destinationPath: "/share/test/旅行计划.md", isDirectory: false,
+                    contentHash: state.hasPrefix("delete") ? nil : String(repeating: "0", count: 64), contentSize: 0, baseContentVersion: nil,
+                    operation: state.hasPrefix("delete") ? .delete : .save)
+                record.phase = state == "conflict" || state == "deleteConflict" ? .conflict : .submitted
                 try store.save(record)
                 if state == "multiple" {
                     var second = DesktopDriveWritebackRecord(mappingID: mapping.id, itemIdentifier: "second", sourcePath: nil,

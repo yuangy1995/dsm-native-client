@@ -13,6 +13,7 @@ public enum DesktopDriveWritebackAvailability {
 }
 
 public struct DesktopDriveWritebackRecord: Codable, Equatable, Identifiable, Sendable {
+    public enum Operation: String, Codable, Sendable { case save, delete }
     public enum Phase: String, Codable, Sendable {
         case prepared, submitted, conflict, verified, keptLocally
         public var isPending: Bool { self != .verified && self != .keptLocally }
@@ -31,9 +32,15 @@ public struct DesktopDriveWritebackRecord: Codable, Equatable, Identifiable, Sen
     public var step: Int
     public var allowOverwrite: Bool
     public var verifiedItem: FileItem?
+    /// 旧记录没有此字段，仍按保存处理；删除收据不能被保存流程接管。
+    public let operation: Operation?
+    public let recursive: Bool?
+    public var restorationRequested: Bool?
+    public var isDeletion: Bool { operation == .delete }
 
     public init(mappingID: UUID, itemIdentifier: String, sourcePath: String?, destinationPath: String,
-                isDirectory: Bool, contentHash: String?, contentSize: Int64?, baseContentVersion: Data?) {
+                isDirectory: Bool, contentHash: String?, contentSize: Int64?, baseContentVersion: Data?,
+                operation: Operation = .save, recursive: Bool = false) {
         self.mappingID = mappingID
         self.itemIdentifier = itemIdentifier
         self.sourcePath = sourcePath
@@ -47,10 +54,14 @@ public struct DesktopDriveWritebackRecord: Codable, Equatable, Identifiable, Sen
         self.step = 0
         self.allowOverwrite = false
         self.verifiedItem = nil
+        self.operation = operation == .save ? nil : operation
+        self.recursive = operation == .delete ? recursive : nil
+        self.restorationRequested = nil
         let key = [mappingID.uuidString, itemIdentifier, sourcePath ?? "", destinationPath,
                    String(isDirectory), contentHash ?? "", baseContentVersion?.base64EncodedString() ?? ""]
             .joined(separator: "\u{0}")
-        self.id = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+        let operationKey = operation == .delete ? "delete\u{0}\(recursive)\u{0}" + key : key
+        self.id = SHA256.hash(data: Data(operationKey.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -96,8 +107,31 @@ public struct DesktopDriveWritebackStore: Sendable {
 
     /// 调用方须持有该挂载的 lease。
     public func setEnabled(_ enabled: Bool, mappingID: UUID) throws {
-        if !enabled { try requireNoPendingChanges(mappingID: mappingID) }
+        if !enabled {
+            try requireNoPendingChanges(mappingID: mappingID)
+            try setDeletionEnabled(false, mappingID: mappingID)
+        }
         try JSONEncoder().encode(enabled).write(to: root(mappingID).appendingPathComponent("enabled.json"), options: .atomic)
+    }
+
+    public func isDeletionEnabled(mappingID: UUID) throws -> Bool {
+        guard try isEnabled(mappingID: mappingID) else { return false }
+        let url = try root(mappingID).appendingPathComponent("deletion-enabled.state")
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        return try JSONDecoder().decode(Bool.self, from: Data(contentsOf: url))
+    }
+
+    /// 删除授权独立保存；旧版的编辑开关不能自动授予删除权限。调用方须持有 lease。
+    public func setDeletionEnabled(_ enabled: Bool, mappingID: UUID) throws {
+        if enabled {
+            guard try isEnabled(mappingID: mappingID) else { throw DesktopDriveWritebackError.disabled }
+        } else {
+            guard try !pendingRecords(mappingID: mappingID).contains(where: \.isDeletion) else {
+                throw DesktopDriveWritebackError.pendingChanges
+            }
+        }
+        // 使用独立状态文件，不让旧版将授权开关误读为待处理操作。
+        try JSONEncoder().encode(enabled).write(to: root(mappingID).appendingPathComponent("deletion-enabled.state"), options: .atomic)
     }
 
     public func records(mappingID: UUID) throws -> [DesktopDriveWritebackRecord] {
@@ -131,7 +165,16 @@ public struct DesktopDriveWritebackStore: Sendable {
     public func prepare(_ requested: DesktopDriveWritebackRecord, contents: URL?) throws -> DesktopDriveWritebackRecord {
         let records = try records(mappingID: requested.mappingID)
         if let existing = records.first(where: { $0.id == requested.id }) { return existing }
-        guard !records.contains(where: { $0.itemIdentifier == requested.itemIdentifier && $0.phase.isPending }) else {
+        guard !records.contains(where: { existing in
+            guard existing.phase.isPending else { return false }
+            if existing.itemIdentifier == requested.itemIdentifier { return true }
+            guard existing.isDeletion || requested.isDeletion else { return false }
+            return [existing.sourcePath, existing.destinationPath].compactMap { $0 }.contains { path in
+                [requested.sourcePath, requested.destinationPath].compactMap { $0 }.contains {
+                    DesktopDrivePath.isAncestorOrSame(path, of: $0) || DesktopDrivePath.isAncestorOrSame($0, of: path)
+                }
+            }
+        }) else {
             throw DesktopDriveWritebackError.pendingChanges
         }
         if let contents {
@@ -180,10 +223,19 @@ public struct DesktopDriveWritebackStore: Sendable {
         try removeCompletedContent(record)
     }
 
+    public func completeDeletion(_ record: DesktopDriveWritebackRecord) throws {
+        guard record.isDeletion else { throw DesktopDriveWritebackError.invalidItem }
+        var completed = record
+        completed.phase = .verified
+        completed.verifiedItem = nil
+        try save(completed)
+    }
+
     /// 界面先完成用户选择的本机副本保存，再停止此操作；绝不把它标成 NAS 保存成功。
     public func keepLocally(_ record: DesktopDriveWritebackRecord) throws {
         var local = record
         local.phase = .keptLocally
+        local.restorationRequested = nil
         try save(local)
         try removeCompletedContent(record)
     }

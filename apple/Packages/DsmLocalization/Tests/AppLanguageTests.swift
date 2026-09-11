@@ -100,6 +100,11 @@ import Testing
         for key in [
             "desktopDrive.title", "desktopDrive.add", "desktopDrive.creator.title",
             "desktopDrive.description", "desktopDrive.menu.tooltip",
+            "desktopDrive.creator.name", "desktopDrive.writeback.title",
+            "desktopDrive.writeback.allow", "desktopDrive.writeback.confirmMessage",
+            "desktopDrive.delete.allow", "desktopDrive.delete.confirmMessage",
+            "desktopDrive.delete.retry", "desktopDrive.delete.summaryPaused",
+            "desktopDrive.delete.summaryUnknown", "desktopDrive.delete.stopMessage",
             "desktopDrive.error.connectionSetup", "desktopDrive.error.sessionSetup",
             "desktopDrive.error.nasAccess", "communityReport.group.desktopDrive",
         ] {
@@ -111,5 +116,12 @@ import Testing
         #expect(store.string("desktopDrive.title") == (
             language == .english ? "Local disk mounts" : "本地磁盘挂载"
         ))
+        #expect(store.string("desktopDrive.creator.name") == (
+            language == .english ? "Mount name" : "挂载名称"
+        ))
+        #expect(store.string("desktopDrive.writeback.title") == (
+            language == .english ? "Read & write" : "读写设置"
+        ))
+        #expect(store.string("desktopDrive.delete.retryMessage", "synthetic.txt").contains("synthetic.txt"))
     }
 }

@@ -1,15 +1,15 @@
-## macOS 1.0.7
+## macOS 1.0.8
 
-- 新增本地挂载文件编辑与上传，可按文件夹开启读写。
-- 完善文件变化提示，以及上传失败后本机修改的保留与恢复。
-- 优化文件编辑界面，改善中英文和浅深色显示。
+- 新增 Finder 文件和文件夹删除，可单独开启。
+- 完善全部共享文件夹挂载，支持复制文件和文件夹到 NAS。
+- 简化挂载读写设置，改善文件操作的稳定性。
 
-已有挂载保持只读，需要手动开启编辑。建议先用测试文件确认保存行为。
+删除默认关闭，建议先用测试文件确认操作。
 
-## English — macOS 1.0.7
+## English — macOS 1.0.8
 
-- Added editing and uploading for mounted folders, with write access enabled per folder.
-- Improved file-change notices and recovery of local edits when uploads fail.
-- Refined the file-editing interface in English and Chinese, with improved light and dark appearances.
+- Added deletion of mounted files and folders in Finder, with separate permission.
+- Improved whole-NAS mounts with copying files and folders to your NAS.
+- Simplified mount settings and improved file-operation reliability.
 
-Existing mounts remain read-only until you enable editing. Try it with disposable files first.
+Deletion is off by default. Try it with disposable files first.

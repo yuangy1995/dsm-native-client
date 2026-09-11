@@ -3922,6 +3922,23 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertFalse(result.requiresRefresh)
     }
 
+    func test挂载非递归删除明确传递false且原有删除仍传递true() async throws {
+        for recursive in [false, true] {
+            let transport = MockHTTPTransport(responses: [
+                response(#"{"success":true,"data":{"taskid":"delete-task"}}"#),
+                response(#"{"success":true,"data":{"finished":true}}"#),
+                response(#"{"success":true,"data":{"files":[]}}"#),
+            ])
+            let repository = try makeDeleteRepository(transport: transport)
+            let result: MutationResult
+            if recursive { result = try await repository.deleteResult(paths: ["/home/empty"], progress: { _, _ in }) }
+            else { result = try await repository.deleteResult(paths: ["/home/empty"], recursive: false, progress: { _, _ in }) }
+            XCTAssertEqual(result.status, .confirmedSuccess)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requestParameter("recursive", in: try XCTUnwrap(requests.first)), recursive ? "true" : "false")
+        }
+    }
+
     func test删除被文件权限禁止时保留明确拒绝而不是未知错误() async throws {
         let repository = try makeDeleteRepository(transport: MockHTTPTransport(responses: [
             response(#"{"success":false,"error":{"code":407}}"#)

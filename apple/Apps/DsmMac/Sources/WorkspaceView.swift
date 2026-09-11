@@ -5214,6 +5214,9 @@ private struct SettingsView: View {
                             Task { await desktopDriveManager.reveal(mapping) }
                         }
                         .disabled(isRuntimeRecoveryRequired(mapping))
+                        Button(L10n.string("desktopDrive.writeback.title")) {
+                            mappingWritebackSettings = mapping
+                        }
                         Menu(L10n.string("desktopDrive.more")) {
                             if isRuntimeRecoveryRequired(mapping) {
                                 Button(
@@ -5311,9 +5314,6 @@ private struct SettingsView: View {
                                 role: .destructive
                             ) {
                                 mappingToRemove = mapping
-                            }
-                            Button(L10n.string("desktopDrive.writeback.title")) {
-                                mappingWritebackSettings = mapping
                             }
                         }
                     }

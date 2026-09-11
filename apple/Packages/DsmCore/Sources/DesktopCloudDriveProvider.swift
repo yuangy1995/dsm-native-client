@@ -85,6 +85,7 @@ public actor DesktopDriveConfigurationStore {
         var connections: [UUID: DesktopDriveProviderConnection] = [:]
         var mappings: [UUID: DesktopDriveMapping] = [:]
         var itemPaths: [UUID: [String: String]]?
+        var retiredItemIdentifiers: [UUID: Set<String>]?
         var changeJournals: [UUID: [String: DesktopDriveChangeJournal]]?
         var runtimes: [UUID: DesktopDriveMappingRuntime]?
         var runtimeRecoveryMappingIDs: Set<UUID>?
@@ -96,6 +97,7 @@ public actor DesktopDriveConfigurationStore {
             case connections
             case mappings
             case itemPaths
+            case retiredItemIdentifiers
             case changeJournals
             case runtimes
             case runtimeRecoveryMappingIDs
@@ -120,6 +122,7 @@ public actor DesktopDriveConfigurationStore {
                 [UUID: [String: String]].self,
                 forKey: .itemPaths
             )
+            retiredItemIdentifiers = try container.decodeIfPresent([UUID: Set<String>].self, forKey: .retiredItemIdentifiers)
             // 日志损坏时不能让整个映射配置不可读；丢弃该可重建缓存并让旧锚点过期。
             do {
                 changeJournals = try container.decodeIfPresent(
@@ -186,6 +189,7 @@ public actor DesktopDriveConfigurationStore {
             try container.encode(connections, forKey: .connections)
             try container.encode(mappings, forKey: .mappings)
             try container.encodeIfPresent(itemPaths, forKey: .itemPaths)
+            try container.encodeIfPresent(retiredItemIdentifiers, forKey: .retiredItemIdentifiers)
             try container.encodeIfPresent(changeJournals, forKey: .changeJournals)
             try container.encodeIfPresent(
                 runtimes.map(RecoverableRuntimeDictionary.init(values:)),
@@ -359,6 +363,7 @@ public actor DesktopDriveConfigurationStore {
         try updateSnapshot { snapshot in
             snapshot.mappings.removeValue(forKey: id)
             snapshot.itemPaths?[id] = nil
+            snapshot.retiredItemIdentifiers?[id] = nil
             snapshot.changeJournals?[id] = nil
             snapshot.runtimes?[id] = nil
             snapshot.runtimeRecoveryMappingIDs?.remove(id)
@@ -378,6 +383,7 @@ public actor DesktopDriveConfigurationStore {
             }
             for mappingID in removedIDs {
                 snapshot.itemPaths?[mappingID] = nil
+                snapshot.retiredItemIdentifiers?[mappingID] = nil
                 snapshot.changeJournals?[mappingID] = nil
                 snapshot.runtimes?[mappingID] = nil
                 snapshot.runtimeRecoveryMappingIDs?.remove(mappingID)
@@ -429,7 +435,9 @@ public actor DesktopDriveConfigurationStore {
                     continue
                 }
                 // 原路径在移动后被重新使用时，不能抢占已经随旧文件移动的标识。
-                let identifier = index[preferredIdentifier] == nil ? preferredIdentifier : "item-" + UUID().uuidString
+                let canReuse = index[preferredIdentifier] == nil
+                    && snapshot.retiredItemIdentifiers?[mappingID]?.contains(preferredIdentifier) != true
+                let identifier = canReuse ? preferredIdentifier : "item-" + UUID().uuidString
                 index[identifier] = path
             }
             if snapshot.itemPaths == nil {
@@ -477,6 +485,29 @@ public actor DesktopDriveConfigurationStore {
         }
     }
 
+    /// 仅在确认远端删除后调用；保留轻量标识墓碑，旧删除回调不能命中同名新文件。
+    public func removeDeletedItemPaths(mappingID: UUID, remotePath: String, maximumEntryCount: Int) throws {
+        try updateSnapshot { snapshot in
+            let removed = (snapshot.itemPaths?[mappingID] ?? [:]).filter {
+                DesktopDrivePath.isAncestorOrSame(remotePath, of: $0.value)
+            }
+            if snapshot.retiredItemIdentifiers == nil { snapshot.retiredItemIdentifiers = [:] }
+            snapshot.retiredItemIdentifiers?[mappingID, default: []].formUnion(removed.keys)
+            for identifier in removed.keys { snapshot.itemPaths?[mappingID]?[identifier] = nil }
+            for (container, var journal) in snapshot.changeJournals?[mappingID] ?? [:] {
+                journal.apply(snapshot: journal.snapshot.filter {
+                    !DesktopDrivePath.isAncestorOrSame(remotePath, of: $0.value.path)
+                }, maximumEntryCount: maximumEntryCount)
+                snapshot.changeJournals?[mappingID]?[container] = journal
+            }
+            if var runtime = snapshot.runtimes?[mappingID] {
+                runtime.pinnedPaths.removeAll { DesktopDrivePath.isAncestorOrSame(remotePath, of: $0) }
+                runtime.cacheEntries = runtime.cacheEntries.filter { !DesktopDrivePath.isAncestorOrSame(remotePath, of: $0.key) }
+                snapshot.runtimes?[mappingID] = runtime
+            }
+        }
+    }
+
     /// 返回扫描开始时需携带到提交阶段的当前 journal revision。
     ///
     /// `nil` 表示尚未建立可重放 journal；调用方提交时仍必须带回 `nil`，以便
@@ -517,6 +548,9 @@ public actor DesktopDriveConfigurationStore {
                 throw CocoaError(.fileNoSuchFile)
             }
 
+            guard !currentItems.keys.contains(where: {
+                snapshot.retiredItemIdentifiers?[mappingID]?.contains($0) == true
+            }) else { throw DesktopDriveConfigurationStoreError.staleChangeJournal }
             let existing = snapshot.changeJournals?[mappingID]?[containerIdentifier]
             let currentRevision: DesktopDriveChangeJournalRevision?
             if let existing, existing.isValid {

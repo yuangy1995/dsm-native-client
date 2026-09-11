@@ -10,10 +10,12 @@ struct DesktopDriveWritebackSettingsSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var enabled = false
+    @State private var deletionEnabled = false
     @State private var records: [DesktopDriveWritebackRecord] = []
     @State private var message: String?
     @State private var hasLoaded = false
     @State private var confirmingEnable = false
+    @State private var confirmingDeletion = false
     @State private var retrying: DesktopDriveWritebackRecord?
     @State private var stopping: DesktopDriveWritebackRecord?
     private let store: DesktopDriveWritebackStore
@@ -26,11 +28,6 @@ struct DesktopDriveWritebackSettingsSheet: View {
         self.writebackAvailable = writebackAvailable
     }
 
-    private var canEnable: Bool {
-        if case .folder = mapping.scope { return writebackAvailable }
-        return false
-    }
-
     private var palette: MacAppearancePalette {
         .init(scheme: colorScheme, increasedContrast: contrast == .increased)
     }
@@ -40,23 +37,34 @@ struct DesktopDriveWritebackSettingsSheet: View {
             header
             Divider().overlay(palette.separator)
             VStack(alignment: .leading, spacing: 16) {
-                if canEnable {
-                    HStack(spacing: 10) {
-                        Image(systemName: "pencil.line").foregroundStyle(.secondary).accessibilityHidden(true)
-                        Text(L10n.string("desktopDrive.writeback.allow")).fontWeight(.medium)
-                        Spacer(minLength: 12)
-                        Toggle(L10n.string("desktopDrive.writeback.allow"), isOn: Binding(
-                            get: { enabled },
-                            set: { if $0 { confirmingEnable = true } else { changeEnabled(false) } }
-                        ))
-                        .toggleStyle(.switch).labelsHidden()
+                if writebackAvailable {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "pencil.line").foregroundStyle(.secondary).accessibilityHidden(true)
+                            Text(L10n.string("desktopDrive.writeback.allow")).fontWeight(.medium)
+                            Spacer(minLength: 12)
+                            Toggle(L10n.string("desktopDrive.writeback.allow"), isOn: Binding(
+                                get: { enabled },
+                                set: { if $0 { confirmingEnable = true } else { changeEnabled(false) } }
+                            ))
+                            .toggleStyle(.switch).labelsHidden()
+                        }
+                        Divider()
+                        HStack(spacing: 10) {
+                            Image(systemName: "trash").foregroundStyle(.secondary).accessibilityHidden(true)
+                            Text(L10n.string("desktopDrive.delete.allow")).fontWeight(.medium)
+                            Spacer(minLength: 12)
+                            Toggle(L10n.string("desktopDrive.delete.allow"), isOn: Binding(
+                                get: { deletionEnabled },
+                                set: { if $0 { confirmingDeletion = true } else { changeDeletionEnabled(false) } }
+                            ))
+                            .toggleStyle(.switch).labelsHidden()
+                            .disabled(!enabled || !hasLoaded)
+                        }
                     }
                     .padding(12)
                     .background(palette.card, in: RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(palette.separator, lineWidth: 0.5))
-                } else if case .allShares = mapping.scope {
-                    Label(L10n.string("desktopDrive.writeback.folderOnly"), systemImage: "info.circle")
-                        .font(.callout).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 7) {
                     Text(L10n.string("desktopDrive.writeback.pendingTitle"))
@@ -93,15 +101,24 @@ struct DesktopDriveWritebackSettingsSheet: View {
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
             Button(L10n.string("desktopDrive.writeback.allow")) { changeEnabled(true) }
         } message: { Text(L10n.string("desktopDrive.writeback.confirmMessage")) }
-        .alert(L10n.string("desktopDrive.writeback.retryTitle"), isPresented: Binding(
+        .alert(L10n.string("desktopDrive.delete.confirmTitle"), isPresented: $confirmingDeletion) {
+            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
+            Button(L10n.string("desktopDrive.delete.allow"), role: .destructive) { changeDeletionEnabled(true) }
+        } message: { Text(L10n.string("desktopDrive.delete.confirmMessage")) }
+        .alert(L10n.string(retrying?.isDeletion == true ? "desktopDrive.delete.retryTitle" : "desktopDrive.writeback.retryTitle"), isPresented: Binding(
             get: { retrying != nil }, set: { if !$0 { retrying = nil } }
         )) {
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { retrying = nil }
-            Button(L10n.string("desktopDrive.writeback.retryConfirm")) {
+            Button(L10n.string(retrying?.isDeletion == true ? "desktopDrive.delete.retry" : "desktopDrive.writeback.retryConfirm"),
+                   role: retrying?.isDeletion == true ? .destructive : nil) {
                 if let record = retrying { retry(record) }
                 retrying = nil
             }
-        } message: { Text(L10n.string("desktopDrive.writeback.retryMessage")) }
+        } message: {
+            if let retrying, retrying.isDeletion {
+                Text(L10n.string("desktopDrive.delete.retryMessage", (retrying.destinationPath as NSString).lastPathComponent))
+            } else { Text(L10n.string("desktopDrive.writeback.retryMessage")) }
+        }
         .alert(L10n.string("desktopDrive.writeback.stopTitle"), isPresented: Binding(
             get: { stopping != nil }, set: { if !$0 { stopping = nil } }
         )) {
@@ -110,7 +127,9 @@ struct DesktopDriveWritebackSettingsSheet: View {
                 if let record = stopping { Task { await stop(record) } }
                 stopping = nil
             }
-        } message: { Text(L10n.string("desktopDrive.writeback.stopMessage")) }
+        } message: {
+            Text(L10n.string(stopping?.isDeletion == true ? "desktopDrive.delete.stopMessage" : "desktopDrive.writeback.stopMessage"))
+        }
         .task { reload() }
     }
 
@@ -172,6 +191,12 @@ struct DesktopDriveWritebackSettingsSheet: View {
 
     private func recordCard(_ record: DesktopDriveWritebackRecord) -> some View {
         let isConflict = record.phase == .conflict
+        let statusKey = record.isDeletion
+            ? (isConflict ? "desktopDrive.delete.statusPaused" : "desktopDrive.delete.statusUnconfirmed")
+            : (isConflict ? "desktopDrive.writeback.statusChanged" : "desktopDrive.writeback.statusUnconfirmed")
+        let summaryKey = record.isDeletion
+            ? (isConflict ? "desktopDrive.delete.summaryPaused" : "desktopDrive.delete.summaryUnknown")
+            : (isConflict ? "desktopDrive.writeback.summaryConflict" : "desktopDrive.writeback.summaryUnknown")
         return HStack(alignment: .top, spacing: 12) {
             Image(systemName: record.isDirectory ? "folder.fill" : "doc.text")
                 .font(.system(size: 22, weight: .light)).foregroundStyle(palette.folderIcon)
@@ -183,7 +208,7 @@ struct DesktopDriveWritebackSettingsSheet: View {
                         .help((record.destinationPath as NSString).lastPathComponent)
                     Spacer(minLength: 4)
                     Label {
-                        Text(L10n.string(isConflict ? "desktopDrive.writeback.statusChanged" : "desktopDrive.writeback.statusUnconfirmed"))
+                        Text(L10n.string(statusKey))
                     } icon: {
                         Image(systemName: isConflict ? "exclamationmark.triangle.fill" : "clock")
                             .foregroundStyle(isConflict ? Color.orange : Color.secondary)
@@ -193,14 +218,16 @@ struct DesktopDriveWritebackSettingsSheet: View {
                     .background(isConflict ? Color.orange.opacity(0.10) : palette.card, in: Capsule())
                     .fixedSize()
                 }
-                Text(L10n.string(isConflict ? "desktopDrive.writeback.summaryConflict" : "desktopDrive.writeback.summaryUnknown"))
+                Text(L10n.string(summaryKey))
                     .font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true).lineSpacing(2)
                 HStack(spacing: 10) {
                     Spacer()
-                    Button(L10n.string("desktopDrive.writeback.retry")) { retrying = record }
+                    Button(L10n.string(record.isDeletion ? "desktopDrive.delete.retry" : "desktopDrive.writeback.retry"),
+                           role: record.isDeletion ? .destructive : nil) { retrying = record }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!enabled || !canEnable)
+                        .tint(record.isDeletion ? Color.red : Color.accentColor)
+                        .disabled(!enabled || !writebackAvailable || (record.isDeletion && !deletionEnabled))
                     Menu {
                         if record.contentHash != nil {
                             Button(L10n.string("desktopDrive.writeback.export")) { export(record) }
@@ -226,6 +253,7 @@ struct DesktopDriveWritebackSettingsSheet: View {
     private func reload() {
         do {
             enabled = try store.isEnabled(mappingID: mapping.id)
+            deletionEnabled = try store.isDeletionEnabled(mappingID: mapping.id)
             records = try store.pendingRecords(mappingID: mapping.id)
             message = nil
             hasLoaded = true
@@ -249,9 +277,13 @@ struct DesktopDriveWritebackSettingsSheet: View {
             guard var current = try store.pendingRecords(mappingID: mapping.id).first(where: { $0.id == record.id }) else {
                 reload(); return
             }
+            guard try store.isEnabled(mappingID: mapping.id),
+                  try (!current.isDeletion || store.isDeletionEnabled(mappingID: mapping.id)) else {
+                throw DesktopDriveWritebackError.disabled
+            }
             current.allowOverwrite = true
             if current.phase == .conflict { current.phase = .prepared }
-            // 已提交的记录仍需先回读；显式同意仅允许内容阶段在核对失败后重新保存。
+            // 已提交的记录仍先回读；保存和删除分别由各自的确认框授予一次重试。
             try store.save(current)
             signalChanges()
             reload()
@@ -265,6 +297,16 @@ struct DesktopDriveWritebackSettingsSheet: View {
         manager.signalErrorResolved(NSFileProviderError(.cannotSynchronize)) { error in
             if error != nil { Task { @MainActor in message = L10n.string("desktopDrive.writeback.loadError") } }
         }
+    }
+
+    private func changeDeletionEnabled(_ value: Bool) {
+        do {
+            let lease = try store.lock(mappingID: mapping.id)
+            defer { withExtendedLifetime(lease) {} }
+            try store.setDeletionEnabled(value, mappingID: mapping.id)
+            reload()
+            signalChanges()
+        } catch { message = L10n.string("desktopDrive.writeback.pending") }
     }
 
     private func export(_ record: DesktopDriveWritebackRecord) {
@@ -282,6 +324,7 @@ struct DesktopDriveWritebackSettingsSheet: View {
                 try store.keepLocally(current)
             }
             reload()
+            signalChanges()
         } catch { message = L10n.string("desktopDrive.writeback.loadError") }
     }
 

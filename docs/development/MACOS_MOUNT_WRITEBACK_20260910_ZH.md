@@ -1,5 +1,108 @@
 # macOS 现有挂载写回实施基线
 
+## 1.0.7 用户反馈后的修正（2026-09-11，准备发布 1.0.8）
+
+用户反馈使用“全部共享文件夹”挂载时找不到写入开关，并要求复制上传和 Finder 删除。
+用户随后明确要求发布新版本，按既有正式通道准备 1.0.8，主 App 与扩展构建号均为 18。
+签名、公证与更新源流程不变；功能先在专用分支完成云端门禁，整合为单一功能提交后再合入主分支发布。
+本地验证记录不替代云端、正式签名或真实 NAS 验收；删除仍需用户对每个挂载单独确认启用。
+先完成不改变本地保存格式的独立部分：
+
+- 将“读写设置”移到挂载卡片的“打开”旁边，不再藏在“管理”菜单底部。
+- 指定文件夹和全部共享挂载均提供同一个默认关闭的写入开关，支持复制文件／文件夹到共享目录、
+  新建及编辑保存；复用原有写回记录、互斥、权限检查、冲突处理和内容回读。
+- 全部共享挂载的最外层不可写；共享文件夹可以接收内容，但其本身不可改名、移动或删除。
+  不开放跨共享文件夹的移动，回收站和远程挂载仍不进入写入范围。
+- 名称字段改为“挂载名称”，不新增页面解释小字，遵循用户明确要求。
+  代码已向系统传入 `mapping.displayName`；用户的单个挂载仍显示 App 名称，与
+  [Apple 开发者论坛的同类报告](https://developer.apple.com/forums/thread/737617) 一致。
+  该报告不是 Apple 的接口保证；未找到经过核实的官方控制开关，未添加猜测的配置项或修改系统侧栏。
+
+### 删除切片（用户已明确同意保存结构调整）
+
+2026-09-11 用户确认后继续实施 Finder 删除。单一修改范围为 Mac 扩展、现有读写设置、
+Apple 写回存储及配置索引、现有删除方法的兼容重载、中英文资源和对应回归测试。
+不修改应用标识、签名权限、会话、依赖或最低系统版本。
+
+- 删除文件与普通文件夹均复用 File Station 删除接口，按系统请求保留是否删除子项的选项。
+  非递归请求会检查目录为空，实际请求也传 `recursive=false`，不能因检查后的目录变化而扩大删除范围。
+  递归请求会先等待本机子项修改提交，并检查子项权限和特殊挂载；有待上传的子文件时拒绝删除。
+- 删除权限单独保存为 `deletion-enabled.state`，默认关闭，必须在编辑已启用时另行确认。
+  关闭编辑同时撤销删除授权；有未确认删除时须先处理或停止，不能静默清空操作记录。
+- 现有操作记录增加可选的 `operation`、`recursive`、`restorationRequested` 字段。
+  缺少字段的旧记录仍是保存操作，保存收据标识不变；删除收据单独编码操作身份，不能被保存流程接管。
+- 本地配置增加可选的 `retiredItemIdentifiers`，只记录已删除项目的不可复用标识。
+  删除后同名文件获得新标识；旧目录快照不能重新引入被删除的标识，旧删除回调不会自动命中新文件。
+  旧配置无需迁移即可读取；这些记录不包含额外凭据或 NAS 文件正文。
+- 请求前持久保存删除意图并持有跨进程互斥；提交结果不明时只回读，确认目标已不存在后才完成。
+  再次提交需要用户检查并明确确认，一次确认只允许一次提交；权限不足、配置损坏、暂停或取消均不能越过门禁。
+- 成功后更新后代索引、固定路径、缓存记账和变化日志，并通知系统刷新工作集。
+  停止未知删除不会冒充成功；目标仍存在时请求系统恢复项目，已删除的目标不会被自动重建。
+  系统没有可用的同步写请求来源标识；停止后若再次收到同一项目删除，必须重新确认，不自动放行。
+- 设置仅新增一个原生删除开关；必要风险放在确认框，待处理卡片明确区分保存和删除，不添加常驻说明小字。
+
+回滚前必须停用删除并处理全部未确认操作，再退回旧版，不得丢弃未确认记录。
+旧版可能重写不认识的可选索引字段，因此不支持带未确认删除跨版本往返运行。
+已删除 NAS 数据的恢复取决于 NAS 自身备份／回收设置，降级 App 不会恢复文件。
+
+五端影响：HTTP 契约及公开 API 名称、版本没有改变；`recursive` 是既有请求参数。
+`DsmFileRepository` 增加向后兼容的重载，原有调用仍传 `true`，仅 Mac 挂载按系统请求传 `false` 或 `true`。
+iPhone、iPad 不启用挂载删除，现有调用语义不变；Windows、Android 代码与写入能力均不变。
+
+平台边界以 Apple 的
+[删除接口说明](https://developer.apple.com/documentation/fileprovider/nsfileproviderreplicatedextension/deleteitem(identifier:baseversion:options:request:completionhandler:))
+及本机 SDK 头文件为依据：非空目录拒绝、删除拒绝后恢复项目、未知结果暂缓及工作集刷新分别处理。
+`supportsSyncingTrash=false` 时废纸篓交互由系统决定，SDK 未保证具体行为；没有声称一定可从 Finder 废纸篓恢复。
+File Station 的时间／大小检查仍非原子条件删除，无法保证其他设备同时改动的内容不被删除；该风险必须保留在实机验收中。
+
+### 删除接入后的验证与独立复核
+
+- `swift test --package-path apple --jobs 4`：1050 项 XCTest，994 通过、56 项既有条件跳过、0 失败；
+  另有 12 项 Swift Testing 通过。跳过仍是 54 项需显式开启的合成界面、1 项元数据基准和 1 项需外部资料的 QuickConnect 检查。
+  系统曾打印通讯录后台服务连接警告，未导致断言失败，不将其日志或真实本机路径写入仓库。
+- `ProviderWritebackTests` 现有 47 项通过，其中保留全部原有保存／上传用例，新增删除主流程、独立授权、
+  响应丢失、系统刷新通知失败、未知结果、单次重试授权、版本信息丢失、停止与重新确认、同名重建、
+  权限不足、特殊挂载祖先、目录范围、待上传子项、取消／暂停、配置损坏及跨进程占用回归。
+- `DesktopDriveWritebackStoreTests` 8 项通过：新增旧操作记录兼容、授权默认值／撤销、父子操作互斥、
+  删除后的标识与变化日志恢复。NAS Repository 回归另验证非递归参数与原有调用语义。
+- `LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/test挂载写回设置双语主题状态绘制' bash tools/codex/run_macos_ui_checks.sh /tmp/lanstash-mount-delete.e5f1ZS/ui`：
+  11 种状态 × 中英文 × 浅深色，共 44 组绘制通过；检查了删除状态文案、红色危险操作按钮与两个开关的布局。
+  `ui-ux-pro-max` 仅用于原生控件、危险操作区分和状态检查，不添加常驻说明。
+- `xcodebuild -quiet -jobs 4 -workspace apple/DsmNativeClient.xcworkspace -scheme DsmMac -configuration Debug -destination 'generic/platform=macOS' -derivedDataPath /tmp/lanstash-mount-delete.e5f1ZS/build CODE_SIGNING_ALLOWED=NO build`：
+  最终完整未签名构建通过，核对主 App 与嵌入扩展均包含 arm64、x86_64。没有进行正式签名／系统注册验收。
+- `python3 tools/localization/check_localization.py`：4014 个 Apple 资源键，双语、参数、引用和硬编码扫描通过；
+  `python3 tools/codex/check_documentation.py --strict-release`、`git diff --check` 通过。
+- 同一执行者另行做集成与只读对抗复核：写入不会接管删除记录；系统重复回调不能扩大权限或删除范围；
+  祖先目录与递归子项均检查特殊挂载；停止不会自动重建 NAS 文件；已确认结果先保存，再发系统刷新通知。
+  通知失败重试只补发通知，不重发删除，也不再次清除同名新文件的索引。
+- `PENDING_USER_VALIDATION`：带正式签名及有效权限的版本，在用户指定的可丢弃目录中验收。
+  指定文件夹和全部共享挂载分别开启“允许添加和修改 NAS 文件”“允许删除 NAS 文件”；
+  核查 Finder 删除的确认交互、文件／空目录／有子项目录、尚未下载的项目、权限不足、断网恢复、扩展重启、
+  未确认删除时停止及重新确认，以及本机文件复制到挂载后的删除。
+  预期仅删除授权范围内的目标；根、共享目录本身和特殊挂载保持受保护；未确认结果不自动重发；
+  系统恢复或拒绝提示不能被误认为 NAS 已删除。需回传版本、操作顺序和脱敏错误，不提供正文、凭据或真实路径。
+- 源码未提交、未推送、未发布；没有对真实 NAS 发起写请求，没有安装或启动 App。
+  本次独立构建、日志和合成截图目录核验后移入废纸篓，可恢复；保留全部正式回归测试与此前已有的文件／缓存。
+
+### 复制上传独立部分的验证（删除接入前）
+
+- `swift test --package-path apple --jobs 4 --filter 'ProviderWritebackTests|ProviderRuntimeTests|DsmLocalizationTests'`：
+  50 项 XCTest 和 6 项语言测试通过，新增 5 项全部共享挂载回归；未降低原有断言。
+- `LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/test挂载写回设置双语主题状态绘制' bash tools/codex/run_macos_ui_checks.sh /tmp/lanstash-mount-followup.TciQel/ui`：
+  8 种状态 × 中英文 × 浅深色，共 32 组设置弹窗绘制通过。
+- `python3 tools/localization/check_localization.py`：3999 个 Apple 资源键检查通过，双语、参数、引用和硬编码扫描无问题。
+- `xcodebuild -quiet -jobs 4 -workspace apple/DsmNativeClient.xcworkspace -scheme DsmMac -configuration Debug -destination 'generic/platform=macOS' -derivedDataPath /tmp/lanstash-mount-followup.TciQel/build CODE_SIGNING_ALLOWED=NO build`：
+  完整未签名构建通过，主 App 和嵌入扩展均包含 arm64、x86_64；不是正式签名或 Finder 实机验收。
+- `python3 tools/codex/check_documentation.py --strict-release`、`git diff --check`：通过。
+- 独立集成及只读安全复核由同一执行者另行检查：开关仍默认关闭，写入仍重新读取本地配置，
+  权限与路径检查先于 NAS 提交；未新增删除入口、NAS API、保存结构或其他平台能力。
+  `ui-ux-pro-max` 仅用于现有原生控件的入口可见性与状态检查，没有引入新的样式系统或说明小字。
+- 本次构建、日志和合成截图目录在核验后移入系统废纸篓，可恢复；保留新增回归测试和项目已有测试／缓存。
+- `PENDING_USER_VALIDATION`：正式签名版本中，从“读写设置”主动开启后，使用可丢弃文件验证全部共享挂载内
+  的复制、文件夹复制、编辑、权限不足及断网恢复；最外层不能直接接收文件，共享文件夹本身不可改名／移动。
+  回传版本、操作顺序和脱敏错误，不提供真实路径、文件内容或凭据。
+- 没有访问或更改真实 NAS 文件；没有提交、推送、发布、安装或启动 App。1.0.7 发布包未被修改。
+
 ## 当前实施决定（2026-09-11，取代下文早期调查的阻塞结论）
 
 用户明确选择个人使用的简化覆盖策略并要求实施：有可比较信息时保存前检查，发现变化暂停并保留本机修改，

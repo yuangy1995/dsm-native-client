@@ -14,13 +14,16 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     private let version: NSFileProviderItemVersion
     private let keptOffline: Bool
     private let writable: Bool
+    private let movable: Bool
+    private let deletable: Bool
 
     init(
         fileItem: FileItem,
         mapping: DesktopDriveMapping,
         keptOffline: Bool,
         identifiersByPath: [String: String] = [:],
-        writable: Bool = false
+        writable: Bool = false,
+        deletable: Bool = false
     ) {
         identifier = identifiersByPath[fileItem.path].map { NSFileProviderItemIdentifier($0) } ?? Self.identifier(
             mappingID: mapping.id,
@@ -47,6 +50,11 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
         self.keptOffline = keptOffline
         self.writable = writable && fileItem.permissions?.canWrite != false && !fileItem.isRecyclePath
             && (fileItem.kind == .file || fileItem.kind == .directory) && fileItem.mountPointType == nil
+        // 共享文件夹可以接收文件，但其本身不能在 Finder 中改名或移动。
+        movable = fileItem.path.split(separator: "/").count > 1
+        self.deletable = deletable && movable && fileItem.permissions?.canDelete == true
+            && !fileItem.isRecyclePath && fileItem.mountPointType == nil
+            && (fileItem.kind == .file || fileItem.kind == .directory)
         super.init()
     }
 
@@ -68,7 +76,10 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
             modifiedAt: mapping.createdAt
         )
         self.keptOffline = keptOffline
-        self.writable = writable
+        if case .folder = mapping.scope { self.writable = writable }
+        else { self.writable = false }
+        movable = false
+        deletable = false
         super.init()
     }
 
@@ -87,6 +98,8 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
         )
         keptOffline = false
         writable = false
+        movable = false
+        deletable = false
         super.init()
     }
 
@@ -116,9 +129,10 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     var capabilities: NSFileProviderItemCapabilities {
         var result: NSFileProviderItemCapabilities = [.allowsReading]
         if directory { result.insert(.allowsContentEnumerating) }
+        if deletable { result.insert(.allowsDeleting) }
         if writable {
             result.insert(.allowsWriting)
-            if identifier != .rootContainer { result.formUnion([.allowsRenaming, .allowsReparenting]) }
+            if movable { result.formUnion([.allowsRenaming, .allowsReparenting]) }
         }
         return result
     }

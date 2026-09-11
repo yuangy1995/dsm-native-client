@@ -2536,6 +2536,15 @@ public actor DsmFileRepository: FileRepository {
         paths: [String],
         progress: @escaping FileTransferProgress
     ) async throws -> MutationResult {
+        try await deleteResult(paths: paths, recursive: true, progress: progress)
+    }
+
+    /// Finder 的非递归删除不能因目录内容变化而扩大为整目录删除；既有调用保持原行为。
+    public func deleteResult(
+        paths: [String],
+        recursive: Bool,
+        progress: @escaping FileTransferProgress
+    ) async throws -> MutationResult {
         let operation = "fileDelete"
         if Task.isCancelled {
             return try makeMutationResult(
@@ -2612,7 +2621,7 @@ public actor DsmFileRepository: FileRepository {
                 requestFormat: capability.requestFormat,
                 parameters: [
                     "path": .stringArray(normalizedPaths),
-                    "recursive": .boolean(true),
+                    "recursive": .boolean(recursive),
                     "accurate_progress": .boolean(true),
                 ],
                 credential: credential,

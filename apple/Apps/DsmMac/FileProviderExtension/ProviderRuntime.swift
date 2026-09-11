@@ -39,6 +39,7 @@ protocol ProviderRuntimeConfigurationStoring: Sendable {
     func isProviderAvailable() async throws -> Bool
     func validateWritebackState(mappingID: UUID) async throws
     func relocateItemPaths(mappingID: UUID, source: String, destination: String) async throws
+    func removeDeletedItemPaths(mappingID: UUID, remotePath: String, maximumEntryCount: Int) async throws
 }
 
 extension ProviderRuntimeConfigurationStoring {
@@ -46,6 +47,9 @@ extension ProviderRuntimeConfigurationStoring {
         throw DesktopDriveWritebackError.disabled
     }
     func relocateItemPaths(mappingID: UUID, source: String, destination: String) async throws {
+        throw DesktopDriveWritebackError.disabled
+    }
+    func removeDeletedItemPaths(mappingID: UUID, remotePath: String, maximumEntryCount: Int) async throws {
         throw DesktopDriveWritebackError.disabled
     }
 }
@@ -72,6 +76,7 @@ protocol ProviderWritebackRepository: ProviderRuntimeRepository {
     func createFolderResult(parentPath: String, name: String) async throws -> FileItemMutationOutcome
     func renameResult(path: String, newName: String) async throws -> FileItemMutationOutcome
     func copyMoveResult(_ request: FileCopyMoveRequest, progress: @escaping FileTransferProgress) async throws -> FileCopyMoveOutcome
+    func deleteResult(paths: [String], recursive: Bool, progress: @escaping FileTransferProgress) async throws -> MutationResult
 }
 
 extension DsmFileRepository: ProviderWritebackRepository {}
@@ -93,6 +98,7 @@ struct ProviderRuntimeDependencies: Sendable {
     var writebackStore: DesktopDriveWritebackStore = .init()
     var writebackAvailable: Bool = DesktopDriveWritebackAvailability.isEnabled
     var waitForChildren: @Sendable (NSFileProviderItemIdentifier, DesktopDriveMapping) async throws -> Void = { _, _ in }
+    var signalDeletion: @Sendable (DesktopDriveMapping) async throws -> Void = { _ in }
 
     static func live() -> Self {
         let configurationStore = DesktopDriveConfigurationStore()
@@ -138,6 +144,13 @@ struct ProviderRuntimeDependencies: Sendable {
                     throw NSFileProviderError(.providerNotFound)
                 }
                 try await manager.waitForChanges(below: identifier)
+            },
+            signalDeletion: { mapping in
+                guard let manager = NSFileProviderManager(for: ProviderRuntime.domain(for: mapping)) else {
+                    throw NSFileProviderError(.providerNotFound)
+                }
+                try await manager.signalEnumerator(for: .workingSet)
+                try await manager.signalEnumerator(for: .rootContainer)
             }
         )
     }
@@ -292,7 +305,8 @@ actor ProviderRuntime {
             mapping: context.configuration.mapping,
             keptOffline: runtime.keepsOffline(path),
             identifiersByPath: context.configuration.itemIdentifiersByPath,
-            writable: isWritebackEnabled(context.configuration)
+            writable: isWritebackEnabled(context.configuration),
+            deletable: isDeletionEnabled(context.configuration)
         )
     }
 
@@ -354,7 +368,8 @@ actor ProviderRuntime {
                 mapping: context.configuration.mapping,
                 keptOffline: runtime.keepsOffline($0.path),
                 identifiersByPath: currentIdentifiers,
-                writable: isWritebackEnabled(context.configuration)
+                writable: isWritebackEnabled(context.configuration),
+                deletable: isDeletionEnabled(context.configuration)
             )
         }
         return (
@@ -427,7 +442,8 @@ actor ProviderRuntime {
                         mapping: context.configuration.mapping,
                         keptOffline: runtime.keepsOffline(item.path),
                         identifiersByPath: currentIdentifiers,
-                        writable: isWritebackEnabled(context.configuration)
+                        writable: isWritebackEnabled(context.configuration),
+                        deletable: isDeletionEnabled(context.configuration)
                     )
                 )
             case .deleted:
@@ -481,7 +497,8 @@ actor ProviderRuntime {
             mapping: context.configuration.mapping,
             keptOffline: false,
             identifiersByPath: context.configuration.itemIdentifiersByPath,
-            writable: isWritebackEnabled(context.configuration)
+            writable: isWritebackEnabled(context.configuration),
+            deletable: isDeletionEnabled(context.configuration)
         )
         let currentVersion = ProviderRequestedVersion(
             content: providerItem.itemVersion.contentVersion,
@@ -652,7 +669,8 @@ actor ProviderRuntime {
                 mapping: configuration.mapping,
                 keptOffline: runtime.keepsOffline(remotePath),
                 identifiersByPath: configuration.itemIdentifiersByPath,
-                writable: isWritebackEnabled(configuration)
+                writable: isWritebackEnabled(configuration),
+                deletable: isDeletionEnabled(configuration)
             ),
             actualSize
         )
@@ -994,7 +1012,8 @@ actor ProviderRuntime {
                     mapping: context.configuration.mapping,
                     keptOffline: runtime.keepsOffline($0.path),
                     identifiersByPath: currentIdentifiers,
-                    writable: isWritebackEnabled(context.configuration)
+                    writable: isWritebackEnabled(context.configuration),
+                    deletable: isDeletionEnabled(context.configuration)
                 )
             },
             end < paths.count ? end : nil
@@ -1135,8 +1154,13 @@ actor ProviderRuntime {
     }
 
     private func isWritebackEnabled(_ configuration: DesktopDriveProviderConfiguration) -> Bool {
-        guard dependencies.writebackAvailable, case .folder = configuration.mapping.scope else { return false }
+        guard dependencies.writebackAvailable else { return false }
         return (try? dependencies.writebackStore.isEnabled(mappingID: configuration.mapping.id)) == true
+    }
+
+    private func isDeletionEnabled(_ configuration: DesktopDriveProviderConfiguration) -> Bool {
+        dependencies.writebackAvailable &&
+            (try? dependencies.writebackStore.isDeletionEnabled(mappingID: configuration.mapping.id)) == true
     }
 
     /// 主 App 不参与上传；系统重复回调复用同一收据，提交结果不明时只回读，不重放。
@@ -1152,10 +1176,10 @@ actor ProviderRuntime {
         try await configurationStore.validateWritebackState(mappingID: mappingID)
         let context = try await makeContext()
         guard try journal.isEnabled(mappingID: mappingID),
-              case .folder(let root) = context.configuration.mapping.scope,
               let repository = context.repository as? any ProviderWritebackRepository else {
             throw DesktopDriveWritebackError.disabled
         }
+        let root = Self.rootPath(for: context.configuration.mapping)
         let runtime = try await configurationStore.runtime(mappingID: mappingID)
         guard ![.removing, .recoveryRequired, .failed].contains(runtime.state) else { throw DesktopDriveWritebackError.disabled }
         guard template.identifier != .rootContainer, template.identifier != .trashContainer,
@@ -1167,9 +1191,13 @@ actor ProviderRuntime {
         let source = creating ? nil : try await remotePath(for: template.identifier)
         for path in [source, destination].compactMap({ $0 }) {
             guard DesktopDrivePath.normalized(path) == path, path != root,
+                  path.split(separator: "/").count > 1,
                   DesktopDrivePath.isAncestorOrSame(root, of: path), !path.split(separator: "/").contains("#recycle") else {
                 throw DesktopDriveWritebackError.invalidItem
             }
+        }
+        if let source, source.split(separator: "/").first != destination.split(separator: "/").first {
+            throw DesktopDriveWritebackError.invalidItem
         }
         if let source, template.isDirectory, DesktopDrivePath.isAncestorOrSame(source, of: parent) {
             throw DesktopDriveWritebackError.invalidItem
@@ -1182,7 +1210,7 @@ actor ProviderRuntime {
             $0.metadata.starts(with: Data("metadata:".utf8)) ? $0.content : nil
         }
         let previous = try journal.records(mappingID: mappingID).last {
-            $0.itemIdentifier == template.identifier.rawValue && $0.destinationPath == destination &&
+            !$0.isDeletion && $0.itemIdentifier == template.identifier.rawValue && $0.destinationPath == destination &&
                 $0.contentHash == hash && ($0.baseContentVersion == comparableBase || $0.phase != .verified)
         }
         var record = try previous ?? journal.prepare(.init(mappingID: mappingID, itemIdentifier: template.identifier.rawValue,
@@ -1320,6 +1348,180 @@ actor ProviderRuntime {
         return item
     }
 
+    /// 先保存删除意图，再提交。未知结果只回读；用户检查并确认后才允许再次提交。
+    func deleteItem(identifier: NSFileProviderItemIdentifier, baseVersion: ProviderRequestedVersion,
+                    recursive: Bool, progress: @escaping FileTransferProgress) async throws {
+        guard let mappingID, dependencies.writebackAvailable else { throw DesktopDriveWritebackError.disabled }
+        guard identifier != .rootContainer, identifier != .trashContainer, identifier != .workingSet else {
+            throw DesktopDriveWritebackError.invalidItem
+        }
+        if recursive { try await dependencies.waitForChildren(identifier, configuration().mapping) }
+        let journal = dependencies.writebackStore
+        let lease = try journal.lock(mappingID: mappingID)
+        defer { withExtendedLifetime(lease) {} }
+        try await configurationStore.validateWritebackState(mappingID: mappingID)
+        let context = try await makeContext()
+        guard let repository = context.repository as? any ProviderWritebackRepository else {
+            throw DesktopDriveWritebackError.disabled
+        }
+        let previous = try journal.records(mappingID: mappingID).last {
+            $0.isDeletion && $0.itemIdentifier == identifier.rawValue
+        }
+        if previous?.phase == .verified {
+            try await dependencies.signalDeletion(context.configuration.mapping)
+            return
+        }
+        guard try journal.isDeletionEnabled(mappingID: mappingID) || previous?.phase == .keptLocally else {
+            throw DesktopDriveWritebackError.disabled
+        }
+        let path: String
+        if let previous { path = previous.destinationPath }
+        else {
+            do { path = try await remotePath(for: identifier) }
+            catch let error as NSFileProviderError where error.code == .noSuchItem {
+                // 未完成创建的项目仍有本机内容，不能把它当作可静默丢弃的未知项目。
+                guard try !journal.pendingRecords(mappingID: mappingID).contains(where: {
+                    $0.itemIdentifier == identifier.rawValue
+                }) else { throw DesktopDriveWritebackError.pendingChanges }
+                return
+            }
+        }
+        let root = Self.rootPath(for: context.configuration.mapping)
+        guard DesktopDrivePath.normalized(path) == path, path != root,
+              path.split(separator: "/").count > 1, DesktopDrivePath.isAncestorOrSame(root, of: path),
+              !path.split(separator: "/").contains("#recycle") else {
+            throw DesktopDriveWritebackError.invalidItem
+        }
+        let parts = path.split(separator: "/")
+        let ancestorPaths = (1..<parts.count).map { "/" + parts.prefix($0).joined(separator: "/") }
+        let ancestors = try await repository.getInfo(paths: ancestorPaths)
+        for ancestorPath in ancestorPaths {
+            guard let ancestor = ancestors.first(where: { $0.path == ancestorPath }), ancestor.isDirectory else {
+                throw CocoaError(.fileReadNoPermission)
+            }
+            guard ancestor.mountPointType == nil else { throw DesktopDriveWritebackError.invalidItem }
+        }
+        guard let parentItem = ancestors.first(where: { $0.path == ancestorPaths.last }),
+              parentItem.permissions?.canRead != false else {
+            throw CocoaError(.fileReadNoPermission)
+        }
+        let current = try await deletionInfo(path, repository: repository)
+        if previous?.phase == .keptLocally {
+            if let current {
+                if var stopped = previous {
+                    if stopped.restorationRequested == true {
+                        // 无法区分新的用户删除与系统重试，重新出现时要求一次明确确认。
+                        stopped.phase = .conflict
+                        stopped.allowOverwrite = false
+                        try journal.save(stopped)
+                        throw DesktopDriveWritebackError.conflict
+                    }
+                    stopped.restorationRequested = true
+                    try journal.save(stopped)
+                }
+                throw NSError.fileProviderErrorForRejectedDeletion(of: ProviderItem(fileItem: current,
+                    mapping: context.configuration.mapping, keptOffline: false,
+                    identifiersByPath: context.configuration.itemIdentifiersByPath))
+            }
+            try await finishDeletion(path: path, mapping: context.configuration.mapping, record: previous)
+            return
+        }
+        guard let current else {
+            try await finishDeletion(path: path, mapping: context.configuration.mapping, record: previous)
+            return
+        }
+        guard current.kind == .file || current.kind == .directory, !current.isRecyclePath,
+              current.mountPointType == nil else { throw DesktopDriveWritebackError.invalidItem }
+        guard current.permissions?.canDelete == true, parentItem.permissions?.canWrite != false else {
+            throw NSError.fileProviderErrorForRejectedDeletion(of: ProviderItem(fileItem: current,
+                mapping: context.configuration.mapping, keptOffline: false,
+                identifiersByPath: context.configuration.itemIdentifiersByPath))
+        }
+        if let currentIdentifier = context.configuration.itemIdentifiersByPath[path],
+           currentIdentifier != identifier.rawValue, !identifier.rawValue.hasPrefix("path:") {
+            throw DesktopDriveWritebackError.conflict
+        }
+        if current.isDirectory && previous == nil {
+            try await checkDeletionChildren(path, recursive: recursive, repository: repository)
+        }
+        let hasKnownBase = baseVersion.metadata.starts(with: Data("metadata:".utf8)) ||
+            (current.isDirectory && current.times?.modifiedAt != nil)
+        var record = try previous ?? journal.prepare(.init(mappingID: mappingID,
+            itemIdentifier: identifier.rawValue, sourcePath: path, destinationPath: path,
+            isDirectory: current.isDirectory, contentHash: nil, contentSize: nil,
+            baseContentVersion: hasKnownBase ? baseVersion.content : nil, operation: .delete, recursive: recursive), contents: nil)
+        if record.phase == .conflict { throw DesktopDriveWritebackError.conflict }
+        if record.phase == .submitted && !record.allowOverwrite { throw DesktopDriveWritebackError.outcomeUnknown }
+        guard record.isDirectory == current.isDirectory else { throw DesktopDriveWritebackError.conflict }
+        if !record.allowOverwrite, let base = record.baseContentVersion {
+            if current.times?.modifiedAt == nil || (!current.isDirectory && current.sizeBytes == nil) {
+                throw DesktopDriveWritebackError.outcomeUnknown
+            }
+            let item = ProviderItem(fileItem: current, mapping: context.configuration.mapping, keptOffline: false)
+            if base != item.itemVersion.contentVersion {
+                record.phase = .conflict
+                try journal.save(record)
+                throw DesktopDriveWritebackError.conflict
+            }
+        }
+        if current.isDirectory && previous != nil {
+            try await checkDeletionChildren(path, recursive: record.recursive == true, repository: repository)
+        }
+        try Task.checkCancellation()
+        record.phase = .submitted
+        record.allowOverwrite = false
+        try journal.save(record)
+        let result = try await repository.deleteResult(paths: [path], recursive: record.recursive == true, progress: progress)
+        if !result.submitted {
+            record.phase = .conflict
+            try journal.save(record)
+            throw DesktopDriveWritebackError.conflict
+        }
+        guard try await deletionInfo(path, repository: repository) == nil else {
+            throw DesktopDriveWritebackError.outcomeUnknown
+        }
+        try await finishDeletion(path: path, mapping: context.configuration.mapping, record: record)
+    }
+
+    private func deletionInfo(_ path: String, repository: any ProviderWritebackRepository) async throws -> FileItem? {
+        do { return try await repository.getInfo(paths: [path]).first(where: { $0.path == path }) }
+        catch let error as AppError where error.category == .notFound { return nil }
+    }
+
+    private func checkDeletionChildren(_ path: String, recursive: Bool,
+                                       repository: any ProviderWritebackRepository) async throws {
+        var folders = [path]
+        while let folder = folders.popLast() {
+            var offset = 0
+            while true {
+                try Task.checkCancellation()
+                let page = try await repository.listFolder(path: folder, offset: offset, limit: 200)
+                if !recursive && (!page.items.isEmpty || page.hasMore) { throw NSFileProviderError(.directoryNotEmpty) }
+                for child in page.items {
+                    guard DesktopDrivePath.normalized(child.path) == child.path,
+                          (child.path as NSString).deletingLastPathComponent == folder,
+                          child.permissions?.canDelete == true, !child.isRecyclePath, child.mountPointType == nil,
+                          child.kind == .file || child.kind == .directory else {
+                        throw NSFileProviderError(.directoryNotEmpty)
+                    }
+                    if child.isDirectory { folders.append(child.path) }
+                }
+                if !page.hasMore { break }
+                guard !page.items.isEmpty else { throw DesktopDriveWritebackError.outcomeUnknown }
+                offset += page.items.count
+            }
+        }
+    }
+
+    private func finishDeletion(path: String, mapping: DesktopDriveMapping, record: DesktopDriveWritebackRecord?) async throws {
+        try await configurationStore.removeDeletedItemPaths(mappingID: mapping.id, remotePath: path,
+            maximumEntryCount: dependencies.changeJournalMaximumEntries)
+        await metadata.invalidate(cancelInFlight: true)
+        if let record { try dependencies.writebackStore.completeDeletion(record) }
+        // 刷新通知失败也不能丢失已确认的删除收据；重试仅补发通知。
+        try await dependencies.signalDeletion(mapping)
+    }
+
     private func verifyUploadedContent(_ record: DesktopDriveWritebackRecord,
                                        repository: any ProviderWritebackRepository) async throws -> Bool {
         guard let expectedHash = record.contentHash,
@@ -1341,7 +1543,8 @@ actor ProviderRuntime {
         let configuration = try await configuration()
         let runtime = try await configurationStore.runtime(mappingID: configuration.mapping.id)
         return ProviderItem(fileItem: item, mapping: configuration.mapping, keptOffline: runtime.keepsOffline(item.path),
-                            identifiersByPath: configuration.itemIdentifiersByPath, writable: isWritebackEnabled(configuration))
+                            identifiersByPath: configuration.itemIdentifiersByPath, writable: isWritebackEnabled(configuration),
+                            deletable: isDeletionEnabled(configuration))
     }
 
     private func configuration()

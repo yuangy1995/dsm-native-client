@@ -208,26 +208,20 @@ final class FileProviderExtension:
     ) -> Progress {
         let progress = Progress(totalUnitCount: 1)
         let completionBox = UncheckedSendableBox(completionHandler)
+        let base = ProviderRequestedVersion(content: version.contentVersion, metadata: version.metadataVersion)
+        let recursive = options.contains(.recursive)
         let operationID = UUID()
         let operation = Task {
             defer { operations.remove(operationID) }
             do {
-                let item = try await runtime.item(for: identifier)
-                completionBox.value(
-                    NSError.fileProviderErrorForRejectedDeletion(of: item)
-                )
-                progress.completedUnitCount = 1
-            } catch {
-                let mapped = ProviderErrorMapper.map(
-                    error,
-                    itemIdentifier: identifier
-                ) as NSError
-                if mapped.domain == NSFileProviderErrorDomain,
-                   mapped.code == NSFileProviderError.noSuchItem.rawValue {
-                    completionBox.value(nil)
-                } else {
-                    completionBox.value(mapped)
+                try await runtime.deleteItem(identifier: identifier, baseVersion: base, recursive: recursive) { completed, total in
+                    if let total { progress.totalUnitCount = max(total, 1) }
+                    progress.completedUnitCount = min(completed, max(progress.totalUnitCount - 1, 0))
                 }
+                completionBox.value(nil)
+                progress.completedUnitCount = progress.totalUnitCount
+            } catch {
+                completionBox.value(ProviderErrorMapper.mapDeletion(error, itemIdentifier: identifier))
             }
         }
         operations.insert(operation, id: operationID)
