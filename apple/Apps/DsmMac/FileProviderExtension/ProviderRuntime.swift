@@ -37,6 +37,17 @@ protocol ProviderRuntimeConfigurationStoring: Sendable {
         mappingID: UUID
     ) async throws
     func isProviderAvailable() async throws -> Bool
+    func validateWritebackState(mappingID: UUID) async throws
+    func relocateItemPaths(mappingID: UUID, source: String, destination: String) async throws
+}
+
+extension ProviderRuntimeConfigurationStoring {
+    func validateWritebackState(mappingID: UUID) async throws {
+        throw DesktopDriveWritebackError.disabled
+    }
+    func relocateItemPaths(mappingID: UUID, source: String, destination: String) async throws {
+        throw DesktopDriveWritebackError.disabled
+    }
 }
 
 extension DesktopDriveConfigurationStore: ProviderRuntimeConfigurationStoring {}
@@ -56,6 +67,15 @@ protocol ProviderRuntimeRepository: Sendable {
 
 extension DsmFileRepository: ProviderRuntimeRepository {}
 
+protocol ProviderWritebackRepository: ProviderRuntimeRepository {
+    func upload(localURL: URL, to folderPath: String, overwrite: Bool, progress: @escaping FileTransferProgress) async throws
+    func createFolderResult(parentPath: String, name: String) async throws -> FileItemMutationOutcome
+    func renameResult(path: String, newName: String) async throws -> FileItemMutationOutcome
+    func copyMoveResult(_ request: FileCopyMoveRequest, progress: @escaping FileTransferProgress) async throws -> FileCopyMoveOutcome
+}
+
+extension DsmFileRepository: ProviderWritebackRepository {}
+
 struct ProviderRuntimeDependencies: Sendable {
     var configurationStore: any ProviderRuntimeConfigurationStoring
     var makeRepository: @Sendable (
@@ -70,6 +90,9 @@ struct ProviderRuntimeDependencies: Sendable {
     var removeItem: @Sendable (URL) -> Void
     var capacityRecheckIntervalBytes: Int64
     var changeJournalMaximumEntries: Int
+    var writebackStore: DesktopDriveWritebackStore = .init()
+    var writebackAvailable: Bool = DesktopDriveWritebackAvailability.isEnabled
+    var waitForChildren: @Sendable (NSFileProviderItemIdentifier, DesktopDriveMapping) async throws -> Void = { _, _ in }
 
     static func live() -> Self {
         let configurationStore = DesktopDriveConfigurationStore()
@@ -109,7 +132,13 @@ struct ProviderRuntimeDependencies: Sendable {
             removeItem: { try? FileManager.default.removeItem(at: $0) },
             capacityRecheckIntervalBytes: 8 * 1_024 * 1_024,
             // 仅保留有限增量；更旧锚点交给系统完整重新枚举，避免无限增长。
-            changeJournalMaximumEntries: 2_048
+            changeJournalMaximumEntries: 2_048,
+            waitForChildren: { identifier, mapping in
+                guard let manager = NSFileProviderManager(for: ProviderRuntime.domain(for: mapping)) else {
+                    throw NSFileProviderError(.providerNotFound)
+                }
+                try await manager.waitForChanges(below: identifier)
+            }
         )
     }
 }
@@ -121,9 +150,23 @@ struct ProviderRequestedVersion: Equatable, Sendable {
 
 struct ProviderImportedItemTemplate: Sendable {
     let identifier: NSFileProviderItemIdentifier
+    let parentIdentifier: NSFileProviderItemIdentifier
+    let filename: String
+    let isDirectory: Bool
 
     init(item: NSFileProviderItem) {
         identifier = item.itemIdentifier
+        parentIdentifier = item.parentItemIdentifier
+        filename = item.filename
+        isDirectory = item.contentType == .folder
+    }
+
+    init(identifier: NSFileProviderItemIdentifier, parentIdentifier: NSFileProviderItemIdentifier,
+         filename: String, isDirectory: Bool) {
+        self.identifier = identifier
+        self.parentIdentifier = parentIdentifier
+        self.filename = filename
+        self.isDirectory = isDirectory
     }
 }
 
@@ -247,7 +290,9 @@ actor ProviderRuntime {
         return ProviderItem(
             fileItem: item,
             mapping: context.configuration.mapping,
-            keptOffline: runtime.keepsOffline(path)
+            keptOffline: runtime.keepsOffline(path),
+            identifiersByPath: context.configuration.itemIdentifiersByPath,
+            writable: isWritebackEnabled(context.configuration)
         )
     }
 
@@ -302,11 +347,14 @@ actor ProviderRuntime {
             mappingID: context.configuration.mapping.id,
             remotePaths: page.items.map(\.path)
         )
+        let currentIdentifiers = try await configuration().itemIdentifiersByPath
         let items = page.items.map {
             ProviderItem(
                 fileItem: $0,
                 mapping: context.configuration.mapping,
-                keptOffline: runtime.keepsOffline($0.path)
+                keptOffline: runtime.keepsOffline($0.path),
+                identifiersByPath: currentIdentifiers,
+                writable: isWritebackEnabled(context.configuration)
             )
         }
         return (
@@ -366,6 +414,7 @@ actor ProviderRuntime {
         )
         var updatedItems: [ProviderItem] = []
         var deletedItemIdentifiers: [NSFileProviderItemIdentifier] = []
+        let currentIdentifiers = try await configuration().itemIdentifiersByPath
         for entry in entries {
             switch entry.kind {
             case .updated:
@@ -376,7 +425,9 @@ actor ProviderRuntime {
                     ProviderItem(
                         fileItem: item,
                         mapping: context.configuration.mapping,
-                        keptOffline: runtime.keepsOffline(item.path)
+                        keptOffline: runtime.keepsOffline(item.path),
+                        identifiersByPath: currentIdentifiers,
+                        writable: isWritebackEnabled(context.configuration)
                     )
                 )
             case .deleted:
@@ -428,13 +479,15 @@ actor ProviderRuntime {
         let providerItem = ProviderItem(
             fileItem: remoteItem,
             mapping: context.configuration.mapping,
-            keptOffline: false
+            keptOffline: false,
+            identifiersByPath: context.configuration.itemIdentifiersByPath,
+            writable: isWritebackEnabled(context.configuration)
         )
         let currentVersion = ProviderRequestedVersion(
             content: providerItem.itemVersion.contentVersion,
             metadata: providerItem.itemVersion.metadataVersion
         )
-        if let requestedVersion, requestedVersion != currentVersion {
+        if let requestedVersion, requestedVersion.content != currentVersion.content {
             throw NSFileProviderError(.versionNoLongerAvailable)
         }
         guard let fileName = DesktopDriveStagingIdentity.contentFileName(
@@ -597,7 +650,9 @@ actor ProviderRuntime {
             ProviderItem(
                 fileItem: remoteItem,
                 mapping: configuration.mapping,
-                keptOffline: runtime.keepsOffline(remotePath)
+                keptOffline: runtime.keepsOffline(remotePath),
+                identifiersByPath: configuration.itemIdentifiersByPath,
+                writable: isWritebackEnabled(configuration)
             ),
             actualSize
         )
@@ -876,9 +931,11 @@ actor ProviderRuntime {
                     [folderPath ?? Self.rootPath(for: context.configuration.mapping)]
                 )
             }
+            try await configurationStore.registerItemPaths(mappingID: context.configuration.mapping.id, remotePaths: scan.items.map(\.path))
             let snapshot = try Self.makeChangeSnapshot(
                 from: scan.items,
-                mappingID: context.configuration.mapping.id
+                mappingID: context.configuration.mapping.id,
+                identifiersByPath: try await configuration().itemIdentifiersByPath
             )
             do {
                 let journal = try await configurationStore.refreshChangeJournal(
@@ -929,12 +986,15 @@ actor ProviderRuntime {
             context: context,
             paths: requestedPaths
         )
+        let currentIdentifiers = try await configuration().itemIdentifiersByPath
         return (
             resolvedItems.map {
                 ProviderItem(
                     fileItem: $0,
                     mapping: context.configuration.mapping,
-                    keptOffline: runtime.keepsOffline($0.path)
+                    keptOffline: runtime.keepsOffline($0.path),
+                    identifiersByPath: currentIdentifiers,
+                    writable: isWritebackEnabled(context.configuration)
                 )
             },
             end < paths.count ? end : nil
@@ -1054,12 +1114,13 @@ actor ProviderRuntime {
 
     private static func makeChangeSnapshot(
         from items: [FileItem],
-        mappingID: UUID
+        mappingID: UUID,
+        identifiersByPath: [String: String] = [:]
     ) throws -> [String: FileItem] {
         var snapshot: [String: FileItem] = [:]
         for item in items {
             guard DesktopDrivePath.normalized(item.path) != nil,
-                  let identifier = DesktopDriveItemIdentity.identifier(
+                  let identifier = identifiersByPath[item.path] ?? DesktopDriveItemIdentity.identifier(
                     mappingID: mappingID,
                     remotePath: item.path
                   ) else {
@@ -1071,6 +1132,216 @@ actor ProviderRuntime {
             snapshot[identifier] = item
         }
         return snapshot
+    }
+
+    private func isWritebackEnabled(_ configuration: DesktopDriveProviderConfiguration) -> Bool {
+        guard dependencies.writebackAvailable, case .folder = configuration.mapping.scope else { return false }
+        return (try? dependencies.writebackStore.isEnabled(mappingID: configuration.mapping.id)) == true
+    }
+
+    /// 主 App 不参与上传；系统重复回调复用同一收据，提交结果不明时只回读，不重放。
+    func writeItem(_ template: ProviderImportedItemTemplate, baseVersion: ProviderRequestedVersion?,
+                   contents: URL?, creating: Bool, progress: @escaping FileTransferProgress) async throws -> ProviderItem {
+        guard let mappingID, dependencies.writebackAvailable else { throw DesktopDriveWritebackError.disabled }
+        if !creating && template.isDirectory {
+            try await dependencies.waitForChildren(template.identifier, configuration().mapping)
+        }
+        let journal = dependencies.writebackStore
+        let lease = try journal.lock(mappingID: mappingID)
+        defer { withExtendedLifetime(lease) {} }
+        try await configurationStore.validateWritebackState(mappingID: mappingID)
+        let context = try await makeContext()
+        guard try journal.isEnabled(mappingID: mappingID),
+              case .folder(let root) = context.configuration.mapping.scope,
+              let repository = context.repository as? any ProviderWritebackRepository else {
+            throw DesktopDriveWritebackError.disabled
+        }
+        let runtime = try await configurationStore.runtime(mappingID: mappingID)
+        guard ![.removing, .recoveryRequired, .failed].contains(runtime.state) else { throw DesktopDriveWritebackError.disabled }
+        guard template.identifier != .rootContainer, template.identifier != .trashContainer,
+              DesktopDriveWritebackStore.validFilename(template.filename), template.filename != "#recycle" else {
+            throw DesktopDriveWritebackError.invalidItem
+        }
+        let parent = template.parentIdentifier == .rootContainer ? root : try await remotePath(for: template.parentIdentifier)
+        let destination = (parent as NSString).appendingPathComponent(template.filename)
+        let source = creating ? nil : try await remotePath(for: template.identifier)
+        for path in [source, destination].compactMap({ $0 }) {
+            guard DesktopDrivePath.normalized(path) == path, path != root,
+                  DesktopDrivePath.isAncestorOrSame(root, of: path), !path.split(separator: "/").contains("#recycle") else {
+                throw DesktopDriveWritebackError.invalidItem
+            }
+        }
+        if let source, template.isDirectory, DesktopDrivePath.isAncestorOrSame(source, of: parent) {
+            throw DesktopDriveWritebackError.invalidItem
+        }
+        let hash = try contents.map(DesktopDriveWritebackStore.hash(of:)) ??
+            (creating && !template.isDirectory ? SHA256.hash(data: Data()).map { String(format: "%02x", $0) }.joined() : nil)
+        let size = try contents.map { Int64(try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) } ??
+            (hash != nil ? 0 : nil)
+        let comparableBase = baseVersion.flatMap {
+            $0.metadata.starts(with: Data("metadata:".utf8)) ? $0.content : nil
+        }
+        let previous = try journal.records(mappingID: mappingID).last {
+            $0.itemIdentifier == template.identifier.rawValue && $0.destinationPath == destination &&
+                $0.contentHash == hash && ($0.baseContentVersion == comparableBase || $0.phase != .verified)
+        }
+        var record = try previous ?? journal.prepare(.init(mappingID: mappingID, itemIdentifier: template.identifier.rawValue,
+                                              sourcePath: source, destinationPath: destination,
+                                              isDirectory: template.isDirectory, contentHash: hash, contentSize: size,
+                                              baseContentVersion: comparableBase), contents: contents)
+        if record.phase == .verified, let item = record.verifiedItem { return try await writebackItem(item) }
+        if record.phase == .keptLocally { throw DesktopDriveWritebackError.keptLocally }
+        if record.phase == .conflict { throw DesktopDriveWritebackError.conflict }
+        let userApprovedOverwrite = record.allowOverwrite
+
+        func info(_ path: String) async throws -> FileItem? {
+            try await repository.getInfo(paths: [path]).first(where: { $0.path == path })
+        }
+        guard let parentItem = try await info(parent), parentItem.isDirectory,
+              parentItem.permissions?.canWrite != false, parentItem.mountPointType == nil else {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+
+        if let source = record.sourcePath, record.step == 0, record.phase == .prepared {
+            guard let current = try await info(source), current.isDirectory == template.isDirectory,
+                  current.kind == .file || current.kind == .directory, current.mountPointType == nil else {
+                throw DesktopDriveWritebackError.invalidItem
+            }
+            guard current.permissions?.canWrite != false else { throw CocoaError(.fileWriteNoPermission) }
+            // 既有 File Station 的内容版本是时间/大小快照，不冒充 Drive 的历史版本号。
+            if !userApprovedOverwrite, let base = record.baseContentVersion {
+                guard current.times?.modifiedAt != nil, current.sizeBytes != nil else {
+                    throw DesktopDriveWritebackError.outcomeUnknown
+                }
+                let currentItem = ProviderItem(fileItem: current, mapping: context.configuration.mapping, keptOffline: false)
+                if base != currentItem.itemVersion.contentVersion {
+                    record.phase = .conflict
+                    try journal.save(record)
+                    throw DesktopDriveWritebackError.conflict
+                }
+            }
+        }
+
+        var paths: [(from: String, to: String, move: Bool)] = []
+        if let source = record.sourcePath, source != destination {
+            let oldParent = (source as NSString).deletingLastPathComponent
+            let oldName = (source as NSString).lastPathComponent
+            let intermediate = (parent as NSString).appendingPathComponent(oldName)
+            if oldParent != parent { paths.append((source, intermediate, true)) }
+            if intermediate != destination { paths.append((oldParent == parent ? source : intermediate, destination, false)) }
+        }
+        for (step, change) in paths.enumerated() where record.step <= step {
+            if record.phase == .submitted {
+                // 用户明确核对后，仅接受“源已消失且目标存在”的已完成移动；不覆盖同名目标。
+                if userApprovedOverwrite, try await info(change.from) == nil,
+                   let moved = try await info(change.to), moved.isDirectory == record.isDirectory {
+                    try await configurationStore.relocateItemPaths(mappingID: mappingID, source: change.from, destination: change.to)
+                    record.step = step + 1
+                    record.phase = .prepared
+                    try journal.save(record)
+                    continue
+                }
+                if userApprovedOverwrite, try await info(change.from) != nil, try await info(change.to) == nil {
+                    record.phase = .prepared
+                } else { throw DesktopDriveWritebackError.outcomeUnknown }
+            }
+            guard let item = try await info(change.from), try await info(change.to) == nil else {
+                record.phase = .conflict
+                try journal.save(record)
+                throw DesktopDriveWritebackError.conflict
+            }
+            record.phase = .submitted
+            record.allowOverwrite = false
+            try journal.save(record)
+            let result: MutationResult
+            if change.move {
+                result = try await repository.copyMoveResult(.init(profileID: item.profileID, operation: .move,
+                    source: item, destinationFolderPath: (change.to as NSString).deletingLastPathComponent,
+                    overwrite: false), progress: progress).result
+            } else {
+                result = try await repository.renameResult(path: change.from, newName: (change.to as NSString).lastPathComponent).result
+            }
+            guard result.status == .confirmedSuccess else {
+                if !result.submitted { record.phase = .prepared; try journal.save(record) }
+                throw DesktopDriveWritebackError.outcomeUnknown
+            }
+            try await configurationStore.registerItemPaths(mappingID: mappingID, remotePaths: [change.from])
+            try await configurationStore.relocateItemPaths(mappingID: mappingID, source: change.from, destination: change.to)
+            record.step = step + 1
+            record.phase = .prepared
+            try journal.save(record)
+        }
+
+        if creating && template.isDirectory {
+            let existing = try await info(destination)
+            if record.phase == .submitted && !userApprovedOverwrite { throw DesktopDriveWritebackError.outcomeUnknown }
+            if userApprovedOverwrite, existing?.isDirectory == true {
+                // 用户已检查，接纳此次创建留下的目录，不重复创建。
+            } else {
+                guard existing == nil else { throw DesktopDriveWritebackError.conflict }
+                record.phase = .submitted
+                record.allowOverwrite = false
+                try journal.save(record)
+                let result = try await repository.createFolderResult(parentPath: parent, name: template.filename).result
+                guard result.status == .confirmedSuccess else {
+                    if !result.submitted { record.phase = .prepared; try journal.save(record) }
+                    throw DesktopDriveWritebackError.outcomeUnknown
+                }
+            }
+        } else if hash != nil {
+            var verified = false
+            if record.phase == .submitted {
+                verified = try await verifyUploadedContent(record, repository: repository)
+                if !verified && !userApprovedOverwrite { throw DesktopDriveWritebackError.outcomeUnknown }
+            }
+            if !verified {
+                if creating && !userApprovedOverwrite, try await info(destination) != nil {
+                    record.phase = .conflict
+                    try journal.save(record)
+                    throw DesktopDriveWritebackError.conflict
+                }
+                try Task.checkCancellation()
+                record.phase = .submitted
+                record.allowOverwrite = false
+                try journal.save(record)
+                try await repository.upload(localURL: journal.contentURL(for: record), to: parent,
+                                            overwrite: !creating || userApprovedOverwrite, progress: progress)
+                // 不覆盖上传可能被 NAS 当成“跳过”；完整内容核对也用于提交响应丢失后的恢复。
+                guard try await verifyUploadedContent(record, repository: repository) else { throw DesktopDriveWritebackError.outcomeUnknown }
+            }
+        }
+        guard let saved = try await info(destination), saved.isDirectory == template.isDirectory else {
+            throw DesktopDriveWritebackError.outcomeUnknown
+        }
+        try await configurationStore.registerItemPaths(mappingID: mappingID, remotePaths: [destination])
+        await metadata.invalidate(cancelInFlight: true)
+        let item = try await writebackItem(saved)
+        try journal.complete(record, item: saved)
+        return item
+    }
+
+    private func verifyUploadedContent(_ record: DesktopDriveWritebackRecord,
+                                       repository: any ProviderWritebackRepository) async throws -> Bool {
+        guard let expectedHash = record.contentHash,
+              let item = try await repository.getInfo(paths: [record.destinationPath]).first(where: { $0.path == record.destinationPath }),
+              !item.isDirectory, item.sizeBytes == record.contentSize else { return false }
+        let scratch = try dependencies.writebackStore.contentURL(for: record).deletingLastPathComponent()
+            .appendingPathComponent("verify-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        do {
+            try await repository.download(remotePath: record.destinationPath, to: scratch, expectedSize: record.contentSize, progress: { _, _ in })
+        } catch {
+            await repository.removePartialDownload(to: scratch)
+            throw error
+        }
+        return try DesktopDriveWritebackStore.hash(of: scratch) == expectedHash
+    }
+
+    private func writebackItem(_ item: FileItem) async throws -> ProviderItem {
+        let configuration = try await configuration()
+        let runtime = try await configurationStore.runtime(mappingID: configuration.mapping.id)
+        return ProviderItem(fileItem: item, mapping: configuration.mapping, keptOffline: runtime.keepsOffline(item.path),
+                            identifiersByPath: configuration.itemIdentifiersByPath, writable: isWritebackEnabled(configuration))
     }
 
     private func configuration()
@@ -1093,7 +1364,8 @@ actor ProviderRuntime {
             configuration: configuration,
             keptOffline: runtime.keepsOffline(
                 Self.rootPath(for: configuration.mapping)
-            )
+            ),
+            writable: isWritebackEnabled(configuration)
         )
     }
 

@@ -1,12 +1,27 @@
 import DsmCore
 import FileProvider
 import Foundation
+import DsmLocalization
 
 enum ProviderErrorMapper {
     static func map(
         _ error: Error,
         itemIdentifier: NSFileProviderItemIdentifier
     ) -> Error {
+        if let writeback = error as? DesktopDriveWritebackError {
+            let key: String
+            switch writeback {
+            case .conflict: key = "desktopDrive.writeback.conflict"
+            case .outcomeUnknown: key = "desktopDrive.writeback.unknown"
+            case .pendingChanges: key = "desktopDrive.writeback.pending"
+            case .busy: return NSFileProviderError(.serverUnreachable)
+            case .disabled: key = "desktopDrive.writeback.readOnly"
+            case .invalidItem: key = "desktopDrive.writeback.invalid"
+            case .keptLocally: key = "desktopDrive.writeback.stopped"
+            }
+            return NSError(domain: NSFileProviderErrorDomain, code: NSFileProviderError.cannotSynchronize.rawValue,
+                           userInfo: [NSLocalizedDescriptionKey: L10n.string(key)])
+        }
         if error is CancellationError {
             return CocoaError(.userCancelled)
         }

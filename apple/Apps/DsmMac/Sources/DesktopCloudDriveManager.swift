@@ -456,6 +456,8 @@ final class DesktopCloudDriveManager {
             cacheBytes[mapping.id] = nil
             offlineProgress[mapping.id] = nil
             setSuccess("desktopDrive.status.removed")
+        } catch is DesktopDriveWritebackError {
+            setError("desktopDrive.writeback.pending")
         } catch {
             setError("desktopDrive.error.remove")
         }

@@ -1,5 +1,6 @@
 import FileProvider
 import Foundation
+import DsmCore
 
 final class FileProviderExtension:
     NSObject,
@@ -130,14 +131,13 @@ final class FileProviderExtension:
                 ) {
                     completionBox.value(item, [], false, nil)
                 } else {
-                    completionBox.value(
-                        nil,
-                        [],
-                        false,
-                        NSFileProviderError(.cannotSynchronize)
-                    )
+                    let item = try await runtime.writeItem(template, baseVersion: nil, contents: url, creating: true) { completed, total in
+                        if let total { progress.totalUnitCount = max(total, 1) }
+                        progress.completedUnitCount = min(completed, max(progress.totalUnitCount - 1, 0))
+                    }
+                    completionBox.value(item, [], false, nil)
                 }
-                progress.completedUnitCount = 1
+                progress.completedUnitCount = progress.totalUnitCount
             } catch {
                 completionBox.value(
                     nil,
@@ -171,13 +171,32 @@ final class FileProviderExtension:
             Error?
         ) -> Void
     ) -> Progress {
-        completionHandler(
-            nil,
-            [],
-            false,
-            NSFileProviderError(.cannotSynchronize)
-        )
-        return Progress(totalUnitCount: 0)
+        let progress = Progress(totalUnitCount: 1)
+        let completionBox = UncheckedSendableBox(completionHandler)
+        let template = ProviderImportedItemTemplate(item: item)
+        let base = ProviderRequestedVersion(content: version.contentVersion, metadata: version.metadataVersion)
+        let operationID = UUID()
+        let operation = Task {
+            defer { operations.remove(operationID) }
+            do {
+                if changedFields.contains(.contents), newContents == nil, !template.isDirectory {
+                    throw DesktopDriveWritebackError.invalidItem
+                }
+                let result = try await runtime.writeItem(template, baseVersion: base,
+                    contents: changedFields.contains(.contents) ? newContents : nil, creating: false) { completed, total in
+                        if let total { progress.totalUnitCount = max(total, 1) }
+                        progress.completedUnitCount = min(completed, max(progress.totalUnitCount - 1, 0))
+                    }
+                let handled: NSFileProviderItemFields = [.contents, .filename, .parentItemIdentifier, .creationDate, .contentModificationDate]
+                completionBox.value(result, changedFields.subtracting(handled), false, nil)
+                progress.completedUnitCount = progress.totalUnitCount
+            } catch {
+                completionBox.value(nil, [], false, ProviderErrorMapper.map(error, itemIdentifier: template.identifier))
+            }
+        }
+        operations.insert(operation, id: operationID)
+        progress.cancellationHandler = { operation.cancel() }
+        return progress
     }
 
     func deleteItem(

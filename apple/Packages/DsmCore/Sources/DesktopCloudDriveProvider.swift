@@ -38,13 +38,25 @@ public struct DesktopDriveProviderConnection: Codable, Equatable, Sendable {
 public struct DesktopDriveProviderConfiguration: Codable, Equatable, Sendable {
     public let mapping: DesktopDriveMapping
     public let connection: DesktopDriveProviderConnection
+    public let itemIdentifiersByPath: [String: String]
 
     public init(
         mapping: DesktopDriveMapping,
-        connection: DesktopDriveProviderConnection
+        connection: DesktopDriveProviderConnection,
+        itemIdentifiersByPath: [String: String] = [:]
     ) {
         self.mapping = mapping
         self.connection = connection
+        self.itemIdentifiersByPath = itemIdentifiersByPath
+    }
+
+    private enum CodingKeys: String, CodingKey { case mapping, connection, itemIdentifiersByPath }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mapping = try container.decode(DesktopDriveMapping.self, forKey: .mapping)
+        connection = try container.decode(DesktopDriveProviderConnection.self, forKey: .connection)
+        itemIdentifiersByPath = try container.decodeIfPresent([String: String].self, forKey: .itemIdentifiersByPath) ?? [:]
     }
 }
 
@@ -309,8 +321,25 @@ public actor DesktopDriveConfigurationStore {
             }
             return DesktopDriveProviderConfiguration(
                 mapping: mapping,
-                connection: connection
+                connection: connection,
+                itemIdentifiersByPath: Dictionary(
+                    (snapshot.itemPaths?[mappingID] ?? [:]).map { ($0.value, $0.key) },
+                    uniquingKeysWith: { first, _ in first }
+                )
             )
+        }
+    }
+
+    /// 只读浏览可以使用最后成功快照；写入前必须重新读取磁盘配置，不能沿用损坏文件的缓存。
+    public func validateWritebackState(mappingID: UUID) throws {
+        try withFileLock(exclusive: false) {
+            let snapshot = try loadSnapshotUnlocked(allowCachedFallback: false)
+            guard let mapping = snapshot.mappings[mappingID], snapshot.connections[mapping.profileID] != nil,
+                  snapshot.providerAvailable != false, snapshot.runtimes?[mappingID]?.isManuallyPaused != true,
+                  ![DesktopDriveMappingState.removing, .recoveryRequired, .failed, .paused]
+                    .contains(effectiveState(in: snapshot, mappingID: mappingID)) else {
+                throw DesktopDriveWritebackError.disabled
+            }
         }
     }
 
@@ -323,6 +352,10 @@ public actor DesktopDriveConfigurationStore {
     }
 
     public func removeMapping(id: UUID) throws {
+        let journal = DesktopDriveWritebackStore(directory: directoryURL)
+        let lease = try journal.lock(mappingID: id)
+        defer { withExtendedLifetime(lease) {} }
+        try journal.requireNoPendingChanges(mappingID: id)
         try updateSnapshot { snapshot in
             snapshot.mappings.removeValue(forKey: id)
             snapshot.itemPaths?[id] = nil
@@ -333,6 +366,8 @@ public actor DesktopDriveConfigurationStore {
     }
 
     public func removeConnection(profileID: UUID) throws {
+        let leases = try protectWritebackForSessionRemoval(profileID: profileID)
+        defer { withExtendedLifetime(leases) {} }
         try updateSnapshot { snapshot in
             snapshot.connections.removeValue(forKey: profileID)
             let removedIDs = snapshot.mappings.values
@@ -383,14 +418,18 @@ public actor DesktopDriveConfigurationStore {
                 return
             }
             var index = snapshot.itemPaths?[mappingID] ?? [:]
+            var knownPaths = Set(index.values)
             for rawPath in remotePaths {
                 guard let path = DesktopDrivePath.normalized(rawPath),
-                      let identifier = DesktopDriveItemIdentity.identifier(
+                      knownPaths.insert(path).inserted,
+                      let preferredIdentifier = DesktopDriveItemIdentity.identifier(
                         mappingID: mappingID,
                         remotePath: path
                       ) else {
                     continue
                 }
+                // 原路径在移动后被重新使用时，不能抢占已经随旧文件移动的标识。
+                let identifier = index[preferredIdentifier] == nil ? preferredIdentifier : "item-" + UUID().uuidString
                 index[identifier] = path
             }
             if snapshot.itemPaths == nil {
@@ -406,6 +445,35 @@ public actor DesktopDriveConfigurationStore {
     ) throws -> String? {
         try readSnapshot {
             $0.itemPaths?[mappingID]?[itemIdentifier]
+        }
+    }
+
+    /// 文件及后代保留原项目标识，避免 Finder 将一次移动识别成删除后重建。
+    public func relocateItemPaths(mappingID: UUID, source: String, destination: String) throws {
+        try updateSnapshot { snapshot in
+            var index = snapshot.itemPaths?[mappingID] ?? [:]
+            for (identifier, path) in index where DesktopDrivePath.isAncestorOrSame(source, of: path) {
+                index[identifier] = destination + path.dropFirst(source.count)
+            }
+            snapshot.itemPaths?[mappingID] = index
+            snapshot.changeJournals?[mappingID] = nil
+            if var runtime = snapshot.runtimes?[mappingID] {
+                runtime.pinnedPaths = runtime.pinnedPaths.map {
+                    DesktopDrivePath.isAncestorOrSame(source, of: $0) ? destination + $0.dropFirst(source.count) : $0
+                }
+                // 下载缓存可重建；不将旧路径记录错误地套用到新内容。
+                runtime.cacheEntries = runtime.cacheEntries.filter { !DesktopDrivePath.isAncestorOrSame(source, of: $0.key) }
+                snapshot.runtimes?[mappingID] = runtime
+            }
+        }
+    }
+
+    public func protectWritebackForSessionRemoval(profileID: UUID) throws -> [DesktopDriveWritebackLease] {
+        let journal = DesktopDriveWritebackStore(directory: directoryURL)
+        return try mappings(profileID: profileID).map { mapping in
+            let lease = try journal.lock(mappingID: mapping.id)
+            try journal.requireNoPendingChanges(mappingID: mapping.id)
+            return lease
         }
     }
 
@@ -584,6 +652,10 @@ public actor DesktopDriveConfigurationStore {
         mappingID: UUID,
         successfulCheckAt: Date? = nil
     ) throws {
+        let journal = DesktopDriveWritebackStore(directory: directoryURL)
+        let lease = state == .removing ? try journal.lock(mappingID: mappingID) : nil
+        defer { withExtendedLifetime(lease) {} }
+        if state == .removing { try journal.requireNoPendingChanges(mappingID: mappingID) }
         try updateSnapshot { snapshot in
             guard snapshot.mappings[mappingID] != nil else {
                 return

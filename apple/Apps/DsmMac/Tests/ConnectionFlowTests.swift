@@ -868,14 +868,19 @@ final class ConnectionFlowTests: XCTestCase {
     func test主动退出清理云盘共享会话但保留应用内密码() async throws {
         let suiteName = "ConnectionFlowTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suiteName)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        }
         let passwordStore = MemoryPasswordStore()
         let desktopDriveSessionStore = MemorySessionStore()
         let model = AppModel(
             profileStore: NasProfileStore(defaults: defaults),
             authRepository: RecordingAuthRepository(),
             passwordStore: passwordStore,
-            desktopDriveSessionStore: desktopDriveSessionStore
+            desktopDriveSessionStore: desktopDriveSessionStore,
+            desktopDriveStore: DesktopDriveConfigurationStore(directoryURL: directory)
         )
         model.host = "home-nas.local"
         model.account = "user"
@@ -902,5 +907,41 @@ final class ConnectionFlowTests: XCTestCase {
         XCTAssertNil(sharedSession)
         XCTAssertEqual(savedPassword, "local-test-password")
         XCTAssertEqual(model.password, "local-test-password")
+    }
+
+    @MainActor
+    func test待上传修改阻止主动退出及删除连接但不清除登录状态() async throws {
+        let suite = "WritebackLogoutTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let store = DesktopDriveConfigurationStore(directoryURL: directory)
+        let shared = MemorySessionStore()
+        let repository = RecordingAuthRepository()
+        let model = AppModel(profileStore: NasProfileStore(defaults: defaults), authRepository: repository,
+                             passwordStore: MemoryPasswordStore(), desktopDriveSessionStore: shared, desktopDriveStore: store)
+        model.host = "nas.invalid"
+        model.account = "synthetic"
+        model.password = "synthetic-password"
+        await model.connect()
+        let profile = try XCTUnwrap(model.profiles.first(where: { $0.id == model.selectedProfileID }))
+        try await store.saveConnection(profile: profile, capabilities: .init([:]))
+        let mapping = DesktopDriveMapping(profileID: profile.id, displayName: "Synthetic", scope: .folder(path: "/share/work"))
+        try await store.saveMapping(mapping)
+        let journal = DesktopDriveWritebackStore(directory: directory)
+        try journal.save(.init(mappingID: mapping.id, itemIdentifier: "synthetic", sourcePath: nil,
+                               destinationPath: "/share/work/new", isDirectory: true, contentHash: nil, contentSize: nil, baseContentVersion: nil))
+        let workspaceBefore = try XCTUnwrap(model.workspace)
+        try await shared.save(AuthSession(sid: "synthetic-session", synoToken: nil, did: nil, isPortalPort: false), for: profile.id)
+        await model.logout()
+        XCTAssertTrue(model.workspace === workspaceBefore)
+        let retained = try await shared.load(for: profile.id)
+        XCTAssertNotNil(retained)
+        XCTAssertTrue(model.statusIsError)
+        await model.deleteSelectedProfile()
+        XCTAssertEqual(model.selectedProfileID, profile.id)
+        XCTAssertTrue(model.profiles.contains(where: { $0.id == profile.id }))
+        let logoutCount = await repository.logoutCallCount
+        XCTAssertEqual(logoutCount, 0)
     }
 }

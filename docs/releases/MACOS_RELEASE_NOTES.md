@@ -1,19 +1,15 @@
-## macOS 1.0.6
+## macOS 1.0.7
 
-- 修复关闭或切换窗口时可能导致整个应用意外退出的问题。
-- 保留窗口标题栏、系统按钮与新窗口的正常显示行为。
-- 包含 1.0.5 及此前版本的修复。
+- 新增本地挂载文件编辑与上传，可按文件夹开启读写。
+- 完善文件变化提示，以及上传失败后本机修改的保留与恢复。
+- 优化文件编辑界面，改善中英文和浅深色显示。
 
-适用于 macOS 14 及以上版本，包含正式签名的挂载扩展。在线更新会自动选择 Apple 芯片或 Intel 安装包。
+已有挂载保持只读，需要手动开启编辑。建议先用测试文件确认保存行为。
 
-升级前请保存工作并等待应用内和 Finder 传输完成。升级不会重置账号、设置或已有挂载配置。
+## English — macOS 1.0.7
 
-## English — macOS 1.0.6
+- Added editing and uploading for mounted folders, with write access enabled per folder.
+- Improved file-change notices and recovery of local edits when uploads fail.
+- Refined the file-editing interface in English and Chinese, with improved light and dark appearances.
 
-- Fixed a crash that could unexpectedly quit the app when closing or switching windows.
-- Preserved normal title bars, window controls, and newly opened windows.
-- Includes the fixes from 1.0.5 and earlier releases.
-
-Requires macOS 14 or later and includes the signed File Provider extension. Online updates select the appropriate Apple silicon or Intel installer.
-
-Save your work and finish app and Finder transfers before updating. Existing accounts, settings, and mounted-drive configurations are not reset.
+Existing mounts remain read-only until you enable editing. Try it with disposable files first.

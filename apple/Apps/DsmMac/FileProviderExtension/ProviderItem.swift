@@ -13,20 +13,25 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     private let modifiedAt: Date?
     private let version: NSFileProviderItemVersion
     private let keptOffline: Bool
+    private let writable: Bool
 
     init(
         fileItem: FileItem,
         mapping: DesktopDriveMapping,
-        keptOffline: Bool
+        keptOffline: Bool,
+        identifiersByPath: [String: String] = [:],
+        writable: Bool = false
     ) {
-        identifier = Self.identifier(
+        identifier = identifiersByPath[fileItem.path].map { NSFileProviderItemIdentifier($0) } ?? Self.identifier(
             mappingID: mapping.id,
             remotePath: fileItem.path
         )
-        parentIdentifier = Self.parentIdentifier(
+        let defaultParent = Self.parentIdentifier(
             remotePath: fileItem.path,
             mapping: mapping
         )
+        parentIdentifier = defaultParent == .rootContainer ? defaultParent :
+            identifiersByPath[(fileItem.path as NSString).deletingLastPathComponent].map { NSFileProviderItemIdentifier($0) } ?? defaultParent
         itemName = fileItem.name
         directory = fileItem.isDirectory
         type = fileItem.isDirectory
@@ -40,12 +45,15 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
             modifiedAt: fileItem.times?.modifiedAt
         )
         self.keptOffline = keptOffline
+        self.writable = writable && fileItem.permissions?.canWrite != false && !fileItem.isRecyclePath
+            && (fileItem.kind == .file || fileItem.kind == .directory) && fileItem.mountPointType == nil
         super.init()
     }
 
     private init(
         root mapping: DesktopDriveMapping,
-        keptOffline: Bool
+        keptOffline: Bool,
+        writable: Bool
     ) {
         identifier = .rootContainer
         parentIdentifier = .rootContainer
@@ -60,6 +68,7 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
             modifiedAt: mapping.createdAt
         )
         self.keptOffline = keptOffline
+        self.writable = writable
         super.init()
     }
 
@@ -77,16 +86,19 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
             modifiedAt: nil
         )
         keptOffline = false
+        writable = false
         super.init()
     }
 
     static func root(
         configuration: DesktopDriveProviderConfiguration,
-        keptOffline: Bool
+        keptOffline: Bool,
+        writable: Bool = false
     ) -> ProviderItem {
         ProviderItem(
             root: configuration.mapping,
-            keptOffline: keptOffline
+            keptOffline: keptOffline,
+            writable: writable
         )
     }
 
@@ -102,10 +114,13 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     var documentSize: NSNumber? { size.map(NSNumber.init(value:)) }
     var contentModificationDate: Date? { modifiedAt }
     var capabilities: NSFileProviderItemCapabilities {
-        if directory {
-            return [.allowsReading, .allowsContentEnumerating]
+        var result: NSFileProviderItemCapabilities = [.allowsReading]
+        if directory { result.insert(.allowsContentEnumerating) }
+        if writable {
+            result.insert(.allowsWriting)
+            if identifier != .rootContainer { result.formUnion([.allowsRenaming, .allowsReparenting]) }
         }
-        return [.allowsReading]
+        return result
     }
     var contentPolicy: NSFileProviderContentPolicy {
         keptOffline ? .downloadEagerlyAndKeepDownloaded : .downloadLazily
@@ -155,7 +170,8 @@ final class ProviderItem: NSObject, NSFileProviderItem, @unchecked Sendable {
         )
         return NSFileProviderItemVersion(
             contentVersion: value.content,
-            metadataVersion: value.metadata
+            // 可比较标记放在元数据版本中，避免升级时把未变化的缓存内容全部判为过期。
+            metadataVersion: Data((size != nil && modifiedAt != nil ? "metadata:" : "unversioned:").utf8) + value.metadata
         )
     }
 }

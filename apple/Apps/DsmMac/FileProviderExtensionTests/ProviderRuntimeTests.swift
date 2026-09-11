@@ -1039,7 +1039,8 @@ private struct ProviderRuntimeTestContext: Sendable {
             },
             removeItem: { try? FileManager.default.removeItem(at: $0) },
             capacityRecheckIntervalBytes: recheckIntervalBytes,
-            changeJournalMaximumEntries: changeJournalMaximumEntries
+            changeJournalMaximumEntries: changeJournalMaximumEntries,
+            writebackStore: .init(directory: directory)
         )
     }
 }

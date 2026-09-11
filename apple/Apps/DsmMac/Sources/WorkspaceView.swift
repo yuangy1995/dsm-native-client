@@ -4703,6 +4703,7 @@ private struct SettingsView: View {
     @State private var showsSelectiveCleanupSheet = false
     @State private var storageMessage: String?
     @State private var mappingToRemove: DesktopDriveMapping?
+    @State private var mappingWritebackSettings: DesktopDriveMapping?
     @State private var showsMappingCreator = false
     @State private var showsDiagnosticPreview = false
     @State private var diagnosticPreview = ""
@@ -4794,6 +4795,9 @@ private struct SettingsView: View {
             }
         } message: {
             Text(L10n.string("desktopDrive.remove.confirm.message"))
+        }
+        .sheet(item: $mappingWritebackSettings) { mapping in
+            DesktopDriveWritebackSettingsSheet(mapping: mapping)
         }
         .alert(L10n.string("ui.536d12618defa1a3"), isPresented: $confirmsCacheCleanup) {
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
@@ -5307,6 +5311,9 @@ private struct SettingsView: View {
                                 role: .destructive
                             ) {
                                 mappingToRemove = mapping
+                            }
+                            Button(L10n.string("desktopDrive.writeback.title")) {
+                                mappingWritebackSettings = mapping
                             }
                         }
                     }

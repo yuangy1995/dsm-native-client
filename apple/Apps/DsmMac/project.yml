@@ -47,8 +47,8 @@ targets:
         INFOPLIST_FILE: SupportingFiles/Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmMac.entitlements
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 16
-        MARKETING_VERSION: 1.0.6
+        CURRENT_PROJECT_VERSION: 17
+        MARKETING_VERSION: 1.0.7
         ENABLE_HARDENED_RUNTIME: true
         GENERATE_INFOPLIST_FILE: false
         SHARED_KEYCHAIN_ACCESS_GROUP: "$(AppIdentifierPrefix)$(LANSTASH_SHARED_KEYCHAIN_SUFFIX)"
@@ -61,6 +61,8 @@ targets:
       - path: FileProviderExtension
     dependencies:
       - package: DsmShared
+        product: DsmLocalization
+      - package: DsmShared
         product: DsmCore
       - package: DsmShared
         product: DsmNetwork
@@ -71,8 +73,8 @@ targets:
         INFOPLIST_FILE: SupportingFiles/DsmFileProvider-Info.plist
         CODE_SIGN_ENTITLEMENTS: SupportingFiles/DsmFileProvider.entitlements
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 16
-        MARKETING_VERSION: 1.0.6
+        CURRENT_PROJECT_VERSION: 17
+        MARKETING_VERSION: 1.0.7
         ENABLE_HARDENED_RUNTIME: true
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true

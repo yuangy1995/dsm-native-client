@@ -596,9 +596,14 @@ final class AppModel {
         guard let profile = selectedProfile else {
             return
         }
+        do { try await desktopDriveStore.removeConnection(profileID: profile.id) }
+        catch {
+            statusIsError = true
+            statusMessage = L10n.string("desktopDrive.writeback.pending")
+            return
+        }
         await clearStoredSessions(profileID: profile.id)
         try? await passwordStore.remove(for: profile.id)
-        try? await desktopDriveStore.removeConnection(profileID: profile.id)
         profileStore.removeAutoLoginPreference(for: profile.id)
         workspacesByProfileID[profile.id]?.cancelAllWork()
         workspacesByProfileID[profile.id] = nil
@@ -610,6 +615,17 @@ final class AppModel {
 
     func logout() async {
         let profile = selectedProfile
+        let writebackLeases: [DesktopDriveWritebackLease]
+        do {
+            if let profile {
+                writebackLeases = try await desktopDriveStore.protectWritebackForSessionRemoval(profileID: profile.id)
+            } else { writebackLeases = [] }
+        } catch {
+            statusIsError = true
+            statusMessage = L10n.string("desktopDrive.writeback.pending")
+            return
+        }
+        defer { withExtendedLifetime(writebackLeases) {} }
         let connectionProfile = activeConnectionProfile
         let discovered = capabilities
         let authenticated = session

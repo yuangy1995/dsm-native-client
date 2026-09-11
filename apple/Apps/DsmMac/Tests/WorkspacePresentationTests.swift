@@ -137,6 +137,46 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test挂载写回设置双语主题状态绘制() async throws {
+        let oldLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = oldLanguage }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("WritebackPresentation-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DesktopDriveWritebackStore(directory: directory)
+        for state in ["empty", "conflict", "submitted", "error", "multiple", "readOnly"] {
+            let mapping = DesktopDriveMapping(profileID: UUID(), displayName: "My NAS", scope: .folder(path: "/share/test"))
+            try store.setEnabled(!["empty", "error", "readOnly"].contains(state), mappingID: mapping.id)
+            if state == "error" {
+                let path = directory.appendingPathComponent("desktop-drive-writeback-v1").appendingPathComponent(mapping.id.uuidString).appendingPathComponent("broken.json")
+                try Data("invalid".utf8).write(to: path)
+            } else if state != "empty" {
+                var record = DesktopDriveWritebackRecord(mappingID: mapping.id, itemIdentifier: "synthetic", sourcePath: nil,
+                    destinationPath: "/share/test/旅行计划.md", isDirectory: false, contentHash: String(repeating: "0", count: 64), contentSize: 0, baseContentVersion: nil)
+                record.phase = state == "conflict" ? .conflict : .submitted
+                try store.save(record)
+                if state == "multiple" {
+                    var second = DesktopDriveWritebackRecord(mappingID: mapping.id, itemIdentifier: "second", sourcePath: nil,
+                        destinationPath: "/share/test/Project-notes-and-reference-materials-for-the-next-release.md", isDirectory: false,
+                        contentHash: String(repeating: "0", count: 64), contentSize: 0, baseContentVersion: nil)
+                    second.phase = .conflict
+                    try store.save(second)
+                }
+            }
+            for language in [AppLanguageSelection.english, .simplifiedChinese] {
+                AppLanguageStore.shared.selection = language
+                for scheme in [ColorScheme.light, .dark] {
+                    let host = NSHostingView(rootView: DesktopDriveWritebackSettingsSheet(mapping: mapping, store: store, writebackAvailable: true)
+                        .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                        .environment(\.controlActiveState, .active).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 580, height: 400))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host)
+                    try snapshot(host, name: "writeback-\(state)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                }
+            }
+        }
+    }
+
     func test新增Photos加载空内容筛选为空和错误状态() async throws {
         let language = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = language }
