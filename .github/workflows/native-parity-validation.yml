@@ -1,0 +1,25 @@
+name: Native Parity Validation
+
+on:
+  push:
+    branches: [codex/native-macos-parity]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: 导出可复现源码基线（不包含 Git 配置或运行环境）
+        shell: bash
+        run: git archive --format=tar --output "$RUNNER_TEMP/native-parity-source.tar" HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-parity-source
+          path: ${{ runner.temp }}/native-parity-source.tar
+          retention-days: 1
