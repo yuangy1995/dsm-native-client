@@ -33,11 +33,11 @@ jobs:
           cp apple/Apps/DsmMac/Sources/SynologyPhotosModel.swift apple/Apps/DsmMobile/Sources/Features/Photos/MobileSynologyPhotosModel.swift
           cp apple/Apps/DsmMac/Tests/SynologyPhotosModelTests.swift apple/Apps/DsmMobile/Tests/MobileSynologyPhotosModelTests.swift
           git add apple/Apps/DsmMobile/Sources/Features/Photos/MobileSynologyPhotosModel.swift apple/Apps/DsmMobile/Tests/MobileSynologyPhotosModelTests.swift
-          git apply --check --index "$RUNNER_TEMP/source.patch"
-          git apply --index "$RUNNER_TEMP/source.patch"
+          git apply --check --index --exclude='.github/workflows/*' "$RUNNER_TEMP/source.patch"
+          git apply --index --exclude='.github/workflows/*' "$RUNNER_TEMP/source.patch"
           git diff --cached --check
-          git diff --exit-code -- apple/Apps/DsmMac
-          git rm -r .github/native-parity .github/workflows/native-parity-validation.yml
+          test -z "$(git diff --cached --name-only -- apple/Apps/DsmMac .github/workflows)"
+          git rm -r .github/native-parity
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(apple): migrate mobile Photos to native Synology library and Liquid Glass'
