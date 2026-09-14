@@ -13,6 +13,7 @@ struct MobileRootView: View {
                 MobileLoginView(model: model)
             }
         }
+        .mobileAppearanceRoot()
         .tint(.blue)
         .preferredColorScheme(model.settingsStore.appearance.colorScheme)
     }

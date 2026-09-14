@@ -79,6 +79,8 @@ final class MobileAppModel {
                 deactivateFileLocations()
                 deactivateDownloads()
                 photoLibraryModel.deactivate()
+                synologyPhotosModel?.setModuleEnabled(false)
+                synologyPhotosModel = nil
                 chatModel.deactivate()
                 nasHealthModel.deactivate()
                 nasDetailsModel.deactivate()
@@ -117,6 +119,7 @@ final class MobileAppModel {
     var activeConnectionProfile: NasProfile?
     var fileRepository: DsmFileRepository?
     var photoRepository: FileStationPhotoRepository?
+    var synologyPhotosModel: MobileSynologyPhotosModel?
     var serviceRepository: DsmServiceManagementRepository?
     var chatRepository: DsmChatRepository?
     var nasRepository: DsmNasAdministrationRepository?

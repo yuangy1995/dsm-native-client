@@ -25,6 +25,7 @@ actor MobilePhotoThumbnailStore {
     private var visibleWaiters: [Waiter] = []
     private var prefetchWaiters: [Waiter] = []
     private var cancelledWaiterIDs: Set<UUID> = []
+    private var pendingWaiterIDs: Set<UUID> = []
     private var generation: UInt64 = 0
     private var namespaceGenerations: [String: UInt64] = [:]
 
@@ -45,7 +46,7 @@ actor MobilePhotoThumbnailStore {
         guard await acquire(priority: priority) else { return nil }
         defer { release() }
 
-        guard isCurrent(
+        guard !Task.isCancelled, isCurrent(
             generation: requestGeneration,
             namespace: namespace,
             namespaceGeneration: requestNamespaceGeneration
@@ -107,8 +108,10 @@ actor MobilePhotoThumbnailStore {
         }
 
         let id = UUID()
+        pendingWaiterIDs.insert(id)
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
+                pendingWaiterIDs.remove(id)
                 if cancelledWaiterIDs.remove(id) != nil || Task.isCancelled {
                     continuation.resume(returning: false)
                     return
@@ -135,7 +138,8 @@ actor MobilePhotoThumbnailStore {
             prefetchWaiters.remove(at: index).continuation.resume(returning: false)
             return
         }
-        cancelledWaiterIDs.insert(id)
+        // 已经恢复的等待者不再属于队列；不能留下永远无法消费的取消标识。
+        if pendingWaiterIDs.contains(id) { cancelledWaiterIDs.insert(id) }
     }
 
     private func release() {

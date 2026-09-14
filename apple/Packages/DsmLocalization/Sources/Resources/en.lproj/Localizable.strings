@@ -4017,3 +4017,10 @@
 "photos.delete.review" = "Check deletion result";
 "photos.delete.reviewFailed" = "The deletion result could not be checked. Check the connection, then try again.";
 "photos.delete.done" = "The photo has been deleted.";
+
+// 原生跨端照片与玻璃界面
+"parity.photos.loading" = "Loading photos";
+"parity.photos.newerMonth" = "Open newer month";
+"parity.photos.shareLink" = "Share link";
+"parity.photos.stopMotion" = "Stop Live Photo";
+"parity.photos.readOnly" = "Use Synology Photos to make this change.";
