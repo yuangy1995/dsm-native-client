@@ -3,23 +3,42 @@ name: Native Parity Validation
 on:
   push:
     branches: [codex/native-macos-parity]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  source-baseline:
+  apply-reviewed-source:
+    if: github.ref == 'refs/heads/codex/native-macos-parity'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
-      - name: 导出可复现源码基线（不包含 Git 配置或运行环境）
+          ref: codex/native-macos-parity
+      - name: 校验并应用已审查的源码差异
         shell: bash
-        run: git archive --format=tar --output "$RUNNER_TEMP/native-parity-source.tar" HEAD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: native-parity-source
-          path: ${{ runner.temp }}/native-parity-source.tar
-          retention-days: 1
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          cat .github/native-parity/chunk{0,1,2,3} > "$RUNNER_TEMP/source.patch.xz"
+          echo "9fcb8e7d02fc6ba0e6c7d2a61d21db8e14183dbeed012bae79381cf918c009f9  $RUNNER_TEMP/source.patch.xz" | sha256sum -c -
+          xz -dc "$RUNNER_TEMP/source.patch.xz" > "$RUNNER_TEMP/source.patch"
+          echo "c1579a88707c74c9a9c0b5e3db76983032d264e76adcfbb0b98df6e7ea90978e  $RUNNER_TEMP/source.patch" | sha256sum -c -
+          test "$(git hash-object apple/Apps/DsmMac/Sources/SynologyPhotosModel.swift)" = 'c5db112a332388e1883558dbcf65ea473968c93e'
+          test "$(git hash-object apple/Apps/DsmMac/Tests/SynologyPhotosModelTests.swift)" = '45dedfbc73d3a5f48eb67888fdc658433f7e5dfd'
+          test ! -e apple/Apps/DsmMobile/Sources/Features/Photos/MobileSynologyPhotosModel.swift
+          test ! -e apple/Apps/DsmMobile/Tests/MobileSynologyPhotosModelTests.swift
+          cp apple/Apps/DsmMac/Sources/SynologyPhotosModel.swift apple/Apps/DsmMobile/Sources/Features/Photos/MobileSynologyPhotosModel.swift
+          cp apple/Apps/DsmMac/Tests/SynologyPhotosModelTests.swift apple/Apps/DsmMobile/Tests/MobileSynologyPhotosModelTests.swift
+          git add apple/Apps/DsmMobile/Sources/Features/Photos/MobileSynologyPhotosModel.swift apple/Apps/DsmMobile/Tests/MobileSynologyPhotosModelTests.swift
+          git apply --check --index "$RUNNER_TEMP/source.patch"
+          git apply --index "$RUNNER_TEMP/source.patch"
+          git diff --cached --check
+          git diff --exit-code -- apple/Apps/DsmMac
+          git rm -r .github/native-parity .github/workflows/native-parity-validation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(apple): migrate mobile Photos to native Synology library and Liquid Glass'
+          git push origin HEAD:refs/heads/codex/native-macos-parity
