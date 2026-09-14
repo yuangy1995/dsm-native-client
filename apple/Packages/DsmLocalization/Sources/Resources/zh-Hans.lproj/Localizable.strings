@@ -4017,3 +4017,10 @@
 "photos.delete.review" = "核对删除结果";
 "photos.delete.reviewFailed" = "暂时无法核对删除结果，请检查连接后再次核对。";
 "photos.delete.done" = "照片已删除。";
+
+// 原生跨端照片与玻璃界面
+"parity.photos.loading" = "正在读取照片";
+"parity.photos.newerMonth" = "打开较新的月份";
+"parity.photos.shareLink" = "分享链接";
+"parity.photos.stopMotion" = "停止实况播放";
+"parity.photos.readOnly" = "此操作请在 Synology Photos 中完成。";

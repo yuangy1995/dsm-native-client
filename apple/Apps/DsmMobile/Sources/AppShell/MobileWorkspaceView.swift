@@ -98,6 +98,7 @@ struct MobileWorkspaceView: View {
             destinationContent(model.selectedTopLevel)
         }
         .navigationSplitViewStyle(.balanced)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
     }
 
     private func primaryTab(_ destination: MobileTopLevelDestination) -> some View {
@@ -137,8 +138,11 @@ struct MobileWorkspaceView: View {
     private func destinationContent(_ destination: MobileTopLevelDestination) -> some View {
         switch destination {
         case .files, .photos, .chat:
-            moduleDetail(destination.defaultModule)
-                .navigationTitle(destination.title)
+            NavigationStack {
+                moduleDetail(destination.defaultModule)
+                    .navigationTitle(destination.title)
+                    .navigationBarTitleDisplayMode(.inline)
+            }
         case .activity, .more:
             NavigationStack {
                 childModuleList(destination)
@@ -229,7 +233,11 @@ struct MobileWorkspaceView: View {
             case .files:
                 MobileFileBrowser(model: model)
             case .photos:
-                MobilePhotosView(model: model)
+                if let photos = model.synologyPhotosModel {
+                    MobileSynologyPhotosView(model: photos)
+                } else {
+                    ContentUnavailableView(L10n.string("photos.service.unavailable"), systemImage: "photo.on.rectangle.angled")
+                }
             case .chat:
                 MobileChatView(model: model)
             case .downloads:
@@ -260,7 +268,7 @@ struct MobileWorkspaceView: View {
                     profileMenu
                 }
             }
-            if module != .chat, module != .settings, module != .transfers {
+            if module != .chat, module != .photos, module != .settings, module != .transfers {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         if module == .nasSettings {

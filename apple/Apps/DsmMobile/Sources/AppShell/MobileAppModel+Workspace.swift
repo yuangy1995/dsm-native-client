@@ -19,6 +19,7 @@ extension MobileAppModel {
             filePreviewModel.close()
         }
         if selectedModule == .photos, module != .photos {
+            synologyPhotosModel?.cancel()
             photoLibraryModel.deactivate()
             filePreviewModel.close()
         }
@@ -80,19 +81,21 @@ extension MobileAppModel {
     func setModule(_ module: MobileModule, isVisible: Bool) {
         guard module.isOptionalPreference else { return }
         settingsStore.setVisible(isVisible, module: module)
+        if module == .photos { synologyPhotosModel?.setModuleEnabled(isVisible) }
         guard !isVisible, selectedModule == module else { return }
         selectModule(preferredModule(for: selectedTopLevel))
     }
 
     func refreshSettingsCacheSummary() async {
-        settingsStore.setPhotoThumbnailCacheBytes(
-            await photoLibraryModel.thumbnailCacheCost()
-        )
+        let legacyBytes = await photoLibraryModel.thumbnailCacheCost()
+        let photosBytes = await synologyPhotosModel?.thumbnailStore.cachedCost() ?? 0
+        settingsStore.setPhotoThumbnailCacheBytes(legacyBytes + photosBytes)
     }
 
     func clearRegenerableCaches() async {
         guard settingsStore.beginClearingCache() else { return }
         await photoLibraryModel.clearThumbnailCache()
+        await synologyPhotosModel?.thumbnailStore.removeAll()
         let remainingBytes = await photoLibraryModel.thumbnailCacheCost()
         settingsStore.finishClearingCache(
             result: remainingBytes == 0 ? .success : .failure,
@@ -233,6 +236,9 @@ extension MobileAppModel {
         )
         self.fileRepository = fileRepository
         photoRepository = FileStationPhotoRepository(files: fileRepository)
+        synologyPhotosModel?.setModuleEnabled(false)
+        synologyPhotosModel = MobileSynologyPhotosModel(repository: try SynologyPhotosRepository(
+            profile: profile, capabilities: capabilities, session: session))
         serviceRepository = try DsmServiceManagementRepository(
             profile: profile,
             capabilities: capabilities,

@@ -1,0 +1,119 @@
+name: Apple Mobile Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apple/**"
+      - ".github/workflows/apple-mobile-build.yml"
+  pull_request:
+    paths:
+      - "apple/**"
+      - ".github/workflows/apple-mobile-build.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apple-mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            toolchain: compatible
+            developer_dir: /Applications/Xcode_16.4.app/Contents/Developer
+          - runner: xcode-27
+            toolchain: liquid-glass
+            developer_dir: ""
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      XCODEGEN_VERSION: "2.46.0"
+      XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: 选择并记录实际 SDK
+        env:
+          PINNED_DEVELOPER_DIR: ${{ matrix.developer_dir }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
+        run: |
+          if [[ -n "$PINNED_DEVELOPER_DIR" ]]; then
+            test -d "$PINNED_DEVELOPER_DIR"
+            export DEVELOPER_DIR="$PINNED_DEVELOPER_DIR"
+            echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+            test "$(xcodebuild -version | awk 'NR == 1 { print $2 }')" = '16.4'
+          else
+            test "$(xcodebuild -version | awk 'NR == 1 { print $2 }' | cut -d. -f1)" = '27'
+          fi
+          xcodebuild -version
+          xcodebuild -showsdks
+          swift --version
+      - name: 安装锁定版本的工程生成器
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: 生成移动工程
+        working-directory: apple/Apps/DsmMobile
+        run: xcodegen generate
+      - name: 选择已安装的 iPhone 与 iPad 模拟器
+        id: devices
+        run: |
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          devices = json.loads(Path(os.environ['RUNNER_TEMP'], 'simulators.json').read_text())['devices']
+          runtimes = sorted((r for r in devices if '.iOS-' in r),
+                            key=lambda r: tuple(map(int, re.findall(r'\d+', r))), reverse=True)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for family in ('iPhone', 'iPad'):
+                  candidates = [d for r in runtimes for d in devices[r]
+                                if d.get('isAvailable') and d['name'].startswith(family)]
+                  if not candidates:
+                      raise SystemExit(f'缺少可用 {family} 模拟器，不能将未运行的测试报告为通过。')
+                  chosen = candidates[0]
+                  print(f'{family}: {chosen["name"]} ({chosen["udid"]})')
+                  print(f'{family.lower()}={chosen["udid"]}', file=output)
+          PY
+      - name: iPhone 单元与集成测试
+        working-directory: apple/Apps/DsmMobile
+        run: |
+          set -o pipefail
+          xcodebuild -project DsmMobile.xcodeproj -scheme DsmMobile \
+            -destination 'platform=iOS Simulator,id=${{ steps.devices.outputs.iphone }}' \
+            -derivedDataPath "$RUNNER_TEMP/mobile-build" \
+            -resultBundlePath "$RUNNER_TEMP/iPhone.xcresult" \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test \
+            | tee "$RUNNER_TEMP/iPhone-build.log"
+      - name: iPad 单元与集成测试
+        if: ${{ !cancelled() && steps.devices.outcome == 'success' }}
+        working-directory: apple/Apps/DsmMobile
+        run: |
+          set -o pipefail
+          xcodebuild -project DsmMobile.xcodeproj -scheme DsmMobile \
+            -destination 'platform=iOS Simulator,id=${{ steps.devices.outputs.ipad }}' \
+            -derivedDataPath "$RUNNER_TEMP/mobile-build" \
+            -resultBundlePath "$RUNNER_TEMP/iPad.xcresult" \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test \
+            | tee "$RUNNER_TEMP/iPad-build.log"
+      - name: 上传构建、测试证据与生成工程
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: mobile-${{ matrix.toolchain }}-validation
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/iPhone-build.log
+            ${{ runner.temp }}/iPad-build.log
+            ${{ runner.temp }}/*.xcresult
+            apple/Apps/DsmMobile/DsmMobile.xcodeproj/project.pbxproj
