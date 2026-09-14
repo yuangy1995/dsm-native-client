@@ -38,36 +38,24 @@ final class MobilePhotoViewerPresentationTests: XCTestCase {
         XCTAssertFalse(source.contains("state.selectedItem?.path == item.path"))
     }
 
-    func testiPhone全屏iPadInspector复用同一冻结查看器() throws {
+    func testiPhone和iPad复用同一Photos预览且属性面板原生适配() throws {
         let source = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-
-        XCTAssertTrue(source.contains("@State private var viewer = MobilePhotoViewerModel()"))
-        XCTAssertTrue(source.contains("viewer.open(item, visibleItems: visiblePhotoSnapshot)"))
-        XCTAssertTrue(source.contains("timeline.visibleItems : state.page.items"))
-        XCTAssertTrue(source.contains(".inspector(isPresented: $showsPreviewInspector)"))
-        XCTAssertTrue(source.contains(".fullScreenCover(isPresented: $showsPreviewFullScreen"))
-        XCTAssertTrue(source.contains("MobilePhotoViewerNavigationControls("))
-        XCTAssertTrue(source.contains("onSaveCopy: { saveCurrentPhotoCopy() }"))
-        XCTAssertTrue(source.contains("onShare: { shareCurrentPhoto() }"))
-        XCTAssertTrue(source.contains("viewer.state.selectedItem"))
-        XCTAssertTrue(source.contains("MobilePhotoMetadataView("))
-        XCTAssertTrue(source.contains(".task(id: activationIdentity)"))
-        XCTAssertTrue(source.contains("await activatePhotoContext()"))
-        XCTAssertTrue(source.contains("fileRepository: model.fileRepository"))
-        XCTAssertTrue(source.contains("viewer.close()"))
+        let preview = try sourceFile("Sources/Features/Photos/MobileSynologyPhotoPreview.swift")
+        XCTAssertTrue(source.contains("MobileSynologyPhotoPreview(library: library)"))
+        XCTAssertTrue(source.contains(".fullScreenCover("))
+        XCTAssertTrue(preview.contains(".inspector(isPresented: $showsInformation)"))
+        XCTAssertTrue(preview.contains("library.previewPhoto"))
+        XCTAssertTrue(preview.contains(".task(id: library.previewRevision)"))
+        XCTAssertTrue(preview.contains("library.clearExport()"))
+        XCTAssertFalse(preview.contains("fileRepository"))
     }
 
-    func test查看器为合格普通媒体提供原生破坏性回收站入口() throws {
-        let controls = try sourceFile("Sources/Features/Photos/Viewer/MobilePhotoViewerView.swift")
-        let photos = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-
-        XCTAssertTrue(controls.contains("if let onMoveToRecycle"))
-        XCTAssertTrue(controls.contains("key: \"mobile.files.recycle.move.action\""))
-        XCTAssertTrue(controls.contains("systemImage: \"trash\""))
-        XCTAssertTrue(controls.contains("role: .destructive"))
-        XCTAssertTrue(photos.contains("moveCurrentPhotoToRecycleAction"))
-        XCTAssertTrue(photos.contains("canMoveToRecycle(item)"))
-        XCTAssertTrue(photos.contains("beginMoveToRecycle(item)"))
+    func test新版Photos查看器仅开放本地保存不沿用FileStation破坏性入口() throws {
+        let preview = try sourceFile("Sources/Features/Photos/MobileSynologyPhotoPreview.swift")
+        XCTAssertTrue(preview.contains("library.exportOriginal(photo)"))
+        XCTAssertTrue(preview.contains("photos.readOnly.message"))
+        XCTAssertFalse(preview.contains("role: .destructive"))
+        XCTAssertFalse(preview.contains("beginMoveToRecycle"))
     }
 
     func test全部可见文案由待补双语资源键提供() throws {

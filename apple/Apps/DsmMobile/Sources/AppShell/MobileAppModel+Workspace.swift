@@ -20,6 +20,7 @@ extension MobileAppModel {
         }
         if selectedModule == .photos, module != .photos {
             photoLibraryModel.deactivate()
+            synologyPhotosModel.setModuleEnabled(false)
             filePreviewModel.close()
         }
         if selectedModule == .chat, module != .chat {
@@ -86,14 +87,14 @@ extension MobileAppModel {
 
     func refreshSettingsCacheSummary() async {
         settingsStore.setPhotoThumbnailCacheBytes(
-            await photoLibraryModel.thumbnailCacheCost()
+            await synologyPhotosModel.thumbnailCacheCost()
         )
     }
 
     func clearRegenerableCaches() async {
         guard settingsStore.beginClearingCache() else { return }
-        await photoLibraryModel.clearThumbnailCache()
-        let remainingBytes = await photoLibraryModel.thumbnailCacheCost()
+        await synologyPhotosModel.clearThumbnailCache()
+        let remainingBytes = await synologyPhotosModel.thumbnailCacheCost()
         settingsStore.finishClearingCache(
             result: remainingBytes == 0 ? .success : .failure,
             remainingBytes: remainingBytes
@@ -120,7 +121,8 @@ extension MobileAppModel {
             case .files:
                 try await loadFiles()
             case .photos:
-                break
+                synologyPhotosModel.setModuleEnabled(true)
+                await synologyPhotosModel.refresh()
             case .chat:
                 guard let profileID = activeProfile?.id else { break }
                 let restoresCachedProfile = chatModel.profiles[profileID] != nil
@@ -233,6 +235,10 @@ extension MobileAppModel {
         )
         self.fileRepository = fileRepository
         photoRepository = FileStationPhotoRepository(files: fileRepository)
+        synologyPhotosModel.setModuleEnabled(false)
+        synologyPhotosModel = MobileSynologyPhotosModel(repository: try SynologyPhotosRepository(
+            profile: profile, capabilities: capabilities, session: session, deletionEnabled: false
+        ))
         serviceRepository = try DsmServiceManagementRepository(
             profile: profile,
             capabilities: capabilities,

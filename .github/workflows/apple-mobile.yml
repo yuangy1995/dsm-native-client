@@ -1,0 +1,88 @@
+name: Apple Mobile Native
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apple/**"
+      - "tools/codex/select_ios_simulator.py"
+      - ".github/workflows/apple-mobile.yml"
+  pull_request:
+    paths:
+      - "apple/**"
+      - "tools/codex/select_ios_simulator.py"
+      - ".github/workflows/apple-mobile.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apple-mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
+
+jobs:
+  native-mobile:
+    # 官方预览 Runner 提供 Xcode 27 / iOS 27；旧 SDK 仍由 Apple Build 独立覆盖。
+    runs-on: xcode-27
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [iPhone, iPad]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: 核实实际工具链和设备
+        id: device
+        shell: bash
+        env:
+          DEVICE_FAMILY: ${{ matrix.family }}
+        run: |
+          set -euo pipefail
+          xcodebuild -version | tee "$RUNNER_TEMP/toolchain.txt"
+          xcodebuild -version | grep -E '^Xcode 27\.'
+          xcrun --sdk iphonesimulator --show-sdk-version | tee -a "$RUNNER_TEMP/toolchain.txt"
+          xcrun --sdk iphonesimulator --show-sdk-version | grep -E '^27\.'
+          swift --version | tee -a "$RUNNER_TEMP/toolchain.txt"
+          device_id="$(python3 tools/codex/select_ios_simulator.py --family "$DEVICE_FAMILY" --major 27)"
+          echo "id=$device_id" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available >> "$RUNNER_TEMP/toolchain.txt"
+      - name: 安装锁定的工程生成器
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          printf '%s  %s\n' "$XCODEGEN_SHA256" "$RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: 生成原生移动工程
+        working-directory: apple/Apps/DsmMobile
+        run: xcodegen generate
+      - name: 构建并执行目标设备测试
+        env:
+          DEVICE_ID: ${{ steps.device.outputs.id }}
+          DEVICE_FAMILY: ${{ matrix.family }}
+        run: |
+          xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj \
+            -scheme DsmMobile -configuration Debug \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath "$RUNNER_TEMP/mobile-build" \
+            -resultBundlePath "$RUNNER_TEMP/$DEVICE_FAMILY.xcresult" \
+            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+      - name: 保留测试结果与生成物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-native-${{ matrix.family }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.family }}.xcresult
+            ${{ runner.temp }}/toolchain.txt
+            apple/Apps/DsmMobile/DsmMobile.xcodeproj/project.pbxproj
+          if-no-files-found: error
+          retention-days: 7

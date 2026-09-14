@@ -15,12 +15,13 @@ struct MobileWorkspaceView: View {
                 compactWorkspace
             }
         }
+        .background { MobileWorkspaceBackground() }
         .overlay(alignment: .top) {
             if model.actionInProgress {
                 ProgressView()
                     .controlSize(.small)
                     .padding(10)
-                    .background(.regularMaterial, in: .capsule)
+                    .mobileGlass(cornerRadius: 24)
                     .padding(.top, 8)
                     .accessibilityLabel(L10n.string("ui.36b7dfe53cf9b5df"))
             }
@@ -246,6 +247,7 @@ struct MobileWorkspaceView: View {
                 MobileSettingsView(model: model)
             }
             if model.isLoading,
+               module != .photos,
                module != .chat,
                module != .nasSettings,
                module != .containers {

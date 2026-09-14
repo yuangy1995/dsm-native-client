@@ -2,914 +2,295 @@ import DsmCore
 import DsmLocalization
 import SwiftUI
 
+/// 正式照片入口只消费 Synology Photos 身份；文件管理中的媒体预览保持独立。
 struct MobilePhotosView: View {
-    @Bindable var model: MobileAppModel
-    var onOpenPhoto: ((PhotoLibraryItem) -> Void)?
-    var onSaveCopy: ((PhotoLibraryItem) -> Void)?
-    var onShare: ((PhotoLibraryItem) -> Void)?
-
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var browseMode = PhotoBrowseMode.albums
-    @State private var timeline = MobilePhotoTimelineModel()
-    @State private var viewer = MobilePhotoViewerModel()
-    @State private var photoImport = MobilePhotoImportModel()
-    @State private var copyMove = MobileFileCopyMoveModel()
-    @State private var recycleAction = MobileFileRecycleActionModel()
-    @State private var showsPreviewInspector = false
-    @State private var showsPreviewFullScreen = false
-    @State private var showsPreviewDetails = false
-    @State private var restoresPreviewInspectorAfterFullScreen = false
-
-    private var library: MobilePhotoLibraryModel { model.photoLibraryModel }
-    private var state: MobilePhotoLibraryProfileState { library.state }
-    private var preview: MobileFilePreviewModel { model.filePreviewModel }
-
+    let model: MobileAppModel
     var body: some View {
-        Group {
-            if horizontalSizeClass == .regular {
-                regularLayout
-            } else {
-                compactLayout
-            }
-        }
-        .navigationTitle(L10n.string("mobile.photos.title"))
-        .toolbar { photosToolbar }
-        .refreshable {
-            if state.spaces.isEmpty {
-                await library.reload()
-            } else if browseMode == .timeline {
-                await timeline.refresh()
-            } else {
-                await library.reload()
-            }
-        }
-        .inspector(isPresented: $showsPreviewInspector) {
-            previewPresentation
-                .inspectorColumnWidth(min: 320, ideal: 420, max: 560)
-        }
-        .fullScreenCover(isPresented: $showsPreviewFullScreen, onDismiss: previewPresentationDidDismiss) {
-            previewPresentation
-        }
-        .sheet(item: documentPresentationBinding, onDismiss: {
-            model.documentTransferController.presentationDidDismiss()
-        }) { presentation in
-            switch presentation.intent {
-            case .exportCopy:
-                MobileDocumentExporter(url: presentation.url) {
-                    model.documentTransferController.requestDismiss(taskID: presentation.taskID)
-                }
-            case .share:
-                MobileShareSheet(url: presentation.url) {
-                    model.documentTransferController.requestDismiss(taskID: presentation.taskID)
-                }
-            case .upload:
-                EmptyView()
-            }
-        }
-        .sheet(isPresented: recycleActionPresentationBinding) {
-            if let repository = model.fileRepository {
-                let repositoryIdentity = ObjectIdentifier(repository)
-                MobileFileRecycleActionView(
-                    recycleAction: recycleAction,
-                    repository: repository,
-                    didConfirm: { success in
-                        await recycleActionDidConfirm(
-                            success,
-                            repositoryIdentity: repositoryIdentity
-                        )
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: copyMovePresentationBinding) {
-            if let repository = model.fileRepository {
-                MobileFileCopyMoveView(
-                    copyMove: copyMove,
-                    repository: repository,
-                    didConfirm: copyMoveDidConfirm
-                )
-            }
-        }
-        .alert(L10n.string("mobile.documents.error-title"), isPresented: documentFailureBinding) {
-            Button(L10n.string("mobile.documents.dismiss")) {
-                model.documentTransferController.clearFailure()
-            }
-        } message: {
-            Text(documentFailureMessage)
-        }
-        .task(id: activationIdentity) { await activatePhotoContext() }
-        .onChange(of: model.activeProfile?.id) { _, _ in
-            resetPreviewPresentation()
-        }
-        .onChange(of: horizontalSizeClass) { _, sizeClass in
-            adaptPreviewPresentation(to: sizeClass)
-        }
-        .onChange(of: browseMode) { _, mode in
-            guard mode == .timeline else { return }
-            Task { await timeline.show(space: library.state.selectedSpace) }
-        }
-        .onChange(of: showsPreviewInspector) { _, isPresented in
-            if !isPresented,
-               !showsPreviewFullScreen,
-               !restoresPreviewInspectorAfterFullScreen {
-                preview.close()
-                viewer.close()
-                showsPreviewDetails = false
-            }
-        }
-        .onDisappear {
-            library.cancelAllWork()
-            timeline.cancelAllWork()
-            viewer.close()
-            photoImport.cancelPreparation()
-            copyMove.deactivate()
-            recycleAction.deactivate()
-        }
-    }
-
-    private var compactLayout: some View {
-        pageContent
-    }
-
-    private var regularLayout: some View {
-        HStack(spacing: 0) {
-            spaceSidebar
-                .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
-            Divider()
-            pageContent
-        }
-    }
-
-    private var spaceSidebar: some View {
-        List(state.spaces, selection: spaceSelection) { space in
-            Label(space.title, systemImage: space.kind == .personal ? "person.crop.rectangle.stack" : "person.2.crop.square.stack")
-                .tag(space.kind)
-                .frame(minHeight: 44)
-        }
-        .listStyle(.sidebar)
-        .navigationTitle(L10n.string("mobile.photos.space"))
-        .accessibilityLabel(L10n.string("mobile.photos.space"))
-    }
-
-    @ViewBuilder
-    private var pageContent: some View {
-        VStack(spacing: 0) {
-            Picker(L10n.string("mobile.photos.mode.title"), selection: $browseMode) {
-                Text(L10n.string("mobile.photos.mode.albums")).tag(PhotoBrowseMode.albums)
-                Text(L10n.string("mobile.photos.mode.timeline")).tag(PhotoBrowseMode.timeline)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, horizontalSizeClass == .regular ? 16 : 12)
-            .padding(.vertical, 8)
-            .frame(minHeight: 44)
-
-            if browseMode == .timeline {
-                MobilePhotoTimelineView(
-                    model: timeline,
-                    compact: horizontalSizeClass != .regular,
-                    onOpenPhoto: openPhoto,
-                    onSaveCopy: saveCopy,
-                    onShare: share,
-                    onMove: beginMove,
-                    isMoveToRecycleAvailable: canMoveToRecycle,
-                    onMoveToRecycle: beginMoveToRecycle,
-                    onRestoreFromRecycle: beginRestoreFromRecycle
-                )
-            } else {
-                albumContent
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var albumContent: some View {
-        if state.isDiscoveringSpaces && state.spaces.isEmpty {
-            loadingView(L10n.string("mobile.photos.loading.spaces"))
-        } else if state.pageState == .loading {
-            loadingView(L10n.string("mobile.photos.loading.album"))
-        } else if state.pageState == .error {
-            errorView
-        } else if state.spaces.isEmpty {
-            noSpacesView
-        } else if state.pageState == .filteredEmpty {
-            filteredEmptyView
-        } else if state.pageState == .empty {
-            emptyAlbumView
-        } else {
-            MobilePhotoGrid(
-                items: state.page.items,
-                library: library,
-                compact: horizontalSizeClass != .regular,
-                isLoadingMore: state.isLoadingMore,
-                loadMoreFailed: state.loadMoreFailed,
-                hasMore: state.page.hasMore,
-                onOpenFolder: openFolder,
-                onOpenPhoto: openPhoto,
-                onSaveCopy: saveCopy,
-                onShare: share,
-                onMove: beginMove,
-                isMoveToRecycleAvailable: canMoveToRecycle,
-                onMoveToRecycle: beginMoveToRecycle,
-                onRestoreFromRecycle: beginRestoreFromRecycle,
-                onLoadMore: loadMore
-            )
-        }
-    }
-
-    private var previewPresentation: some View {
-        NavigationStack {
-            Group {
-                if showsPreviewDetails,
-                   (preview.state.details ?? preview.state.selectedItem) != nil {
-                    MobilePhotoMetadataView(viewer: viewer, previewState: preview.state)
-                } else {
-                    MobileFilePreviewView(
-                        state: preview.state,
-                        mediaSource: preview.mediaSource,
-                        onCancel: preview.cancel,
-                        onRetry: retryPreview,
-                        onClose: closePreview,
-                        onShowDetails: { showsPreviewDetails = true },
-                        onOpenFullScreen: openPreviewFullScreen,
-                        canOpenFullScreen: horizontalSizeClass == .regular && !showsPreviewFullScreen,
-                        onQuickLookDismiss: previewPresentationDidDismiss
-                    )
-                }
-            }
-            .navigationTitle(preview.state.details?.name ?? preview.state.selectedItem?.name ?? "")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if showsPreviewDetails {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            showsPreviewDetails = false
-                        } label: {
-                            Image(systemName: "chevron.backward")
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel(L10n.string("mobile.files.back"))
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: closePreview) {
-                            Image(systemName: "xmark")
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel(L10n.string("mobile.files.preview.action.close"))
-                    }
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    MobilePhotoViewerNavigationControls(
-                        state: viewer.state,
-                        onPrevious: { openPreviousPhoto() },
-                        onNext: { openNextPhoto() },
-                        onSaveCopy: { saveCurrentPhotoCopy() },
-                        onShare: { shareCurrentPhoto() },
-                        onMoveToRecycle: moveCurrentPhotoToRecycleAction,
-                        onRestoreFromRecycle: restoreCurrentPhotoFromRecycleAction
-                    )
-                }
-            }
-        }
-    }
-
-    private func loadingView(_ title: String) -> some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.large)
-                .accessibilityHidden(true)
-            Text(title)
-                .foregroundStyle(.secondary)
-        }
-        .fillsAvailableContentArea(alignment: .center)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(title)
-    }
-
-    private var noSpacesView: some View {
-        ContentUnavailableView {
-            Label(L10n.string("mobile.photos.empty.spaces.title"), systemImage: "photo.stack")
-        } description: {
-            Text(L10n.string("mobile.photos.empty.spaces.message"))
-        } actions: {
-            retryButton
-        }
-        .fillsAvailableContentArea(alignment: .center)
-    }
-
-    private var emptyAlbumView: some View {
-        ContentUnavailableView {
-            Label(L10n.string("mobile.photos.empty.album.title"), systemImage: "photo.on.rectangle")
-        } description: {
-            Text(L10n.string("mobile.photos.empty.album.message"))
-        } actions: {
-            retryButton
-        }
-        .fillsAvailableContentArea(alignment: .center)
-    }
-
-    private var filteredEmptyView: some View {
-        ContentUnavailableView {
-            Label(L10n.string("mobile.photos.empty.filtered.title"), systemImage: "line.3.horizontal.decrease.circle")
-        } description: {
-            Text(L10n.string("mobile.photos.empty.filtered.message"))
-        } actions: {
-            Button(L10n.string("mobile.photos.action.clear-filters")) {
-                library.setFilter(.all)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(minWidth: 44, minHeight: 44)
-        }
-        .fillsAvailableContentArea(alignment: .center)
-    }
-
-    private var errorView: some View {
-        ContentUnavailableView {
-            Label(L10n.string("mobile.photos.error.title"), systemImage: "exclamationmark.triangle")
-        } actions: {
-            retryButton
-        }
-        .fillsAvailableContentArea(alignment: .center)
-    }
-
-    private var retryButton: some View {
-        Button(L10n.string("mobile.photos.action.retry")) {
-            Task { await library.reload() }
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .frame(minWidth: 44, minHeight: 44)
-    }
-
-    @ToolbarContentBuilder
-    private var photosToolbar: some ToolbarContent {
-        if let destination = photoImportDestination,
-           let repository = model.fileRepository {
-            ToolbarItem(placement: .primaryAction) {
-                MobilePhotoImportButton(
-                    importModel: photoImport,
-                    destination: destination,
-                    repository: repository,
-                    controller: model.documentTransferController,
-                    coordinator: model.transferCoordinator,
-                    onConfirmedSuccess: {
-                        guard photoImportDestination == destination else { return }
-                        if browseMode == .timeline {
-                            await timeline.refresh()
-                        } else {
-                            await library.reload()
-                        }
-                    }
-                )
-            }
-        }
-
-        if browseMode == .albums, !state.pathHistory.isEmpty {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    Task { await library.goBack() }
-                } label: {
-                    Image(systemName: "chevron.backward")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel(L10n.string("mobile.files.back"))
-            }
-        }
-
-        if browseMode == .albums {
-            ToolbarItem(placement: .primaryAction) {
-            Menu {
-                if horizontalSizeClass != .regular, state.spaces.count > 1 {
-                    Picker(L10n.string("mobile.photos.space"), selection: spaceSelection) {
-                        ForEach(state.spaces) { space in
-                            Text(space.title).tag(Optional(space.kind))
-                        }
-                    }
-                }
-                Picker(L10n.string("mobile.photos.filter.title"), selection: filterSelection) {
-                    Text(L10n.string("mobile.photos.filter.all")).tag(MobilePhotoFilter.all)
-                    Text(L10n.string("mobile.photos.filter.images")).tag(MobilePhotoFilter.images)
-                }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel(L10n.string("mobile.photos.filter.title"))
-            }
-        } else if horizontalSizeClass != .regular, state.spaces.count > 1 {
-            ToolbarItem(placement: .secondaryAction) {
-                Menu {
-                    Picker(L10n.string("mobile.photos.space"), selection: spaceSelection) {
-                        ForEach(state.spaces) { space in
-                            Text(space.title).tag(Optional(space.kind))
-                        }
-                    }
-                } label: {
-                    Image(systemName: "person.2.crop.square.stack")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel(L10n.string("mobile.photos.space"))
-            }
-        }
-    }
-
-    private var spaceSelection: Binding<PhotoSpaceKind?> {
-        Binding(
-            get: { state.selectedSpace?.kind },
-            set: { kind in
-                guard let kind else { return }
-                Task {
-                    await library.selectSpace(kind)
-                    if browseMode == .timeline {
-                        await timeline.show(space: library.state.selectedSpace)
-                    }
-                }
-            }
-        )
-    }
-
-    private var filterSelection: Binding<MobilePhotoFilter> {
-        Binding(
-            get: { state.filter },
-            set: { library.setFilter($0) }
-        )
-    }
-
-    private func openFolder(_ item: PhotoLibraryItem) {
-        Task { await library.openFolder(item) }
-    }
-
-    private func loadMore() {
-        Task { await library.loadMore() }
-    }
-
-    private func openPhoto(_ item: PhotoLibraryItem) {
-        guard let item = canonicalPhotoItem(item) else { return }
-        if let onOpenPhoto {
-            onOpenPhoto(item)
-            return
-        }
-        guard let repository = model.fileRepository else { return }
-        guard viewer.open(item, visibleItems: visiblePhotoSnapshot) else { return }
-        showsPreviewDetails = false
-        restoresPreviewInspectorAfterFullScreen = false
-        if horizontalSizeClass == .regular {
-            showsPreviewFullScreen = false
-            showsPreviewInspector = true
-        } else {
-            showsPreviewInspector = false
-            showsPreviewFullScreen = true
-        }
-        Task { await preview.open(item.fileItem, service: repository) }
-    }
-
-    private func retryPreview() {
-        guard let repository = model.fileRepository else { return }
-        showsPreviewDetails = false
-        Task { await preview.retry(service: repository) }
-    }
-
-    private func openPreviewFullScreen() {
-        guard horizontalSizeClass == .regular,
-              showsPreviewInspector,
-              preview.state.phase != .inactive else { return }
-        restoresPreviewInspectorAfterFullScreen = true
-        showsPreviewInspector = false
-        Task { @MainActor in
-            await Task.yield()
-            guard restoresPreviewInspectorAfterFullScreen,
-                  horizontalSizeClass == .regular,
-                  preview.state.phase != .inactive else {
-                restoresPreviewInspectorAfterFullScreen = false
-                return
-            }
-            showsPreviewFullScreen = true
-        }
-    }
-
-    private func closePreview() {
-        showsPreviewDetails = false
-        restoresPreviewInspectorAfterFullScreen = false
-        showsPreviewFullScreen = false
-        showsPreviewInspector = false
-        preview.close()
-        viewer.close()
-    }
-
-    private func previewPresentationDidDismiss() {
-        guard !showsPreviewFullScreen else { return }
-        if restoresPreviewInspectorAfterFullScreen {
-            restoresPreviewInspectorAfterFullScreen = false
-            if horizontalSizeClass == .regular,
-               preview.state.phase != .inactive {
-                showsPreviewInspector = true
-                return
-            }
-        }
-        guard !showsPreviewInspector, !showsPreviewFullScreen else { return }
-        showsPreviewDetails = false
-        preview.close()
-        viewer.close()
-    }
-
-    private func resetPreviewPresentation() {
-        showsPreviewDetails = false
-        restoresPreviewInspectorAfterFullScreen = false
-        showsPreviewFullScreen = false
-        showsPreviewInspector = false
-        preview.close()
-        viewer.activate(
-            profileID: model.activeProfile?.id,
-            fileRepository: model.fileRepository
-        )
-    }
-
-    private func activatePhotoContext() async {
-        let profileID = model.activeProfile?.id
-        let fileRepository = model.fileRepository
-        let fileRepositoryIdentity = fileRepository.map(ObjectIdentifier.init)
-        model.documentTransferController.setActiveProfile(profileID)
-        photoImport.activate(
-            profileID: model.activeProfile?.id,
-            repositoryIdentity: model.fileRepository.map { ObjectIdentifier($0) }
-        )
-        recycleAction.activate(
-            profileID: model.activeProfile?.id,
-            repository: model.fileRepository
-        )
-        copyMove.activate(
-            profileID: model.activeProfile?.id,
-            repository: model.fileRepository
-        )
-        if viewer.activate(
-            profileID: model.activeProfile?.id,
-            fileRepository: model.fileRepository
-        ) {
-            showsPreviewDetails = false
-            restoresPreviewInspectorAfterFullScreen = false
-            showsPreviewFullScreen = false
-            showsPreviewInspector = false
-            preview.close()
-        }
-        preview.activate(profileID: model.activeProfile?.id)
-        timeline.activate(
-            profileID: model.activeProfile?.id,
-            repository: model.photoRepository,
-            repositoryProfileID: model.fileRepository?.profileID
-        )
-        model.fileBrowserModel.locations.activate(
-            profileID: profileID,
-            repository: fileRepository
-        )
-        let locationLoadTask: Task<Void, Never>?
-        if let profileID,
-           let fileRepository,
-           fileRepository.profileID == profileID {
-            locationLoadTask = Task {
-                await model.fileBrowserModel.locations.loadIfNeeded(repository: fileRepository)
-            }
-        } else {
-            locationLoadTask = nil
-        }
-        await library.activate(
-            profileID: profileID,
-            repository: model.photoRepository
-        )
-        guard model.activeProfile?.id == profileID,
-              model.fileRepository.map(ObjectIdentifier.init) == fileRepositoryIdentity else {
-            locationLoadTask?.cancel()
-            await locationLoadTask?.value
-            return
-        }
-        if browseMode == .timeline {
-            await timeline.show(space: library.state.selectedSpace)
-        }
-        if Task.isCancelled { locationLoadTask?.cancel() }
-        await locationLoadTask?.value
-    }
-
-    private var activationIdentity: MobilePhotoActivationIdentity {
-        MobilePhotoActivationIdentity(
-            profileID: model.activeProfile?.id,
-            fileRepository: model.fileRepository.map(ObjectIdentifier.init)
-        )
-    }
-
-    private var photoImportDestination: MobilePhotoImportDestination? {
-        guard let profileID = model.activeProfile?.id,
-              library.activeProfileID == profileID,
-              let repository = model.fileRepository,
-              repository.profileID == profileID,
-              let space = state.selectedSpace else { return nil }
-        let folderPath = browseMode == .timeline ? space.rootPath : state.currentPath
-        let destination = MobilePhotoImportDestination(
-            profileID: profileID,
-            folderPath: folderPath,
-            spaceRootPath: space.rootPath
-        )
-        return MobilePhotoImportModel.isAllowed(destination) ? destination : nil
-    }
-
-    private var visiblePhotoSnapshot: [PhotoLibraryItem] {
-        let candidates = browseMode == .timeline ? timeline.visibleItems : state.page.items
-        return candidates.filter { !$0.isFolder }
-    }
-
-    private func openPreviousPhoto() {
-        guard let item = viewer.movePrevious() else { return }
-        openSnapshotPhoto(item)
-    }
-
-    private func openNextPhoto() {
-        guard let item = viewer.moveNext() else { return }
-        openSnapshotPhoto(item)
-    }
-
-    private func openSnapshotPhoto(_ item: PhotoLibraryItem) {
-        guard viewer.state.profileID == model.activeProfile?.id,
-              let repository = model.fileRepository,
-              repository.profileID == item.profileID else {
-            viewer.close()
-            return
-        }
-        showsPreviewDetails = false
-        Task { await preview.open(item.fileItem, service: repository) }
-    }
-
-    private func saveCurrentPhotoCopy() {
-        guard let item = viewer.state.selectedItem else { return }
-        saveCopy(item)
-    }
-
-    private func shareCurrentPhoto() {
-        guard let item = viewer.state.selectedItem else { return }
-        share(item)
-    }
-
-    private var canRestoreCurrentPhotoFromRecycle: Bool {
-        guard let item = viewer.state.selectedItem else { return false }
-        return canRestoreFromRecycle(item)
-    }
-
-    private var moveCurrentPhotoToRecycleAction: (() -> Void)? {
-        guard let item = viewer.state.selectedItem, canMoveToRecycle(item) else { return nil }
-        return { beginMoveToRecycle(item) }
-    }
-
-    private var restoreCurrentPhotoFromRecycleAction: (() -> Void)? {
-        guard canRestoreCurrentPhotoFromRecycle else { return nil }
-        return { restoreCurrentPhotoFromRecycle() }
-    }
-
-    private func restoreCurrentPhotoFromRecycle() {
-        guard let item = viewer.state.selectedItem else { return }
-        beginRestoreFromRecycle(item)
-    }
-
-    private func adaptPreviewPresentation(to sizeClass: UserInterfaceSizeClass?) {
-        guard preview.state.phase != .inactive else { return }
-        if sizeClass == .regular {
-            showsPreviewInspector = !showsPreviewFullScreen
-        } else {
-            restoresPreviewInspectorAfterFullScreen = false
-            showsPreviewFullScreen = true
-            showsPreviewInspector = false
-        }
-    }
-
-    private func saveCopy(_ item: PhotoLibraryItem) {
-        guard let item = canonicalPhotoItem(item) else { return }
-        if let onSaveCopy {
-            onSaveCopy(item)
-        } else {
-            startDownload(item, intent: .exportCopy)
-        }
-    }
-
-    private func share(_ item: PhotoLibraryItem) {
-        guard let item = canonicalPhotoItem(item) else { return }
-        if let onShare {
-            onShare(item)
-        } else {
-            startDownload(item, intent: .share)
-        }
-    }
-
-    private func canRestoreFromRecycle(_ item: PhotoLibraryItem) -> Bool {
-        guard let item = canonicalPhotoItem(item),
-              let activeProfileID = model.activeProfile?.id,
-              let repository = model.fileRepository,
-              repository.profileID == activeProfileID,
-              let parentPath = Self.parentPath(of: item.path) else { return false }
-        return MobileFileRecycleActionModel.canRestoreFromRecycle(
-            item: item.fileItem,
-            parentPath: parentPath,
-            source: .recycle,
-            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
-            profileID: activeProfileID
-        )
-    }
-
-    private func beginRestoreFromRecycle(_ item: PhotoLibraryItem) {
-        guard let item = canonicalPhotoItem(item),
-              canRestoreFromRecycle(item),
-              let repository = model.fileRepository,
-              let parentPath = Self.parentPath(of: item.path) else { return }
-        recycleAction.beginRestoreFromRecycle(
-            item: item.fileItem,
-            parentPath: parentPath,
-            source: .recycle,
-            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
-            repository: repository
-        )
-    }
-
-    private func canMoveToRecycle(_ item: PhotoLibraryItem) -> Bool {
-        guard let item = canonicalPhotoItem(item),
-              let activeProfileID = model.activeProfile?.id,
-              let repository = model.fileRepository,
-              repository.profileID == activeProfileID,
-              let parentPath = Self.parentPath(of: item.path) else { return false }
-        return MobileFileRecycleActionModel.canMoveToRecycle(
-            item: item.fileItem,
-            parentPath: parentPath,
-            source: .browser,
-            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
-            recycleLocations: model.fileBrowserModel.locations.state.recycle.locations,
-            profileID: activeProfileID
-        )
-    }
-
-    private func beginMoveToRecycle(_ item: PhotoLibraryItem) {
-        guard let item = canonicalPhotoItem(item),
-              canMoveToRecycle(item),
-              let repository = model.fileRepository,
-              let parentPath = Self.parentPath(of: item.path) else { return }
-        closePreview()
-        recycleAction.beginMoveToRecycle(
-            item: item.fileItem,
-            parentPath: parentPath,
-            source: .browser,
-            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
-            recycleLocations: model.fileBrowserModel.locations.state.recycle.locations,
-            repository: repository
-        )
-    }
-
-    private func beginMove(_ item: PhotoLibraryItem) {
-        guard let item = canonicalPhotoItem(item),
-              canMove(item),
-              let repository = model.fileRepository,
-              let parentPath = Self.parentPath(of: item.path) else { return }
-        closePreview()
-        copyMove.begin(
-            operation: .move,
-            item: item.fileItem,
-            parentPath: parentPath,
-            source: .browser,
-            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
-            readOnlyRoots: readOnlyMutationRoots,
-            repository: repository
-        )
-    }
-
-    private func canMove(_ item: PhotoLibraryItem) -> Bool {
-        guard let item = canonicalPhotoItem(item),
-              let profileID = model.activeProfile?.id,
-              let parentPath = Self.parentPath(of: item.path) else { return false }
-        return MobileFileCopyMoveModel.canBegin(
-            item: item.fileItem,
-            parentPath: parentPath,
-            source: .browser,
-            visibleItems: visiblePhotoSnapshot.map(\.fileItem),
-            readOnlyRoots: readOnlyMutationRoots,
-            profileID: profileID
-        )
-    }
-
-    private var readOnlyMutationRoots: [String] {
-        let locations = model.fileBrowserModel.locations.state
-        return locations.remote.folders.map(\.item.path) +
-            locations.recycle.locations.map(\.recyclePath)
-    }
-
-    private func copyMoveDidConfirm(_ success: MobileFileCopyMoveSuccess) async {
-        guard model.activeProfile?.id == success.profileID,
-              model.fileRepository?.profileID == success.profileID else { return }
-        if browseMode == .timeline {
-            await timeline.refresh()
-        } else {
-            await library.reload()
-        }
-    }
-
-    private func recycleActionDidConfirm(
-        _ success: MobileFileRecycleActionSuccess,
-        repositoryIdentity: ObjectIdentifier
-    ) async {
-        guard model.activeProfile?.id == success.profileID,
-              model.fileRepository?.profileID == success.profileID,
-              model.fileRepository.map(ObjectIdentifier.init) == repositoryIdentity else { return }
-        if viewer.state.selectedItem?.path == success.sourcePath {
-            closePreview()
-        }
-        if browseMode == .timeline {
-            await timeline.refresh()
-        } else {
-            await library.reload()
-        }
-    }
-
-    private func startDownload(_ item: PhotoLibraryItem, intent: MobileDocumentIntent) {
-        guard let activeProfileID = model.activeProfile?.id,
-              item.profileID == activeProfileID,
-              let repository = model.fileRepository,
-              repository.profileID == activeProfileID else { return }
-        let context = MobileDocumentDownloadContext(
-            profileID: item.profileID,
-            remotePath: item.path,
-            fileName: item.name,
-            intent: intent
-        )
-        let service = MobileFileTransferService(repository: repository)
-        Task {
-            _ = await model.documentTransferController.startDownload(context: context, service: service)
-        }
-    }
-
-    private func canonicalPhotoItem(_ item: PhotoLibraryItem) -> PhotoLibraryItem? {
-        guard let activeProfileID = model.activeProfile?.id,
-              item.profileID == activeProfileID,
-              library.activeProfileID == activeProfileID,
-              timeline.activeProfileID == activeProfileID,
-              let repository = model.fileRepository,
-              repository.profileID == activeProfileID else { return nil }
-        let candidates = browseMode == .timeline ? timeline.state.items : state.page.items
-        return candidates.first {
-            $0.id == item.id &&
-            $0.profileID == item.profileID &&
-            $0.path == item.path &&
-            $0.kind == item.kind
-        }
-    }
-
-    private var documentPresentationBinding: Binding<MobileDocumentPresentation?> {
-        Binding(
-            get: { model.documentTransferController.presentation },
-            set: { value in
-                guard value == nil,
-                      let taskID = model.documentTransferController.presentation?.taskID else { return }
-                model.documentTransferController.requestDismiss(taskID: taskID)
-            }
-        )
-    }
-
-    private var documentFailureBinding: Binding<Bool> {
-        Binding(
-            get: { model.documentTransferController.failure != nil },
-            set: { if !$0 { model.documentTransferController.clearFailure() } }
-        )
-    }
-
-    private var documentFailureMessage: String {
-        switch model.documentTransferController.failure {
-        case .localStorageFull: L10n.string("mobile.documents.error-local-space")
-        case .remoteStorageFull: L10n.string("mobile.documents.error-nas-space")
-        case .authenticationRequired: L10n.string("mobile.documents.error-authentication")
-        case .otpRequired: L10n.string("mobile.documents.error-otp")
-        case .permissionDenied: L10n.string("mobile.documents.error-permission")
-        case .networkUnavailable: L10n.string("mobile.documents.error-network")
-        case .unknown, .none: L10n.string("mobile.documents.error-unknown")
-        }
-    }
-
-    private var recycleActionPresentationBinding: Binding<Bool> {
-        Binding(
-            get: { recycleAction.isPresented },
-            set: { if !$0 { recycleAction.dismiss() } }
-        )
-    }
-
-    private var copyMovePresentationBinding: Binding<Bool> {
-        Binding(
-            get: { copyMove.isPresented },
-            set: { if !$0 { copyMove.dismiss() } }
-        )
-    }
-
-    private static func parentPath(of path: String) -> String? {
-        let components = path.split(separator: "/")
-        guard components.count >= 2 else { return nil }
-        return "/" + components.dropLast().joined(separator: "/")
+        MobileSynologyPhotosContent(library: model.synologyPhotosModel)
+            .id(ObjectIdentifier(model.synologyPhotosModel))
     }
 }
 
-private struct MobilePhotoActivationIdentity: Hashable {
-    let profileID: UUID?
-    let fileRepository: ObjectIdentifier?
+private struct MobileSynologyPhotosContent: View {
+    @Bindable var library: MobileSynologyPhotosModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Group {
+            if horizontalSizeClass == .regular { regularLayout }
+            else { compactLayout }
+        }
+        .background { MobileWorkspaceBackground() }
+        .safeAreaInset(edge: .top, spacing: 0) { controls.padding(.horizontal, 12).padding(.bottom, 8) }
+        .task {
+            library.setModuleEnabled(true)
+            await library.loadIfNeeded()
+        }
+        .onDisappear { library.cancel() }
+        .sheet(isPresented: $library.showsFilters) {
+            MobileSynologyPhotoFilters(library: library, draft: library.filter)
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { library.previewPhoto != nil },
+            set: { if !$0 { library.closePreview(); library.clearExport() } }
+        ), onDismiss: { library.closePreview(); library.clearExport() }) {
+            MobileSynologyPhotoPreview(library: library)
+        }
+    }
+
+    private var regularLayout: some View {
+        HStack(alignment: .top, spacing: 12) {
+            page
+            if library.showsTimeline, !library.timelineMonths.isEmpty,
+               !dynamicTypeSize.isAccessibilitySize {
+                monthSidebar.frame(width: 112).padding(.trailing, 12)
+            }
+        }
+    }
+
+    private var compactLayout: some View { page }
+
+    private var controls: some View {
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(MobileSynologyPhotosSection.allCases, id: \.self) { section in
+                        Button {
+                            Task { await library.selectSection(section) }
+                        } label: {
+                            Text(section.title).font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 14).frame(minHeight: 44)
+                                .background(library.section == section ? Color.accentColor.opacity(0.16) : .clear, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(library.section == section ? Color.accentColor : .primary)
+                        .accessibilityAddTraits(library.section == section ? .isSelected : [])
+                    }
+                }
+            }
+            if library.section == .sharing, library.selectedAlbum == nil {
+                Picker(L10n.string("photos.sharing"), selection: Binding(
+                    get: { library.shareScope },
+                    set: { scope in Task { await library.selectShareScope(scope) } }
+                )) {
+                    ForEach(SynologyPhotoShareScope.allCases, id: \.self) { scope in
+                        Text(scope.mobileTitle).tag(scope)
+                    }
+                }.pickerStyle(.menu).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            HStack(spacing: 4) {
+                if library.canGoBack {
+                    control("photos.library.back", symbol: "chevron.backward") { Task { await library.goBack() } }
+                }
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
+                TextField(L10n.string("photos.library.search"), text: $library.searchText)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .submitLabel(.search).onSubmit { Task { await library.submitSearch() } }
+                    .frame(minHeight: 44)
+                    .disabled(library.section == .sharing)
+                if !library.searchText.isEmpty {
+                    control("photos.filters.clear", symbol: "xmark.circle.fill") {
+                        library.searchText = ""; Task { await library.submitSearch() }
+                    }
+                }
+                control("photos.filters", symbol: library.filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") {
+                    library.showsFilters = true
+                }.disabled(library.section == .sharing)
+                if !library.timelineMonths.isEmpty {
+                    Menu {
+                        ForEach(library.timelineMonths) { month in
+                            Button(monthLabel(month)) { Task { await library.jumpToMonth(month) } }
+                        }
+                    } label: {
+                        Image(systemName: "calendar").frame(width: 44, height: 44)
+                    }.accessibilityLabel(L10n.string("photos.timeline.navigator"))
+                }
+            }
+            if library.spaces.count > 1 {
+                Picker(L10n.string("photos.library.space"), selection: Binding(
+                    get: { library.selectedSpace },
+                    set: { space in Task { await library.refresh(space: space) } }
+                )) {
+                    ForEach(library.spaces, id: \.self) { space in
+                        Text(L10n.string(space == .personal ? "photos.space.personal" : "photos.space.shared")).tag(space)
+                    }
+                }.pickerStyle(.segmented)
+            }
+        }
+        .padding(8).mobileGlass()
+    }
+
+    private var monthSidebar: some View {
+        ScrollView {
+            LazyVStack(spacing: 4) {
+                ForEach(library.timelineMonths) { month in
+                    Button(monthLabel(month)) { Task { await library.jumpToMonth(month) } }
+                        .font(.caption.monospacedDigit())
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(library.selectedTimelineMonthID == month.id ? Color.accentColor.opacity(0.16) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 12))
+                        .accessibilityAddTraits(library.selectedTimelineMonthID == month.id ? .isSelected : [])
+                }
+            }.padding(6)
+        }.mobileGlass().accessibilityLabel(L10n.string("photos.timeline.navigator"))
+    }
+
+    @ViewBuilder
+    private var page: some View {
+        if library.isLoading && !hasContent {
+            ProgressView(L10n.string("mobile.photos.loading.album"))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = library.errorMessage, !hasContent {
+            emptyState(title: "photos.error.title", message: error, isError: true)
+        } else if library.hasLoaded && library.spaces.isEmpty {
+            emptyState(title: "photos.error.title", message: L10n.string("photos.service.permission"), isError: true)
+        } else if library.hasLoaded && !hasContent && !library.hasPrevious {
+            emptyState(title: "photos.empty.title", message: emptyMessage, isError: false)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if let error = library.errorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.callout).foregroundStyle(.secondary)
+                        Button(L10n.string("photos.retry")) {
+                            Task {
+                                if library.hasMoreCollections { await library.loadMoreCollections() }
+                                else if library.hasMore { await library.loadMore() }
+                                else { await library.refresh() }
+                            }
+                        }.frame(minHeight: 44)
+                    }
+                    if library.hasPrevious {
+                        Button(L10n.string("photos.library.newer")) { Task { await library.loadPreviousPage() } }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .disabled(library.isLoadingPrevious)
+                        if library.isLoadingPrevious { ProgressView() }
+                        if let error = library.previousPageErrorMessage {
+                            Text(error).font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    if library.showsCategories {
+                        LazyVGrid(columns: collectionColumns, spacing: 12) {
+                            ForEach(SynologyPhotoCategory.allCases.filter { library.availableCategories.contains($0) }, id: \.self) { category in
+                                collectionButton(category.mobileTitle, symbol: category.mobileSymbol) {
+                                    Task { await library.openCategory(category) }
+                                }
+                            }
+                        }
+                    }
+                    if !library.collections.isEmpty {
+                        LazyVGrid(columns: collectionColumns, spacing: 12) {
+                            ForEach(library.collections) { collection in
+                                collectionButton(collection.name, symbol: library.section == .folders ? "folder" : "rectangle.stack") {
+                                    Task { await library.open(collection) }
+                                }
+                            }
+                        }
+                    }
+                    ForEach(library.sharedEntries) { entry in
+                        HStack {
+                            if entry.albumID != nil {
+                                Button { Task { await library.openSharedAlbum(entry) } } label: {
+                                    Label(entry.title, systemImage: "person.2.crop.square.stack")
+                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                }
+                            } else {
+                                Label(entry.title, systemImage: "link").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            if let url = entry.url {
+                                ShareLink(item: url) {
+                                    Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44)
+                                }.accessibilityLabel(L10n.string("mobile.photos.action.share"))
+                            }
+                        }.padding(12).background(.background, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    ForEach(library.datedGroups, id: \.date) { group in
+                        Text(group.date.formatted(.dateTime.year().month().day().locale(L10n.locale)))
+                            .font(.headline).accessibilityAddTraits(.isHeader)
+                        LazyVGrid(columns: photoColumns, spacing: 8) {
+                            ForEach(group.photos) { photo in
+                                MobileSynologyPhotoCell(photo: photo, library: library) { library.showPreview(photo) }
+                            }
+                        }
+                    }
+                    if library.hasMore || library.hasMoreCollections {
+                        ProgressView().frame(maxWidth: .infinity, minHeight: 44)
+                            .accessibilityLabel(L10n.string("mobile.photos.loading-more"))
+                            .task(id: library.paginationIdentity) { await library.loadNextPageAutomatically() }
+                    }
+                }.padding(16)
+            }.refreshable { await library.refresh() }
+        }
+    }
+
+    private var hasContent: Bool {
+        !library.items.isEmpty || !library.collections.isEmpty || !library.sharedEntries.isEmpty || library.showsCategories
+    }
+    private var emptyMessage: String {
+        if library.isFiltering { return L10n.string("photos.library.noResults") }
+        if library.section == .sharing { return L10n.string("photos.sharing.empty") }
+        if library.section == .albums { return L10n.string("photos.library.noAlbums") }
+        return L10n.string("photos.library.empty")
+    }
+    private var collectionColumns: [GridItem] { [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 260 : 150), spacing: 12)] }
+    private var photoColumns: [GridItem] { [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 180 : 108), spacing: 8)] }
+
+    private func emptyState(title: String, message: String, isError: Bool) -> some View {
+        ContentUnavailableView {
+            Label(L10n.string(title), systemImage: isError ? "exclamationmark.triangle" : "photo.on.rectangle")
+        } description: { Text(message) } actions: {
+            if library.isFiltering {
+                Button(L10n.string("photos.filters.clear")) { Task { await library.resetSearchAndFilters() } }.frame(minHeight: 44)
+            }
+            Button(L10n.string(isError ? "photos.retry" : "photos.library.refresh")) { Task { await library.refresh() } }.frame(minHeight: 44)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func collectionButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol).font(.body)
+                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading).padding(12)
+                .background(.background, in: RoundedRectangle(cornerRadius: 16))
+        }.buttonStyle(.plain)
+    }
+    private func control(_ key: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).frame(width: 44, height: 44) }
+            .accessibilityLabel(L10n.string(key))
+    }
+    private func monthLabel(_ month: MobileSynologyPhotoMonth) -> String {
+        month.date?.formatted(.dateTime.year().month(.abbreviated).locale(L10n.locale)) ?? ""
+    }
+}
+
+extension SynologyPhotoCategory {
+    var mobileTitle: String {
+        switch self {
+        case .recentlyAdded: L10n.string("photos.category.recentlyAdded")
+        case .person: L10n.string("photos.category.person")
+        case .concept: L10n.string("photos.category.concept")
+        case .location: L10n.string("photos.category.location")
+        case .tags: L10n.string("photos.category.tags")
+        case .videos: L10n.string("photos.category.videos")
+        }
+    }
+    var mobileSymbol: String {
+        switch self {
+        case .recentlyAdded: "clock"
+        case .person: "person.crop.rectangle"
+        case .concept: "sparkles"
+        case .location: "mappin.and.ellipse"
+        case .tags: "tag"
+        case .videos: "video"
+        }
+    }
+}
+extension SynologyPhotoShareScope {
+    var mobileTitle: String {
+        switch self {
+        case .withMe: L10n.string("photos.sharing.withMe")
+        case .withOthers: L10n.string("photos.sharing.withOthers")
+        case .requests: L10n.string("photos.sharing.requests")
+        }
+    }
 }

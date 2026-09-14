@@ -22,12 +22,12 @@ final class MobilePhotoImportPresentationTests: XCTestCase {
         XCTAssertFalse(combined.contains("repository.upload("))
     }
 
-    func test照片页所有状态均保留工具栏导入入口并绑定当前空间目标() throws {
+    func test新版Photos不把FileStation上传冒充照片导入() throws {
         let source = try sourceFile("Sources/Features/Photos/MobilePhotosView.swift")
-        XCTAssertTrue(source.contains("MobilePhotoImportButton("))
-        XCTAssertTrue(source.contains("let folderPath = browseMode == .timeline ? space.rootPath : state.currentPath"))
-        XCTAssertTrue(source.contains("photoImport.activate("))
-        XCTAssertTrue(source.contains("photoImport.cancelPreparation()"))
+        XCTAssertTrue(source.contains("model.synologyPhotosModel"))
+        XCTAssertFalse(source.contains("MobilePhotoImportButton("))
+        XCTAssertFalse(source.contains("rootPath"))
+        XCTAssertFalse(source.contains("photoImport.activate("))
     }
 
     func test导入控件具备44点目标可访问目标说明和本地化反馈() throws {

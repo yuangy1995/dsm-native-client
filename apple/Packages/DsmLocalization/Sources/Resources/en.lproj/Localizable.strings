@@ -4017,3 +4017,9 @@
 "photos.delete.review" = "Check deletion result";
 "photos.delete.reviewFailed" = "The deletion result could not be checked. Check the connection, then try again.";
 "photos.delete.done" = "The photo has been deleted.";
+
+// 跨端原生照片
+"photos.space.personal" = "Personal space";
+"photos.space.shared" = "Shared space";
+"photos.library.newer" = "Load newer photos";
+"photos.readOnly.message" = "View and save originals here. Use Synology Photos to organize or delete them.";
