@@ -1,111 +1,23 @@
 name: Photos Parity Workspace
 on:
   push:
-    branches: [codex/photos-cross-platform-parity]
+    branches: [codex/photos-parity-complete-20260915]
     paths: [.github/workflows/photos-parity-workspace.yml]
 permissions:
   contents: read
 jobs:
-  apply:
+  source:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: write
-    outputs:
-      commit: ${{ steps.patch.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
-      - name: 应用已校验的移动照片变更
-        id: patch
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          branch=codex/photos-cross-platform-parity
-          test "$GITHUB_REF_NAME" = "$branch"
-          test "$(git rev-parse HEAD^)" = da5994db6b5208a6089491dfd759e290b7054783
-          test "$(git ls-remote origin "refs/heads/$branch" | cut -f1)" = "$GITHUB_SHA"
-          for blob in bf02a4c170ba6a576ef84ecea8e332c6c8c5b846 d3f62eab46bf0b2fb0cc16eff00872888e8075f1 354609f27756c3df129ea88c7beeb8be2085c610; do
-            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$blob" --jq '.content' | base64 --decode >> "$RUNNER_TEMP/photos.patch.b64"
-          done
-          python3 - <<'PY'
-          import base64, gzip, hashlib, os, pathlib
-          root = pathlib.Path(os.environ['RUNNER_TEMP'])
-          patch = gzip.decompress(base64.b64decode((root / 'photos.patch.b64').read_bytes(), validate=True))
-          assert hashlib.sha256(patch).hexdigest() == '64485d80e543744ce21dff17475dc56a45e3b377c9275550a73cbf180c79183a'
-          (root / 'photos.patch').write_bytes(patch)
-          PY
-          git apply --index "$RUNNER_TEMP/photos.patch"
-          git diff --cached --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(photos): validate native iPhone and iPad Photos migration'
-          git push origin "HEAD:refs/heads/$branch"
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-  mobile:
-    needs: apply
-    runs-on: macos-15
-    timeout-minutes: 45
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      XCODEGEN_VERSION: '2.46.0'
-      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.apply.outputs.commit }}
           persist-credentials: false
-      - name: 安装仓库锁定的工程生成器
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
-          printf '%s  %s\n' "$XCODEGEN_SHA256" "$RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
-          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
-          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
-          xcodebuild -version
-      - name: 生成移动工程
-        working-directory: apple/Apps/DsmMobile
-        run: xcodegen generate
+      - name: 导出已提交源码用于隔离验证
+        run: git archive --format=tar --output="$RUNNER_TEMP/photos-parity-source.tar" HEAD
       - uses: actions/upload-artifact@v4
         with:
-          name: photos-mobile-generated-project
-          path: apple/Apps/DsmMobile/DsmMobile.xcodeproj/project.pbxproj
+          name: photos-parity-source
+          path: ${{ runner.temp }}/photos-parity-source.tar
           retention-days: 1
-      - name: 选择 iPhone 和 iPad 模拟器
-        shell: bash
-        run: |
-          xcrun simctl list devices available --json > "$RUNNER_TEMP/devices.json"
-          python3 - <<'PY'
-          import json, os, pathlib
-          devices = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'devices.json').read_text())['devices']
-          compatible = [device for runtime, values in devices.items() if 'iOS-18' in runtime for device in values if device['isAvailable']]
-          with open(os.environ['GITHUB_ENV'], 'a') as environment:
-              for name in ('iPhone', 'iPad'):
-                  device = next(device for device in compatible if name in device['name'])
-                  environment.write(f'{name.upper()}_SIMULATOR={device["udid"]}\n')
-          PY
-      - name: 构建并运行两种移动设备的照片回归
-        working-directory: apple/Apps/DsmMobile
-        shell: bash
-        run: |
-          set -euo pipefail
-          xcodebuild test -project DsmMobile.xcodeproj -scheme DsmMobile -configuration Debug \
-            -destination "platform=iOS Simulator,id=$IPHONE_SIMULATOR" \
-            -destination "platform=iOS Simulator,id=$IPAD_SIMULATOR" \
-            -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-            -only-testing:DsmMobileTests/MobileSynologyPhotosModelTests \
-            -resultBundlePath "$RUNNER_TEMP/photos-mobile.xcresult" \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/photos-mobile-build.log"
-      - name: 保存构建和回归证据
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: photos-mobile-validation
-          path: |
-            ${{ runner.temp }}/photos-mobile-build.log
-            ${{ runner.temp }}/photos-mobile.xcresult
-          retention-days: 1
+          if-no-files-found: error
