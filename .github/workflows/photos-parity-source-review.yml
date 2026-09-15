@@ -1,0 +1,36 @@
+name: Photos Parity Source Review
+
+on:
+  push:
+    branches: [codex/photos-parity-integrated-20260915]
+    paths: [.github/workflows/photos-parity-source-review.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  source-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 导出已固定的公开源码快照，不包含 git 配置或凭据
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/photos-source"
+          git archive --format=zip --output="$RUNNER_TEMP/photos-source/main.zip" 2243e731000382e5ff8bf2460c1ee7f9b83d0f11
+          git archive --format=zip --output="$RUNNER_TEMP/photos-source/android-existing.zip" afcc8dbfb53e3b16d14f6015eee60a9c1ebb77cc
+          git archive --format=zip --output="$RUNNER_TEMP/photos-source/apple-existing.zip" 075eefbae28533241b69149613ce2b54ab6f6a17
+          printf '%s\n' 'main 2243e731000382e5ff8bf2460c1ee7f9b83d0f11' 'android-existing afcc8dbfb53e3b16d14f6015eee60a9c1ebb77cc' 'apple-existing 075eefbae28533241b69149613ce2b54ab6f6a17' > "$RUNNER_TEMP/photos-source/manifest.txt"
+          cd "$RUNNER_TEMP/photos-source"
+          sha256sum *.zip > SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: photos-parity-source-review
+          path: ${{ runner.temp }}/photos-source/
+          retention-days: 1
+          if-no-files-found: error
