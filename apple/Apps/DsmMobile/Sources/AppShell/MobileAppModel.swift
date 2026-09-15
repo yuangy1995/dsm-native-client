@@ -28,6 +28,7 @@ final class MobileAppModel {
     let filePreviewModel = MobileFilePreviewModel()
     let fileShareLinkModel: MobileFileShareLinkModel
     let photoLibraryModel = MobilePhotoLibraryModel()
+    var synologyPhotosModel = MobileSynologyPhotosModel()
     let chatModel = MobileChatModel()
     let nasHealthModel = MobileNasHealthModel()
     let nasDetailsModel = MobileNasDetailsModel()
@@ -79,6 +80,7 @@ final class MobileAppModel {
                 deactivateFileLocations()
                 deactivateDownloads()
                 photoLibraryModel.deactivate()
+                synologyPhotosModel.deactivate()
                 chatModel.deactivate()
                 nasHealthModel.deactivate()
                 nasDetailsModel.deactivate()

@@ -49,6 +49,20 @@ iPhone/iPad 自动备份及释放设备空间仍是后续独立决策，不是�
 
 每个切片先交付主流程与聚焦自动化，设备条件后置；新增写能力单独核实契约与授权。全部调用及测试迁移后，最后清理旧照片专用组件、资源和失效引用。
 
+## 2026-09-15 跨端迁移账本
+
+基线：`2243e731000382e5ff8bf2460c1ee7f9b83d0f11`。本次用户明确授权 Android、iPhone、iPad 与 Windows 照片模块跟随 macOS 完整更新；只读参考 `apple/Apps/DsmMac/**`，不改变应用标识、权限、依赖、存储格式与后台备份语义。
+
+| 切片 | macOS 证据 | 目标与原生交互 | 契约 / 安全 | 验证 |
+| --- | --- | --- | --- | --- |
+| 图库与导航 | `SynologyPhotosModel.swift`、`SynologyPhotosView.swift` | 四端直接读取 Photos；时间线、目录、相册、分类与共享页；移动触控/返回、iPad 宽屏、Windows 键鼠 | `photos-library-read`；只读；无 File Station 扫描降级 | 实施中，尚未验证 |
+| 搜索、12 类筛选与双向年月分页 | 同上及 `SynologyPhotosModelTests.swift` | 使用 NAS 全库查询、原始条数游标、跳月后向前/向后加载；取消与迟到结果隔离 | 既有 JSON 请求，不按客户端已加载页筛选 | 实施中，尚未验证 |
+| 媒体、属性与原件保存/系统分享 | `SynologyPhotosRepository.swift`、`SynologyPhotoPreview` | 大图、普通视频、Live Photo 独立视频单元、元数据、前台保存/系统分享 | Header 凭据、证书、同源重定向、有界媒体读取；不猜测转换版 | 实施中，尚未验证 |
+| 原件删除 | `prepareDeletion/deletePhoto/reviewDeletion` | 保留确认、权限与身份复核、单次提交、未知只核对；不调用 File Station 删除 | `photos-item-deletion`；高风险。Mac 的跨版本授权不自动扩展到其他端；新平台入口保持能力门保护 | 实施中，真机为 `PENDING_USER_VALIDATION` |
+| 性能、集成与文档 | 现有平台测试与质量门 | 可取消分页、有界缩略图缓存/并发、复用播放器、移除正式路由的旧扫描依赖；合并当前计划与矩阵 | 不新增持久化照片副本、不触碰原有备份任务所有权 | 实施中，尚未验证 |
+
+单一修改范围：各端 Photos 功能与测试、对应组合根/发现列表、双语资源及本计划/平台矩阵/状态页。文件管理通用实现和现有备份契约保留；共享 Apple 网络只做必要的向后兼容改动并回归 macOS。非目标沿用 Mac 未完成边界：上传、分享写入、共享空间写入、Live Photo 组合 ZIP、识别模型与照片编辑器；iPhone/iPad 自动备份仍不在范围内。
+
 ## 可重跑检查
 
 ```sh

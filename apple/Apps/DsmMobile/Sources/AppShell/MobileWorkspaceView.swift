@@ -229,7 +229,8 @@ struct MobileWorkspaceView: View {
             case .files:
                 MobileFileBrowser(model: model)
             case .photos:
-                MobilePhotosView(model: model)
+                MobileSynologyPhotosView(model: model.synologyPhotosModel)
+                .id(ObjectIdentifier(model.synologyPhotosModel))
             case .chat:
                 MobileChatView(model: model)
             case .downloads:
