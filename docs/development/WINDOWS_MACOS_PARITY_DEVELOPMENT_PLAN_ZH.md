@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-09-15 -->
 
 # Windows 对齐 macOS 功能长期计划
 
@@ -58,7 +58,7 @@ partial 文件保持单一领域边界，并以源级契约、fixture 或 xUnit 
 
 ### W2：Photos、Chat 与 Download Station
 
-- 对齐明确范围内的 Photos 浏览、主动导入/分享和基础管理；后续候选不因 macOS 实现而
+- Photos 正式入口已迁移到 `Views/Photos/SynologyPhotosPage` 与独立照片状态／媒体层；完整范围、性能边界与验收只维护在[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。后续候选不因 macOS 实现而
   自动进入 Windows。
 - Chat 按文字、受限附件和明确的低风险操作推进；加密、语音、实时通话和未验证服务器写
   保持关闭或后续。

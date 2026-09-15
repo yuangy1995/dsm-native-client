@@ -1,3 +1,4 @@
+using LanStash.App.Views.Photos;
 using LanStash.App.Localization;
 using LanStash.App.Features.Settings;
 using LanStash.App.Features.Files.Sharing;
@@ -26,9 +27,9 @@ public sealed partial class ShellPage : Page
     private readonly WindowsTransferPickerService? _transferPicker;
     private FilesPage? _files;
     private Guid? _filesProfileId;
-    private PhotosPage? _photos;
+    private SynologyPhotosPage? _photos;
     private Guid? _photosProfileId;
-    private IPhotoRepository? _photosRepository;
+    private ISynologyPhotosRepository? _photosRepository;
     private ChatPage? _chat;
     private Guid? _chatProfileId;
     private DownloadStationPage? _downloads;
@@ -358,70 +359,21 @@ public sealed partial class ShellPage : Page
         }
         if (module == AppModule.Photos)
         {
-            if (_app.Repository is not IPhotoRepository photoRepository ||
-                _app.ActiveProfile is not { } photoProfile ||
-                _transferPicker is not { } photoTransferPicker ||
+            // 照片正式入口只接入 Photos，不根据路径或套件缺失回退 File Station。
+            var photoRepository = (_app.Repository as ISynologyPhotosProvider)?.SynologyPhotos;
+            if (photoRepository is null || _app.ActiveProfile is not { } photoProfile ||
                 photoRepository.ProfileId != photoProfile.Id)
             {
-                _photos?.Dispose();
-                _photos = null;
-                _photosProfileId = null;
-                _photosRepository = null;
-                ContentFrame.Content = PhotosPage.CreateUnavailableState();
+                _photos?.Dispose(); _photos = null; _photosProfileId = null; _photosRepository = null;
+                ContentFrame.Content = SynologyPhotosPage.CreateUnavailableState();
                 return;
             }
-            if (_photos is null || _photosProfileId != photoProfile.Id ||
-                !ReferenceEquals(_photosRepository, photoRepository))
+            if (_photos is null || _photosProfileId != photoProfile.Id || !ReferenceEquals(_photosRepository, photoRepository))
             {
                 _photos?.Dispose();
-                var photoRecycleRepository = _app.Repository as IFileRecycleRepository;
-                if (photoRecycleRepository?.ProfileId != photoProfile.Id)
-                {
-                    photoRecycleRepository = null;
-                }
-                var photoLocationsRepository = _app.Repository as IFileLocationsRepository;
-                if (photoLocationsRepository?.ProfileId != photoProfile.Id)
-                {
-                    photoLocationsRepository = null;
-                }
-                var photoPreviewRepository = _app.Repository as IFilePreviewRepository;
-                if (photoPreviewRepository?.ProfileId != photoProfile.Id)
-                {
-                    photoPreviewRepository = null;
-                }
-                var photoCopyMoveRepository = _app.Repository as IFileCopyMoveRepository;
-                if (photoCopyMoveRepository?.ProfileId != photoProfile.Id)
-                {
-                    photoCopyMoveRepository = null;
-                }
-                var photoShareRepository = _app.Repository as IFileShareLinkRepository;
-                if (photoShareRepository?.ProfileId != photoProfile.Id)
-                {
-                    photoShareRepository = null;
-                }
-                IFileCopyMoveFolderSource? photoCopyMoveFolderSource = null;
-                if (photoLocationsRepository is not null)
-                {
-                    photoCopyMoveFolderSource = new RepositoryFileCopyMoveFolderSource(
-                        photoProfile.Id,
-                        new RepositoryFileBrowserDataSource(_app.Repository),
-                        photoLocationsRepository);
-                }
-                _photos = new PhotosPage(
-                    photoRepository,
-                    photoProfile.Id.ToString(),
-                    photoTransferPicker,
-                    locationsRepository: photoLocationsRepository,
-                    recycleRepository: photoRecycleRepository,
-                    recycleReviewBlocker: FileRecycleReviewBlocker.Current,
-                    previewRepository: photoPreviewRepository,
-                    copyMoveRepository: photoCopyMoveRepository,
-                    copyMoveFolderSource: photoCopyMoveFolderSource,
-                    copyMoveReviewBlocker: FileCopyMoveReviewBlocker.Current,
-                    shareRepository: photoShareRepository,
-                    shareReviewBlocker: FileShareLinkReviewBlocker.Current);
-                _photosProfileId = photoProfile.Id;
-                _photosRepository = photoRepository;
+                _photos = new SynologyPhotosPage(photoRepository,
+                    new WindowsTransferSavePicker(() => (Application.Current as App)?.MainWindow));
+                _photosProfileId = photoProfile.Id; _photosRepository = photoRepository;
             }
             ContentFrame.Content = _photos;
             return;

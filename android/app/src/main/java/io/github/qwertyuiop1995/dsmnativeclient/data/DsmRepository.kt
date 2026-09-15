@@ -236,7 +236,7 @@ class DsmRepository(
     private val session: DsmSession,
     private val api: DsmApiClient,
     private val capabilities: Map<String, ApiCapability>,
-) {
+) : SynologyPhotosProvider by DefaultSynologyPhotosProvider(profile, session, api, capabilities) {
     private val capabilityResolver = DsmRepositoryCapabilityResolver(capabilities)
     private val requestBuilder = DsmRepositoryRequestBuilder(
         profile = profile,
@@ -573,7 +573,7 @@ class DsmRepository(
 
     fun availability(): List<ModuleAvailability> = listOf(
         ModuleAvailability(Module.FILES, supports("SYNO.FileStation.List")),
-        ModuleAvailability(Module.PHOTOS, supports("SYNO.FileStation.List")),
+        ModuleAvailability(Module.PHOTOS, supports("SYNO.Foto.UserInfo") || supports("SYNO.FileStation.Upload"), ModuleUnavailableReason.SYNOLOGY_PHOTOS),
         ModuleAvailability(
             Module.CHAT,
             supports("SYNO.Chat.Channel"),

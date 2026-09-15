@@ -8,12 +8,17 @@ public sealed partial class DsmRepository(
     NasProfile profile,
     DsmSession session,
     IDsmApiClient api,
-    IReadOnlyDictionary<string, ApiCapability> capabilities) : IDsmRepository, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IFileBackgroundTaskRepository, IDirectorySizeRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository, INasSettingsRepository, IFileSearchRepository
+    IReadOnlyDictionary<string, ApiCapability> capabilities) : IDsmRepository, ISynologyPhotosProvider, IFileMutationRepository, IFileCopyMoveRepository, IFileRecycleRepository, IFileArchiveCompressionRepository, IFileArchiveExtractionRepository, IFilePreviewRepository, IFileShareLinkRepository, IFileLocationsRepository, IFileBackgroundTaskRepository, IDirectorySizeRepository, IPhotoRepository, IChatRepository, IDownloadStationRepository, IVirtualMachineManagerRepository, IContainerManagerRepository, INasDetailsRepository, INasSettingsRepository, IFileSearchRepository
 {
     private readonly NasProfile _profile = profile;
     private readonly DsmSession _session = session;
     private readonly IDsmApiClient _api = api;
     private readonly IReadOnlyDictionary<string, ApiCapability> _capabilities = capabilities;
+
+    private readonly Lazy<ISynologyPhotosRepository> _synologyPhotos = new(() =>
+        new SynologyPhotosRepository(profile, session, api, capabilities, deletionEnabled: true));
+
+    public ISynologyPhotosRepository SynologyPhotos => _synologyPhotos.Value;
 
     public Guid ProfileId => _profile.Id;
 

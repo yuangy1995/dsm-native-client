@@ -674,11 +674,14 @@ final class MobileFilePreviewModelTests: XCTestCase {
 
     func test安全文件名不会逃逸独占目录() async throws {
         let fixture = try makeFixture()
-        let item = file(
-            fixture.profileID,
+        // 显式提供服务端扩展名，避免 Foundation 对含 NUL 名称的路径解析干扰目录隔离测试。
+        let item = FileItem(
+            profileID: fixture.profileID,
             name: "../..\\unsafe:\u{0000}.jpg",
             path: "/unsafe.jpg",
-            size: 7
+            kind: .file,
+            sizeBytes: 7,
+            fileExtension: "jpg"
         )
         let service = FilePreviewServiceStub(
             profileID: fixture.profileID,
@@ -695,6 +698,26 @@ final class MobileFilePreviewModelTests: XCTestCase {
         XCTAssertFalse(artifact.lastPathComponent.contains("/"))
         XCTAssertFalse(artifact.lastPathComponent.contains("\\"))
         XCTAssertFalse(artifact.lastPathComponent.contains(":"))
+    }
+
+    func test未批准扩展名不产生预览临时文件() async throws {
+        let fixture = try makeFixture()
+        let item = FileItem(
+            profileID: fixture.profileID,
+            name: "unsafe.jpg",
+            path: "/unsafe.jpg",
+            kind: .file,
+            sizeBytes: 7,
+            fileExtension: "jpg\u{0000}"
+        )
+        let service = FilePreviewServiceStub(
+            profileID: fixture.profileID,
+            infoByPath: [item.path: .success([item])]
+        )
+        await fixture.model.open(item, service: service)
+        XCTAssertNil(fixture.model.state.artifactURL)
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: fixture.rootURL.path)) ?? []
+        XCTAssertTrue(contents.isEmpty)
     }
 
     func test超长英文和中文文件名含UUID前缀后不超过255字节并保留扩展名() async throws {

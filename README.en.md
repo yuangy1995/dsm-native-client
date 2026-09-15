@@ -1,5 +1,5 @@
 <!-- doc-role: entrypoint -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-09-15 -->
 
 # LanStash
 
@@ -28,13 +28,15 @@ The current milestone is native-client alignment and device validation across al
 - Multiple NAS profiles, HTTPS addresses, and QuickConnect IDs.
 - DSM sign-in, two-factor verification, session restoration, and platform secure storage.
 - File and shared-folder browsing, search, upload, download, copy, move, rename, compression, extraction, and sharing.
-- Photo spaces, thumbnails, timeline browsing, and common media previews.
+- Native Synology Photos personal timelines, month navigation, 12 filter categories, album/shared-entry browsing, media previews, and original-file saving; single-item personal deletion retains confirmation, permission checks, and result verification.
 - Synology Chat conversations, attachments, reminders, polls, and scheduled messages.
 - Entry points for Download Station, Container Manager, Virtual Machine Manager, and NAS settings.
 - Native management views for storage, packages, accounts, logs, connections, networks, and security.
 - Light and dark modes, keyboard and touch input, dynamic type, screen readers, and reduced motion.
 
 Some capabilities depend on DSM or package versions. LanStash prefers Synology's public APIs. Internal APIs are explicitly marked in the implementation and compatibility documentation and isolated behind capability discovery.
+
+All five production Photos routes use Synology Photos directly, without falling back to File Station scanning when the package is unavailable. Sharing an original through the operating system does not create a Photos sharing link. Uploads, album editing, shared spaces, and automatic backup retain their separate scope. See the [Photos plan](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md) for implementation, performance boundaries, and per-platform validation.
 
 ## Languages and localization
 

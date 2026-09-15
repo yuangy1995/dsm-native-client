@@ -102,6 +102,23 @@ public interface IDsmApiClient
         IReadOnlyDictionary<string, string>? parameters = null,
         CancellationToken cancellationToken = default);
 
+    // Photos 使用 JSON 业务参数、固定版本和独立媒体路径，不能复用文件扫描契约。
+    Task<System.Text.Json.Nodes.JsonObject> CallPhotoJsonAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability, int requiredVersion,
+        string method, IReadOnlyDictionary<string, string>? parameters = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<System.Text.Json.Nodes.JsonObject>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+    Task<byte[]> ReadPhotoThumbnailAsync(NasProfile profile, DsmSession session,
+        SynologyPhotoThumbnail thumbnail, bool large, CancellationToken cancellationToken = default) =>
+        Task.FromException<byte[]>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+    Task<IReadOnlyMediaSource> OpenPhotoMediaAsync(NasProfile profile, DsmSession session,
+        SynologyPhotoMediaRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromException<IReadOnlyMediaSource>(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+    Task DownloadPhotoOriginalAsync(NasProfile profile, DsmSession session,
+        SynologyPhotoMediaRequest request, string destination, long expectedBytes,
+        IProgress<long>? progress = null, CancellationToken cancellationToken = default) =>
+        Task.FromException(new SynologyPhotoException(SynologyPhotoFailure.Unavailable));
+
     /// <summary>
     /// 使用契约指定的固定版本执行只读调用，并要求 DSM 返回严格的对象型 JSON data。
     /// 旧测试替身默认不支持此窄契约，以免在未验证版本和响应形态时静默降级。

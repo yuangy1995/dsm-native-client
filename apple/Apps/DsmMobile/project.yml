@@ -20,6 +20,8 @@ targets:
     platform: iOS
     sources:
       - Sources
+      # 无 AppKit 依赖的同一状态机；Mac 源文件保持只读，避免四处复制分页和删除规则。
+      - path: ../DsmMac/Sources/SynologyPhotosModel.swift
       - path: Resources
     dependencies:
       - package: DsmShared

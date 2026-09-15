@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-09-15 -->
 
 # macOS 语义基线下的 Windows 与 Apple 移动端对齐总控计划
 
@@ -7,7 +7,7 @@
 
 macOS 是 Files、Photos、Chat、Download Station、NAS 管理、桌面云盘与安全行为的业务语义
 基准。Windows 的目标是完整业务语义对齐；iPhone/iPad 的目标是移动专项计划中明确的
-核心或受限用户结果。Android 不属于本计划的实施线，除非另有明确授权。
+核心或受限用户结果。Android 不属于本计划的一般实施线；2026-09-15 用户已单独授权四端 Photos 对齐，因此仅该波次包含 Android，详细账本集中在[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)，不扩大其他模块范围。
 
 当前状态见[开发进度](../progress/STATUS.md)，能力边界见[平台功能矩阵](../progress/PLATFORM_MATRIX.md)，
 已结束的阶段性账本见[跨端功能对齐历史](../archive/2026-h2/CROSS_PLATFORM_PARITY_HISTORY.md)。
