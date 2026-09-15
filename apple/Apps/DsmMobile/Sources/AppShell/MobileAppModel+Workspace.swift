@@ -20,6 +20,7 @@ extension MobileAppModel {
         }
         if selectedModule == .photos, module != .photos {
             photoLibraryModel.deactivate()
+            synologyPhotos.deactivate()
             filePreviewModel.close()
         }
         if selectedModule == .chat, module != .chat {
@@ -85,14 +86,15 @@ extension MobileAppModel {
     }
 
     func refreshSettingsCacheSummary() async {
-        settingsStore.setPhotoThumbnailCacheBytes(
-            await photoLibraryModel.thumbnailCacheCost()
-        )
+        let legacyBytes = await photoLibraryModel.thumbnailCacheCost()
+        let photosBytes = await synologyPhotos.thumbnails.cachedCost()
+        settingsStore.setPhotoThumbnailCacheBytes(legacyBytes + photosBytes)
     }
 
     func clearRegenerableCaches() async {
         guard settingsStore.beginClearingCache() else { return }
         await photoLibraryModel.clearThumbnailCache()
+        await synologyPhotos.thumbnails.removeAll()
         let remainingBytes = await photoLibraryModel.thumbnailCacheCost()
         settingsStore.finishClearingCache(
             result: remainingBytes == 0 ? .success : .failure,
@@ -233,6 +235,9 @@ extension MobileAppModel {
         )
         self.fileRepository = fileRepository
         photoRepository = FileStationPhotoRepository(files: fileRepository)
+        synologyPhotos.configure(try SynologyPhotosRepository(
+            profile: profile, capabilities: capabilities, session: session, deletionEnabled: true
+        ))
         serviceRepository = try DsmServiceManagementRepository(
             profile: profile,
             capabilities: capabilities,

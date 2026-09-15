@@ -26,6 +26,8 @@ data class ApiCapability(
     val path: String,
     val minVersion: Int,
     val maxVersion: Int,
+    // 能力发现的原始请求格式；未提供时不得猜测为 Photos 所需的 JSON。
+    val requestFormat: String = "",
 ) {
     fun version(preferred: Int = maxVersion): Int = preferred.coerceIn(minVersion, maxVersion)
 }
@@ -90,6 +92,7 @@ enum class Module {
 }
 
 enum class ModuleUnavailableReason {
+    SYNOLOGY_PHOTOS,
     CHAT_SERVICE,
     DOWNLOAD_STATION,
     CONTAINER_MANAGER,
