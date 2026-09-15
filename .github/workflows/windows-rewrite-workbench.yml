@@ -1,13 +1,10 @@
 name: Windows Rewrite Workbench
-
 on:
   push:
     branches: [codex/windows-native-rebuild]
     paths: [.github/workflows/windows-rewrite-workbench.yml]
-
 permissions:
   contents: write
-
 jobs:
   validation:
     runs-on: windows-latest
@@ -17,7 +14,7 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
-      - name: 应用已校验的 Windows 源码变更
+      - name: 应用经过逐文件校验的源码变更
         id: patch
         shell: python
         env:
@@ -69,20 +66,20 @@ jobs:
           870c696d4416ab626c81bff2e1bf75f2b35cd36b
           1d2b08f6ece6cf5c4ccd5c31fb4d6dac43c44781
           '''.split()
+          def blob_hash(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          def git(*args):
+              return subprocess.check_output(['git', *args])
           payload = bytearray()
           for sha in shas:
-              url = f'https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/{sha}'
-              request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'User-Agent': 'native-workspace-validation'})
+              request = urllib.request.Request(f'https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/{sha}', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'User-Agent': 'native-workspace-validation'})
               with urllib.request.urlopen(request, timeout=30) as response:
-                  result = json.load(response)
-              data = base64.b64decode(result['content'])
-              assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == sha
+                  data = base64.b64decode(json.load(response)['content'])
+              assert blob_hash(data) == sha
               payload.extend(data)
           assert hashlib.sha256(payload).hexdigest() == 'd02b68c5d6db2fd0cb59bfb49dd3945a9c14b926e93579203e1603c998b117da'
           manifest = json.loads(lzma.decompress(payload))
           assert manifest['version'] == 2
-          def git(*args):
-              return subprocess.check_output(['git', *args])
           def normalize_xaml(text):
               doc = minidom.parseString(text.encode('utf-8'))
               def strip(node):
@@ -93,8 +90,7 @@ jobs:
                           strip(child)
               strip(doc)
               return doc.toprettyxml(indent='    ', encoding='utf-8').decode('utf-8')
-          prepared = []
-          seen = set()
+          seen, sources, prepared = set(), {}, []
           for entry in manifest['files']:
               name = entry['path']
               path = pathlib.PurePosixPath(name)
@@ -104,14 +100,21 @@ jobs:
               disk = pathlib.Path(name)
               assert not any(parent.is_symlink() for parent in [disk, *disk.parents])
               tracked = bool(git('ls-files', '--', name).strip())
-              current = git('rev-parse', 'HEAD:' + name).decode().strip() if tracked else None
-              assert current == entry['old'], '并发变更，停止：' + name
-              if not tracked:
-                  assert not disk.exists()
+              if entry['old'] is None:
+                  assert not tracked and not disk.exists(), name
+              else:
+                  assert tracked, name
+                  raw = git('show', 'HEAD:' + name)
+                  normalized = raw.replace(b'\r\n', b'\n')
+                  # Windows git archive converts LF to CRLF; allow only that exact reversible difference.
+                  assert entry['old'] in {blob_hash(raw), blob_hash(normalized), blob_hash(normalized.replace(b'\n', b'\r\n'))}, name
+                  sources[entry['old']] = normalized.decode('utf-8')
+          for entry in manifest['files']:
+              disk = pathlib.Path(entry['path'])
               if entry.get('delete'):
                   prepared.append((disk, None))
                   continue
-              text = git('cat-file', 'blob', entry['source']).decode('utf-8').replace('\r\n', '\n') if entry['source'] else ''
+              text = sources[entry['source']] if entry['source'] else ''
               if entry.get('normalize_xaml') and text:
                   text = normalize_xaml(text)
               lines = text.splitlines(keepends=True)
@@ -119,7 +122,7 @@ jobs:
                   assert 0 <= start <= end <= len(lines)
                   lines[start:end] = [replacement]
               output = ''.join(lines).encode('utf-8')
-              assert hashlib.sha256(output).hexdigest() == entry['sha256'], name
+              assert hashlib.sha256(output).hexdigest() == entry['sha256'], entry['path']
               prepared.append((disk, output))
           for disk, output in prepared:
               if output is None:
