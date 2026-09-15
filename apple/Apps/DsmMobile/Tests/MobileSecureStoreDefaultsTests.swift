@@ -4,7 +4,7 @@ import XCTest
 @testable import DsmMobile
 
 final class MobileSecureStoreDefaultsTests: XCTestCase {
-    func testSimulatorUsesSandboxEncryptedStoreWithoutSigningEntitlements() {
+    func testSimulatorUsesSandboxEncryptedStore() {
 #if targetEnvironment(simulator)
         XCTAssertTrue(MobileSecureStoreDefaults.sessionStore() is LocalFileSecureStore)
         XCTAssertTrue(MobileSecureStoreDefaults.passwordStore() is LocalFileSecureStore)
