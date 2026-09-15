@@ -16,7 +16,7 @@ internal data class SynologyPhotoDeletionState(
     val confirmed: Boolean = false,
 )
 
-/** 新平台默认只读；即使显式启用，也必须先准备、用户确认、单次提交、结果回读。 */
+/** 个人单项删除必须先准备、用户确认、单次提交、结果回读；不扩展为共享或批量删除。 */
 internal class SynologyPhotoDeletionModel(
     private val repository: SynologyPhotosServing,
     private val scope: CoroutineScope,

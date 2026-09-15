@@ -1885,4 +1885,103 @@
   <data name="VirtualMachineManagerEventLevelWarning" xml:space="preserve"><value>Warning</value></data>
   <data name="VirtualMachineManagerEventLevelError" xml:space="preserve"><value>Needs attention</value></data>
   <data name="VirtualMachineManagerEventAutomationName" xml:space="preserve"><value>{0}, {1}</value></data>
+  <data name="PhotosLibraryTimeline" xml:space="preserve"><value>Timeline</value></data>
+  <data name="PhotosLibraryFolders" xml:space="preserve"><value>Folders</value></data>
+  <data name="PhotosLibraryAlbums" xml:space="preserve"><value>Albums</value></data>
+  <data name="PhotosLibrarySharing" xml:space="preserve"><value>Sharing</value></data>
+  <data name="PhotosPersonalSpace" xml:space="preserve"><value>Personal space</value></data>
+  <data name="PhotosSharedSpaceClosed" xml:space="preserve"><value>Shared-space access is not available yet. Personal-space photos remain available.</value></data>
+  <data name="PhotosSearchPlaceholder" xml:space="preserve"><value>Search photos</value></data>
+  <data name="PhotosChooseMonth" xml:space="preserve"><value>Go to month</value></data>
+  <data name="PhotosRefresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="PhotosBack" xml:space="preserve"><value>Back</value></data>
+  <data name="PhotosFilters" xml:space="preserve"><value>Filters</value></data>
+  <data name="PhotosRetry" xml:space="preserve"><value>Try again</value></data>
+  <data name="PhotosReviewDeletion" xml:space="preserve"><value>Check deletion result</value></data>
+  <data name="PhotosLoadNewer" xml:space="preserve"><value>Load newer photos</value></data>
+  <data name="PhotosLoadOlder" xml:space="preserve"><value>Load more</value></data>
+  <data name="PhotosPreviousPhoto" xml:space="preserve"><value>Previous photo</value></data>
+  <data name="PhotosNextPhoto" xml:space="preserve"><value>Next photo</value></data>
+  <data name="PhotosPlayLive" xml:space="preserve"><value>Play Live Photo</value></data>
+  <data name="PhotosStopLive" xml:space="preserve"><value>Show still photo</value></data>
+  <data name="PhotosSaveOriginal" xml:space="preserve"><value>Save original</value></data>
+  <data name="PhotosDeleteOriginal" xml:space="preserve"><value>Delete original</value></data>
+  <data name="PhotosDetails" xml:space="preserve"><value>Photo details</value></data>
+  <data name="PhotosClose" xml:space="preserve"><value>Close</value></data>
+  <data name="PhotosCancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="PhotosCategoryRecent" xml:space="preserve"><value>Recently added</value></data>
+  <data name="PhotosCategoryPeople" xml:space="preserve"><value>People</value></data>
+  <data name="PhotosCategorySubjects" xml:space="preserve"><value>Subjects</value></data>
+  <data name="PhotosCategoryLocations" xml:space="preserve"><value>Places</value></data>
+  <data name="PhotosCategoryTags" xml:space="preserve"><value>Tags</value></data>
+  <data name="PhotosCategoryVideos" xml:space="preserve"><value>Videos</value></data>
+  <data name="PhotosSharedWithMe" xml:space="preserve"><value>Shared with me</value></data>
+  <data name="PhotosSharedWithOthers" xml:space="preserve"><value>Shared with others</value></data>
+  <data name="PhotosPhotoRequests" xml:space="preserve"><value>Photo requests</value></data>
+  <data name="PhotosCopyLink" xml:space="preserve"><value>Copy link</value></data>
+  <data name="PhotosCopyLinkFailed" xml:space="preserve"><value>The link could not be copied. Please try again.</value></data>
+  <data name="PhotosLinkCopied" xml:space="preserve"><value>Link copied.</value></data>
+  <data name="PhotosLoading" xml:space="preserve"><value>Loading photos</value></data>
+  <data name="PhotosLoadingDescription" xml:space="preserve"><value>You can switch views while photos load.</value></data>
+  <data name="PhotosLoadFailed" xml:space="preserve"><value>Photos could not be loaded</value></data>
+  <data name="PhotosEmpty" xml:space="preserve"><value>No photos here yet</value></data>
+  <data name="PhotosEmptyDescription" xml:space="preserve"><value>Add photos in Synology Photos, then refresh this view.</value></data>
+  <data name="PhotosFilteredEmpty" xml:space="preserve"><value>No matching photos</value></data>
+  <data name="PhotosFilteredEmptyDescription" xml:space="preserve"><value>Try a different search or clear the filters.</value></data>
+  <data name="PhotosLoadedCount" xml:space="preserve"><value>{0} items loaded</value></data>
+  <data name="PhotosItemCount" xml:space="preserve"><value>{0} items</value></data>
+  <data name="PhotosServiceUnavailable" xml:space="preserve"><value>Photos is not available. Check that Synology Photos is installed and enabled, then reconnect.</value></data>
+  <data name="PhotosServicePermission" xml:space="preserve"><value>This account cannot open the photo library. Check its Photos and personal-space permissions, then reconnect.</value></data>
+  <data name="PhotosServiceInvalidResponse" xml:space="preserve"><value>Photos could not be loaded. Please refresh or reconnect and try again.</value></data>
+  <data name="PhotosCategoriesFailed" xml:space="preserve"><value>Some categories could not be loaded. Refresh to try again; albums are still available.</value></data>
+  <data name="PhotosFiltersFailed" xml:space="preserve"><value>Some filter choices could not be loaded. Try again or use the available choices.</value></data>
+  <data name="PhotosMediaPhoto" xml:space="preserve"><value>Photos</value></data>
+  <data name="PhotosMediaVideo" xml:space="preserve"><value>Video</value></data>
+  <data name="PhotosMediaLive" xml:space="preserve"><value>Live</value></data>
+  <data name="PhotosMediaFailed" xml:space="preserve"><value>This photo or video could not be opened. Try again, or save the original to open it in another app.</value></data>
+  <data name="PhotosSaving" xml:space="preserve"><value>Saving the original…</value></data>
+  <data name="PhotosSaveProgress" xml:space="preserve"><value>Saving the original: {0}</value></data>
+  <data name="PhotosSaved" xml:space="preserve"><value>Original saved.</value></data>
+  <data name="PhotosSaveFailed" xml:space="preserve"><value>The original could not be saved. Your existing file has not been replaced. Check the destination and try again.</value></data>
+  <data name="PhotosDeleteUnverified" xml:space="preserve"><value>Deletion is not available for this connection. You can manage originals in Synology Photos.</value></data>
+  <data name="PhotosDeleteChanged" xml:space="preserve"><value>This photo changed. Refresh the library and check it before deleting.</value></data>
+  <data name="PhotosDeleteDenied" xml:space="preserve"><value>This account cannot delete this original. Check its photo-folder permissions.</value></data>
+  <data name="PhotosDeleteFailed" xml:space="preserve"><value>Deletion could not be prepared. Refresh and check the photo before trying again.</value></data>
+  <data name="PhotosDeletePending" xml:space="preserve"><value>The deletion result is not yet confirmed. Check the result before taking any further action; do not delete again.</value></data>
+  <data name="PhotosDeleteConfirmBody" xml:space="preserve"><value>Delete the original “{0}” from your NAS? It will disappear from the library and its albums. This is not just removing it from an album, and recovery is not guaranteed.</value></data>
+  <data name="PhotosApplyFilters" xml:space="preserve"><value>Apply filters</value></data>
+  <data name="PhotosClearFilters" xml:space="preserve"><value>Clear filters</value></data>
+  <data name="PhotosFilterMedia" xml:space="preserve"><value>Media type</value></data>
+  <data name="PhotosFilterDate" xml:space="preserve"><value>Date range</value></data>
+  <data name="PhotosDateFrom" xml:space="preserve"><value>From</value></data>
+  <data name="PhotosDateTo" xml:space="preserve"><value>To</value></data>
+  <data name="PhotosFilterPerson" xml:space="preserve"><value>Person</value></data>
+  <data name="PhotosFilterLocation" xml:space="preserve"><value>Place</value></data>
+  <data name="PhotosFilterTag" xml:space="preserve"><value>Tag</value></data>
+  <data name="PhotosFilterRating" xml:space="preserve"><value>Rating</value></data>
+  <data name="PhotosFilterCamera" xml:space="preserve"><value>Camera</value></data>
+  <data name="PhotosFilterLens" xml:space="preserve"><value>Lens</value></data>
+  <data name="PhotosFilterFocal" xml:space="preserve"><value>Focal length</value></data>
+  <data name="PhotosFilterExposure" xml:space="preserve"><value>Exposure time</value></data>
+  <data name="PhotosFilterAperture" xml:space="preserve"><value>Aperture</value></data>
+  <data name="PhotosFilterIso" xml:space="preserve"><value>ISO</value></data>
+  <data name="PhotosFilterAny" xml:space="preserve"><value>Any</value></data>
+  <data name="PhotosRatingValue" xml:space="preserve"><value>{0} stars</value></data>
+  <data name="PhotosFocalFrom" xml:space="preserve"><value>{0} mm or more</value></data>
+  <data name="PhotosFocalRange" xml:space="preserve"><value>{0}–{1} mm</value></data>
+  <data name="PhotosExposureRange" xml:space="preserve"><value>{0}/{1}–{2}/{3} s</value></data>
+  <data name="PhotosFilterSelectionUnavailable" xml:space="preserve"><value>Current selection (not in the latest choices)</value></data>
+  <data name="PhotosFilterInvalidDate" xml:space="preserve"><value>Choose both dates. The end date must not be before the start date.</value></data>
+  <data name="PhotosMetadataFilename" xml:space="preserve"><value>Filename</value></data>
+  <data name="PhotosMetadataTaken" xml:space="preserve"><value>Taken</value></data>
+  <data name="PhotosMetadataIndexed" xml:space="preserve"><value>Added</value></data>
+  <data name="PhotosMetadataSize" xml:space="preserve"><value>Original size</value></data>
+  <data name="PhotosBytes" xml:space="preserve"><value>{0} bytes</value></data>
+  <data name="PhotosMetadataResolution" xml:space="preserve"><value>Resolution</value></data>
+  <data name="PhotosResolution" xml:space="preserve"><value>{0} × {1}</value></data>
+  <data name="PhotosMetadataDescription" xml:space="preserve"><value>Description</value></data>
+  <data name="PhotosMetadataDuration" xml:space="preserve"><value>Duration</value></data>
+  <data name="PhotosSeconds" xml:space="preserve"><value>{0} s</value></data>
+  <data name="PhotosMetadataCoordinates" xml:space="preserve"><value>Coordinates</value></data>
+  <data name="PhotosCoordinates" xml:space="preserve"><value>{0:F6}, {1:F6}</value></data>
 </root>

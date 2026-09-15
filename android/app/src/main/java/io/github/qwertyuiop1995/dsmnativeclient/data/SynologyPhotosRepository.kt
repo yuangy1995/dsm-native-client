@@ -31,7 +31,7 @@ import kotlinx.serialization.json.*
 
 /**
  * Synology Photos 内部接口适配；请求契约来自 photos-library-read.md 与 photos-item-deletion.md。
- * 每个实例绑定一个已登录账号；共享空间未知权限、未验证删除入口默认关闭。
+ * 每个实例绑定一个已登录账号；共享空间保持关闭，个人单项删除仍逐次检查实际权限与身份。
  */
 class SynologyPhotosRepository internal constructor(
     override val profileId: String,
@@ -43,7 +43,7 @@ class SynologyPhotosRepository internal constructor(
     constructor(profile: NasProfile, session: DsmSession, api: DsmApiClient, capabilities: Map<String, ApiCapability>) :
         this(profile.id, capabilities, { capability, method, parameters ->
             api.call(profile, session, capability, method, parameters)
-        }, api.photosMedia(profile, session))
+        }, api.photosMedia(profile, session), canDeleteOriginals = true)
 
     private val capabilities = capabilities.toMap()
     private val accessGeneration = AtomicLong()

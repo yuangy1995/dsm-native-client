@@ -1885,4 +1885,103 @@
   <data name="VirtualMachineManagerEventLevelWarning" xml:space="preserve"><value>警告</value></data>
   <data name="VirtualMachineManagerEventLevelError" xml:space="preserve"><value>需要注意</value></data>
   <data name="VirtualMachineManagerEventAutomationName" xml:space="preserve"><value>{0}，{1}</value></data>
+  <data name="PhotosLibraryTimeline" xml:space="preserve"><value>时间线</value></data>
+  <data name="PhotosLibraryFolders" xml:space="preserve"><value>文件夹</value></data>
+  <data name="PhotosLibraryAlbums" xml:space="preserve"><value>相册</value></data>
+  <data name="PhotosLibrarySharing" xml:space="preserve"><value>共享</value></data>
+  <data name="PhotosPersonalSpace" xml:space="preserve"><value>个人空间</value></data>
+  <data name="PhotosSharedSpaceClosed" xml:space="preserve"><value>暂不开放共享空间，可继续使用个人空间照片。</value></data>
+  <data name="PhotosSearchPlaceholder" xml:space="preserve"><value>搜索照片</value></data>
+  <data name="PhotosChooseMonth" xml:space="preserve"><value>跳转到月份</value></data>
+  <data name="PhotosRefresh" xml:space="preserve"><value>刷新</value></data>
+  <data name="PhotosBack" xml:space="preserve"><value>返回</value></data>
+  <data name="PhotosFilters" xml:space="preserve"><value>筛选</value></data>
+  <data name="PhotosRetry" xml:space="preserve"><value>重试</value></data>
+  <data name="PhotosReviewDeletion" xml:space="preserve"><value>核对删除结果</value></data>
+  <data name="PhotosLoadNewer" xml:space="preserve"><value>加载较新的照片</value></data>
+  <data name="PhotosLoadOlder" xml:space="preserve"><value>加载更多</value></data>
+  <data name="PhotosPreviousPhoto" xml:space="preserve"><value>上一张</value></data>
+  <data name="PhotosNextPhoto" xml:space="preserve"><value>下一张</value></data>
+  <data name="PhotosPlayLive" xml:space="preserve"><value>播放实况照片</value></data>
+  <data name="PhotosStopLive" xml:space="preserve"><value>显示静态照片</value></data>
+  <data name="PhotosSaveOriginal" xml:space="preserve"><value>保存原件</value></data>
+  <data name="PhotosDeleteOriginal" xml:space="preserve"><value>删除原件</value></data>
+  <data name="PhotosDetails" xml:space="preserve"><value>照片详情</value></data>
+  <data name="PhotosClose" xml:space="preserve"><value>关闭</value></data>
+  <data name="PhotosCancel" xml:space="preserve"><value>取消</value></data>
+  <data name="PhotosCategoryRecent" xml:space="preserve"><value>最近添加</value></data>
+  <data name="PhotosCategoryPeople" xml:space="preserve"><value>人物</value></data>
+  <data name="PhotosCategorySubjects" xml:space="preserve"><value>主题</value></data>
+  <data name="PhotosCategoryLocations" xml:space="preserve"><value>地点</value></data>
+  <data name="PhotosCategoryTags" xml:space="preserve"><value>标签</value></data>
+  <data name="PhotosCategoryVideos" xml:space="preserve"><value>视频</value></data>
+  <data name="PhotosSharedWithMe" xml:space="preserve"><value>与我共享</value></data>
+  <data name="PhotosSharedWithOthers" xml:space="preserve"><value>与他人共享</value></data>
+  <data name="PhotosPhotoRequests" xml:space="preserve"><value>照片请求</value></data>
+  <data name="PhotosCopyLink" xml:space="preserve"><value>复制链接</value></data>
+  <data name="PhotosCopyLinkFailed" xml:space="preserve"><value>无法复制链接，请重试。</value></data>
+  <data name="PhotosLinkCopied" xml:space="preserve"><value>链接已复制。</value></data>
+  <data name="PhotosLoading" xml:space="preserve"><value>正在加载照片</value></data>
+  <data name="PhotosLoadingDescription" xml:space="preserve"><value>加载期间可切换其他视图。</value></data>
+  <data name="PhotosLoadFailed" xml:space="preserve"><value>无法加载照片</value></data>
+  <data name="PhotosEmpty" xml:space="preserve"><value>这里还没有照片</value></data>
+  <data name="PhotosEmptyDescription" xml:space="preserve"><value>请先在 Synology Photos 中添加照片，再刷新此视图。</value></data>
+  <data name="PhotosFilteredEmpty" xml:space="preserve"><value>没有符合条件的照片</value></data>
+  <data name="PhotosFilteredEmptyDescription" xml:space="preserve"><value>请更换搜索词或清除筛选条件。</value></data>
+  <data name="PhotosLoadedCount" xml:space="preserve"><value>已加载 {0} 项</value></data>
+  <data name="PhotosItemCount" xml:space="preserve"><value>{0} 项</value></data>
+  <data name="PhotosServiceUnavailable" xml:space="preserve"><value>暂时无法使用照片。请确认已安装并启用 Synology Photos，然后重新连接。</value></data>
+  <data name="PhotosServicePermission" xml:space="preserve"><value>此账号无法打开图库。请检查照片和个人空间权限，然后重新连接。</value></data>
+  <data name="PhotosServiceInvalidResponse" xml:space="preserve"><value>无法加载照片，请刷新或重新连接后重试。</value></data>
+  <data name="PhotosCategoriesFailed" xml:space="preserve"><value>部分分类无法加载，请刷新重试；仍可浏览相册。</value></data>
+  <data name="PhotosFiltersFailed" xml:space="preserve"><value>部分筛选选项无法加载，请重试或使用已有选项。</value></data>
+  <data name="PhotosMediaPhoto" xml:space="preserve"><value>照片</value></data>
+  <data name="PhotosMediaVideo" xml:space="preserve"><value>视频</value></data>
+  <data name="PhotosMediaLive" xml:space="preserve"><value>实况</value></data>
+  <data name="PhotosMediaFailed" xml:space="preserve"><value>无法打开此照片或视频。请重试，或保存原件后使用其他应用打开。</value></data>
+  <data name="PhotosSaving" xml:space="preserve"><value>正在保存原件…</value></data>
+  <data name="PhotosSaveProgress" xml:space="preserve"><value>正在保存原件：{0}</value></data>
+  <data name="PhotosSaved" xml:space="preserve"><value>原件已保存。</value></data>
+  <data name="PhotosSaveFailed" xml:space="preserve"><value>无法保存原件，已有文件未被替换。请检查保存位置后重试。</value></data>
+  <data name="PhotosDeleteUnverified" xml:space="preserve"><value>此连接暂不开放删除，请在 Synology Photos 中管理原件。</value></data>
+  <data name="PhotosDeleteChanged" xml:space="preserve"><value>此照片已发生变化，请刷新图库并核对后再删除。</value></data>
+  <data name="PhotosDeleteDenied" xml:space="preserve"><value>此账号无权删除该原件，请检查照片文件夹权限。</value></data>
+  <data name="PhotosDeleteFailed" xml:space="preserve"><value>无法准备删除，请刷新并核对照片后重试。</value></data>
+  <data name="PhotosDeletePending" xml:space="preserve"><value>删除结果尚未确认。请先核对结果，不要再次删除。</value></data>
+  <data name="PhotosDeleteConfirmBody" xml:space="preserve"><value>确定删除 NAS 上“{0}”的原件吗？它将从图库及所属相册中消失。这不是仅从相册移除，且不保证可以恢复。</value></data>
+  <data name="PhotosApplyFilters" xml:space="preserve"><value>应用筛选</value></data>
+  <data name="PhotosClearFilters" xml:space="preserve"><value>清除筛选</value></data>
+  <data name="PhotosFilterMedia" xml:space="preserve"><value>媒体类型</value></data>
+  <data name="PhotosFilterDate" xml:space="preserve"><value>日期范围</value></data>
+  <data name="PhotosDateFrom" xml:space="preserve"><value>开始日期</value></data>
+  <data name="PhotosDateTo" xml:space="preserve"><value>结束日期</value></data>
+  <data name="PhotosFilterPerson" xml:space="preserve"><value>人物</value></data>
+  <data name="PhotosFilterLocation" xml:space="preserve"><value>地点</value></data>
+  <data name="PhotosFilterTag" xml:space="preserve"><value>标签</value></data>
+  <data name="PhotosFilterRating" xml:space="preserve"><value>评分</value></data>
+  <data name="PhotosFilterCamera" xml:space="preserve"><value>相机</value></data>
+  <data name="PhotosFilterLens" xml:space="preserve"><value>镜头</value></data>
+  <data name="PhotosFilterFocal" xml:space="preserve"><value>焦距</value></data>
+  <data name="PhotosFilterExposure" xml:space="preserve"><value>曝光时间</value></data>
+  <data name="PhotosFilterAperture" xml:space="preserve"><value>光圈</value></data>
+  <data name="PhotosFilterIso" xml:space="preserve"><value>ISO</value></data>
+  <data name="PhotosFilterAny" xml:space="preserve"><value>不限</value></data>
+  <data name="PhotosRatingValue" xml:space="preserve"><value>{0} 星</value></data>
+  <data name="PhotosFocalFrom" xml:space="preserve"><value>{0} 毫米及以上</value></data>
+  <data name="PhotosFocalRange" xml:space="preserve"><value>{0}–{1} 毫米</value></data>
+  <data name="PhotosExposureRange" xml:space="preserve"><value>{0}/{1}–{2}/{3} 秒</value></data>
+  <data name="PhotosFilterSelectionUnavailable" xml:space="preserve"><value>当前选项（不在最新列表中）</value></data>
+  <data name="PhotosFilterInvalidDate" xml:space="preserve"><value>请选择开始和结束日期，结束日期不能早于开始日期。</value></data>
+  <data name="PhotosMetadataFilename" xml:space="preserve"><value>文件名</value></data>
+  <data name="PhotosMetadataTaken" xml:space="preserve"><value>拍摄时间</value></data>
+  <data name="PhotosMetadataIndexed" xml:space="preserve"><value>添加时间</value></data>
+  <data name="PhotosMetadataSize" xml:space="preserve"><value>原件大小</value></data>
+  <data name="PhotosBytes" xml:space="preserve"><value>{0} 字节</value></data>
+  <data name="PhotosMetadataResolution" xml:space="preserve"><value>分辨率</value></data>
+  <data name="PhotosResolution" xml:space="preserve"><value>{0} × {1}</value></data>
+  <data name="PhotosMetadataDescription" xml:space="preserve"><value>描述</value></data>
+  <data name="PhotosMetadataDuration" xml:space="preserve"><value>时长</value></data>
+  <data name="PhotosSeconds" xml:space="preserve"><value>{0} 秒</value></data>
+  <data name="PhotosMetadataCoordinates" xml:space="preserve"><value>坐标</value></data>
+  <data name="PhotosCoordinates" xml:space="preserve"><value>{0:F6}，{1:F6}</value></data>
 </root>

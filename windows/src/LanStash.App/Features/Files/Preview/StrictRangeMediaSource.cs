@@ -11,11 +11,11 @@ namespace LanStash.App.Features.Files.Preview;
 /// </summary>
 public sealed class StrictRangeMediaSource : IDisposable
 {
-    private readonly StrictRangeReadSession _session;
+    private readonly IReadOnlyRangeSession _session;
     private bool _disposed;
 
     private StrictRangeMediaSource(
-        StrictRangeReadSession session,
+        IReadOnlyRangeSession session,
         string contentType,
         FilePreviewMediaMetadata? metadata)
     {
@@ -59,6 +59,10 @@ public sealed class StrictRangeMediaSource : IDisposable
         }
     }
 
+    /// <summary>Photos 仅复用系统流适配器；数据读取仍由独立 Photos 仓储负责。</summary>
+    public static StrictRangeMediaSource FromPhotos(IReadOnlyMediaSource source) =>
+        new(new PhotosReadSession(source), source.ContentType, null);
+
     public void Dispose()
     {
         if (_disposed)
@@ -71,7 +75,21 @@ public sealed class StrictRangeMediaSource : IDisposable
     }
 }
 
-internal sealed class StrictRangeReadSession : IDisposable
+internal interface IReadOnlyRangeSession : IDisposable
+{
+    ulong Size { get; }
+    Task<byte[]> ReadAsync(long offset, int requestedLength, CancellationToken cancellationToken);
+}
+
+internal sealed class PhotosReadSession(IReadOnlyMediaSource source) : IReadOnlyRangeSession
+{
+    public ulong Size => checked((ulong)source.Length);
+    public Task<byte[]> ReadAsync(long offset, int requestedLength, CancellationToken cancellationToken) =>
+        source.ReadAsync(offset, requestedLength, cancellationToken);
+    public void Dispose() => source.Dispose();
+}
+
+internal sealed class StrictRangeReadSession : IReadOnlyRangeSession
 {
     internal const int MaximumRangeLength = 4 * 1024 * 1024;
     private readonly IFileRangeReader _repository;
@@ -255,7 +273,7 @@ internal sealed class StrictRangeRandomAccessStream : IRandomAccessStream
 {
     private readonly StrictRangeReadCursor _cursor;
 
-    public StrictRangeRandomAccessStream(StrictRangeReadSession session) =>
+    public StrictRangeRandomAccessStream(IReadOnlyRangeSession session) =>
         _cursor = new StrictRangeReadCursor(session);
 
     private StrictRangeRandomAccessStream(StrictRangeReadCursor cursor) => _cursor = cursor;
@@ -315,7 +333,7 @@ internal sealed class StrictRangeInputStream : IInputStream
 {
     private readonly StrictRangeReadCursor _cursor;
 
-    public StrictRangeInputStream(StrictRangeReadSession session, ulong position)
+    public StrictRangeInputStream(IReadOnlyRangeSession session, ulong position)
     {
         _cursor = new StrictRangeReadCursor(session, position);
     }
@@ -346,13 +364,13 @@ internal sealed class StrictRangeReadCursor : IDisposable
     private ulong _position;
     private bool _disposed;
 
-    public StrictRangeReadCursor(StrictRangeReadSession session, ulong position = 0)
+    public StrictRangeReadCursor(IReadOnlyRangeSession session, ulong position = 0)
     {
         Session = session;
         _position = position;
     }
 
-    internal StrictRangeReadSession Session { get; }
+    internal IReadOnlyRangeSession Session { get; }
     public ulong Size => Session.Size;
     public ulong Position
     {
