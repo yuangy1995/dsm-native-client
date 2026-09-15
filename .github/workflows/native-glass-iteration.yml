@@ -1,0 +1,139 @@
+name: Native glass implementation validation
+on:
+  push:
+    branches: [codex/native-glass-photos-validation]
+    paths: [.github/native-glass-input.json]
+permissions:
+  contents: read
+concurrency:
+  group: native-glass-implementation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: xcode-27
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      source_sha: ${{ steps.publish.outputs.source_sha }}
+      targets: ${{ steps.import.outputs.targets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Import reviewed source objects
+        id: import
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, os, pathlib, re, subprocess, urllib.request
+          assert os.environ['GITHUB_REPOSITORY'] == 'yuangy1995/dsm-native-client'
+          assert os.environ['GITHUB_REF'] == 'refs/heads/codex/native-glass-photos-validation'
+          data = json.loads(pathlib.Path('.github/native-glass-input.json').read_text())
+          for key in ('pack_blob', 'tree', 'baseline', 'expected_head'):
+              assert re.fullmatch('[0-9a-f]{40}', data[key]), key
+          assert data['baseline'] == '2243e731000382e5ff8bf2460c1ee7f9b83d0f11'
+          assert set(data['targets']) <= {'apple', 'android', 'windows'}
+          target = 'refs/heads/codex/native-glass-photos-parity'
+          remote = subprocess.check_output(['git', 'ls-remote', 'origin', target], text=True).split()[0]
+          assert remote == data['expected_head'], 'Feature branch changed; refuse to overwrite it'
+          request = urllib.request.Request('https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/' + data['pack_blob'], headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              blob = json.load(response)
+          pack = base64.b64decode(blob['content'])
+          assert len(pack) < 10_000_000
+          assert hashlib.sha256(pack).hexdigest() == data['pack_sha256']
+          subprocess.run(['git', 'unpack-objects', '-r'], input=pack, check=True)
+          assert subprocess.check_output(['git', 'cat-file', '-t', data['tree']], text=True).strip() == 'tree'
+          subprocess.run(['git', 'diff', '--exit-code', data['baseline'], data['tree'], '--', 'apple/Apps/DsmMac'], check=True)
+          stored = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-input.json'
+          stored.write_text(json.dumps(data))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('targets=' + json.dumps(data['targets']) + '\n')
+          subprocess.run(['git', 'read-tree', '--reset', '-u', data['tree']], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          PY
+      - name: Generate the mobile project with the pinned generator
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          printf '%s  %s\n' 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806 "$RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          cd apple/Apps/DsmMobile
+          "$RUNNER_TEMP/xcodegen/xcodegen/bin/xcodegen" generate
+      - name: Publish only the isolated feature branch
+        id: publish
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, shutil, subprocess
+          data = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-input.json').read_text())
+          target = 'refs/heads/codex/native-glass-photos-parity'
+          subprocess.run(['git', 'add', 'apple/Apps/DsmMobile/DsmMobile.xcodeproj/project.pbxproj'], check=True)
+          subprocess.run(['git', 'config', 'user.name', 'codex'], check=True)
+          subprocess.run(['git', 'config', 'user.email', 'codex@users.noreply.github.com'], check=True)
+          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          message = data.get('message', 'feat(native): align Photos and native glass with the macOS baseline')
+          commit = subprocess.check_output(['git', 'commit-tree', tree, '-p', data['baseline']], input=message + '\n', text=True).strip()
+          subprocess.run(['git', 'push', '--force-with-lease=' + target + ':' + data['expected_head'], 'origin', commit + ':' + target], check=True)
+          generated = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-generated'
+          generated.mkdir()
+          shutil.copy('apple/Apps/DsmMobile/DsmMobile.xcodeproj/project.pbxproj', generated / 'DsmMobile.pbxproj')
+          (generated / 'source-report.json').write_text(json.dumps({'source_sha': commit, 'tree': tree, 'requested_tree': data['tree'], 'baseline': data['baseline']}, indent=2))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('source_sha=' + commit + '\n')
+          print('Published source:', commit)
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-generated
+          path: ${{ runner.temp }}/native-generated
+          retention-days: 3
+  apple-modern:
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.targets), 'apple')
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify the actual iOS 27 SDK and compile app and tests
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/native-logs"
+          xcodebuild -version | tee "$RUNNER_TEMP/native-logs/toolchain.txt"
+          xcodebuild -showsdks >> "$RUNNER_TEMP/native-logs/toolchain.txt"
+          xcodebuild -version | head -1 | grep -E '^Xcode 27\.'
+          xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -configuration Debug -derivedDataPath "$RUNNER_TEMP/mobile-derived" CODE_SIGNING_ALLOWED=NO build-for-testing > "$RUNNER_TEMP/native-logs/mobile-modern.log" 2>&1 || { tail -180 "$RUNNER_TEMP/native-logs/mobile-modern.log"; exit 1; }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: native-apple-modern-logs
+          path: ${{ runner.temp }}/native-logs
+          retention-days: 3
+  apple-baseline:
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.targets), 'apple')
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - name: Compile the compatibility branch and run Mac shared regressions
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/native-logs"
+          xcodebuild -version | tee "$RUNNER_TEMP/native-logs/toolchain.txt"
+          xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -configuration Debug -derivedDataPath "$RUNNER_TEMP/mobile-derived" CODE_SIGNING_ALLOWED=NO build-for-testing > "$RUNNER_TEMP/native-logs/mobile-baseline.log" 2>&1 || { tail -180 "$RUNNER_TEMP/native-logs/mobile-baseline.log"; exit 1; }
+          swift test --package-path apple > "$RUNNER_TEMP/native-logs/shared-tests.log" 2>&1 || { tail -180 "$RUNNER_TEMP/native-logs/shared-tests.log"; exit 1; }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: native-apple-baseline-logs
+          path: ${{ runner.temp }}/native-logs
+          retention-days: 3
