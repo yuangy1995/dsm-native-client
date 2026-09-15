@@ -502,7 +502,7 @@ private fun AudioPreview(content: FilePreviewContent.Audio) {
 }
 
 @Composable
-private fun MediaPreview(
+internal fun MediaPreview(
     localFile: File?,
     mediaSource: RandomAccessMediaSource?,
     itemName: String,

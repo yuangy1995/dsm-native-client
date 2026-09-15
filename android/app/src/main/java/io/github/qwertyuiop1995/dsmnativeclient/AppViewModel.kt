@@ -179,7 +179,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SecureProfileStore(application)
     private val transferStore = TransferStore(application)
     private val workManager = WorkManager.getInstance(application)
+    private var synologyPhotosModel: io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotosModel? = null
     private var repository: DsmRepository? = null
+        set(value) {
+            if (field !== value) {
+                synologyPhotosModel?.close()
+                synologyPhotosModel = null
+            }
+            field = value
+        }
+
+    internal fun photoLibraryFor(profileId: String): io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotosModel? {
+        val repo = repository ?: return null
+        if (_workspace.value?.profile?.id != profileId) return null
+        return synologyPhotosModel ?: io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotosModel(
+            repo.synologyPhotos, viewModelScope,
+        ).also { synologyPhotosModel = it }
+    }
     private var workspacePersistenceJob: Job? = null
     private var nasSwitchJob: Job? = null
     private val loginAttempt = LoginAttemptOwner()
@@ -1646,10 +1662,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val targetModule = module ?: _workspace.value?.selectedModule ?: return
         val repo = repository ?: return
         if (targetModule == Module.PHOTOS) {
-            if (_workspace.value?.photoBrowser?.mode == PhotoBrowseMode.TIMELINE) {
-                startPhotoTimelineLoad(repo)
-            } else {
-                viewModelScope.launch { loadPhotoPage(repo, reset = true) }
+            _workspace.value?.profile?.id?.let(::photoLibraryFor)?.let { photos ->
+                photos.activate()
             }
             return
         }
@@ -16466,6 +16480,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        synologyPhotosModel?.close()
         releasePendingVirtualMachineLocalImageGrant()
         nasAdministrationFeature.clearForProfileSwitch()
         chatFeature.clearForProfileSwitch()

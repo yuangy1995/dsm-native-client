@@ -94,6 +94,10 @@ class DsmApiClient(
         return "$scheme://$authority$basePath"
     }
 
+    /** 复用当前连接的证书校验与禁止重定向策略，不把凭据交给系统播放器。 */
+    fun photosMedia(profile: NasProfile, session: DsmSession): SynologyPhotosMediaTransport =
+        SynologyPhotosMediaTransport(profile, session, endpoint(profile), http)
+
     suspend fun discover(profile: NasProfile): Map<String, ApiCapability> {
         val result = post(
             profile = profile,
@@ -111,7 +115,7 @@ class DsmApiClient(
             val path = value.string("path") ?: return@mapNotNull null
             val min = value.int("minVersion") ?: 1
             val max = value.int("maxVersion") ?: min
-            name to ApiCapability(name, path, min, max)
+            name to ApiCapability(name, path, min, max, value.string("requestFormat").orEmpty())
         }.toMap()
     }
 

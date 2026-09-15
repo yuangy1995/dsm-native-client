@@ -237,6 +237,11 @@ class DsmRepository(
     private val api: DsmApiClient,
     private val capabilities: Map<String, ApiCapability>,
 ) {
+    // Photos 与原有文件备份分别使用各自身份和权限，不再借 File Station 扫描图库。
+    val synologyPhotos: SynologyPhotosRepository by lazy {
+        SynologyPhotosRepository(profile, session, api, capabilities)
+    }
+
     private val capabilityResolver = DsmRepositoryCapabilityResolver(capabilities)
     private val requestBuilder = DsmRepositoryRequestBuilder(
         profile = profile,
@@ -573,7 +578,8 @@ class DsmRepository(
 
     fun availability(): List<ModuleAvailability> = listOf(
         ModuleAvailability(Module.FILES, supports("SYNO.FileStation.List")),
-        ModuleAvailability(Module.PHOTOS, supports("SYNO.FileStation.List")),
+        // 即便未安装 Photos，保留已授权的设备备份入口；图库自己呈现套件/权限恢复提示。
+        ModuleAvailability(Module.PHOTOS, supports("SYNO.Foto.UserInfo") || supports("SYNO.FileStation.Upload"), ModuleUnavailableReason.SYNOLOGY_PHOTOS),
         ModuleAvailability(
             Module.CHAT,
             supports("SYNO.Chat.Channel"),

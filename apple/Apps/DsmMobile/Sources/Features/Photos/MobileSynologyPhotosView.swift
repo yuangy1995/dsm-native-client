@@ -309,7 +309,16 @@ extension MobileSynologyPhotosSection {
 }
 
 extension SynologyPhotoCategory {
-    var title: String { L10n.string("photos.category.\(rawValue)") }
+    var title: String {
+        switch self {
+        case .recentlyAdded: L10n.string("photos.category.recentlyAdded")
+        case .person: L10n.string("photos.category.person")
+        case .concept: L10n.string("photos.category.concept")
+        case .location: L10n.string("photos.category.location")
+        case .tags: L10n.string("photos.category.tags")
+        case .videos: L10n.string("photos.category.videos")
+        }
+    }
     var symbol: String {
         switch self {
         case .recentlyAdded: "clock"
@@ -323,5 +332,11 @@ extension SynologyPhotoCategory {
 }
 
 extension SynologyPhotoShareScope {
-    var title: String { L10n.string("photos.sharing.\(rawValue)") }
+    var title: String {
+        switch self {
+        case .withMe: L10n.string("photos.sharing.withMe")
+        case .withOthers: L10n.string("photos.sharing.withOthers")
+        case .requests: L10n.string("photos.sharing.requests")
+        }
+    }
 }
