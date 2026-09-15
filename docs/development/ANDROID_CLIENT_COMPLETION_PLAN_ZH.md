@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-09-15 -->
 
 # Android 原生客户端长期计划
 
@@ -31,7 +31,9 @@ NasAdministrationFeatureModel.kt NAS 设置读取 Job、代次与同步边界所
 data/DsmRepository.kt           兼容门面与共享网络能力
 data/downloads/                 已拆出的 Download Station Repository
 data/container/                 已拆出的 Container Repository
-data/PhotoRepository.kt         已拆出的照片读取能力
+data/PhotoRepository.kt         File Station 照片文件／备份兼容能力
+data/SynologyPhotos*.kt         正式 Synology Photos Repository 与门面委托
+photos/SynologyPhotosSession.kt 照片模型、会话与父作用域的唯一所有者
 PhotoBackup*.kt                 照片备份与唯一后台任务所有权
 *ViewModelState.kt              按领域状态与纯策略函数
 ui/                             Compose 页面与组件
@@ -90,7 +92,7 @@ python3 tools/localization/check_localization.py
 3. Chat；
 4. File Station。
 
-复用既有 `PhotoRepository`、`DownloadStationRepository` 和 `ContainerRepository`，不再为
+正式 Photos 路由已按[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)使用 `SynologyPhotosRepository`；`PhotoRepository` 只保留文件／备份兼容范围，不回退旧扫描库。复用既有 `DownloadStationRepository` 和 `ContainerRepository`，不再为
 同一能力建立平行 Repository。门面仅保留向后兼容的委托；每个领域均保持相同 API 名称、
 版本、参数和 `MutationResult` 语义。
 
