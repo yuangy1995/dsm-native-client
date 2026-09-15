@@ -9,16 +9,108 @@ permissions:
   contents: read
 
 jobs:
-  source-baseline:
+  source:
+    if: github.repository == 'yuangy1995/dsm-native-client' && github.ref == 'refs/heads/codex/windows-native-macos-rewrite-20260915'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare isolated source tooling
+        run: python -m pip install lxml
+      - name: Apply reviewed native desktop sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          blobs = [
+              '98db82aef722ca879823ecdd7296c55477500ade',
+              '6873f4ce9ecb286471cffbfd9f7d2b36b3e4ad4c',
+              'a5fea668f0bb37c7abe64041f222afda09cb95e3',
+              'aa3c3cdee93492e0b85e97c33d49c8747d84ede9',
+              'a9215152a7e176d9deaa7feeb7a283232df763b4',
+              'c17a2e8a69a0b61664dca03592f664dc7fe7eaca',
+          ]
+          chunks = []
+          for sha in blobs:
+              request = urllib.request.Request(
+                  f'https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/{sha}',
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request) as response:
+                  payload = json.load(response)
+              chunk = base64.b64decode(payload['content'])
+              assert hashlib.sha1(b'blob ' + str(len(chunk)).encode() + b'\0' + chunk).hexdigest() == sha
+              chunks.append(chunk)
+          source = lzma.decompress(base64.b64decode(b''.join(chunks)))
+          assert hashlib.sha256(source).hexdigest() == '08b6c4843c8b10a57c53d96bd3acf2cbbaa74680ee63b7041ead7b693a7df125'
+          script = pathlib.Path(os.environ['RUNNER_TEMP']) / 'materialize_desktop.py'
+          script.write_bytes(source)
+          subprocess.run(['python', str(script)], check=True)
+          script.unlink()
+          PY
+      - name: Validate source and localization
+        run: |
+          git diff --check
+          python tools/localization/check_localization.py
+          python tools/localization/update_windows_live_bindings.py --check
+          python - <<'PY'
+          import subprocess
+          paths = subprocess.check_output(['git', 'ls-files', '-m', '-o', '--exclude-standard'], text=True).splitlines()
+          assert all(p.startswith('windows/') or p == 'tools/localization/update_windows_live_bindings.py' for p in paths), paths
+          PY
+      - name: Commit only to isolated rewrite branch
+        id: commit
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          test "$(git ls-remote origin refs/heads/codex/windows-native-macos-rewrite-20260915 | cut -f1)" = "$EXPECTED_HEAD"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add windows tools/localization/update_windows_live_bindings.py
+          git commit -m 'feat(windows): rebuild native desktop shell and file workspace'
+          git push origin HEAD:refs/heads/codex/windows-native-macos-rewrite-20260915
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Export reviewed source without credentials
+        run: git archive --format=zip --output=${{ runner.temp }}/native-desktop-source.zip HEAD
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-desktop-source
+          path: ${{ runner.temp }}/native-desktop-source.zip
+          retention-days: 3
+
+  windows:
+    needs: source
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.source.outputs.sha }}
           persist-credentials: false
-      - name: Export tracked baseline without Git credentials
-        run: git archive --format=zip --output=source-baseline.zip HEAD
-      - uses: actions/upload-artifact@v7
+      - uses: actions/setup-dotnet@v6
         with:
-          name: windows-native-rewrite-source-baseline
-          path: source-baseline.zip
-          retention-days: 1
+          dotnet-version: '10.0.x'
+      - name: Restore
+        working-directory: windows
+        run: dotnet restore LanStash.slnx
+      - name: Test
+        timeout-minutes: 10
+        working-directory: windows
+        run: dotnet test tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --logger 'trx;LogFileName=windows-native.trx' --logger 'console;verbosity=normal' --blame-hang --blame-hang-timeout 2m
+      - name: WinUI x64
+        if: success() || failure()
+        working-directory: windows
+        run: dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore
+      - name: WinUI ARM64
+        if: success() || failure()
+        working-directory: windows
+        run: dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-desktop-test-results
+          path: windows/tests/LanStash.Tests/TestResults/**
+          retention-days: 3
