@@ -1,0 +1,38 @@
+name: Photos Parity Mobile Repair
+on:
+  push:
+    branches: [codex/photos-parity-integrated-20260915]
+    paths: [.github/workflows/photos-parity-mobile-repair.yml]
+permissions:
+  contents: write
+  actions: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: codex/photos-parity-integrated-20260915
+      - name: 修正测试辅助闭包的 actor 边界，不变更产品或断言
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apple/Apps/DsmMobile/Tests/MobileChatModelTests.swift')
+          text = p.read_text()
+          before = 'private func assertReadOnlyFailure<T>(\n        _ operation: () async throws -> T,'
+          after = 'private func assertReadOnlyFailure<T>(\n        _ operation: @MainActor () async throws -> T,'
+          assert text.count(before) == 1
+          p.write_text(text.replace(before, after))
+          PY
+          git diff --check
+          git add apple/Apps/DsmMobile/Tests/MobileChatModelTests.swift
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test(apple): keep read-only assertion closures on the main actor'
+          git push origin HEAD:refs/heads/codex/photos-parity-integrated-20260915
+      - name: 运行完整 Apple 构建和两个移动模拟器测试
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run apple-build.yml --ref codex/photos-parity-integrated-20260915
