@@ -1,0 +1,40 @@
+name: Windows Rewrite Workbench
+
+on:
+  push:
+    branches: [codex/windows-native-rebuild]
+    paths: [.github/workflows/windows-rewrite-workbench.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: 导出当前已提交的源码基线
+        run: git archive --format=zip HEAD --output=windows-rewrite-source.zip
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-rewrite-source
+          path: windows-rewrite-source.zip
+          retention-days: 1
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: 基线测试
+        working-directory: windows
+        run: dotnet test tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --logger 'trx;LogFileName=baseline.trx'
+      - name: 基线 WinUI 构建
+        working-directory: windows
+        run: dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: windows-rewrite-baseline-tests
+          path: windows/tests/**/TestResults/*.trx
+          retention-days: 1
