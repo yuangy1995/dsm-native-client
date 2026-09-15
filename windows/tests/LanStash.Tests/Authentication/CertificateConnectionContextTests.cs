@@ -38,6 +38,8 @@ public sealed class CertificateConnectionContextTests
             "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentContent.cs",
             "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentUpload.cs",
             "windows/src/LanStash.Infrastructure/Features/Files/DsmApiClient.FileArchive.cs",
+            "windows/src/LanStash.Infrastructure/Features/Photos/Synology/DsmApiClient.PhotoMedia.cs",
+            "windows/src/LanStash.Infrastructure/Features/Photos/Synology/DsmApiClient.Photos.cs",
             "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.DownloadStream.cs",
             "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.Transport.cs",
         };
@@ -47,8 +49,8 @@ public sealed class CertificateConnectionContextTests
         var apiSources = actualApiSourcePaths.Select(Read).ToArray();
         var quickConnect = Read("windows/src/LanStash.Infrastructure/DsmQuickConnectResolver.cs");
 
-        Assert.Equal(23, apiSources.Sum(source => Count(source, "_http.SendAsync(")));
-        Assert.Equal(12, apiSources.Sum(source =>
+        Assert.Equal(28, apiSources.Sum(source => Count(source, "_http.SendAsync(")));
+        Assert.Equal(17, apiSources.Sum(source =>
             Count(source, "SetNasConnectionContext(request, profile);")));
         Assert.Equal(2, apiSources.Sum(source =>
             Count(source, "WindowsCertificateTrustHandler.SetConnectionContext(")));

@@ -99,7 +99,7 @@ internal fun SynologyPhotosGrid(state: SynologyPhotosState, model: SynologyPhoto
         }
         items(state.sharing, key = { "shared:${it.id}" }, span = { GridItemSpan(maxLineSpan) }) { shared ->
             ListItem(headlineContent = { Text(shared.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                modifier = Modifier.clickable(enabled = shared.albumId != null) { model.openSharedAlbum(shared) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = shared.albumId != null) { model.openSharedAlbum(shared) },
                 trailingContent = {
                     shared.url?.let { url -> IconButton(onClick = { clipboard.setText(AnnotatedString(url)) }) {
                         Icon(Icons.Outlined.ContentCopy, stringResource(R.string.sp_copy_link))
@@ -151,7 +151,7 @@ internal fun SynologyPhotoTile(photo: SynologyPhoto, model: SynologyPhotosModel,
         catch (error: Exception) { if (error is CancellationException) throw error }
     }
     val description = stringResource(if (photo.mediaType == "video") R.string.video_thumbnail_description else R.string.photo_thumbnail_description, photo.filename)
-    Box(Modifier.fillMaxWidth().aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().aspectRatio(1f).heightIn(min = 48.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         val image = bitmap
         if (image != null) Image(image.asImageBitmap(), description, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else Icon(Icons.Outlined.Image, description, Modifier.size(40.dp))

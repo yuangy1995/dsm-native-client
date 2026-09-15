@@ -127,6 +127,19 @@ class SynologyPhotosRepositoryTest {
         assertEquals("100", calls.last().fields["offset"])
     }
 
+    @Test fun `月份窗口与日期筛选取交集且无交集不发送请求`() = runTest {
+        val fixture = Fixture()
+        val repository = fixture.ready()
+        val filter = SynologyPhotoFilter(startTime = 100, endTime = 900)
+        repository.photos(SynologyPhotoSpace.PERSONAL, SynologyPhotoQuery.Filtered(filter, 200, 800), 0, 100)
+        assertEquals("[{\"start_time\":200,\"end_time\":800}]", fixture.requests.single().fields["time"])
+        val count = fixture.requests.size
+        val empty = repository.photos(SynologyPhotoSpace.PERSONAL, SynologyPhotoQuery.Filtered(filter, 1000, 1200), 0, 100)
+        assertTrue(empty.items.isEmpty())
+        assertFalse(empty.hasMore)
+        assertEquals(count, fixture.requests.size)
+    }
+
     @Test fun `十二类筛选编码使用数字身份与分数对象而非标签文案`() = runTest {
         val fixture = Fixture()
         val repository = fixture.ready()

@@ -193,7 +193,7 @@ private fun PhotoZoomImage(data: ByteArray, photo: SynologyPhoto, zoom: Float, o
     if (failed) Text(stringResource(R.string.sp_media_failed), Modifier.padding(24.dp))
     else if (image == null) CircularProgressIndicator()
     else Image(image.asImageBitmap(), photo.filename, contentScale = ContentScale.Fit,
-        modifier = Modifier.fillMaxSize().onSizeChanged { size = it }.graphicsLayer {
+        modifier = Modifier.fillMaxSize().sizeIn(minWidth = 48.dp, minHeight = 48.dp).onSizeChanged { size = it }.graphicsLayer {
             scaleX = zoom; scaleY = zoom; translationX = offset.x; translationY = offset.y; clip = true
         }.pointerInput(photo.id, zoom) { detectTapGestures(onDoubleTap = { onZoom(if (zoom > 1f) 1f else 2f) }) }.transformable(transform))
 }

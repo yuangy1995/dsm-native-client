@@ -100,7 +100,7 @@ internal fun SynologyPhotosLibrary(model: SynologyPhotosModel, canBackup: Boolea
         val format = remember(locale) { DateTimeFormatter.ofPattern("LLLL yyyy", locale) }
         LazyColumn(Modifier.fillMaxSize()) {
             items(state.months, key = { it.toString() }) { month ->
-                ListItem(headlineContent = { Text(month.format(format)) }, modifier = Modifier.clickable {
+                ListItem(headlineContent = { Text(month.format(format)) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
                     months = false; model.jumpToMonth(month)
                 })
             }

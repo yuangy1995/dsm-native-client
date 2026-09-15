@@ -77,6 +77,7 @@ class SynologyPhotosMediaTransport internal constructor(
         parameters: Map<String, String>,
         destination: File,
         expectedBytes: Long,
+        beforeCommit: suspend () -> Unit = {},
         progress: (Long, Long) -> Unit,
     ): Unit = withContext(Dispatchers.IO) {
         require(expectedBytes >= 0)
@@ -91,7 +92,21 @@ class SynologyPhotosMediaTransport internal constructor(
                 if (declared >= 0 && declared != expectedBytes) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
                 var done = 0L
                 var lastProgress = 0L
-                response.body!!.byteStream().use { input ->
+                response.body!!.byteStream().buffered().use { input ->
+                    // MIME 可能错误，另读有界前缀阻止错误页或实况 ZIP 冒充单个原件。
+                    input.mark(512)
+                    val prefix = ByteArray(512)
+                    var prefixCount = 0
+                    while (prefixCount < prefix.size) {
+                        currentCoroutineContext().ensureActive()
+                        val count = input.read(prefix, prefixCount, prefix.size - prefixCount)
+                        if (count < 0) break
+                        prefixCount += count
+                    }
+                    val header = prefix.decodeToString(0, prefixCount).trimStart { it.isWhitespace() || it == '\uFEFF' }
+                    if (header.startsWith("{") || header.startsWith("[") || header.startsWith("<") ||
+                        (prefixCount >= 4 && prefix[0] == 0x50.toByte() && prefix[1] == 0x4b.toByte() && prefix[2] == 3.toByte() && prefix[3] == 4.toByte())) fail()
+                    input.reset()
                     staging.outputStream().buffered().use { output ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
@@ -110,6 +125,9 @@ class SynologyPhotosMediaTransport internal constructor(
                     }
                 }
                 if (done != expectedBytes) fail(SynologyPhotoFailureKind.LENGTH_MISMATCH)
+                currentCoroutineContext().ensureActive()
+                // 提升前重新检查账号/权限代际；迟到结果不能成为可导出的原件。
+                beforeCommit()
                 currentCoroutineContext().ensureActive()
                 // 不使用 REPLACE_EXISTING，也不清理用户已有目标；仅清理本次随机暂存文件。
                 Files.move(staging.toPath(), destination.toPath())

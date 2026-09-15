@@ -174,7 +174,7 @@
 
 | 稳定 ID | 文件 | 当前 ratchet | 非阻断目标 |
 | --- | --- | ---: | ---: |
-| `android-app-view-model` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16475 | 12000 |
+| `android-app-view-model` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16473 | 12000 |
 | `android-app-view-model-support` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 | 1200 |
 | `android-dsm-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 14934 | 11000 |
 | `android-download-station-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 | 1800 |

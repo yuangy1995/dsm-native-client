@@ -12,6 +12,7 @@ internal sealed class SynologyPhotoFilterDialog : ContentDialog
     private readonly SynologyPhotosWorkspace _model;
     private readonly LocalizationService _l = LocalizationService.Current;
     private readonly StackPanel _fields = new() { Spacing = 12, MinWidth = 260, MaxWidth = 560 };
+    private readonly ContentControl _fieldHost = new();
     private readonly InfoBar _error = new() { IsClosable = false, Severity = InfoBarSeverity.Warning };
     private readonly Dictionary<string, ComboBox> _choices = [];
     private readonly CalendarDatePicker _start = new();
@@ -29,7 +30,8 @@ internal sealed class SynologyPhotoFilterDialog : ContentDialog
         var retry = new Button { Content = _l.Get("PhotosRetry") };
         retry.Click += async (_, _) => await ReloadOptionsAsync(); _error.ActionButton = retry;
         var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(_error); content.Children.Add(_fields);
+        _fieldHost.Content = _fields;
+        content.Children.Add(_error); content.Children.Add(_fieldHost);
         Content = new ScrollViewer { Content = content, MaxHeight = 620, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Build(model.Filter);
         PrimaryButtonClick += OnApply;
@@ -41,7 +43,7 @@ internal sealed class SynologyPhotoFilterDialog : ContentDialog
     private async Task ReloadOptionsAsync()
     {
         if (_model.IsLoadingOptions || _closed) return;
-        var draft = ReadValue(); _fields.IsEnabled = false; IsPrimaryButtonEnabled = false;
+        var draft = ReadValue(); _fieldHost.IsEnabled = false; IsPrimaryButtonEnabled = false;
         try
         {
             await _model.LoadFilterOptionsAsync();
@@ -49,7 +51,7 @@ internal sealed class SynologyPhotoFilterDialog : ContentDialog
             Build(draft); _error.IsOpen = _model.OptionsErrorKey is not null;
             _error.Message = _model.OptionsErrorKey is { } key ? _l.Get(key) : "";
         }
-        finally { if (!_closed) { _fields.IsEnabled = true; IsPrimaryButtonEnabled = true; } }
+        finally { if (!_closed) { _fieldHost.IsEnabled = true; IsPrimaryButtonEnabled = true; } }
     }
     private void Build(SynologyPhotoFilter filter)
     {

@@ -180,7 +180,7 @@ public sealed partial class SynologyPhotosPage
         {
             if (string.IsNullOrWhiteSpace(value)) return;
             var group = new StackPanel { Spacing = 2 };
-            group.Children.Add(new TextBlock { Text = _l.Get(key), FontWeight = Windows.UI.Text.FontWeights.SemiBold });
+            group.Children.Add(new TextBlock { Text = _l.Get(key), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
             group.Children.Add(new TextBlock { Text = value, IsTextSelectionEnabled = true, TextWrapping = TextWrapping.Wrap }); rows.Children.Add(group);
         }
         var culture = System.Globalization.CultureInfo.CurrentCulture;

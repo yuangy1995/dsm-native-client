@@ -107,7 +107,7 @@ internal fun SynologyPhotoFilters(state: SynologyPhotosState, onRetry: () -> Uni
 
 @Composable
 private fun FilterRow(title: String, value: String, onClick: () -> Unit) = ListItem(
-    headlineContent = { Text(title) }, supportingContent = { Text(value) }, modifier = Modifier.clickable(onClick = onClick),
+    headlineContent = { Text(title) }, supportingContent = { Text(value) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick),
 )
 
 @Composable
@@ -124,9 +124,9 @@ private fun <T> PhotoChoices(values: List<T>, selected: T?, key: (T) -> String, 
         ClientSearchField(search, { search = it }, stringResource(R.string.sp_filter_candidate_search), Modifier.padding(12.dp))
         LazyColumn(Modifier.weight(1f)) {
             item(key = "all") { ListItem(headlineContent = { Text(stringResource(R.string.sp_filters_all)) },
-                leadingContent = { RadioButton(selected == null, onClick = null) }, modifier = Modifier.clickable { onChoose(null) }) }
+                leadingContent = { RadioButton(selected == null, onClick = null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChoose(null) }) }
             items(visible, key = { "option:${key(it.first)}" }) { (value, title) ->
-                ListItem(headlineContent = { Text(title) }, leadingContent = { RadioButton(selected == value, onClick = null) }, modifier = Modifier.clickable { onChoose(value) })
+                ListItem(headlineContent = { Text(title) }, leadingContent = { RadioButton(selected == value, onClick = null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChoose(value) })
             }
             if (visible.isEmpty()) item { Text(stringResource(R.string.sp_filters_no_options), Modifier.padding(24.dp)) }
         }

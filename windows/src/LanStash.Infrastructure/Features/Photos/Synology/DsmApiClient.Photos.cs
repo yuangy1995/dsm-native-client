@@ -32,6 +32,7 @@ public sealed partial class DsmApiClient
         using var request = PhotoRequest(profile, session, HttpMethod.Post,
             ResolveSafeApiUri(profile, $"entry.cgi/{capability.Name}"), "application/json");
         request.Content = new FormUrlEncodedContent(values);
+        SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ValidatePhotoResponse(response, HttpStatusCode.OK);
         var bytes = await ReadBoundedPhotoBodyAsync(response.Content, MaximumPhotoResponseBytes, cancellationToken).ConfigureAwait(false);
@@ -58,6 +59,7 @@ public sealed partial class DsmApiClient
             ("type", "unit"), ("size", large ? "xl" : "m"));
         using var request = PhotoRequest(profile, session, HttpMethod.Get,
             PhotoQueryUri(profile, "/synofoto/api/v2/p/Thumbnail/get", values), "image/*");
+        SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ValidatePhotoResponse(response, HttpStatusCode.OK);
         if (response.Content.Headers.ContentType?.MediaType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) != true)
@@ -76,6 +78,7 @@ public sealed partial class DsmApiClient
         if (expectedBytes < 0 || media.Capability.Name != "SYNO.Foto.Download" || media.Method != "download")
             throw SynologyPhotosCodec.Invalid();
         using var request = PhotoRequest(profile, session, HttpMethod.Get, PhotoMediaUri(profile, media), "image/*, video/*, application/octet-stream");
+        SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ValidatePhotoResponse(response, HttpStatusCode.OK);
         ValidatePhotoBinaryType(response);
@@ -167,7 +170,6 @@ public sealed partial class DsmApiClient
         request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
         request.Headers.TryAddWithoutValidation("Cookie", $"id={session.Sid}");
         if (!string.IsNullOrWhiteSpace(session.SynoToken)) request.Headers.TryAddWithoutValidation("X-SYNO-TOKEN", session.SynoToken);
-        SetNasConnectionContext(request, profile);
         return request;
     }
 

@@ -13,6 +13,7 @@ public sealed partial class DsmApiClient
         var uri = PhotoMediaUri(profile, media);
         using var request = PhotoRequest(profile, session, HttpMethod.Get, uri, "video/*, application/octet-stream");
         request.Headers.Range = new RangeHeaderValue(0, PhotoRangeSource.InitialBytes - 1);
+        SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ValidatePhotoResponse(response, HttpStatusCode.PartialContent);
         ValidatePhotoBinaryType(response);
@@ -60,6 +61,7 @@ public sealed partial class DsmApiClient
                 if (entityTag is not null && EntityTagHeaderValue.TryParse(entityTag, out var tag) && !tag.IsWeak)
                     request.Headers.IfRange = new RangeConditionHeaderValue(tag);
                 else if (lastModified is not null) request.Headers.IfRange = new RangeConditionHeaderValue(lastModified.Value);
+                SetNasConnectionContext(request, profile);
                 using var response = await owner._http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false);
                 ValidatePhotoResponse(response, HttpStatusCode.PartialContent);
                 ValidatePhotoBinaryType(response);

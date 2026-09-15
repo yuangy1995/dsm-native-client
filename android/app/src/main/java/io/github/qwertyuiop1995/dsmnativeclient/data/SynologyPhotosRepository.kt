@@ -124,7 +124,11 @@ class SynologyPhotosRepository internal constructor(
             is SynologyPhotoQuery.Filtered -> {
                 version = 2; method = "list_with_filter"
                 parameters.putAll(SynologyPhotosCodec.filterParameters(query.filter))
-                parameters.putIfAbsent("time", SynologyPhotosCodec.time(query.start, query.end))
+                SynologyPhotosCodec.time(query.start, query.end)
+                val start = maxOf(query.start, query.filter.startTime ?: query.start)
+                val end = minOf(query.end, query.filter.endTime ?: query.end)
+                if (start > end) return SynologyPhotoPage(emptyList(), offset, offset, false)
+                parameters["time"] = SynologyPhotosCodec.time(start, end)
             }
             is SynologyPhotoQuery.Category -> {
                 if (query.id <= 0) invalid()
@@ -255,9 +259,10 @@ class SynologyPhotosRepository internal constructor(
 
     override suspend fun downloadOriginal(photo: SynologyPhoto, destination: File, progress: (Long, Long) -> Unit) {
         requirePhoto(photo)
+        val generation = accessGeneration.get()
         media().download(capability("Download", 2), encode(json(
             "item_id" to array(photo.id.itemId), "force_download" to true, "download_type" to "source",
-        )), destination, photo.sizeBytes, progress)
+        )), destination, photo.sizeBytes, beforeCommit = { requireGeneration(generation) }, progress = progress)
     }
 
     override suspend fun prepareDeletion(photo: SynologyPhoto) {

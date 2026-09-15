@@ -159,6 +159,33 @@ class SynologyPhotosMediaTransportTest {
         assertEquals("/synofoto/api/v2/p/Thumbnail/get", photoApiPath("/synofoto/api/v2/p/Thumbnail/get"))
     }
 
+    @Test fun `原件权限代际检查失败时不提升文件也不覆盖用户目标`() = runBlocking {
+        val directory = Files.createTempDirectory("photos-stale-original-").toFile()
+        try {
+            val transport = transport { request -> response(request, ByteArray(1024), "image/heic") }
+            val target = File(directory, "original.heic")
+            try {
+                transport.download(download, originalParameters, target, 1024,
+                    beforeCommit = { throw CancellationException("stale access") }) { _, _ -> }
+                fail("权限改变后不能生成可导出的文件")
+            } catch (_: CancellationException) { }
+            assertFalse(target.exists())
+            assertTrue(directory.listFiles()!!.isEmpty())
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun `图片MIME中的JSON错误页HTML和ZIP原件均被拒绝`() = runBlocking {
+        val directory = Files.createTempDirectory("photos-mime-original-").toFile()
+        try {
+            for (text in listOf("  {\"success\":false}", "<!DOCTYPE html><html>login</html>", "PK\u0003\u0004archive")) {
+                val bytes = text.toByteArray()
+                val transport = transport { request -> response(request, bytes, "image/jpeg") }
+                failure { transport.download(download, originalParameters, File(directory, "original.jpg"), bytes.size.toLong()) { _, _ -> } }
+                assertTrue(directory.listFiles()!!.isEmpty())
+            }
+        } finally { directory.deleteRecursively() }
+    }
+
     private suspend fun failure(action: suspend () -> Any?) {
         try { action(); fail("应该拒绝不合规媒体") } catch (_: SynologyPhotoFailure) { }
     }
