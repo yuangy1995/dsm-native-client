@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: codex/photos-parity-integrated-20260915
-      - name: 应用已复核的测试夹具和模拟器宿主修正
+      - name: 应用已复核的测试夹具修正
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -24,8 +24,8 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/git/blobs/71eebb4aed4b60474f9c4c6be45a6dac76da858a" --jq .content | base64 -d > "$RUNNER_TEMP/mobile.patch.xz"
           echo "157ca7753fcf0c2c39e26b1933ddcf5ca6cf16dc418508b3d4df24de3b79e93d  $RUNNER_TEMP/mobile.patch.xz" | sha256sum -c -
           xz -dc "$RUNNER_TEMP/mobile.patch.xz" > "$RUNNER_TEMP/mobile.patch"
-          git apply --check --index "$RUNNER_TEMP/mobile.patch"
-          git apply --index "$RUNNER_TEMP/mobile.patch"
+          git apply --exclude='.github/workflows/apple-build.yml' --check --index "$RUNNER_TEMP/mobile.patch"
+          git apply --exclude='.github/workflows/apple-build.yml' --index "$RUNNER_TEMP/mobile.patch"
           git diff --cached --check
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test(apple): make simulator fixtures independent of host locale and filename parsing'
           git push origin HEAD:refs/heads/codex/photos-parity-integrated-20260915

@@ -113,14 +113,17 @@ jobs:
                   raise SystemExit(f"缺少 {family} 可用模拟器，不能跳过移动端测试")
               print(f"{family} {matches[0]['udid']}")
           PYTHON
+          test_status=0
           while read -r family device; do
+            # 测试宿主临时签名仅用于模拟器钥匙串；不改变正式签名或权限文件。
             xcodebuild test \
               -project DsmMobile.xcodeproj -scheme DsmMobile \
               -destination "platform=iOS Simulator,id=$device" \
               -parallel-testing-enabled NO \
               -resultBundlePath "$RUNNER_TEMP/DsmMobile-$family.xcresult" \
-              CODE_SIGNING_ALLOWED=NO
+              CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- || test_status=1
           done < "$RUNNER_TEMP/mobile-test-destinations.txt"
+          exit "$test_status"
 
       - name: 上传移动端测试结果
         if: always()
