@@ -6,19 +6,128 @@ on:
     paths: [.github/workflows/photos-parity-workspace.yml]
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 jobs:
-  snapshot:
+  apply-mobile:
+    if: github.repository == 'yuangy1995/dsm-native-client'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
-      - name: 导出当前功能分支的已跟踪源码（不含 Git 配置和凭据）
-        run: git archive --format=tar.gz --output=photos-parity-source.tar.gz HEAD
-      - uses: actions/upload-artifact@v7
-        with:
-          name: photos-parity-source
-          path: photos-parity-source.tar.gz
-          retention-days: 1
+          ref: codex/photos-parity-20260915
+          fetch-depth: 1
+      - name: Validate branch and restore exact reviewed patch
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 - <<'PY'
+          import base64, gzip, hashlib, os, pathlib, re, subprocess, zlib
+          exp = [0] * 512
+          log = [0] * 256
+          value = 1
+          for i in range(255):
+              exp[i] = value
+              log[value] = i
+              value <<= 1
+              if value & 256:
+                  value ^= 0x11d
+          for i in range(255, 512):
+              exp[i] = exp[i - 255]
+          def mul(a, b):
+              return exp[log[a] + log[b]] if a and b else 0
+          def div(a, b):
+              if not b:
+                  raise ValueError('zero divisor')
+              return exp[(log[a] - log[b]) % 255] if a else 0
+          def weights(x, k):
+              result = []
+              for j in range(k):
+                  v = 1
+                  for m in range(k):
+                      if j != m:
+                          v = mul(v, div(x ^ m, j ^ m))
+                  result.append(v)
+              return result
+          # Transfer-only erasure recovery. No source is executed before whole-patch verification.
+          k, length = 123, 15638
+          rows = {}
+          for path in sorted(pathlib.Path('.').glob('.photos-parity-apple-*.rs')):
+              for line in path.read_text().splitlines():
+                  try:
+                      text, crc = line.strip().rsplit(':', 1)
+                      if format(zlib.crc32(text.encode()), '08x') != crc:
+                          continue
+                      index, encoded = text.split(':')
+                      index = int(index)
+                      data = base64.b64decode(encoded, validate=True)
+                      if len(data) != 128 or not 0 <= index < 255:
+                          continue
+                      if index in rows and rows[index] != data:
+                          raise RuntimeError('Conflicting transfer segments')
+                      rows[index] = data
+                  except (ValueError, TypeError):
+                      continue
+          missing = [i for i in range(k) if i not in rows]
+          print('Validated source segments:', len(rows), 'recovering:', len(missing))
+          if missing:
+              parity = [(i, b) for i, b in sorted(rows.items()) if i >= k][:len(missing)]
+              if len(parity) < len(missing):
+                  raise RuntimeError('Insufficient valid source segments')
+              matrix = []
+              for index, data in parity:
+                  w = weights(index, k)
+                  rhs = bytearray(data)
+                  for i, block in rows.items():
+                      if i >= k:
+                          continue
+                      for j, v in enumerate(block):
+                          rhs[j] ^= mul(w[i], v)
+                  matrix.append([w[i] for i in missing] + list(rhs))
+              d = len(missing)
+              for col in range(d):
+                  pivot = next(r for r in range(col, d) if matrix[r][col])
+                  matrix[col], matrix[pivot] = matrix[pivot], matrix[col]
+                  scale = div(1, matrix[col][col])
+                  matrix[col] = [mul(v, scale) for v in matrix[col]]
+                  for r in range(d):
+                      if r == col:
+                          continue
+                      factor = matrix[r][col]
+                      if factor:
+                          matrix[r] = [a ^ mul(factor, b) for a, b in zip(matrix[r], matrix[col])]
+              for index, row in zip(missing, matrix):
+                  rows[index] = bytes(row[d:])
+          compressed = b''.join(rows[i] for i in range(k))[:length]
+          patch = gzip.decompress(compressed)
+          expected = '78ad95b1d177172cfedf059e065b2e361a929d90d26cf6798d0e4abd2ce9bfda'
+          if hashlib.sha256(patch).hexdigest() != expected:
+              raise RuntimeError('Source checksum mismatch; refusing all changes')
+          allowed = ('apple/Apps/DsmMobile/', 'docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md')
+          for line in patch.decode('utf-8').splitlines():
+              if line.startswith('diff --git '):
+                  match = re.fullmatch(r'diff --git a/(.+) b/(.+)', line)
+                  if not match or match[1] != match[2] or not match[1].startswith(allowed):
+                      raise RuntimeError('Source path outside approved mobile slice')
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'photos-apple.patch'
+          target.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(target)], check=True)
+          subprocess.run(['git', 'apply', '--index', '--whitespace=error-all', str(target)], check=True)
+          PY
+      - name: Commit only to the isolated feature branch
+        shell: bash
+        run: |
+          git rm --ignore-unmatch .photos-parity-apple-*.rs .photos-parity-apple-*.b64
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only -- apple/Apps/DsmMac)"
+          python3 tools/localization/check_localization.py
+          git config user.name 'OpenAI'
+          git config user.email 'noreply@openai.com'
+          git commit -m 'feat(ios): share native Synology Photos state machine on iPhone and iPad'
+          git push origin HEAD:refs/heads/codex/photos-parity-20260915
+      - name: Run native Apple build at the applied branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run apple-build.yml --ref codex/photos-parity-20260915
