@@ -1,0 +1,31 @@
+name: Photos Parity Workspace
+
+on:
+  push:
+    branches:
+      - codex/photos-cross-platform-parity
+    paths:
+      - .github/workflows/photos-parity-workspace.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 检出照片对齐功能分支
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: 导出已提交源码用于隔离验证
+        shell: bash
+        run: git archive --format=tar --output="$RUNNER_TEMP/photos-parity-source.tar" HEAD
+      - name: 保存短期源码快照
+        uses: actions/upload-artifact@v4
+        with:
+          name: photos-parity-source
+          path: ${{ runner.temp }}/photos-parity-source.tar
+          retention-days: 1
+          if-no-files-found: error
