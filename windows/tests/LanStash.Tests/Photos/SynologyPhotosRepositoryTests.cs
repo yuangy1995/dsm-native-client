@@ -150,11 +150,11 @@ public sealed class SynologyPhotosRepositoryTests
         var repository = fixture.Repository(delete: true); await repository.AccessAsync();
         Assert.Equal(SynologyPhotoDeletionResult.PendingReview, await repository.DeleteAsync(fixture.Photo, Guid.NewGuid()));
         Assert.Equal(SynologyPhotoDeletionResult.PendingReview, await repository.DeleteAsync(fixture.Photo, Guid.NewGuid()));
-        var write = Assert.Single(fixture.Requests.Where(call => call.Method == "delete"));
+        var write = Assert.Single(fixture.Requests, call => call.Method == "delete");
         Assert.Equal("[7]", write.Values["item_id"]); Assert.Equal("[]", write.Values["folder_id"]);
         deleted = true;
         Assert.Equal(SynologyPhotoDeletionResult.Confirmed, await repository.ReviewDeletionAsync(fixture.Photo));
-        Assert.Single(fixture.Requests.Where(call => call.Method == "delete"));
+        Assert.Single(fixture.Requests, call => call.Method == "delete");
     }
 
     [Theory]
