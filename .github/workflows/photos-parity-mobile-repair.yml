@@ -14,25 +14,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: codex/photos-parity-integrated-20260915
-      - name: 修正测试辅助闭包的 actor 边界，不变更产品或断言
+      - name: 应用已复核的测试夹具和模拟器宿主修正
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('apple/Apps/DsmMobile/Tests/MobileChatModelTests.swift')
-          text = p.read_text()
-          before = 'private func assertReadOnlyFailure<T>(\n        _ operation: () async throws -> T,'
-          after = 'private func assertReadOnlyFailure<T>(\n        _ operation: @MainActor () async throws -> T,'
-          assert text.count(before) == 1
-          p.write_text(text.replace(before, after))
-          PY
-          git diff --check
-          git add apple/Apps/DsmMobile/Tests/MobileChatModelTests.swift
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test(apple): keep read-only assertion closures on the main actor'
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/71eebb4aed4b60474f9c4c6be45a6dac76da858a" --jq .content | base64 -d > "$RUNNER_TEMP/mobile.patch.xz"
+          echo "157ca7753fcf0c2c39e26b1933ddcf5ca6cf16dc418508b3d4df24de3b79e93d  $RUNNER_TEMP/mobile.patch.xz" | sha256sum -c -
+          xz -dc "$RUNNER_TEMP/mobile.patch.xz" > "$RUNNER_TEMP/mobile.patch"
+          git apply --check --index "$RUNNER_TEMP/mobile.patch"
+          git apply --index "$RUNNER_TEMP/mobile.patch"
+          git diff --cached --check
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test(apple): make simulator fixtures independent of host locale and filename parsing'
           git push origin HEAD:refs/heads/codex/photos-parity-integrated-20260915
-      - name: 运行完整 Apple 构建和两个移动模拟器测试
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run apple-build.yml --ref codex/photos-parity-integrated-20260915
+          gh workflow run apple-build.yml --ref codex/photos-parity-integrated-20260915
