@@ -5,6 +5,7 @@ using LanStash.App.Views;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using System.IO;
 using WinRT.Interop;
 
@@ -31,6 +32,20 @@ public sealed partial class MainWindow : Window
         _appWindow.SetIcon(iconPath);
         _appWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
         _appWindow.Closing += OnWindowClosing;
+        WindowTitleText.Text = Title;
+        if (AppWindowTitleBar.IsCustomizationSupported())
+        {
+            ExtendsContentIntoTitleBar = true;
+            SetTitleBar(NativeTitleBar);
+            _appWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
+            _appWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+            SystemBackdrop = new MicaBackdrop();
+        }
+        else
+        {
+            TitleBarRow.Height = new GridLength(0);
+        }
+        Closed += Window_Closed;
         _trayIcon = new TrayIcon(
             windowHandle,
             iconPath,
@@ -55,12 +70,23 @@ public sealed partial class MainWindow : Window
         _ = _viewModel.InitializeAsync();
     }
 
+    private void Window_Closed(object sender, WindowEventArgs args)
+    {
+        LocalizationService.Current.LanguageChanged -= OnLanguageChanged;
+        _viewModel.ConnectionChanged -= OnConnectionChanged;
+        _appWindow.Closing -= OnWindowClosing;
+        _transferNotifications?.Dispose();
+        _transferNotifications = null;
+        _trayIcon.Dispose();
+    }
+
     private void OnLanguageChanged(object? sender, EventArgs e)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
             ExitPhotoViewerFullScreen();
             Title = LocalizationService.Current.Get("AppName");
+            WindowTitleText.Text = Title;
             _trayIcon.UpdateText(
                 LocalizationService.Current.Get("TrayTooltip"),
                 LocalizationService.Current.Get("TrayOpenApp"),

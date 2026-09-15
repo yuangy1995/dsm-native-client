@@ -43,7 +43,10 @@ public sealed partial class FilesPage : Page, IDisposable
     private CancellationTokenSource? _dragMoveUndoCts;
     private readonly IFileSearchRepository? _searchRepository;
     private CancellationTokenSource? _searchCancellation;
-    private bool? _locationsAreWide;
+    private bool _locationCollectionOpen;
+    private bool _inspectorVisible;
+    private LanStash.App.Features.Settings.WorkspaceDestination _workspaceDestination;
+    private readonly LanStash.App.Features.Settings.PresentationInvalidation _renderInvalidation = new();
     private bool _disposed;
 
     internal FilesPage(
@@ -168,6 +171,7 @@ public sealed partial class FilesPage : Page, IDisposable
         LocationsPane.Attach(_locationsViewModel, OpenLocationAsync, RefreshLocationsAsync);
         LocationsPane.LocationOpened += LocationsPane_LocationOpened;
         Loaded += FilesPage_Loaded;
+        Unloaded += FilesPage_Unloaded;
         UpdateState();
     }
 
@@ -180,12 +184,21 @@ public sealed partial class FilesPage : Page, IDisposable
     {
         if (_initialized)
         {
+            ApplyWorkspaceDestination();
             return;
         }
 
         _initialized = true;
         await RunAsync(_viewModel.InitializeAsync);
         await LocationsPane.LoadAsync();
+        if (!_disposed) ApplyWorkspaceDestination();
+    }
+
+    private void FilesPage_Unloaded(object sender, RoutedEventArgs args)
+    {
+        CancelFileSearch();
+        PreviewPane.PauseMediaPlayback();
+        if (!_disposed) _viewModel.SetFilter(_viewModel.FilterText);
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -194,41 +207,31 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             _selectionNeedsScroll = true;
         }
-        DispatcherQueue.TryEnqueue(UpdateState);
+        QueueStateUpdate();
     }
 
     private void LocationsViewModel_PropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        QueueStateUpdate();
 
     private async void PathBreadcrumbs_ItemClicked(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
     {
+        CancelFileSearch();
         ExitDownloadSelectionMode();
         await RunAsync(() => _viewModel.NavigateToBreadcrumbAsync(args.Item as FileBrowserBreadcrumb));
     }
 
     private void Locations_Click(object sender, RoutedEventArgs e)
     {
-        if (!_locationsViewModel.IsActive)
-        {
-            return;
-        }
-        if (_locationsAreWide == true)
-        {
-            LocationsPane.FocusFirstLocation();
-            return;
-        }
-        LocationsSplitView.IsPaneOpen = !LocationsSplitView.IsPaneOpen;
-        if (LocationsSplitView.IsPaneOpen)
-        {
-            LocationsPane.FocusFirstLocation();
-        }
-        else
-        {
-            LocationsPane.CancelOpening();
-            LocationsButton.Focus(FocusState.Programmatic);
-        }
+        if (_locationCollectionOpen) HideLocationCollection();
+        else ShowLocationCollection(null);
+    }
+
+    internal void NavigateToWorkspaceDestination(LanStash.App.Features.Settings.WorkspaceDestination destination)
+    {
+        _workspaceDestination = destination;
+        if (_initialized && IsLoaded) ApplyWorkspaceDestination();
     }
 
     private async Task RefreshLocationsAsync(CancellationToken cancellationToken)
@@ -294,10 +297,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void LocationsPane_LocationOpened(object? sender, EventArgs e)
     {
-        if (_locationsAreWide != true)
-        {
-            LocationsSplitView.IsPaneOpen = false;
-        }
+        HideLocationCollection();
         if (_viewModel.HasContent && _viewModel.IsListLayout)
         {
             FileList.Focus(FocusState.Programmatic);
@@ -310,16 +310,6 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             PathBreadcrumbs.Focus(FocusState.Programmatic);
         }
-    }
-
-    private void LocationsSplitView_PaneClosed(SplitView sender, object args)
-    {
-        if (_locationsAreWide == true)
-        {
-            return;
-        }
-        LocationsPane.CancelOpening();
-        LocationsButton.Focus(FocusState.Programmatic);
     }
 
     private void FilterBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -342,6 +332,8 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void SearchSubfolders_Toggled(object sender, RoutedEventArgs e)
     {
+        if (_viewModel is null || _disposed) return;
+        CancelFileSearch();
         if (!SearchSubfoldersToggle.IsOn)
         {
             _viewModel.SetFilter(FilterBox.Text);
@@ -356,52 +348,46 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async Task PerformAsyncSearchAsync(string query)
     {
-        _searchCancellation?.Cancel();
-        _searchCancellation?.Dispose();
-        _searchCancellation = new CancellationTokenSource();
-        var token = _searchCancellation.Token;
-
-        if (_searchRepository is null)
-        {
-            return;
-        }
-
+        CancelFileSearch();
+        if (_disposed || _searchRepository is null) return;
         if (string.IsNullOrWhiteSpace(query))
         {
             _viewModel.SetFilter(query);
             UpdateState();
             return;
         }
-
-        _viewModel.BeginAsyncSearch();
-        UpdateState();
-
+        var cancellation = new CancellationTokenSource();
+        _searchCancellation = cancellation;
+        var token = cancellation.Token;
+        var path = _viewModel.CurrentPath;
+        bool IsCurrent() => !_disposed && IsLoaded && !token.IsCancellationRequested &&
+            ReferenceEquals(_searchCancellation, cancellation) && SearchSubfoldersToggle.IsOn &&
+            string.Equals(path, _viewModel.CurrentPath, StringComparison.Ordinal);
         try
         {
-            var currentPath = _viewModel.CurrentPath ?? string.Empty;
-            var request = new FileSearchRequest(currentPath, query, Recursive: true);
+            // 连续输入只提交最后一个查询；页面、路径和开关共同构成请求所有权。
+            await Task.Delay(300, token);
+            if (!IsCurrent()) return;
+            _viewModel.BeginAsyncSearch();
+            QueueStateUpdate();
+            var request = new FileSearchRequest(path, query, Recursive: true);
             var result = await _searchRepository.SearchAsync(request, token);
-
-            if (token.IsCancellationRequested)
-            {
-                return;
-            }
-
+            if (!IsCurrent()) return;
             _viewModel.SetAsyncSearchResults(result.Items, result.TotalCount, result.IsTruncated);
         }
-        catch (OperationCanceledException)
-        {
-        }
+        catch (OperationCanceledException) { }
         catch (Exception)
         {
-            if (!token.IsCancellationRequested)
-            {
-                _viewModel.SetAsyncSearchError();
-            }
+            if (IsCurrent()) _viewModel.SetAsyncSearchError();
         }
         finally
         {
-            UpdateState();
+            if (ReferenceEquals(_searchCancellation, cancellation))
+            {
+                _searchCancellation = null;
+                if (!_disposed) QueueStateUpdate();
+            }
+            cancellation.Dispose();
         }
     }
 
@@ -465,6 +451,8 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async void Back_Click(object sender, RoutedEventArgs e)
     {
+        CancelFileSearch();
+        if (_locationCollectionOpen) { HideLocationCollection(); return; }
         ExitDownloadSelectionMode();
         if (_previewViewModel.IsOpen)
         {
@@ -480,6 +468,8 @@ public sealed partial class FilesPage : Page, IDisposable
         KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
+        CancelFileSearch();
+        if (_locationCollectionOpen) { HideLocationCollection(); return; }
         ExitDownloadSelectionMode();
         if (_previewViewModel.IsOpen)
         {
@@ -1530,46 +1520,30 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void UpdateLocationsLayout()
     {
-        if (LocationsSplitView is null)
-        {
-            return;
-        }
-        var isWide = ActualWidth >= 900;
-        if (_locationsAreWide == isWide)
-        {
-            return;
-        }
-        _locationsAreWide = isWide;
-        LocationsSplitView.DisplayMode = isWide
-            ? SplitViewDisplayMode.Inline
-            : SplitViewDisplayMode.Overlay;
-        LocationsSplitView.IsPaneOpen = isWide;
-        if (!isWide)
-        {
-            LocationsPane.CancelOpening();
-        }
+        // 集合页与浏览器互斥，侧栏已属于主工作区，不再嵌套第二个常驻导航栏。
+        LocationsPane.Visibility = _locationCollectionOpen ? Visibility.Visible : Visibility.Collapsed;
+        BrowserWorkspace.Visibility = _locationCollectionOpen ? Visibility.Collapsed : Visibility.Visible;
+        PathBreadcrumbs.Visibility = ActualWidth >= 680 ? Visibility.Visible : Visibility.Collapsed;
+        FilterBox.Width = ActualWidth >= 900 ? 260 : 140;
     }
 
     private void UpdatePreviewLayout()
     {
-        if (PreviewPane is null)
-        {
-            return;
-        }
+        if (PreviewPane is null) return;
         var isOpen = _previewViewModel.IsOpen;
-        var isWide = ActualWidth >= (_locationsAreWide == true ? 1280 : 1000);
+        var showInspector = _inspectorVisible && !isOpen;
+        var isWide = ActualWidth >= LanStash.App.Features.Settings.WorkspaceLayout.InspectorBreakpoint;
         PreviewPane.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        PreviewColumn.Width = isOpen
-            ? isWide ? new GridLength(420) : new GridLength(1, GridUnitType.Star)
+        Grid.SetColumn(PreviewPane, 0);
+        Grid.SetColumnSpan(PreviewPane, 2);
+        InspectorPane.Visibility = showInspector ? Visibility.Visible : Visibility.Collapsed;
+        PreviewColumn.Width = showInspector
+            ? isWide ? new GridLength(LanStash.App.Features.Settings.WorkspaceLayout.InspectorWidth)
+                : new GridLength(1, GridUnitType.Star)
             : new GridLength(0);
-        BrowserColumn.Width = isOpen && !isWide
-            ? new GridLength(0)
-            : new GridLength(1, GridUnitType.Star);
-        BrowserSurface.Visibility = isOpen && !isWide
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        BackButton.IsEnabled = _previewViewModel.IsOpen ||
-            (_viewModel.CanGoBack && !_viewModel.IsLoading);
+        BrowserColumn.Width = showInspector && !isWide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        BrowserSurface.Visibility = isOpen || (showInspector && !isWide) ? Visibility.Collapsed : Visibility.Visible;
+        BackButton.IsEnabled = isOpen || _locationCollectionOpen || (_viewModel.CanGoBack && !_viewModel.IsLoading);
     }
 
     public async Task CloseAsync()
@@ -1578,6 +1552,7 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             return;
         }
+        CancelFileSearch();
         DeactivateFileUploadDrop();
         LocationsPane.CancelOpening();
         _locationsViewModel.Deactivate();
@@ -1606,6 +1581,8 @@ public sealed partial class FilesPage : Page, IDisposable
         }
 
         _disposed = true;
+        _renderInvalidation.Stop();
+        CancelFileSearch();
         CloseDirectorySizeDialog();
         DeactivateFileUploadDrop();
         CloseShareManagementDialog();
@@ -1618,6 +1595,7 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseArchiveExtractionDialog();
         CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
+        Unloaded -= FilesPage_Unloaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
         _transfers.UploadBatchFinished -= Transfers_UploadBatchFinished;
         _transfers.FolderUploadBatchFinished -= Transfers_FolderUploadBatchFinished;
@@ -1628,6 +1606,7 @@ public sealed partial class FilesPage : Page, IDisposable
         PreviewPane.CloseRequested -= PreviewPane_CloseRequested;
         PreviewPane.RetryRequested -= PreviewPane_RetryRequested;
         PreviewPane.SaveCopyRequested -= PreviewPane_SaveCopyRequested;
+        PreviewPane.UnsavedDiscardRequested -= PreviewPane_UnsavedDiscardRequested;
         LocationsPane.LocationOpened -= LocationsPane_LocationOpened;
         LocationsPane.Dispose();
         _locationsViewModel.Dispose();

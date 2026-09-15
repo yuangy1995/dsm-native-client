@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="LanStash.App.Views.DesktopDriveSettingsPage" Background="{ThemeResource WorkspaceCanvasBrush}">
+    <ScrollViewer>
+        <StackPanel MaxWidth="880" Margin="16" HorizontalAlignment="Left" Spacing="12">
+            <TextBlock x:Name="TitleText" Style="{StaticResource WorkspaceTitleStyle}"/>
+            <Border Padding="16" Background="{ThemeResource WorkspaceCardBrush}" BorderBrush="{ThemeResource WorkspaceDividerBrush}" BorderThickness="1" CornerRadius="12">
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="CloudDriveTitle" Style="{StaticResource WorkspaceSectionTitleStyle}"/>
+                    <TextBlock x:Name="CloudDriveDescription" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Visibility="Collapsed"/>
+                    <TextBox x:Name="MappingNameTextBox"/>
+                    <TextBox x:Name="FolderPathTextBox" Header="" PlaceholderText="" AutomationProperties.Name=""/>
+                    <ComboBox x:Name="CacheLimitSelector" MinWidth="220" DisplayMemberPath="DisplayName"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock x:Name="CacheDiskText" VerticalAlignment="Center"/>
+                        <Button x:Name="ChooseCacheDiskButton" Click="ChooseCacheDiskButton_Click"/>
+                        <Button x:Name="UseDefaultCacheDiskButton" Click="UseDefaultCacheDiskButton_Click" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="AddNasButton" Click="AddNasButton_Click" Style="{StaticResource AccentButtonStyle}"/>
+                        <Button x:Name="AddFolderButton" Click="AddFolderButton_Click"/>
+                        <ProgressRing x:Name="CloudDriveProgress" Width="20" Height="20" IsActive="False" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <InfoBar x:Name="CloudDriveMessage" IsOpen="False" IsClosable="True"/>
+                    <StackPanel x:Name="CloudDriveList" Spacing="8"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

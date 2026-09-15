@@ -54,6 +54,20 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         _ready = true; Localize(); Render();
     }
 
+    private SynologyPhotosSection _requestedSection = SynologyPhotosSection.Timeline;
+    internal async Task NavigateToWorkspaceDestinationAsync(WorkspaceDestination destination)
+    {
+        if (_disposed) return;
+        _requestedSection = destination switch
+        {
+            WorkspaceDestination.PhotoAlbums => SynologyPhotosSection.Albums,
+            WorkspaceDestination.PhotoFolders => SynologyPhotosSection.Folders,
+            WorkspaceDestination.PhotoSharing => SynologyPhotosSection.Sharing,
+            _ => SynologyPhotosSection.Timeline,
+        };
+        if (_windowVisible && IsLoaded) await _model.SelectSectionAsync(_requestedSection);
+    }
+
     public static FrameworkElement CreateUnavailableState() => new TextBlock
     {
         Text = LocalizationService.Current.Get("PhotosServiceUnavailable"), TextWrapping = TextWrapping.Wrap,
@@ -62,13 +76,13 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     };
 
     private async void PageLoaded(object sender, RoutedEventArgs args)
-    { if (!_disposed && _windowVisible) await _model.LoadIfNeededAsync(); }
+    { if (!_disposed && _windowVisible) await _model.SelectSectionAsync(_requestedSection); }
     private void PageUnloaded(object sender, RoutedEventArgs args) => Suspend();
     public void SetWindowVisible(bool visible)
     {
         _windowVisible = visible;
         if (!visible) Suspend();
-        else if (!_disposed && IsLoaded) _ = _model.LoadIfNeededAsync();
+        else if (!_disposed && IsLoaded) _ = _model.SelectSectionAsync(_requestedSection);
     }
     private void Suspend()
     {
@@ -95,8 +109,6 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     {
         PageTitle.Text = _l.Get("ModulePhotos"); SpaceTitle.Text = _l.Get("PhotosPersonalSpace");
         ToolTipService.SetToolTip(SpaceTitle, _l.Get("PhotosSharedSpaceClosed"));
-        TimelineTab.Header = _l.Get("PhotosLibraryTimeline"); FoldersTab.Header = _l.Get("PhotosLibraryFolders");
-        AlbumsTab.Header = _l.Get("PhotosLibraryAlbums"); SharingTab.Header = _l.Get("PhotosLibrarySharing");
         SearchBox.PlaceholderText = _l.Get("PhotosSearchPlaceholder");
         AutomationProperties.SetName(SearchBox, _l.Get("PhotosSearchPlaceholder"));
         AutomationProperties.SetName(MonthPicker, _l.Get("PhotosChooseMonth"));
@@ -123,7 +135,6 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         try
         {
             var busy = _model.Deletion.IsBusy;
-            Sections.SelectedIndex = (int)_model.Section; Sections.IsEnabled = !busy;
             SearchBox.Visibility = Visible(_model.Section == SynologyPhotosSection.Timeline);
             FiltersButton.Visibility = SearchBox.Visibility;
             FiltersButton.IsEnabled = !busy && !_model.IsLoading;
@@ -256,8 +267,6 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         else if (cell.Collection is { } collection) await _model.OpenCollectionAsync(collection);
         else if (cell.Shared is { AlbumId: not null } shared) await _model.OpenSharedAsync(shared);
     }
-    private async void Sections_SelectionChanged(object sender, SelectionChangedEventArgs args)
-    { if (_ready && !_rendering && Sections.SelectedIndex >= 0) await _model.SelectSectionAsync((SynologyPhotosSection)Sections.SelectedIndex); }
     private async void ShareScope_SelectionChanged(object sender, SelectionChangedEventArgs args)
     { if (_ready && !_rendering && ShareScopePicker.SelectedItem is SynologyPhotoShareChoice choice) await _model.SelectShareScopeAsync(choice.Scope); }
     private async void Search_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)

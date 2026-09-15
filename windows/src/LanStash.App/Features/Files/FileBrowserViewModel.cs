@@ -13,9 +13,14 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     private readonly IFileBrowserDataSource _dataSource;
     private readonly int _pageSize;
     private readonly Stack<FileBrowserLocation> _backHistory = new();
-    private readonly Dictionary<FileBrowserRequestKey, PageSnapshot> _pageCache = [];
-    private readonly Dictionary<string, FileListOptions> _preferredOptionsByPath =
-        new(StringComparer.Ordinal);
+    public const int MaximumCachedLocations = 24;
+    public const int MaximumCachedEntries = 4_000;
+    private readonly BoundedLruCache<FileBrowserRequestKey, PageSnapshot> _pageCache =
+        new(MaximumCachedLocations, MaximumCachedEntries, page => page.Items.Count);
+    internal int CachedLocationCount => _pageCache.Count;
+    internal long CachedEntryCount => _pageCache.Weight;
+    private readonly BoundedLruCache<string, FileListOptions> _preferredOptionsByPath =
+        new(128, 128, _ => 1, StringComparer.Ordinal);
     private readonly List<FileBrowserEntry> _loadedItems = [];
     private CancellationTokenSource? _requestCancellation;
     private long _generation;
@@ -29,7 +34,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     private FileListOptions _preferredOptions = FileListOptions.Default;
     private FileListOptions _currentOptions = FileListOptions.Default.NormalizeForSharedRoot();
     private FileBrowserContentState _contentState = FileBrowserContentState.Loading;
-    private FileBrowserLayout _layout = FileBrowserLayout.List;
+    private FileBrowserLayout _layout = FileBrowserLayout.Grid;
     private FileBrowserEntry? _selectedItem;
     private StorageSpaceSummary? _storageSpace;
     private bool _isLoadingStorageSpace;
@@ -234,7 +239,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             if (_disposed || generation != Volatile.Read(ref _generation)) return false;
 
-            _backHistory.Push(CaptureLocation());
+            PushHistory(CaptureLocation());
             _preferredOptionsByPath[CurrentPath] = _preferredOptions;
             CurrentPath = normalized;
             _preferredOptions = destinationOptions;
@@ -539,7 +544,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 
         if (recordHistory)
         {
-            _backHistory.Push(CaptureLocation());
+            PushHistory(CaptureLocation());
             RaisePropertyChanged(nameof(CanGoBack));
         }
 
@@ -720,10 +725,15 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         FilterText,
         SelectedItem?.Path);
 
-    private void SaveCurrentPage() => _pageCache[CurrentRequestKey] = new PageSnapshot(
-        _loadedItems.ToArray(),
-        _nextOffset,
-        _total);
+    private void SaveCurrentPage()
+    {
+        if (_loadedItems.Count > MaximumCachedEntries)
+        {
+            _pageCache.Remove(CurrentRequestKey);
+            return;
+        }
+        _pageCache[CurrentRequestKey] = new PageSnapshot(_loadedItems.ToArray(), _nextOffset, _total);
+    }
 
     private bool TryRestorePage(FileBrowserRequestKey key, string? selectedPath)
     {
@@ -826,6 +836,17 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         return path;
     }
 
+    private void PushHistory(FileBrowserLocation location)
+    {
+        if (_backHistory.Count >= 128)
+        {
+            var recent = _backHistory.Take(127).Reverse().ToArray();
+            _backHistory.Clear();
+            foreach (var entry in recent) _backHistory.Push(entry);
+        }
+        _backHistory.Push(location);
+    }
+
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private void RaiseStorageSpaceProperties()
@@ -872,6 +893,10 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         CancelCurrentRequest();
         _pageCache.Clear();
         _preferredOptionsByPath.Clear();
+        _backHistory.Clear();
+        _loadedItems.Clear();
+        Items.Clear();
+        Breadcrumbs.Clear();
     }
 
     private sealed record PageSnapshot(

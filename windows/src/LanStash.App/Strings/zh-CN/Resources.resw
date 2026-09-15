@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <root>
   <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
   <resheader name="version"><value>2.0</value></resheader>
@@ -1984,4 +1984,51 @@
   <data name="PhotosSeconds" xml:space="preserve"><value>{0} 秒</value></data>
   <data name="PhotosMetadataCoordinates" xml:space="preserve"><value>坐标</value></data>
   <data name="PhotosCoordinates" xml:space="preserve"><value>{0:F6}，{1:F6}</value></data>
-</root>
+<data name="NativeNavFavorites" xml:space="preserve"><value>收藏夹</value></data>
+  <data name="NativeNavRecent" xml:space="preserve"><value>最近使用</value></data>
+  <data name="NativeNavRemote" xml:space="preserve"><value>远程位置</value></data>
+  <data name="NativeNavSharedLinks" xml:space="preserve"><value>共享链接</value></data>
+  <data name="NativeNavRecycle" xml:space="preserve"><value>回收站</value></data>
+  <data name="NativeNavContainerList" xml:space="preserve"><value>容器</value></data>
+  <data name="NativeNavImages" xml:space="preserve"><value>映像</value></data>
+  <data name="NativeNavNetworks" xml:space="preserve"><value>网络</value></data>
+  <data name="NativeNavProjects" xml:space="preserve"><value>项目</value></data>
+  <data name="NativeNavEvents" xml:space="preserve"><value>事件</value></data>
+  <data name="NativeNavHosts" xml:space="preserve"><value>主机</value></data>
+  <data name="NativeNavStorage" xml:space="preserve"><value>存储</value></data>
+  <data name="NativeNavProtection" xml:space="preserve"><value>保护</value></data>
+  <data name="NativeNavContainerImages" xml:space="preserve"><value>映像</value></data>
+  <data name="NativeNavContainerNetworks" xml:space="preserve"><value>网络</value></data>
+  <data name="NativeNavContainerProjects" xml:space="preserve"><value>项目</value></data>
+  <data name="NativeNavContainerEvents" xml:space="preserve"><value>事件</value></data>
+  <data name="NativeContainerOverview.Text" xml:space="preserve"><value>概览</value></data>
+  <data name="NativeValueUnavailable" xml:space="preserve"><value>—</value></data>
+  <data name="NativeCollapseModule" xml:space="preserve"><value>收起{0}</value></data>
+  <data name="NativeExpandModule" xml:space="preserve"><value>展开{0}</value></data>
+  <data name="NativeConnected" xml:space="preserve"><value>已连接</value></data>
+  <data name="NativeNavigationFailed" xml:space="preserve"><value>无法打开此页面，请重新选择后重试。</value></data>
+  <data name="NativeWorkspaceUnavailable" xml:space="preserve"><value>当前连接无法使用此功能，请检查账号权限或重新连接。</value></data>
+  <data name="NativeCollectionUnavailable.Text" xml:space="preserve"><value>当前连接无法查看此集合，请检查账号权限或刷新。</value></data>
+  <data name="NativeNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>工作区导航</value></data>
+  <data name="NativeUtilityNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>传输与设置</value></data>
+  <data name="NativeSignOut.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>退出登录</value></data>
+  <data name="NativeSignOut.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>退出登录</value></data>
+  <data name="NativeResizeSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>调整侧栏宽度</value></data>
+  <data name="NativeResizeSidebar.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>调整侧栏宽度</value></data>
+  <data name="NativeToggleSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>显示或隐藏侧栏</value></data>
+  <data name="NativeToggleSidebar.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>显示或隐藏侧栏</value></data>
+  <data name="NativeWorkspaceBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>返回上一页面</value></data>
+  <data name="NativeWorkspaceBack.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>返回上一页面</value></data>
+  <data name="NativeCloseSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>关闭侧栏</value></data>
+  <data name="NativeCloseSidebar.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>关闭侧栏</value></data>
+  <data name="NativeInspector.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>显示文件信息</value></data>
+  <data name="NativeInspector.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>显示文件信息</value></data>
+  <data name="NativeOpenPreview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>打开预览</value></data>
+  <data name="NativeOpenPreview.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>打开预览</value></data>
+  <data name="NativeOpenPreview.Content" xml:space="preserve"><value>打开预览</value></data>
+  <data name="NativeInspectorTitle.Text" xml:space="preserve"><value>信息</value></data>
+  <data name="NativeConnected.Text" xml:space="preserve"><value>已连接</value></data>
+  <data name="NativeAddNasLabel.Text" xml:space="preserve"><value>添加 NAS</value></data>
+  <data name="NativeAddNas.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>添加 NAS</value></data>
+  <data name="NativeInspectorHeading.Text" xml:space="preserve"><value>信息</value></data>
+  </root>

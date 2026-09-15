@@ -24,6 +24,7 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
     private CancellationTokenSource? _openCancellation;
     private CancellationTokenSource? _refreshCancellation;
     private bool _disposed;
+    private FileLocationSource? _section;
 
     public event EventHandler? LocationOpened;
     public event EventHandler? RemoteMountNeedsRefresh;
@@ -66,7 +67,42 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
         SetLocationButtonsEnabled(true);
     }
 
-    internal void FocusFirstLocation() => SharesButton.Focus(FocusState.Programmatic);
+    internal void ShowSection(FileLocationSource? section)
+    {
+        _section = section;
+        Render();
+    }
+
+    private void ApplySectionVisibility()
+    {
+        CollectionUnavailableState.Visibility = Visibility.Collapsed;
+        if (_section is null) return;
+        SharesSection.Visibility = Visibility.Collapsed;
+        foreach (var (source, panel) in new (FileLocationSource, FrameworkElement)[]
+        {
+            (FileLocationSource.Favorite, FavoritesSection), (FileLocationSource.Recent, RecentSection),
+            (FileLocationSource.Recycle, RecycleSection), (FileLocationSource.Remote, RemoteSection),
+        })
+        {
+            if (_section != source) panel.Visibility = Visibility.Collapsed;
+            else if (panel.Visibility == Visibility.Collapsed)
+                CollectionUnavailableState.Visibility = Visibility.Visible;
+        }
+        CollectionTitle.Text = LocalizationService.Current.Get(_section switch
+        {
+            FileLocationSource.Favorite => "NativeNavFavorites",
+            FileLocationSource.Recent => "NativeNavRecent",
+            FileLocationSource.Recycle => "NativeNavRecycle",
+            FileLocationSource.Remote => "NativeNavRemote",
+            _ => "FileLocationsTitle.Text",
+        });
+    }
+
+    internal void FocusFirstLocation()
+    {
+        if (_section is null) SharesButton.Focus(FocusState.Programmatic);
+        else RefreshButton.Focus(FocusState.Programmatic);
+    }
 
     private void ViewModel_PropertyChanged(
         object? sender,
@@ -427,6 +463,9 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
 
     private void Render()
     {
+        if (_disposed) return;
+        SharesSection.Visibility = Visibility.Visible;
+        CollectionTitle.Text = LocalizationService.Current.Get("FileLocationsTitle.Text");
         if (_viewModel is not { } model)
         {
             FavoritesSection.Visibility = Visibility.Collapsed;
@@ -481,6 +520,7 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
             ? Visibility.Visible : Visibility.Collapsed;
         RecentItems.Visibility = model.RecentLocations.Count > 0
             ? Visibility.Visible : Visibility.Collapsed;
+        ApplySectionVisibility();
     }
 
     private static void RenderSection<T>(

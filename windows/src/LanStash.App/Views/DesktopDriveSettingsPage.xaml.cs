@@ -10,26 +10,24 @@ using WinRT.Interop;
 
 namespace LanStash.App.Views;
 
-public sealed partial class LanguageSettingsPage : Page
+public sealed partial class DesktopDriveSettingsPage : Page, IDisposable
 {
     private readonly AppViewModel _app;
-    private bool _isLoading = true;
+    private bool _disposed;
+    private bool _subscribed;
+    private bool _busy;
+    private bool _refreshPending;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _refreshTimer;
     private DesktopDriveCacheLocation _cacheLocation =
         DesktopDriveCacheLocation.SystemDefault;
     private sealed record CacheLimitChoice(long Bytes, string DisplayName);
 
-    public LanguageSettingsPage(AppViewModel app)
+    public DesktopDriveSettingsPage(AppViewModel app)
     {
         _app = app;
         InitializeComponent();
         var localization = LocalizationService.Current;
-        TitleText.Text = localization.Get("ModuleSettings");
-        FieldLabel.Text = localization.Get("LanguageTitle");
-        NoteText.Text = localization.Get("LanguageFallbackNote");
-        var choices = localization.Choices();
-        LanguageSelector.ItemsSource = choices;
-        LanguageSelector.SelectedItem = choices.First(choice =>
-            choice.Value == localization.Selection);
+        TitleText.Text = localization.Get("CloudDriveTitle");
         CloudDriveTitle.Text = localization.Get("CloudDriveTitle");
         CloudDriveDescription.Text = localization.Get("CloudDriveDescription");
         MappingNameTextBox.Header = localization.Get("CloudDriveMappingName");
@@ -49,22 +47,47 @@ public sealed partial class LanguageSettingsPage : Page
         ChooseCacheDiskButton.Content = localization.Get("CloudDriveChooseCacheDisk");
         UseDefaultCacheDiskButton.Content =
             localization.Get("CloudDriveUseDefaultCacheDisk");
-        _app.DesktopDriveProgressChanged += DesktopDriveProgressChanged;
-        Unloaded += (_, _) =>
-            _app.DesktopDriveProgressChanged -= DesktopDriveProgressChanged;
+        // 下载进度只在页面可见时以 250ms 合并更新，不逐回调重建整个列表。
+        _refreshTimer = DispatcherQueue.CreateTimer();
+        _refreshTimer.Interval = TimeSpan.FromMilliseconds(250);
+        _refreshTimer.IsRepeating = false;
+        _refreshTimer.Tick += RefreshTimer_Tick;
+        Loaded += PageLoaded;
+        Unloaded += PageUnloaded;
         RenderMappings();
-        _isLoading = false;
     }
 
-    private void LanguageSelector_SelectionChanged(
-        object sender,
-        SelectionChangedEventArgs e)
+    private void PageLoaded(object sender, RoutedEventArgs args)
     {
-        if (_isLoading || LanguageSelector.SelectedItem is not LanguageChoice choice)
-        {
-            return;
-        }
-        LocalizationService.Current.SetSelection(choice.Value);
+        if (_disposed || _subscribed) return;
+        _subscribed = true;
+        _app.DesktopDriveProgressChanged += DesktopDriveProgressChanged;
+        RenderMappings();
+    }
+
+    private void PageUnloaded(object sender, RoutedEventArgs args)
+    {
+        _app.DesktopDriveProgressChanged -= DesktopDriveProgressChanged;
+        _subscribed = false;
+        _refreshTimer.Stop();
+        _refreshPending = false;
+    }
+
+    private void RefreshTimer_Tick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        _refreshPending = false;
+        if (!_disposed && IsLoaded) RenderMappings();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        PageUnloaded(this, new RoutedEventArgs());
+        _refreshTimer.Tick -= RefreshTimer_Tick;
+        Loaded -= PageLoaded;
+        Unloaded -= PageUnloaded;
+        CloudDriveList.Children.Clear();
     }
 
     private async void AddNasButton_Click(object sender, RoutedEventArgs e) =>
@@ -75,6 +98,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private async Task AddMappingAsync(string? folderPath)
     {
+        if (_disposed || _busy) return;
         SetBusy(true);
         try
         {
@@ -105,6 +129,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void RenderMappings()
     {
+        if (_disposed) return;
         var localization = LocalizationService.Current;
         CloudDriveList.Children.Clear();
         var mappings = _app.DesktopDriveMappings
@@ -534,6 +559,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void ShowMessage(string key, InfoBarSeverity severity)
     {
+        if (_disposed) return;
         CloudDriveMessage.Message = LocalizationService.Current.Get(key);
         CloudDriveMessage.Severity = severity;
         CloudDriveMessage.IsOpen = true;
@@ -541,7 +567,12 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void DesktopDriveProgressChanged(object? sender, EventArgs e)
     {
-        DispatcherQueue.TryEnqueue(RenderMappings);
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_disposed || !IsLoaded || _refreshPending) return;
+            _refreshPending = true;
+            _refreshTimer.Start();
+        });
     }
 
     private string ProgressText(DesktopDriveMapping mapping)
@@ -604,6 +635,8 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void SetBusy(bool busy)
     {
+        _busy = busy;
+        if (_disposed) return;
         AddNasButton.IsEnabled = !busy;
         AddFolderButton.IsEnabled = !busy;
         CloudDriveProgress.IsActive = busy;

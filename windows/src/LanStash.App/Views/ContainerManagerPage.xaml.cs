@@ -36,6 +36,57 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         UpdateState();
     }
 
+    private LanStash.App.Features.Settings.WorkspaceDestination _destination;
+    internal Action<LanStash.App.Features.Settings.WorkspaceDestination>? NavigateRequested { get; set; }
+
+    internal void NavigateToWorkspaceDestination(LanStash.App.Features.Settings.WorkspaceDestination destination)
+    {
+        if (_disposed) return;
+        _destination = destination;
+        UpdateWorkspaceSection();
+    }
+
+    private void OverviewSection_Click(object sender, RoutedEventArgs args)
+    {
+        if (sender is FrameworkElement { Tag: string tag } &&
+            Enum.TryParse<LanStash.App.Features.Settings.WorkspaceDestination>(tag, out var destination))
+        {
+            if (NavigateRequested is { } navigate) navigate(destination);
+            else NavigateToWorkspaceDestination(destination);
+        }
+    }
+
+    private void UpdateWorkspaceSection()
+    {
+        if (_disposed) return;
+        var index = _destination switch
+        {
+            LanStash.App.Features.Settings.WorkspaceDestination.ContainerList => 0,
+            LanStash.App.Features.Settings.WorkspaceDestination.ContainerImages => 1,
+            LanStash.App.Features.Settings.WorkspaceDestination.ContainerNetworks => 2,
+            LanStash.App.Features.Settings.WorkspaceDestination.ContainerProjects => 3,
+            LanStash.App.Features.Settings.WorkspaceDestination.ContainerEvents => 4,
+            _ => -1,
+        };
+        FrameworkElement[] sections = [ContainersSection, ImagesSection, NetworksSection, ProjectsSection, EventsSection];
+        for (var i = 0; i < sections.Length; i++) sections[i].Visibility = Visible(index == i);
+        OverviewSection.Visibility = Visible(index < 0);
+        ContainerSections.Visibility = Visible(index >= 0);
+        var l = LanStash.App.Localization.LocalizationService.Current;
+        TextBlock[] headings = [ContainerListHeading, ContainerImagesHeading, ContainerNetworksHeading, ContainerProjectsHeading, ContainerEventsHeading];
+        TextBlock[] values = [ContainerListCount, ContainerImagesCount, ContainerNetworksCount, ContainerProjectsCount, ContainerEventsCount];
+        string[] keys = ["NativeNavContainerList", "NativeNavContainerImages", "NativeNavContainerNetworks", "NativeNavContainerProjects", "NativeNavContainerEvents"];
+        int[] counts = [_viewModel.Containers.Count, _viewModel.Images.Count, _viewModel.Networks.Count, _viewModel.Projects.Count, _viewModel.Events.Count];
+        ContainerManagerContentState[] states = [_viewModel.ContainersState, _viewModel.ImagesState, _viewModel.NetworksState, _viewModel.ProjectsState, _viewModel.EventsState];
+        for (var i = 0; i < headings.Length; i++)
+        {
+            headings[i].Text = l.Get(keys[i]);
+            // 未加载或接口不可用不是“零个资源”。
+            values[i].Text = states[i] is ContainerManagerContentState.Content or ContainerManagerContentState.Empty
+                ? counts[i].ToString("N0") : l.Get("NativeValueUnavailable");
+        }
+    }
+
     private async void ContainerManagerPage_Loaded(object sender, RoutedEventArgs e)
     {
         if (_initialized)
@@ -147,6 +198,7 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         DetailState.Visibility = Visible(_viewModel.HasSelection);
         SyncFilterPicker();
         UpdateAdaptiveLayout();
+        UpdateWorkspaceSection();
     }
 
     private static void ApplySectionState(
@@ -182,7 +234,7 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
     {
         if (ActualWidth >= CompactWidth)
         {
-            ListColumn.Width = new GridLength(360);
+            ListColumn.Width = new GridLength(300);
             DetailColumn.Width = new GridLength(1, GridUnitType.Star);
             ListPane.Visibility = Visibility.Visible;
             DetailPane.Visibility = Visibility.Visible;
@@ -215,6 +267,8 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        NavigateRequested = null;
+        Loaded -= ContainerManagerPage_Loaded;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
     }

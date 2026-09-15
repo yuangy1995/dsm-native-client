@@ -1,8 +1,13 @@
-<Window
-    x:Class="LanStash.App.MainWindow"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid>
-        <Frame x:Name="RootFrame" />
+<?xml version="1.0" encoding="utf-8"?>
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="LanStash.App.MainWindow">
+    <Grid x:Name="WindowRoot" Background="{ThemeResource WorkspaceSidebarBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition x:Name="TitleBarRow" Height="40"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid x:Name="NativeTitleBar" Background="Transparent" Padding="18,0,160,0">
+            <TextBlock x:Name="WindowTitleText" VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"/>
+        </Grid>
+        <Frame x:Name="RootFrame" Grid.Row="1"/>
     </Grid>
 </Window>

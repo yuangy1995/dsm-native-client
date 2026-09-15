@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <root>
   <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
   <resheader name="version"><value>2.0</value></resheader>
@@ -264,7 +264,7 @@
   <data name="ErrorOperationTitle" xml:space="preserve"><value>Operation not completed</value></data>
   <data name="ActionAcknowledge" xml:space="preserve"><value>OK</value></data>
   <data name="WinShared03b4e19bbedaaf48" xml:space="preserve"><value>This QuickConnect ID is not recognized</value></data>
-  <data name="WinShared07e42c78bef61378" xml:space="preserve"><value>Please enter the QuickConnect ID, the NAS&apos;s IP, domain name, or full HTTPS address.</value></data>
+  <data name="WinShared07e42c78bef61378" xml:space="preserve"><value>Please enter the QuickConnect ID, the NAS's IP, domain name, or full HTTPS address.</value></data>
   <data name="WinShared09f262a53ad074ca" xml:space="preserve"><value>Please confirm that the address points to DSM and try again.</value></data>
   <data name="WinShared0addf7c060c570ce" xml:space="preserve"><value>NAS did not complete this operation</value></data>
   <data name="WinShared0dc50225eea5c275" xml:space="preserve"><value>NAS has not confirmed this change</value></data>
@@ -298,7 +298,7 @@
   <data name="WinShared5448ceb91a80e260" xml:space="preserve"><value>Please refresh and try again.</value></data>
   <data name="WinShared5634da8d0d5a2089" xml:space="preserve"><value>QuickConnect is temporarily not responding</value></data>
   <data name="WinShared5a870c4775a4ef6b" xml:space="preserve"><value>Connection to NAS timed out</value></data>
-  <data name="WinShared6730f03f8272b1f9" xml:space="preserve"><value>Please enable relaying in DSM&apos;s QuickConnect advanced settings and try again.</value></data>
+  <data name="WinShared6730f03f8272b1f9" xml:space="preserve"><value>Please enable relaying in DSM's QuickConnect advanced settings and try again.</value></data>
   <data name="WinShared6744b4c6a9aa0038" xml:space="preserve"><value>Closed</value></data>
   <data name="WinShared6e75c1fff5138b30" xml:space="preserve"><value>Please refresh the list and check the results.</value></data>
   <data name="WinShared6edbda7d2a81743a" xml:space="preserve"><value>Establishing QuickConnect secure relay...</value></data>
@@ -1984,4 +1984,51 @@
   <data name="PhotosSeconds" xml:space="preserve"><value>{0} s</value></data>
   <data name="PhotosMetadataCoordinates" xml:space="preserve"><value>Coordinates</value></data>
   <data name="PhotosCoordinates" xml:space="preserve"><value>{0:F6}, {1:F6}</value></data>
-</root>
+<data name="NativeNavFavorites" xml:space="preserve"><value>Favorites</value></data>
+  <data name="NativeNavRecent" xml:space="preserve"><value>Recent</value></data>
+  <data name="NativeNavRemote" xml:space="preserve"><value>Remote locations</value></data>
+  <data name="NativeNavSharedLinks" xml:space="preserve"><value>Shared links</value></data>
+  <data name="NativeNavRecycle" xml:space="preserve"><value>Recycle bin</value></data>
+  <data name="NativeNavContainerList" xml:space="preserve"><value>Containers</value></data>
+  <data name="NativeNavImages" xml:space="preserve"><value>Images</value></data>
+  <data name="NativeNavNetworks" xml:space="preserve"><value>Networks</value></data>
+  <data name="NativeNavProjects" xml:space="preserve"><value>Projects</value></data>
+  <data name="NativeNavEvents" xml:space="preserve"><value>Events</value></data>
+  <data name="NativeNavHosts" xml:space="preserve"><value>Hosts</value></data>
+  <data name="NativeNavStorage" xml:space="preserve"><value>Storage</value></data>
+  <data name="NativeNavProtection" xml:space="preserve"><value>Protection</value></data>
+  <data name="NativeNavContainerImages" xml:space="preserve"><value>Images</value></data>
+  <data name="NativeNavContainerNetworks" xml:space="preserve"><value>Networks</value></data>
+  <data name="NativeNavContainerProjects" xml:space="preserve"><value>Projects</value></data>
+  <data name="NativeNavContainerEvents" xml:space="preserve"><value>Events</value></data>
+  <data name="NativeContainerOverview.Text" xml:space="preserve"><value>Overview</value></data>
+  <data name="NativeValueUnavailable" xml:space="preserve"><value>—</value></data>
+  <data name="NativeCollapseModule" xml:space="preserve"><value>Collapse {0}</value></data>
+  <data name="NativeExpandModule" xml:space="preserve"><value>Expand {0}</value></data>
+  <data name="NativeConnected" xml:space="preserve"><value>Connected</value></data>
+  <data name="NativeNavigationFailed" xml:space="preserve"><value>This page could not be opened. Try selecting it again.</value></data>
+  <data name="NativeWorkspaceUnavailable" xml:space="preserve"><value>This feature is not available for this connection. Check your account permissions or reconnect.</value></data>
+  <data name="NativeCollectionUnavailable.Text" xml:space="preserve"><value>This collection is not available for this connection. Check your account permissions or refresh.</value></data>
+  <data name="NativeNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Workspace navigation</value></data>
+  <data name="NativeUtilityNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Transfers and settings</value></data>
+  <data name="NativeSignOut.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Sign out</value></data>
+  <data name="NativeSignOut.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Sign out</value></data>
+  <data name="NativeResizeSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Resize sidebar</value></data>
+  <data name="NativeResizeSidebar.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Resize sidebar</value></data>
+  <data name="NativeToggleSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Toggle sidebar</value></data>
+  <data name="NativeToggleSidebar.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Toggle sidebar</value></data>
+  <data name="NativeWorkspaceBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Back to previous page</value></data>
+  <data name="NativeWorkspaceBack.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Back to previous page</value></data>
+  <data name="NativeCloseSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Close sidebar</value></data>
+  <data name="NativeCloseSidebar.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Close sidebar</value></data>
+  <data name="NativeInspector.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Show file information</value></data>
+  <data name="NativeInspector.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Show file information</value></data>
+  <data name="NativeOpenPreview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Open preview</value></data>
+  <data name="NativeOpenPreview.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Open preview</value></data>
+  <data name="NativeOpenPreview.Content" xml:space="preserve"><value>Open preview</value></data>
+  <data name="NativeInspectorTitle.Text" xml:space="preserve"><value>Information</value></data>
+  <data name="NativeConnected.Text" xml:space="preserve"><value>Connected</value></data>
+  <data name="NativeAddNasLabel.Text" xml:space="preserve"><value>Add NAS</value></data>
+  <data name="NativeAddNas.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Add NAS</value></data>
+  <data name="NativeInspectorHeading.Text" xml:space="preserve"><value>Information</value></data>
+  </root>

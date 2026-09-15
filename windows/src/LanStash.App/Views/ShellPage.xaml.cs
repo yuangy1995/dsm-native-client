@@ -22,7 +22,6 @@ public sealed partial class ShellPage : Page
 {
     private readonly AppViewModel _app;
     private readonly AppSettingsService _settings = AppSettingsService.Current;
-    private readonly WorkspacePage _workspace;
     private readonly ForegroundTransferCoordinator _transfers;
     private readonly WindowsTransferPickerService? _transferPicker;
     private FilesPage? _files;
@@ -57,7 +56,6 @@ public sealed partial class ShellPage : Page
     {
         InitializeComponent();
         _app = app;
-        _workspace = new WorkspacePage(app);
         _transfers = new ForegroundTransferCoordinator(transferNotifications);
         if (app.ActiveProfile is { } activeProfile && app.Repository is { } repository)
         {
@@ -71,26 +69,27 @@ public sealed partial class ShellPage : Page
                 new WindowsTransferOpenPicker(
                     () => (Application.Current as App)?.MainWindow));
         }
-        ContentFrame.Content = _workspace;
+        ContentFrame.Content = CreateUnavailableWorkspace();
         Unloaded += ShellPage_Unloaded;
         var localization = LocalizationService.Current;
-        AppNameText.Text = localization.Get("AppName");
-        LogoutItem.Content = localization.Get("ActionSignOut");
-        if (Navigation.SettingsItem is NavigationViewItem settingsItem)
-        {
-            settingsItem.Content = localization.Get("ModuleSettings");
-        }
-        ProfileName.Text = app.ActiveProfile?.DisplayName ?? "NAS";
+        ProfileName.Text = app.ActiveProfile?.DisplayName ?? localization.Get("AppName");
         AutomationProperties.SetName(
             ProfileMenuButton,
             localization.Get("ProfileMenuAutomationName"));
 
         _settings.Changed += Settings_Changed;
-        RebuildModuleNavigation(routeHiddenSelectionToSettings: false);
+        InitializeNavigation();
     }
 
     private async void ShellPage_Unloaded(object sender, RoutedEventArgs e)
     {
+        if (_isUnloaded) return;
+        _isUnloaded = true;
+        ++_navigationGeneration;
+        Loaded -= Shell_Loaded;
+        _settings.Changed -= Settings_Changed;
+        await ApplyPageVisibilityAsync(false);
+        await _navigationSerial.WaitAsync();
         try
         {
             try
@@ -135,7 +134,9 @@ public sealed partial class ShellPage : Page
             ReleaseCrossNasTargetLeases();
             _transferPicker?.Dispose();
             _transfers.Dispose();
-            _settings.Changed -= Settings_Changed;
+            _desktopDriveSettings?.Dispose();
+            _desktopDriveSettings = null;
+            _navigationSerial.Release();
         }
     }
 
@@ -245,44 +246,13 @@ public sealed partial class ShellPage : Page
         await dialog.ShowAsync();
     }
 
-    private async void Navigation_SelectionChanged(
-        NavigationView sender,
-        NavigationViewSelectionChangedEventArgs args)
+    private async Task OpenModuleAsync(AppModule module)
     {
-        if (args.IsSettingsSelected)
+        if (module == AppModule.Settings)
         {
             ContentFrame.Content = new AppSettingsPage();
             return;
         }
-        if (args.SelectedItem is NavigationViewItem selectedItem
-            && ReferenceEquals(selectedItem, LogoutItem))
-        {
-            var localization = LocalizationService.Current;
-            var dialog = new ContentDialog
-            {
-                XamlRoot = XamlRoot,
-                Title = localization.Get("DialogSignOutTitle"),
-                Content = localization.Get("DialogSignOutMessage"),
-                PrimaryButtonText = localization.Get("DialogSignOutAction"),
-                CloseButtonText = localization.Get("ActionCancel"),
-                DefaultButton = ContentDialogButton.Close,
-            };
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                await CloseFilesPageAsync();
-                CloseNasDetailsPage();
-                await _app.LogoutAsync();
-            }
-            return;
-        }
-        if (args.SelectedItemContainer?.Tag is AppModule module)
-        {
-            await OpenModuleAsync(module);
-        }
-    }
-
-    private async Task OpenModuleAsync(AppModule module)
-    {
         if (module == AppModule.Files &&
             _app.Repository is { } repository &&
             _app.ActiveProfile is { } profile &&
@@ -502,8 +472,8 @@ public sealed partial class ShellPage : Page
             ContentFrame.Content = _nasDetails;
             return;
         }
-        ContentFrame.Content = _workspace;
-        await _workspace.ShowModuleAsync(module);
+        ContentFrame.Content = CreateUnavailableWorkspace();
+
     }
 
     private async Task CloseFilesPageAsync()
@@ -518,7 +488,7 @@ public sealed partial class ShellPage : Page
         }
         if (ReferenceEquals(ContentFrame.Content, files))
         {
-            ContentFrame.Content = _workspace;
+            ContentFrame.Content = CreateUnavailableWorkspace();
         }
         try
         {
@@ -532,16 +502,8 @@ public sealed partial class ShellPage : Page
 
     internal async Task SetWindowVisibleAsync(bool isVisible)
     {
-        _isWindowVisible = isVisible;
-        _photos?.SetWindowVisible(isVisible);
-        if (_chat is not null)
-        {
-            await _chat.SetWindowVisibleAsync(isVisible);
-        }
-        if (_activity is not null)
-        {
-            await _activity.SetWindowVisibleAsync(isVisible);
-        }
+        _windowIsActuallyVisible = isVisible;
+        await ApplyPageVisibilityAsync(isVisible);
     }
 
     private void CloseNasDetailsPage()
@@ -556,67 +518,10 @@ public sealed partial class ShellPage : Page
         }
         if (ReferenceEquals(ContentFrame.Content, page))
         {
-            ContentFrame.Content = _workspace;
+            ContentFrame.Content = CreateUnavailableWorkspace();
         }
         page.Deactivate();
         page.Dispose();
-    }
-
-    private void Settings_Changed(object? sender, AppSettingsChangedEventArgs e)
-    {
-        if (e.ModuleVisibilityChanged)
-        {
-            DispatcherQueue.TryEnqueue(() =>
-                RebuildModuleNavigation(routeHiddenSelectionToSettings: true));
-        }
-    }
-
-    private void RebuildModuleNavigation(bool routeHiddenSelectionToSettings)
-    {
-        var wasSettingsSelected = ReferenceEquals(
-            Navigation.SelectedItem,
-            Navigation.SettingsItem);
-        var selectedModule = (Navigation.SelectedItem as NavigationViewItem)?.Tag is AppModule module
-            ? module
-            : (AppModule?)null;
-        var visibleModules = _app.AvailableModules
-            .Where(module => module != AppModule.Settings)
-            .Where(_settings.IsModuleVisible)
-            .ToArray();
-        Navigation.MenuItems.Clear();
-        var localization = LocalizationService.Current;
-        foreach (var visibleModule in visibleModules)
-        {
-            Navigation.MenuItems.Add(new NavigationViewItem
-            {
-                Content = localization.ModuleTitle(visibleModule),
-                Icon = new FontIcon { Glyph = visibleModule.Glyph() },
-                Tag = visibleModule,
-            });
-        }
-
-        var restored = selectedModule is { } selected
-            ? Navigation.MenuItems.OfType<NavigationViewItem>()
-                .FirstOrDefault(item => item.Tag is AppModule itemModule && itemModule == selected)
-            : null;
-        if (restored is not null)
-        {
-            Navigation.SelectedItem = restored;
-            return;
-        }
-        if (wasSettingsSelected)
-        {
-            Navigation.SelectedItem = Navigation.SettingsItem;
-            return;
-        }
-        if (routeHiddenSelectionToSettings && selectedModule is { } hidden)
-        {
-            DisposeHiddenModulePage(hidden);
-            Navigation.SelectedItem = Navigation.SettingsItem;
-            ContentFrame.Content = new AppSettingsPage();
-            return;
-        }
-        Navigation.SelectedItem = Navigation.MenuItems.FirstOrDefault();
     }
 
     private void DisposeHiddenModulePage(AppModule module)
@@ -643,20 +548,6 @@ public sealed partial class ShellPage : Page
                 CloseNasDetailsPage();
                 break;
         }
-    }
-
-    internal async Task ShowTransfersAsync()
-    {
-        var item = Navigation.MenuItems
-            .OfType<NavigationViewItem>()
-            .FirstOrDefault(value => value.Tag is AppModule.Transfers);
-        if (item is null)
-        {
-            return;
-        }
-
-        Navigation.SelectedItem = item;
-        await OpenModuleAsync(AppModule.Transfers);
     }
 
     private void WireCrossNasDependencies(FilesPage page, Guid currentProfileId)

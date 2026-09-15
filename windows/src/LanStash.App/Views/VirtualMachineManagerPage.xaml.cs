@@ -35,6 +35,25 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         UpdateState();
     }
 
+    private int _resourceSection = -1;
+    internal Action<LanStash.App.Features.Settings.WorkspaceDestination>? NavigateRequested { get; set; }
+
+    internal void NavigateToWorkspaceDestination(LanStash.App.Features.Settings.WorkspaceDestination destination)
+    {
+        if (_disposed) return;
+        _resourceSection = destination switch
+        {
+            LanStash.App.Features.Settings.WorkspaceDestination.MachineHosts => 0,
+            LanStash.App.Features.Settings.WorkspaceDestination.MachineStorage => 1,
+            LanStash.App.Features.Settings.WorkspaceDestination.MachineNetworks => 2,
+            LanStash.App.Features.Settings.WorkspaceDestination.MachineImages => 3,
+            LanStash.App.Features.Settings.WorkspaceDestination.MachineProtection => 4,
+            LanStash.App.Features.Settings.WorkspaceDestination.MachineEvents => 5,
+            _ => -1,
+        };
+        UpdateAdaptiveLayout();
+    }
+
     private async void VirtualMachineManagerPage_Loaded(object sender, RoutedEventArgs e)
     {
         if (_initialized)
@@ -65,9 +84,9 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
 
     private void Resources_Click(object sender, RoutedEventArgs e)
     {
-        _compactShowsDetail = true;
-        UpdateAdaptiveLayout();
-        ResourcePivot.Focus(FocusState.Keyboard);
+        if (NavigateRequested is { } navigate)
+            navigate(LanStash.App.Features.Settings.WorkspaceDestination.MachineHosts);
+        else NavigateToWorkspaceDestination(LanStash.App.Features.Settings.WorkspaceDestination.MachineHosts);
     }
 
     private void Back_Click(object sender, RoutedEventArgs e) => ShowMachineList();
@@ -155,9 +174,24 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
 
     private void UpdateAdaptiveLayout()
     {
+        if (_disposed || ResourceSections is null) return;
+        FrameworkElement[] sections = [HostsSection, StoragesSection, NetworksSection, ImagesSection, ProtectionSection, EventsSection];
+        for (var i = 0; i < sections.Length; i++) sections[i].Visibility = Visible(_resourceSection == i);
+        ResourceSections.Visibility = Visible(_resourceSection >= 0);
+        MachineDetailState.Visibility = Visible(_resourceSection < 0 && _viewModel.HasSelection);
+        NoSelectionState.Visibility = Visible(_resourceSection < 0 && !_viewModel.HasSelection);
+        if (_resourceSection >= 0)
+        {
+            MachineColumn.Width = new GridLength(0);
+            DetailColumn.Width = new GridLength(1, GridUnitType.Star);
+            MachinePane.Visibility = Visibility.Collapsed;
+            DetailPane.Visibility = Visibility.Visible;
+            BackButton.Visibility = Visibility.Collapsed;
+            return;
+        }
         if (ActualWidth >= CompactWidth)
         {
-            MachineColumn.Width = new GridLength(360);
+            MachineColumn.Width = new GridLength(300);
             DetailColumn.Width = new GridLength(1, GridUnitType.Star);
             MachinePane.Visibility = Visibility.Visible;
             DetailPane.Visibility = Visibility.Visible;
@@ -189,6 +223,8 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        NavigateRequested = null;
+        Loaded -= VirtualMachineManagerPage_Loaded;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
     }
