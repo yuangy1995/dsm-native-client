@@ -179,7 +179,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val store = SecureProfileStore(application)
     private val transferStore = TransferStore(application)
     private val workManager = WorkManager.getInstance(application)
-    private var repository: DsmRepository? = null
+    private val photosSession = io.github.qwertyuiop1995.dsmnativeclient.photos.SynologyPhotosSession(viewModelScope)
+    private var repository: DsmRepository? by photosSession
+    internal fun photoLibraryFor(profileId: String) = photosSession.modelFor(profileId, _workspace.value?.profile?.id)
     private var workspacePersistenceJob: Job? = null
     private var nasSwitchJob: Job? = null
     private val loginAttempt = LoginAttemptOwner()
@@ -1646,11 +1648,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val targetModule = module ?: _workspace.value?.selectedModule ?: return
         val repo = repository ?: return
         if (targetModule == Module.PHOTOS) {
-            if (_workspace.value?.photoBrowser?.mode == PhotoBrowseMode.TIMELINE) {
-                startPhotoTimelineLoad(repo)
-            } else {
-                viewModelScope.launch { loadPhotoPage(repo, reset = true) }
-            }
+            _workspace.value?.profile?.id?.let(::photoLibraryFor)?.activate()
             return
         }
         viewModelScope.launch {

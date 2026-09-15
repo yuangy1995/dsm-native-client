@@ -11,11 +11,11 @@ public sealed class PhotosShellIntegrationTests
             "if (module == AppModule.Photos",
             "ContentFrame.Content = _workspace;");
 
-        Assert.Contains("_app.Repository is not IPhotoRepository photoRepository", photosBranch);
+        Assert.Contains("(_app.Repository as ISynologyPhotosProvider)?.SynologyPhotos", photosBranch);
         Assert.Contains("_photosProfileId != photoProfile.Id", photosBranch);
         Assert.Contains("!ReferenceEquals(_photosRepository, photoRepository)", photosBranch);
-        Assert.Contains("photoPreviewRepository = _app.Repository as IFilePreviewRepository", photosBranch);
-        Assert.Contains("_photos = new PhotosPage(", photosBranch);
+        Assert.DoesNotContain("IFilePreviewRepository", photosBranch);
+        Assert.Contains("_photos = new SynologyPhotosPage(photoRepository,", photosBranch);
         Assert.Contains("_photosProfileId = photoProfile.Id;", photosBranch);
         Assert.Contains("_photosRepository = photoRepository;", photosBranch);
         Assert.Contains("ContentFrame.Content = _photos;", photosBranch);
@@ -34,9 +34,9 @@ public sealed class PhotosShellIntegrationTests
             "if (module == AppModule.Photos)",
             "ContentFrame.Content = _workspace;");
 
-        Assert.Contains("_app.Repository is not IPhotoRepository", photosBranch);
+        Assert.Contains("photoRepository is null", photosBranch);
         Assert.Contains("photoRepository.ProfileId != photoProfile.Id", photosBranch);
-        Assert.Contains("PhotosPage.CreateUnavailableState()", photosBranch);
+        Assert.Contains("SynologyPhotosPage.CreateUnavailableState()", photosBranch);
         Assert.Contains("_photosRepository = null;", photosBranch);
         Assert.True(photosBranch.Split("return;", StringSplitOptions.None).Length - 1 >= 2);
         Assert.DoesNotContain("ShowModuleAsync", photosBranch);

@@ -1,5 +1,5 @@
 <!-- doc-role: entrypoint -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-09-15 -->
 
 # 岚仓（LanStash）
 
@@ -28,13 +28,15 @@
 - 多 NAS 配置、HTTPS 地址和 QuickConnect ID。
 - DSM 登录、双重验证、会话恢复和平台安全存储。
 - 文件与共享文件夹浏览、搜索、上传、下载、复制、移动、重命名、压缩、解压和分享。
-- 照片空间、缩略图、时间线和常见媒体预览。
+- 原生 Synology Photos 个人时间线、年月定位、12 类筛选、相册／共享读取、媒体预览和原件保存；个人单项删除保留确认、权限与结果核对。
 - Synology Chat 会话、附件、提醒、投票和定时消息能力。
 - Download Station、Container Manager、Virtual Machine Manager 和 NAS 设置入口。
 - 存储、套件、账号、日志、连接、网络和安全状态的原生管理界面。
 - 浅色/深色模式、键盘、触控、动态文字、屏幕阅读器和降低动态效果适配。
 
 部分能力依赖 DSM 或套件版本。项目优先使用 Synology 官方公开 API；必须使用内部 API 时，会在实现与兼容文档中明确标注并通过能力探测隔离。
+
+五端正式照片入口均直接使用 Synology Photos，套件不可用时不会退回 File Station 扫描。系统原件分享不代表支持创建 Photos 分享链接；上传、相册编辑、共享空间和自动备份按各自范围控制。实现、性能边界与逐端验收统一见[照片计划](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
 
 ## 语言与本地化
 

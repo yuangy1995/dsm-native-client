@@ -21,6 +21,7 @@ fun DsmFailure.localize(context: Context): LocalizedFailure {
 
 @StringRes
 fun ModuleUnavailableReason.messageResource(): Int = when (this) {
+        ModuleUnavailableReason.SYNOLOGY_PHOTOS -> R.string.sp_service_unavailable
         ModuleUnavailableReason.CHAT_SERVICE -> R.string.module_unavailable_chat
         ModuleUnavailableReason.DOWNLOAD_STATION -> R.string.module_unavailable_downloads
         ModuleUnavailableReason.CONTAINER_MANAGER -> R.string.module_unavailable_containers

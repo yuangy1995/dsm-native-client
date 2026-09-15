@@ -1675,8 +1675,9 @@ final class MobileChatModelTests: XCTestCase {
             users: [
                 ChatUser(id: "disabled", displayName: "停用", isDisabled: true),
                 ChatUser(id: "current", displayName: "当前", isCurrentUser: true),
-                ChatUser(id: "z", displayName: "周末"),
-                ChatUser(id: "a", displayName: "阿明")
+                // 使用跨区域排序一致的合成名称，避免把运行器语言当成产品契约。
+                ChatUser(id: "z", displayName: "Zulu"),
+                ChatUser(id: "a", displayName: "Alpha")
             ]
         )
         let creator = MobileChatConversationCreator(
@@ -1890,7 +1891,7 @@ final class MobileChatModelTests: XCTestCase {
     }
 
     private func assertReadOnlyFailure<T>(
-        _ operation: () async throws -> T,
+        _ operation: @MainActor () async throws -> T,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {

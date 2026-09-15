@@ -1866,6 +1866,17 @@
           "IconButton(onClick = { menu = true }, enabled = !saving,"
         ],
         "evidence": "用户确认的导航排序；48dp 原生 IconButton 句柄，长按拖动只调整未保存的模块顺序；提供上移/下移菜单与无障碍动作。由 ApprovedNavigationUiTest 验证。"
+      },
+      {
+        "file": "photos/SynologyPhotoPreview.kt",
+        "source": "}.pointerInput(photo.id, zoom) { detectTapGestures(onDoubleTap = { onZoom(if (zoom > 1f) 1f else 2f) }) }.transformable(transform))",
+        "requiredMarkers": [
+          "sizeIn(minWidth = 48.dp, minHeight = 48.dp)",
+          "coerceIn(1f, 8f)",
+          "Icons.Outlined.ZoomIn, stringResource(R.string.sp_media_zoom)",
+          "onClick = { zoom = if (zoom > 1f) 1f else 2f }"
+        ],
+        "evidence": "照片整屏手势区至少 48dp；双击仅调整本地预览缩放，提供同等作用的原生 IconButton 和本地化无障碍名称。由 SynologyPhotosPresentationTest 验证；真机手势与 TalkBack 为 PENDING_USER_VALIDATION。"
       }
     ],
     "rules": {
@@ -1894,7 +1905,7 @@
       {
         "id": "android-app-view-model",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt",
-        "maxLines": 16475,
+        "maxLines": 16473,
         "targetLines": 12000
       },
       {

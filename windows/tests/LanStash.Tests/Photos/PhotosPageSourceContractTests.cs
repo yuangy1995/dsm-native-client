@@ -153,8 +153,8 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("ClosePhotoShareManagementDialog();", page);
         Assert.Contains("_photoShareRepository", page);
         Assert.Contains("_photoShareClipboard", page);
-        Assert.Contains("photoShareRepository?.ProfileId != photoProfile.Id", shell);
-        Assert.Contains("shareReviewBlocker: FileShareLinkReviewBlocker.Current", shell);
+        Assert.DoesNotContain("photoShareRepository?.ProfileId != photoProfile.Id", PhotoRoute(shell));
+        Assert.DoesNotContain("shareReviewBlocker: FileShareLinkReviewBlocker.Current", PhotoRoute(shell));
 
         Assert.Contains("new FileShareLinkViewModel(", dialog);
         Assert.Contains("_reviewBlocker.Contains(_profileId, target.Path)", dialog);
@@ -266,8 +266,8 @@ public sealed class PhotosPageSourceContractTests
         Assert.DoesNotContain("AppWindowPresenterKind", viewer);
         Assert.DoesNotContain("OverlappedPresenter", viewer);
 
-        Assert.Contains("var photoPreviewRepository = _app.Repository as IFilePreviewRepository;", shell);
-        Assert.Contains("previewRepository: photoPreviewRepository", shell);
+        Assert.DoesNotContain("var photoPreviewRepository = _app.Repository as IFilePreviewRepository;", PhotoRoute(shell));
+        Assert.DoesNotContain("previewRepository: photoPreviewRepository", PhotoRoute(shell));
         Assert.Contains("!ReferenceEquals(_photosRepository, photoRepository)", shell);
     }
 
@@ -316,9 +316,9 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("MovePhotoToRecycleAsync", page);
         Assert.Contains("CanRestorePhotoItem", page);
         Assert.Contains("RestorePhotoItemAsync", page);
-        Assert.Contains("photoLocationsRepository = _app.Repository as IFileLocationsRepository", shell);
-        Assert.Contains("locationsRepository: photoLocationsRepository", shell);
-        Assert.Contains("recycleRepository: photoRecycleRepository", shell);
+        Assert.DoesNotContain("photoLocationsRepository = _app.Repository as IFileLocationsRepository", PhotoRoute(shell));
+        Assert.DoesNotContain("locationsRepository: photoLocationsRepository", PhotoRoute(shell));
+        Assert.DoesNotContain("recycleRepository: photoRecycleRepository", PhotoRoute(shell));
         Assert.Contains("recycleReviewBlocker: FileRecycleReviewBlocker.Current", shell);
 
         Assert.Contains("new FileRecycleViewModel(", recycle);
@@ -492,8 +492,8 @@ public sealed class PhotosPageSourceContractTests
         Assert.Contains("x:Name=\"PhotoMoveButton\"", xaml);
         Assert.Contains("Click=\"MovePhoto_Click\"", xaml);
         Assert.Contains("InitializePhotoCopyMove(copyMoveRepository, copyMoveFolderSource, copyMoveReviewBlocker);", page);
-        Assert.Contains("copyMoveRepository: photoCopyMoveRepository", shell);
-        Assert.Contains("copyMoveFolderSource: photoCopyMoveFolderSource", shell);
+        Assert.DoesNotContain("copyMoveRepository: photoCopyMoveRepository", PhotoRoute(shell));
+        Assert.DoesNotContain("copyMoveFolderSource: photoCopyMoveFolderSource", PhotoRoute(shell));
         Assert.Contains("new RepositoryFileCopyMoveFolderSource(", shell);
 
         Assert.Contains("new FileCopyMoveViewModel(", move);
@@ -544,6 +544,9 @@ public sealed class PhotosPageSourceContractTests
 
     private static int CountOccurrences(string source, string value) =>
         source.Split(value, StringSplitOptions.None).Length - 1;
+
+    // 兼容适配的回归保留；新 Photos 入口不得重新注入 File Station 写操作。
+    private static string PhotoRoute(string shell) => Slice(shell, "if (module == AppModule.Photos)", "if (module == AppModule.Chat)");
 
     private static string Slice(string source, string start, string end)
     {
