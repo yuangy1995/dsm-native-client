@@ -9,35 +9,29 @@ permissions:
 jobs:
   finish:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: codex/photos-parity-integrated-20260915
-      - name: 应用已保存并校验摘要的照片修复
+      - name: 保持删除次数断言并修正分析器要求
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          : > "$RUNNER_TEMP/review.patch"
-          for blob in 637a98cad6afbb684ba0b0c3956130708d21f2d1 5c823d61ef4cc4b1634b09b785de9786f2f83dbd; do
-            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$blob" --jq .content | base64 -d > "$RUNNER_TEMP/part.xz"
-            xz -dc "$RUNNER_TEMP/part.xz" >> "$RUNNER_TEMP/review.patch"
-          done
-          echo "e7269349be39d3e4af5134d1d4bb4e5a7ad843a3714cc5b4f78de78bc4eb7bc4  $RUNNER_TEMP/review.patch" | sha256sum -c -
-          git apply --check --index "$RUNNER_TEMP/review.patch"
-          git apply --index "$RUNNER_TEMP/review.patch"
-          git diff --cached --check
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(photos): close session races and verify native Windows media and filters'
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('windows/tests/LanStash.Tests/Photos/SynologyPhotosRepositoryTests.cs')
+          text = p.read_text()
+          before = 'Assert.Single(fixture.Requests.Where(call => call.Method == "delete"))'
+          after = 'Assert.Single(fixture.Requests, call => call.Method == "delete")'
+          assert text.count(before) == 2
+          p.write_text(text.replace(before, after))
+          PY
+          git diff --check
+          git add windows/tests/LanStash.Tests/Photos/SynologyPhotosRepositoryTests.cs
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test(photos): preserve exact single deletion assertions with analyzer-compatible overload'
           git push origin HEAD:refs/heads/codex/photos-parity-integrated-20260915
-      - name: 执行现有平台和仓库门禁
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for workflow in android-build.yml windows-build.yml repository-check.yml; do
-            gh workflow run "$workflow" --ref codex/photos-parity-integrated-20260915
-          done
+          gh workflow run windows-build.yml --ref codex/photos-parity-integrated-20260915
