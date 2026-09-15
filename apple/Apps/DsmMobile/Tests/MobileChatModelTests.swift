@@ -1890,7 +1890,7 @@ final class MobileChatModelTests: XCTestCase {
     }
 
     private func assertReadOnlyFailure<T>(
-        _ operation: () async throws -> T,
+        _ operation: @MainActor () async throws -> T,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
