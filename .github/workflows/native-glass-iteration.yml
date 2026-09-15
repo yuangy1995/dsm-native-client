@@ -21,38 +21,68 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - name: Import reviewed source objects
+      - name: Import and verify reviewed source edits
         id: import
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import base64, hashlib, json, os, pathlib, re, subprocess, urllib.request
+          import base64, gzip, hashlib, json, os, pathlib, re, subprocess, urllib.request
           assert os.environ['GITHUB_REPOSITORY'] == 'yuangy1995/dsm-native-client'
           assert os.environ['GITHUB_REF'] == 'refs/heads/codex/native-glass-photos-validation'
           data = json.loads(pathlib.Path('.github/native-glass-input.json').read_text())
-          for key in ('pack_blob', 'tree', 'baseline', 'expected_head'):
+          for key in ('payload_blob', 'tree', 'baseline', 'expected_head'):
               assert re.fullmatch('[0-9a-f]{40}', data[key]), key
           assert data['baseline'] == '2243e731000382e5ff8bf2460c1ee7f9b83d0f11'
           assert set(data['targets']) <= {'apple', 'android', 'windows'}
           target = 'refs/heads/codex/native-glass-photos-parity'
           remote = subprocess.check_output(['git', 'ls-remote', 'origin', target], text=True).split()[0]
           assert remote == data['expected_head'], 'Feature branch changed; refuse to overwrite it'
-          request = urllib.request.Request('https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/' + data['pack_blob'], headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          request = urllib.request.Request('https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/' + data['payload_blob'], headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
           with urllib.request.urlopen(request, timeout=60) as response:
               blob = json.load(response)
-          pack = base64.b64decode(blob['content'])
-          assert len(pack) < 10_000_000
-          assert hashlib.sha256(pack).hexdigest() == data['pack_sha256']
-          subprocess.run(['git', 'unpack-objects', '-r'], input=pack, check=True)
-          assert subprocess.check_output(['git', 'cat-file', '-t', data['tree']], text=True).strip() == 'tree'
-          subprocess.run(['git', 'diff', '--exit-code', data['baseline'], data['tree'], '--', 'apple/Apps/DsmMac'], check=True)
+          compressed = base64.b64decode(blob['content'])
+          assert len(compressed) < 10_000_000
+          assert hashlib.sha256(compressed).hexdigest() == data['payload_sha256']
+          payload = json.loads(gzip.decompress(compressed))
+          assert payload['version'] == 1
           stored = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-input.json'
           stored.write_text(json.dumps(data))
+          subprocess.run(['git', 'read-tree', '--reset', '-u', data['baseline']], check=True)
+          def git_hash(content):
+              return hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+          seen = set()
+          for entry in payload['entries']:
+              path = pathlib.Path(entry['path'])
+              assert not path.is_absolute() and '..' not in path.parts and '.git' not in path.parts
+              assert str(path) not in seen
+              seen.add(str(path))
+              assert not path.is_symlink() and not any(parent.is_symlink() for parent in path.parents)
+              before = path.read_bytes() if path.exists() else None
+              assert (git_hash(before) if before is not None else None) == entry['base'], str(path)
+              if entry['sha'] is None:
+                  path.unlink()
+                  continue
+              lines = (before or b'').decode('utf-8').splitlines(keepends=True)
+              previous_end = 0
+              for edit in entry['edits']:
+                  assert previous_end <= edit['start'] <= edit['end'] <= len(lines)
+                  previous_end = edit['end']
+              for edit in reversed(entry['edits']):
+                  lines[edit['start']:edit['end']] = edit['text'].splitlines(keepends=True)
+              after = ''.join(lines).encode('utf-8')
+              assert git_hash(after) == entry['sha'], str(path)
+              assert entry['mode'] in ('100644', '100755')
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_bytes(after)
+              path.chmod(int(entry['mode'][-3:], 8))
+          subprocess.run(['git', 'add', '-A'], check=True)
+          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          assert tree == data['tree'], (tree, data['tree'])
+          subprocess.run(['git', 'diff', '--exit-code', data['baseline'], tree, '--', 'apple/Apps/DsmMac'], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('targets=' + json.dumps(data['targets']) + '\n')
-          subprocess.run(['git', 'read-tree', '--reset', '-u', data['tree']], check=True)
-          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
           PY
       - name: Generate the mobile project with the pinned generator
         run: |
@@ -120,7 +150,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
-      - uses: actions/checkout@3d3c42e5aac5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
           persist-credentials: false
