@@ -17,7 +17,11 @@ public sealed class SynologyPhotosRepositoryTests
         await repository.AccessAsync(); var page = await repository.PhotosAsync(new SynologyPhotoQuery.Search("a & b", 0, 1800000000), 0, 100);
         var call = fixture.Requests[^1];
         Assert.Equal("SYNO.Foto.Search.Search", call.Api); Assert.Equal(1, call.Version); Assert.Equal("list_item", call.Method);
-        Assert.Equal(HttpMethod.Post, call.HttpMethod); Assert.Equal("\"a & b\"", call.Values["keyword"]);
+        Assert.Equal(HttpMethod.Post, call.HttpMethod);
+        // JSON 可用 Unicode 转义表示 &；核对解析后的字符串，不依赖序列化器的转义风格。
+        using var keyword = System.Text.Json.JsonDocument.Parse(call.Values["keyword"]);
+        Assert.Equal(System.Text.Json.JsonValueKind.String, keyword.RootElement.ValueKind);
+        Assert.Equal("a & b", keyword.RootElement.GetString());
         Assert.Equal("synthetic-sid", call.Values["_sid"]); Assert.Equal("synthetic-token", call.Token);
         Assert.DoesNotContain("synthetic-sid", call.Uri.ToString()); Assert.DoesNotContain("synthetic-token", call.Uri.ToString());
         Assert.Single(page.Items); Assert.Equal(1, page.NextOffset); Assert.False(page.HasMore);

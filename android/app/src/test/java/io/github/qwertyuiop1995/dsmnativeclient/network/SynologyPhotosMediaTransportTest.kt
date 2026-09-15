@@ -14,6 +14,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.*
 import org.junit.Test
+import okio.buffer
 
 class SynologyPhotosMediaTransportTest {
     @Test fun `缩略图使用观测路径和独立单元并仅在头部认证`() = runBlocking {
@@ -109,6 +110,35 @@ class SynologyPhotosMediaTransportTest {
             withTimeout(2_000) { task.cancelAndJoin() }
             assertTrue(directory.listFiles()!!.isEmpty())
         } finally { release.countDown(); server.close(); worker.join(1_000); directory.deleteRecursively() }
+    }
+
+    @Test fun `未取消的响应体读取异常保持媒体失败且清理暂存文件`() = runBlocking {
+        val directory = Files.createTempDirectory("photos-body-failure-").toFile()
+        val failure = IOException("synthetic body interruption")
+        try {
+            val transport = transport { request ->
+                val body = object : ResponseBody() {
+                    override fun contentType() = "image/heic".toMediaType()
+                    override fun contentLength() = 1024L
+                    override fun source(): okio.BufferedSource = (object : okio.Source {
+                        override fun read(sink: okio.Buffer, byteCount: Long): Long = throw failure
+                        override fun timeout() = okio.Timeout.NONE
+                        override fun close() = Unit
+                    }).buffer()
+                }
+                response(request, ByteArray(1024), "image/heic").newBuilder().body(body).build()
+            }
+            val target = File(directory, "original.heic")
+            try {
+                transport.download(download, originalParameters, target, 1024) { _, _ -> }
+                fail("未取消时必须报告正文读取失败")
+            } catch (error: SynologyPhotoFailure) {
+                assertSame(failure, error.cause)
+            }
+            currentCoroutineContext().ensureActive()
+            assertFalse(target.exists())
+            assertTrue(directory.listFiles()!!.isEmpty())
+        } finally { directory.deleteRecursively() }
     }
 
     @Test fun `视频范围严格验证且至多缓存两个块`() = runBlocking {

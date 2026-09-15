@@ -185,7 +185,15 @@ class SynologyPhotosMediaTransport internal constructor(
         val cancellation = launch(start = CoroutineStart.UNDISPATCHED) {
             try { awaitCancellation() } finally { call.cancel() }
         }
-        try { await(call).use { body(it) } } finally { cancellation.cancel() }
+        try {
+            await(call).use { body(it) }
+        } catch (error: IOException) {
+            // 取消会关闭正在读取的套接字；保留协程取消语义，不能把它升级为父任务失败。
+            currentCoroutineContext().ensureActive()
+            throw SynologyPhotoFailure(SynologyPhotoFailureKind.MEDIA, error)
+        } finally {
+            cancellation.cancel()
+        }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
