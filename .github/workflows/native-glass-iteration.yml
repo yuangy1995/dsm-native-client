@@ -27,28 +27,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import base64, gzip, hashlib, json, os, pathlib, re, subprocess, urllib.request
+          import base64, gzip, hashlib, json, lzma, os, pathlib, re, subprocess, urllib.request
           assert os.environ['GITHUB_REPOSITORY'] == 'yuangy1995/dsm-native-client'
           assert os.environ['GITHUB_REF'] == 'refs/heads/codex/native-glass-photos-validation'
           data = json.loads(pathlib.Path('.github/native-glass-input.json').read_text())
-          for key in ('payload_blob', 'tree', 'baseline', 'expected_head'):
+          for key in ('tree', 'baseline', 'expected_head'):
               assert re.fullmatch('[0-9a-f]{40}', data[key]), key
           assert data['baseline'] == '2243e731000382e5ff8bf2460c1ee7f9b83d0f11'
+          source_base = data.get('source_base', data['baseline'])
+          assert source_base in (data['baseline'], data['expected_head'])
           assert set(data['targets']) <= {'apple', 'android', 'windows'}
           target = 'refs/heads/codex/native-glass-photos-parity'
           remote = subprocess.check_output(['git', 'ls-remote', 'origin', target], text=True).split()[0]
           assert remote == data['expected_head'], 'Feature branch changed; refuse to overwrite it'
-          request = urllib.request.Request('https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/' + data['payload_blob'], headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
-          with urllib.request.urlopen(request, timeout=60) as response:
-              blob = json.load(response)
-          compressed = base64.b64decode(blob['content'])
-          assert len(compressed) < 10_000_000
+          blob_ids = data.get('payload_blobs', [data.get('payload_blob')])
+          assert 1 <= len(blob_ids) <= 32
+          compressed = b''
+          for blob_id in blob_ids:
+              assert re.fullmatch('[0-9a-f]{40}', blob_id)
+              request = urllib.request.Request('https://api.github.com/repos/yuangy1995/dsm-native-client/git/blobs/' + blob_id, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  blob = json.load(response)
+              compressed += base64.b64decode(blob['content'])
+              assert len(compressed) < 10_000_000
           assert hashlib.sha256(compressed).hexdigest() == data['payload_sha256']
-          payload = json.loads(gzip.decompress(compressed))
+          compression = data.get('compression', 'gzip')
+          assert compression in ('gzip', 'xz')
+          payload = json.loads(lzma.decompress(compressed) if compression == 'xz' else gzip.decompress(compressed))
           assert payload['version'] == 1
-          stored = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-input.json'
-          stored.write_text(json.dumps(data))
-          subprocess.run(['git', 'read-tree', '--reset', '-u', data['baseline']], check=True)
+          (pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-input.json').write_text(json.dumps(data))
+          subprocess.run(['git', 'read-tree', '--reset', '-u', source_base], check=True)
           def git_hash(content):
               return hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
           seen = set()
@@ -154,16 +162,104 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
           persist-credentials: false
-      - name: Compile the compatibility branch and run Mac shared regressions
+      - name: Compile the compatibility branch
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/native-logs"
           xcodebuild -version | tee "$RUNNER_TEMP/native-logs/toolchain.txt"
           xcodebuild -project apple/Apps/DsmMobile/DsmMobile.xcodeproj -scheme DsmMobile -sdk iphonesimulator -configuration Debug -derivedDataPath "$RUNNER_TEMP/mobile-derived" CODE_SIGNING_ALLOWED=NO build-for-testing > "$RUNNER_TEMP/native-logs/mobile-baseline.log" 2>&1 || { tail -180 "$RUNNER_TEMP/native-logs/mobile-baseline.log"; exit 1; }
-          swift test --package-path apple > "$RUNNER_TEMP/native-logs/shared-tests.log" 2>&1 || { tail -180 "$RUNNER_TEMP/native-logs/shared-tests.log"; exit 1; }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: native-apple-baseline-logs
           path: ${{ runner.temp }}/native-logs
+          retention-days: 3
+  apple-shared:
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.targets), 'apple')
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - name: Run shared Mac regressions independently of mobile compilation
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-logs"
+          swift test --package-path apple > "$RUNNER_TEMP/native-logs/shared-tests.log" 2>&1 || { tail -180 "$RUNNER_TEMP/native-logs/shared-tests.log"; exit 1; }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: native-apple-shared-logs
+          path: ${{ runner.temp }}/native-logs
+          retention-days: 3
+  android:
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.targets), 'android')
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Compile and test Android
+        working-directory: android
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-logs"
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:minifyReleaseWithR8 :app:assembleDebugAndroidTest :app:lintDebug --no-parallel --stacktrace > "$RUNNER_TEMP/native-logs/android.log" 2>&1 || { tail -220 "$RUNNER_TEMP/native-logs/android.log"; exit 1; }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: native-android-validation
+          path: |
+            ${{ runner.temp }}/native-logs
+            android/app/build/reports
+            android/app/build/outputs/apk
+          retention-days: 3
+  windows:
+    needs: prepare
+    if: contains(fromJSON(needs.prepare.outputs.targets), 'windows')
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore and validate native Windows
+        working-directory: windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/native-logs" | Out-Null
+          dotnet restore LanStash.slnx *> "$env:RUNNER_TEMP/native-logs/restore.log"
+          if ($LASTEXITCODE -ne 0) { Get-Content "$env:RUNNER_TEMP/native-logs/restore.log" -Tail 160; exit 1 }
+          dotnet test tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=native.trx" --blame-hang --blame-hang-timeout 2m *> "$env:RUNNER_TEMP/native-logs/tests.log"
+          $testResult = $LASTEXITCODE
+          dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore *> "$env:RUNNER_TEMP/native-logs/x64.log"
+          $x64Result = $LASTEXITCODE
+          dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore *> "$env:RUNNER_TEMP/native-logs/arm64.log"
+          $armResult = $LASTEXITCODE
+          Get-Content "$env:RUNNER_TEMP/native-logs/tests.log" -Tail 100
+          Get-Content "$env:RUNNER_TEMP/native-logs/x64.log" -Tail 100
+          Get-Content "$env:RUNNER_TEMP/native-logs/arm64.log" -Tail 100
+          if ($testResult -ne 0 -or $x64Result -ne 0 -or $armResult -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: native-windows-validation
+          path: |
+            ${{ runner.temp }}/native-logs
+            windows/tests/LanStash.Tests/TestResults
           retention-days: 3
