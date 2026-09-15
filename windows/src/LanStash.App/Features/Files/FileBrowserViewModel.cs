@@ -828,6 +828,12 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
+    public void RefreshLocalization()
+    {
+        RebuildBreadcrumbs();
+        RaiseStorageSpaceProperties();
+    }
+
     private void RaiseStorageSpaceProperties()
     {
         RaisePropertyChanged(nameof(HasStorageSpace));
@@ -838,7 +844,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(StorageScopeText));
     }
 
-    private static string FormatBytes(long bytes)
+    internal static string FormatBytes(long bytes)
     {
         string[] unitKeys =
         [

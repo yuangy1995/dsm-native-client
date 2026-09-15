@@ -1,3 +1,4 @@
+using LanStash.App.Features.Shell;
 using LanStash.App.Features.Files.Locations;
 using LanStash.App.Localization;
 using LanStash.Domain;
@@ -24,6 +25,7 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
     private CancellationTokenSource? _openCancellation;
     private CancellationTokenSource? _refreshCancellation;
     private bool _disposed;
+    private DesktopSection _desktopSection;
 
     public event EventHandler? LocationOpened;
     public event EventHandler? RemoteMountNeedsRefresh;
@@ -425,6 +427,22 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
         }
     }
 
+    internal void ShowDesktopSection(DesktopSection section)
+    {
+        _desktopSection = section;
+        Render();
+    }
+
+    private void ApplyDesktopSection()
+    {
+        if (_desktopSection == DesktopSection.Root) { SharesSection.Visibility = Visibility.Visible; return; }
+        SharesSection.Visibility = Visibility.Collapsed;
+        if (_desktopSection != DesktopSection.Favorites) FavoritesSection.Visibility = Visibility.Collapsed;
+        if (_desktopSection != DesktopSection.Recent) RecentSection.Visibility = Visibility.Collapsed;
+        if (_desktopSection != DesktopSection.Recycle) RecycleSection.Visibility = Visibility.Collapsed;
+        if (_desktopSection != DesktopSection.RemoteLocations) RemoteSection.Visibility = Visibility.Collapsed;
+    }
+
     private void Render()
     {
         if (_viewModel is not { } model)
@@ -481,6 +499,7 @@ public sealed partial class FileLocationsView : UserControl, IDisposable
             ? Visibility.Visible : Visibility.Collapsed;
         RecentItems.Visibility = model.RecentLocations.Count > 0
             ? Visibility.Visible : Visibility.Collapsed;
+        ApplyDesktopSection();
     }
 
     private static void RenderSection<T>(

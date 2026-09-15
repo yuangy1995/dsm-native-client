@@ -1,3 +1,4 @@
+using LanStash.App.Features.Shell;
 using LanStash.App.Features.Files;
 using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Locations;
@@ -45,6 +46,13 @@ public sealed partial class FilesPage : Page, IDisposable
     private CancellationTokenSource? _searchCancellation;
     private bool? _locationsAreWide;
     private bool _disposed;
+    private readonly CoalescedUiUpdate _uiUpdates;
+    private readonly CoalescedUiUpdate _previewUpdates;
+    private DesktopSection _desktopSection;
+    private bool _showInspector = true;
+    private Task<bool>? _leaveConfirmation;
+    internal FileBrowserViewModel StorageOverview => _viewModel;
+    internal event Action? DesktopFolderOpened;
 
     internal FilesPage(
         IDsmRepository repository,
@@ -106,7 +114,10 @@ public sealed partial class FilesPage : Page, IDisposable
         IFileArchiveExtractionRepository? archiveExtractionRepository = null)
     {
         InitializeComponent();
+        _uiUpdates = new(action => DispatcherQueue.TryEnqueue(() => action()), UpdateState);
+        _previewUpdates = new(action => DispatcherQueue.TryEnqueue(() => action()), UpdatePreviewLayout);
         _viewModel = viewModel;
+        _viewModel.Layout = FileBrowserLayout.Grid;
         _previewViewModel = new FilePreviewViewModel();
         _textEditViewModel = new FileTextEditViewModel();
         _previewRepository = previewRepository;
@@ -174,7 +185,7 @@ public sealed partial class FilesPage : Page, IDisposable
     private void PreviewViewModel_PropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdatePreviewLayout);
+        _previewUpdates.Request();
 
     private async void FilesPage_Loaded(object sender, RoutedEventArgs e)
     {
@@ -194,13 +205,13 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             _selectionNeedsScroll = true;
         }
-        DispatcherQueue.TryEnqueue(UpdateState);
+        _uiUpdates.Request();
     }
 
     private void LocationsViewModel_PropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        _uiUpdates.Request();
 
     private async void PathBreadcrumbs_ItemClicked(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
     {
@@ -294,6 +305,11 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void LocationsPane_LocationOpened(object? sender, EventArgs e)
     {
+        _desktopSection = DesktopSection.Root;
+        LocationsPane.ShowDesktopSection(DesktopSection.Root);
+        LocationsSplitView.IsPaneOpen = false;
+        UpdateLocationsLayout();
+        DesktopFolderOpened?.Invoke();
         if (_locationsAreWide != true)
         {
             LocationsSplitView.IsPaneOpen = false;
@@ -1283,6 +1299,8 @@ public sealed partial class FilesPage : Page, IDisposable
         FileList.Visibility = _viewModel.HasContent && _viewModel.IsListLayout
             ? Visibility.Visible
             : Visibility.Collapsed;
+        ListHeader.Visibility = _viewModel.HasContent && _viewModel.IsListLayout ? Visibility.Visible : Visibility.Collapsed;
+        RenderMetadata();
         FileGrid.Visibility = _viewModel.HasContent && _viewModel.IsGridLayout
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -1524,30 +1542,27 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void FilesPage_SizeChanged(object sender, SizeChangedEventArgs e)
     {
+        if (FileSearchPanel is not null)
+        {
+            var narrow = ActualWidth < 640;
+            Grid.SetRow(FileSearchPanel, narrow ? 1 : 0);
+            Grid.SetColumn(FileSearchPanel, narrow ? 0 : 1);
+            Grid.SetColumnSpan(FileSearchPanel, narrow ? 3 : 1);
+            FileSearchPanel.MaxWidth = narrow ? double.PositiveInfinity : 300;
+            FileCommandsColumn.Width = new GridLength(Math.Clamp(ActualWidth * .32, 176, 280));
+        }
         UpdateLocationsLayout();
         UpdatePreviewLayout();
     }
 
     private void UpdateLocationsLayout()
     {
-        if (LocationsSplitView is null)
-        {
-            return;
-        }
-        var isWide = ActualWidth >= 900;
-        if (_locationsAreWide == isWide)
-        {
-            return;
-        }
-        _locationsAreWide = isWide;
-        LocationsSplitView.DisplayMode = isWide
-            ? SplitViewDisplayMode.Inline
-            : SplitViewDisplayMode.Overlay;
-        LocationsSplitView.IsPaneOpen = isWide;
-        if (!isWide)
-        {
-            LocationsPane.CancelOpening();
-        }
+        if (LocationsSplitView is null) return;
+        var fullPage = _desktopSection is DesktopSection.Favorites or DesktopSection.Recent or DesktopSection.Recycle or DesktopSection.RemoteLocations;
+        _locationsAreWide = fullPage;
+        LocationsSplitView.DisplayMode = fullPage ? SplitViewDisplayMode.Inline : SplitViewDisplayMode.Overlay;
+        LocationsSplitView.OpenPaneLength = fullPage ? Math.Max(1, ActualWidth - 40) : 300;
+        if (fullPage) LocationsSplitView.IsPaneOpen = true;
     }
 
     private void UpdatePreviewLayout()
@@ -1557,7 +1572,10 @@ public sealed partial class FilesPage : Page, IDisposable
             return;
         }
         var isOpen = _previewViewModel.IsOpen;
-        var isWide = ActualWidth >= (_locationsAreWide == true ? 1280 : 1000);
+        var isWide = ActualWidth >= 1000;
+        var showMetadata = _showInspector && !isOpen && _desktopSection == DesktopSection.Root && ActualWidth >= 800;
+        MetadataInspector.Visibility = showMetadata ? Visibility.Visible : Visibility.Collapsed;
+        MetadataColumn.Width = new GridLength(showMetadata ? 210 : 0);
         PreviewPane.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         PreviewColumn.Width = isOpen
             ? isWide ? new GridLength(420) : new GridLength(1, GridUnitType.Star)
@@ -1570,6 +1588,71 @@ public sealed partial class FilesPage : Page, IDisposable
             : Visibility.Visible;
         BackButton.IsEnabled = _previewViewModel.IsOpen ||
             (_viewModel.CanGoBack && !_viewModel.IsLoading);
+    }
+
+    internal void RefreshLocalization()
+    {
+        _viewModel.RefreshLocalization();
+        UpdateState();
+    }
+
+    internal void SetDesktopVisible(bool visible)
+    {
+        if (!visible) PreviewPane.PauseMediaPlayback();
+    }
+
+    internal Task<bool> ConfirmNavigationAwayAsync()
+    {
+        if (_disposed || !PreviewPane.HasUnsavedTextEdits) return Task.FromResult(true);
+        return _leaveConfirmation ??= ConfirmLeaveCoreAsync();
+    }
+
+    private async Task<bool> ConfirmLeaveCoreAsync()
+    {
+        try
+        {
+            if (!await ShowUnsavedDiscardDialogAsync() || _disposed) return false;
+            PreviewPane.ConfirmDiscardTextEdits();
+            return true;
+        }
+        finally { _leaveConfirmation = null; }
+    }
+
+    internal async Task ShowDesktopSectionAsync(DesktopSection section)
+    {
+        if (_disposed) return;
+        _desktopSection = section;
+        LocationsPane.ShowDesktopSection(section);
+        LocationsSplitView.IsPaneOpen = section != DesktopSection.Root;
+        UpdateLocationsLayout(); UpdatePreviewLayout();
+        if (section == DesktopSection.SharedLinks)
+        {
+            _desktopSection = DesktopSection.Root;
+            LocationsSplitView.IsPaneOpen = false;
+            await ShowShareManagementAsync();
+        }
+        else if (section != DesktopSection.Root) await LocationsPane.LoadAsync();
+    }
+
+    private void Inspector_Click(object sender, RoutedEventArgs args)
+    {
+        _showInspector = InspectorButton.IsChecked == true;
+        UpdatePreviewLayout();
+    }
+
+    private void RenderMetadata()
+    {
+        if (MetadataDetails is null) return;
+        var selected = _viewModel.SelectedItem;
+        MetadataEmpty.Visibility = selected is null ? Visibility.Visible : Visibility.Collapsed;
+        MetadataDetails.Visibility = selected is null ? Visibility.Collapsed : Visibility.Visible;
+        ItemStatusText.Text = LocalizationService.Current.Format("DesktopLoadedItems", _viewModel.Items.Count);
+        if (selected is null) return;
+        MetadataIcon.Glyph = selected.Glyph; MetadataName.Text = selected.Name;
+        MetadataPath.Text = selected.Path; MetadataKind.Text = selected.KindText;
+        MetadataSize.Text = selected.SizeText; MetadataModified.Text = selected.ModifiedText;
+        MetadataPreviewButton.IsEnabled = !selected.IsDirectory && !_viewModel.IsLoading;
+        MetadataDownloadButton.IsEnabled = !_viewModel.IsLoading;
     }
 
     public async Task CloseAsync()
@@ -1606,6 +1689,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
 
         _disposed = true;
+        _uiUpdates.Dispose(); _previewUpdates.Dispose();
         CloseDirectorySizeDialog();
         DeactivateFileUploadDrop();
         CloseShareManagementDialog();
@@ -1628,6 +1712,7 @@ public sealed partial class FilesPage : Page, IDisposable
         PreviewPane.CloseRequested -= PreviewPane_CloseRequested;
         PreviewPane.RetryRequested -= PreviewPane_RetryRequested;
         PreviewPane.SaveCopyRequested -= PreviewPane_SaveCopyRequested;
+        PreviewPane.UnsavedDiscardRequested -= PreviewPane_UnsavedDiscardRequested;
         LocationsPane.LocationOpened -= LocationsPane_LocationOpened;
         LocationsPane.Dispose();
         _locationsViewModel.Dispose();

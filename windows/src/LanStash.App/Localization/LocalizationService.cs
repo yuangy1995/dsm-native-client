@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security;
 using LanStash.Domain;
@@ -29,7 +30,9 @@ internal sealed class WinUiLocalizationPlatform : ILocalizationPlatform
     public void ApplyLanguage(string language) =>
         ApplicationLanguages.PrimaryLanguageOverride = language;
 
-    public string? GetString(string key) => new ResourceLoader().GetString(key);
+    public string? GetString(string key) => new ResourceLoader().GetString(ResourcePath(key));
+
+    internal static string ResourcePath(string key) => key.Replace('.', '/');
 }
 
 internal sealed class FileLanguagePreferenceStore(string path) : ILanguagePreferenceStore
@@ -80,6 +83,7 @@ public sealed class LocalizationService
 
     private readonly ILanguagePreferenceStore _preferenceStore;
     private readonly ILocalizationPlatform _platform;
+    private ConcurrentDictionary<string, string> _strings = new(StringComparer.Ordinal);
 
     public event EventHandler? LanguageChanged;
     public AppLanguageSelection Selection { get; private set; } = AppLanguageSelection.System;
@@ -148,8 +152,12 @@ public sealed class LocalizationService
 
     public string Get(string key)
     {
-        var value = _platform.GetString(key);
-        return string.IsNullOrEmpty(value) ? key : value;
+        var cache = Volatile.Read(ref _strings);
+        return cache.GetOrAdd(key, resourceKey =>
+        {
+            var value = _platform.GetString(resourceKey);
+            return string.IsNullOrEmpty(value) ? resourceKey : value;
+        });
     }
 
     internal static void UseForTests(LocalizationService service) => Current = service;
@@ -192,6 +200,7 @@ public sealed class LocalizationService
             Selection,
             _platform.SystemLanguage);
         _platform.ApplyLanguage(ResolvedLanguage);
+        Volatile.Write(ref _strings, new ConcurrentDictionary<string, string>(StringComparer.Ordinal));
         var culture = CultureInfo.GetCultureInfo(ResolvedLanguage);
         CultureInfo.CurrentCulture = culture;
         CultureInfo.CurrentUICulture = culture;

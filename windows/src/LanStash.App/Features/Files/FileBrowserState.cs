@@ -40,6 +40,10 @@ public sealed record FileBrowserEntry(FileItem Item)
     public bool IsDirectory => Item.IsDirectory;
     public string Glyph => Item.IsDirectory ? "\uE8B7" : "\uE8A5";
 
+    public string KindText => LocalizationService.Current.Get(IsDirectory ? "DesktopFolderKind" : "DesktopFileKindValue");
+    public string SizeText => IsDirectory ? LocalizationService.Current.Get("UnknownValue") : FileBrowserViewModel.FormatBytes(Item.Size);
+    public string ModifiedText => Item.ModifiedAt?.ToLocalTime().ToString("g") ?? LocalizationService.Current.Get("UnknownValue");
+
     public string Detail => Item.IsDirectory
         ? Item.Path
         : LocalizationService.Current.Format(

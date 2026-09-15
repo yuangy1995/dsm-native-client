@@ -1,0 +1,93 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 数值取自 MacAppearance；只对材质使用透明度，文字和交互控件保持不透明。 -->
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="DesktopSurfaceBrush" Color="#F9FAFC" />
+            <SolidColorBrush x:Key="DesktopFolderBackBrush" Color="#5CA6DA" />
+            <SolidColorBrush x:Key="DesktopFolderFrontBrush" Color="#83C7EF" />
+            <SolidColorBrush x:Key="DesktopGlassBrush" Color="#68E3EEFC" />
+            <SolidColorBrush x:Key="DesktopCardBrush" Color="#0E5C7A9E" />
+            <SolidColorBrush x:Key="DesktopEdgeBrush" Color="#C7FFFFFF" />
+            <SolidColorBrush x:Key="DesktopSelectionBrush" Color="#295C7A9E" />
+            <SolidColorBrush x:Key="DesktopPreviewBrush" Color="#EBF0F7" />
+            <SolidColorBrush x:Key="DesktopSearchBrush" Color="#6BFFFFFF" />
+            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#F2F3F7FC" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Default">
+            <SolidColorBrush x:Key="DesktopSurfaceBrush" Color="#1B2026" />
+            <SolidColorBrush x:Key="DesktopFolderBackBrush" Color="#3C83B8" />
+            <SolidColorBrush x:Key="DesktopFolderFrontBrush" Color="#68B3E0" />
+            <SolidColorBrush x:Key="DesktopGlassBrush" Color="#7A1F2934" />
+            <SolidColorBrush x:Key="DesktopCardBrush" Color="#1A5C7A9E" />
+            <SolidColorBrush x:Key="DesktopEdgeBrush" Color="#1FFFFFFF" />
+            <SolidColorBrush x:Key="DesktopSelectionBrush" Color="#3D5C7A9E" />
+            <SolidColorBrush x:Key="DesktopPreviewBrush" Color="#0F1318" />
+            <SolidColorBrush x:Key="DesktopSearchBrush" Color="#42000000" />
+            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#F21B2026" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="DesktopSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="DesktopFolderBackBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="DesktopFolderFrontBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="DesktopGlassBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="DesktopCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="DesktopEdgeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="DesktopSelectionBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="DesktopPreviewBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="DesktopSearchBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="{ThemeResource SystemColorWindowColor}" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+    <x:Double x:Key="DesktopSidebarWidth">241</x:Double>
+    <Thickness x:Key="DesktopWorkspaceInset">12</Thickness>
+    <CornerRadius x:Key="DesktopSurfaceRadius">16</CornerRadius>
+    <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="OverlayCornerRadius">16</CornerRadius>
+    <CornerRadius x:Key="NavigationViewItemCornerRadius">10</CornerRadius>
+    <Thickness x:Key="NavigationViewItemMargin">8,2,8,2</Thickness>
+    <Style x:Key="DesktopPageTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="DesktopSectionTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="DesktopCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource DesktopCardBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DesktopEdgeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="20" />
+    </Style>
+    <Style x:Key="DesktopIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="MinWidth" Value="40" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style x:Key="DesktopNavigationItemStyle" TargetType="NavigationViewItem">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="CornerRadius" Value="10" />
+    </Style>
+    <Style x:Key="DesktopListItemStyle" TargetType="ListViewItem">
+        <Setter Property="MinHeight" Value="44" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+</ResourceDictionary>

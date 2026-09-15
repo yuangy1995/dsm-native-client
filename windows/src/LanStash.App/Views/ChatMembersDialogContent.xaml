@@ -2,6 +2,7 @@
     x:Class="LanStash.App.Views.ChatMembersDialogContent"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation"
     xmlns:chat="using:LanStash.App.Features.Chat">
     <Grid
         MinWidth="280"
@@ -83,7 +84,7 @@
             </StackPanel>
 
             <ListView
-                x:Uid="ChatMembersList"
+                x:Uid="ChatMembersList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatMembersList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                 x:Name="MembersContentState"
                 ItemsSource="{x:Bind ViewModel.ConversationMembers}"
                 SelectionMode="None"

@@ -2,6 +2,7 @@
     x:Class="LanStash.App.Views.LoginPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation"
     xmlns:domain="using:LanStash.Domain"
     Loaded="LoginPage_Loaded"
     Unloaded="LoginPage_Unloaded"
@@ -22,21 +23,21 @@
                     Source="ms-appx:///Assets/AppIcon.png"
                     Stretch="UniformToFill" />
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock x:Uid="BrandTitle" Style="{StaticResource TitleTextBlockStyle}" />
+                    <TextBlock x:Uid="BrandTitle" desktop:DesktopLocalization.Bindings="Text=BrandTitle.Text" Style="{StaticResource TitleTextBlockStyle}" />
                     <TextBlock
-                        x:Uid="BrandSubtitle"
+                        x:Uid="BrandSubtitle" desktop:DesktopLocalization.Bindings="Text=BrandSubtitle.Text"
                         Margin="0,4,0,0"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </StackPanel>
             <Button
-                x:Uid="AddNasButton"
+                x:Uid="AddNasButton" desktop:DesktopLocalization.Bindings="Content=AddNasButton.Content"
                 x:Name="AddNasButton"
                 HorizontalAlignment="Stretch"
                 Click="NewProfile_Click"
                 Style="{StaticResource AccentButtonStyle}" />
             <ListView
-                x:Uid="SavedNasList"
+                x:Uid="SavedNasList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=SavedNasList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                 x:Name="ProfileList"
                 ItemsSource="{Binding Profiles}"
                 SelectionChanged="ProfileList_SelectionChanged">
@@ -87,48 +88,48 @@
             CornerRadius="16">
             <StackPanel Spacing="18">
                 <StackPanel>
-                    <TextBlock x:Uid="LoginTitle" Style="{StaticResource TitleTextBlockStyle}" />
+                    <TextBlock x:Uid="LoginTitle" desktop:DesktopLocalization.Bindings="Text=LoginTitle.Text" Style="{StaticResource TitleTextBlockStyle}" />
                     <TextBlock
-                        x:Uid="LoginSubtitle"
+                        x:Uid="LoginSubtitle" desktop:DesktopLocalization.Bindings="Text=LoginSubtitle.Text"
                         Margin="0,6,0,0"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
                 <StackPanel x:Name="ConnectionFields" Spacing="18">
                     <TextBox
-                        x:Uid="ProfileNameInput"
+                        x:Uid="ProfileNameInput" desktop:DesktopLocalization.Bindings="Header=ProfileNameInput.Header"
                         Text="{Binding DisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBox
-                        x:Uid="NasAddressInput"
+                        x:Uid="NasAddressInput" desktop:DesktopLocalization.Bindings="Header=NasAddressInput.Header;PlaceholderText=NasAddressInput.PlaceholderText"
                         Text="{Binding Host, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     <TextBox
-                        x:Uid="UsernameInput"
+                        x:Uid="UsernameInput" desktop:DesktopLocalization.Bindings="Header=UsernameInput.Header"
                         Text="{Binding Username, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                    <PasswordBox x:Uid="PasswordInput" x:Name="PasswordInput" PasswordRevealMode="Peek" />
-                    <PasswordBox x:Uid="OtpInput" x:Name="OtpInput" PasswordRevealMode="Peek" />
+                    <PasswordBox x:Uid="PasswordInput" desktop:DesktopLocalization.Bindings="Header=PasswordInput.Header" x:Name="PasswordInput" PasswordRevealMode="Peek" />
+                    <PasswordBox x:Uid="OtpInput" desktop:DesktopLocalization.Bindings="Header=OtpInput.Header" x:Name="OtpInput" PasswordRevealMode="Peek" />
                     <CheckBox
-                        x:Uid="RememberPasswordCheckBox"
+                        x:Uid="RememberPasswordCheckBox" desktop:DesktopLocalization.Bindings="Content=RememberPasswordCheckBox.Content"
                         IsChecked="{Binding RememberPassword, Mode=TwoWay}" />
                     <TextBlock
-                        x:Uid="PasswordProtectionNote"
+                        x:Uid="PasswordProtectionNote" desktop:DesktopLocalization.Bindings="Text=PasswordProtectionNote.Text"
                         Margin="28,-14,0,0"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextWrapping="Wrap" />
                     <CheckBox
-                        x:Uid="AutoLoginCheckBox"
+                        x:Uid="AutoLoginCheckBox" desktop:DesktopLocalization.Bindings="Content=AutoLoginCheckBox.Content"
                         IsChecked="{Binding AutoLogin, Mode=TwoWay}" />
                     <TextBlock
-                        x:Uid="AutoLoginNote"
+                        x:Uid="AutoLoginNote" desktop:DesktopLocalization.Bindings="Text=AutoLoginNote.Text"
                         Margin="28,-14,0,0"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextWrapping="Wrap" />
-                    <Expander x:Uid="AdvancedConnectionExpander">
+                    <Expander x:Uid="AdvancedConnectionExpander" desktop:DesktopLocalization.Bindings="Header=AdvancedConnectionExpander.Header">
                         <StackPanel Padding="0,10,0,0" Spacing="6">
                             <TextBox
-                                x:Uid="CustomPortInput"
+                                x:Uid="CustomPortInput" desktop:DesktopLocalization.Bindings="Header=CustomPortInput.Header;PlaceholderText=CustomPortInput.PlaceholderText"
                                 InputScope="Number"
                                 Text="{Binding Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             <TextBlock
-                                x:Uid="CustomPortNote"
+                                x:Uid="CustomPortNote" desktop:DesktopLocalization.Bindings="Text=CustomPortNote.Text"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 TextWrapping="Wrap" />
                         </StackPanel>
@@ -159,7 +160,7 @@
                         VerticalAlignment="Center"
                         IsActive="False" />
                     <Button
-                        x:Uid="CancelConnectButton"
+                        x:Uid="CancelConnectButton" desktop:DesktopLocalization.Bindings="Content=CancelConnectButton.Content"
                         x:Name="CancelConnectButton"
                         Grid.Column="1"
                         MinWidth="96"
@@ -169,7 +170,7 @@
                         Click="CancelConnect_Click"
                         Visibility="Collapsed" />
                     <Button
-                        x:Uid="ConnectButton"
+                        x:Uid="ConnectButton" desktop:DesktopLocalization.Bindings="Content=ConnectButton.Content"
                         x:Name="ConnectButton"
                         Grid.Column="2"
                         MinWidth="120"

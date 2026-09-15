@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using LanStash.App.Features.Photos.Synology;
 using LanStash.App.Features.Settings;
+using LanStash.App.Features.Shell;
 using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using LanStash.Domain;
@@ -20,6 +21,7 @@ namespace LanStash.App.Views.Photos;
 public sealed partial class SynologyPhotosPage : Page, IDisposable
 {
     private readonly SynologyPhotosWorkspace _model;
+    private readonly CoalescedUiUpdate _uiUpdates;
     private readonly IWindowsTransferSavePicker _savePicker;
     private readonly SynologyPhotoThumbnailCache<BitmapImage> _thumbnails;
     private readonly IDisposable _cacheRegistration;
@@ -39,6 +41,7 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     internal SynologyPhotosPage(ISynologyPhotosRepository repository, IWindowsTransferSavePicker savePicker)
     {
         InitializeComponent();
+        _uiUpdates = new(action => DispatcherQueue.TryEnqueue(() => action()), Render);
         _model = new(repository); _savePicker = savePicker;
         _thumbnails = new(repository, (bytes, token) => SynologyPhotoImages.DecodeAsync(bytes, 320, token));
         _cacheRegistration = AppSettingsService.Current.Caches.Register(_thumbnails);
@@ -53,6 +56,14 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         LibraryGrid.PointerWheelChanged += LibraryWheelChanged;
         _ready = true; Localize(); Render();
     }
+
+    internal Task ShowDesktopSectionAsync(DesktopSection section) => _model.SelectSectionAsync(section switch
+    {
+        DesktopSection.PhotoFolders => SynologyPhotosSection.Folders,
+        DesktopSection.PhotoAlbums => SynologyPhotosSection.Albums,
+        DesktopSection.PhotoSharing => SynologyPhotosSection.Sharing,
+        _ => SynologyPhotosSection.Timeline,
+    });
 
     public static FrameworkElement CreateUnavailableState() => new TextBlock
     {
@@ -115,7 +126,7 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         PreviewReviewButton.Content = _l.Get("PhotosReviewDeletion");
         AutomationProperties.SetName(LibraryGrid, _l.Get("ModulePhotos"));
     }
-    private void ModelChanged(object? sender, PropertyChangedEventArgs args) => Render();
+    private void ModelChanged(object? sender, PropertyChangedEventArgs args) => _uiUpdates.Request();
     private void Render()
     {
         if (!_ready || _disposed) return;
@@ -308,7 +319,7 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        Suspend(); _disposed = true;
+        Suspend(); _disposed = true; _uiUpdates.Dispose();
         _l.LanguageChanged -= LanguageChanged; _model.PropertyChanged -= ModelChanged;
         _model.ContentChanged -= RebuildGroups; _model.RequestChanged -= RequestChanged;
         _model.Preview.PropertyChanged -= PreviewChanged; _model.Deletion.PropertyChanged -= ModelChanged;

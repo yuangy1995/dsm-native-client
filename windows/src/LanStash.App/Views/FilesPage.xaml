@@ -1,743 +1,254 @@
-<Page
-    x:Class="LanStash.App.Views.FilesPage"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:files="using:LanStash.App.Features.Files"
-    xmlns:views="using:LanStash.App.Views"
-    SizeChanged="FilesPage_SizeChanged"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-    <Grid Padding="28,20,28,28" RowSpacing="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="320" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="FileBrowserTitle" Style="{StaticResource TitleTextBlockStyle}" />
-                <BreadcrumbBar
-                    x:Uid="FileBrowserBreadcrumbs"
-                    x:Name="PathBreadcrumbs"
-                    ItemsSource="{Binding Breadcrumbs}"
-                    ItemClicked="PathBreadcrumbs_ItemClicked" />
-            </StackPanel>
-            <StackPanel Grid.Column="1" Spacing="6">
-                <AutoSuggestBox
-                    x:Uid="FileBrowserFilter"
-                    x:Name="FilterBox"
-                    QueryIcon="Find"
-                    TextChanged="FilterBox_TextChanged" />
-                <ToggleSwitch
-                    x:Uid="FileBrowserSearchSubfolders"
-                    x:Name="SearchSubfoldersToggle"
-                    Toggled="SearchSubfolders_Toggled"
-                    IsOn="False"
-                    Visibility="Collapsed" />
-                <StackPanel
-                    x:Name="SearchProgressState"
-                    Orientation="Horizontal"
-                    Spacing="8"
-                    Visibility="Collapsed">
-                    <ProgressRing Width="18" Height="18" IsActive="True" />
-                    <TextBlock
-                        x:Uid="FileBrowserSearchInProgress"
-                        VerticalAlignment="Center"
-                        TextWrapping="Wrap" />
+<Page xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:desktop="using:LanStash.App.Presentation" xmlns:files="using:LanStash.App.Features.Files" xmlns:views="using:LanStash.App.Views" x:Class="LanStash.App.Views.FilesPage" SizeChanged="FilesPage_SizeChanged" Background="Transparent">
+    <Page.Resources><desktop:BooleanVisibilityConverter x:Key="DesktopVisibleIf"/></Page.Resources><Grid Padding="20,0,20,12" RowSpacing="8">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid x:Name="FileHeader" MinHeight="76"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition x:Name="FileCommandsColumn" Width="260"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><StackPanel Orientation="Horizontal" VerticalAlignment="Center"><AppBarButton x:Uid="FileLocationsOpen" desktop:DesktopLocalization.Bindings="Content=FileLocationsOpen.Content;AutomationProperties.Name=FileLocationsOpen.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="LocationsButton" Click="Locations_Click" Icon="GlobalNavigationButton" AccessKey="L" MinHeight="44" LabelPosition="Collapsed" Width="44"/>
+            <AppBarButton x:Uid="FileBrowserBack" desktop:DesktopLocalization.Bindings="Label=FileBrowserBack.Label;AutomationProperties.Name=FileBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="BackButton" Click="Back_Click" Icon="Back" LabelPosition="Collapsed" MinHeight="44" Width="44">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="BackAccelerator_Invoked"/>
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton x:Uid="FileBrowserUp" desktop:DesktopLocalization.Bindings="Label=FileBrowserUp.Label;AutomationProperties.Name=FileBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="UpButton" Click="Up_Click" Icon="Up" LabelPosition="Collapsed" MinHeight="44" Width="44"/>
+            <AppBarButton x:Uid="FileBrowserRefresh" desktop:DesktopLocalization.Bindings="Label=FileBrowserRefresh.Label;AutomationProperties.Name=FileBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="RefreshButton" Click="Refresh_Click" Icon="Refresh" LabelPosition="Collapsed" MinHeight="44" Width="44"/>
+            </StackPanel><StackPanel Grid.Column="1" Spacing="4" x:Name="FileSearchPanel" MinWidth="120" MaxWidth="300" VerticalAlignment="Center" Margin="8,0">
+                <Grid ColumnSpacing="4"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="36"/></Grid.ColumnDefinitions><AutoSuggestBox x:Uid="FileBrowserFilter" desktop:DesktopLocalization.Bindings="PlaceholderText=FileBrowserFilter.PlaceholderText;AutomationProperties.Name=FileBrowserFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="FilterBox" QueryIcon="Find" TextChanged="FilterBox_TextChanged" MinHeight="36" Background="{ThemeResource DesktopSearchBrush}"/>
+                <Button x:Uid="DesktopSearchOptions" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DesktopSearchOptions.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" MinWidth="36" MinHeight="36" Style="{StaticResource DesktopIconButtonStyle}" Grid.Column="1"><FontIcon Glyph="" FontSize="14"/><Button.Flyout><Flyout><StackPanel Padding="8"><ToggleSwitch x:Uid="FileBrowserSearchSubfolders" desktop:DesktopLocalization.Bindings="Header=FileBrowserSearchSubfolders.Header;OffContent=FileBrowserSearchSubfolders.OffContent;OnContent=FileBrowserSearchSubfolders.OnContent" x:Name="SearchSubfoldersToggle" Toggled="SearchSubfolders_Toggled" IsOn="False" Visibility="Collapsed"/>
+                </StackPanel></Flyout></Button.Flyout></Button></Grid><StackPanel x:Name="SearchProgressState" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                    <ProgressRing Width="18" Height="18" IsActive="True"/>
+                    <TextBlock x:Uid="FileBrowserSearchInProgress" desktop:DesktopLocalization.Bindings="Text=FileBrowserSearchInProgress.Text" VerticalAlignment="Center" TextWrapping="Wrap"/>
                 </StackPanel>
-                <InfoBar
-                    x:Name="SearchStatus"
-                    AutomationProperties.LiveSetting="Polite"
-                    IsClosable="False"
-                    IsOpen="False"
-                    Visibility="Collapsed">
+                <InfoBar x:Name="SearchStatus" AutomationProperties.LiveSetting="Polite" IsClosable="False" IsOpen="False" Visibility="Collapsed">
                     <InfoBar.ActionButton>
-                        <Button
-                            x:Uid="FileBrowserSearchRetry"
-                            Click="SearchRetry_Click"
-                            MinHeight="44" />
+                        <Button x:Uid="FileBrowserSearchRetry" desktop:DesktopLocalization.Bindings="Content=FileBrowserSearchRetry.Content;AutomationProperties.Name=FileBrowserSearchRetry.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" Click="SearchRetry_Click" MinHeight="44"/>
                     </InfoBar.ActionButton>
                 </InfoBar>
             </StackPanel>
-        </Grid>
-
-        <Grid Grid.Row="1">
-            <StackPanel Spacing="4">
-                <TextBlock
-                    x:Uid="FileBrowserStorageTitle"
-                    FontWeight="SemiBold" />
-                <StackPanel
-                    x:Name="StorageLoadingState"
-                    Orientation="Horizontal"
-                    Spacing="8">
-                    <ProgressRing Width="18" Height="18" IsActive="True" />
-                    <TextBlock x:Uid="FileBrowserStorageLoading" TextWrapping="Wrap" />
-                </StackPanel>
-                <StackPanel x:Name="StorageAvailableState" Spacing="4" Visibility="Collapsed">
-                    <ProgressBar
-                        x:Uid="FileBrowserStorageProgress"
-                        Height="4"
-                        Maximum="100"
-                        Value="{Binding StorageUsedPercent}" />
-                    <TextBlock
-                        Text="{Binding StorageUsageText}"
-                        TextWrapping="Wrap" />
-                    <TextBlock
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="{Binding StorageRemainingText}"
-                        TextWrapping="Wrap" />
-                    <TextBlock
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="{Binding StorageScopeText}"
-                        TextWrapping="Wrap" />
-                </StackPanel>
-                <TextBlock
-                    x:Uid="FileBrowserStorageUnavailable"
-                    x:Name="StorageUnavailableState"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    TextWrapping="Wrap"
-                    Visibility="Collapsed" />
-            </StackPanel>
-        </Grid>
-
-        <CommandBar
-            Grid.Row="2"
-            Background="Transparent"
-            DefaultLabelPosition="Right">
-            <AppBarButton
-                x:Uid="FileLocationsOpen"
-                x:Name="LocationsButton"
-                Click="Locations_Click"
-                Icon="GlobalNavigationButton"
-                AccessKey="L"
-                MinHeight="48" />
-            <AppBarButton
-                x:Uid="FileBrowserBack"
-                x:Name="BackButton"
-                Click="Back_Click"
-                Icon="Back">
+        <CommandBar Background="Transparent" DefaultLabelPosition="Collapsed" Grid.Column="2" IsDynamicOverflowEnabled="True" VerticalAlignment="Center" HorizontalAlignment="Stretch" x:Name="FileCommands">
+            <AppBarButton x:Uid="FileBrowserUpload" desktop:DesktopLocalization.Bindings="Label=FileBrowserUpload.Label;AutomationProperties.Name=FileBrowserUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="UploadButton" Click="Upload_Click" Icon="Upload" MinHeight="44">
                 <AppBarButton.KeyboardAccelerators>
-                    <KeyboardAccelerator
-                        Key="Left"
-                        Modifiers="Menu"
-                        Invoked="BackAccelerator_Invoked" />
-                </AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton
-                x:Uid="FileBrowserUp"
-                x:Name="UpButton"
-                Click="Up_Click"
-                Icon="Up" />
-            <AppBarButton
-                x:Uid="FileBrowserRefresh"
-                x:Name="RefreshButton"
-                Click="Refresh_Click"
-                Icon="Refresh" />
-            <AppBarButton
-                x:Uid="FileMutationCreateFolder"
-                x:Name="CreateFolderButton"
-                Click="CreateFolder_Click"
-                Icon="NewFolder"
-                MinHeight="48">
-                <AppBarButton.KeyboardAccelerators>
-                    <KeyboardAccelerator
-                        Key="N"
-                        Modifiers="Control,Shift"
-                        Invoked="CreateFolderAccelerator_Invoked" />
-                </AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton
-                x:Uid="FileMutationRename"
-                x:Name="RenameButton"
-                Click="RenameItem_Click"
-                Icon="Rename"
-                MinHeight="48">
-                <AppBarButton.KeyboardAccelerators>
-                    <KeyboardAccelerator
-                        Key="F2"
-                        Invoked="RenameAccelerator_Invoked" />
-                </AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton
-                x:Uid="FileCopyMoveCopy"
-                x:Name="CopyFileButton"
-                Click="CopyFile_Click"
-                Icon="Copy"
-                AccessKey="C"
-                MinHeight="48" />
-            <AppBarButton
-                x:Uid="FileCopyMoveMove"
-                x:Name="MoveFileButton"
-                Click="MoveFile_Click"
-                Icon="MoveToFolder"
-                AccessKey="M"
-                MinHeight="48" />
-            <AppBarButton
-                x:Uid="FileRecycleMoveToRecycle"
-                x:Name="MoveToRecycleButton"
-                Click="MoveToRecycle_Click"
-                Icon="Delete"
-                MinHeight="48" />
-            <AppBarButton
-                x:Uid="FileRecycleRestore"
-                x:Name="RestoreFromRecycleButton"
-                Click="RestoreFromRecycle_Click"
-                Icon="Undo"
-                MinHeight="48" />
-            <AppBarButton
-                x:Uid="FileBrowserUpload"
-                x:Name="UploadButton"
-                Click="Upload_Click"
-                Icon="Upload"
-                MinHeight="44">
-                <AppBarButton.KeyboardAccelerators>
-                    <KeyboardAccelerator
-                        Key="U"
-                        Modifiers="Control"
-                        Invoked="UploadAccelerator_Invoked" />
-                </AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton
-                x:Uid="FolderUpload"
-                x:Name="UploadFolderButton"
-                Click="UploadFolder_Click"
-                Icon="FolderOpen"
-                MinHeight="44" />
-            <AppBarToggleButton
-                x:Uid="FileBrowserUploadOverwrite"
-                x:Name="UploadOverwriteToggle"
-                Icon="Replace"
-                MinHeight="44" />
-            <AppBarButton
-                x:Uid="FileBrowserDownload"
-                x:Name="DownloadButton"
-                Click="Download_Click"
-                Icon="Download"
-                MinHeight="44">
-                <AppBarButton.KeyboardAccelerators>
-                    <KeyboardAccelerator
-                        Key="S"
-                        Modifiers="Control"
-                        Invoked="DownloadAccelerator_Invoked" />
-                </AppBarButton.KeyboardAccelerators>
-            </AppBarButton>
-            <AppBarButton
-                x:Uid="FileBrowserDownloadMultiple"
-                x:Name="DownloadMultipleButton"
-                Click="DownloadMultiple_Click"
-                MinHeight="44">
-                <AppBarButton.Icon>
-                    <FontIcon Glyph="&#xE762;" />
-                </AppBarButton.Icon>
-            </AppBarButton>
-            <AppBarButton
-                x:Uid="FileBrowserDownloadSelected"
-                x:Name="DownloadSelectedFilesButton"
-                Click="DownloadSelectedFiles_Click"
-                Icon="Accept"
-                MinHeight="44"
-                Visibility="Collapsed" />
-            <AppBarButton
-                x:Uid="FileCopyMoveCopySelected"
-                x:Name="CopySelectedItemsButton"
-                Click="CopySelectedItems_Click"
-                Icon="Copy"
-                MinHeight="48"
-                Visibility="Collapsed" />
-            <AppBarButton
-                x:Uid="FileCopyMoveMoveSelected"
-                x:Name="MoveSelectedItemsButton"
-                Click="MoveSelectedItems_Click"
-                Icon="MoveToFolder"
-                MinHeight="48"
-                Visibility="Collapsed" />
-            <AppBarButton
-                x:Uid="FileRecycleBatchMoveSelected"
-                x:Name="MoveSelectedToRecycleButton"
-                Click="MoveSelectedToRecycle_Click"
-                Icon="Delete"
-                MinHeight="48"
-                Visibility="Collapsed" />
-            <AppBarButton
-                x:Uid="FileRestoreBatchSelected"
-                x:Name="RestoreSelectedItemsButton"
-                Click="RestoreSelectedItems_Click"
-                Icon="Undo"
-                MinHeight="48"
-                Visibility="Collapsed" />
-            <AppBarButton
-                x:Uid="FileArchiveCompressionSelected"
-                x:Name="CreateArchiveSelectedButton"
-                Click="CreateArchiveSelected_Click"
-                Icon="Accept"
-                MinHeight="48"
-                Visibility="Collapsed" />
-            <AppBarButton
-                x:Uid="FileBrowserCancelDownloadSelection"
-                x:Name="CancelDownloadSelectionButton"
-                Click="CancelDownloadSelection_Click"
-                Icon="Cancel"
-                MinHeight="44"
-                Visibility="Collapsed" />
-            <AppBarButton
-                x:Uid="FilePreviewOpen"
-                x:Name="PreviewButton"
-                Click="Preview_Click"
-                Icon="View"
-                MinHeight="44" />
-            <AppBarButton
-                x:Uid="FileShareLink"
-                x:Name="ShareLinkButton"
-                Click="ShareLink_Click"
-                Icon="Link"
-                MinHeight="44">
-                <AppBarButton.KeyboardAccelerators>
-                    <KeyboardAccelerator
-                        Key="L"
-                        Modifiers="Control,Shift"
-                        Invoked="ShareLinkAccelerator_Invoked" />
+                    <KeyboardAccelerator Key="U" Modifiers="Control" Invoked="UploadAccelerator_Invoked"/>
                 </AppBarButton.KeyboardAccelerators>
             </AppBarButton>
             <CommandBar.SecondaryCommands>
-                <AppBarButton
-                    x:Uid="FileCopyMoveCopyMultiple"
-                    x:Name="CopyMultipleButton"
-                    Click="CopyMultiple_Click"
-                    Icon="Copy"
-                    MinHeight="48" />
-                <AppBarButton
-                    x:Uid="FileCopyMoveMoveMultiple"
-                    x:Name="MoveMultipleButton"
-                    Click="MoveMultiple_Click"
-                    Icon="MoveToFolder"
-                    MinHeight="48" />
-                <AppBarButton
-                    x:Uid="FileRecycleBatchMoveMultiple"
-                    x:Name="MoveMultipleToRecycleButton"
-                    Click="MoveMultipleToRecycle_Click"
-                    Icon="Delete"
-                    MinHeight="48" />
-                <AppBarButton
-                    x:Uid="FileRestoreBatchMultiple"
-                    x:Name="RestoreMultipleItemsButton"
-                    Click="RestoreMultipleItems_Click"
-                    Icon="Undo"
-                    MinHeight="48" />
-                <AppBarButton
-                    x:Uid="FileArchiveCompressionCreate"
-                    x:Name="CreateArchiveButton"
-                    Click="CreateArchive_Click"
-                    MinHeight="48">
+                <AppBarButton x:Uid="FileCopyMoveCopyMultiple" desktop:DesktopLocalization.Bindings="Label=FileCopyMoveCopyMultiple.Label;AutomationProperties.Name=FileCopyMoveCopyMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CopyMultipleButton" Click="CopyMultiple_Click" Icon="Copy" MinHeight="48"/>
+                <AppBarButton x:Uid="FileCopyMoveMoveMultiple" desktop:DesktopLocalization.Bindings="Label=FileCopyMoveMoveMultiple.Label;AutomationProperties.Name=FileCopyMoveMoveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="MoveMultipleButton" Click="MoveMultiple_Click" Icon="MoveToFolder" MinHeight="48"/>
+                <AppBarButton x:Uid="FileRecycleBatchMoveMultiple" desktop:DesktopLocalization.Bindings="Label=FileRecycleBatchMoveMultiple.Label;AutomationProperties.Name=FileRecycleBatchMoveMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="MoveMultipleToRecycleButton" Click="MoveMultipleToRecycle_Click" Icon="Delete" MinHeight="48"/>
+                <AppBarButton x:Uid="FileRestoreBatchMultiple" desktop:DesktopLocalization.Bindings="Content=FileRestoreBatchMultiple.Content;Label=FileRestoreBatchMultiple.Label;AutomationProperties.Name=FileRestoreBatchMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="RestoreMultipleItemsButton" Click="RestoreMultipleItems_Click" Icon="Undo" MinHeight="48"/>
+                <AppBarButton x:Uid="FileArchiveCompressionCreate" desktop:DesktopLocalization.Bindings="Label=FileArchiveCompressionCreate.Label;AutomationProperties.Name=FileArchiveCompressionCreate.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CreateArchiveButton" Click="CreateArchive_Click" MinHeight="48">
                     <AppBarButton.Icon>
-                        <FontIcon Glyph="&#xE8B7;" />
+                        <FontIcon Glyph=""/>
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton
-                    x:Uid="FileArchiveExtractionExtract"
-                    x:Name="ExtractArchiveButton"
-                    Click="ExtractArchive_Click"
-                    Icon="OpenFile"
-                    MinHeight="48">
+                <AppBarButton x:Uid="FileArchiveExtractionExtract" desktop:DesktopLocalization.Bindings="Label=FileArchiveExtractionExtract.Label;AutomationProperties.Name=FileArchiveExtractionExtract.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="ExtractArchiveButton" Click="ExtractArchive_Click" Icon="OpenFile" MinHeight="48">
                     <AppBarButton.KeyboardAccelerators>
-                        <KeyboardAccelerator
-                            Key="E"
-                            Modifiers="Control,Shift"
-                            Invoked="ExtractArchiveAccelerator_Invoked" />
+                        <KeyboardAccelerator Key="E" Modifiers="Control,Shift" Invoked="ExtractArchiveAccelerator_Invoked"/>
                     </AppBarButton.KeyboardAccelerators>
                 </AppBarButton>
-                <AppBarButton
-                    x:Uid="FileShareLinkManage"
-                    x:Name="ManageShareLinksButton"
-                    Click="ManageShareLinks_Click"
-                    Icon="Link"
-                    MinHeight="44" />
-                <AppBarButton
-                    x:Uid="FileDirectorySizeAction"
-                    x:Name="DirectorySizeButton"
-                    Click="DirectorySize_Click"
-                    Icon="Folder"
-                    MinHeight="44">
+                <AppBarButton x:Uid="FileShareLinkManage" desktop:DesktopLocalization.Bindings="Label=FileShareLinkManage.Label;AutomationProperties.Name=FileShareLinkManage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="ManageShareLinksButton" Click="ManageShareLinks_Click" Icon="Link" MinHeight="44"/>
+                <AppBarButton x:Uid="FileDirectorySizeAction" desktop:DesktopLocalization.Bindings="Label=FileDirectorySizeAction.Label;AutomationProperties.Name=FileDirectorySizeAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="DirectorySizeButton" Click="DirectorySize_Click" Icon="Folder" MinHeight="44">
                     <AppBarButton.KeyboardAccelerators>
-                        <KeyboardAccelerator
-                            Key="Enter"
-                            Modifiers="Menu"
-                            Invoked="DirectorySizeAccelerator_Invoked" />
+                        <KeyboardAccelerator Key="Enter" Modifiers="Menu" Invoked="DirectorySizeAccelerator_Invoked"/>
                     </AppBarButton.KeyboardAccelerators>
                 </AppBarButton>
-                <AppBarSeparator />
-                <AppBarButton
-                    x:Uid="CrossNasCopyAction"
-                    x:Name="CrossNasCopyButton"
-                    Click="CrossNasCopy_Click"
-                    MinHeight="44">
+                <AppBarSeparator/>
+                <AppBarButton x:Uid="CrossNasCopyAction" desktop:DesktopLocalization.Bindings="Label=CrossNasCopyAction.Label;AutomationProperties.Name=CrossNasCopyAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CrossNasCopyButton" Click="CrossNasCopy_Click" MinHeight="44">
                     <AppBarButton.Icon>
-                        <FontIcon Glyph="&#xE8C8;" />
+                        <FontIcon Glyph=""/>
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton
-                    x:Uid="CrossNasMoveAction"
-                    x:Name="CrossNasMoveButton"
-                    Click="CrossNasMove_Click"
-                    MinHeight="44">
+                <AppBarButton x:Uid="CrossNasMoveAction" desktop:DesktopLocalization.Bindings="Label=CrossNasMoveAction.Label;AutomationProperties.Name=CrossNasMoveAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CrossNasMoveButton" Click="CrossNasMove_Click" MinHeight="44">
                     <AppBarButton.Icon>
-                        <FontIcon Glyph="&#xE8C9;" />
+                        <FontIcon Glyph=""/>
                     </AppBarButton.Icon>
                 </AppBarButton>
-                <AppBarButton
-                    x:Uid="FileBrowserSort"
-                    x:Name="SortButton"
-                    Icon="Sort"
-                    MinHeight="44">
+                <AppBarButton x:Uid="FileBrowserSort" desktop:DesktopLocalization.Bindings="Label=FileBrowserSort.Label;AutomationProperties.Name=FileBrowserSort.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="SortButton" Icon="Sort" MinHeight="44">
                     <AppBarButton.Flyout>
                         <MenuFlyout>
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserSortName"
-                                x:Name="SortNameItem"
-                                Click="SortName_Click"
-                                GroupName="FileSortField"
-                                MinHeight="44" />
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserSortModified"
-                                x:Name="SortModifiedItem"
-                                Click="SortModified_Click"
-                                GroupName="FileSortField"
-                                MinHeight="44" />
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserSortSize"
-                                x:Name="SortSizeItem"
-                                Click="SortSize_Click"
-                                GroupName="FileSortField"
-                                MinHeight="44" />
-                            <MenuFlyoutSeparator />
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserSortAscending"
-                                x:Name="SortAscendingItem"
-                                Click="SortAscending_Click"
-                                GroupName="FileSortDirection"
-                                MinHeight="44" />
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserSortDescending"
-                                x:Name="SortDescendingItem"
-                                Click="SortDescending_Click"
-                                GroupName="FileSortDirection"
-                                MinHeight="44" />
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserSortName" desktop:DesktopLocalization.Bindings="Text=FileBrowserSortName.Text;AutomationProperties.Name=FileBrowserSortName.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="SortNameItem" Click="SortName_Click" GroupName="FileSortField" MinHeight="44"/>
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserSortModified" desktop:DesktopLocalization.Bindings="Text=FileBrowserSortModified.Text;AutomationProperties.Name=FileBrowserSortModified.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="SortModifiedItem" Click="SortModified_Click" GroupName="FileSortField" MinHeight="44"/>
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserSortSize" desktop:DesktopLocalization.Bindings="Text=FileBrowserSortSize.Text;AutomationProperties.Name=FileBrowserSortSize.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="SortSizeItem" Click="SortSize_Click" GroupName="FileSortField" MinHeight="44"/>
+                            <MenuFlyoutSeparator/>
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserSortAscending" desktop:DesktopLocalization.Bindings="Text=FileBrowserSortAscending.Text;AutomationProperties.Name=FileBrowserSortAscending.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="SortAscendingItem" Click="SortAscending_Click" GroupName="FileSortDirection" MinHeight="44"/>
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserSortDescending" desktop:DesktopLocalization.Bindings="Text=FileBrowserSortDescending.Text;AutomationProperties.Name=FileBrowserSortDescending.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="SortDescendingItem" Click="SortDescending_Click" GroupName="FileSortDirection" MinHeight="44"/>
                         </MenuFlyout>
                     </AppBarButton.Flyout>
                 </AppBarButton>
-                <AppBarButton
-                    x:Uid="FileBrowserTypeFilter"
-                    x:Name="TypeFilterButton"
-                    Icon="Filter"
-                    MinHeight="44">
+                <AppBarButton x:Uid="FileBrowserTypeFilter" desktop:DesktopLocalization.Bindings="Label=FileBrowserTypeFilter.Label;AutomationProperties.Name=FileBrowserTypeFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="TypeFilterButton" Icon="Filter" MinHeight="44">
                     <AppBarButton.Flyout>
                         <MenuFlyout>
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserTypeAll"
-                                x:Name="TypeAllItem"
-                                Click="TypeAll_Click"
-                                GroupName="FileTypeFilter"
-                                MinHeight="44" />
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserTypeFiles"
-                                x:Name="TypeFilesItem"
-                                Click="TypeFiles_Click"
-                                GroupName="FileTypeFilter"
-                                MinHeight="44" />
-                            <RadioMenuFlyoutItem
-                                x:Uid="FileBrowserTypeFolders"
-                                x:Name="TypeFoldersItem"
-                                Click="TypeFolders_Click"
-                                GroupName="FileTypeFilter"
-                                MinHeight="44" />
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserTypeAll" desktop:DesktopLocalization.Bindings="Text=FileBrowserTypeAll.Text;AutomationProperties.Name=FileBrowserTypeAll.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="TypeAllItem" Click="TypeAll_Click" GroupName="FileTypeFilter" MinHeight="44"/>
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserTypeFiles" desktop:DesktopLocalization.Bindings="Text=FileBrowserTypeFiles.Text;AutomationProperties.Name=FileBrowserTypeFiles.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="TypeFilesItem" Click="TypeFiles_Click" GroupName="FileTypeFilter" MinHeight="44"/>
+                            <RadioMenuFlyoutItem x:Uid="FileBrowserTypeFolders" desktop:DesktopLocalization.Bindings="Text=FileBrowserTypeFolders.Text;AutomationProperties.Name=FileBrowserTypeFolders.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="TypeFoldersItem" Click="TypeFolders_Click" GroupName="FileTypeFilter" MinHeight="44"/>
                         </MenuFlyout>
                     </AppBarButton.Flyout>
                 </AppBarButton>
-                <AppBarToggleButton
-                    x:Uid="FileBrowserListLayout"
-                    x:Name="ListLayoutButton"
-                    Click="ListLayout_Click"
-                    Icon="List" />
-                <AppBarToggleButton
-                    x:Uid="FileBrowserGridLayout"
-                    x:Name="GridLayoutButton"
-                    Click="GridLayout_Click"
-                    Icon="View" />
+                <AppBarButton x:Uid="FileMutationCreateFolder" desktop:DesktopLocalization.Bindings="Label=FileMutationCreateFolder.Label;AutomationProperties.Name=FileMutationCreateFolder.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CreateFolderButton" Click="CreateFolder_Click" Icon="NewFolder" MinHeight="48">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="N" Modifiers="Control,Shift" Invoked="CreateFolderAccelerator_Invoked"/>
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton x:Uid="FileMutationRename" desktop:DesktopLocalization.Bindings="Label=FileMutationRename.Label;AutomationProperties.Name=FileMutationRename.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="RenameButton" Click="RenameItem_Click" Icon="Rename" MinHeight="48">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="F2" Invoked="RenameAccelerator_Invoked"/>
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton x:Uid="FileCopyMoveCopy" desktop:DesktopLocalization.Bindings="Label=FileCopyMoveCopy.Label;AutomationProperties.Name=FileCopyMoveCopy.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CopyFileButton" Click="CopyFile_Click" Icon="Copy" AccessKey="C" MinHeight="48"/>
+            <AppBarButton x:Uid="FileCopyMoveMove" desktop:DesktopLocalization.Bindings="Label=FileCopyMoveMove.Label;AutomationProperties.Name=FileCopyMoveMove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="MoveFileButton" Click="MoveFile_Click" Icon="MoveToFolder" AccessKey="M" MinHeight="48"/>
+            <AppBarButton x:Uid="FileRecycleMoveToRecycle" desktop:DesktopLocalization.Bindings="Label=FileRecycleMoveToRecycle.Label;AutomationProperties.Name=FileRecycleMoveToRecycle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="MoveToRecycleButton" Click="MoveToRecycle_Click" Icon="Delete" MinHeight="48"/>
+            <AppBarButton x:Uid="FileRecycleRestore" desktop:DesktopLocalization.Bindings="Label=FileRecycleRestore.Label;AutomationProperties.Name=FileRecycleRestore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="RestoreFromRecycleButton" Click="RestoreFromRecycle_Click" Icon="Undo" MinHeight="48"/>
+            <AppBarButton x:Uid="FolderUpload" desktop:DesktopLocalization.Bindings="Label=FolderUpload.Label;AutomationProperties.Name=FolderUpload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="UploadFolderButton" Click="UploadFolder_Click" Icon="FolderOpen" MinHeight="44"/>
+            <AppBarToggleButton x:Uid="FileBrowserUploadOverwrite" desktop:DesktopLocalization.Bindings="Label=FileBrowserUploadOverwrite.Label;AutomationProperties.Name=FileBrowserUploadOverwrite.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="UploadOverwriteToggle" Icon="Replace" MinHeight="44"/>
+            <AppBarButton x:Uid="FileBrowserDownload" desktop:DesktopLocalization.Bindings="Label=FileBrowserDownload.Label;AutomationProperties.Name=FileBrowserDownload.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="DownloadButton" Click="Download_Click" Icon="Download" MinHeight="44">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="DownloadAccelerator_Invoked"/>
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
+            <AppBarButton x:Uid="FileBrowserDownloadMultiple" desktop:DesktopLocalization.Bindings="Label=FileBrowserDownloadMultiple.Label;AutomationProperties.Name=FileBrowserDownloadMultiple.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="DownloadMultipleButton" Click="DownloadMultiple_Click" MinHeight="44">
+                <AppBarButton.Icon>
+                    <FontIcon Glyph=""/>
+                </AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton x:Uid="FileBrowserDownloadSelected" desktop:DesktopLocalization.Bindings="Label=FileBrowserDownloadSelected.Label;AutomationProperties.Name=FileBrowserDownloadSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="DownloadSelectedFilesButton" Click="DownloadSelectedFiles_Click" Icon="Accept" MinHeight="44" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FileCopyMoveCopySelected" desktop:DesktopLocalization.Bindings="Label=FileCopyMoveCopySelected.Label;AutomationProperties.Name=FileCopyMoveCopySelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CopySelectedItemsButton" Click="CopySelectedItems_Click" Icon="Copy" MinHeight="48" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FileCopyMoveMoveSelected" desktop:DesktopLocalization.Bindings="Label=FileCopyMoveMoveSelected.Label;AutomationProperties.Name=FileCopyMoveMoveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="MoveSelectedItemsButton" Click="MoveSelectedItems_Click" Icon="MoveToFolder" MinHeight="48" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FileRecycleBatchMoveSelected" desktop:DesktopLocalization.Bindings="Label=FileRecycleBatchMoveSelected.Label;AutomationProperties.Name=FileRecycleBatchMoveSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="MoveSelectedToRecycleButton" Click="MoveSelectedToRecycle_Click" Icon="Delete" MinHeight="48" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FileRestoreBatchSelected" desktop:DesktopLocalization.Bindings="Content=FileRestoreBatchSelected.Content;Label=FileRestoreBatchSelected.Label;AutomationProperties.Name=FileRestoreBatchSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="RestoreSelectedItemsButton" Click="RestoreSelectedItems_Click" Icon="Undo" MinHeight="48" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FileArchiveCompressionSelected" desktop:DesktopLocalization.Bindings="Label=FileArchiveCompressionSelected.Label;AutomationProperties.Name=FileArchiveCompressionSelected.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CreateArchiveSelectedButton" Click="CreateArchiveSelected_Click" Icon="Accept" MinHeight="48" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FileBrowserCancelDownloadSelection" desktop:DesktopLocalization.Bindings="Label=FileBrowserCancelDownloadSelection.Label;AutomationProperties.Name=FileBrowserCancelDownloadSelection.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="CancelDownloadSelectionButton" Click="CancelDownloadSelection_Click" Icon="Cancel" MinHeight="44" Visibility="Collapsed"/>
+            <AppBarButton x:Uid="FilePreviewOpen" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=FilePreviewOpen.AutomationProperties.Name;Label=FilePreviewOpen.Label" x:Name="PreviewButton" Click="Preview_Click" Icon="View" MinHeight="44"/>
+            <AppBarButton x:Uid="FileShareLink" desktop:DesktopLocalization.Bindings="Label=FileShareLink.Label;AutomationProperties.Name=FileShareLink.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="ShareLinkButton" Click="ShareLink_Click" Icon="Link" MinHeight="44">
+                <AppBarButton.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="L" Modifiers="Control,Shift" Invoked="ShareLinkAccelerator_Invoked"/>
+                </AppBarButton.KeyboardAccelerators>
+            </AppBarButton>
             </CommandBar.SecondaryCommands>
-        </CommandBar>
+        <AppBarToggleButton x:Uid="FileBrowserGridLayout" desktop:DesktopLocalization.Bindings="Label=FileBrowserGridLayout.Label;AutomationProperties.Name=FileBrowserGridLayout.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="GridLayoutButton" Click="GridLayout_Click" Icon="View"/>
+            <AppBarToggleButton x:Uid="FileBrowserListLayout" desktop:DesktopLocalization.Bindings="Label=FileBrowserListLayout.Label;AutomationProperties.Name=FileBrowserListLayout.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="ListLayoutButton" Click="ListLayout_Click" Icon="List"/>
+                <AppBarToggleButton x:Uid="DesktopInspector" desktop:DesktopLocalization.Bindings="Label=DesktopInspector.Label;AutomationProperties.Name=DesktopInspector.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="InspectorButton" IsChecked="True" Click="Inspector_Click"><AppBarToggleButton.Icon><FontIcon Glyph=""/></AppBarToggleButton.Icon></AppBarToggleButton></CommandBar>
 
-        <InfoBar
-            x:Uid="FileBrowserUploadNeedsReview"
-            x:Name="UploadNeedsReview"
-            Grid.Row="3"
-            IsClosable="True"
-            IsOpen="False"
-            Severity="Warning" />
+        </Grid><InfoBar x:Uid="FileBrowserUploadNeedsReview" desktop:DesktopLocalization.Bindings="Message=FileBrowserUploadNeedsReview.Message;Title=FileBrowserUploadNeedsReview.Title" x:Name="UploadNeedsReview" Grid.Row="2" IsClosable="True" IsOpen="False" Severity="Warning"/>
 
-        <SplitView
-            x:Name="LocationsSplitView"
-            Grid.Row="4"
-            CompactPaneLength="0"
-            DisplayMode="Inline"
-            IsPaneOpen="True"
-            OpenPaneLength="264"
-            PaneClosed="LocationsSplitView_PaneClosed"
-            PanePlacement="Left">
+        <SplitView x:Name="LocationsSplitView" Grid.Row="3" CompactPaneLength="0" DisplayMode="Overlay" IsPaneOpen="False" OpenPaneLength="300" PaneClosed="LocationsSplitView_PaneClosed" PanePlacement="Left" PaneBackground="{ThemeResource DesktopSurfaceBrush}">
             <SplitView.Pane>
-                <views:FileLocationsView x:Name="LocationsPane" />
+                <views:FileLocationsView x:Name="LocationsPane"/>
             </SplitView.Pane>
             <SplitView.Content>
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="BrowserColumn" Width="*" />
-                <ColumnDefinition x:Name="PreviewColumn" Width="0" />
+                <ColumnDefinition x:Name="BrowserColumn" Width="*"/>
+                <ColumnDefinition x:Name="MetadataColumn" Width="210"/><ColumnDefinition x:Name="PreviewColumn" Width="0"/>
             </Grid.ColumnDefinitions>
-            <Grid
-                x:Name="BrowserSurface"
-                AllowDrop="True"
-                DragOver="FileUpload_DragOver"
-                DragLeave="FileUpload_DragLeave"
-                Drop="FileUpload_Drop">
+            <Grid x:Name="BrowserSurface" AllowDrop="True" DragOver="FileUpload_DragOver" DragLeave="FileUpload_DragLeave" Drop="FileUpload_Drop">
             <Grid x:Name="ContentState" Visibility="Collapsed">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <ListView
-                    x:Uid="FileBrowserList"
-                    x:Name="FileList"
-                    AllowDrop="True"
-                    CanDragItems="True"
-                    DragItemsStarting="FileList_DragItemsStarting"
-                    DragOver="FileList_DragOver"
-                    Drop="FileList_Drop"
-                    DoubleTapped="Files_DoubleTapped"
-                    ItemsSource="{Binding Items}"
-                    SelectionChanged="Files_SelectionChanged"
-                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
-                    SelectionMode="Single">
-                    <ListView.KeyboardAccelerators>
-                        <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked" />
+                <ListView x:Uid="FileBrowserList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=FileBrowserList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="FileList" AllowDrop="True" CanDragItems="True" DragItemsStarting="FileList_DragItemsStarting" DragOver="FileList_DragOver" Drop="FileList_Drop" DoubleTapped="Files_DoubleTapped" ItemsSource="{Binding Items}" SelectionChanged="Files_SelectionChanged" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" SelectionMode="Single" Grid.Row="1" ItemContainerStyle="{StaticResource DesktopListItemStyle}">
+                    <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel/></ItemsPanelTemplate></ListView.ItemsPanel><ListView.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked"/>
                     </ListView.KeyboardAccelerators>
                     <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="files:FileBrowserEntry">
-                            <Grid MinHeight="56" Padding="8" ColumnSpacing="14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="32" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon
-                                    VerticalAlignment="Center"
-                                    FontSize="20"
-                                    Glyph="{x:Bind Glyph}" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
-                                    <TextBlock
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Text="{x:Bind Detail}"
-                                        TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
+                        <DataTemplate x:DataType="files:FileBrowserEntry"><Grid MinHeight="40" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/><ColumnDefinition Width="144"/></Grid.ColumnDefinitions><FontIcon Glyph="{x:Bind Glyph}" FontSize="20" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Grid.Column="1" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/><TextBlock Grid.Column="2" Text="{x:Bind SizeText}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/><TextBlock Grid.Column="3" Text="{x:Bind ModifiedText}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></Grid></DataTemplate></ListView.ItemTemplate>
                 </ListView>
 
-                <GridView
-                    x:Uid="FileBrowserGrid"
-                    x:Name="FileGrid"
-                    AllowDrop="True"
-                    CanDragItems="True"
-                    DragItemsStarting="FileList_DragItemsStarting"
-                    DragOver="FileList_DragOver"
-                    Drop="FileList_Drop"
-                    DoubleTapped="Files_DoubleTapped"
-                    ItemsSource="{Binding Items}"
-                    SelectionChanged="Files_SelectionChanged"
-                    SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
-                    SelectionMode="Single"
-                    Visibility="Collapsed">
-                    <GridView.KeyboardAccelerators>
-                        <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked" />
+                <GridView x:Uid="FileBrowserGrid" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=FileBrowserGrid.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="FileGrid" AllowDrop="True" CanDragItems="True" DragItemsStarting="FileList_DragItemsStarting" DragOver="FileList_DragOver" Drop="FileList_Drop" DoubleTapped="Files_DoubleTapped" ItemsSource="{Binding Items}" SelectionChanged="Files_SelectionChanged" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" SelectionMode="Single" Visibility="Collapsed" Grid.Row="1">
+                    <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal"/></ItemsPanelTemplate></GridView.ItemsPanel><GridView.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="Enter" Invoked="OpenSelectedAccelerator_Invoked"/>
                     </GridView.KeyboardAccelerators>
                     <GridView.ItemTemplate>
-                        <DataTemplate x:DataType="files:FileBrowserEntry">
-                            <StackPanel Width="156" MinHeight="132" Padding="16" Spacing="10">
-                                <FontIcon
-                                    HorizontalAlignment="Center"
-                                    FontSize="36"
-                                    Glyph="{x:Bind Glyph}" />
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    FontWeight="SemiBold"
-                                    MaxLines="2"
-                                    Text="{x:Bind Name}"
-                                    TextAlignment="Center"
-                                    TextTrimming="CharacterEllipsis"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </GridView.ItemTemplate>
+                        <DataTemplate x:DataType="files:FileBrowserEntry"><StackPanel Width="132" MinHeight="144" Padding="10,16,10,8" Spacing="12">
+<Grid Width="88" Height="68">
+<Viewbox Visibility="{x:Bind IsDirectory, Converter={StaticResource DesktopVisibleIf}}"><Grid Width="88" Height="68">
+<Path Data="M3,17 C3,11 7,7 13,7 L34,7 C38,7 39,11 43,14 L76,14 C82,14 85,18 85,24 L85,56 C85,62 81,65 75,65 L13,65 C7,65 3,61 3,55 Z" Fill="{ThemeResource DesktopFolderBackBrush}"/>
+<Path Data="M3,26 C3,22 6,19 10,19 L78,19 C82,19 85,22 85,26 L85,57 C85,62 81,65 76,65 L12,65 C7,65 3,62 3,57 Z" Fill="{ThemeResource DesktopFolderFrontBrush}"/>
+</Grid></Viewbox>
+<FontIcon FontSize="54" Glyph="{x:Bind Glyph}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Visibility="{x:Bind IsDirectory, Converter={StaticResource DesktopVisibleIf}, ConverterParameter=Not}"/>
+</Grid><TextBlock Text="{x:Bind Name}" MaxLines="2" FontSize="13" TextAlignment="Center" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"/>
+</StackPanel></DataTemplate></GridView.ItemTemplate>
                 </GridView>
 
-                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Spacing="8">
-                    <InfoBar
-                        x:Uid="FileBrowserLoadMoreError"
-                        x:Name="LoadMoreError"
-                        IsClosable="False"
-                        IsOpen="False"
-                        Severity="Warning" />
-                    <Button
-                        x:Uid="FileBrowserLoadMore"
-                        x:Name="LoadMoreButton"
-                        Click="LoadMore_Click"
-                        MinHeight="44" />
-                    <ProgressRing
-                        x:Name="LoadMoreProgress"
-                        Width="24"
-                        Height="24"
-                        IsActive="False"
-                        Visibility="Collapsed" />
+                <StackPanel Grid.Row="2" HorizontalAlignment="Center" Spacing="8">
+                    <InfoBar x:Uid="FileBrowserLoadMoreError" desktop:DesktopLocalization.Bindings="Message=FileBrowserLoadMoreError.Message;Title=FileBrowserLoadMoreError.Title" x:Name="LoadMoreError" IsClosable="False" IsOpen="False" Severity="Warning"/>
+                    <Button x:Uid="FileBrowserLoadMore" desktop:DesktopLocalization.Bindings="Content=FileBrowserLoadMore.Content;AutomationProperties.Name=FileBrowserLoadMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="LoadMoreButton" Click="LoadMore_Click" MinHeight="44"/>
+                    <ProgressRing x:Name="LoadMoreProgress" Width="24" Height="24" IsActive="False" Visibility="Collapsed"/>
                 </StackPanel>
-            </Grid>
+            <Grid x:Name="ListHeader" Padding="54,4,12,8" ColumnSpacing="12" Visibility="Collapsed"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/><ColumnDefinition Width="144"/></Grid.ColumnDefinitions><TextBlock x:Uid="DesktopFileName" desktop:DesktopLocalization.Bindings="Text=DesktopFileName.Text" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><TextBlock x:Uid="DesktopFileSize" desktop:DesktopLocalization.Bindings="Text=DesktopFileSize.Text" Grid.Column="1" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><TextBlock x:Uid="DesktopFileModified" desktop:DesktopLocalization.Bindings="Text=DesktopFileModified.Text" Grid.Column="2" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></Grid></Grid>
 
-            <StackPanel
-                x:Name="LoadingState"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="12">
-                <ProgressRing Width="36" Height="36" IsActive="True" />
-                <TextBlock x:Uid="FileBrowserLoading" TextAlignment="Center" />
+            <StackPanel x:Name="LoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                <ProgressRing Width="36" Height="36" IsActive="True"/>
+                <TextBlock x:Uid="FileBrowserLoading" desktop:DesktopLocalization.Bindings="Text=FileBrowserLoading.Text" TextAlignment="Center"/>
             </StackPanel>
 
-            <StackPanel
-                x:Name="EmptyState"
-                MaxWidth="420"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="10"
-                Visibility="Collapsed">
-                <FontIcon FontSize="38" Glyph="&#xE8B7;" />
-                <TextBlock x:Uid="FileBrowserEmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-                <TextBlock x:Uid="FileBrowserEmptyMessage" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="FileBrowserRefreshEmpty" Click="Refresh_Click" HorizontalAlignment="Center" MinHeight="44" />
+            <StackPanel x:Name="EmptyState" MaxWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Visibility="Collapsed">
+                <FontIcon FontSize="38" Glyph=""/>
+                <TextBlock x:Uid="FileBrowserEmptyTitle" desktop:DesktopLocalization.Bindings="Text=FileBrowserEmptyTitle.Text" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center"/>
+                <TextBlock x:Uid="FileBrowserEmptyMessage" desktop:DesktopLocalization.Bindings="Text=FileBrowserEmptyMessage.Text" TextAlignment="Center" TextWrapping="Wrap"/>
+                <Button x:Uid="FileBrowserRefreshEmpty" desktop:DesktopLocalization.Bindings="Content=FileBrowserRefreshEmpty.Content" Click="Refresh_Click" HorizontalAlignment="Center" MinHeight="44"/>
             </StackPanel>
 
-            <StackPanel
-                x:Name="FilteredEmptyState"
-                MaxWidth="420"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="10"
-                Visibility="Collapsed">
-                <FontIcon FontSize="38" Glyph="&#xE721;" />
-                <TextBlock x:Uid="FileBrowserFilteredEmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-                <TextBlock x:Uid="FileBrowserFilteredEmptyMessage" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="FileBrowserClearFilter" Click="ClearFilter_Click" HorizontalAlignment="Center" MinHeight="44" />
+            <StackPanel x:Name="FilteredEmptyState" MaxWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Visibility="Collapsed">
+                <FontIcon FontSize="38" Glyph=""/>
+                <TextBlock x:Uid="FileBrowserFilteredEmptyTitle" desktop:DesktopLocalization.Bindings="Text=FileBrowserFilteredEmptyTitle.Text" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center"/>
+                <TextBlock x:Uid="FileBrowserFilteredEmptyMessage" desktop:DesktopLocalization.Bindings="Text=FileBrowserFilteredEmptyMessage.Text" TextAlignment="Center" TextWrapping="Wrap"/>
+                <Button x:Uid="FileBrowserClearFilter" desktop:DesktopLocalization.Bindings="Content=FileBrowserClearFilter.Content" Click="ClearFilter_Click" HorizontalAlignment="Center" MinHeight="44"/>
             </StackPanel>
 
-            <StackPanel
-                x:Name="ErrorState"
-                MaxWidth="420"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="10"
-                Visibility="Collapsed">
-                <FontIcon FontSize="38" Glyph="&#xEA39;" />
-                <TextBlock x:Uid="FileBrowserErrorTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-                <TextBlock x:Uid="FileBrowserErrorMessage" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="FileBrowserRetry" Click="Refresh_Click" HorizontalAlignment="Center" MinHeight="44" />
+            <StackPanel x:Name="ErrorState" MaxWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" Visibility="Collapsed">
+                <FontIcon FontSize="38" Glyph=""/>
+                <TextBlock x:Uid="FileBrowserErrorTitle" desktop:DesktopLocalization.Bindings="Text=FileBrowserErrorTitle.Text" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center"/>
+                <TextBlock x:Uid="FileBrowserErrorMessage" desktop:DesktopLocalization.Bindings="Text=FileBrowserErrorMessage.Text" TextAlignment="Center" TextWrapping="Wrap"/>
+                <Button x:Uid="FileBrowserRetry" desktop:DesktopLocalization.Bindings="Content=FileBrowserRetry.Content" Click="Refresh_Click" HorizontalAlignment="Center" MinHeight="44"/>
             </StackPanel>
-            <Border
-                x:Uid="FileUploadDropTarget"
-                x:Name="FileUploadDropOverlay"
-                Margin="12"
-                Padding="24"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch"
-                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-                BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
-                BorderThickness="2"
-                CornerRadius="8"
-                IsHitTestVisible="False"
-                Visibility="Collapsed">
-                <StackPanel
-                    MaxWidth="440"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Spacing="12">
-                    <FontIcon
-                        HorizontalAlignment="Center"
-                        FontSize="40"
-                        Glyph="&#xE898;" />
-                    <TextBlock
-                        x:Uid="FileUploadDropTargetMessage"
-                        Style="{ThemeResource SubtitleTextBlockStyle}"
-                        TextAlignment="Center"
-                        TextWrapping="Wrap" />
+            <Border x:Uid="FileUploadDropTarget" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=FileUploadDropTarget.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="FileUploadDropOverlay" Margin="12" Padding="24" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" BorderBrush="{ThemeResource AccentFillColorDefaultBrush}" BorderThickness="2" CornerRadius="8" IsHitTestVisible="False" Visibility="Collapsed">
+                <StackPanel MaxWidth="440" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                    <FontIcon HorizontalAlignment="Center" FontSize="40" Glyph=""/>
+                    <TextBlock x:Uid="FileUploadDropTargetMessage" desktop:DesktopLocalization.Bindings="Text=FileUploadDropTargetMessage.Text" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
-            <StackPanel
-                Margin="12"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Top"
-                Spacing="8">
-                <InfoBar
-                    x:Uid="FileUploadDropStatus"
-                    x:Name="FileUploadDropStatus"
-                    IsClosable="True"
-                    IsOpen="False"
-                    AutomationProperties.LiveSetting="Polite"
-                    Severity="Informational" />
-                <InfoBar
-                    x:Uid="FileDownloadBatchStatus"
-                    x:Name="FileDownloadBatchStatus"
-                    IsClosable="True"
-                    IsOpen="False"
-                    AutomationProperties.LiveSetting="Polite"
-                    Severity="Informational" />
-                <InfoBar
-                    x:Uid="FileCopyMoveBatchStatus"
-                    x:Name="FileCopyMoveBatchStatus"
-                    IsClosable="True"
-                    IsOpen="False"
-                    AutomationProperties.LiveSetting="Polite"
-                    Severity="Informational" />
-                <InfoBar
-                    x:Uid="FileRecycleBatchStatus"
-                    x:Name="FileRecycleBatchStatus"
-                    IsClosable="True"
-                    IsOpen="False"
-                    AutomationProperties.LiveSetting="Polite"
-                    Severity="Informational" />
-                <InfoBar
-                    x:Uid="FileArchiveCompressionStatus"
-                    x:Name="FileArchiveCompressionStatus"
-                    IsClosable="True"
-                    IsOpen="False"
-                    AutomationProperties.LiveSetting="Polite"
-                    Severity="Informational" />
-                <InfoBar
-                    x:Uid="FileMoveUndoStatus"
-                    x:Name="FileMoveUndoStatus"
-                    IsClosable="True"
-                    IsOpen="False"
-                    AutomationProperties.LiveSetting="Assertive"
-                    Severity="Success" />
+            <StackPanel Margin="12" HorizontalAlignment="Stretch" VerticalAlignment="Top" Spacing="8">
+                <InfoBar x:Uid="FileUploadDropStatus" desktop:DesktopLocalization.Bindings="Title=FileUploadDropStatus.Title;AutomationProperties.Name=FileUploadDropStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="FileUploadDropStatus" IsClosable="True" IsOpen="False" AutomationProperties.LiveSetting="Polite" Severity="Informational"/>
+                <InfoBar x:Uid="FileDownloadBatchStatus" desktop:DesktopLocalization.Bindings="Title=FileDownloadBatchStatus.Title" x:Name="FileDownloadBatchStatus" IsClosable="True" IsOpen="False" AutomationProperties.LiveSetting="Polite" Severity="Informational"/>
+                <InfoBar x:Uid="FileCopyMoveBatchStatus" desktop:DesktopLocalization.Bindings="Title=FileCopyMoveBatchStatus.Title" x:Name="FileCopyMoveBatchStatus" IsClosable="True" IsOpen="False" AutomationProperties.LiveSetting="Polite" Severity="Informational"/>
+                <InfoBar x:Uid="FileRecycleBatchStatus" desktop:DesktopLocalization.Bindings="Title=FileRecycleBatchStatus.Title" x:Name="FileRecycleBatchStatus" IsClosable="True" IsOpen="False" AutomationProperties.LiveSetting="Polite" Severity="Informational"/>
+                <InfoBar x:Uid="FileArchiveCompressionStatus" desktop:DesktopLocalization.Bindings="Title=FileArchiveCompressionStatus.Title" x:Name="FileArchiveCompressionStatus" IsClosable="True" IsOpen="False" AutomationProperties.LiveSetting="Polite" Severity="Informational"/>
+                <InfoBar x:Uid="FileMoveUndoStatus" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=FileMoveUndoStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="FileMoveUndoStatus" IsClosable="True" IsOpen="False" AutomationProperties.LiveSetting="Assertive" Severity="Success"/>
             </StackPanel>
             </Grid>
 
-            <views:FilePreviewPane
-                x:Name="PreviewPane"
-                Grid.Column="1"
-                Visibility="Collapsed" />
-        </Grid>
+            <views:FilePreviewPane x:Name="PreviewPane" Grid.Column="2" Visibility="Collapsed"/>
+        <Border x:Name="MetadataInspector" Grid.Column="1" Padding="16" Background="{ThemeResource DesktopCardBrush}" CornerRadius="12">
+<ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"><StackPanel Spacing="16">
+<TextBlock x:Uid="DesktopProperties" desktop:DesktopLocalization.Bindings="Text=DesktopProperties.Text" Style="{StaticResource DesktopSectionTitleStyle}"/>
+<TextBlock x:Name="MetadataEmpty" x:Uid="DesktopChooseFile" desktop:DesktopLocalization.Bindings="Text=DesktopChooseFile.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+<StackPanel x:Name="MetadataDetails" Spacing="14" Visibility="Collapsed">
+<FontIcon x:Name="MetadataIcon" FontSize="56" Margin="0,8" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+<TextBlock x:Name="MetadataName" FontWeight="SemiBold" FontSize="16" TextAlignment="Center" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+<StackPanel Spacing="4"><TextBlock x:Uid="DesktopFileKind" desktop:DesktopLocalization.Bindings="Text=DesktopFileKind.Text" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><TextBlock x:Name="MetadataKind" TextWrapping="Wrap"/></StackPanel>
+<StackPanel Spacing="4"><TextBlock x:Uid="DesktopFileSize" desktop:DesktopLocalization.Bindings="Text=DesktopFileSize.Text" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><TextBlock x:Name="MetadataSize" TextWrapping="Wrap"/></StackPanel>
+<StackPanel Spacing="4"><TextBlock x:Uid="DesktopFileModified" desktop:DesktopLocalization.Bindings="Text=DesktopFileModified.Text" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><TextBlock x:Name="MetadataModified" TextWrapping="Wrap"/></StackPanel>
+<StackPanel Spacing="4"><TextBlock x:Uid="DesktopFilePath" desktop:DesktopLocalization.Bindings="Text=DesktopFilePath.Text" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><TextBlock x:Name="MetadataPath" TextWrapping="Wrap" IsTextSelectionEnabled="True"/></StackPanel>
+<Button x:Name="MetadataPreviewButton" x:Uid="DesktopOpenPreview" desktop:DesktopLocalization.Bindings="Content=DesktopOpenPreview.Content" Click="Preview_Click" HorizontalAlignment="Stretch" MinHeight="40"/>
+<Button x:Name="MetadataDownloadButton" x:Uid="DesktopSaveFile" desktop:DesktopLocalization.Bindings="Content=DesktopSaveFile.Content" Click="Download_Click" HorizontalAlignment="Stretch" MinHeight="40"/>
+</StackPanel></StackPanel></ScrollViewer></Border></Grid>
             </SplitView.Content>
         </SplitView>
-    </Grid>
+    <BreadcrumbBar x:Uid="FileBrowserBreadcrumbs" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=FileBrowserBreadcrumbs.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" x:Name="PathBreadcrumbs" ItemsSource="{Binding Breadcrumbs}" ItemClicked="PathBreadcrumbs_ItemClicked" Grid.Row="1" Margin="0,0,0,2"/>
+            <Grid Grid.Row="4" Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock x:Name="ItemStatusText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/><Button x:Uid="DesktopStorageDetails" desktop:DesktopLocalization.Bindings="Content=DesktopStorageDetails.Content" Grid.Column="1" MinHeight="32" Padding="10,4" Background="Transparent" BorderThickness="0"><Button.Flyout><Flyout><Grid Padding="12" MaxWidth="340">
+            <StackPanel Spacing="4">
+                <TextBlock x:Uid="FileBrowserStorageTitle" desktop:DesktopLocalization.Bindings="Text=FileBrowserStorageTitle.Text" FontWeight="SemiBold"/>
+                <StackPanel x:Name="StorageLoadingState" Orientation="Horizontal" Spacing="8">
+                    <ProgressRing Width="18" Height="18" IsActive="True"/>
+                    <TextBlock x:Uid="FileBrowserStorageLoading" desktop:DesktopLocalization.Bindings="Text=FileBrowserStorageLoading.Text" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel x:Name="StorageAvailableState" Spacing="4" Visibility="Collapsed">
+                    <ProgressBar x:Uid="FileBrowserStorageProgress" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=FileBrowserStorageProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" Height="4" Maximum="100" Value="{Binding StorageUsedPercent}"/>
+                    <TextBlock Text="{Binding StorageUsageText}" TextWrapping="Wrap"/>
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding StorageRemainingText}" TextWrapping="Wrap"/>
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding StorageScopeText}" TextWrapping="Wrap"/>
+                </StackPanel>
+                <TextBlock x:Uid="FileBrowserStorageUnavailable" desktop:DesktopLocalization.Bindings="Text=FileBrowserStorageUnavailable.Text" x:Name="StorageUnavailableState" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Visibility="Collapsed"/>
+            </StackPanel>
+        </Grid>
+
+        </Flyout></Button.Flyout></Button></Grid></Grid>
 </Page>

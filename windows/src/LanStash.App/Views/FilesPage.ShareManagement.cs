@@ -7,7 +7,9 @@ public sealed partial class FilesPage
 {
     private FileShareLinkManagementDialog? _shareManagementDialog;
 
-    private async void ManageShareLinks_Click(object sender, RoutedEventArgs e)
+    private async void ManageShareLinks_Click(object sender, RoutedEventArgs e) => await ShowShareManagementAsync();
+
+    private async Task ShowShareManagementAsync()
     {
         if (_disposed || _shareRepository is null ||
             _shareManagementDialog?.IsOpen == true ||

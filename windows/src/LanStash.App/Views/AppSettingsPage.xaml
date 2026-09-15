@@ -2,6 +2,7 @@
     x:Class="LanStash.App.Views.AppSettingsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
     <ScrollViewer>
         <StackPanel
@@ -11,11 +12,11 @@
             Spacing="20">
             <StackPanel Spacing="6">
                 <TextBlock
-                    x:Uid="Settings.PageTitle"
+                    x:Uid="Settings.PageTitle" desktop:DesktopLocalization.Bindings="Text=Settings.PageTitle.Text"
                     AutomationProperties.HeadingLevel="Level1"
                     Style="{StaticResource TitleTextBlockStyle}" />
                 <TextBlock
-                    x:Uid="Settings.PageDescription"
+                    x:Uid="Settings.PageDescription" desktop:DesktopLocalization.Bindings="Text=Settings.PageDescription.Text"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="Wrap" />
             </StackPanel>
@@ -28,18 +29,18 @@
                 CornerRadius="8">
                 <StackPanel Spacing="12">
                     <TextBlock
-                        x:Uid="Settings.LanguageSectionTitle"
+                        x:Uid="Settings.LanguageSectionTitle" desktop:DesktopLocalization.Bindings="Text=Settings.LanguageSectionTitle.Text"
                         AutomationProperties.HeadingLevel="Level2"
                         Style="{StaticResource SubtitleTextBlockStyle}" />
                     <ComboBox
-                        x:Uid="Settings.Language"
+                        x:Uid="Settings.Language" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=Settings.Language.AutomationProperties.Name;Header=Settings.Language.Header"
                         x:Name="LanguageSelector"
                         DisplayMemberPath="DisplayName"
                         MinHeight="44"
                         HorizontalAlignment="Stretch"
                         SelectionChanged="LanguageSelector_SelectionChanged" />
                     <TextBlock
-                        x:Uid="Settings.LanguageDescription"
+                        x:Uid="Settings.LanguageDescription" desktop:DesktopLocalization.Bindings="Text=Settings.LanguageDescription.Text"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextWrapping="Wrap" />
                 </StackPanel>
@@ -53,11 +54,11 @@
                 CornerRadius="8">
                 <StackPanel Spacing="12">
                     <TextBlock
-                        x:Uid="Settings.AppearanceSectionTitle"
+                        x:Uid="Settings.AppearanceSectionTitle" desktop:DesktopLocalization.Bindings="Text=Settings.AppearanceSectionTitle.Text"
                         AutomationProperties.HeadingLevel="Level2"
                         Style="{StaticResource SubtitleTextBlockStyle}" />
                     <ComboBox
-                        x:Uid="Settings.Theme"
+                        x:Uid="Settings.Theme" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=Settings.Theme.AutomationProperties.Name;Header=Settings.Theme.Header"
                         x:Name="ThemeSelector"
                         DisplayMemberPath="DisplayName"
                         MinHeight="44"
@@ -74,33 +75,33 @@
                 CornerRadius="8">
                 <StackPanel Spacing="12">
                     <TextBlock
-                        x:Uid="Settings.ModulesSectionTitle"
+                        x:Uid="Settings.ModulesSectionTitle" desktop:DesktopLocalization.Bindings="Text=Settings.ModulesSectionTitle.Text"
                         AutomationProperties.HeadingLevel="Level2"
                         Style="{StaticResource SubtitleTextBlockStyle}" />
                     <TextBlock
-                        x:Uid="Settings.ModulesDescription"
+                        x:Uid="Settings.ModulesDescription" desktop:DesktopLocalization.Bindings="Text=Settings.ModulesDescription.Text"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextWrapping="Wrap" />
                     <ToggleSwitch
-                        x:Uid="Settings.DownloadsModule"
+                        x:Uid="Settings.DownloadsModule" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=Settings.DownloadsModule.AutomationProperties.Name;Header=Settings.DownloadsModule.Header;OffContent=Settings.DownloadsModule.OffContent;OnContent=Settings.DownloadsModule.OnContent"
                         x:Name="DownloadsToggle"
                         MinHeight="44"
                         Toggled="ModuleToggle_Toggled"
                         Tag="Downloads" />
                     <ToggleSwitch
-                        x:Uid="Settings.ContainersModule"
+                        x:Uid="Settings.ContainersModule" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=Settings.ContainersModule.AutomationProperties.Name;Header=Settings.ContainersModule.Header;OffContent=Settings.ContainersModule.OffContent;OnContent=Settings.ContainersModule.OnContent"
                         x:Name="ContainersToggle"
                         MinHeight="44"
                         Toggled="ModuleToggle_Toggled"
                         Tag="Containers" />
                     <ToggleSwitch
-                        x:Uid="Settings.VirtualMachinesModule"
+                        x:Uid="Settings.VirtualMachinesModule" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=Settings.VirtualMachinesModule.AutomationProperties.Name;Header=Settings.VirtualMachinesModule.Header;OffContent=Settings.VirtualMachinesModule.OffContent;OnContent=Settings.VirtualMachinesModule.OnContent"
                         x:Name="VirtualMachinesToggle"
                         MinHeight="44"
                         Toggled="ModuleToggle_Toggled"
                         Tag="VirtualMachines" />
                     <ToggleSwitch
-                        x:Uid="Settings.NasHealthModule"
+                        x:Uid="Settings.NasHealthModule" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=Settings.NasHealthModule.AutomationProperties.Name;Header=Settings.NasHealthModule.Header;OffContent=Settings.NasHealthModule.OffContent;OnContent=Settings.NasHealthModule.OnContent"
                         x:Name="NasHealthToggle"
                         MinHeight="44"
                         Toggled="ModuleToggle_Toggled"
@@ -116,11 +117,11 @@
                 CornerRadius="8">
                 <StackPanel Spacing="12">
                     <TextBlock
-                        x:Uid="Settings.CacheSectionTitle"
+                        x:Uid="Settings.CacheSectionTitle" desktop:DesktopLocalization.Bindings="Text=Settings.CacheSectionTitle.Text"
                         AutomationProperties.HeadingLevel="Level2"
                         Style="{StaticResource SubtitleTextBlockStyle}" />
                     <TextBlock
-                        x:Uid="Settings.CacheDescription"
+                        x:Uid="Settings.CacheDescription" desktop:DesktopLocalization.Bindings="Text=Settings.CacheDescription.Text"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextWrapping="Wrap" />
                     <TextBlock
@@ -129,7 +130,7 @@
                         TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button
-                            x:Uid="Settings.ClearCache"
+                            x:Uid="Settings.ClearCache" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=Settings.ClearCache.AutomationProperties.Name;Content=Settings.ClearCache.Content"
                             x:Name="ClearCacheButton"
                             MinHeight="44"
                             Click="ClearCacheButton_Click" />
@@ -149,7 +150,7 @@
             </Border>
 
             <InfoBar
-                x:Uid="Settings.Privacy"
+                x:Uid="Settings.Privacy" desktop:DesktopLocalization.Bindings="Message=Settings.Privacy.Message;Title=Settings.Privacy.Title"
                 IsClosable="False"
                 IsOpen="True"
                 Severity="Informational" />

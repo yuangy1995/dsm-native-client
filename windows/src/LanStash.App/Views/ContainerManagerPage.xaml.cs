@@ -1,3 +1,4 @@
+using LanStash.App.Features.Shell;
 using LanStash.App.Features.Containers;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
@@ -11,6 +12,7 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
     private const double CompactWidth = 760;
     private readonly IContainerManagerRepository _repository;
     private readonly ContainerManagerViewModel _viewModel;
+    private readonly CoalescedUiUpdate _uiUpdates;
     private bool _initialized;
     private bool _compactShowsList = true;
     private bool _updatingFilter;
@@ -28,12 +30,23 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(viewModel);
         InitializeComponent();
+        _uiUpdates = new(action => DispatcherQueue.TryEnqueue(() => action()), UpdateState);
         _repository = repository;
         _viewModel = viewModel;
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += ContainerManagerPage_Loaded;
         UpdateState();
+    }
+
+    internal void ShowDesktopSection(DesktopSection section)
+    {
+        SectionPivot.SelectedIndex = section switch
+        {
+            DesktopSection.ContainerImages => 1, DesktopSection.ContainerNetworks => 2,
+            DesktopSection.ContainerProjects => 3, DesktopSection.ContainerEvents => 4, _ => 0,
+        };
+        if (section == DesktopSection.Root) ShowList();
     }
 
     private async void ContainerManagerPage_Loaded(object sender, RoutedEventArgs e)
@@ -49,7 +62,7 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
     private void ViewModel_PropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        _uiUpdates.Request();
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.RefreshAsync);
@@ -215,6 +228,7 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        _uiUpdates.Dispose();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
     }

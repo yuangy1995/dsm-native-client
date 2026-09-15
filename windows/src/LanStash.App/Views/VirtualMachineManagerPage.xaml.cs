@@ -1,3 +1,4 @@
+using LanStash.App.Features.Shell;
 using LanStash.App.Features.VirtualMachines;
 using LanStash.Domain;
 using Microsoft.UI.Xaml;
@@ -11,6 +12,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
     private const double CompactWidth = 760;
     private readonly IVirtualMachineManagerRepository _repository;
     private readonly VirtualMachineManagerViewModel _viewModel;
+    private readonly CoalescedUiUpdate _uiUpdates;
     private bool _initialized;
     private bool _compactShowsDetail;
     private bool _disposed;
@@ -27,12 +29,26 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(viewModel);
         InitializeComponent();
+        _uiUpdates = new(action => DispatcherQueue.TryEnqueue(() => action()), UpdateState);
         _repository = repository;
         _viewModel = viewModel;
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += VirtualMachineManagerPage_Loaded;
         UpdateState();
+    }
+
+    internal void ShowDesktopSection(DesktopSection section)
+    {
+        if (section == DesktopSection.Root) { ShowMachineList(); return; }
+        ResourcePivot.SelectedIndex = section switch
+        {
+            DesktopSection.VirtualStorage => 1, DesktopSection.VirtualNetworks => 2,
+            DesktopSection.VirtualImages => 3, DesktopSection.VirtualProtection => 4,
+            DesktopSection.VirtualEvents => 5, _ => 0,
+        };
+        _compactShowsDetail = true;
+        UpdateAdaptiveLayout();
     }
 
     private async void VirtualMachineManagerPage_Loaded(object sender, RoutedEventArgs e)
@@ -48,7 +64,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
     private void ViewModel_PropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        _uiUpdates.Request();
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.RefreshAsync);
@@ -189,6 +205,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        _uiUpdates.Dispose();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
     }

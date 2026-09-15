@@ -2,6 +2,7 @@
     x:Class="LanStash.App.Views.DownloadStationPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation"
     xmlns:downloads="using:LanStash.App.Features.Downloads"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     SizeChanged="Page_SizeChanged">
@@ -59,11 +60,11 @@
                 Grid.ColumnSpan="2"
                 Spacing="4">
                 <TextBlock
-                    x:Uid="DownloadStationTitle"
+                    x:Uid="DownloadStationTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationTitle.Text"
                     Style="{StaticResource TitleTextBlockStyle}"
                     AutomationProperties.HeadingLevel="Level1" />
                 <TextBlock
-                    x:Uid="DownloadStationDescription"
+                    x:Uid="DownloadStationDescription" desktop:DesktopLocalization.Bindings="Text=DownloadStationDescription.Text"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="Wrap" />
             </StackPanel>
@@ -78,29 +79,29 @@
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <Button
-                    x:Uid="DownloadStationCreateTask"
+                    x:Uid="DownloadStationCreateTask" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationCreateTask.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                     x:Name="CreateTaskButton"
                     Margin="0,0,8,8"
                     MinHeight="44"
                     Click="CreateTask_Click">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE710;" FontSize="16" />
-                        <TextBlock x:Uid="DownloadStationCreateTaskLabel" />
+                        <TextBlock x:Uid="DownloadStationCreateTaskLabel" desktop:DesktopLocalization.Bindings="Text=DownloadStationCreateTaskLabel.Text" />
                     </StackPanel>
                 </Button>
                 <Button
-                    x:Uid="DownloadStationCreateFileTask"
+                    x:Uid="DownloadStationCreateFileTask" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationCreateFileTask.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                     x:Name="CreateFileTaskButton"
                     Margin="0,0,8,8"
                     MinHeight="44"
                     Click="CreateFileTask_Click">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE8E5;" FontSize="16" />
-                        <TextBlock x:Uid="DownloadStationCreateFileTaskLabel" />
+                        <TextBlock x:Uid="DownloadStationCreateFileTaskLabel" desktop:DesktopLocalization.Bindings="Text=DownloadStationCreateFileTaskLabel.Text" />
                     </StackPanel>
                 </Button>
                 <Button
-                    x:Uid="DownloadStationBtSearchButton"
+                    x:Uid="DownloadStationBtSearchButton" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationBtSearchButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                     x:Name="BtSearchButton"
                     AccessKey="B"
                     Margin="0,0,8,8"
@@ -109,32 +110,32 @@
                     Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE721;" FontSize="16" />
-                        <TextBlock x:Uid="DownloadStationBtSearchButtonLabel" />
+                        <TextBlock x:Uid="DownloadStationBtSearchButtonLabel" desktop:DesktopLocalization.Bindings="Text=DownloadStationBtSearchButtonLabel.Text" />
                     </StackPanel>
                 </Button>
                 <Button
-                    x:Uid="DownloadStationRefresh"
+                    x:Uid="DownloadStationRefresh" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                     x:Name="RefreshButton"
                     Margin="0,0,0,8"
                     MinHeight="44"
                     Click="Refresh_Click">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon Glyph="&#xE72C;" FontSize="16" />
-                        <TextBlock x:Uid="DownloadStationRefreshLabel" />
+                        <TextBlock x:Uid="DownloadStationRefreshLabel" desktop:DesktopLocalization.Bindings="Text=DownloadStationRefreshLabel.Text" />
                     </StackPanel>
                 </Button>
             </ItemsControl>
         </Grid>
 
         <InfoBar
-            x:Uid="DownloadStationReadOnly"
+            x:Uid="DownloadStationReadOnly" desktop:DesktopLocalization.Bindings="Message=DownloadStationReadOnly.Message;Title=DownloadStationReadOnly.Title"
             Grid.Row="1"
             IsClosable="False"
             IsOpen="True"
             Severity="Informational" />
 
         <InfoBar
-            x:Uid="DownloadStationActivityError"
+            x:Uid="DownloadStationActivityError" desktop:DesktopLocalization.Bindings="Message=DownloadStationActivityError.Message;Title=DownloadStationActivityError.Title"
             x:Name="ActivityErrorNotice"
             Grid.Row="3"
             AutomationProperties.LiveSetting="Polite"
@@ -163,7 +164,7 @@
             Visibility="Collapsed">
             <StackPanel Spacing="8">
                 <TextBlock
-                    x:Uid="DownloadStationActivityTitle"
+                    x:Uid="DownloadStationActivityTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationActivityTitle.Text"
                     FontWeight="SemiBold"
                     AutomationProperties.HeadingLevel="Level2" />
                 <Grid ColumnSpacing="24" RowSpacing="8">
@@ -177,25 +178,25 @@
                     </Grid.RowDefinitions>
                     <StackPanel Spacing="2">
                         <TextBlock
-                            x:Uid="DownloadStationActivityDownload"
+                            x:Uid="DownloadStationActivityDownload" desktop:DesktopLocalization.Bindings="Text=DownloadStationActivityDownload.Text"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock Text="{Binding ActivityDownloadSpeedText}" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Spacing="2">
                         <TextBlock
-                            x:Uid="DownloadStationActivityUpload"
+                            x:Uid="DownloadStationActivityUpload" desktop:DesktopLocalization.Bindings="Text=DownloadStationActivityUpload.Text"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock Text="{Binding ActivityUploadSpeedText}" />
                     </StackPanel>
                     <StackPanel Grid.Row="1" Spacing="2">
                         <TextBlock
-                            x:Uid="DownloadStationActivityEmuleDownload"
+                            x:Uid="DownloadStationActivityEmuleDownload" desktop:DesktopLocalization.Bindings="Text=DownloadStationActivityEmuleDownload.Text"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock Text="{Binding ActivityEmuleDownloadSpeedText}" />
                     </StackPanel>
                     <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
                         <TextBlock
-                            x:Uid="DownloadStationActivityEmuleUpload"
+                            x:Uid="DownloadStationActivityEmuleUpload" desktop:DesktopLocalization.Bindings="Text=DownloadStationActivityEmuleUpload.Text"
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock Text="{Binding ActivityEmuleUploadSpeedText}" />
                     </StackPanel>
@@ -215,7 +216,7 @@
             Visibility="Collapsed">
             <StackPanel Spacing="10">
                 <InfoBar
-                    x:Uid="DownloadStationAdvancedSummaryError"
+                    x:Uid="DownloadStationAdvancedSummaryError" desktop:DesktopLocalization.Bindings="Message=DownloadStationAdvancedSummaryError.Message;Title=DownloadStationAdvancedSummaryError.Title"
                     x:Name="AdvancedSummaryErrorNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
@@ -231,7 +232,7 @@
                         Spacing="8"
                         Visibility="Collapsed">
                         <TextBlock
-                            x:Uid="DownloadStationSettingsSummaryTitle"
+                            x:Uid="DownloadStationSettingsSummaryTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationSettingsSummaryTitle.Text"
                             FontWeight="SemiBold"
                             AutomationProperties.HeadingLevel="Level2" />
                         <Grid ColumnSpacing="12" RowSpacing="8">
@@ -246,15 +247,15 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <TextBlock x:Uid="DownloadStationSettingsDefaultDestination" FontWeight="SemiBold" />
+                            <TextBlock x:Uid="DownloadStationSettingsDefaultDestination" desktop:DesktopLocalization.Bindings="Text=DownloadStationSettingsDefaultDestination.Text" FontWeight="SemiBold" />
                             <TextBlock Grid.Column="1" Text="{Binding SettingsDefaultDestinationText}" TextWrapping="Wrap" />
-                            <TextBlock x:Uid="DownloadStationSettingsAutoExtract" Grid.Row="1" FontWeight="SemiBold" />
+                            <TextBlock x:Uid="DownloadStationSettingsAutoExtract" desktop:DesktopLocalization.Bindings="Text=DownloadStationSettingsAutoExtract.Text" Grid.Row="1" FontWeight="SemiBold" />
                             <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SettingsAutoExtractText}" TextWrapping="Wrap" />
-                            <TextBlock x:Uid="DownloadStationSettingsSchedule" Grid.Row="2" FontWeight="SemiBold" />
+                            <TextBlock x:Uid="DownloadStationSettingsSchedule" desktop:DesktopLocalization.Bindings="Text=DownloadStationSettingsSchedule.Text" Grid.Row="2" FontWeight="SemiBold" />
                             <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SettingsScheduleText}" TextWrapping="Wrap" />
-                            <TextBlock x:Uid="DownloadStationSettingsSpeedLimits" Grid.Row="3" FontWeight="SemiBold" />
+                            <TextBlock x:Uid="DownloadStationSettingsSpeedLimits" desktop:DesktopLocalization.Bindings="Text=DownloadStationSettingsSpeedLimits.Text" Grid.Row="3" FontWeight="SemiBold" />
                             <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SettingsSpeedLimitText}" TextWrapping="Wrap" />
-                            <TextBlock x:Uid="DownloadStationSettingsEmule" Grid.Row="4" FontWeight="SemiBold" />
+                            <TextBlock x:Uid="DownloadStationSettingsEmule" desktop:DesktopLocalization.Bindings="Text=DownloadStationSettingsEmule.Text" Grid.Row="4" FontWeight="SemiBold" />
                             <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SettingsEmuleText}" TextWrapping="Wrap" />
                         </Grid>
                     </StackPanel>
@@ -264,7 +265,7 @@
                         Spacing="8"
                         Visibility="Collapsed">
                         <TextBlock
-                            x:Uid="DownloadStationRssSummaryTitle"
+                            x:Uid="DownloadStationRssSummaryTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationRssSummaryTitle.Text"
                             FontWeight="SemiBold"
                             AutomationProperties.HeadingLevel="Level2" />
                         <Grid ColumnSpacing="12" RowSpacing="8">
@@ -276,9 +277,9 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <TextBlock x:Uid="DownloadStationRssSites" FontWeight="SemiBold" />
+                            <TextBlock x:Uid="DownloadStationRssSites" desktop:DesktopLocalization.Bindings="Text=DownloadStationRssSites.Text" FontWeight="SemiBold" />
                             <TextBlock Grid.Column="1" Text="{Binding RssSitesText}" TextWrapping="Wrap" />
-                            <TextBlock x:Uid="DownloadStationRssFeeds" Grid.Row="1" FontWeight="SemiBold" />
+                            <TextBlock x:Uid="DownloadStationRssFeeds" desktop:DesktopLocalization.Bindings="Text=DownloadStationRssFeeds.Text" Grid.Row="1" FontWeight="SemiBold" />
                             <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding RssFeedsText}" TextWrapping="Wrap" />
                         </Grid>
                     </StackPanel>
@@ -287,7 +288,7 @@
         </Border>
 
         <InfoBar
-            x:Uid="DownloadStationRefreshError"
+            x:Uid="DownloadStationRefreshError" desktop:DesktopLocalization.Bindings="Message=DownloadStationRefreshError.Message;Title=DownloadStationRefreshError.Title"
             x:Name="RefreshErrorNotice"
             Grid.Row="5"
             AutomationProperties.LiveSetting="Polite"
@@ -324,29 +325,29 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <AutoSuggestBox
-                                x:Uid="DownloadStationSearch"
+                                x:Uid="DownloadStationSearch" desktop:DesktopLocalization.Bindings="PlaceholderText=DownloadStationSearch.PlaceholderText;AutomationProperties.Name=DownloadStationSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                 x:Name="SearchBox"
                                 MinHeight="44"
                                 QueryIcon="Find"
                                 Text="{Binding SearchText, Mode=OneWay}"
                                 TextChanged="SearchBox_TextChanged" />
                             <ComboBox
-                                x:Uid="DownloadStationFilter"
+                                x:Uid="DownloadStationFilter" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationFilter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                 x:Name="FilterPicker"
                                 Grid.Column="1"
                                 MinWidth="144"
                                 MinHeight="44"
                                 SelectedIndex="0"
                                 SelectionChanged="FilterPicker_SelectionChanged">
-                                <ComboBoxItem x:Uid="DownloadStationFilterAll" Tag="All" />
-                                <ComboBoxItem x:Uid="DownloadStationFilterActive" Tag="Active" />
-                                <ComboBoxItem x:Uid="DownloadStationFilterFinished" Tag="Finished" />
-                                <ComboBoxItem x:Uid="DownloadStationFilterPaused" Tag="Paused" />
+                                <ComboBoxItem x:Uid="DownloadStationFilterAll" desktop:DesktopLocalization.Bindings="Content=DownloadStationFilterAll.Content" Tag="All" />
+                                <ComboBoxItem x:Uid="DownloadStationFilterActive" desktop:DesktopLocalization.Bindings="Content=DownloadStationFilterActive.Content" Tag="Active" />
+                                <ComboBoxItem x:Uid="DownloadStationFilterFinished" desktop:DesktopLocalization.Bindings="Content=DownloadStationFilterFinished.Content" Tag="Finished" />
+                                <ComboBoxItem x:Uid="DownloadStationFilterPaused" desktop:DesktopLocalization.Bindings="Content=DownloadStationFilterPaused.Content" Tag="Paused" />
                             </ComboBox>
                         </Grid>
 
                         <ListView
-                            x:Uid="DownloadStationTaskList"
+                            x:Uid="DownloadStationTaskList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationTaskList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                             x:Name="TaskList"
                             Grid.Row="1"
                             IsItemClickEnabled="True"
@@ -403,19 +404,19 @@
 
                         <StackPanel Grid.Row="2" HorizontalAlignment="Center" Spacing="8">
                             <InfoBar
-                                x:Uid="DownloadStationLoadMoreError"
+                                x:Uid="DownloadStationLoadMoreError" desktop:DesktopLocalization.Bindings="Message=DownloadStationLoadMoreError.Message;Title=DownloadStationLoadMoreError.Title"
                                 x:Name="LoadMoreErrorNotice"
                                 AutomationProperties.LiveSetting="Polite"
                                 IsClosable="False"
                                 IsOpen="False"
                                 Severity="Warning" />
                             <Button
-                                x:Uid="DownloadStationLoadMore"
+                                x:Uid="DownloadStationLoadMore" desktop:DesktopLocalization.Bindings="Content=DownloadStationLoadMore.Content"
                                 x:Name="LoadMoreButton"
                                 MinHeight="44"
                                 Click="LoadMore_Click" />
                             <ProgressRing
-                                x:Uid="DownloadStationLoadingMore"
+                                x:Uid="DownloadStationLoadingMore" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationLoadingMore.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                 x:Name="LoadMoreProgress"
                                 Width="24"
                                 Height="24"
@@ -441,13 +442,13 @@
                             Spacing="8">
                             <FontIcon Glyph="&#xE9D9;" FontSize="40" />
                             <TextBlock
-                                x:Uid="DownloadStationChooseTaskTitle"
+                                x:Uid="DownloadStationChooseTaskTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationChooseTaskTitle.Text"
                                 AutomationProperties.HeadingLevel="Level2"
                                 HorizontalAlignment="Center"
                                 Style="{ThemeResource SubtitleTextBlockStyle}"
                                 TextAlignment="Center" />
                             <TextBlock
-                                x:Uid="DownloadStationChooseTaskMessage"
+                                x:Uid="DownloadStationChooseTaskMessage" desktop:DesktopLocalization.Bindings="Text=DownloadStationChooseTaskMessage.Text"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 TextAlignment="Center"
                                 TextWrapping="Wrap" />
@@ -467,7 +468,7 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <Button
-                                    x:Uid="DownloadStationBack"
+                                    x:Uid="DownloadStationBack" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                     x:Name="BackButton"
                                     MinWidth="44"
                                     MinHeight="44"
@@ -508,24 +509,24 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <Button
-                                            x:Uid="DownloadStationPause"
+                                            x:Uid="DownloadStationPause" desktop:DesktopLocalization.Bindings="Content=DownloadStationPause.Content;AutomationProperties.Name=DownloadStationPause.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                             x:Name="PauseButton"
                                             MinHeight="44"
                                             Click="Pause_Click" />
                                         <Button
-                                            x:Uid="DownloadStationResume"
+                                            x:Uid="DownloadStationResume" desktop:DesktopLocalization.Bindings="Content=DownloadStationResume.Content;AutomationProperties.Name=DownloadStationResume.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                             x:Name="ResumeButton"
                                             Grid.Column="1"
                                             MinHeight="44"
                                             Click="Resume_Click" />
                                         <Button
-                                            x:Uid="DownloadStationDelete"
+                                            x:Uid="DownloadStationDelete" desktop:DesktopLocalization.Bindings="Content=DownloadStationDelete.Content;AutomationProperties.Name=DownloadStationDelete.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                             x:Name="DeleteButton"
                                             Grid.Column="2"
                                             MinHeight="44"
                                             Click="Delete_Click" />
                                         <ProgressRing
-                                            x:Uid="DownloadStationControlProgress"
+                                            x:Uid="DownloadStationControlProgress" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DownloadStationControlProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                             x:Name="ControlProgress"
                                             Grid.Column="3"
                                             Width="28"
@@ -560,35 +561,35 @@
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
-                                        <TextBlock x:Uid="DownloadStationDetailStatus" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailStatus" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailStatus.Text" FontWeight="SemiBold" />
                                         <TextBlock Grid.Column="1" Text="{Binding SelectedTask.StatusText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailProgress" Grid.Row="1" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailProgress" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailProgress.Text" Grid.Row="1" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedTask.ProgressText}" />
-                                        <TextBlock x:Uid="DownloadStationDetailSize" Grid.Row="2" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailSize" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailSize.Text" Grid.Row="2" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedTask.SizeText}" />
-                                        <TextBlock x:Uid="DownloadStationDetailDownloaded" Grid.Row="3" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailDownloaded" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailDownloaded.Text" Grid.Row="3" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedTask.DownloadedText}" />
-                                        <TextBlock x:Uid="DownloadStationDetailUploaded" Grid.Row="4" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailUploaded" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailUploaded.Text" Grid.Row="4" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedTask.UploadedText}" />
-                                        <TextBlock x:Uid="DownloadStationDetailDownloadSpeed" Grid.Row="5" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailDownloadSpeed" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailDownloadSpeed.Text" Grid.Row="5" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedTask.DownloadSpeedText}" />
-                                        <TextBlock x:Uid="DownloadStationDetailUploadSpeed" Grid.Row="6" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailUploadSpeed" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailUploadSpeed.Text" Grid.Row="6" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding SelectedTask.UploadSpeedText}" />
-                                        <TextBlock x:Uid="DownloadStationDetailDestination" Grid.Row="7" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailDestination" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailDestination.Text" Grid.Row="7" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding SelectedTask.DestinationText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailError" Grid.Row="8" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailError" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailError.Text" Grid.Row="8" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding SelectedTask.ErrorText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailPriority" Grid.Row="9" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailPriority" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailPriority.Text" Grid.Row="9" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="9" Grid.Column="1" Text="{Binding SelectedTask.PriorityText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailFiles" Grid.Row="10" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailFiles" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailFiles.Text" Grid.Row="10" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding SelectedTask.FileCountText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailTrackers" Grid.Row="11" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailTrackers" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailTrackers.Text" Grid.Row="11" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding SelectedTask.TrackerCountText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailPeers" Grid.Row="12" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailPeers" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailPeers.Text" Grid.Row="12" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedTask.PeerCountText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailSeeds" Grid.Row="13" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailSeeds" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailSeeds.Text" Grid.Row="13" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="13" Grid.Column="1" Text="{Binding SelectedTask.SeedsText}" TextWrapping="Wrap" />
-                                        <TextBlock x:Uid="DownloadStationDetailLeeches" Grid.Row="14" FontWeight="SemiBold" />
+                                        <TextBlock x:Uid="DownloadStationDetailLeeches" desktop:DesktopLocalization.Bindings="Text=DownloadStationDetailLeeches.Text" Grid.Row="14" FontWeight="SemiBold" />
                                         <TextBlock Grid.Row="14" Grid.Column="1" Text="{Binding SelectedTask.LeechesText}" TextWrapping="Wrap" />
                                     </Grid>
                                 </StackPanel>
@@ -604,31 +605,31 @@
                 VerticalAlignment="Center"
                 Spacing="12">
                 <ProgressRing Width="40" Height="40" IsActive="True" />
-                <TextBlock x:Uid="DownloadStationLoading" AutomationProperties.LiveSetting="Polite" />
+                <TextBlock x:Uid="DownloadStationLoading" desktop:DesktopLocalization.Bindings="Text=DownloadStationLoading.Text" AutomationProperties.LiveSetting="Polite" />
             </StackPanel>
 
             <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8">
-                <TextBlock x:Uid="DownloadStationEmptyTitle" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-                <TextBlock x:Uid="DownloadStationEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="DownloadStationRefreshEmpty" MinHeight="44" Click="Refresh_Click" />
+                <TextBlock x:Uid="DownloadStationEmptyTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationEmptyTitle.Text" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+                <TextBlock x:Uid="DownloadStationEmptyMessage" desktop:DesktopLocalization.Bindings="Text=DownloadStationEmptyMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="DownloadStationRefreshEmpty" desktop:DesktopLocalization.Bindings="Content=DownloadStationRefreshEmpty.Content" MinHeight="44" Click="Refresh_Click" />
             </StackPanel>
 
             <StackPanel x:Name="FilteredEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8">
-                <TextBlock x:Uid="DownloadStationFilteredEmptyTitle" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-                <TextBlock x:Uid="DownloadStationFilteredEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="DownloadStationShowAll" MinHeight="44" Click="ShowAll_Click" />
+                <TextBlock x:Uid="DownloadStationFilteredEmptyTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationFilteredEmptyTitle.Text" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+                <TextBlock x:Uid="DownloadStationFilteredEmptyMessage" desktop:DesktopLocalization.Bindings="Text=DownloadStationFilteredEmptyMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="DownloadStationShowAll" desktop:DesktopLocalization.Bindings="Content=DownloadStationShowAll.Content" MinHeight="44" Click="ShowAll_Click" />
             </StackPanel>
 
             <StackPanel x:Name="ErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8">
-                <TextBlock x:Uid="DownloadStationErrorTitle" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-                <TextBlock x:Uid="DownloadStationErrorMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="DownloadStationRetry" MinHeight="44" Click="Refresh_Click" />
+                <TextBlock x:Uid="DownloadStationErrorTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationErrorTitle.Text" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+                <TextBlock x:Uid="DownloadStationErrorMessage" desktop:DesktopLocalization.Bindings="Text=DownloadStationErrorMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="DownloadStationRetry" desktop:DesktopLocalization.Bindings="Content=DownloadStationRetry.Content" MinHeight="44" Click="Refresh_Click" />
             </StackPanel>
 
             <StackPanel x:Name="UnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8">
                 <FontIcon Glyph="&#xE783;" FontSize="40" />
-                <TextBlock x:Uid="DownloadStationUnavailableTitle" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-                <TextBlock x:Uid="DownloadStationUnavailableMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <TextBlock x:Uid="DownloadStationUnavailableTitle" desktop:DesktopLocalization.Bindings="Text=DownloadStationUnavailableTitle.Text" AutomationProperties.LiveSetting="Polite" Style="{ThemeResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+                <TextBlock x:Uid="DownloadStationUnavailableMessage" desktop:DesktopLocalization.Bindings="Text=DownloadStationUnavailableMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
         </Grid>
     </Grid>

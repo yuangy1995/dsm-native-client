@@ -2,6 +2,7 @@
     x:Class="LanStash.App.Views.ChatAnnouncementsDialogContent"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation"
     xmlns:chat="using:LanStash.App.Features.Chat">
     <Grid
         MinWidth="300"
@@ -83,7 +84,7 @@
             </StackPanel>
 
             <ListView
-                x:Uid="ChatAnnouncementsList"
+                x:Uid="ChatAnnouncementsList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatAnnouncementsList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                 x:Name="AnnouncementsContentState"
                 ItemsSource="{x:Bind ViewModel.ConversationAnnouncements}"
                 SelectionMode="None"

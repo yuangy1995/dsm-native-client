@@ -2,6 +2,7 @@
     x:Class="LanStash.App.Views.ChatPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation"
     xmlns:chat="using:LanStash.App.Features.Chat"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
     SizeChanged="Page_SizeChanged">
@@ -31,11 +32,11 @@
             </Grid.ColumnDefinitions>
             <StackPanel Spacing="4">
                 <TextBlock
-                    x:Uid="ChatBrowserTitle"
+                    x:Uid="ChatBrowserTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserTitle.Text"
                     Style="{StaticResource TitleTextBlockStyle}"
                     AutomationProperties.HeadingLevel="Level1" />
                 <TextBlock
-                    x:Uid="ChatBrowserDescription"
+                    x:Uid="ChatBrowserDescription" desktop:DesktopLocalization.Bindings="Text=ChatBrowserDescription.Text"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="Wrap" />
             </StackPanel>
@@ -52,20 +53,20 @@
                 </StackPanel>
             </Button>
             <Button
-                x:Uid="ChatBrowserRefresh"
+                x:Uid="ChatBrowserRefresh" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                 x:Name="RefreshButton"
                 Grid.Column="2"
                 MinHeight="44"
                 Click="Refresh_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE72C;" FontSize="16" />
-                    <TextBlock x:Uid="ChatBrowserRefreshLabel" />
+                    <TextBlock x:Uid="ChatBrowserRefreshLabel" desktop:DesktopLocalization.Bindings="Text=ChatBrowserRefreshLabel.Text" />
                 </StackPanel>
             </Button>
         </Grid>
 
         <InfoBar
-            x:Uid="ChatBrowserReadOnly"
+            x:Uid="ChatBrowserReadOnly" desktop:DesktopLocalization.Bindings="Message=ChatBrowserReadOnly.Message;Title=ChatBrowserReadOnly.Title"
             x:Name="ReadOnlyNotice"
             Grid.Row="1"
             IsClosable="False"
@@ -98,14 +99,14 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <AutoSuggestBox
-                            x:Uid="ChatBrowserSearch"
+                            x:Uid="ChatBrowserSearch" desktop:DesktopLocalization.Bindings="PlaceholderText=ChatBrowserSearch.PlaceholderText;AutomationProperties.Name=ChatBrowserSearch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                             x:Name="SearchBox"
                             MinHeight="44"
                             QueryIcon="Find"
                             Text="{Binding SearchQuery, Mode=TwoWay}"
                             TextChanged="SearchBox_TextChanged" />
                         <InfoBar
-                            x:Uid="ChatBrowserConversationRefreshError"
+                            x:Uid="ChatBrowserConversationRefreshError" desktop:DesktopLocalization.Bindings="Message=ChatBrowserConversationRefreshError.Message;Title=ChatBrowserConversationRefreshError.Title"
                             x:Name="ConversationRefreshError"
                             Grid.Row="1"
                             AutomationProperties.LiveSetting="Polite"
@@ -113,7 +114,7 @@
                             IsOpen="False"
                             Severity="Warning" />
                         <ListView
-                            x:Uid="ChatBrowserConversationList"
+                            x:Uid="ChatBrowserConversationList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserConversationList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                             x:Name="ConversationList"
                             Grid.Row="2"
                             IsItemClickEnabled="True"
@@ -194,7 +195,7 @@
                             </ListView.ItemTemplate>
                         </ListView>
                         <InfoBar
-                            x:Uid="ChatBrowserPinStorageError"
+                            x:Uid="ChatBrowserPinStorageError" desktop:DesktopLocalization.Bindings="Message=ChatBrowserPinStorageError.Message;Title=ChatBrowserPinStorageError.Title"
                             x:Name="PinStorageError"
                             Grid.Row="3"
                             AutomationProperties.LiveSetting="Polite"
@@ -228,7 +229,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <Button
-                                x:Uid="ChatBrowserBack"
+                                x:Uid="ChatBrowserBack" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserBack.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                 x:Name="BackButton"
                                 MinWidth="44"
                                 MinHeight="44"
@@ -243,11 +244,11 @@
                                     FontWeight="SemiBold"
                                     TextTrimming="CharacterEllipsis" />
                                 <TextBlock
-                                    x:Uid="ChatBrowserConversationReadOnly"
+                                    x:Uid="ChatBrowserConversationReadOnly" desktop:DesktopLocalization.Bindings="Text=ChatBrowserConversationReadOnly.Text"
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <Button
-                                x:Uid="ChatBrowserMembersButton"
+                                x:Uid="ChatBrowserMembersButton" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserMembersButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name;ToolTipService.ToolTip=ChatBrowserMembersButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip"
                                 x:Name="MembersButton"
                                 Grid.Column="2"
                                 MinWidth="44"
@@ -257,7 +258,7 @@
                                 <FontIcon Glyph="&#xE902;" FontSize="16" />
                             </Button>
                             <Button
-                                x:Uid="ChatBrowserAnnouncementsButton"
+                                x:Uid="ChatBrowserAnnouncementsButton" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserAnnouncementsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name;ToolTipService.ToolTip=ChatBrowserAnnouncementsButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip"
                                 x:Name="AnnouncementsButton"
                                 Grid.Column="3"
                                 MinWidth="44"
@@ -279,7 +280,7 @@
                                     FontSize="16" />
                             </Button>
                             <Button
-                                x:Uid="ChatBrowserRefreshMessages"
+                                x:Uid="ChatBrowserRefreshMessages" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserRefreshMessages.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                 x:Name="RefreshMessagesButton"
                                 Grid.Column="5"
                                 MinWidth="44"
@@ -291,21 +292,21 @@
 
                         <StackPanel Grid.Row="1" Spacing="6">
                             <InfoBar
-                                x:Uid="ChatBrowserMessageError"
+                                x:Uid="ChatBrowserMessageError" desktop:DesktopLocalization.Bindings="Message=ChatBrowserMessageError.Message;Title=ChatBrowserMessageError.Title"
                                 x:Name="MessageError"
                                 AutomationProperties.LiveSetting="Polite"
                                 IsClosable="False"
                                 IsOpen="False"
                                 Severity="Warning" />
                             <InfoBar
-                                x:Uid="ChatMessageDeleteReview"
+                                x:Uid="ChatMessageDeleteReview" desktop:DesktopLocalization.Bindings="Message=ChatMessageDeleteReview.Message;Title=ChatMessageDeleteReview.Title"
                                 x:Name="MessageDeleteReview"
                                 AutomationProperties.LiveSetting="Assertive"
                                 IsClosable="False"
                                 IsOpen="False"
                                 Severity="Warning" />
                             <InfoBar
-                                x:Uid="ChatMessageDeleteError"
+                                x:Uid="ChatMessageDeleteError" desktop:DesktopLocalization.Bindings="Message=ChatMessageDeleteError.Message;Title=ChatMessageDeleteError.Title"
                                 x:Name="MessageDeleteError"
                                 AutomationProperties.LiveSetting="Polite"
                                 IsClosable="True"
@@ -322,11 +323,11 @@
                                 Spacing="8">
                                 <FontIcon Glyph="&#xE8BD;" FontSize="40" />
                                 <TextBlock
-                                    x:Uid="ChatBrowserChooseConversationTitle"
+                                    x:Uid="ChatBrowserChooseConversationTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserChooseConversationTitle.Text"
                                     FontSize="20"
                                     TextAlignment="Center" />
                                 <TextBlock
-                                    x:Uid="ChatBrowserChooseConversationMessage"
+                                    x:Uid="ChatBrowserChooseConversationMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserChooseConversationMessage.Text"
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                     TextAlignment="Center"
                                     TextWrapping="Wrap" />
@@ -341,11 +342,11 @@
                                 Visibility="Collapsed">
                                 <FontIcon Glyph="&#xE72E;" FontSize="40" />
                                 <TextBlock
-                                    x:Uid="ChatBrowserEncryptedTitle"
+                                    x:Uid="ChatBrowserEncryptedTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserEncryptedTitle.Text"
                                     FontSize="20"
                                     TextAlignment="Center" />
                                 <TextBlock
-                                    x:Uid="ChatBrowserEncryptedMessage"
+                                    x:Uid="ChatBrowserEncryptedMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserEncryptedMessage.Text"
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                     TextAlignment="Center"
                                     TextWrapping="Wrap" />
@@ -358,7 +359,7 @@
                                 Spacing="12"
                                 Visibility="Collapsed">
                                 <ProgressRing Width="36" Height="36" IsActive="True" />
-                                <TextBlock x:Uid="ChatBrowserMessagesLoading" />
+                                <TextBlock x:Uid="ChatBrowserMessagesLoading" desktop:DesktopLocalization.Bindings="Text=ChatBrowserMessagesLoading.Text" />
                             </StackPanel>
 
                             <StackPanel
@@ -368,9 +369,9 @@
                                 MaxWidth="420"
                                 Spacing="8"
                                 Visibility="Collapsed">
-                                <TextBlock x:Uid="ChatBrowserMessagesEmptyTitle" FontSize="20" TextAlignment="Center" />
+                                <TextBlock x:Uid="ChatBrowserMessagesEmptyTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserMessagesEmptyTitle.Text" FontSize="20" TextAlignment="Center" />
                                 <TextBlock
-                                    x:Uid="ChatBrowserMessagesEmptyMessage"
+                                    x:Uid="ChatBrowserMessagesEmptyMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserMessagesEmptyMessage.Text"
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                     TextAlignment="Center"
                                     TextWrapping="Wrap" />
@@ -383,19 +384,19 @@
                                 </Grid.RowDefinitions>
                                 <StackPanel HorizontalAlignment="Center" Spacing="6">
                                     <InfoBar
-                                        x:Uid="ChatBrowserLoadEarlierError"
+                                        x:Uid="ChatBrowserLoadEarlierError" desktop:DesktopLocalization.Bindings="Message=ChatBrowserLoadEarlierError.Message;Title=ChatBrowserLoadEarlierError.Title"
                                         x:Name="LoadEarlierError"
                                         AutomationProperties.LiveSetting="Polite"
                                         IsClosable="False"
                                         IsOpen="False"
                                         Severity="Warning" />
                                     <Button
-                                        x:Uid="ChatBrowserLoadEarlier"
+                                        x:Uid="ChatBrowserLoadEarlier" desktop:DesktopLocalization.Bindings="Content=ChatBrowserLoadEarlier.Content;AutomationProperties.Name=ChatBrowserLoadEarlier.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="LoadEarlierButton"
                                         MinHeight="44"
                                         Click="LoadEarlier_Click" />
                                     <ProgressRing
-                                        x:Uid="ChatBrowserLoadEarlierProgress"
+                                        x:Uid="ChatBrowserLoadEarlierProgress" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserLoadEarlierProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="LoadEarlierProgress"
                                         Width="24"
                                         Height="24"
@@ -403,7 +404,7 @@
                                         Visibility="Collapsed" />
                                 </StackPanel>
                                 <ListView
-                                    x:Uid="ChatBrowserMessageList"
+                                    x:Uid="ChatBrowserMessageList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserMessageList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                     x:Name="MessageList"
                                     Grid.Row="1"
                                     IsItemClickEnabled="False"
@@ -468,7 +469,7 @@
                                                                             Text="{x:Bind FileName}"
                                                                             TextTrimming="CharacterEllipsis" />
                                                                         <Button
-                                                                            x:Uid="ChatAttachmentPreview"
+                                                                            x:Uid="ChatAttachmentPreview" desktop:DesktopLocalization.Bindings="Content=ChatAttachmentPreview.Content;AutomationProperties.Name=ChatAttachmentPreview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                                                             Grid.Column="1"
                                                                             MinWidth="48"
                                                                             MinHeight="48"
@@ -476,7 +477,7 @@
                                                                             Tag="{x:Bind}"
                                                                             Visibility="{x:Bind PreviewVisibility}" />
                                                                         <Button
-                                                                            x:Uid="ChatAttachmentSave"
+                                                                            x:Uid="ChatAttachmentSave" desktop:DesktopLocalization.Bindings="Content=ChatAttachmentSave.Content;AutomationProperties.Name=ChatAttachmentSave.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                                                             Grid.Column="2"
                                                                             MinWidth="48"
                                                                             MinHeight="48"
@@ -519,11 +520,11 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock
-                                        x:Uid="ChatBrowserComposerLabel"
+                                        x:Uid="ChatBrowserComposerLabel" desktop:DesktopLocalization.Bindings="Text=ChatBrowserComposerLabel.Text"
                                         VerticalAlignment="Center"
                                         FontWeight="SemiBold" />
                                     <Button
-                                        x:Uid="ChatEmojiAction"
+                                        x:Uid="ChatEmojiAction" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatEmojiAction.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="EmojiButton"
                                         Grid.Column="1"
                                         MinWidth="48"
@@ -533,7 +534,7 @@
                                         <FontIcon Glyph="&#xE76E;" FontSize="16" />
                                     </Button>
                                     <Button
-                                        x:Uid="ChatAttachmentChoose"
+                                        x:Uid="ChatAttachmentChoose" desktop:DesktopLocalization.Bindings="Content=ChatAttachmentChoose.Content;AutomationProperties.Name=ChatAttachmentChoose.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="ChooseAttachmentButton"
                                         Grid.Column="2"
                                         MinWidth="48"
@@ -565,7 +566,7 @@
                                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                         <Button
-                                            x:Uid="ChatAttachmentRemove"
+                                            x:Uid="ChatAttachmentRemove" desktop:DesktopLocalization.Bindings="Content=ChatAttachmentRemove.Content;AutomationProperties.Name=ChatAttachmentRemove.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                             x:Name="RemoveAttachmentButton"
                                             Grid.Column="1"
                                             MinWidth="48"
@@ -573,7 +574,7 @@
                                             Click="RemoveAttachment_Click"
                                             Visibility="Collapsed" />
                                         <Button
-                                            x:Uid="ChatAttachmentCancel"
+                                            x:Uid="ChatAttachmentCancel" desktop:DesktopLocalization.Bindings="Content=ChatAttachmentCancel.Content;AutomationProperties.Name=ChatAttachmentCancel.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                             x:Name="CancelAttachmentButton"
                                             Grid.Column="2"
                                             MinWidth="48"
@@ -588,7 +589,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBox
-                                        x:Uid="ChatBrowserComposer"
+                                        x:Uid="ChatBrowserComposer" desktop:DesktopLocalization.Bindings="PlaceholderText=ChatBrowserComposer.PlaceholderText;AutomationProperties.Name=ChatBrowserComposer.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="ComposerInput"
                                         AcceptsReturn="True"
                                         MaxHeight="120"
@@ -596,7 +597,7 @@
                                         TextChanged="ComposerInput_TextChanged"
                                         TextWrapping="Wrap" />
                                     <Button
-                                        x:Uid="ChatBrowserSend"
+                                        x:Uid="ChatBrowserSend" desktop:DesktopLocalization.Bindings="Content=ChatBrowserSend.Content;AutomationProperties.Name=ChatBrowserSend.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="SendMessageButton"
                                         Grid.Column="1"
                                         MinWidth="72"
@@ -609,21 +610,21 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <ProgressRing
-                                        x:Uid="ChatBrowserSendProgress"
+                                        x:Uid="ChatBrowserSendProgress" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserSendProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="SendMessageProgress"
                                         Width="20"
                                         Height="20"
                                         IsActive="False"
                                         Visibility="Collapsed" />
                                     <ProgressRing
-                                        x:Uid="ChatAttachmentProgress"
+                                        x:Uid="ChatAttachmentProgress" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatAttachmentProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="AttachmentProgress"
                                         Width="20"
                                         Height="20"
                                         IsActive="False"
                                         Visibility="Collapsed" />
                                     <TextBlock
-                                        x:Uid="ChatBrowserSendStatus"
+                                        x:Uid="ChatBrowserSendStatus" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=ChatBrowserSendStatus.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                         x:Name="ComposerStatus"
                                         Grid.Column="1"
                                         AutomationProperties.LiveSetting="Polite"
@@ -646,35 +647,35 @@
 
             <StackPanel x:Name="LoadingState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                 <ProgressRing Width="40" Height="40" IsActive="True" />
-                <TextBlock x:Uid="ChatBrowserLoading" />
+                <TextBlock x:Uid="ChatBrowserLoading" desktop:DesktopLocalization.Bindings="Text=ChatBrowserLoading.Text" />
             </StackPanel>
 
             <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-                <TextBlock x:Uid="ChatBrowserEmptyTitle" FontSize="20" TextAlignment="Center" />
-                <TextBlock x:Uid="ChatBrowserEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="ChatBrowserEmptyRefresh" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click" />
+                <TextBlock x:Uid="ChatBrowserEmptyTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserEmptyTitle.Text" FontSize="20" TextAlignment="Center" />
+                <TextBlock x:Uid="ChatBrowserEmptyMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserEmptyMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="ChatBrowserEmptyRefresh" desktop:DesktopLocalization.Bindings="Content=ChatBrowserEmptyRefresh.Content" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click" />
             </StackPanel>
 
             <StackPanel x:Name="FilteredEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-                <TextBlock x:Uid="ChatBrowserFilteredEmptyTitle" FontSize="20" TextAlignment="Center" />
-                <TextBlock x:Uid="ChatBrowserFilteredEmptyMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="ChatBrowserClearSearch" MinHeight="44" HorizontalAlignment="Center" Click="ClearSearch_Click" />
+                <TextBlock x:Uid="ChatBrowserFilteredEmptyTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserFilteredEmptyTitle.Text" FontSize="20" TextAlignment="Center" />
+                <TextBlock x:Uid="ChatBrowserFilteredEmptyMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserFilteredEmptyMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="ChatBrowserClearSearch" desktop:DesktopLocalization.Bindings="Content=ChatBrowserClearSearch.Content" MinHeight="44" HorizontalAlignment="Center" Click="ClearSearch_Click" />
             </StackPanel>
 
             <StackPanel x:Name="ErrorState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-                <TextBlock x:Uid="ChatBrowserErrorTitle" FontSize="20" TextAlignment="Center" />
-                <TextBlock x:Uid="ChatBrowserErrorMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
-                <Button x:Uid="ChatBrowserRetry" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click" />
+                <TextBlock x:Uid="ChatBrowserErrorTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserErrorTitle.Text" FontSize="20" TextAlignment="Center" />
+                <TextBlock x:Uid="ChatBrowserErrorMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserErrorMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <Button x:Uid="ChatBrowserRetry" desktop:DesktopLocalization.Bindings="Content=ChatBrowserRetry.Content" MinHeight="44" HorizontalAlignment="Center" Click="Refresh_Click" />
             </StackPanel>
 
             <StackPanel x:Name="UnavailableState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-                <TextBlock x:Uid="ChatBrowserUnavailableTitle" FontSize="20" TextAlignment="Center" />
-                <TextBlock x:Uid="ChatBrowserUnavailableMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <TextBlock x:Uid="ChatBrowserUnavailableTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserUnavailableTitle.Text" FontSize="20" TextAlignment="Center" />
+                <TextBlock x:Uid="ChatBrowserUnavailableMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserUnavailableMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
 
             <StackPanel x:Name="ValidationState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440" Spacing="8" Visibility="Collapsed">
-                <TextBlock x:Uid="ChatBrowserValidationTitle" FontSize="20" TextAlignment="Center" />
-                <TextBlock x:Uid="ChatBrowserValidationMessage" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+                <TextBlock x:Uid="ChatBrowserValidationTitle" desktop:DesktopLocalization.Bindings="Text=ChatBrowserValidationTitle.Text" FontSize="20" TextAlignment="Center" />
+                <TextBlock x:Uid="ChatBrowserValidationMessage" desktop:DesktopLocalization.Bindings="Text=ChatBrowserValidationMessage.Text" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
         </Grid>
     </Grid>

@@ -1,3 +1,4 @@
+using LanStash.App.Presentation;
 using LanStash.App.Localization;
 using LanStash.App.Platform.Notifications;
 using LanStash.App.ViewModels;
@@ -24,6 +25,9 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = LocalizationService.Current.Get("AppName");
+        AppTitleBar.Title = Title;
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
         var windowHandle = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
         _appWindow = AppWindow.GetFromWindowId(windowId);
@@ -47,7 +51,7 @@ public sealed partial class MainWindow : Window
             ToggleCloudDrives,
             ShowCloudDriveIssues,
             RequestExit);
-        _appWindow.Destroying += (_, _) => _trayIcon.Dispose();
+        _appWindow.Destroying += OnWindowDestroyed;
 
         _viewModel.ConnectionChanged += OnConnectionChanged;
         LocalizationService.Current.LanguageChanged += OnLanguageChanged;
@@ -68,15 +72,22 @@ public sealed partial class MainWindow : Window
                 LocalizationService.Current.Get("TrayResumeCloudDrives"),
                 LocalizationService.Current.Get("TrayCloudDriveIssues"),
                 LocalizationService.Current.Get("TrayExitApp"));
-            if (_viewModel.Repository is not null)
-            {
-                _transferNotifications ??= new WindowsTransferNotificationService(
-                    () => ShowTransfersFromNotification());
-            }
-            RootFrame.Content = _viewModel.Repository is null
-                ? new LoginPage(_viewModel)
-                : new ShellPage(_viewModel, _transferNotifications);
+            AppTitleBar.Title = Title;
+            DesktopLocalization.RefreshTree(RootFrame);
+            if (RootFrame.Content is ShellPage shell) shell.RefreshLocalization();
+            else if (RootFrame.Content is LoginPage login) login.RefreshLocalization();
         });
+    }
+
+    private void OnWindowDestroyed(AppWindow sender, object args)
+    {
+        _viewModel.ConnectionChanged -= OnConnectionChanged;
+        LocalizationService.Current.LanguageChanged -= OnLanguageChanged;
+        _appWindow.Closing -= OnWindowClosing;
+        _appWindow.Destroying -= OnWindowDestroyed;
+        _transferNotifications?.Dispose();
+        _transferNotifications = null;
+        _trayIcon.Dispose();
     }
 
     private void OnConnectionChanged(object? sender, bool connected)
@@ -181,6 +192,7 @@ public sealed partial class MainWindow : Window
             presenter.State == OverlappedPresenterState.Maximized;
         _appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
         _photoViewerOwnsFullScreen = true;
+        AppTitleBar.Visibility = Visibility.Collapsed;
         return true;
     }
 
@@ -193,6 +205,7 @@ public sealed partial class MainWindow : Window
 
         var restoreMaximized = _restorePhotoViewerMaximized;
         _photoViewerOwnsFullScreen = false;
+        AppTitleBar.Visibility = Visibility.Visible;
         _restorePhotoViewerMaximized = false;
         _appWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
         if (restoreMaximized && _appWindow.Presenter is OverlappedPresenter presenter)

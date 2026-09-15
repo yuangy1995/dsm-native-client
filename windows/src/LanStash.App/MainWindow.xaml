@@ -2,7 +2,12 @@
     x:Class="LanStash.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Window.SystemBackdrop><MicaBackdrop /></Window.SystemBackdrop>
     <Grid>
-        <Frame x:Name="RootFrame" />
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <TitleBar x:Name="AppTitleBar" Height="40">
+            <TitleBar.IconSource><ImageIconSource ImageSource="ms-appx:///Assets/AppIcon.png" /></TitleBar.IconSource>
+        </TitleBar>
+        <Frame x:Name="RootFrame" Grid.Row="1" />
     </Grid>
 </Window>

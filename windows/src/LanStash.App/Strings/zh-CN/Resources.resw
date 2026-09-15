@@ -1984,4 +1984,39 @@
   <data name="PhotosSeconds" xml:space="preserve"><value>{0} 秒</value></data>
   <data name="PhotosMetadataCoordinates" xml:space="preserve"><value>坐标</value></data>
   <data name="PhotosCoordinates" xml:space="preserve"><value>{0:F6}，{1:F6}</value></data>
+  <data name="DesktopNavFavorites" xml:space="preserve"><value>收藏</value></data>
+  <data name="DesktopNavRecent" xml:space="preserve"><value>最近使用</value></data>
+  <data name="DesktopNavRecycle" xml:space="preserve"><value>回收站</value></data>
+  <data name="DesktopNavRemote" xml:space="preserve"><value>远程连接</value></data>
+  <data name="DesktopNavSharedLinks" xml:space="preserve"><value>共享链接</value></data>
+  <data name="DesktopNavImages" xml:space="preserve"><value>映像</value></data>
+  <data name="DesktopNavNetworks" xml:space="preserve"><value>网络</value></data>
+  <data name="DesktopNavProjects" xml:space="preserve"><value>项目</value></data>
+  <data name="DesktopNavEvents" xml:space="preserve"><value>事件</value></data>
+  <data name="DesktopNavHosts" xml:space="preserve"><value>主机</value></data>
+  <data name="DesktopNavStorage" xml:space="preserve"><value>存储</value></data>
+  <data name="DesktopNavProtection" xml:space="preserve"><value>保护</value></data>
+  <data name="DesktopNavigationFailed" xml:space="preserve"><value>无法打开此页面，请重试或重新连接 NAS。</value></data>
+  <data name="DesktopModuleUnavailable" xml:space="preserve"><value>当前连接暂不支持此功能，请从侧栏选择其他项目。</value></data>
+  <data name="DesktopConnected.Text" xml:space="preserve"><value>已连接</value></data>
+  <data name="DesktopAddNas.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>添加 NAS</value></data>
+  <data name="DesktopAddNasLabel.Text" xml:space="preserve"><value>添加 NAS</value></data>
+  <data name="DesktopResizeSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>调整侧栏宽度，可拖动或使用左右方向键。</value></data>
+  <data name="DesktopStorage.Text" xml:space="preserve"><value>存储空间</value></data>
+  <data name="DesktopFileName.Text" xml:space="preserve"><value>名称</value></data>
+  <data name="DesktopFileKind.Text" xml:space="preserve"><value>种类</value></data>
+  <data name="DesktopFileSize.Text" xml:space="preserve"><value>大小</value></data>
+  <data name="DesktopFileModified.Text" xml:space="preserve"><value>修改日期</value></data>
+  <data name="DesktopFilePath.Text" xml:space="preserve"><value>位置</value></data>
+  <data name="DesktopProperties.Text" xml:space="preserve"><value>属性</value></data>
+  <data name="DesktopChooseFile.Text" xml:space="preserve"><value>选择一个项目以查看详情。</value></data>
+  <data name="DesktopFolderKind" xml:space="preserve"><value>文件夹</value></data>
+  <data name="DesktopFileKindValue" xml:space="preserve"><value>文件</value></data>
+  <data name="DesktopLoadedItems" xml:space="preserve"><value>{0:N0} 个项目 · 已选择 {1:N0} 个</value></data>
+  <data name="DesktopOpenPreview.Content" xml:space="preserve"><value>打开预览</value></data>
+  <data name="DesktopSaveFile.Content" xml:space="preserve"><value>下载</value></data>
+  <data name="DesktopInspector.Label" xml:space="preserve"><value>属性</value></data>
+  <data name="DesktopInspector.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>显示或隐藏属性栏</value></data>
+  <data name="DesktopSearchOptions.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>搜索选项</value></data>
+  <data name="DesktopStorageDetails.Content" xml:space="preserve"><value>存储详情</value></data>
 </root>

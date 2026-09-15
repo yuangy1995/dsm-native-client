@@ -30,6 +30,7 @@
     <Compile Remove="Features\NasAdmin\**\*.cs" />
     <Compile Remove="Features\Photos\**\*.cs" />
     <Compile Remove="Features\Settings\**\*.cs" />
+    <Compile Remove="Features\Shell\**\*.cs" />
     <Compile Remove="Features\Transfers\ForegroundTransfer*.cs" />
     <Compile Remove="Features\Transfers\BoundedFileUploadBatch.cs" />
     <Compile Remove="Features\Transfers\BoundedFileDownloadBatch.cs" />

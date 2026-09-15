@@ -2,6 +2,7 @@
     x:Class="LanStash.App.Views.TransferActivityPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation"
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
     <Page.KeyboardAccelerators>
         <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
@@ -21,16 +22,16 @@
             </Grid.ColumnDefinitions>
             <StackPanel Spacing="4">
                 <TextBlock
-                    x:Uid="TransferActivityTitle"
+                    x:Uid="TransferActivityTitle" desktop:DesktopLocalization.Bindings="Text=TransferActivityTitle.Text"
                     Style="{StaticResource TitleTextBlockStyle}"
                     AutomationProperties.HeadingLevel="Level1" />
                 <TextBlock
-                    x:Uid="TransferActivityDescription"
+                    x:Uid="TransferActivityDescription" desktop:DesktopLocalization.Bindings="Text=TransferActivityDescription.Text"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="Wrap" />
             </StackPanel>
             <ProgressRing
-                x:Uid="TransferActivityRefreshProgress"
+                x:Uid="TransferActivityRefreshProgress" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=TransferActivityRefreshProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                 x:Name="RefreshProgress"
                 Grid.Column="1"
                 Width="20"
@@ -38,14 +39,14 @@
                 IsActive="False"
                 Visibility="Collapsed" />
             <Button
-                x:Uid="TransferActivityRefresh"
+                x:Uid="TransferActivityRefresh" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=TransferActivityRefresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                 x:Name="RefreshButton"
                 Grid.Column="2"
                 MinHeight="44"
                 Click="Refresh_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE72C;" FontSize="16" />
-                    <TextBlock x:Uid="TransferActivityRefreshLabel" />
+                    <TextBlock x:Uid="TransferActivityRefreshLabel" desktop:DesktopLocalization.Bindings="Text=TransferActivityRefreshLabel.Text" />
                 </StackPanel>
             </Button>
         </Grid>
@@ -57,49 +58,49 @@
             VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="8">
                 <InfoBar
-                    x:Uid="TransferActivityDownloadRefreshError"
+                    x:Uid="TransferActivityDownloadRefreshError" desktop:DesktopLocalization.Bindings="Message=TransferActivityDownloadRefreshError.Message;Title=TransferActivityDownloadRefreshError.Title"
                     x:Name="DownloadRefreshErrorNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
                     IsOpen="False"
                     Severity="Warning" />
                 <InfoBar
-                    x:Uid="TransferActivityFileRefreshError"
+                    x:Uid="TransferActivityFileRefreshError" desktop:DesktopLocalization.Bindings="Message=TransferActivityFileRefreshError.Message;Title=TransferActivityFileRefreshError.Title"
                     x:Name="FileRefreshErrorNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
                     IsOpen="False"
                     Severity="Warning" />
                 <InfoBar
-                    x:Uid="TransferActivityDownloadTruncated"
+                    x:Uid="TransferActivityDownloadTruncated" desktop:DesktopLocalization.Bindings="Message=TransferActivityDownloadTruncated.Message;Title=TransferActivityDownloadTruncated.Title"
                     x:Name="DownloadTruncatedNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
                     IsOpen="False"
                     Severity="Informational" />
                 <InfoBar
-                    x:Uid="TransferActivityFileTruncated"
+                    x:Uid="TransferActivityFileTruncated" desktop:DesktopLocalization.Bindings="Message=TransferActivityFileTruncated.Message;Title=TransferActivityFileTruncated.Title"
                     x:Name="FileTruncatedNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
                     IsOpen="False"
                     Severity="Informational" />
                 <InfoBar
-                    x:Uid="TransferActivityDownloadUnavailable"
+                    x:Uid="TransferActivityDownloadUnavailable" desktop:DesktopLocalization.Bindings="Message=TransferActivityDownloadUnavailable.Message;Title=TransferActivityDownloadUnavailable.Title"
                     x:Name="DownloadUnavailableNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
                     IsOpen="False"
                     Severity="Informational" />
                 <InfoBar
-                    x:Uid="TransferActivityFileUnavailable"
+                    x:Uid="TransferActivityFileUnavailable" desktop:DesktopLocalization.Bindings="Message=TransferActivityFileUnavailable.Message;Title=TransferActivityFileUnavailable.Title"
                     x:Name="FileUnavailableNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
                     IsOpen="False"
                     Severity="Informational" />
                 <InfoBar
-                    x:Uid="TransferActivityNasUnavailable"
+                    x:Uid="TransferActivityNasUnavailable" desktop:DesktopLocalization.Bindings="Message=TransferActivityNasUnavailable.Message;Title=TransferActivityNasUnavailable.Title"
                     x:Name="NasUnavailableNotice"
                     AutomationProperties.LiveSetting="Polite"
                     IsClosable="False"
@@ -109,7 +110,7 @@
         </ScrollViewer>
 
         <ListView
-            x:Uid="TransferActivityList"
+            x:Uid="TransferActivityList" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=TransferActivityList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
             x:Name="ActivityList"
             Grid.Row="2"
             SelectionMode="None">
@@ -134,7 +135,7 @@
                                 Text="{Binding DirectionText}"
                                 TextWrapping="Wrap" />
                             <ProgressBar
-                                x:Uid="TransferActivityProgressBar"
+                                x:Uid="TransferActivityProgressBar" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=TransferActivityProgressBar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"
                                 Height="4"
                                 IsIndeterminate="{Binding IsIndeterminate}"
                                 Maximum="{Binding Maximum}"
@@ -146,7 +147,7 @@
                                 TextWrapping="Wrap" />
                         </StackPanel>
                         <Button
-                            x:Uid="TransferActivityCancel"
+                            x:Uid="TransferActivityCancel" desktop:DesktopLocalization.Bindings="Content=TransferActivityCancel.Content"
                             Grid.Column="1"
                             MinHeight="44"
                             AutomationProperties.Name="{Binding CancelAutomationName}"
@@ -166,8 +167,8 @@
             VerticalAlignment="Center"
             Spacing="10">
             <FontIcon FontSize="38" Glyph="&#xE898;" />
-            <TextBlock x:Uid="TransferActivityEmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
-            <TextBlock x:Uid="TransferActivityEmptyMessage" TextAlignment="Center" TextWrapping="Wrap" />
+            <TextBlock x:Uid="TransferActivityEmptyTitle" desktop:DesktopLocalization.Bindings="Text=TransferActivityEmptyTitle.Text" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" />
+            <TextBlock x:Uid="TransferActivityEmptyMessage" desktop:DesktopLocalization.Bindings="Text=TransferActivityEmptyMessage.Text" TextAlignment="Center" TextWrapping="Wrap" />
         </StackPanel>
     </Grid>
 </Page>

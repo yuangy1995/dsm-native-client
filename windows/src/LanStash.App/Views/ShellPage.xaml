@@ -1,46 +1,72 @@
 <Page
     x:Class="LanStash.App.Views.ShellPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <NavigationView
-        x:Name="Navigation"
-        IsBackButtonVisible="Collapsed"
-        IsSettingsVisible="True"
-        PaneDisplayMode="Auto"
-        SelectionChanged="Navigation_SelectionChanged">
-        <NavigationView.PaneHeader>
-            <StackPanel Margin="4,8,4,12" Spacing="4">
-                <TextBlock x:Name="AppNameText" FontSize="20" FontWeight="SemiBold" />
-                <Button
-                    x:Name="ProfileMenuButton"
-                    MinHeight="44"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch">
-                    <Button.Flyout>
-                        <MenuFlyout x:Name="ProfileMenu" Opening="ProfileMenu_Opening" />
-                    </Button.Flyout>
-                    <Grid ColumnSpacing="8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock
-                            x:Name="ProfileName"
-                            VerticalAlignment="Center"
-                            FontWeight="SemiBold"
-                            TextTrimming="CharacterEllipsis" />
-                        <FontIcon
-                            Grid.Column="1"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            Glyph="&#xE70D;" />
-                    </Grid>
-                </Button>
-            </StackPanel>
-        </NavigationView.PaneHeader>
-        <NavigationView.FooterMenuItems>
-            <NavigationViewItem x:Name="LogoutItem" Icon="Account" />
-        </NavigationView.FooterMenuItems>
-        <Frame x:Name="ContentFrame" />
-    </NavigationView>
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:desktop="using:LanStash.App.Presentation">
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="S" Modifiers="Control,Menu" Invoked="ToggleSidebar_Invoked" />
+        <KeyboardAccelerator Key="F6" Invoked="FocusSidebar_Invoked" />
+    </Page.KeyboardAccelerators>
+    <Grid Background="{ThemeResource DesktopGlassBrush}">
+        <NavigationView x:Name="Navigation"
+            IsBackButtonVisible="Collapsed" IsSettingsVisible="True"
+            PaneDisplayMode="Auto" CompactModeThresholdWidth="0" ExpandedModeThresholdWidth="960"
+            OpenPaneLength="{StaticResource DesktopSidebarWidth}"
+            MenuItemContainerStyle="{StaticResource DesktopNavigationItemStyle}"
+            SelectionChanged="Navigation_SelectionChanged" DisplayModeChanged="Navigation_DisplayModeChanged">
+            <NavigationView.PaneHeader>
+                <StackPanel Width="209" Margin="8,6,8,16" Spacing="12">
+                    <Button x:Name="ProfileMenuButton" MinHeight="76" Padding="8"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                        Background="Transparent" BorderThickness="0">
+                        <Button.Flyout><MenuFlyout x:Name="ProfileMenu" Opening="ProfileMenu_Opening" /></Button.Flyout>
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="44" /><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /></Grid.ColumnDefinitions>
+                            <Border Height="48" Background="{ThemeResource DesktopCardBrush}" CornerRadius="12">
+                                <FontIcon Glyph="&#xEDA2;" FontSize="26" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+                                <TextBlock x:Name="ProfileName" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Ellipse Width="6" Height="6" Fill="{ThemeResource SystemFillColorSuccessBrush}" />
+                                    <TextBlock x:Uid="DesktopConnected" desktop:DesktopLocalization.Bindings="Text=DesktopConnected.Text" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <FontIcon Grid.Column="2" VerticalAlignment="Center" FontSize="10" Glyph="&#xE70D;" />
+                        </Grid>
+                    </Button>
+                    <Button x:Uid="DesktopAddNas" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DesktopAddNas.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                        MinHeight="44" Padding="14,8" Click="AddProfile_Click" Background="{ThemeResource DesktopCardBrush}" BorderThickness="0">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <FontIcon Glyph="&#xE710;" FontSize="14" /><TextBlock x:Uid="DesktopAddNasLabel" desktop:DesktopLocalization.Bindings="Text=DesktopAddNasLabel.Text" />
+                        </StackPanel>
+                    </Button>
+                    <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                </StackPanel>
+            </NavigationView.PaneHeader>
+            <NavigationView.PaneFooter>
+                <StackPanel x:Name="StorageOverview" Visibility="Collapsed" Width="201" Margin="16,16,16,12" Spacing="6">
+                    <TextBlock x:Uid="DesktopStorage" desktop:DesktopLocalization.Bindings="Text=DesktopStorage.Text" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="{Binding StorageUsageText}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                    <ProgressBar Height="4" Value="{Binding StorageUsedPercent}" Maximum="100" />
+                    <TextBlock Text="{Binding StorageRemainingText}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </NavigationView.PaneFooter>
+            <NavigationView.FooterMenuItems><NavigationViewItem x:Name="LogoutItem" Icon="Account" /></NavigationView.FooterMenuItems>
+            <Border Margin="0,0,12,12" Background="{ThemeResource DesktopSurfaceBrush}"
+                BorderBrush="{ThemeResource DesktopEdgeBrush}" BorderThickness="1" CornerRadius="16">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <InfoBar x:Name="NavigationNotice" IsOpen="False" IsClosable="True" Severity="Warning" Margin="12,8,12,0" />
+                    <Frame x:Name="ContentFrame" Grid.Row="1" />
+                    <ProgressBar x:Name="NavigationProgress" Grid.Row="1" Height="2" VerticalAlignment="Top"
+                        IsIndeterminate="True" Visibility="Collapsed" IsHitTestVisible="False" />
+                </Grid>
+            </Border>
+        </NavigationView>
+        <Thumb x:Name="SidebarResizeGrip" x:Uid="DesktopResizeSidebar" desktop:DesktopLocalization.Bindings="AutomationProperties.Name=DesktopResizeSidebar.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" Width="6" HorizontalAlignment="Left"
+            Margin="238,0,0,12" DragDelta="SidebarResize_DragDelta" KeyDown="SidebarResize_KeyDown" IsTabStop="True">
+            <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="Transparent" /></ControlTemplate></Thumb.Template>
+        </Thumb>
+    </Grid>
 </Page>

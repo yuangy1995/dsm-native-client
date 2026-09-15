@@ -32,6 +32,8 @@ public sealed partial class AppSettingsPage : Page
     private void Settings_Changed(object? sender, AppSettingsChangedEventArgs e) =>
         DispatcherQueue.TryEnqueue(LoadState);
 
+    internal void RefreshLocalization() => LoadState();
+
     private void LoadState()
     {
         _isLoading = true;

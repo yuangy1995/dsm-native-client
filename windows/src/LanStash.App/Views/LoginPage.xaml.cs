@@ -49,6 +49,12 @@ public sealed partial class LoginPage : Page
         }
     }
 
+    internal void RefreshLocalization()
+    {
+        LoadLanguageOptions();
+        UpdateState();
+    }
+
     private void LoadLanguageOptions()
     {
         _isLoadingLanguage = true;
