@@ -51,7 +51,7 @@ class SynologyPhotosRepository internal constructor(
     private val deletionMutex = Mutex()
     private val pendingDeletions = mutableMapOf<SynologyPhotoId, SynologyPhoto>()
     private val confirmedDeletions = mutableMapOf<SynologyPhotoId, SynologyPhoto>()
-    private val deletionOperations = mutableMapOf<UUID, SynologyPhotoId>()
+    private val deletionOperations = mutableMapOf<UUID, SynologyPhoto>()
 
     override suspend fun access(): SynologyPhotoAccess {
         personalAllowed = false
@@ -274,7 +274,7 @@ class SynologyPhotosRepository internal constructor(
 
     override suspend fun deletePhoto(photo: SynologyPhoto, operationId: UUID): SynologyPhotoDeletionResult = deletionMutex.withLock {
         requirePhoto(photo)
-        deletionOperations[operationId]?.let { if (it != photo.id) changed() }
+        deletionOperations[operationId]?.let { if (!it.sameDeletionTarget(photo)) changed() }
         confirmedDeletions[photo.id]?.let { if (it.sameDeletionTarget(photo)) return@withLock SynologyPhotoDeletionResult.CONFIRMED }
         pendingDeletions[photo.id]?.let {
             if (!it.sameDeletionTarget(photo)) changed()
@@ -284,7 +284,7 @@ class SynologyPhotosRepository internal constructor(
         prepareDeletion(photo)
         currentCoroutineContext().ensureActive()
         requireGeneration(generation)
-        deletionOperations[operationId] = photo.id
+        deletionOperations[operationId] = photo
         pendingDeletions[photo.id] = photo
         try {
             call("BackgroundTask.File", 1, "delete", json("item_id" to array(photo.id.itemId), "folder_id" to array()))

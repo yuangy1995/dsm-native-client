@@ -15,7 +15,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import io.github.qwertyuiop1995.dsmnativeclient.*
+import io.github.qwertyuiop1995.dsmnativeclient.WorkspaceState
+import io.github.qwertyuiop1995.dsmnativeclient.POST_NOTIFICATIONS_PERMISSION
+import io.github.qwertyuiop1995.dsmnativeclient.AppViewModel
+import io.github.qwertyuiop1995.dsmnativeclient.R
 import io.github.qwertyuiop1995.dsmnativeclient.ui.components.ClientSheet
 
 /** 原有设备备份独立于 Photos 图库，不把 Photos 项目编号转换为文件路径。 */
