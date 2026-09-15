@@ -1,0 +1,24 @@
+name: Photos Parity Workspace
+
+on:
+  push:
+    branches: [codex/photos-parity-20260915]
+    paths: [.github/workflows/photos-parity-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: 导出当前功能分支的已跟踪源码（不含 Git 配置和凭据）
+        run: git archive --format=tar.gz --output=photos-parity-source.tar.gz HEAD
+      - uses: actions/upload-artifact@v7
+        with:
+          name: photos-parity-source
+          path: photos-parity-source.tar.gz
+          retention-days: 1
