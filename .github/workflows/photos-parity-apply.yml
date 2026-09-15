@@ -1,0 +1,83 @@
+name: Photos Parity Integration Validation
+on:
+  push:
+    branches: [codex/photos-parity-integrated-20260915]
+    paths: [.github/workflows/photos-parity-apply.yml]
+permissions:
+  contents: write
+  actions: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.patch.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: codex/photos-parity-integrated-20260915
+      - name: 应用已校验的功能差异
+        id: patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          for sha in 442c1f8861b3056ceb43e44e596b40ff901f8220 c7161945f8cedacb60b1ab6a4f587c57fdd3c69b 812851a2201301d938069929760c407f284455cb d6e531c80289c7760e01aaacba010e17ea4202e5; do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content | base64 -d >> "$RUNNER_TEMP/photos.patch.xz"
+          done
+          echo "75dba225da28a688a372cee40ce2ec12f28b4534fdd476ee7c7eea960aad64f2  $RUNNER_TEMP/photos.patch.xz" | sha256sum -c -
+          xz -dc "$RUNNER_TEMP/photos.patch.xz" > "$RUNNER_TEMP/photos.patch"
+          git apply --check --index "$RUNNER_TEMP/photos.patch"
+          git apply --index "$RUNNER_TEMP/photos.patch"
+          git diff --cached --check
+          python3 tools/localization/check_localization.py
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat(photos): replace Windows photo browser with native Synology Photos'
+          git push origin HEAD:refs/heads/codex/photos-parity-integrated-20260915
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          gh workflow run android-build.yml --ref codex/photos-parity-integrated-20260915
+  windows:
+    needs: integrate
+    runs-on: windows-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.integrate.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: 还原依赖
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force diagnostics | Out-Null
+          dotnet restore windows/LanStash.slnx 2>&1 | Tee-Object diagnostics/restore.log
+          exit $LASTEXITCODE
+      - name: 完整领域与应用测试
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          dotnet test windows/tests/LanStash.Tests/LanStash.Tests.csproj --configuration Release --no-restore --logger 'trx;LogFileName=tests.trx' --results-directory diagnostics --blame-hang --blame-hang-timeout 2m 2>&1 | Tee-Object diagnostics/tests.log
+          exit $LASTEXITCODE
+      - name: Windows x64 构建
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-x64 --no-restore 2>&1 | Tee-Object diagnostics/build-x64.log
+          exit $LASTEXITCODE
+      - name: Windows ARM64 构建
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          dotnet build windows/src/LanStash.App/LanStash.App.csproj --configuration Release --runtime win-arm64 --no-restore 2>&1 | Tee-Object diagnostics/build-arm64.log
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: photos-parity-windows-diagnostics
+          path: diagnostics/
+          retention-days: 3
