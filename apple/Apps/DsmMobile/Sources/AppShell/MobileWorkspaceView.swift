@@ -20,7 +20,7 @@ struct MobileWorkspaceView: View {
                 ProgressView()
                     .controlSize(.small)
                     .padding(10)
-                    .background(.regularMaterial, in: .capsule)
+                    .mobileGlassChrome(cornerRadius: 24)
                     .padding(.top, 8)
                     .accessibilityLabel(L10n.string("ui.36b7dfe53cf9b5df"))
             }
@@ -86,6 +86,9 @@ struct MobileWorkspaceView: View {
                     .accessibilityAddTraits(model.selectedTopLevel == destination ? .isSelected : [])
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background { MobileGlassBackground() }
+            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 320)
             .navigationTitle(
                 model.activeProfile?.displayName ?? L10n.string("ui.4aeb6d92cbbff699")
             )

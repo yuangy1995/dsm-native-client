@@ -13,6 +13,7 @@ struct MobileRootView: View {
                 MobileLoginView(model: model)
             }
         }
+        .mobileGlassWorkspace()
         .tint(.blue)
         .preferredColorScheme(model.settingsStore.appearance.colorScheme)
     }

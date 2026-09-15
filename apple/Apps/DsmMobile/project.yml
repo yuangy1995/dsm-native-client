@@ -20,6 +20,8 @@ targets:
     platform: iOS
     sources:
       - Sources
+      # 与 macOS 编译同一个纯 Swift 状态机；Mac 文件保持只读。
+      - path: ../DsmMac/Sources/SynologyPhotosModel.swift
       - path: Resources
     dependencies:
       - package: DsmShared

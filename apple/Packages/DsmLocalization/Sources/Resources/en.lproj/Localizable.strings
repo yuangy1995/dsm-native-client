@@ -4017,3 +4017,16 @@
 "photos.delete.review" = "Check deletion result";
 "photos.delete.reviewFailed" = "The deletion result could not be checked. Check the connection, then try again.";
 "photos.delete.done" = "The photo has been deleted.";
+
+// 跨端原生 Photos 的移动交互。
+"native.photos.personal" = "Personal space";
+"native.photos.shared" = "Shared space";
+"native.photos.share" = "Share";
+"native.photos.exporting" = "Preparing original…";
+"native.photos.readonly" = "Details are read-only. Use Synology Photos to edit or delete this item.";
+"native.photos.newer" = "Show newer photos";
+"native.photos.collection.count" = "%d items";
+"native.photos.grid.smaller" = "Smaller thumbnails";
+"native.photos.grid.larger" = "Larger thumbnails";
+"native.photos.zoom.reset" = "Reset zoom";
+"native.photos.filter.date.invalid" = "The end date must not be before the start date.";

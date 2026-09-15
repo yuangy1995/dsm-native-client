@@ -284,6 +284,8 @@ private final class MobileMediaPlaybackModel {
 struct MobileMediaPlayer: View {
     let source: MediaStreamSource
     let title: String
+    var autoplays = false
+    var onFinished: (() -> Void)? = nil
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = MobileMediaPlaybackModel()
@@ -320,6 +322,16 @@ struct MobileMediaPlayer: View {
         .accessibilityLabel(L10n.string("mobile.files.preview.media.accessibility.player", title))
         .task(id: source.request.url) { model.prepare(source) }
         .onDisappear { model.close() }
+        .onChange(of: model.isPreparing) { _, preparing in
+            if !preparing, !model.hasFailed, autoplays { model.player?.play() }
+        }
+        .onChange(of: model.hasFailed) { _, failed in
+            if failed { onFinished?() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
+            guard let item = notification.object as? AVPlayerItem, item === model.player?.currentItem else { return }
+            onFinished?()
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active where wasSuspended:

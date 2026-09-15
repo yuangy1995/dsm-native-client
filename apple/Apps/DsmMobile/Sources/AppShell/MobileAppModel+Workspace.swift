@@ -20,6 +20,8 @@ extension MobileAppModel {
         }
         if selectedModule == .photos, module != .photos {
             photoLibraryModel.deactivate()
+            synologyPhotosModel.cancel()
+            synologyPhotosExporter.cancel()
             filePreviewModel.close()
         }
         if selectedModule == .chat, module != .chat {
@@ -86,14 +88,15 @@ extension MobileAppModel {
 
     func refreshSettingsCacheSummary() async {
         settingsStore.setPhotoThumbnailCacheBytes(
-            await photoLibraryModel.thumbnailCacheCost()
+            await photoLibraryModel.thumbnailCacheCost() + synologyPhotosCache.cachedCost()
         )
     }
 
     func clearRegenerableCaches() async {
         guard settingsStore.beginClearingCache() else { return }
         await photoLibraryModel.clearThumbnailCache()
-        let remainingBytes = await photoLibraryModel.thumbnailCacheCost()
+        await synologyPhotosCache.removeAll()
+        let remainingBytes = await photoLibraryModel.thumbnailCacheCost() + synologyPhotosCache.cachedCost()
         settingsStore.finishClearingCache(
             result: remainingBytes == 0 ? .success : .failure,
             remainingBytes: remainingBytes
@@ -120,7 +123,7 @@ extension MobileAppModel {
             case .files:
                 try await loadFiles()
             case .photos:
-                break
+                await synologyPhotosModel.loadIfNeeded()
             case .chat:
                 guard let profileID = activeProfile?.id else { break }
                 let restoresCachedProfile = chatModel.profiles[profileID] != nil
@@ -233,6 +236,10 @@ extension MobileAppModel {
         )
         self.fileRepository = fileRepository
         photoRepository = FileStationPhotoRepository(files: fileRepository)
+        installSynologyPhotos(
+            try SynologyPhotosRepository(profile: profile, capabilities: capabilities, session: session, deletionEnabled: false),
+            profileID: profile.id
+        )
         serviceRepository = try DsmServiceManagementRepository(
             profile: profile,
             capabilities: capabilities,

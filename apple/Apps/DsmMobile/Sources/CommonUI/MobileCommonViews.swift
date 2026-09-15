@@ -82,7 +82,7 @@ struct MobileSummaryCard<Content: View>: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: .rect(cornerRadius: 16))
+        .mobileGlassCard()
     }
 }
 

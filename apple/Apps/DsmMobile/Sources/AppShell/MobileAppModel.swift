@@ -28,6 +28,10 @@ final class MobileAppModel {
     let filePreviewModel = MobileFilePreviewModel()
     let fileShareLinkModel: MobileFileShareLinkModel
     let photoLibraryModel = MobilePhotoLibraryModel()
+    var synologyPhotosModel = SynologyPhotosModel()
+    var synologyPhotosCache = MobilePhotoThumbnailStore()
+    let synologyPhotosExporter = MobilePhotosExportModel()
+    var synologyPhotosProfileID: UUID?
     let chatModel = MobileChatModel()
     let nasHealthModel = MobileNasHealthModel()
     let nasDetailsModel = MobileNasDetailsModel()
@@ -79,6 +83,9 @@ final class MobileAppModel {
                 deactivateFileLocations()
                 deactivateDownloads()
                 photoLibraryModel.deactivate()
+                synologyPhotosModel.cancel()
+                synologyPhotosModel.setModuleEnabled(synologyPhotosProfileID == activeProfile?.id && activeProfile != nil)
+                synologyPhotosExporter.cancel()
                 chatModel.deactivate()
                 nasHealthModel.deactivate()
                 nasDetailsModel.deactivate()
@@ -117,6 +124,7 @@ final class MobileAppModel {
     var activeConnectionProfile: NasProfile?
     var fileRepository: DsmFileRepository?
     var photoRepository: FileStationPhotoRepository?
+    var synologyPhotosRepository: SynologyPhotosRepository?
     var serviceRepository: DsmServiceManagementRepository?
     var chatRepository: DsmChatRepository?
     var nasRepository: DsmNasAdministrationRepository?

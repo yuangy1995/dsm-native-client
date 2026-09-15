@@ -331,6 +331,8 @@ extension MobileAppModel {
 
     private typealias WorkspaceRepositories = (
         file: DsmFileRepository,
+        photos: SynologyPhotosRepository,
+        profileID: UUID,
         service: DsmServiceManagementRepository,
         chat: DsmChatRepository,
         nas: DsmNasAdministrationRepository
@@ -343,6 +345,8 @@ extension MobileAppModel {
     ) throws -> WorkspaceRepositories {
         (
             file: try DsmFileRepository(profile: profile, capabilities: capabilities, session: session),
+            photos: try SynologyPhotosRepository(profile: profile, capabilities: capabilities, session: session, deletionEnabled: false),
+            profileID: profile.id,
             service: try DsmServiceManagementRepository(profile: profile, capabilities: capabilities, session: session),
             chat: try DsmChatRepository(profile: profile, capabilities: capabilities, session: session),
             nas: try DsmNasAdministrationRepository(profile: profile, capabilities: capabilities, session: session)
@@ -352,6 +356,7 @@ extension MobileAppModel {
     private func applyWorkspaceRepositories(_ repositories: WorkspaceRepositories) {
         fileRepository = repositories.file
         photoRepository = FileStationPhotoRepository(files: repositories.file)
+        installSynologyPhotos(repositories.photos, profileID: repositories.profileID)
         serviceRepository = repositories.service
         chatRepository = repositories.chat
         nasRepository = repositories.nas
@@ -538,6 +543,9 @@ extension MobileAppModel {
         session = nil
         fileRepository = nil
         photoRepository = nil
+        deactivateSynologyPhotos()
+        synologyPhotosRepository = nil
+        synologyPhotosProfileID = nil
         serviceRepository = nil
         chatRepository = nil
         nasRepository = nil

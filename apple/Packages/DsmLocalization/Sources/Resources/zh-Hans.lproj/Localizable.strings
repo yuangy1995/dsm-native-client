@@ -4017,3 +4017,16 @@
 "photos.delete.review" = "核对删除结果";
 "photos.delete.reviewFailed" = "暂时无法核对删除结果，请检查连接后再次核对。";
 "photos.delete.done" = "照片已删除。";
+
+// 跨端原生 Photos 的移动交互。
+"native.photos.personal" = "个人空间";
+"native.photos.shared" = "共享空间";
+"native.photos.share" = "分享";
+"native.photos.exporting" = "正在准备原图…";
+"native.photos.readonly" = "详细信息为只读。编辑或删除请使用 Synology Photos。";
+"native.photos.newer" = "显示较新的照片";
+"native.photos.collection.count" = "%d 个项目";
+"native.photos.grid.smaller" = "缩小缩略图";
+"native.photos.grid.larger" = "放大缩略图";
+"native.photos.zoom.reset" = "还原缩放";
+"native.photos.filter.date.invalid" = "结束日期不能早于开始日期。";

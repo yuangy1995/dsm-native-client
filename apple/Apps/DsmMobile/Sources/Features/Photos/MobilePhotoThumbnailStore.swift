@@ -25,6 +25,7 @@ actor MobilePhotoThumbnailStore {
     private var visibleWaiters: [Waiter] = []
     private var prefetchWaiters: [Waiter] = []
     private var cancelledWaiterIDs: Set<UUID> = []
+    private var pendingWaiterIDs: Set<UUID> = []
     private var generation: UInt64 = 0
     private var namespaceGenerations: [String: UInt64] = [:]
 
@@ -95,6 +96,8 @@ actor MobilePhotoThumbnailStore {
 
     func cachedCost() -> Int { totalCost }
 
+    func cancellationTombstoneCount() -> Int { cancelledWaiterIDs.count }
+
     func pendingRequestCounts() -> (visible: Int, prefetch: Int) {
         (visibleWaiters.count, prefetchWaiters.count)
     }
@@ -107,8 +110,10 @@ actor MobilePhotoThumbnailStore {
         }
 
         let id = UUID()
+        pendingWaiterIDs.insert(id)
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
+                pendingWaiterIDs.remove(id)
                 if cancelledWaiterIDs.remove(id) != nil || Task.isCancelled {
                     continuation.resume(returning: false)
                     return
@@ -135,7 +140,8 @@ actor MobilePhotoThumbnailStore {
             prefetchWaiters.remove(at: index).continuation.resume(returning: false)
             return
         }
-        cancelledWaiterIDs.insert(id)
+        // 已授予/完成的请求不再登记取消墓碑，连续快速滚动不会无限累积 UUID。
+        if pendingWaiterIDs.contains(id) { cancelledWaiterIDs.insert(id) }
     }
 
     private func release() {
