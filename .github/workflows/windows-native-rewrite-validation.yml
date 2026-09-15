@@ -1,0 +1,24 @@
+name: Windows Native Rewrite Workspace
+
+on:
+  push:
+    branches: [codex/windows-native-macos-rewrite-20260915]
+    paths: [.github/workflows/windows-native-rewrite-validation.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  source-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Export tracked baseline without Git credentials
+        run: git archive --format=zip --output=source-baseline.zip HEAD
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-native-rewrite-source-baseline
+          path: source-baseline.zip
+          retention-days: 1
