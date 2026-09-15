@@ -14,21 +14,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: codex/photos-parity-integrated-20260915
-      - name: 修复取消语义并保留正文失败和 JSON 业务值回归
+      - name: 合并照片账本并同步平台计划和兼容证据边界
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          gh api "repos/$GITHUB_REPOSITORY/git/blobs/7f3c8b5b256bae26a4b300f2bee933ee41550916" --jq .content | base64 -d > "$RUNNER_TEMP/fixes.patch.xz"
-          xz -dc "$RUNNER_TEMP/fixes.patch.xz" > "$RUNNER_TEMP/fixes.patch"
-          echo "82101e27bbc8504802a984c118a62be169841d73207bc67cbb53d4fbefefbdc9  $RUNNER_TEMP/fixes.patch" | sha256sum -c -
-          git apply --check --index "$RUNNER_TEMP/fixes.patch"
-          git apply --index "$RUNNER_TEMP/fixes.patch"
-          git diff --cached --check
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(photos): preserve cancellation during body reads and verify decoded request values'
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/0ff7ac75337d36033b4b77dc0271cc6de916ac03" --jq .content | base64 -d > "$RUNNER_TEMP/docs.py.xz"
+          xz -dc "$RUNNER_TEMP/docs.py.xz" > "$RUNNER_TEMP/docs.py"
+          echo "3d546ddcc7275d24ac3fd85b6ea3a2e364b24a8426001ed663f604ae175b486c  $RUNNER_TEMP/docs.py" | sha256sum -c -
+          python3 "$RUNNER_TEMP/docs.py"
+          python3 tools/codex/check_documentation.py --strict-release
+          git diff --check
+          git add README.md README.en.md docs/
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'docs(photos): consolidate native parity scope, performance boundaries and device validation'
           git push origin HEAD:refs/heads/codex/photos-parity-integrated-20260915
-          for workflow in android-build.yml windows-build.yml; do
-            gh workflow run "$workflow" --ref codex/photos-parity-integrated-20260915
-          done
+          gh workflow run repository-check.yml --ref codex/photos-parity-integrated-20260915
