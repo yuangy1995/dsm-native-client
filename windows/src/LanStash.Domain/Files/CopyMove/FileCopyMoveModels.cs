@@ -24,6 +24,13 @@ public sealed record FileCopyMoveTarget(
     bool IsVirtual,
     bool IsRecycle);
 
+public enum FileCopyMoveConflictPolicy { Fail, Skip, Overwrite }
+
+// 只暴露当前连接内的核对身份与冻结目标，不携带认证资料或可重放请求。
+public sealed record FileCopyMovePendingReview(
+    Guid Id, Guid ProfileId, FileCopyMoveOperation Operation,
+    string SourcePath, string DestinationPath, string Name, bool IsDirectory, long Size);
+
 public sealed record FileCopyMoveRequest(
     FileCopyMoveTarget Target,
     string DestinationDirectoryPath,
@@ -31,8 +38,15 @@ public sealed record FileCopyMoveRequest(
     bool DestinationCanWrite,
     bool DestinationIsRemote,
     bool DestinationIsVirtual,
-    bool DestinationIsRecycle);
+    bool DestinationIsRecycle)
+{
+    // 旧调用保留遇同名失败；覆盖只能由已确认的入口显式选择。
+    public FileCopyMoveConflictPolicy ConflictPolicy { get; init; } = FileCopyMoveConflictPolicy.Fail;
+}
 
 public sealed record FileCopyMoveOutcome(
     MutationResult Result,
-    FileItem? ConfirmedItem = null);
+    FileItem? ConfirmedItem = null)
+{
+    public bool SkippedExisting { get; init; }
+}

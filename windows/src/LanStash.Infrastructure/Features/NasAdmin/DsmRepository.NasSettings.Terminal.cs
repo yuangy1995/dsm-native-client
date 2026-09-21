@@ -1,36 +1,28 @@
-using System.Text.Json.Nodes;
 using LanStash.Domain;
 
 namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
+    // DSM 内部接口，仅采用已记录的读取契约，不将失败转换为关闭状态。
     public async Task<NasTerminalSettings> LoadTerminalSettingsAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!Supports("SYNO.Core.Terminal"))
+        var data = await ReadNasServiceSettingsAsync("SYNO.Core.Terminal", 3, cancellationToken)
+            .ConfigureAwait(false);
+        return ParseNasTerminalSettings(data);
+    }
+
+    private static NasTerminalSettings ParseNasTerminalSettings(System.Text.Json.Nodes.JsonObject data)
+    {
+        if (data.Bool("enable_ssh") is not bool ssh || data.Bool("enable_telnet") is not bool telnet)
         {
-            return new NasTerminalSettings(false, null, false, null);
+            throw InvalidNasServiceSettings();
         }
 
-        try
-        {
-            var data = await CallFirstAsync(
-                "SYNO.Core.Terminal",
-                ["get", "load"],
-                parameters: null,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            return new NasTerminalSettings(
-                SshEnabled: data.Bool("enable_ssh") ?? data.Bool("ssh_enable") ?? false,
-                SshPort: data.Int("ssh_port") ?? data.Int("port"),
-                TelnetEnabled: data.Bool("enable_telnet") ?? data.Bool("telnet_enable") ?? false,
-                TelnetPort: data.Int("telnet_port") ?? data.Int("telnet_port"));
-        }
-        catch (DsmException)
-        {
-            return new NasTerminalSettings(false, null, false, null);
-        }
+        // 契约未提供 Telnet 端口，SSH 端口缺失或无效时不猜测默认值。
+        var port = data.Int("ssh_port");
+        return new NasTerminalSettings(ssh, port is > 0 and <= 65535 ? port : null, telnet, null);
     }
 
     public Task<MutationResult> SaveTerminalSettingsAsync(
@@ -38,26 +30,7 @@ public sealed partial class DsmRepository
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["ssh_enable"] = settings.SshEnabled ? "true" : "false",
-            ["telnet_enable"] = settings.TelnetEnabled ? "true" : "false",
-        };
-
-        if (settings.SshPort is int sshPort && sshPort is > 0 and <= 65535)
-        {
-            parameters["ssh_port"] = sshPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        if (settings.TelnetPort is int telnetPort && telnetPort is > 0 and <= 65535)
-        {
-            parameters["telnet_port"] = telnetPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        return SaveSettingsAsync(
-            "SYNO.Core.Terminal", "set", parameters, "saveTerminal",
-            ct => Task.CompletedTask,
-            cancellationToken);
+        // 完成基线绑定、确认和逐字段回读前不保留可被总开关意外启用的猜测写请求。
+        return Task.FromResult(UnsupportedResult("saveTerminal"));
     }
 }

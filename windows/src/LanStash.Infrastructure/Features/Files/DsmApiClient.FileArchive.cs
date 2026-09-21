@@ -9,16 +9,24 @@ public sealed partial class DsmApiClient
 {
     internal const int FolderArchiveChunkSize = 1024 * 1024;
 
-    public async Task StreamFolderArchiveAsync(
+    public Task StreamFolderArchiveAsync(
         NasProfile profile,
         DsmSession session,
         ApiCapability capability,
         string remotePath,
         Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        StreamArchiveAsync(profile, session, capability, new[] { remotePath }, writeChunkAsync, cancellationToken);
+
+    public async Task StreamArchiveAsync(NasProfile profile, DsmSession session, ApiCapability capability, IReadOnlyList<string> remotePaths,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
+        ArgumentNullException.ThrowIfNull(remotePaths);
+        var paths = remotePaths.ToArray();
+        if (!FileArchivePaths.IsValidSelection(paths)) throw new ArgumentException("Invalid archive source selection.", nameof(remotePaths));
         ArgumentNullException.ThrowIfNull(writeChunkAsync);
+        if (profile.Id != session.ProfileId || string.IsNullOrWhiteSpace(session.Sid) || capability.Name != "SYNO.FileStation.Download" || !IsSafeWebApiPath(capability.Path))
+            throw new FileArchiveContractException(FileArchiveContractFailure.UnsupportedVersion, "Invalid archive connection context.");
         if (capability.MinVersion > 2 || capability.MaxVersion < 2)
         {
             throw new FileArchiveContractException(
@@ -34,7 +42,7 @@ public sealed partial class DsmApiClient
             ["api"] = capability.Name,
             ["version"] = "2",
             ["method"] = "download",
-            ["path"] = JsonSerializer.Serialize(new[] { remotePath }),
+            ["path"] = JsonSerializer.Serialize(paths),
             ["mode"] = "download",
             ["_sid"] = session.Sid,
         };

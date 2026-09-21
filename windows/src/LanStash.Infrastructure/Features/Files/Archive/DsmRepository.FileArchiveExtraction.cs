@@ -7,7 +7,6 @@ namespace LanStash.Infrastructure;
 public sealed partial class DsmRepository
 {
     private const int FileArchiveExtractionPollLimit = 8;
-    private const int FileArchiveExtractionListLimit = 200;
 
     public FileArchiveExtractionAvailability FileArchiveExtractionAvailability =>
         new(
@@ -55,7 +54,26 @@ public sealed partial class DsmRepository
                     _session,
                     _capabilities["SYNO.FileStation.Extract"],
                     normalized.Source.Item.Path,
+                    normalized.Options,
                     cancellationToken).ConfigureAwait(false);
+                var originalPenalty = FileArchiveExtractionOptions.NamePenalty(archiveItems.Select(item => item.Name));
+                if (normalized.Options.Codepage is null && originalPenalty > 0)
+                {
+                    try
+                    {
+                        var chineseOptions = normalized.Options with { Codepage = "chs" };
+                        var chineseItems = await _api.ListFileArchiveExtractionItemsAsync(_profile, _session,
+                            _capabilities["SYNO.FileStation.Extract"], normalized.Source.Item.Path, chineseOptions, cancellationToken).ConfigureAwait(false);
+                        if (chineseItems.Count == archiveItems.Count && FileArchiveExtractionOptions.NamePenalty(chineseItems.Select(item => item.Name)) < originalPenalty)
+                        {
+                            normalized = normalized with { Options = chineseOptions };
+                            archiveItems = chineseItems;
+                        }
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (DsmException error) when (IsArchiveAuthenticationFailure(error)) { throw; }
+                    catch (Exception) { /* 编码比较不可用时使用原始成功列表，不影响原解压流程。 */ }
+                }
             }
             catch (DsmException error) when (IsArchiveAuthenticationFailure(error))
             {
@@ -73,6 +91,11 @@ public sealed partial class DsmRepository
                     1, 0, 0, MutationErrorCategory.Unsupported,
                     "file.archive-extraction.list-unsupported");
             }
+            catch (DsmException error) when (error.Code == 1403)
+            {
+                return ExtractionOutcome(MutationResultStatus.ConfirmedFailure, false, false,
+                    1, 0, 0, MutationErrorCategory.Validation, "file.archive-extraction.password-required");
+            }
             catch (Exception)
             {
                 return ExtractionOutcome(MutationResultStatus.ConfirmedFailure, false, false,
@@ -80,12 +103,13 @@ public sealed partial class DsmRepository
                     "file.archive-extraction.archive-list-invalid");
             }
 
-            if (!TryBuildExtractionOutputs(archiveItems, normalized.DestinationFolder,
+            if (!TryBuildExtractionOutputs(archiveItems, normalized,
                     out var outputs, out var outputTag))
                 return ExtractionOutcome(MutationResultStatus.ConfirmedFailure, false, false,
                     Math.Max(1, archiveItems.Count), 0, 0, MutationErrorCategory.Validation,
                     outputTag);
-            review = review! with { ExpectedOutputs = outputs };
+            review = review! with { ExpectedOutputs = outputs,
+                Request = normalized with { Options = normalized.Options with { Password = null } } };
 
             IReadOnlyList<FileArchiveListedItem> folderItems;
             FileArchiveListedItem destination;
@@ -130,12 +154,17 @@ public sealed partial class DsmRepository
                     outputs.Count, 0, 0, MutationErrorCategory.Permission,
                     "file.archive-extraction.destination-read-only");
 
-            var existingNames = folderItems.Select(item => item.Item.Name)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (outputs.Any(output => existingNames.Contains(output.Name)))
-                return ExtractionOutcome(MutationResultStatus.ConfirmedFailure, false, false,
-                    outputs.Count, 0, 0, MutationErrorCategory.Conflict,
-                    "file.archive-extraction.target-conflict");
+            try
+            {
+                if (await CheckExtractionTargetsAsync(normalized, outputs, folderItems, cancellationToken).ConfigureAwait(false) is { } conflict)
+                    return ExtractionOutcome(conflict == MutationErrorCategory.Permission ? MutationResultStatus.PermissionDenied : MutationResultStatus.ConfirmedFailure,
+                        false, false, outputs.Count, 0, 0, conflict, "file.archive-extraction.target-conflict");
+            }
+            catch (DsmException error) when (IsArchiveAuthenticationFailure(error)) { throw; }
+            catch (OperationCanceledException)
+            { return ExtractionOutcome(MutationResultStatus.CancelledBeforeSubmission, false, false, 0, 0, 0, null, "file.archive-extraction.cancelled-before-submit"); }
+            catch (Exception)
+            { return ExtractionOutcome(MutationResultStatus.ConfirmedFailure, false, false, outputs.Count, 0, 0, MutationErrorCategory.Unknown, "file.archive-extraction.preflight-invalid"); }
 
             return await SubmitArchiveExtractionAsync(normalized, review, cancellationToken)
                 .ConfigureAwait(false);
@@ -164,6 +193,7 @@ public sealed partial class DsmRepository
                 _capabilities["SYNO.FileStation.Extract"],
                 request.Source.Item.Path,
                 request.DestinationFolder,
+                request.Options,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -209,12 +239,14 @@ public sealed partial class DsmRepository
         {
             try
             {
+                review.TaskId = start.TaskId;
                 var taskStatus = await PollArchiveExtractionAsync(
                     start.TaskId!, cancellationToken).ConfigureAwait(false);
                 taskFinished =
                     taskStatus.Status == FileArchiveExtractionTaskTransportStatus.Finished;
                 confirmedFailure |=
                     taskStatus.Status == FileArchiveExtractionTaskTransportStatus.ConfirmedFailure;
+                review.TaskFinished = taskFinished;
                 errorCategory ??= taskStatus.ErrorCategory;
                 diagnosticTag ??= taskStatus.DiagnosticTag;
                 postSubmitFailure = !taskFinished;
@@ -310,6 +342,18 @@ public sealed partial class DsmRepository
     {
         StoreArchiveExtractionReview(review);
         var readback = await ReadBackArchiveExtractionAsync(review).ConfigureAwait(false);
+        // 输出可能是正在写入的部分文件；任务完成前不把存在或类型一致当成成功。
+        if (confirmedFailure || !review.TaskFinished)
+        {
+            if (confirmedFailure && !cancellationAfterSubmission)
+            {
+                RemoveArchiveExtractionReview(review);
+                return ExtractionOutcome(MutationResultStatus.ConfirmedFailure, true, true,
+                    review.ExpectedOutputs.Count, 0, 0, errorCategory ?? MutationErrorCategory.Server, diagnosticTag);
+            }
+            return ExtractionOutcome(cancellationAfterSubmission ? MutationResultStatus.CancellationRequestedAfterSubmission : MutationResultStatus.SubmittedButUnverified,
+                true, true, 0, 0, review.ExpectedOutputs.Count, errorCategory ?? MutationErrorCategory.Unknown, diagnosticTag);
+        }
         if (readback.ConfirmedItems.Count == review.ExpectedOutputs.Count)
         {
             RemoveArchiveExtractionReview(review);
@@ -319,27 +363,14 @@ public sealed partial class DsmRepository
         }
         if (readback.ConfirmedItems.Count > 0)
         {
-            if (confirmedFailure && !cancellationAfterSubmission)
-                RemoveArchiveExtractionReview(review);
             return ExtractionOutcome(MutationResultStatus.PartialSuccess, true, true,
-                confirmedFailure && !cancellationAfterSubmission
-                    ? review.ExpectedOutputs.Count - readback.ConfirmedItems.Count
-                    : 0,
+                0,
                 readback.ConfirmedItems.Count,
-                confirmedFailure && !cancellationAfterSubmission
-                    ? 0
-                    : review.ExpectedOutputs.Count - readback.ConfirmedItems.Count,
+                review.ExpectedOutputs.Count - readback.ConfirmedItems.Count,
                 errorCategory ?? MutationErrorCategory.Unknown,
                 diagnosticTag ?? "file.archive-extraction.partial-readback",
                 readback.ConfirmedItems);
         }
-        if (confirmedFailure && !cancellationAfterSubmission)
-        {
-            RemoveArchiveExtractionReview(review);
-            return ExtractionOutcome(MutationResultStatus.ConfirmedFailure, true, true,
-                review.ExpectedOutputs.Count, 0, 0, errorCategory, diagnosticTag);
-        }
-
         StoreArchiveExtractionReview(review);
         return ExtractionOutcome(
             cancellationAfterSubmission
@@ -357,6 +388,26 @@ public sealed partial class DsmRepository
     private async Task<FileArchiveExtractionOutcome> ReviewArchiveExtractionAsync(
         FileArchiveExtractionReview review)
     {
+        if (!review.TaskFinished)
+        {
+            try
+            {
+                if (review.TaskId is not null)
+                {
+                    var status = await _api.ReadFileArchiveExtractionStatusAsync(_profile, _session,
+                        _capabilities["SYNO.FileStation.Extract"], review.TaskId, CancellationToken.None).ConfigureAwait(false);
+                    if (status.ErrorCategory == MutationErrorCategory.Authentication) throw ArchiveAuthenticationException();
+                    review.TaskFinished = status.Status == FileArchiveExtractionTaskTransportStatus.Finished;
+                    if (status.Status == FileArchiveExtractionTaskTransportStatus.ConfirmedFailure)
+                        return await FinishArchiveExtractionAsync(review, false, true, status.ErrorCategory, status.DiagnosticTag).ConfigureAwait(false);
+                }
+            }
+            catch (DsmException error) when (IsArchiveAuthenticationFailure(error)) { throw; }
+            catch (Exception) { /* 保留任务与目标锁，稍后只能回读。 */ }
+            if (!review.TaskFinished)
+                return ExtractionOutcome(MutationResultStatus.SubmittedButUnverified, true, true,
+                    0, 0, review.ExpectedOutputs.Count, MutationErrorCategory.Unknown, "file.archive-extraction.review-pending");
+        }
         var readback = await ReadBackArchiveExtractionAsync(review).ConfigureAwait(false);
         if (readback.ConfirmedItems.Count == review.ExpectedOutputs.Count)
         {
@@ -381,14 +432,19 @@ public sealed partial class DsmRepository
     {
         try
         {
-            var folderItems = await LoadArchiveFolderAsync(
-                review.Request.DestinationFolder, CancellationToken.None).ConfigureAwait(false);
-            var byPath = folderItems.ToDictionary(item => item.Item.Path, StringComparer.Ordinal);
-            var confirmed = review.ExpectedOutputs
-                .Where(expected => byPath.TryGetValue(expected.Path, out var observed) &&
-                    observed.Item.IsDirectory == expected.IsDirectory)
-                .Select(expected => byPath[expected.Path].Item)
-                .ToArray();
+            var confirmed = new List<FileItem>();
+            foreach (var group in review.ExpectedOutputs.GroupBy(item => ArchiveMutationParent(item.Path)))
+            {
+                IReadOnlyList<FileArchiveListedItem> folderItems;
+                try { folderItems = await LoadArchiveFolderAsync(group.Key, CancellationToken.None).ConfigureAwait(false); }
+                catch (DsmException error) when (IsArchiveAuthenticationFailure(error)) { throw; }
+                catch (Exception) { continue; }
+                var byPath = folderItems.ToDictionary(item => item.Item.Path, StringComparer.Ordinal);
+                confirmed.AddRange(group.Where(expected => byPath.TryGetValue(expected.Path, out var observed) &&
+                        observed.Item.IsDirectory == expected.IsDirectory &&
+                        (expected.IsDirectory || expected.Size is null || observed.Item.Size == expected.Size))
+                    .Select(expected => byPath[expected.Path].Item));
+            }
             return new FileArchiveExtractionReadback(confirmed);
         }
         catch (DsmException error) when (IsArchiveAuthenticationFailure(error))
@@ -432,6 +488,8 @@ public sealed partial class DsmRepository
         review = null;
         invalidTag = "file.archive-extraction.invalid-input";
         if (request is null || request.ProfileId != ProfileId || request.Source is null ||
+            request.Options is null || !request.Options.IsValid ||
+            request.Options.Overwrite && !request.OverwriteConfirmed ||
             request.Source.Item is null ||
             request.Source.SourceKind != FileArchiveCompressionSourceKind.Local ||
             !request.Source.CanRead || request.Source.Item.IsDirectory ||
@@ -441,50 +499,97 @@ public sealed partial class DsmRepository
             !request.Source.Item.Path.EndsWith("/" + request.Source.Item.Name,
                 StringComparison.Ordinal) ||
             ArchiveContainsRecycleSegment(request.Source.Item.Path) ||
-            !IsSupportedExtractionArchive(request.Source.Item.Name) ||
+            !FileArchiveExtractionOptions.IsSupportedArchive(request.Source.Item.Name) ||
             request.DestinationFolder != ArchiveMutationParent(request.Source.Item.Path) ||
             string.IsNullOrEmpty(request.DestinationFolder))
             return false;
 
-        normalized = new FileArchiveExtractionRequest(ProfileId, request.Source,
-            request.DestinationFolder);
+        normalized = request;
         var reservedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             request.Source.Item.Path,
             request.DestinationFolder,
         };
-        review = new FileArchiveExtractionReview(normalized, [], reservedPaths);
+        var signature = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request.Options))));
+        review = new FileArchiveExtractionReview(normalized with { Options = normalized.Options with { Password = null } }, [], reservedPaths, signature);
         return true;
     }
 
     private static bool TryBuildExtractionOutputs(
         IReadOnlyList<FileArchiveExtractionListedItem> archiveItems,
-        string destinationFolder,
+        FileArchiveExtractionRequest request,
         out IReadOnlyList<FileArchiveExtractionExpectedOutput> outputs,
         out string invalidTag)
     {
         outputs = [];
         invalidTag = "file.archive-extraction.invalid-archive-item";
-        if (archiveItems is null || archiveItems.Count is 0 or >= FileArchiveExtractionListLimit)
+        if (archiveItems is null || archiveItems.Count == 0)
         {
-            invalidTag = archiveItems?.Count == 0
-                ? "file.archive-extraction.empty-archive"
-                : "file.archive-extraction.archive-list-truncated";
+            invalidTag = "file.archive-extraction.empty-archive";
             return false;
         }
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<FileArchiveExtractionExpectedOutput>(archiveItems.Count);
+        var paths = new Dictionary<string, FileArchiveExtractionListedItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in archiveItems)
+            if (item is null || !ValidArchiveItemName(item.Name) || item.Size < 0 ||
+                string.IsNullOrEmpty(item.RelativePath) || item.RelativePath.Contains('\\') ||
+                item.RelativePath.Split('/').Any(segment => !ValidArchiveItemName(segment)) ||
+                item.RelativePath.Split('/')[^1] != item.Name || !paths.TryAdd(item.RelativePath, item)) return false;
         foreach (var item in archiveItems)
         {
-            if (item is null || !ValidArchiveItemName(item.Name) || !names.Add(item.Name))
-                return false;
+            var separator = item.RelativePath.LastIndexOf('/');
+            if (separator >= 0 && (!paths.TryGetValue(item.RelativePath[..separator], out var parent) || !parent.IsDirectory)) return false;
+        }
+        var destinationFolder = request.DestinationFolder;
+        var result = new List<FileArchiveExtractionExpectedOutput>(archiveItems.Count);
+        if (request.Options.CreateSubfolder)
+        {
+            var folderName = Path.GetFileNameWithoutExtension(request.Source.Item.Name);
+            if (!ValidArchiveItemName(folderName)) return false;
+            destinationFolder += "/" + folderName;
+            result.Add(new(folderName, destinationFolder, true));
+        }
+        var outputPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in archiveItems)
+        {
+            if (!request.Options.KeepDirectoryStructure && item.IsDirectory) continue;
+            var path = destinationFolder + "/" + (request.Options.KeepDirectoryStructure ? item.RelativePath : item.Name);
+            if (!outputPaths.Add(path) || path.Equals(request.Source.Item.Path, StringComparison.OrdinalIgnoreCase)) return false;
             result.Add(new FileArchiveExtractionExpectedOutput(
-                item.Name,
-                $"{destinationFolder}/{item.Name}",
-                item.IsDirectory));
+                item.Name, path, item.IsDirectory, item.Size));
         }
         outputs = result;
-        return true;
+        return result.Count > 0;
+    }
+
+    private async Task<MutationErrorCategory?> CheckExtractionTargetsAsync(FileArchiveExtractionRequest request,
+        IReadOnlyList<FileArchiveExtractionExpectedOutput> outputs, IReadOnlyList<FileArchiveListedItem> rootItems, CancellationToken token)
+    {
+        var folders = new Dictionary<string, IReadOnlyList<FileArchiveListedItem>>(StringComparer.OrdinalIgnoreCase)
+        { [request.DestinationFolder] = rootItems };
+        var newFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var output in outputs.OrderBy(item => item.Path.Count(character => character == '/')))
+        {
+            token.ThrowIfCancellationRequested();
+            var parent = ArchiveMutationParent(output.Path);
+            if (newFolders.Contains(parent))
+            {
+                if (output.IsDirectory) newFolders.Add(output.Path);
+                continue;
+            }
+            if (!folders.TryGetValue(parent, out var items))
+                folders[parent] = items = await LoadArchiveFolderAsync(parent, token).ConfigureAwait(false);
+            var existing = items.SingleOrDefault(item => item.Item.Path.Equals(output.Path, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                if (output.IsDirectory) newFolders.Add(output.Path);
+                continue;
+            }
+            if (existing.Item.IsDirectory != output.IsDirectory || !output.IsDirectory && !request.Options.Overwrite)
+                return MutationErrorCategory.Conflict;
+            if (!existing.Item.CanWrite) return MutationErrorCategory.Permission;
+        }
+        return null;
     }
 
     private FileArchiveExtractionReservation ReserveArchiveExtraction(
@@ -546,10 +651,6 @@ public sealed partial class DsmRepository
         HasArchiveCapability("SYNO.FileStation.Extract", 2) &&
         HasArchiveCapability("SYNO.FileStation.List", 2);
 
-    private static bool IsSupportedExtractionArchive(string name) =>
-        name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
-        name.EndsWith(".7z", StringComparison.OrdinalIgnoreCase);
-
     private static FileArchiveExtractionOutcome ExtractionOutcome(
         MutationResultStatus status,
         bool submitted,
@@ -567,15 +668,19 @@ public sealed partial class DsmRepository
     private sealed record FileArchiveExtractionExpectedOutput(
         string Name,
         string Path,
-        bool IsDirectory);
+        bool IsDirectory,
+        long? Size = null);
 
     private sealed record FileArchiveExtractionReview(
         FileArchiveExtractionRequest Request,
         IReadOnlyList<FileArchiveExtractionExpectedOutput> ExpectedOutputs,
-        HashSet<string> ReservedPaths)
+        HashSet<string> ReservedPaths,
+        string OptionsSignature)
     {
+        public string? TaskId { get; set; }
+        public bool TaskFinished { get; set; }
         public string Key => $"{Request.ProfileId:N}|{Request.Source.Item.Path}|" +
-            Request.DestinationFolder;
+            Request.DestinationFolder + "|" + OptionsSignature;
     }
 
     private sealed record FileArchiveExtractionReservation(

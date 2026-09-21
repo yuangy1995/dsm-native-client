@@ -9,7 +9,7 @@ public sealed class ChatAdvancedWriteContractTests
     private static readonly Guid ProfileId = Guid.NewGuid();
 
     [Fact]
-    public async Task AdvancedWritesStayClosedAndSendNoRequests()
+    public async Task AdvancedWritesStayClosedWithMissingChatContextAndSendNoRequests()
     {
         var api = new RecordingApi();
         var repository = new DsmRepository(

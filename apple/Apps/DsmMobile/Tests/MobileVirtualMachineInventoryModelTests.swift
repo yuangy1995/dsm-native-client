@@ -5,6 +5,14 @@ import XCTest
 
 @MainActor
 final class MobileVirtualMachineInventoryModelTests: XCTestCase {
+    func test启动策略投影保持三态与未知而不增加写能力() {
+        for behavior in VirtualMachineStartupBehavior.allCases {
+            let item = MobileVirtualMachineItem(VirtualMachine(id: "vm", name: "Synthetic", status: "shutdown", startupBehavior: behavior))
+            XCTAssertEqual(item.startupBehavior, behavior)
+        }
+        XCTAssertNil(MobileVirtualMachineItem(VirtualMachine(id: "vm", name: "Synthetic", status: "unknown")).startupBehavior)
+    }
+
     func test共享快照投影七分区白名单摘要() async {
         let profileID = UUID()
         let repository = VirtualMachineManagerRepositoryStub(
@@ -371,7 +379,7 @@ final class MobileVirtualMachineInventoryModelTests: XCTestCase {
         ))
         XCTAssertEqual(
             Set(Mirror(reflecting: machine).children.compactMap(\.label)),
-            ["id", "name", "status", "cpuCount", "memoryBytes", "storageBytes", "autoStart"]
+            ["id", "name", "status", "cpuCount", "memoryBytes", "storageBytes", "startupBehavior"]
         )
         let event = MobileVirtualMachineEventItem(
             ServiceEvent(id: "id", timestamp: nil, level: "info", user: "private", message: "private")

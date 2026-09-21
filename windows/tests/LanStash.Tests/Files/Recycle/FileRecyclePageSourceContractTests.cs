@@ -53,7 +53,7 @@ public sealed class FileRecyclePageSourceContractTests
     }
 
     [Fact]
-    public void BatchRecycleAndRestoreUseBoundedNativeSelectionAndOneConfirmation()
+    public void BatchRecycleAndRestoreUseFullNativeSelectionAndOneConfirmation()
     {
         var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
         var selection = Read("windows/src/LanStash.App/Views/FilesPage.BatchDownload.cs");
@@ -68,7 +68,13 @@ public sealed class FileRecyclePageSourceContractTests
         Assert.Contains("x:Name=\"RestoreSelectedItemsButton\"", xaml);
         Assert.Contains("FileBatchSelectionOperation.Recycle", selection);
         Assert.Contains("FileBatchSelectionOperation.Restore", selection);
-        Assert.Contains("FileRecycleBatchViewModel.MaximumItemCount", selection);
+        Assert.DoesNotContain("FileRecycleBatchViewModel.MaximumItemCount", selection);
+        Assert.Contains("visible.Count != sources.Count", partial);
+        Assert.Contains("_batchSelection.Count != sources.Count", partial);
+        Assert.Contains("RequestedTheme = ActualTheme", partial);
+        Assert.DoesNotContain("ContentDialogButton.Primary", partial);
+        Assert.Contains("model.PropertyChanged -= ProgressChanged", partial);
+        Assert.Contains("FileRecycleBatchSignIn", dialog);
         Assert.Contains("ContentDialog", partial);
         Assert.Contains("FileRecycleBatchDialogContent.Build(", partial);
         Assert.Contains("FileRecycleOperation.Restore", partial);
@@ -81,6 +87,22 @@ public sealed class FileRecyclePageSourceContractTests
         Assert.Contains("FileRecycleViewModel.TryRestoreDestination", model);
         Assert.DoesNotContain("DeleteFile", model);
         Assert.DoesNotContain("overwrite", partial, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RecycleReviewReusesReadOnlyWindowWithoutMutationCalls()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
+        var page = Read("windows/src/LanStash.App/Views/FilesPage.FileOperationRecovery.cs");
+        var model = Read("windows/src/LanStash.App/Features/Files/Recovery/FileOperationRecoveryViewModel.cs");
+        Assert.Contains("RecycleRecoveryButton", xaml);
+        Assert.Contains("ShowFileOperationRecoveryAsync(recycle: true)", page);
+        Assert.Contains("repository.ReviewRecycleAsync(entry.Id, token)", model);
+        Assert.Contains("repository.AcknowledgeRecycleReview", model);
+        Assert.Contains("result.SourcePath == entry.SourcePath", model);
+        Assert.DoesNotContain(".MoveToRecycleAsync(", model);
+        Assert.DoesNotContain(".RestoreFromRecycleAsync(", model);
+        Assert.Contains("selected.RequiresTimestamp", model);
     }
 
     private static string Read(string relativePath) =>

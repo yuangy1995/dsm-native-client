@@ -410,6 +410,231 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertEqual(model.accounts?.users.map(\.name), ["user"])
     }
 
+    private var syntheticTaskDraft: NasScheduledTaskDraft {
+        NasScheduledTaskDraft(id: 12, name: "synthetic-task", owner: "execution-user", script: "old-script")
+    }
+
+    func test任务保存不能仅凭相同ID报告成功() async throws {
+        let repository = NasAdministrationRepositoryStub(scheduledTasks: [syntheticScheduledTask], savedTaskDraft: syntheticTaskDraft, ignoreTaskSave: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        var desired = syntheticTaskDraft
+        desired.script = "changed-script"
+        do { try await model.saveTask(desired, baseline: syntheticTaskDraft); XCTFail("脚本未保存不能报告成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .unknown); XCTAssertFalse(error.isRetryable) }
+        let count = await repository.taskSaveCount()
+        XCTAssertEqual(count, 1)
+    }
+
+    func test任务详情基线改变不发送保存() async throws {
+        var changed = syntheticTaskDraft
+        changed.script = "externally-changed"
+        let repository = NasAdministrationRepositoryStub(scheduledTasks: [syntheticScheduledTask], savedTaskDraft: changed)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        var desired = syntheticTaskDraft
+        desired.script = "new-script"
+        do { try await model.saveTask(desired, baseline: syntheticTaskDraft); XCTFail("详情改变后不能覆盖") }
+        catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        let count = await repository.taskSaveCount()
+        XCTAssertEqual(count, 0)
+    }
+
+    func test任务保存后完整配置匹配才成功() async throws {
+        let repository = NasAdministrationRepositoryStub(scheduledTasks: [syntheticScheduledTask], savedTaskDraft: syntheticTaskDraft)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        var desired = syntheticTaskDraft
+        desired.name = "renamed-task"
+        desired.script = "new-script"
+        desired.schedule.hour = 7
+        try await model.saveTask(desired, baseline: syntheticTaskDraft)
+        let count = await repository.taskSaveCount()
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(model.tasks.first?.name, "renamed-task")
+    }
+
+    private var syntheticScheduledTask: NasScheduledTask {
+        NasScheduledTask(id: "12", name: "synthetic-task", owner: "execution-user", realOwner: nil, type: "script", action: nil,
+            isEnabled: true, nextTriggerDescription: nil, canRun: true, canEdit: true)
+    }
+
+    func test任务运行不猜测真实所有者且不把接受当执行结果() async throws {
+        let repository = NasAdministrationRepositoryStub(scheduledTasks: [syntheticScheduledTask])
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        try await model.runTask(syntheticScheduledTask)
+        let count = await repository.taskCommandCount()
+        let owner = await repository.lastTaskRealOwner()
+        XCTAssertEqual(count, 1)
+        XCTAssertNil(owner)
+    }
+
+    func test删除任务后回读失败不使用空缓存确认消失() async throws {
+        let repository = NasAdministrationRepositoryStub(scheduledTasks: [syntheticScheduledTask], taskReadFailsAfterCommand: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        do { try await model.deleteTask(syntheticScheduledTask); XCTFail("回读失败不能报告删除成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .unknown); XCTAssertFalse(error.isRetryable) }
+        let count = await repository.taskCommandCount()
+        XCTAssertEqual(count, 1)
+    }
+
+    func test任务命令前状态漂移不发送() async throws {
+        let changed = NasScheduledTask(id: "12", name: "renamed", owner: "execution-user", realOwner: nil, type: "script", action: nil,
+            isEnabled: true, nextTriggerDescription: nil, canRun: true, canEdit: true)
+        let repository = NasAdministrationRepositoryStub(scheduledTasks: [changed])
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        do { try await model.runTask(syntheticScheduledTask); XCTFail("任务变化后不能沿用旧目标") }
+        catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse); XCTAssertFalse(error.isRetryable) }
+        let count = await repository.taskCommandCount()
+        XCTAssertEqual(count, 0)
+    }
+
+    private var syntheticConnection: NasConnection {
+        NasConnection(id: "old-display", processID: "synthetic-process", deviceID: "synthetic-device", account: "synthetic",
+            source: "synthetic-source", location: nil, protocolName: "HTTPS", type: "HTTP/HTTPS", connectedAt: nil,
+            description: "DSM", isCurrentConnection: false, canDisconnect: true)
+    }
+
+    func test连接派生行变化但原始标识存在不报告断开() async throws {
+        let changed = NasConnection(id: "new-display", processID: "new-process", deviceID: "synthetic-device", account: "synthetic",
+            source: "synthetic-source", location: nil, protocolName: "SMB", type: "SMB", connectedAt: nil,
+            description: nil, isCurrentConnection: false, canDisconnect: true)
+        let repository = NasAdministrationRepositoryStub(connectionAfterDisconnect: NasConnectionPage(connections: [changed], total: 1))
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        do { try await model.disconnectConnection(syntheticConnection); XCTFail("原始设备标识仍在不能报告断开") }
+        catch let error as AppError { XCTAssertFalse(error.isRetryable); XCTAssertEqual(error.safeUserMessage, L10n.string("ui.f0b77bcbb861e723")) }
+        let count = await repository.connectionDisconnectCount()
+        XCTAssertEqual(count, 1)
+    }
+
+    func test连接回读失败不使用空缓存报告成功() async throws {
+        let repository = NasAdministrationRepositoryStub(connectionReadFailsAfterDisconnect: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.connections)
+        do { try await model.disconnectConnection(syntheticConnection); XCTFail("读取失败不能使用空缓存确认断开") }
+        catch let error as AppError { XCTAssertFalse(error.isRetryable) }
+        let count = await repository.connectionDisconnectCount()
+        XCTAssertEqual(count, 1)
+    }
+
+    private var editableDirectoryAccount: NasAccount {
+        NasAccount(id: "user:user", name: "user", kind: .user, numericID: 1, description: "old",
+                   email: "old@example.invalid", isExpired: false, canEdit: true, canDelete: true)
+    }
+
+    func test账号操作标识大小写一致且区分用户和群组() {
+        XCTAssertEqual(NasSettingsModel.accountOperationKey(kind: .user, name: "USER"), NasSettingsModel.accountOperationKey(kind: .user, name: "user"))
+        XCTAssertNotEqual(NasSettingsModel.accountOperationKey(kind: .user, name: "same"), NasSettingsModel.accountOperationKey(kind: .group, name: "same"))
+    }
+
+    func test账号保存必须逐字段回读而不是只检查名称存在() async throws {
+        let repository = NasAdministrationRepositoryStub(editableUsers: [editableDirectoryAccount], ignoresDirectorySaves: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        do {
+            try await model.saveAccount(NasAccountDraft(originalName: "user", name: "user", description: "changed", email: "new@example.invalid"))
+            XCTFail("旧账号名称存在不能证明保存成功")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .unknown)
+            XCTAssertFalse(error.isRetryable)
+            XCTAssertEqual(error.safeUserMessage, L10n.string("account.save.unverified"))
+        }
+        let saves = await repository.directorySaveCount()
+        XCTAssertEqual(saves, 1)
+    }
+
+    func test群组保存必须核对说明() async throws {
+        let group = NasAccount(id: "group:team", name: "team", kind: .group, numericID: 2, description: "old", canEdit: true, canDelete: true)
+        let repository = NasAdministrationRepositoryStub(editableGroups: [group], ignoresDirectorySaves: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        do {
+            try await model.saveGroup(NasGroupDraft(originalName: "team", name: "team", description: "changed"))
+            XCTFail("群组说明未更新不能报告成功")
+        } catch let error as AppError { XCTAssertEqual(error.category, .unknown); XCTAssertFalse(error.isRetryable) }
+    }
+
+    func test账号保存完整匹配才成功() async throws {
+        let repository = NasAdministrationRepositoryStub(editableUsers: [editableDirectoryAccount])
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        try await model.saveAccount(NasAccountDraft(originalName: "user", name: "user", description: "changed", email: "new@example.invalid", isExpired: true))
+        XCTAssertEqual(model.accounts?.users.first?.description, "changed")
+        XCTAssertEqual(model.accounts?.users.first?.email, "new@example.invalid")
+        XCTAssertEqual(model.accounts?.users.first?.isExpired, true)
+        XCTAssertTrue(model.accountOperationIDs.isEmpty)
+    }
+
+    func test账号保存前基线漂移不提交() async throws {
+        let repository = NasAdministrationRepositoryStub(editableUsers: [editableDirectoryAccount])
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        await repository.replaceDirectoryUsers([NasAccount(id: "user:user", name: "user", kind: .user, numericID: 2,
+            description: "old", email: "old@example.invalid", canEdit: true, canDelete: true)])
+        do {
+            try await model.saveAccount(NasAccountDraft(originalName: "user", name: "user", description: "changed", email: "old@example.invalid"))
+            XCTFail("账号身份漂移后不能保存")
+        } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse); XCTAssertFalse(error.isRetryable) }
+        let saves = await repository.directorySaveCount()
+        XCTAssertEqual(saves, 0)
+    }
+
+    func test账号保存后读取失败不能用缓存确认密码变更() async throws {
+        let repository = NasAdministrationRepositoryStub(editableUsers: [editableDirectoryAccount], directoryReadFailsAfterSave: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        do {
+            try await model.saveAccount(NasAccountDraft(originalName: "user", name: "user", description: "old", email: "old@example.invalid",
+                password: "synthetic-secret", passwordConfirmation: "synthetic-secret"))
+            XCTFail("回读失败不能使用缓存确认保存")
+        } catch let error as AppError { XCTAssertEqual(error.category, .unknown); XCTAssertFalse(error.isRetryable) }
+    }
+
+    func test账号保存超时不提示立即重试() async throws {
+        let repository = NasAdministrationRepositoryStub(editableUsers: [editableDirectoryAccount], directorySaveFails: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        do {
+            try await model.saveAccount(NasAccountDraft(originalName: "user", name: "user", description: "changed", email: "old@example.invalid"))
+            XCTFail("超时不能报告已保存")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .unknown); XCTAssertFalse(error.isRetryable)
+            XCTAssertEqual(error.safeUserMessage, L10n.string("account.save.unverified"))
+        }
+        let saves = await repository.directorySaveCount()
+        XCTAssertEqual(saves, 1)
+    }
+
+    func test空账号目录不能覆盖未确认的删除结果() async throws {
+        let repository = NasAdministrationRepositoryStub(accountDeleteStatus: .submittedButUnverified, removesAccountAfterUnknown: true)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        let account = try XCTUnwrap(model.accounts?.users.first)
+        do { try await model.deleteAccount(account); XCTFail("空目录不能把未知结果改为成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .unknown); XCTAssertFalse(error.isRetryable) }
+    }
+
+    func test空群组目录不能覆盖不支持的删除结果() async throws {
+        let model = NasSettingsModel(repository: NasAdministrationRepositoryStub())
+        model.setModuleEnabled(true)
+        await model.activate(.accounts)
+        let group = NasAccount(id: "group:synthetic", name: "synthetic", kind: .group, numericID: nil, description: nil, canDelete: true)
+        do { try await model.deleteGroup(group); XCTFail("空目录不能把不支持改为成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable); XCTAssertFalse(error.isRetryable) }
+    }
+
     func test账号与群组删除反馈覆盖权限和不支持状态() {
         let accountPermission = NasSettingsModel.directoryDeletionFeedback(
             for: .permissionDenied,
@@ -503,6 +728,58 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertFalse(model.diskOperationIDs.contains("disk1"))
         let requestCount = await repository.diskTestRequestCount()
         XCTAssertEqual(requestCount, 1)
+    }
+
+    func test换盘和存储刷新失败不保留检测缓存() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        let model = NasSettingsModel(repository: repository); model.setModuleEnabled(true)
+        await model.activate(.storage); _ = try await model.loadDiskTestStatus(diskID: "disk1")
+        XCTAssertNotNil(model.diskTestStatuses["disk1"])
+        await repository.configureDisk(deviceID: "replacement")
+        await model.activate(.storage, force: true); XCTAssertNil(model.diskTestStatuses["disk1"])
+        _ = try await model.loadDiskTestStatus(diskID: "disk1")
+        await repository.configureDisk(storageFails: true)
+        await model.activate(.storage, force: true); XCTAssertNil(model.diskTestStatuses["disk1"])
+    }
+
+    func test迟到状态不会覆盖较新读取或重新开启后的页面() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        let model = NasSettingsModel(repository: repository); model.setModuleEnabled(true)
+        await model.activate(.storage); await repository.pauseNextDiskRead()
+        let old = Task { try await model.loadDiskTestStatus(diskID: "disk1") }
+        while !(await repository.hasSuspendedDiskRead()) { await Task.yield() }
+        await repository.configureDisk(state: NasDiskTestStatus(diskID: "disk1", isRunning: true, runningType: .quick))
+        _ = try await model.loadDiskTestStatus(diskID: "disk1")
+        await repository.resumeDiskRead()
+        do { _ = try await old.value; XCTFail("旧读取应失效") } catch is CancellationError { }
+        XCTAssertEqual(model.diskTestStatuses["disk1"]?.isRunning, true)
+
+        await repository.pauseNextDiskRead()
+        let disabled = Task { try await model.loadDiskTestStatus(diskID: "disk1") }
+        while !(await repository.hasSuspendedDiskRead()) { await Task.yield() }
+        model.setModuleEnabled(false); model.setModuleEnabled(true)
+        await repository.resumeDiskRead()
+        do { _ = try await disabled.value; XCTFail("旧页面读取应失效") } catch is CancellationError { }
+        XCTAssertNil(model.diskTestStatuses["disk1"])
+    }
+
+    func test已确认启动后刷新失败不补造检测状态() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        let model = NasSettingsModel(repository: repository); model.setModuleEnabled(true)
+        await model.activate(.storage); await repository.configureDisk(statusFails: true)
+        try await model.startDiskTest(diskID: "disk1", type: .quick)
+        XCTAssertNil(model.diskTestStatuses["disk1"])
+    }
+
+    func test未知启动不会因无关运行状态而冒充成功() async throws {
+        let repository = NasAdministrationRepositoryStub(diskTestStartStatus: .submittedButUnverified)
+        let model = NasSettingsModel(repository: repository); model.setModuleEnabled(true)
+        await model.activate(.storage)
+        await repository.configureDisk(state: NasDiskTestStatus(diskID: "disk1", isRunning: true, runningType: .extended))
+        _ = try await model.loadDiskTestStatus(diskID: "disk1")
+        do { try await model.startDiskTest(diskID: "disk1", type: .quick); XCTFail("未知结果不能用缓存升级为成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .unknown) }
+        XCTAssertEqual(model.diskTestStatuses["disk1"]?.runningType, .extended)
     }
 
     func test停止硬盘检测后保存已确认的停止状态() async throws {
@@ -964,6 +1241,42 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertTrue(model.ddns?.records.isEmpty == true)
     }
 
+    func testDDNS匹配旧记录不能覆盖保存拒绝或未知结果() async {
+        for status in [MutationResultStatus.submittedButUnverified, .permissionDenied] {
+            let repository = NasAdministrationRepositoryStub(ddnsRecords: [ddnsRecord], ddnsSaveStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.ddns)
+            do {
+                try await model.saveDDNS(ddnsDraft)
+                XCTFail("旧记录匹配不能把拒绝或未知保存显示为成功")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, status == .permissionDenied ? .permissionDenied : .unknown)
+                XCTAssertFalse(error.isRetryable)
+            } catch {
+                XCTFail("返回了非统一错误：\(error)")
+            }
+        }
+    }
+
+    func testDDNS空目录不能覆盖删除拒绝或未知结果() async {
+        for status in [MutationResultStatus.submittedButUnverified, .permissionDenied] {
+            let repository = NasAdministrationRepositoryStub(ddnsRecords: [], ddnsDeleteStatus: status)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            await model.activate(.ddns)
+            do {
+                try await model.deleteDDNS(ddnsRecord)
+                XCTFail("空目录不能把拒绝或未知删除显示为成功")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, status == .permissionDenied ? .permissionDenied : .unknown)
+                XCTAssertFalse(error.isRetryable)
+            } catch {
+                XCTFail("返回了非统一错误：\(error)")
+            }
+        }
+    }
+
     func testDDNS删除未确认时刷新后仍保留记录() async {
         let record = ddnsRecord
         let repository = NasAdministrationRepositoryStub(
@@ -1234,6 +1547,17 @@ final class NasAdministrationModelTests: XCTestCase {
         XCTAssertEqual(model.remoteAccess?.isRouterConfigurationEnabled, false)
     }
 
+    func test远程访问未知且刷新失败不能沿用匹配旧缓存报成功() async throws {
+        let repository = NasAdministrationRepositoryStub(remoteAccessUpdateStatus: .submittedButUnverified)
+        let model = NasSettingsModel(repository: repository); model.setModuleEnabled(true)
+        await model.activate(.remoteAccess)
+        let previous = try XCTUnwrap(model.remoteAccess)
+        await repository.failRemoteAccessReadAfterSave()
+        do { try await model.saveRemoteAccess(previous); XCTFail("旧缓存吻合不能覆盖未知操作结果") }
+        catch let error as AppError { XCTAssertEqual(error.category, .unknown) }
+        XCTAssertNotNil(model.errorMessage(for: .remoteAccess))
+    }
+
     func test远程访问反馈覆盖权限和不支持状态() {
         XCTAssertEqual(
             NasSettingsModel.remoteAccessSettingsFeedback(for: .permissionDenied),
@@ -1493,6 +1817,19 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     private var diskTestRequests = 0
     private var powerActionRequests = 0
     private var diskTestStatus = NasDiskTestStatus(diskID: "disk1", isRunning: false)
+    private var diskDeviceID = "disk1"
+    private var diskStatusReadFails = false
+    private var storageReadFails = false
+    private var diskReadPaused = false
+    private var diskReadContinuation: CheckedContinuation<Void, Never>?
+    func configureDisk(deviceID: String? = nil, state: NasDiskTestStatus? = nil, statusFails: Bool = false, storageFails: Bool = false) {
+        if let deviceID { diskDeviceID = deviceID }
+        if let state { diskTestStatus = state }
+        diskStatusReadFails = statusFails; storageReadFails = storageFails
+    }
+    func pauseNextDiskRead() { diskReadPaused = true }
+    func hasSuspendedDiskRead() -> Bool { diskReadContinuation != nil }
+    func resumeDiskRead() { diskReadContinuation?.resume(); diskReadContinuation = nil }
     private let diskTestStartStatus: MutationResultStatus
     private let diskTestStopStatus: MutationResultStatus
     private var packages: [NasPackage]
@@ -1512,6 +1849,21 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         groups: []
     )
     private let accountDeleteStatus: MutationResultStatus
+    private let removesAccountAfterUnknown: Bool
+    private let ignoresDirectorySaves: Bool
+    private let directorySaveFails: Bool
+    private let directoryReadFailsAfterSave: Bool
+    private var directorySaves = 0
+    private let connectionAfterDisconnect: NasConnectionPage
+    private let connectionReadFailsAfterDisconnect: Bool
+    private var connectionDisconnects = 0
+    private var scheduledTasks: [NasScheduledTask]
+    private let taskReadFailsAfterCommand: Bool
+    private var taskCommands = 0
+    private var taskRealOwner: String?
+    private var savedTaskDraft: NasScheduledTaskDraft?
+    private let ignoreTaskSave: Bool
+    private var taskSaves = 0
     private var ethernetInterfaces = [
         NasEthernetInterface(
             id: "eth0",
@@ -1549,6 +1901,9 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         isRouterConfigurationEnabled: false,
         canDisableRelay: true
     )
+    private var remoteAccessSaves = 0
+    private var remoteAccessReadFailsAfterSave = false
+    func failRemoteAccessReadAfterSave() { remoteAccessReadFailsAfterSave = true }
     private let securityUpdateStatus: MutationResultStatus
     private var fileServiceSettings = NasFileServiceSettings(
         isSMBEnabled: false,
@@ -1604,6 +1959,18 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         packageControlStatus: MutationResultStatus = .confirmedSuccess,
         packageUninstallStatus: MutationResultStatus = .confirmedSuccess,
         accountDeleteStatus: MutationResultStatus = .confirmedSuccess,
+        removesAccountAfterUnknown: Bool = false,
+        editableUsers: [NasAccount]? = nil,
+        editableGroups: [NasAccount]? = nil,
+        ignoresDirectorySaves: Bool = false,
+        directorySaveFails: Bool = false,
+        directoryReadFailsAfterSave: Bool = false,
+        connectionAfterDisconnect: NasConnectionPage = NasConnectionPage(connections: [], total: 0),
+        connectionReadFailsAfterDisconnect: Bool = false,
+        scheduledTasks: [NasScheduledTask] = [],
+        taskReadFailsAfterCommand: Bool = false,
+        savedTaskDraft: NasScheduledTaskDraft? = nil,
+        ignoreTaskSave: Bool = false,
         ethernetUpdateStatus: MutationResultStatus = .confirmedSuccess,
         securityUpdateStatus: MutationResultStatus = .confirmedSuccess,
         fileServiceUpdateStatus: MutationResultStatus = .confirmedSuccess,
@@ -1626,6 +1993,16 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         self.packageControlStatus = packageControlStatus
         self.packageUninstallStatus = packageUninstallStatus
         self.accountDeleteStatus = accountDeleteStatus
+        self.removesAccountAfterUnknown = removesAccountAfterUnknown
+        self.ignoresDirectorySaves = ignoresDirectorySaves
+        self.directorySaveFails = directorySaveFails
+        self.directoryReadFailsAfterSave = directoryReadFailsAfterSave
+        self.connectionAfterDisconnect = connectionAfterDisconnect
+        self.connectionReadFailsAfterDisconnect = connectionReadFailsAfterDisconnect
+        self.scheduledTasks = scheduledTasks
+        self.taskReadFailsAfterCommand = taskReadFailsAfterCommand
+        self.savedTaskDraft = savedTaskDraft
+        self.ignoreTaskSave = ignoreTaskSave
         self.ethernetUpdateStatus = ethernetUpdateStatus
         self.securityUpdateStatus = securityUpdateStatus
         self.fileServiceUpdateStatus = fileServiceUpdateStatus
@@ -1647,6 +2024,8 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         self.remoteAccessUpdateStatus = remoteAccessUpdateStatus
         self.diskTestStartStatus = diskTestStartStatus
         self.diskTestStopStatus = diskTestStopStatus
+        let defaultDirectory = self.accountDirectory
+        self.accountDirectory = NasAccountDirectory(users: editableUsers ?? defaultDirectory.users, groups: editableGroups ?? defaultDirectory.groups)
     }
 
     func systemRequestCount() -> Int { systemRequests }
@@ -1733,11 +2112,13 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     }
 
     func loadStorage() async throws -> NasStorageSnapshot {
-        NasStorageSnapshot(
+        if storageReadFails { throw AppError(category: .networkUnavailable, isRetryable: true, safeUserMessage: "合成存储读取失败") }
+        return NasStorageSnapshot(
             overallStatus: "normal",
             disks: [
                 NasDisk(
                     id: "disk1",
+                    deviceID: diskDeviceID,
                     name: "硬盘 1",
                     model: "MODEL",
                     type: "HDD",
@@ -1756,7 +2137,13 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     }
 
     func loadDiskTestStatus(diskID: String) async throws -> NasDiskTestStatus {
-        diskTestStatus
+        if diskStatusReadFails { throw AppError(category: .networkUnavailable, isRetryable: true, safeUserMessage: "合成状态读取失败") }
+        let snapshot = diskTestStatus
+        if diskReadPaused {
+            diskReadPaused = false
+            await withCheckedContinuation { diskReadContinuation = $0 }
+        }
+        return snapshot
     }
 
     func startDiskTest(
@@ -1841,14 +2228,74 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     }
 
     func loadPackages() async throws -> [NasPackage] { packages }
-    func loadScheduledTasks() async throws -> [NasScheduledTask] { [] }
+    func loadScheduledTasks() async throws -> [NasScheduledTask] {
+        if taskReadFailsAfterCommand, taskCommands > 0 { throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: "合成任务回读失败") }
+        return scheduledTasks
+    }
+    func runScheduledTask(id: Int, realOwner: String?) async throws { taskCommands += 1; taskRealOwner = realOwner }
+    func deleteScheduledTask(id: Int, realOwner: String?) async throws {
+        taskCommands += 1; taskRealOwner = realOwner; scheduledTasks.removeAll { $0.id == String(id) }
+    }
+    func setScheduledTaskEnabled(id: Int, realOwner: String?, enabled: Bool) async throws {
+        taskCommands += 1; taskRealOwner = realOwner
+        scheduledTasks = scheduledTasks.map { task in
+            guard task.id == String(id) else { return task }
+            return NasScheduledTask(id: task.id, name: task.name, owner: task.owner, realOwner: task.realOwner, type: task.type, action: task.action,
+                isEnabled: enabled, nextTriggerDescription: task.nextTriggerDescription, canRun: task.canRun, canEdit: task.canEdit)
+        }
+    }
+    func taskCommandCount() -> Int { taskCommands }
+    func lastTaskRealOwner() -> String? { taskRealOwner }
+    func taskSaveCount() -> Int { taskSaves }
+    func loadScheduledTaskDraft(id: Int?, realOwner: String?) async throws -> NasScheduledTaskDraft {
+        guard let savedTaskDraft else { throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: "合成详情不可用") }
+        return savedTaskDraft
+    }
+    func saveScheduledTask(_ draft: NasScheduledTaskDraft) async throws {
+        taskSaves += 1
+        if ignoreTaskSave { return }
+        var saved = draft
+        saved.id = draft.id ?? 21
+        saved.name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        saved.owner = draft.owner.trimmingCharacters(in: .whitespacesAndNewlines)
+        savedTaskDraft = saved
+        scheduledTasks = [NasScheduledTask(id: String(saved.id!), name: saved.name, owner: saved.owner, realOwner: saved.realOwner,
+            type: "script", action: nil, isEnabled: saved.isEnabled, nextTriggerDescription: nil, canRun: true, canEdit: true)]
+    }
 
     func loadAccountsAndGroups() async throws -> NasAccountDirectory {
-        accountDirectory
+        if directoryReadFailsAfterSave, directorySaves > 0 {
+            throw AppError(category: .timeout, isRetryable: true, safeUserMessage: "合成回读失败")
+        }
+        return accountDirectory
+    }
+
+    func directorySaveCount() -> Int { directorySaves }
+    func replaceDirectoryUsers(_ users: [NasAccount]) { accountDirectory = NasAccountDirectory(users: users, groups: accountDirectory.groups) }
+    func saveAccount(_ draft: NasAccountDraft) async throws {
+        directorySaves += 1
+        if directorySaveFails { throw AppError(category: .timeout, isRetryable: true, safeUserMessage: "合成保存超时") }
+        if ignoresDirectorySaves { return }
+        let name = draft.originalName ?? draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let original = accountDirectory.users.first { $0.name == name }
+        let saved = NasAccount(id: "user:\(name)", name: name, kind: .user, numericID: original?.numericID ?? 42,
+            description: draft.description, email: draft.email, groups: draft.groups ?? original?.groups,
+            isExpired: draft.isExpired, canEdit: true, canDelete: true)
+        accountDirectory = NasAccountDirectory(users: accountDirectory.users.filter { $0.name != name } + [saved], groups: accountDirectory.groups)
+    }
+    func saveGroup(_ draft: NasGroupDraft) async throws {
+        directorySaves += 1
+        if directorySaveFails { throw AppError(category: .timeout, isRetryable: true, safeUserMessage: "合成保存超时") }
+        if ignoresDirectorySaves { return }
+        let name = draft.originalName ?? draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let original = accountDirectory.groups.first { $0.name == name }
+        let saved = NasAccount(id: "group:\(name)", name: name, kind: .group, numericID: original?.numericID ?? 43,
+            description: draft.description, canEdit: true, canDelete: true)
+        accountDirectory = NasAccountDirectory(users: accountDirectory.users, groups: accountDirectory.groups.filter { $0.name != name } + [saved])
     }
 
     func deleteAccountResult(name: String) async throws -> MutationResult {
-        if accountDeleteStatus == .confirmedSuccess {
+        if accountDeleteStatus == .confirmedSuccess || removesAccountAfterUnknown {
             accountDirectory = NasAccountDirectory(
                 users: accountDirectory.users.filter { $0.name != name },
                 groups: accountDirectory.groups
@@ -1938,8 +2385,14 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     }
 
     func loadConnections(offset: Int, limit: Int) async throws -> NasConnectionPage {
-        NasConnectionPage(connections: [], total: 0)
+        if connectionDisconnects > 0 {
+            if connectionReadFailsAfterDisconnect { throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: "合成连接读取失败") }
+            return connectionAfterDisconnect
+        }
+        return NasConnectionPage(connections: [], total: 0)
     }
+    func disconnectConnection(_ connection: NasConnection) async throws { connectionDisconnects += 1 }
+    func connectionDisconnectCount() -> Int { connectionDisconnects }
 
     func loadEthernetInterfaces() async throws -> [NasEthernetInterface] {
         ethernetInterfaces
@@ -2283,12 +2736,16 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
     }
 
     func loadRemoteAccessSettings() async throws -> NasRemoteAccessSettings {
-        remoteAccessSettings
+        if remoteAccessReadFailsAfterSave && remoteAccessSaves > 0 {
+            throw AppError(category: .networkUnavailable, isRetryable: true, safeUserMessage: "合成远程访问读取失败")
+        }
+        return remoteAccessSettings
     }
 
     func saveRemoteAccessSettingsResult(
         _ settings: NasRemoteAccessSettings
     ) async throws -> MutationResult {
+        remoteAccessSaves += 1
         switch remoteAccessUpdateStatus {
         case .confirmedSuccess:
             remoteAccessSettings = settings

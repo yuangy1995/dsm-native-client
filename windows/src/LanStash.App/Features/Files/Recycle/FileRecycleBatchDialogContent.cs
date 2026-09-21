@@ -30,6 +30,15 @@ internal static class FileRecycleBatchDialogContent
 
         if (model.State == FileRecycleBatchState.Confirming)
         {
+            panel.Children.Add(new ScrollViewer
+            {
+                MaxHeight = 100,
+                Content = new TextBlock
+                {
+                    Text = string.Join(Environment.NewLine, model.Sources.Select(item => item.Name)),
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            });
             panel.Children.Add(new InfoBar
             {
                 IsOpen = true,
@@ -43,6 +52,7 @@ internal static class FileRecycleBatchDialogContent
         {
             var progress = new ProgressBar
             {
+                Name = "BatchRecycleProgress",
                 Minimum = 0,
                 Maximum = model.Sources.Count,
                 Value = model.ProcessedCount,
@@ -56,12 +66,8 @@ internal static class FileRecycleBatchDialogContent
             panel.Children.Add(progress);
             var status = new TextBlock
             {
-                Text = localization.Format(
-                    model.Operation == FileRecycleOperation.Restore
-                        ? "FileRestoreBatchWorking"
-                        : "FileRecycleBatchWorking",
-                    Math.Min(model.ProcessedCount + 1, model.Sources.Count),
-                    model.Sources.Count),
+                Name = "BatchRecycleWorking",
+                Text = FormatProgress(model, localization),
                 TextWrapping = TextWrapping.WrapWholeWords,
             };
             AutomationProperties.SetLiveSetting(status, AutomationLiveSetting.Polite);
@@ -91,8 +97,25 @@ internal static class FileRecycleBatchDialogContent
                 : "FileRecycleBatchStatusAutomationName"));
         AutomationProperties.SetLiveSetting(message, AutomationLiveSetting.Assertive);
         panel.Children.Add(message);
+        if (model.RequiresSignIn)
+            panel.Children.Add(new TextBlock
+            {
+                Text = localization.Get("FileRecycleBatchSignIn"),
+                TextWrapping = TextWrapping.WrapWholeWords,
+            });
         return panel;
     }
+
+    public static void UpdateProgress(StackPanel panel, FileRecycleBatchViewModel model, LocalizationService localization)
+    {
+        foreach (var progress in panel.Children.OfType<ProgressBar>()) progress.Value = model.ProcessedCount;
+        foreach (var status in panel.Children.OfType<TextBlock>().Where(item => item.Name == "BatchRecycleWorking"))
+            status.Text = FormatProgress(model, localization);
+    }
+
+    private static string FormatProgress(FileRecycleBatchViewModel model, LocalizationService localization) =>
+        localization.Format(model.Operation == FileRecycleOperation.Restore ? "FileRestoreBatchWorking" : "FileRecycleBatchWorking",
+            Math.Min(model.ProcessedCount + 1, model.Sources.Count), model.Sources.Count);
 
     public static string FormatSummary(
         LocalizationService localization,

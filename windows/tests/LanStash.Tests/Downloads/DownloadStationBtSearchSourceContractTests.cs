@@ -40,7 +40,8 @@ public sealed class DownloadStationBtSearchSourceContractTests
         Assert.DoesNotContain("MinHeight=\"540\"", dialog);
         Assert.Contains("!_viewModel.HasNoBtSearchProviders", contentSource);
         Assert.Contains("x:Name=\"HeaderActions\"", page);
-        Assert.Contains("<ItemsWrapGrid Orientation=\"Horizontal\"", page);
+        // 隐藏的设置按钮不能改变等宽项测量并把刷新按钮挤出窗口；原生整页回归另查边界。
+        Assert.Contains("<StackPanel x:Name=\"HeaderActions\" Orientation=\"Horizontal\"", page);
         Assert.Contains("x:Name=\"NarrowHeaderLayout\"", page);
         Assert.Contains("x:Name=\"WideHeaderLayout\"", page);
         Assert.DoesNotContain("Background=\"#", dialog, StringComparison.OrdinalIgnoreCase);

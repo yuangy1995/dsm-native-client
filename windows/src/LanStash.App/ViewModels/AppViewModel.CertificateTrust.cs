@@ -205,6 +205,7 @@ internal sealed class CertificateConnectionContext : IDisposable
         Guid profileId,
         CertificateFingerprint? pinnedFingerprint)
     {
+        UsesPinnedCertificate = pinnedFingerprint is not null;
         _httpClient = new HttpClient(
             new WindowsCertificateTrustHandler(profileId, pinnedFingerprint))
         {
@@ -217,6 +218,7 @@ internal sealed class CertificateConnectionContext : IDisposable
     }
 
     internal IDsmApiClient Api { get; }
+    internal bool UsesPinnedCertificate { get; }
     internal DsmConnectionResolver Resolver { get; }
 
     internal HttpClient TakeOwnership() =>

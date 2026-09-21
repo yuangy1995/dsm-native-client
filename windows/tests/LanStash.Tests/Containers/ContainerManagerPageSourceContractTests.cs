@@ -5,6 +5,40 @@ namespace LanStash.Tests;
 public sealed class ContainerManagerPageSourceContractTests
 {
     [Fact]
+    public void RegistryDownloadRequiresConfirmationAndOwnsVisiblePollingLifetime()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ContainerRegistryDialogContent.xaml");
+        var source = Read("windows/src/LanStash.App/Views/ContainerRegistryDialogContent.xaml.cs");
+        var host = Read("windows/src/LanStash.App/Views/ContainerManagerPage.Registry.cs");
+        Assert.Contains("PullConfirmation", xaml); Assert.Contains("PullTasksList", xaml);
+        Assert.Contains("HasPollableTasks", source); Assert.Contains("TimeSpan.FromSeconds(5)", source);
+        Assert.Contains("_pullTimer.Stop()", source); Assert.Contains("_pull.Dispose()", source);
+        Assert.Contains("content.ActivateAsync()", host); Assert.Contains("content.NeedsParentRefresh", host);
+        Assert.Contains("dialog.Closed += (_, _) => content.Dispose()", host);
+        Assert.True(host.IndexOf("content.Dispose()", StringComparison.Ordinal) < host.IndexOf("await RunAsync(_viewModel.RefreshAsync)", StringComparison.Ordinal));
+        Assert.DoesNotContain("pull_cancel", source); Assert.DoesNotContain("PullImageAsync", host);
+    }
+
+    [Fact]
+    public void ImageDeletionUsesNativeConfirmedDialogAndPageLifetimeIsolation()
+    {
+        var page = Read("windows/src/LanStash.App/Views/ContainerManagerPage.xaml");
+        var lifecycle = Read("windows/src/LanStash.App/Views/ContainerManagerPage.xaml.cs");
+        var dialog = Read("windows/src/LanStash.App/Views/ContainerManagerPage.ImageDeletion.cs");
+        var content = Read("windows/src/LanStash.App/Views/ContainerImageDeleteDialogContent.xaml");
+        Assert.Contains("Click=\"DeleteImages_Click\"", page);
+        Assert.Contains("CloseImageDeletion();", lifecycle);
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", dialog);
+        Assert.Contains("_repository.ProfileId != _viewModel.ActiveProfileId", dialog);
+        Assert.Contains("content.ReloadAsync()", dialog);
+        Assert.Contains("content.NeedsParentRefresh", dialog);
+        Assert.Contains("SelectionMode=\"Multiple\"", content);
+        Assert.Contains("RiskAcknowledgement", content);
+        foreach (var file in new[] { "Mutations", "Registry", "NetworkCreation", "NetworkDeletion" })
+            Assert.Contains("_imageDeletionDialog is not null", Read($"windows/src/LanStash.App/Views/ContainerManagerPage.{file}.cs"));
+    }
+
+    [Fact]
     public void PageHasDedicatedAdaptiveListDetailAndAllContentStates()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ContainerManagerPage.xaml");
@@ -67,11 +101,12 @@ public sealed class ContainerManagerPageSourceContractTests
     }
 
     [Fact]
-    public void PageAndRouteExposeFiveReadSectionsAndNoWriteActions()
+    public void PageAndRouteExposeFiveReadSectionsAndNoUnrelatedWriteActions()
     {
         var combined =
             Read("windows/src/LanStash.App/Views/ContainerManagerPage.xaml") +
             Read("windows/src/LanStash.App/Views/ContainerManagerPage.xaml.cs") +
+            Read("windows/src/LanStash.App/Views/ContainerManagerPage.Registry.cs") +
             Read("windows/src/LanStash.App/Features/Containers/ContainerManagerState.cs") +
             Read("windows/src/LanStash.App/Features/Containers/ContainerManagerViewModel.cs") +
             Read("windows/src/LanStash.Infrastructure/Features/Containers/PrivateApi/DsmRepository.ContainerManager.Private.cs");
@@ -82,7 +117,7 @@ public sealed class ContainerManagerPageSourceContractTests
         }
         foreach (var forbidden in new[]
         {
-            "Registry", "Compose", "Terminal", "LoadLogs", "CreateContainer",
+            "Compose", "Terminal", "LoadLogs", "CreateContainer",
             "DeleteContainer", "StartContainer", "StopContainer", "RestartContainer",
             "ControlContainer", "pull_start", "WebView", "noVNC", "RawResponse",
             "RawDiagnostic", "\"create\"", "\"set\"", "\"remove\"",

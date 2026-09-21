@@ -8,6 +8,26 @@
 
 ## 端点组
 
+2026-09-19 Windows 已按用户授权开放现有 NAS 专用管理和容器网络验证入口，保留
+接口、权限、确认、预检、防重复及结果核查；不再仅因未行为验收固定关闭。旧通用
+辅助/未实现能力不包括在内，记录中的历史关闭状态以此客户端补充为准，API 契约和
+真实环境证据不变。详情见 [Windows 开放账本](../../../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-09-19-可测试入口开放nas-专用流程与容器网络)。
+
+2026-09-19 Windows Chat 高级入口策略已更新：移除单一 DSM/套件 build 白名单及
+系统套件列表依赖，普通 Chat 用户按绑定会话和对应接口能力使用；操作前仍核对会话
+可访问性、消息归属，保留确认/去重/结果核查。仅客户端授权策略变化，无新 API 或
+真实行为证据；其他四端不改。见 [Chat 开放账本](../../../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-09-19-可测试入口开放chat-高级操作)。
+
+### Container 映像列表与下载任务边界
+
+- [映像列表精确参数、任务静态线索与未验证语义](container-manager-internal.md#2026-09-17-映像列表与下载任务分离)。
+- Image.list 请求/字段结构已在待归属环境只读验证；pull_status 和聚合任务列表仅有静态线索，下载写操作仍未验证。
+
+### 任务计划读取与管理边界
+
+- [TaskScheduler v3/v4 与 EventScheduler v1 方法级契约](dsm-task-scheduler.md)。
+- 整理已有 NAS 管理切片，不增加真实环境证据等级；脚本及输出只在当前窗口使用。
+
 ### `photos-item-deletion`
 
 - 内部危险写接口，已完成单张合成 PNG 的真实删除与刷新回读；macOS 按接口能力跨 DSM／Photos 版本开放个人空间供测试，共享空间关闭。
@@ -32,7 +52,7 @@
 ### `quickconnect-relay-control`
 
 - 组件：`dsm-core`
-- 内部协议：QuickConnect `Serv.php`
+- 内部协议：QuickConnect `Serv.php`；[区域转介、信任范围与五端影响](quickconnect-relay-control.md)。
 - 命令：`get_server_info`、`request_tunnel`
 - 数字 API 版本：不适用
 - 当前证据：中继建立、目标身份核对及随后 `SYNO.API.Info` 探测已有行为记录。
@@ -44,6 +64,7 @@
 - API：`SYNO.FileStation.Mount`
 - 客户端范围：v1
 - 当前确认：v1 `mount_remote`、`unmount` 为内部实验性契约。
+- 新字段证据与旧实现偏差见[远程挂载记录](file-station-remote-mount.md)；Mount.List.get 空列表已只读核对。
 - 状态：候选写能力；需要专用环境完成权限、错误凭据、重连、重复提交和公开 `getinfo` 回读验证。
 
 ### `dsm-system-observability`
@@ -191,6 +212,9 @@
 
 ### `chat-internal`
 
+- 2026-09-16 Windows 提醒、定时、投票、批量关闭/转发/本人消息删除、新联系人转发与公告的请求/响应映射、安全门、五端影响与待验收集中在
+  [高级动作记录](chat-advanced-actions.md)。只有源码与合成证据，未新增 NAS 写入行为验证。
+
 - 组件：`synology-chat-server`
 - API 与客户端范围：
   - `SYNO.Chat.Channel` v1-v5。
@@ -206,6 +230,10 @@
 
 #### 2026-09-09 会话创建编码纠正
 
+2026-09-16 [当前管理员只读复核](../environments/2026-09-16-windows-parity-read-observation.md)
+再次确认同一版本组合的三项创建/成员能力声明 JSON。Windows 已开始同步现有创建链编码、
+独立成员回读与未知结果保护；元数据证据不代表建群行为通过，设备匿名归属仍待确认。
+
 - [待归属管理员观察](../environments/2026-09-09-admin-chat-observation.md)核实了 `Anonymous` v2、`Named` v1、`Member` v1 的 `requestFormat=JSON`；旧的 FORM-only 判定错误，不能将 JSON 声明当成无权限或接口缺失。仅元数据达到 `read-verified`，未执行真实创建。
 - 请求仍为 POST `application/x-www-form-urlencoded`，相对路径采用能力发现的 `entry.cgi`。JSON 声明表示业务字段按 JSON 值编码，再作为表单字段发送，并不是直接发送 JSON HTTP 正文。
 - 固定使用 `Anonymous.initiate` v2（`user_ids` 数组、`encrypted=false`、`channel_key_encs=[]`）；群聊使用 `Named.create` v1（`name`、`type=private`），随后 `join(channel_id)`、`invite(channel_id,user_ids,channel_key_encs)`。空密钥数组必须保持数组，不编码成内容为 `[]` 的字符串。
@@ -216,6 +244,7 @@
 
 ### `chat-realtime`
 
+- 稳定记录：[Chat 实时事件通道](chat-realtime.md)。Windows 已接入同源原生 WebSocket、现有证书管线、事件合并与取消隔离；只有本地合成证据。
 - 组件：`synology-chat-server`
 - 协议：同源 `sc/socket.io`
 - Engine.IO 客户端兼容：4 / 3

@@ -7,6 +7,59 @@ namespace LanStash.Tests.NasAdmin;
 public sealed class NasDetailsViewModelTests
 {
     [Fact]
+    public async Task PackageUpgradeIsAccessibleReadOnlyHintAndUnknownStatusIsNotRawProtocolText()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(repository.ProfileId, "Synthetic") with
+        {
+            Packages = new(NasDetailsSectionStatus.Available,
+                [new NasPackageSummary("synthetic", "Synthetic package", "1.0", "internal-transition", ResourceState.Unknown)
+                    { AvailableOperations = new[] { "upgrade" } }]),
+        });
+        using var model = new NasDetailsViewModel(); await model.ActivateAsync(repository); model.SelectSection(NasDetailsSectionKind.Packages);
+        var row = Assert.Single(model.Rows);
+        Assert.Contains(LanStash.App.Localization.LocalizationService.Current.Get("NasPackageUpgradeAvailable"), row.AutomationName);
+        Assert.DoesNotContain("internal-transition", row.AutomationName);
+        Assert.Single(repository.Requests);
+    }
+
+    [Fact]
+    public async Task SelectingCurrentSectionDoesNotRebuildNavigationAgain()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(repository.ProfileId, "Demo"));
+        using var model = new NasDetailsViewModel();
+        await model.ActivateAsync(repository);
+        var changes = 0;
+        model.Sections.CollectionChanged += (_, _) => changes++;
+        model.SelectSection(model.SelectedSection);
+        Assert.Equal(0, changes);
+        Assert.Single(repository.Requests);
+    }
+
+    [Theory]
+    [InlineData(false, "1.00 KB", "512 B")]
+    [InlineData(true, "Unknown", "Unknown")]
+    public async Task StorageCardsUseOnlyCompleteVolumeCapacity(bool missing, string total, string used)
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.Results.Enqueue(Snapshot(repository.ProfileId, "Demo") with
+        {
+            StorageHealth = new(NasDetailsSectionStatus.Available, [
+                new("volume", NasStorageItemKind.Volume, 1, "normal", ResourceState.Healthy, 1024, missing ? null : 512),
+                new("pool", NasStorageItemKind.Pool, 1, "normal", ResourceState.Healthy, 2048),
+                new("disk", NasStorageItemKind.Drive, 1, "normal", ResourceState.Healthy, 4096)]),
+        });
+        using var model = new NasDetailsViewModel();
+        await model.ActivateAsync(repository);
+        model.SelectSection(NasDetailsSectionKind.StorageHealth);
+        Assert.Equal(total, model.StorageOverviewRows.Single(row => row.Id == "total").Detail);
+        Assert.Equal(used, model.StorageOverviewRows.Single(row => row.Id == "used").Detail);
+        model.Deactivate();
+        Assert.Empty(model.StorageOverviewRows);
+    }
+
+    [Fact]
     public async Task UnavailableRepositoryMakesNoRequestAndRefreshIsDisabled()
     {
         var repository = new FakeRepository(Guid.NewGuid(), available: false);

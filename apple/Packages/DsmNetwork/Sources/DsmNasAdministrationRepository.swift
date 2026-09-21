@@ -29,7 +29,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     var isPowerActionActive = false
     private var activeDiskTestIDs: Set<String> = []
     var storageDisks: [String: NasDisk] = [:]
+    var storageReadGeneration = 0
     private var diskTestHistories: [String: DiskTestHistorySnapshot] = [:]
+    private var diskStatusReadGenerations: [String: Int] = [:]
     private var beepVolumeFieldName: String?
 
     private enum SecuritySettingsMutationStep: Sendable {
@@ -2335,19 +2337,17 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             method: "load",
             version: 1
         )
-        let primaryRows = value.objects("schedules")
-        let rows = primaryRows.isEmpty ? value.objects("items") : primaryRows
         let maximumEntries = 128
+        guard case .array(let rawRows) = try taskCoalescedRead(value["schedules"], value["items"]) else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+        let rows = rawRows.prefix(maximumEntries).compactMap(\.object)
         var seenIDs = Set<String>()
         let entries = rows.prefix(maximumEntries).enumerated().compactMap {
             index, raw -> NasPowerScheduleEntry? in
             let item = DsmDynamicJSON.object(raw)
-            guard let hour = item.integer(["hour"]).flatMap({
-                $0 >= 0 && $0 <= 23 ? Int($0) : nil
-            }),
-            let minute = item.integer(["minute"]).flatMap({
-                $0 >= 0 && $0 <= 59 ? Int($0) : nil
-            }) else {
+            guard let hour = Self.powerScheduleClockValue(item["hour"]), (0...23).contains(hour),
+                  let minute = Self.powerScheduleClockValue(item["minute"]), (0...59).contains(minute) else {
                 return nil
             }
             let serverID = Self.safePowerScheduleIdentifier(
@@ -2360,7 +2360,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 action: Self.powerScheduleAction(
                     item.string(["action", "type", "operation"])
                 ),
-                isEnabled: item.boolean(["enabled", "is_enabled"]),
+                isEnabled: try? taskReadBoolean(taskCoalescedRead(item["enabled"], item["is_enabled"])),
                 hour: hour,
                 minute: minute,
                 recurrence: Self.powerScheduleRecurrence(item)
@@ -2369,15 +2369,16 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         let reportedTotal = value.integer(["total", "total_count"]).flatMap {
             $0 >= 0 && $0 <= 1_000_000 ? Int($0) : nil
         }
-        let total = max(entries.count, reportedTotal ?? rows.count)
+        guard !entries.isEmpty || (rawRows.isEmpty && (reportedTotal ?? 0) == 0) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        let total = max(rawRows.count, reportedTotal ?? rawRows.count)
         return NasPowerScheduleSnapshot(
             entries: entries,
             timeZoneIdentifier: Self.safePowerScheduleTimeZone(
                 value.string(["timezone", "time_zone"])
             ),
             total: total,
-            isTruncated: rows.count > maximumEntries
-                || (reportedTotal.map { $0 > rows.count } ?? false)
+            isTruncated: rawRows.count > maximumEntries || entries.count < min(rawRows.count, maximumEntries)
+                || (reportedTotal.map { $0 > rawRows.count } ?? false)
         )
     }
 
@@ -2399,6 +2400,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
         var devices: [NasExternalStorageDevice] = []
         var unavailableConnections: [NasExternalStorageConnection] = []
+        var successfulConnections = 0
         var total = 0
         var isTruncated = false
 
@@ -2409,9 +2411,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             }
             do {
                 let value = try await call(apiName, method: "list", version: 1)
-                let rows = Self.externalStorageRows(from: value, connection: connection)
-                let reportedTotal = value.integer(["total", "total_count"]).flatMap {
+                let rows = try Self.externalStorageRows(from: value, connection: connection)
+                let reportedTotal = Self.externalStorageByteValue(value, keys: ["total", "total_count"]).flatMap {
                     $0 >= 0 && $0 <= 1_000_000 ? Int($0) : nil
+                }
+                guard !rows.isEmpty || (reportedTotal ?? 0) == 0 else {
+                    throw verificationError(L10n.string("shared.db6b9590023d51f5"))
                 }
                 total += max(rows.count, reportedTotal ?? rows.count)
                 isTruncated = isTruncated
@@ -2428,12 +2433,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     let localID = rawID ?? "snapshot-\(index)"
                     let id = "\(connection.rawValue):\(localID)"
                     guard seenIDs.insert(id).inserted else { return nil }
-                    let capacityBytes = Self.safeExternalStorageByteCount(
-                        item.integer(["capacity_bytes", "total_bytes", "size_bytes"])
-                    )
-                    let usedBytes = Self.safeExternalStorageByteCount(
-                        item.integer(["used_bytes", "usage_bytes"])
-                    ).flatMap { value in
+                    let capacityBytes = Self.externalStorageByteValue(item, keys: ["capacity_bytes", "total_bytes", "size_bytes"])
+                    let usedBytes = Self.externalStorageByteValue(item, keys: ["used_bytes", "usage_bytes"]).flatMap { value in
                         guard let capacityBytes else { return value }
                         return value <= capacityBytes ? value : nil
                     }
@@ -2451,16 +2452,20 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     )
                 }
                 devices.append(contentsOf: parsed)
+                successfulConnections += 1
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as AppError where error.category == .cancelled {
                 throw CancellationError()
+            } catch let error as AppError where [.authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged].contains(error.category) {
+                throw error
             } catch {
                 // USB 与 eSATA 是独立的只读补充，单项失败不能覆盖另一项结果。
                 unavailableConnections.append(connection)
             }
         }
 
+        guard successfulConnections > 0 else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
         return NasExternalStorageDirectory(
             devices: devices.sorted {
                 if $0.connection != $1.connection {
@@ -2482,13 +2487,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             method: "get",
             version: 1
         )
+        guard value.object != nil else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
         return NasZRAMSnapshot(
-            isEnabled: value.boolean(["enable", "enabled", "zram_enable"]),
-            configuredBytes: Self.safeExternalStorageByteCount(
-                value.integer(["configured_bytes", "capacity_bytes", "size_bytes"])
-            ),
+            isEnabled: try? taskReadBoolean(taskCoalescedRead(taskCoalescedRead(value["enable"], value["enabled"]), value["zram_enable"])),
+            configuredBytes: Self.externalStorageByteValue(value, keys: ["configured_bytes", "capacity_bytes", "size_bytes"]),
             algorithm: Self.zramAlgorithm(
-                value.string(["algorithm", "compression_algorithm", "compressor"])
+                try? taskReadText(taskCoalescedRead(taskCoalescedRead(value["algorithm"], value["compression_algorithm"]), value["compressor"]))
             )
         )
     }
@@ -3368,26 +3372,29 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     }
 
     public func loadRemoteAccessSettings() async throws -> NasRemoteAccessSettings {
-        let hasQuickConnect = capabilities[DsmAPIName.coreQuickConnect]?.selectedVersion != nil
-        let hasUPnP = capabilities[DsmAPIName.coreQuickConnectUPnP]?.selectedVersion != nil
+        let hasQuickConnect = capabilitySupports(DsmAPIName.coreQuickConnect, version: 3)
+        let hasUPnP = capabilitySupports(DsmAPIName.coreQuickConnectUPnP, version: 1)
         guard hasQuickConnect || hasUPnP else {
             throw unavailableError()
         }
-        let quickConnect = hasQuickConnect
-            ? try await call(
-                DsmAPIName.coreQuickConnect,
-                method: "get_misc_config",
-                version: 3
-            )
-            : nil
-        let upnp = hasUPnP
-            ? try await call(DsmAPIName.coreQuickConnectUPnP, method: "get")
-            : nil
+        let quickConnect = hasQuickConnect ? try await remoteAccessReadBoolean(DsmAPIName.coreQuickConnect,
+            method: "get_misc_config", version: 3, field: "relay_enabled") : nil
+        let upnp = hasUPnP ? try await remoteAccessReadBoolean(DsmAPIName.coreQuickConnectUPnP,
+            method: "get", version: 1, field: "enabled") : nil
         return NasRemoteAccessSettings(
-            isRelayEnabled: quickConnect?.boolean(["relay_enabled"]),
-            isRouterConfigurationEnabled: upnp?.boolean(["enabled"]),
+            isRelayEnabled: quickConnect,
+            isRouterConfigurationEnabled: upnp,
             canDisableRelay: !isConnectedThroughQuickConnectRelay
         )
+    }
+
+    private func remoteAccessReadBoolean(_ api: String, method: String, version: Int, field: String) async throws -> Bool? {
+        do {
+            let value = try await call(api, method: method, version: version)
+            return try taskReadBoolean(value[field])
+        } catch is CancellationError { throw CancellationError() }
+        catch let error as AppError where [.authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged, .cancelled].contains(error.category) { throw error }
+        catch { return nil }
     }
 
     public func saveRemoteAccessSettings(_ settings: NasRemoteAccessSettings) async throws {
@@ -3473,6 +3480,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
         let steps = remoteAccessMutationSteps(from: current, to: settings)
+        guard !(settings.isRelayEnabled != nil && current.isRelayEnabled == nil),
+              !(settings.isRouterConfigurationEnabled != nil && current.isRouterConfigurationEnabled == nil) else {
+            return try remoteAccessPreflightResult(verificationError(L10n.string("shared.259c1e687815c0a7")), operation: operation, prefix: prefix)
+        }
         guard !steps.isEmpty else {
             return try remoteAccessMutationResult(
                 status: .confirmedFailure,
@@ -3642,7 +3653,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             case .relay:
                 capabilitySupports(DsmAPIName.coreQuickConnect, version: 3)
             case .routerConfiguration:
-                capabilitySupports(DsmAPIName.coreQuickConnectUPnP)
+                capabilitySupports(DsmAPIName.coreQuickConnectUPnP, version: 1)
             }
         }
     }
@@ -3669,6 +3680,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreQuickConnectUPnP,
                 method: "set",
+                version: 1,
                 parameters: ["enabled": .boolean(enabled)]
             )
         }
@@ -3790,7 +3802,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         failureCategory: AppErrorCategory? = nil,
         uncertainCount: Int = 0
     ) throws -> MutationResult {
-        let succeeded = steps.filter {
+        // 明确拒绝或未提交的后续项，不能因其他客户端改成目标值而记为本次成功。
+        let eligible = failureCategory == nil ? steps : Array(steps.prefix(max(0, uncertainCount)))
+        let succeeded = eligible.filter {
             Self.remoteAccessMutationStep($0, matches: actual, expected: expected)
         }.count
         let remaining = steps.count - succeeded
@@ -3806,7 +3820,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "\(prefix).confirmed"
             )
         }
-        let unknown = min(remaining, max(0, uncertainCount - succeeded))
+        let unavailable = eligible.filter { step in
+            switch step {
+            case .relay: actual.isRelayEnabled == nil
+            case .routerConfiguration: actual.isRouterConfigurationEnabled == nil
+            }
+        }.count
+        let unknown = min(remaining, max(unavailable, max(0, uncertainCount - succeeded)))
         if succeeded > 0 {
             return try remoteAccessMutationResult(
                 status: .partialSuccess,
@@ -4796,8 +4816,15 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
               let rawMode = value.string(["enable_ntp"]) else {
             throw verificationError(L10n.string("shared.db6b9590023d51f5"))
         }
-        let isNetworkTimeEnabled =
-            ["ntp", "true", "yes", "1", "enabled"].contains(rawMode.lowercased())
+        let normalizedMode = rawMode.lowercased()
+        let networkModes = ["ntp", "true", "yes", "1", "enabled"]
+        let manualModes = ["manual", "false", "no", "0", "disabled"]
+        guard networkModes.contains(normalizedMode) || manualModes.contains(normalizedMode),
+              !dateFormat.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !timeFormat.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+        let isNetworkTimeEnabled = networkModes.contains(normalizedMode)
         let serverText = value.string(["server"]) ?? ""
         let servers = serverText
             .split(separator: ",", omittingEmptySubsequences: true)
@@ -4812,10 +4839,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         }
         let manualDate = Self.regionDate(
             date: value.string(["date"]),
-            hour: value.number(["hour"]).map(Int.init),
-            minute: value.number(["minute"]).map(Int.init),
-            second: value.number(["second"]).map(Int.init)
+            hour: value.number(["hour"]).flatMap { Int(exactly: $0) },
+            minute: value.number(["minute"]).flatMap { Int(exactly: $0) },
+            second: value.number(["second"]).flatMap { Int(exactly: $0) }
         )
+        guard zones.contains(where: { $0.id == timeZone }) else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
         return NasRegionSettings(
             dateFormat: dateFormat,
             timeFormat: timeFormat,
@@ -5872,6 +5902,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 prefix: prefix
             )
         }
+        // 仅改凭据时，旧记录的可读字段已匹配；响应丢失不能证明密码保存成功。
+        let needsCredentialAcknowledgement = !draft.password.isEmpty && providerID != "Synology"
+            && directory.records.contains { Self.ddnsRecord($0, matches: draft) }
         var parameters = Self.ddnsParameters(
             draft,
             hostname: draft.normalizedHostname,
@@ -5890,12 +5923,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             return try await ddnsSaveSubmissionFailureResult(
                 error,
                 draft: draft,
+                needsCredentialAcknowledgement: needsCredentialAcknowledgement,
                 operation: operation,
                 prefix: prefix
             )
         } catch {
             return try await ddnsSaveUnknownSubmissionResult(
                 draft: draft,
+                needsCredentialAcknowledgement: needsCredentialAcknowledgement,
                 operation: operation,
                 prefix: prefix
             )
@@ -6182,6 +6217,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private func ddnsSaveSubmissionFailureResult(
         _ submissionError: AppError,
         draft: NasDDNSDraft,
+        needsCredentialAcknowledgement: Bool,
         operation: String,
         prefix: String
     ) async throws -> MutationResult {
@@ -6191,28 +6227,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 prefix: prefix
             )
         }
-        let ambiguous = ddnsSubmissionIsAmbiguous(submissionError.category)
-        do {
-            let verified = try await loadDDNS()
-            let result = try ddnsSavedRecordResult(
-                directory: verified,
+        // 明确拒绝不能被碰巧匹配的旧记录覆盖；仅模糊提交才进入回读恢复。
+        if ddnsSubmissionIsAmbiguous(submissionError.category) {
+            return try await ddnsSaveUnknownSubmissionResult(
                 draft: draft,
+                needsCredentialAcknowledgement: needsCredentialAcknowledgement,
                 operation: operation,
-                prefix: prefix,
-                treatsMismatchAsUnknown: ambiguous
+                prefix: prefix
             )
-            if result.status == .confirmedSuccess || ambiguous {
-                return result
-            }
-        } catch {
-            if ambiguous {
-                return try ddnsUnverifiedResult(
-                    operation: operation,
-                    prefix: prefix,
-                    category: submissionError.category,
-                    diagnosticTag: "\(prefix).readback-unverified"
-                )
-            }
         }
         return try ddnsRejectedResult(
             submissionError,
@@ -6224,9 +6246,17 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
     private func ddnsSaveUnknownSubmissionResult(
         draft: NasDDNSDraft,
+        needsCredentialAcknowledgement: Bool,
         operation: String,
         prefix: String
     ) async throws -> MutationResult {
+        if needsCredentialAcknowledgement {
+            return try ddnsUnverifiedResult(
+                operation: operation,
+                prefix: prefix,
+                diagnosticTag: "\(prefix).credential-unverified"
+            )
+        }
         do {
             let verified = try await loadDDNS()
             return try ddnsSavedRecordResult(
@@ -6257,28 +6287,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 prefix: prefix
             )
         }
-        let ambiguous = ddnsSubmissionIsAmbiguous(submissionError.category)
-        do {
-            let verified = try await loadDDNS()
-            let result = try ddnsDeletedRecordResult(
-                directory: verified,
+        if ddnsSubmissionIsAmbiguous(submissionError.category) {
+            return try await ddnsDeleteUnknownSubmissionResult(
                 providerID: providerID,
                 operation: operation,
-                prefix: prefix,
-                treatsPresenceAsUnknown: ambiguous
+                prefix: prefix
             )
-            if result.status == .confirmedSuccess || ambiguous {
-                return result
-            }
-        } catch {
-            if ambiguous {
-                return try ddnsUnverifiedResult(
-                    operation: operation,
-                    prefix: prefix,
-                    category: submissionError.category,
-                    diagnosticTag: "\(prefix).readback-unverified"
-                )
-            }
         }
         return try ddnsRejectedResult(
             submissionError,
@@ -6834,31 +6848,57 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         for disk: NasDisk,
         includesHistory: Bool
     ) async throws -> NasDiskTestStatus {
+        try requireCurrentStorageDisk(disk)
+        diskStatusReadGenerations[disk.id, default: 0] += 1
+        let generation = diskStatusReadGenerations[disk.id, default: 0]
         let value = try await call(
             DsmAPIName.coreStorageDisk,
             method: "get_smart_test_log",
+            version: 1,
             parameters: ["device": .string(disk.deviceID)]
         )
-        let latest = value.objects("testInfo").first.map(DsmDynamicJSON.object)
-        let isRunning = latest?.boolean(["testing", "is_testing"]) ?? false
-        let isBusyWithOtherTest = !isRunning && (
-            latest?.boolean(["ihm_testing"]) == true
-                || latest?.boolean(["perf_testing"]) == true
-        )
-        let rawType = latest?.string(["test_type", "testType", "type"])?.lowercased()
+        try requireCurrentStorageDisk(disk)
+        guard diskStatusReadGenerations[disk.id] == generation else { throw CancellationError() }
+        guard case .array(let states) = value["testInfo"], states.count == 1,
+              case .object = states[0] else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        let latest = states[0]
+        if let reportedDevice = try taskReadText(latest["device"]), reportedDevice != disk.deviceID {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+        guard let isRunning = try taskReadBoolean(taskCoalescedRead(latest["testing"], latest["is_testing"])) else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+        let ihm = try taskReadBoolean(latest["ihm_testing"])
+        let performance = try taskReadBoolean(latest["perf_testing"])
+        // 当前模型不能表达未知占用；缺少证据时不能把硬盘判为空闲供启动使用。
+        guard isRunning || ihm == true || performance == true || (ihm != nil && performance != nil) else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+        let isBusyWithOtherTest = !isRunning && (ihm == true || performance == true)
+        let types = try ["test_type", "testType", "type"].compactMap { key -> String? in
+            guard let text = try taskReadText(latest[key]), !text.isEmpty else { return nil }
+            let normalized = text.lowercased()
+            return normalized == "extended" ? "extend" : normalized
+        }
+        guard Set(types).count <= 1 else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        let rawType = types.first
         let runningType: NasDiskTestType?
         if rawType == "quick" {
             runningType = .quick
         } else if rawType == "extend" || rawType == "extended" {
             runningType = .extended
         } else {
+            guard rawType == nil && !isRunning else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
             runningType = nil
         }
         let history: DiskTestHistorySnapshot
         if includesHistory {
             history = try await loadDiskTestHistory(for: disk)
+            try requireCurrentStorageDisk(disk)
+            guard diskStatusReadGenerations[disk.id] == generation else { throw CancellationError() }
             diskTestHistories[disk.id] = history
         } else {
+            try requireCurrentStorageDisk(disk)
             history = diskTestHistories[disk.id] ?? .unavailable
         }
         return NasDiskTestStatus(
@@ -6866,10 +6906,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             isRunning: isRunning,
             isBusyWithOtherTest: isBusyWithOtherTest,
             runningType: isRunning ? runningType : nil,
-            progressDescription: latest?.string(["remain", "progress"]),
+            progressDescription: try taskReadText(taskCoalescedRead(latest["remain"], latest["progress"])),
             lastQuickTest: history.lastQuickTest,
             lastExtendedTest: history.lastExtendedTest,
-            lastResult: latest?.string(["latest_test_result", "result"])
+            lastResult: try taskReadText(taskCoalescedRead(latest["latest_test_result"], latest["result"]))
                 ?? history.latestResult,
             isHistoryAvailable: history.isAvailable
         )
@@ -6881,6 +6921,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             value = try await call(
                 DsmAPIName.coreStorageDisk,
                 method: "disk_test_log_get",
+                version: 1,
                 parameters: [
                     "device": .string(disk.deviceID),
                     "offset": .integer(0),
@@ -6896,7 +6937,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             return .unavailable
         }
 
-        let logs = value.objects("testLog").map(DsmDynamicJSON.object)
+        guard case .array(let logs) = value["testLog"], logs.allSatisfy({ $0.object != nil }) else { return .unavailable }
         let smartLogs = logs.filter {
             $0.string(["type"])?.lowercased() == "smart"
                 || $0.string(["test_type"]) != nil
@@ -6945,6 +6986,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         try await callVoid(
             DsmAPIName.coreStorageDisk,
             method: "do_smart_test",
+            version: 1,
             parameters: [
                 "device": .string(disk.deviceID),
                 "type": .string(type == .quick ? "quick" : "extend")
@@ -6984,6 +7026,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         try await callVoid(
             DsmAPIName.coreStorageDisk,
             method: "do_smart_test",
+            version: 1,
             parameters: [
                 "device": .string(disk.deviceID),
                 "type": .string("stop")
@@ -7183,6 +7226,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.coreStorageDisk,
                 method: "do_smart_test",
+                version: 1,
                 parameters: [
                     "device": .string(disk.deviceID),
                     "type": .string(
@@ -7931,20 +7975,28 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 "limit": .integer(1_000)
             ]
         )
-        return value.objects("tasks").enumerated().compactMap { index, raw in
-            let item = DsmDynamicJSON.object(raw)
-            guard let name = item.string(["name"]) else { return nil }
+        guard let rows = value["tasks"]?.array, rows.count < 1_000 else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        var seen: Set<Int> = []
+        return try rows.map { item in
+            guard item.object != nil, let identifier = try taskReadInteger(item["id"]), identifier >= 0,
+                  seen.insert(identifier).inserted, let name = try taskReadText(item["name"]),
+                  !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            }
+            let enabled = try taskReadBoolean(item["enable"])
+            let type = try taskReadText(item["type"])
             return NasScheduledTask(
-                id: item.string(["id"]) ?? "task-\(index)-\(name)",
+                id: String(identifier),
                 name: name,
-                owner: item.string(["real_owner", "owner"]),
-                realOwner: item.string(["real_owner"]),
-                type: item.string(["type"]),
-                action: item.string(["action"]),
-                isEnabled: item.boolean(["enable"]) ?? false,
-                nextTriggerDescription: item.string(["next_trigger_time"]),
-                canRun: item.boolean(["can_run"]) ?? false,
-                canEdit: item.boolean(["can_edit"]) ?? false
+                owner: try taskReadText(item["owner"]) ?? taskReadText(item["real_owner"]),
+                realOwner: try taskReadText(item["real_owner"]),
+                type: type,
+                action: try taskReadText(item["action"]),
+                isEnabled: enabled ?? false,
+                nextTriggerDescription: try taskReadText(item["next_trigger_time"]),
+                canRun: try taskReadBoolean(item["can_run"]) == true,
+                canEdit: try taskReadBoolean(item["can_edit"]) == true && enabled != nil && type == "script"
             )
         }
     }
@@ -7968,30 +8020,41 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             version: 4,
             parameters: parameters
         )
-        let schedule = value["schedule"] ?? .object([:])
-        let extra = value["extra"] ?? .object([:])
+        guard let schedule = value["schedule"], schedule.object != nil,
+              let extra = value["extra"], extra.object != nil,
+              let name = try taskReadText(value["name"]),
+              let owner = try taskReadText(value["owner"]) ?? taskReadText(value["real_owner"]),
+              let enabled = try taskReadBoolean(value["enable"]),
+              let script = try taskReadText(extra["script"]),
+              let notify = try taskReadBoolean(extra["notify_if_error"]),
+              let emails = try taskReadText(extra["notify_mail"]),
+              let weekDays = try taskReadText(schedule["week_day"]) else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+        if let actualID = try taskReadInteger(value["id"]), actualID != (id ?? -1) { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        if let requested = realOwner, let reported = try taskReadText(value["real_owner"]), requested != reported {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
         return NasScheduledTaskDraft(
             id: id,
-            name: value.string(["name"]) ?? "",
-            owner: value.string(["owner", "real_owner"]) ?? realOwner ?? "",
-            realOwner: value.string(["real_owner"]) ?? realOwner,
-            isEnabled: value.boolean(["enable"]) ?? true,
-            script: extra.string(["script"]) ?? "",
-            notifyOnError: extra.boolean(["notify_if_error"]) ?? false,
-            notificationEmails: extra.string(["notify_mail"]) ?? "",
+            name: name,
+            owner: owner,
+            realOwner: try taskReadText(value["real_owner"]) ?? realOwner,
+            isEnabled: enabled,
+            script: script,
+            notifyOnError: notify,
+            notificationEmails: emails,
             schedule: NasTaskSchedule(
-                dateType: Int(schedule.number(["date_type"]) ?? 0),
-                weekDays: schedule.string(["week_day"]) ?? "0,1,2,3,4,5,6",
-                date: schedule.string(["date"]),
-                repeatDate: Int(schedule.number(["repeat_date"]) ?? 1001),
-                monthlyWeek: schedule["monthly_week"]?.array?.compactMap {
-                    $0.scalarNumber.map(Int.init)
-                } ?? [],
-                hour: Int(schedule.number(["hour"]) ?? 0),
-                minute: Int(schedule.number(["minute"]) ?? 0),
-                repeatHour: Int(schedule.number(["repeat_hour"]) ?? 0),
-                repeatMinute: Int(schedule.number(["repeat_min"]) ?? 0),
-                lastWorkHour: Int(schedule.number(["last_work_hour"]) ?? 0)
+                dateType: try taskRequiredInteger(schedule["date_type"]),
+                weekDays: weekDays,
+                date: try taskReadText(schedule["date"]),
+                repeatDate: try taskRequiredInteger(schedule["repeat_date"]),
+                monthlyWeek: try taskMonthlyWeeks(schedule["monthly_week"]),
+                hour: try taskRequiredInteger(schedule["hour"]),
+                minute: try taskRequiredInteger(schedule["minute"]),
+                repeatHour: try taskRequiredInteger(schedule["repeat_hour"]),
+                repeatMinute: try taskRequiredInteger(schedule["repeat_min"]),
+                lastWorkHour: try taskRequiredInteger(schedule["last_work_hour"])
             )
         )
     }
@@ -7999,8 +8062,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     public func loadScheduledTaskResults(
         taskName: String
     ) async throws -> [NasScheduledTaskResult] {
-        let name = taskName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else {
+        let name = taskName
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             throw AppError(
                 category: .invalidResponse,
                 isRetryable: false,
@@ -8010,23 +8074,28 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         let value = try await call(
             DsmAPIName.coreEventScheduler,
             method: "result_list",
+            version: 1,
             parameters: ["task_name": .string(name)]
         )
-        let rows = value.array ?? value["results"]?.array ?? []
-        return Array(rows.compactMap { raw -> NasScheduledTaskResult? in
-            guard let resultID = raw.string(["result_id", "id"]) else { return nil }
+        guard let rows = value.array ?? value["results"]?.array else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        var seen: Set<String> = []
+        return try Array(rows.map { raw -> NasScheduledTaskResult in
+            guard raw.object != nil, let resultID = try taskReadText(taskCoalescedRead(raw["result_id"], raw["id"])), !resultID.isEmpty,
+                  !resultID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !resultID.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+                  seen.insert(resultID).inserted else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+            let reportedName = try taskReadText(raw["task_name"])
+            if let reportedName, reportedName != name { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
             let exitInfo = raw["exit_info"] ?? .object([:])
+            guard exitInfo.object != nil else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
             return NasScheduledTaskResult(
                 id: resultID,
-                taskName: raw.string(["task_name"]) ?? name,
-                startedAt: Self.date(from: raw.string(["start_time"])),
-                stoppedAt: Self.date(from: raw.string(["stop_time"])),
-                exitType: exitInfo.string(["exit_type"]) ?? raw.string(["exit_type"]),
-                exitCode: (
-                    exitInfo.integer(["exit_code"])
-                        ?? raw.integer(["exit_code"])
-                ).map(Int.init),
-                triggerEvent: raw.string(["trigger_event"])
+                taskName: reportedName ?? name,
+                startedAt: Self.date(from: try taskReadText(raw["start_time"])),
+                stoppedAt: Self.date(from: try taskReadText(raw["stop_time"])),
+                exitType: try taskReadText(taskCoalescedRead(exitInfo["exit_type"], raw["exit_type"])),
+                exitCode: try taskReadInteger(taskCoalescedRead(exitInfo["exit_code"], raw["exit_code"])),
+                triggerEvent: try taskReadText(raw["trigger_event"])
             )
         }.reversed())
     }
@@ -8035,9 +8104,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         taskName: String,
         resultID: String
     ) async throws -> NasScheduledTaskResultOutput {
-        let name = taskName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let identifier = resultID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !identifier.isEmpty else {
+        let name = taskName
+        let identifier = resultID
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+              !identifier.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             throw AppError(
                 category: .invalidResponse,
                 isRetryable: false,
@@ -8047,15 +8118,45 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         let value = try await call(
             DsmAPIName.coreEventScheduler,
             method: "result_get_file",
+            version: 1,
             parameters: [
                 "task_name": .string(name),
                 "result_id": .string(identifier)
             ]
         )
         return NasScheduledTaskResultOutput(
-            command: value.string(["script_in"]),
-            output: value.string(["script_out"])
+            command: try taskReadText(value["script_in"]),
+            output: try taskReadText(value["script_out"])
         )
+    }
+
+    private func taskCoalescedRead(_ first: DsmDynamicJSON?, _ second: DsmDynamicJSON?) throws -> DsmDynamicJSON? {
+        if let first, let second, first != .null, second != .null, first != second { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        return first == .null ? second : first ?? second
+    }
+    private func taskReadText(_ value: DsmDynamicJSON?) throws -> String? {
+        guard let value, value != .null else { return nil }
+        guard case .string(let text) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        return text
+    }
+    private func taskReadInteger(_ value: DsmDynamicJSON?) throws -> Int? {
+        guard let value, value != .null else { return nil }
+        guard case .number(let number) = value, let integer = Int(exactly: number) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        return integer
+    }
+    private func taskRequiredInteger(_ value: DsmDynamicJSON?) throws -> Int {
+        guard let value = try taskReadInteger(value) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        return value
+    }
+    private func taskReadBoolean(_ value: DsmDynamicJSON?) throws -> Bool? {
+        guard let value, value != .null else { return nil }
+        guard case .boolean(let flag) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        return flag
+    }
+    private func taskMonthlyWeeks(_ value: DsmDynamicJSON?) throws -> [Int] {
+        guard let value, value != .null else { return [] }
+        guard let values = value.array else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        return try values.map { try taskRequiredInteger($0) }
     }
 
     public func saveScheduledTask(_ draft: NasScheduledTaskDraft) async throws {
@@ -8119,12 +8220,35 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         try await taskCommand(method: "delete", id: id, realOwner: realOwner)
     }
 
-    private func validatedStorageDisk(id: String) async throws -> NasDisk {
-        if let disk = storageDisks[id] {
-            return disk
+    func cacheStorageDisks(_ disks: [NasDisk]) {
+        let next = Dictionary(uniqueKeysWithValues: disks.map { ($0.id, $0) })
+        for (id, old) in storageDisks {
+            if next[id].map({ sameStorageDisk(old, $0) }) != true {
+                diskStatusReadGenerations[id, default: 0] += 1
+            }
         }
+        diskTestHistories = diskTestHistories.filter { id, _ in
+            guard let old = storageDisks[id], let current = next[id] else { return false }
+            return sameStorageDisk(old, current)
+        }
+        storageDisks = next
+    }
+
+    private func sameStorageDisk(_ left: NasDisk, _ right: NasDisk) -> Bool {
+        left.id == right.id && left.deviceID == right.deviceID && left.supportsSmartTest == right.supportsSmartTest
+    }
+
+    private func requireCurrentStorageDisk(_ disk: NasDisk) throws {
+        try Task.checkCancellation()
+        guard let current = storageDisks[disk.id], sameStorageDisk(disk, current) else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("shared.e8513b25080428db"))
+        }
+    }
+
+    private func validatedStorageDisk(id: String) async throws -> NasDisk {
+        let baseline = storageDisks[id]
         _ = try await loadStorage()
-        guard let disk = storageDisks[id] else {
+        guard let disk = storageDisks[id], baseline.map({ sameStorageDisk($0, disk) }) ?? true else {
             throw AppError(
                 category: .conflict,
                 isRetryable: false,
@@ -8740,9 +8864,10 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             )
         }
 
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalized = trimmed.lowercased()
-        guard !trimmed.isEmpty else {
+        // 目录名称是稳定标识；保护检查可规范化，但不能裁剪后删除另一个目标。
+        let targetName = name
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else {
             return try directoryMutationResult(
                 status: .confirmedFailure,
                 operation: operation,
@@ -8756,7 +8881,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 diagnosticTag: "\(prefix).invalid-input"
             )
         }
-        guard !protectedNames.contains(normalized) else {
+        guard !protectedNames.contains(normalized),
+              isGroup || currentUsername?.caseInsensitiveCompare(normalized) != .orderedSame else {
             return try directoryMutationResult(
                 status: .permissionDenied,
                 operation: operation,
@@ -8818,8 +8944,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         do {
             let directory = try await loadAccountsAndGroups()
             let entries = isGroup ? directory.groups : directory.users
-            guard entries.contains(where: {
-                $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+            guard let target = entries.first(where: {
+                $0.name.caseInsensitiveCompare(targetName) == .orderedSame
             }) else {
                 return try directoryMutationResult(
                     status: .confirmedFailure,
@@ -8832,6 +8958,13 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     errorCategory: .conflict,
                     localizationKey: "\(prefix).failed",
                     diagnosticTag: "\(prefix).target-not-found"
+                )
+            }
+            guard target.canDelete else {
+                return try directoryMutationResult(
+                    status: .permissionDenied, operation: operation, submitted: false, requiresRefresh: false,
+                    succeeded: 0, failed: 1, unknown: 0, errorCategory: .permission,
+                    localizationKey: "\(prefix).permission-denied", diagnosticTag: "\(prefix).permission-denied"
                 )
             }
         } catch let error as AppError {
@@ -8868,7 +9001,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 apiName,
                 method: "delete",
-                parameters: ["name": .stringArray([trimmed])]
+                parameters: ["name": .stringArray([targetName])]
             )
         } catch let error as AppError {
             return try directorySubmissionResult(error, operation: operation, prefix: prefix)
@@ -8905,7 +9038,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             let directory = try await loadAccountsAndGroups()
             let entries = isGroup ? directory.groups : directory.users
             if entries.contains(where: {
-                $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+                $0.name.caseInsensitiveCompare(targetName) == .orderedSame
             }) {
                 return try directoryMutationResult(
                     status: .submittedButUnverified,
@@ -9671,18 +9804,25 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         minute: Int?,
         second: Int?
     ) -> Date? {
-        guard let date else { return nil }
-        let parts = date.split(separator: "/").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
+        guard let date, let hour, let minute, let second,
+              (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second) else { return nil }
+        let rawParts = date.split(separator: "/", omittingEmptySubsequences: false)
+        let parts = rawParts.compactMap { Int($0) }
+        guard rawParts.count == 3, parts.count == 3, (1...9999).contains(parts[0]),
+              (1...12).contains(parts[1]), (1...31).contains(parts[2]) else { return nil }
         var components = DateComponents()
         components.calendar = Calendar(identifier: .gregorian)
         components.year = parts[0]
         components.month = parts[1]
         components.day = parts[2]
-        components.hour = hour ?? 0
-        components.minute = minute ?? 0
-        components.second = second ?? 0
-        return components.date
+        components.hour = hour
+        components.minute = minute
+        components.second = second
+        guard let result = components.date, let calendar = components.calendar else { return nil }
+        let verified = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: result)
+        guard verified.year == parts[0], verified.month == parts[1], verified.day == parts[2],
+              verified.hour == hour, verified.minute == minute, verified.second == second else { return nil }
+        return result
     }
 
     private static func ddnsParameters(
@@ -9972,7 +10112,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private static func externalStorageRows(
         from value: DsmDynamicJSON,
         connection: NasExternalStorageConnection
-    ) -> [[String: DsmDynamicJSON]] {
+    ) throws -> [[String: DsmDynamicJSON]] {
         let keys: [String]
         switch connection {
         case .usb:
@@ -9980,11 +10120,18 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         case .eSATA:
             keys = ["devices", "items", "storages", "esata_devices"]
         }
+        var selected: DsmDynamicJSON?
         for key in keys {
-            let rows = value.objects(key)
-            if !rows.isEmpty { return rows }
+            guard let candidate = value[key], candidate != .null else { continue }
+            if let selected, selected != candidate {
+                throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("shared.db6b9590023d51f5"))
+            }
+            selected = candidate
         }
-        return []
+        guard case .array(let rows) = selected, rows.allSatisfy({ $0.object != nil }) else {
+            throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("shared.db6b9590023d51f5"))
+        }
+        return rows.compactMap(\.object)
     }
 
     private static func safeExternalStorageIdentifier(_ raw: String?) -> String? {
@@ -10006,6 +10153,22 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             return nil
         }
         return value
+    }
+
+    private static func externalStorageByteValue(_ item: DsmDynamicJSON, keys: [String]) -> Int64? {
+        var selected: DsmDynamicJSON?
+        for key in keys {
+            guard let value = item[key], value != .null else { continue }
+            if let selected, selected != value { return nil }
+            selected = value
+        }
+        let parsed: Int64?
+        switch selected {
+        case .number(let value): parsed = Int64(exactly: value)
+        case .string(let value): parsed = Int64(value)
+        default: parsed = nil
+        }
+        return safeExternalStorageByteCount(parsed)
     }
 
     private static func safeExternalStorageByteCount(_ value: Int64?) -> Int64? {
@@ -10032,6 +10195,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         case "lzo", "lzo-rle", "lzorle": .lzo
         case "zstd": .zstd
         default: .unknown
+        }
+    }
+
+    private static func powerScheduleClockValue(_ value: DsmDynamicJSON?) -> Int? {
+        switch value {
+        case .number(let number): Int(exactly: number)
+        case .string(let text): Int(text)
+        default: nil
         }
     }
 

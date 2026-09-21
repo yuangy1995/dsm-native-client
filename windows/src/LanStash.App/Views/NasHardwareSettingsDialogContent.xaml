@@ -1,0 +1,31 @@
+<UserControl x:Class="LanStash.App.Views.NasHardwareSettingsDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:LanStash.App.Views">
+  <StackPanel MinWidth="300" MaxWidth="500" Spacing="12">
+    <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" IsActive="False" Visibility="Collapsed"/>
+    <InfoBar x:Name="StatusNotice" IsOpen="False" IsClosable="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+    <TextBlock x:Name="ReadOnlyNotice" x:Uid="NasServiceReadOnly" Visibility="Collapsed" TextWrapping="Wrap"/>
+    <ListView x:Name="SettingsList" SelectionMode="None" MaxHeight="480">
+      <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+      <ListView.ItemTemplate>
+        <DataTemplate x:DataType="local:NasHardwareSettingsRow">
+          <Grid ColumnSpacing="16" Padding="0,8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock Text="{x:Bind Title}" TextWrapping="Wrap"/>
+            <TextBlock Grid.Column="1" Text="{x:Bind Value}" TextWrapping="Wrap" MaxWidth="240"/>
+          </Grid>
+        </DataTemplate>
+      </ListView.ItemTemplate>
+    </ListView>
+    <ScrollViewer x:Name="Editor" MaxHeight="480" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+      <StackPanel Spacing="12">
+        <StackPanel x:Name="EditorFields" Spacing="12"/>
+        <TextBlock x:Name="ValidationNotice" x:Uid="NasHardwareInvalid" TextWrapping="Wrap" Visibility="Collapsed"/>
+        <TextBlock x:Uid="NasHardwareRisk" TextWrapping="Wrap"/>
+        <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasServiceRiskConfirmed" Checked="Acknowledgement_Changed" Unchecked="Acknowledgement_Changed">
+          <CheckBox.Content><TextBlock x:Uid="NasServiceRiskConfirmedText" TextWrapping="Wrap"/></CheckBox.Content>
+        </CheckBox>
+      </StackPanel>
+    </ScrollViewer>
+  </StackPanel>
+</UserControl>

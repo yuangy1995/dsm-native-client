@@ -1,0 +1,69 @@
+<UserControl x:Class="LanStash.App.Views.NasTasksSettingsDialogContent"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="using:LanStash.App.Views">
+ <ScrollViewer MaxHeight="550">
+  <StackPanel MinWidth="340" MaxWidth="560" Spacing="12">
+   <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" Visibility="Collapsed"/>
+   <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
+   <InfoBar x:Name="FeedbackNotice" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite"/>
+   <InfoBar x:Name="PendingNotice" IsOpen="False" IsClosable="False" Severity="Warning"/>
+   <TextBlock x:Name="ReadOnlyNotice" x:Uid="NasServiceReadOnly" TextWrapping="Wrap"/>
+   <StackPanel x:Name="BrowserPanel" Spacing="12">
+   <TextBox x:Name="SearchInput" x:Uid="NasTasksSearch" TextChanged="Search_Changed"/>
+   <TextBlock x:Name="EmptyNotice" Visibility="Collapsed" TextWrapping="Wrap"/>
+   <ListView x:Name="TaskList" x:Uid="NasTasksList" MaxHeight="180" SelectionMode="Single" SelectionChanged="Selection_Changed">
+    <ListView.ItemTemplate><DataTemplate x:DataType="local:NasTaskSettingsRow">
+     <StackPanel Padding="0,6" Spacing="3">
+      <TextBlock Text="{x:Bind Entry.Name}" TextWrapping="Wrap" FontWeight="SemiBold"/>
+      <TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap"/>
+     </StackPanel>
+    </DataTemplate></ListView.ItemTemplate>
+   </ListView>
+   <ItemsControl><ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+    <Button x:Name="CreateButton" x:Uid="NasTasksCreate" Click="Create_Click" Margin="0,0,8,8"/>
+    <Button x:Name="DetailButton" x:Uid="NasTasksDetail" Click="Detail_Click" Margin="0,0,8,8"/>
+    <Button x:Name="EditButton" x:Uid="NasTasksEdit" Click="Edit_Click" Margin="0,0,8,8"/>
+    <Button x:Name="EnableButton" x:Uid="NasTasksEnable" Click="Enable_Click" Margin="0,0,8,8"/>
+    <Button x:Name="DisableButton" x:Uid="NasTasksDisable" Click="Disable_Click" Margin="0,0,8,8"/>
+    <Button x:Name="RunButton" x:Uid="NasTasksRun" Click="Run_Click" Margin="0,0,8,8"/>
+    <Button x:Name="DeleteButton" x:Uid="NasTasksDelete" Click="Delete_Click" Margin="0,0,8,8"/>
+    <Button x:Name="ResultsButton" x:Uid="NasTasksResults" Click="Results_Click" Margin="0,0,8,8"/>
+   </ItemsControl>
+   </StackPanel>
+   <StackPanel x:Name="EditorPanel" Visibility="Collapsed" Spacing="10">
+    <TextBlock x:Name="DetailTitle" FontWeight="SemiBold" TextWrapping="Wrap"/>
+    <TextBlock x:Name="IncompleteNotice" x:Uid="NasTasksIncomplete" Visibility="Collapsed" TextWrapping="Wrap"/>
+    <TextBox x:Name="NameInput" x:Uid="NasTasksName" TextChanged="Fields_Changed"/>
+    <TextBox x:Name="OwnerInput" x:Uid="NasTasksOwner" TextChanged="Fields_Changed"/>
+    <CheckBox x:Name="EnabledInput" x:Uid="NasTasksEnabled" IsThreeState="True" Checked="Checks_Changed" Unchecked="Checks_Changed" Indeterminate="Checks_Changed"/>
+    <StackPanel Orientation="Horizontal" Spacing="12">
+     <NumberBox x:Name="HourInput" x:Uid="NasTasksHour" Minimum="0" Maximum="23" Width="120" ValueChanged="Number_Changed"/>
+     <NumberBox x:Name="MinuteInput" x:Uid="NasTasksMinute" Minimum="0" Maximum="59" Width="120" ValueChanged="Number_Changed"/>
+    </StackPanel>
+    <TextBlock x:Uid="NasTasksDays" TextWrapping="Wrap"/>
+    <ItemsControl x:Name="DayChoices"><ItemsControl.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+    <TextBox x:Name="ScriptInput" x:Uid="NasTasksScript" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110" MaxHeight="240" TextChanged="Fields_Changed"/>
+    <CheckBox x:Name="NotifyInput" x:Uid="NasTasksNotify" IsThreeState="True" Checked="Checks_Changed" Unchecked="Checks_Changed" Indeterminate="Checks_Changed"/>
+    <TextBox x:Name="EmailInput" x:Uid="NasTasksEmail" TextChanged="Fields_Changed"/>
+    <TextBlock x:Name="ValidationNotice" x:Uid="NasTasksValidation" Visibility="Collapsed" TextWrapping="Wrap"/>
+   </StackPanel>
+   <StackPanel x:Name="HistoryPanel" Visibility="Collapsed" Spacing="8">
+    <TextBlock x:Uid="NasTasksHistoryTitle" FontWeight="SemiBold"/>
+    <TextBlock x:Name="EmptyHistory" x:Uid="NasTasksNoHistory" Visibility="Collapsed" TextWrapping="Wrap"/>
+    <ListView x:Name="ResultList" x:Uid="NasTasksHistoryList" MaxHeight="170" SelectionMode="Single" SelectionChanged="Result_Changed">
+     <ListView.ItemTemplate><DataTemplate x:DataType="local:NasTaskResultRow"><TextBlock Text="{x:Bind Detail}" TextWrapping="Wrap" Padding="0,6"/></DataTemplate></ListView.ItemTemplate>
+    </ListView>
+    <StackPanel x:Name="OutputPanel" Visibility="Collapsed" Spacing="8">
+     <TextBox x:Name="CommandOutput" x:Uid="NasTasksCommandOutput" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="140"/>
+     <TextBox x:Name="ResultOutput" x:Uid="NasTasksResultOutput" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="220"/>
+    </StackPanel>
+   </StackPanel>
+   <Button x:Name="CloseDetailButton" x:Uid="NasTasksCloseDetail" Visibility="Collapsed" Click="CloseDetail_Click"/>
+   <StackPanel x:Name="ConfirmationPanel" Visibility="Collapsed" Spacing="10">
+    <TextBlock x:Name="ConfirmationText" TextWrapping="Wrap"/>
+    <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasTasksConfirm" Checked="Confirm_Changed" Unchecked="Confirm_Changed"/>
+    <Button x:Name="ExecuteButton" Click="Execute_Click"/>
+   </StackPanel>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

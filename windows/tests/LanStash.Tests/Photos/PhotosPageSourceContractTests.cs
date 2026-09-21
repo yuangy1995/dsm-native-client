@@ -513,7 +513,8 @@ public sealed class PhotosPageSourceContractTests
             "private bool IsCurrentPhotoMoveRequest"));
 
         Assert.Contains("FileCopyMoveDialogContent.Build(model, localization, RenderAsync)", move);
-        Assert.Contains("FileCopyMoveDialogContent.Build(model, localization, RenderAsync)", filesMove);
+        Assert.Contains("ShowBatchCopyMoveDialogAsync(operation, [source], requireSelectedItem: true)", filesMove);
+        Assert.Contains("SameCopyMoveItem(source, _viewModel.SelectedItem?.Item)", filesMove);
         Assert.Contains("FileCopyMove_A11y_DestinationTree", sharedDialog);
         Assert.Contains("AutomationLiveSetting.Assertive", sharedDialog);
     }

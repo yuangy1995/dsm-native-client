@@ -42,6 +42,7 @@ public sealed record FileRecycleBatchSummary(
 
 public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
 {
+    // 仅供旧 File Station 照片组件兼容使用，通用文件批次不限制数量。
     public const int MaximumItemCount = 20;
 
     private readonly IFileRecycleRepository _repository;
@@ -59,6 +60,9 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
     private int _cancellationRequested;
     private long _generation;
     private bool _disposed;
+    private bool _requiresSignIn;
+
+    public bool RequiresSignIn { get => _requiresSignIn; private set => SetProperty(ref _requiresSignIn, value); }
 
     public FileRecycleBatchViewModel(
         IFileRecycleRepository repository,
@@ -120,12 +124,14 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
             throw new ArgumentException("file.recycle.batch.profile-mismatch", nameof(profileId));
         }
 
+        var snapshot = sources.ToArray();
+        var locationSnapshot = recycleLocations.ToArray();
         var validation = Validate(
             profileId,
-            sources,
+            snapshot,
             sourceRoot,
             source,
-            recycleLocations,
+            locationSnapshot,
             sourceScope,
             operation);
         if (validation != FileRecycleBatchValidationStatus.Valid)
@@ -137,13 +143,13 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         _blocker = blocker;
         _profileId = profileId;
         _operation = operation;
-        _sources = sources.ToArray();
+        _sources = Array.AsReadOnly(snapshot);
         _entries = _sources
             .Select(source =>
             {
                 var location = operation == FileRecycleOperation.MoveToRecycle
                     ? FileRecycleViewModel.FindRecycleLocation(
-                        profileId, source.Path, recycleLocations) ??
+                        profileId, source.Path, locationSnapshot) ??
                         throw new ArgumentException(
                             "file.recycle.batch.missing-recycle-location", nameof(recycleLocations))
                     : null;
@@ -240,10 +246,6 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
         if (sources.Count == 0)
         {
             return FileRecycleBatchValidationStatus.Empty;
-        }
-        if (sources.Count > MaximumItemCount)
-        {
-            return FileRecycleBatchValidationStatus.TooMany;
         }
         var sourceIsValid = operation == FileRecycleOperation.MoveToRecycle
             ? source is FileLocationSource.Shares or FileLocationSource.Favorite or
@@ -346,6 +348,7 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
 
         var generation = BeginRequest(out var cancellation);
         Interlocked.Exchange(ref _cancellationRequested, 0);
+        RequiresSignIn = false;
         State = FileRecycleBatchState.Submitting;
         var confirmed = 0;
         var needsReview = 0;
@@ -407,7 +410,8 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
                     break;
                 }
 
-                switch (Classify(outcome, entry))
+                RequiresSignIn = outcome?.Result?.ErrorCategory == MutationErrorCategory.Authentication;
+                switch (Classify(outcome!, entry))
                 {
                     case BatchItemResult.Confirmed:
                         confirmed++;
@@ -436,14 +440,16 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
                 UpdateSummary(confirmed, needsReview, failed, cancelled);
                 _activeEntry = null;
                 Volatile.Write(ref _activeSubmitted, 0);
+                if (RequiresSignIn) break;
             }
         }
-        catch
+        catch (Exception error)
         {
             if (!IsCurrent(generation))
             {
                 return;
             }
+            RequiresSignIn = error is DsmException dsm && (dsm.AuthenticationFailure || dsm.Code is 106 or 107 or 119 or 401);
             if (_activeEntry is { } active)
             {
                 needsReview++;
@@ -624,13 +630,12 @@ public sealed class FileRecycleBatchViewModel : ObservableObject, IDisposable
 
     private static bool HasNestedSelection(IReadOnlyList<FileItem> sources)
     {
-        for (var index = 0; index < sources.Count; index++)
+        var paths = sources.Select(item => item.Path).ToHashSet(StringComparer.Ordinal);
+        foreach (var source in sources)
         {
-            for (var candidate = 0; candidate < sources.Count; candidate++)
+            for (var ancestor = Parent(source.Path); ancestor.Length > 0; ancestor = Parent(ancestor))
             {
-                if (index != candidate &&
-                    sources[candidate].Path.StartsWith(
-                        sources[index].Path + "/", StringComparison.Ordinal))
+                if (paths.Contains(ancestor))
                 {
                     return true;
                 }

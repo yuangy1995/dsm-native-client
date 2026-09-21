@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
@@ -9,7 +11,6 @@ public sealed partial class DsmRepository
 {
     private const int FileArchiveCompressionPollLimit = 8;
     private const int FileArchiveCompressionPageSize = 100;
-    private const int FileArchiveCompressionItemLimit = 5000;
     private static readonly object FileArchiveMutationStatesSync = new();
     private static readonly Dictionary<Guid, FileArchiveMutationApiState>
         FileArchiveMutationStates = [];
@@ -68,9 +69,9 @@ public sealed partial class DsmRepository
                     MutationErrorCategory.Unknown, "file.archive-compression.preflight-invalid");
             }
 
+            var baselineByPath = baseline.ToDictionary(item => item.Item.Path, StringComparer.Ordinal);
             if (normalized.Sources.Any(source =>
-                    baseline.SingleOrDefault(item => item.Item.Path == source.Item.Path) is not
-                        { } observed || !MatchesArchiveSource(observed, source)))
+                    !baselineByPath.TryGetValue(source.Item.Path, out var observed) || !MatchesArchiveSource(observed, source)))
             {
                 return ArchiveOutcome(MutationResultStatus.ConfirmedFailure, false, false,
                     MutationErrorCategory.Validation, "file.archive-compression.source-changed");
@@ -126,6 +127,7 @@ public sealed partial class DsmRepository
                 _capabilities["SYNO.FileStation.Compress"],
                 request.Sources.Select(source => source.Item.Path).ToArray(),
                 review.DestinationPath,
+                request.Options,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -169,7 +171,8 @@ public sealed partial class DsmRepository
         {
             try
             {
-                taskFinished = await PollArchiveCompressionAsync(start.TaskId!, cancellationToken)
+                review.TaskId = start.TaskId;
+                taskFinished = await PollArchiveCompressionAsync(review, cancellationToken)
                     .ConfigureAwait(false);
                 postSubmitFailure = !taskFinished;
             }
@@ -224,15 +227,18 @@ public sealed partial class DsmRepository
             throw;
         }
 
-        if (confirmed is not null)
+        if (confirmed is not null && review.TaskFinished && !confirmedFailure)
         {
             RemoveArchiveReview(review);
             return ArchiveOutcome(MutationResultStatus.ConfirmedSuccess,
                 true, true, null, null, confirmed);
         }
-        if (confirmedFailure && !cancellationAfterSubmission)
+        if ((confirmedFailure || review.TaskFailed) && !cancellationAfterSubmission)
+        {
+            RemoveArchiveReview(review);
             return ArchiveOutcome(MutationResultStatus.ConfirmedFailure,
                 true, true, errorCategory, diagnosticTag);
+        }
 
         StoreArchiveReview(review);
         return ArchiveOutcome(
@@ -246,7 +252,7 @@ public sealed partial class DsmRepository
     }
 
     private async Task<bool> PollArchiveCompressionAsync(
-        string taskId,
+        FileArchiveCompressionReview review,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < FileArchiveCompressionPollLimit; attempt++)
@@ -255,12 +261,16 @@ public sealed partial class DsmRepository
                 _profile,
                 _session,
                 _capabilities["SYNO.FileStation.Compress"],
-                taskId,
+                review.TaskId!,
                 cancellationToken).ConfigureAwait(false);
             if (status.ErrorCategory == MutationErrorCategory.Authentication)
                 throw ArchiveAuthenticationException();
             if (status.Status == FileArchiveCompressionTaskTransportStatus.Finished)
+            {
+                review.TaskFinished = true;
                 return true;
+            }
+            if (status.Status == FileArchiveCompressionTaskTransportStatus.ConfirmedFailure) review.TaskFailed = true;
             if (status.Status != FileArchiveCompressionTaskTransportStatus.Running)
                 return false;
             await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(2000, 500 * (1 << attempt))),
@@ -297,8 +307,22 @@ public sealed partial class DsmRepository
     {
         try
         {
+            if (!review.TaskFinished && !review.TaskFailed && review.TaskId is not null)
+            {
+                var status = await _api.ReadFileArchiveCompressionStatusAsync(_profile, _session,
+                    _capabilities["SYNO.FileStation.Compress"], review.TaskId, CancellationToken.None).ConfigureAwait(false);
+                if (status.ErrorCategory == MutationErrorCategory.Authentication) throw ArchiveAuthenticationException();
+                review.TaskFinished = status.Status == FileArchiveCompressionTaskTransportStatus.Finished;
+                review.TaskFailed = status.Status == FileArchiveCompressionTaskTransportStatus.ConfirmedFailure;
+            }
+            if (review.TaskFailed)
+            {
+                RemoveArchiveReview(review);
+                return ArchiveOutcome(MutationResultStatus.ConfirmedFailure, true, true,
+                    MutationErrorCategory.Server, "file.archive-compression.task-failed");
+            }
             var confirmed = await TryReadBackArchiveCompressionAsync(review).ConfigureAwait(false);
-            if (confirmed is not null)
+            if (confirmed is not null && review.TaskFinished)
             {
                 RemoveArchiveReview(review);
                 return ArchiveOutcome(MutationResultStatus.ConfirmedSuccess,
@@ -349,10 +373,10 @@ public sealed partial class DsmRepository
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var offset = 0;
         int? stableTotal = null;
-        while (offset < FileArchiveCompressionItemLimit)
+        while (true)
         {
-            var requestedLimit = Math.Min(FileArchiveCompressionPageSize,
-                FileArchiveCompressionItemLimit - offset);
+            cancellationToken.ThrowIfCancellationRequested();
+            var requestedLimit = FileArchiveCompressionPageSize;
             var data = await _api.CallReadJsonObjectAsync(
                 _profile,
                 _session,
@@ -370,7 +394,6 @@ public sealed partial class DsmRepository
             var pageOffset = ArchiveNativeInt(data, "offset");
             var total = ArchiveNativeInt(data, "total");
             if (pageOffset != offset || (stableTotal is not null && stableTotal != total) ||
-                total > FileArchiveCompressionItemLimit ||
                 data["files"] is not JsonArray files || files.Count > requestedLimit)
                 throw new InvalidDataException("file.archive-compression.invalid-list-page");
             stableTotal ??= total;
@@ -419,17 +442,10 @@ public sealed partial class DsmRepository
         var canDelete = false;
         if (additional?["perm"] is not null)
         {
-            if (additional["perm"] is not JsonObject permission)
-                throw new InvalidDataException("file.archive-compression.invalid-permission");
-            if (permission["read"] is not null &&
-                !ArchiveNativeBool(permission, "read", out canRead))
-                throw new InvalidDataException("file.archive-compression.invalid-permission");
-            if (permission["write"] is not null &&
-                !ArchiveNativeBool(permission, "write", out canWrite))
-                throw new InvalidDataException("file.archive-compression.invalid-permission");
-            if (permission["delete"] is not null &&
-                !ArchiveNativeBool(permission, "delete", out canDelete))
-                throw new InvalidDataException("file.archive-compression.invalid-permission");
+            var permission = FileStationPermissions.Parse(additional["perm"]);
+            canRead = permission.Read ?? true;
+            canWrite = permission.Write ?? false;
+            canDelete = permission.Delete ?? false;
         }
         return new(new FileItem(path, name, isDirectory, size, modified, null,
             canWrite, canDelete), canRead);
@@ -445,8 +461,8 @@ public sealed partial class DsmRepository
         review = null;
         invalidTag = "file.archive-compression.invalid-input";
         if (request is null || request.ProfileId != ProfileId ||
-            request.Sources is null || request.Sources.Count is < 1 or > 20 ||
-            !TryNormalizeArchiveName(request.DestinationName, out var destinationName))
+            request.Sources is null || request.Sources.Count == 0 ||
+            request.Options is null || !request.Options.TryNormalizeName(request.DestinationName, out var destinationName))
             return false;
 
         var sources = request.Sources.ToArray();
@@ -470,24 +486,18 @@ public sealed partial class DsmRepository
                 return false;
         }
 
-        for (var i = 0; i < sources.Length; i++)
-        for (var j = i + 1; j < sources.Length; j++)
-        {
-            var left = sources[i].Item.Path;
-            var right = sources[j].Item.Path;
-            if (left.StartsWith(right + "/", StringComparison.Ordinal) ||
-                right.StartsWith(left + "/", StringComparison.Ordinal))
-                return false;
-        }
+        // 规范路径均已验证属于同一父目录，因此不可能互为祖先；避免大批量时两两比较。
 
         var destinationPath = $"{firstParent}/{destinationName}";
-        normalized = new FileArchiveCompressionRequest(ProfileId, sources, destinationName);
+        normalized = request with { Sources = sources, DestinationName = destinationName };
+        // 恢复只保留选项摘要，不持有压缩密码；改变选项不能接管旧操作或重复提交。
+        var optionsSignature = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request.Options))));
         review = new FileArchiveCompressionReview(
-            normalized,
+            normalized with { Options = request.Options with { Password = null } },
             firstParent,
             destinationPath,
             new HashSet<string>(sources.Select(source => source.Item.Path)
-                .Append(destinationPath), StringComparer.Ordinal));
+                .Append(destinationPath), StringComparer.Ordinal), optionsSignature);
         return true;
     }
 
@@ -588,20 +598,6 @@ public sealed partial class DsmRepository
         observed.Item.IsDirectory == expected.Item.IsDirectory &&
         observed.Item.Size == expected.Item.Size &&
         observed.Item.ModifiedAt == expected.Item.ModifiedAt;
-
-    private static bool TryNormalizeArchiveName(string? value, out string normalized)
-    {
-        normalized = string.Empty;
-        if (string.IsNullOrWhiteSpace(value) || value != value.Trim())
-            return false;
-        var name = value;
-        while (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-            name = name[..^4];
-        if (!ValidArchiveItemName(name))
-            return false;
-        normalized = name + ".zip";
-        return true;
-    }
 
     private static bool ValidArchiveItemName(string value) =>
         !string.IsNullOrWhiteSpace(value) && value == value.Trim() && value is not ("." or "..") &&
@@ -705,9 +701,13 @@ public sealed partial class DsmRepository
         FileArchiveCompressionRequest Request,
         string SourceParent,
         string DestinationPath,
-        HashSet<string> ReservedPaths)
+        HashSet<string> ReservedPaths,
+        string OptionsSignature)
     {
-        public string Key => $"{Request.ProfileId:N}|{DestinationPath}|" +
+        public string? TaskId { get; set; }
+        public bool TaskFinished { get; set; }
+        public bool TaskFailed { get; set; }
+        public string Key => $"{Request.ProfileId:N}|{DestinationPath}|{OptionsSignature}|" +
             string.Join("|", Request.Sources.Select(source => source.Item.Path)
                 .OrderBy(path => path, StringComparer.Ordinal));
     }

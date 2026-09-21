@@ -271,7 +271,7 @@ public sealed partial class AppViewModel : ObservableObject
                 connection.Profile,
                 session,
                 connectionContext.Api,
-                connection.Capabilities);
+                connection.Capabilities) { ConsoleUsesSystemTrust = !connectionContext.UsesPinnedCertificate || connection.Source == DsmConnectionSource.QuickConnectRelay };
             await TryActivateDesktopDrivesAsync(
                 input.Profile.Id,
                 repository).ConfigureAwait(true);
@@ -389,7 +389,7 @@ public sealed partial class AppViewModel : ObservableObject
                 connection.Profile,
                 session,
                 connectionContext.Api,
-                connection.Capabilities);
+                connection.Capabilities) { ConsoleUsesSystemTrust = !connectionContext.UsesPinnedCertificate || connection.Source == DsmConnectionSource.QuickConnectRelay };
             _ = await repository.ListFilesAsync(
                 string.Empty,
                 cancellation.Token).ConfigureAwait(true);
@@ -598,7 +598,8 @@ public sealed partial class AppViewModel : ObservableObject
     public async Task AddDesktopDriveAsync(
         string? displayName,
         string? folderPath,
-        DesktopDriveCachePolicy cachePolicy)
+        DesktopDriveCachePolicy cachePolicy,
+        bool launchAtLogin = true)
     {
         if (ActiveProfile is null || Repository is null)
         {
@@ -615,7 +616,8 @@ public sealed partial class AppViewModel : ObservableObject
             string.IsNullOrWhiteSpace(displayName) ? name : displayName.Trim(),
             scope,
             Repository,
-            cachePolicy).ConfigureAwait(true);
+            cachePolicy,
+            launchAtLogin).ConfigureAwait(true);
         RefreshDesktopDriveMappings();
     }
 
@@ -796,6 +798,73 @@ public sealed partial class AppViewModel : ObservableObject
 
     public bool IsDesktopDrivePaused(DesktopDriveMapping mapping) =>
         _cloudDrives.Runtime(mapping).IsManuallyPaused;
+
+    internal async Task<CloudDriveRefreshSummary> RefreshDesktopDriveFilesAsync(DesktopDriveMapping mapping, CancellationToken token)
+    {
+        if (ActiveProfile?.Id != mapping.ProfileId || Repository is null)
+            throw new InvalidOperationException("CloudDriveSignInRequired");
+        var result = await _cloudDrives.RefreshFilesAsync(mapping, token).ConfigureAwait(true);
+        DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
+        return result;
+    }
+
+    internal Task<CloudDriveWritebackOverview> ReadDesktopDriveWritebackAsync(DesktopDriveMapping mapping, CancellationToken token)
+    {
+        RequireWritebackProfile(mapping);
+        return _cloudDrives.ReadWritebackAsync(mapping, token);
+    }
+
+    internal async Task<CloudDriveWritebackPreparation> ConfigureDesktopDriveWritebackAsync(DesktopDriveMapping mapping,
+        bool enabled, bool confirmed, CancellationToken token)
+    {
+        RequireWritebackProfile(mapping);
+        var result = await _cloudDrives.ConfigureWritebackAsync(mapping, enabled, confirmed, token).ConfigureAwait(true);
+        DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
+        return result;
+    }
+
+    internal async Task RecoverDesktopDriveWritebackAsync(DesktopDriveMapping mapping, CloudDrivePendingChange expected,
+        CloudDriveRecoveryAction action, bool confirmed, CancellationToken token)
+    {
+        RequireWritebackProfile(mapping);
+        await _cloudDrives.RecoverWritebackAsync(mapping, Repository!, expected, action, confirmed, token).ConfigureAwait(true);
+        DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal Task ExportDesktopDriveWritebackAsync(DesktopDriveMapping mapping, Guid id, string destination, CancellationToken token)
+    {
+        RequireWritebackProfile(mapping);
+        return _cloudDrives.ExportWritebackAsync(mapping, id, destination, token);
+    }
+
+    private void RequireWritebackProfile(DesktopDriveMapping mapping)
+    {
+        if (ActiveProfile?.Id != mapping.ProfileId || Repository is null)
+            throw new InvalidOperationException("CloudDriveSignInRequired");
+    }
+
+    internal async Task RecoverDesktopDriveRelocationAsync(DesktopDriveMapping mapping, CloudDriveRelocationOperation expected,
+        CloudDriveRelocationRecoveryAction action, bool confirmed, CancellationToken token)
+    {
+        RequireWritebackProfile(mapping);
+        await _cloudDrives.RecoverRelocationAsync(mapping, Repository!, expected, action, confirmed, token).ConfigureAwait(true);
+        DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal async Task ConfigureDesktopDriveDeletionAsync(DesktopDriveMapping mapping, bool enabled, bool confirmed, CancellationToken token)
+    {
+        RequireWritebackProfile(mapping);
+        await _cloudDrives.ConfigureDeletionAsync(mapping, enabled, confirmed, token).ConfigureAwait(true);
+        DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal async Task RecoverDesktopDriveDeletionAsync(DesktopDriveMapping mapping, CloudDriveDeletionOperation expected,
+        CloudDriveDeletionRecoveryAction action, bool confirmed, CancellationToken token)
+    {
+        RequireWritebackProfile(mapping);
+        await _cloudDrives.RecoverDeletionAsync(mapping, Repository!, expected, action, confirmed, token).ConfigureAwait(true);
+        DesktopDriveProgressChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     public int CurrentDesktopDriveCount =>
         ActiveProfile is { } profile

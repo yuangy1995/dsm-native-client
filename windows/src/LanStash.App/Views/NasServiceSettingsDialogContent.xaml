@@ -1,0 +1,29 @@
+<UserControl
+    x:Class="LanStash.App.Views.NasServiceSettingsDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="560">
+    <StackPanel Spacing="16" MinWidth="260" MaxWidth="480" Padding="0,4">
+      <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" IsActive="False" Visibility="Collapsed"/>
+      <InfoBar x:Name="StatusNotice" IsClosable="False" IsOpen="False" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="ReadOnlyNotice" x:Uid="NasServiceReadOnly" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed"/>
+      <StackPanel x:Name="TerminalFields" Spacing="12" Visibility="Collapsed">
+        <ToggleSwitch x:Name="SshToggle" x:Uid="NasServiceSsh" Toggled="Fields_Changed"/>
+        <TextBox x:Name="SshPort" x:Uid="NasServiceSshPort" MaxLength="6" TextChanged="Host_Changed" InputScope="Number"/>
+        <ToggleSwitch x:Name="TelnetToggle" x:Uid="NasServiceTelnet" Toggled="Fields_Changed"/>
+      </StackPanel>
+      <StackPanel x:Name="ProxyFields" Spacing="12" Visibility="Collapsed">
+        <ToggleSwitch x:Name="ProxyToggle" x:Uid="NasServiceProxyEnabled" Toggled="Fields_Changed"/>
+        <TextBox x:Name="ProxyHost" x:Uid="NasServiceProxyHost" MaxLength="253" TextChanged="Host_Changed"/>
+        <TextBox x:Name="ProxyPort" x:Uid="NasServiceProxyPort" MaxLength="6" TextChanged="Host_Changed" InputScope="Number"/>
+      </StackPanel>
+      <TextBlock x:Name="ValidationNotice" x:Uid="NasServiceInvalidInput" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="RiskNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
+      <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasServiceRiskConfirmed" Checked="Acknowledgement_Changed" Unchecked="Acknowledgement_Changed" Visibility="Collapsed">
+        <CheckBox.Content>
+          <TextBlock x:Uid="NasServiceRiskConfirmedText" TextWrapping="Wrap"/>
+        </CheckBox.Content>
+      </CheckBox>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

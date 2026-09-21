@@ -55,11 +55,13 @@ public sealed class NasPowerViewModelTests
         await model.ActivateAsync(repository);
 
         model.RequestShutdown();
+        Assert.True(model.ConfirmAction(true));
         await model.ExecuteActionAsync();
 
         Assert.NotNull(model.LastResult);
         Assert.Equal("shutdown", model.LastResult!.Operation);
-        Assert.True(model.WasSuccessful);
+        Assert.False(model.WasSuccessful);
+        Assert.NotNull(model.Recovery);
     }
 
     [Fact]
@@ -73,6 +75,7 @@ public sealed class NasPowerViewModelTests
         await model.ActivateAsync(repository);
 
         model.RequestReboot();
+        Assert.True(model.ConfirmAction(true));
         await model.ExecuteActionAsync();
 
         Assert.NotNull(model.LastResult);
@@ -89,10 +92,82 @@ public sealed class NasPowerViewModelTests
         Assert.True(model.IsUnsupported);
     }
 
+    [Fact]
+    public async Task NoConfirmationChangedActionAndCancelledChoiceDoNotSend()
+    {
+        var repository = new FakeSettingsRepository(Guid.NewGuid(), true); using var model = new NasPowerViewModel(); await model.ActivateAsync(repository);
+        await model.ExecuteActionAsync(); model.RequestShutdown(); await model.ExecuteActionAsync(); Assert.Equal(0, repository.PowerRequests);
+        Assert.True(model.ConfirmAction(true)); model.RequestReboot(); await model.ExecuteActionAsync(); Assert.Equal(0, repository.PowerRequests);
+        model.ConfirmAction(true); model.CancelAction(); await model.ExecuteActionAsync(); Assert.Equal(0, repository.PowerRequests);
+    }
+
+    [Fact]
+    public async Task UnknownResultCannotBeDismissedByCancelOrReload()
+    {
+        var repository = new FakeSettingsRepository(Guid.NewGuid(), true) { NextPowerResult = new(1, MutationResultStatus.SubmittedButUnverified, "reboot", true, true, new(0, 0, 1)) };
+        using var model = new NasPowerViewModel(); await model.ActivateAsync(repository); model.RequestReboot(); model.ConfirmAction(true); await model.ExecuteActionAsync();
+        model.CancelAction(); await model.ReloadAsync(); Assert.NotNull(model.Recovery); Assert.False(model.CanChoose); Assert.False(model.WasSuccessful);
+        await model.AcknowledgeAsync(true); Assert.NotNull(model.Recovery); Assert.Equal(1, repository.PowerRequests);
+    }
+
+    [Fact]
+    public async Task AcceptanceStillRequiresFreshConnectionAndDeviceCheck()
+    {
+        var repository = new FakeSettingsRepository(Guid.NewGuid(), true) { NextPowerResult = new(1, MutationResultStatus.ConfirmedSuccess, "reboot", true, false, new(1, 0, 0)) };
+        using var model = new NasPowerViewModel(); await model.ActivateAsync(repository); model.RequestReboot(); model.ConfirmAction(true); await model.ExecuteActionAsync();
+        Assert.True(model.WasSuccessful); Assert.NotNull(model.Recovery); Assert.False(model.CanChoose);
+        repository.FreshSession = true; await model.ReloadAsync(); await model.AcknowledgeAsync(false); Assert.NotNull(model.Recovery);
+        await model.AcknowledgeAsync(true); Assert.Null(model.Recovery); Assert.True(model.CanChoose); Assert.Equal(1, repository.PowerRequests);
+    }
+
+    [Fact]
+    public async Task SwitchingNasCancelsAndIgnoresLatePowerResult()
+    {
+        var finish = new TaskCompletionSource<MutationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new FakeSettingsRepository(Guid.NewGuid(), true) { PowerTask = finish.Task };
+        using var model = new NasPowerViewModel(); await model.ActivateAsync(repository); model.RequestReboot(); model.ConfirmAction(true); var active = model.ExecuteActionAsync();
+        Assert.True(model.IsBusy); await model.ActivateAsync(new FakeSettingsRepository(Guid.NewGuid(), true)); Assert.True(repository.LastToken.IsCancellationRequested);
+        finish.SetResult(new(1, MutationResultStatus.ConfirmedSuccess, "reboot", true, false, new(1, 0, 0))); await active;
+        Assert.Null(model.LastResult); Assert.Null(model.Recovery); Assert.False(model.IsBusy);
+    }
+
+    [Fact]
+    public async Task LateRecoveryReadCannotPopulateAnotherNas()
+    {
+        var repository = new FakeSettingsRepository(Guid.NewGuid(), true) { NextPowerResult = new(1, MutationResultStatus.SubmittedButUnverified, "reboot", true, true, new(0, 0, 1)) };
+        using var model = new NasPowerViewModel(); await model.ActivateAsync(repository);
+        var finish = new TaskCompletionSource<NasPowerRecoveryInfo?>(TaskCreationOptions.RunContinuationsAsynchronously); repository.RecoveryTask = finish.Task;
+        model.RequestReboot(); model.ConfirmAction(true); var active = model.ExecuteActionAsync();
+        await model.ActivateAsync(new FakeSettingsRepository(Guid.NewGuid(), true)); finish.SetResult(repository.Recovery); await active;
+        Assert.Null(model.LastResult); Assert.Null(model.Recovery);
+    }
+
     private sealed class FakeSettingsRepository(Guid profileId, bool writeAvailable) : INasSettingsRepository
     {
         public Guid ProfileId { get; } = profileId;
         public MutationResult? NextPowerResult { get; set; }
+        public NasPowerRecoveryInfo? Recovery { get; set; }
+        public int PowerRequests { get; private set; }
+        public Task<MutationResult>? PowerTask { get; set; }
+        public CancellationToken LastToken { get; private set; }
+        public bool FreshSession { get; set; }
+        public Task<NasPowerRecoveryInfo?>? RecoveryTask { get; set; }
+        public Task<NasPowerRecoveryInfo?> GetPowerRecoveryAsync(CancellationToken token = default) =>
+            RecoveryTask ?? Task.FromResult(Recovery is null ? null : Recovery with { HasFreshSession = FreshSession });
+        public Task<bool> AcknowledgePowerRecoveryAsync(bool deviceChecked, CancellationToken token = default)
+        {
+            if (!deviceChecked || !FreshSession) return Task.FromResult(false);
+            Recovery = null; return Task.FromResult(true);
+        }
+        public Task<MutationResult> ExecutePowerActionAsync(NasPowerRequest request, CancellationToken token = default)
+        {
+            PowerRequests++; LastToken = token;
+            if (PowerTask is not null) return PowerTask;
+            var result = NextPowerResult ?? Unsupported("powerAction");
+            if (result.Submitted && result.Status is MutationResultStatus.ConfirmedSuccess or MutationResultStatus.SubmittedButUnverified)
+                Recovery = new(request.Action, result, false);
+            return Task.FromResult(result);
+        }
 
         public NasSettingsWriteAvailability WriteAvailability { get; } = new(
             CanSaveDDNS: writeAvailable,

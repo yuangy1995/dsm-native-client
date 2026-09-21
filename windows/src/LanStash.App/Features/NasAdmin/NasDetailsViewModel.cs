@@ -32,6 +32,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<NasDetailsSectionOption> Sections { get; } = [];
     public ObservableCollection<NasDetailsRow> Rows { get; } = [];
+    public ObservableCollection<NasDetailsRow> StorageOverviewRows { get; } = [];
 
     public Guid? ActiveProfileId
     {
@@ -192,6 +193,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     public void SelectSection(NasDetailsSectionKind section)
     {
         ThrowIfDisposed();
+        if (SelectedSection == section) return;
         SelectedSection = section;
         if (CurrentProfile is { } profile)
         {
@@ -389,6 +391,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             return;
         }
         RebuildSections(snapshot);
+        RebuildStorageOverview(snapshot.StorageHealth);
         Rows.Clear();
         SectionNoticeIsOpen = false;
         var section = SelectedSection switch
@@ -438,6 +441,29 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         ContentState = Rows.Count > 0
             ? NasDetailsContentState.Content
             : NasDetailsContentState.Empty;
+    }
+
+    private void RebuildStorageOverview(NasDetailsSection<NasStorageHealthSummary> section)
+    {
+        StorageOverviewRows.Clear();
+        if (section.Status != NasDetailsSectionStatus.Available) return;
+        // 只汇总存储空间，避免把同一容量在存储池、空间和硬盘中重复相加。
+        var volumes = section.Items.Where(item => item.Kind == NasStorageItemKind.Volume).ToArray();
+        if (volumes.Length == 0) return;
+        var complete = volumes.All(item => item.TotalBytes is >= 0 && item.UsedBytes is >= 0 && item.UsedBytes <= item.TotalBytes);
+        var total = complete ? volumes.Sum(item => item.TotalBytes!.Value) : (long?)null;
+        var used = complete ? volumes.Sum(item => item.UsedBytes!.Value) : (long?)null;
+        StorageOverviewRows.Add(Row("total", L.Get("WorkspaceStorageTotal"),
+            total is { } capacity ? FormatBytes(capacity) : L.Get("UnknownValue"),
+            L.Format("WorkspaceStorageVolumeCount", volumes.Length), "\uEDA2"));
+        StorageOverviewRows.Add(Row("used", L.Get("WorkspaceStorageUsed"),
+            used is { } occupied ? FormatBytes(occupied) : L.Get("UnknownValue"), string.Empty, "\uEB05"));
+        StorageOverviewRows.Add(Row("free", L.Get("WorkspaceStorageFree"),
+            total is { } size && used is { } allocated ? FormatBytes(size - allocated) : L.Get("UnknownValue"), string.Empty, "\uE7F1"));
+        StorageOverviewRows.Add(Row("health", L.Get("WorkspaceStorageHealth"),
+            section.Items.All(item => item.State == ResourceState.Healthy)
+                ? L.Get("WorkspaceStorageHealthy") : L.Get("WorkspaceStorageCheckDetails"),
+            string.Empty, "\uE73E"));
     }
 
     private void RebuildSections(NasDetailsSnapshot snapshot)
@@ -951,10 +977,10 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
         new(
             item.Id,
             item.Name,
-            item.Version ?? L.Get("UnknownValue"),
-            StatusText(item.State, item.Status),
+            item.IsUpgradeAvailable ? L.Format("NasPackageVersionUpgrade", item.Version ?? L.Get("UnknownValue")) : item.Version ?? L.Get("UnknownValue"),
+            StatusText(item.State, ""),
             "\uE7B8",
-            L.Format("NasDetailsRowAutomationName", item.Name, item.Status));
+            L.Format("NasDetailsRowAutomationName", item.Name, item.IsUpgradeAvailable ? L.Get("NasPackageUpgradeAvailable") : StatusText(item.State, "")));
 
     private static NasDetailsRow TaskRow(NasScheduledTaskSummary item)
     {
@@ -987,8 +1013,8 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
 
     private static NasDetailsRow ConnectionRow(NasConnectionSummary item)
     {
-        var time = item.ConnectedAt?.ToLocalTime().ToString("g") ?? L.Get("UnknownValue");
-        var status = item.IsCurrent
+        var time = item.ReportedTime ?? item.ConnectedAt?.ToLocalTime().ToString("g") ?? L.Get("UnknownValue");
+        var status = !item.IsCurrentKnown ? L.Get("UnknownValue") : item.IsCurrent
             ? L.Get("NasDetailsConnectionCurrent")
             : L.Get("NasDetailsConnectionActive");
         return new NasDetailsRow(
@@ -1057,7 +1083,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
             : L.Format("NasDetailsDurationHoursMinutes", totalHours, minutes);
     }
 
-    private static string FormatBytes(long bytes)
+    internal static string FormatBytes(long bytes)
     {
         string[] unitKeys =
         [
@@ -1137,6 +1163,7 @@ public sealed class NasDetailsViewModel : ObservableObject, IDisposable
     {
         Sections.Clear();
         Rows.Clear();
+        StorageOverviewRows.Clear();
         SectionNoticeIsOpen = false;
     }
 

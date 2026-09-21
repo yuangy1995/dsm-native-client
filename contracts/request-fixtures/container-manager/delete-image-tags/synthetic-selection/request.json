@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "container-manager.delete-image-tags.synthetic-selection",
+  "module": "container-manager",
+  "operation": "deleteImageTags",
+  "api": {
+    "name": "SYNO.Docker.Image",
+    "method": "delete",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "images",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"repository\":\"synthetic/web\",\"tags\":[\"stable\"]}]"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "destructive",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

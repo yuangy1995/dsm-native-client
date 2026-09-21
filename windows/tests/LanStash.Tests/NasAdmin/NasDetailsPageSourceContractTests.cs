@@ -29,7 +29,7 @@ public sealed class NasDetailsPageSourceContractTests
         Assert.Contains("_viewModel.CanRunStorageAnalysis", source);
         Assert.Contains("_viewModel.CanRunDeepStorageAnalysis", source);
         Assert.Contains("_viewModel.CanCancelStorageAnalysis", source);
-        Assert.Contains("ScrollViewer.HorizontalScrollMode=\"Enabled\"", xaml);
+        Assert.Contains("ScrollViewer.VerticalScrollMode=\"Enabled\"", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
         Assert.True(Count(xaml, "MinHeight=\"44\"") >= 2);
         Assert.Contains("_viewModel.HasRefreshError", source);
@@ -160,6 +160,64 @@ public sealed class NasDetailsPageSourceContractTests
 
     private static int Count(string source, string value) =>
         source.Split(value, StringSplitOptions.None).Length - 1;
+
+    [Fact]
+    public void ServiceSettingsHaveActualFieldsConfirmationAndBoundedDialogLifetime()
+    {
+        var page = Read("windows/src/LanStash.App/Views/NasDetailsPage.xaml");
+        var source = Read("windows/src/LanStash.App/Views/NasDetailsPage.ServiceSettings.cs");
+        var form = Read("windows/src/LanStash.App/Views/NasServiceSettingsDialogContent.xaml");
+        var behavior = Read("windows/src/LanStash.App/Views/NasServiceSettingsDialogContent.xaml.cs");
+        Assert.Contains("TerminalSettings_Click", page);
+        Assert.Contains("ProxySettings_Click", page);
+        foreach (var field in new[] { "SshToggle", "SshPort", "TelnetToggle", "ProxyToggle", "ProxyHost", "ProxyPort", "RiskAcknowledgement" })
+            Assert.Contains($"x:Name=\"{field}\"", form);
+        Assert.Contains("ContentDialogButton.Close", source);
+        Assert.Contains("args.Cancel = true", source);
+        Assert.Contains("content.Dispose()", source);
+        Assert.Contains("RiskAcknowledgement.IsChecked == true", behavior);
+        Assert.Contains("NasServiceSettingsInput.TryTerminal", behavior);
+        Assert.Contains("NasServiceSettingsInput.TryProxy", behavior);
+        Assert.Contains("WriteAvailable", behavior);
+        Assert.Contains("_settingsRepository.ProfileId != _viewModel.ActiveProfileId", source);
+        var localizationSource = Read("windows/src/LanStash.App/Localization/LocalizationService.cs");
+        Assert.Contains("GetString(ToResourcePath(key))", localizationSource);
+        Assert.Contains("characters[index] == '.' && !inNamespace", localizationSource);
+        Assert.DoesNotContain("ShowEditDialogAsync", Read("windows/src/LanStash.App/Views/NasDetailsPage.xaml.cs"));
+    }
+
+    [Fact]
+    public void FileServicesUseAvailabilityFlagsAndSharedDialogLifecycle()
+    {
+        var source = Read("windows/src/LanStash.App/Views/NasFileServiceSettingsDialogContent.xaml.cs");
+        var xaml = Read("windows/src/LanStash.App/Views/NasFileServiceSettingsDialogContent.xaml");
+        Assert.Contains("AvailableFields", source);
+        Assert.Contains("FailedFields", source);
+        Assert.Contains("available.HasFlag(field)", source);
+        Assert.Contains("NasFileServicePartialRead", source);
+        Assert.Contains("NasSettingsUnavailable", source);
+        Assert.Contains("RiskAcknowledgement.IsChecked == true", source);
+        Assert.Contains("NasFileServiceSettingsRules.IsValidChange", source);
+        Assert.Contains("NasServiceSettingsSaveRequest<NasFileServiceSettings>", source);
+        Assert.Contains("NasFileFtps", xaml);
+        Assert.Contains("ShowSettingsContentAsync(new NasFileServiceSettingsDialogContent", Read("windows/src/LanStash.App/Views/NasDetailsPage.ServiceSettings.cs"));
+    }
+
+    [Fact]
+    public void TaskManagementUsesExistingDialogAndClearsSensitiveControls()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/NasTasksSettingsDialogContent.xaml");
+        var source = Read("windows/src/LanStash.App/Views/NasTasksSettingsDialogContent.xaml.cs");
+        Assert.Contains("TasksSettings_Click", Read("windows/src/LanStash.App/Views/NasDetailsPage.xaml"));
+        Assert.Contains("new NasTasksSettingsDialogContent(_settingsRepository)", Read("windows/src/LanStash.App/Views/NasDetailsPage.ServiceSettings.cs"));
+        foreach (var name in new[] { "LoadingIndicator", "ErrorNotice", "EmptyNotice", "TaskList", "EditorPanel", "HistoryPanel", "RiskAcknowledgement", "ExecuteButton" })
+            Assert.Contains($"x:Name=\"{name}\"", xaml);
+        Assert.Contains("ReadFields(); if (_model.CanExecute)", source);
+        Assert.Contains("ScriptInput.Text = EmailInput.Text = CommandOutput.Text = ResultOutput.Text = \"\"", source);
+        Assert.DoesNotContain("HttpClient", source);
+        Assert.DoesNotContain("File.Write", source);
+        Assert.Contains("PrimaryButtonResourceKey => null", source);
+    }
 
     private static string Read(string relativePath)
     {

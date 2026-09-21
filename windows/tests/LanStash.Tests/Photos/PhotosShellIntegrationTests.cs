@@ -3,6 +3,16 @@ namespace LanStash.Tests;
 public sealed class PhotosShellIntegrationTests
 {
     [Fact]
+    public void PhotoLoadFailureDoesNotTellTheUserToAddPhotos()
+    {
+        var source = ReadRepositoryFile("windows/src/LanStash.App/Views/Photos/SynologyPhotosPage.xaml.cs");
+        var message = Slice(source, "EmptyMessage.Text =", "CountText.Text =");
+        Assert.Contains("_model.ErrorKey ??", message);
+        Assert.True(message.IndexOf("_model.ErrorKey", StringComparison.Ordinal) <
+            message.IndexOf("PhotosEmptyDescription", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ShellRoutesPhotosToOneCachedDedicatedPageAndDisposesIt()
     {
         var shell = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");

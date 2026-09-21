@@ -5,7 +5,17 @@ namespace LanStash.App.Features.Settings;
 
 public sealed class AppSettingsService
 {
+#if LANSTASH_UI_SMOKE
+    public static AppSettingsService Current { get; } = new(new SmokePreferenceStore());
+    private sealed class SmokePreferenceStore : IAppSettingsStore
+    {
+        private AppSettingsPreferences _value = AppSettingsPreferences.Default;
+        public AppSettingsPreferences Load() => _value;
+        public bool Save(AppSettingsPreferences value) { _value = value; return true; }
+    }
+#else
     public static AppSettingsService Current { get; } = new(new FileAppSettingsStore());
+#endif
 
     private readonly IAppSettingsStore _store;
     private AppSettingsPreferences _preferences;

@@ -218,7 +218,7 @@
                                         Click="RemoteEdit_Click"
                                         MinWidth="48"
                                         MinHeight="48"
-                                        Visibility="{Binding DataContext.AllowsRemoteMountManagement, ElementName=Root, Converter={StaticResource FileLocationsBooleanToVisibilityConverter}}">
+                                        Visibility="{Binding DataContext.CanManageRemoteMountWorkflow, ElementName=Root, Converter={StaticResource FileLocationsBooleanToVisibilityConverter}}">
                                         <FontIcon Glyph="&#xE70F;" />
                                     </Button>
                                     <Button
@@ -227,7 +227,7 @@
                                         Click="RemoteDelete_Click"
                                         MinWidth="48"
                                         MinHeight="48"
-                                        Visibility="{Binding DataContext.AllowsRemoteMountManagement, ElementName=Root, Converter={StaticResource FileLocationsBooleanToVisibilityConverter}}">
+                                        Visibility="{Binding DataContext.CanManageRemoteMountWorkflow, ElementName=Root, Converter={StaticResource FileLocationsBooleanToVisibilityConverter}}">
                                         <FontIcon Glyph="&#xE74D;" />
                                     </Button>
                                 </Grid>

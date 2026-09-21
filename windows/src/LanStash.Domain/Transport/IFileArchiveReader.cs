@@ -24,6 +24,13 @@ public sealed class FileArchiveContractException(
 /// </summary>
 public interface IFileArchiveReader
 {
+    /// <summary>多个项目或单个文件夹返回一个 ZIP；单个普通文件应使用原文件下载。</summary>
+    Task StreamArchiveAsync(IReadOnlyList<string> remotePaths,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync,
+        CancellationToken cancellationToken = default) => remotePaths.Count == 1
+            ? StreamFolderArchiveAsync(remotePaths[0], writeChunkAsync, cancellationToken)
+            : Task.FromException(new NotSupportedException("The repository does not implement selection archive downloads."));
+
     Task StreamFolderArchiveAsync(
         string remotePath,
         Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync,

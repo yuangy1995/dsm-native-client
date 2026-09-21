@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.list-remote-mounts.synthetic-location",
+  "module": "file-station",
+  "operation": "listRemoteMounts",
+  "api": {
+    "name": "SYNO.FileStation.Mount.List",
+    "method": "get",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

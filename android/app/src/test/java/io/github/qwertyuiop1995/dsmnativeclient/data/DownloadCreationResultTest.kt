@@ -33,6 +33,86 @@ import org.junit.Test
 
 class DownloadCreationResultTest {
     @Test
+    fun `未指定目录的链接固定使用v1且兼容仅有v1的服务`() = runBlocking {
+        for (maxVersion in listOf(1, 3)) {
+            val transport = ScriptedDownloadCreationInterceptor(
+                emptyTaskList(), success("""{"taskid":"task-1"}"""), taskList("task-1"),
+            )
+            val result = repository(transport, taskMaxVersion = maxVersion)
+                .createDownloadResult("https://example.invalid/synthetic.iso", "  ")
+
+            assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+            val form = transport.requests.single { it.downloadMethod() == "create" }.body as FormBody
+            assertEquals("1", (0 until form.size).first { form.name(it) == "version" }.let(form::value))
+            assertFalse((0 until form.size).any { form.name(it) == "destination" })
+        }
+    }
+
+    @Test
+    fun `仅有v1时指定目录的链接在任何请求之前拒绝`() = runBlocking {
+        val transport = ScriptedDownloadCreationInterceptor()
+        val result = repository(transport, taskMaxVersion = 1)
+            .createDownloadResult("https://example.invalid/synthetic.iso", "/downloads")
+
+        assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
+        assertFalse(result.submitted)
+        assertTrue(transport.requests.isEmpty())
+    }
+
+    @Test
+    fun `不包含所需版本的链接能力不回退到其他版本`() = runBlocking {
+        for (destination in listOf(null, "/downloads")) {
+            val transport = ScriptedDownloadCreationInterceptor()
+            val result = repository(transport, taskMinVersion = 3)
+                .createDownloadResult("https://example.invalid/synthetic.iso", destination)
+
+            assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
+            assertFalse(result.submitted)
+            assertTrue(transport.requests.isEmpty())
+        }
+    }
+
+    @Test
+    fun `任务文件无目录固定v1并保留指定目录的v2规则`() = runBlocking {
+        for (destination in listOf(null, "/downloads")) {
+            val steps = buildList {
+                if (destination != null) add(writableDestination(destination))
+                add(emptyTaskList())
+                add(success("""{"taskid":"task-1"}"""))
+                add(taskList("task-1"))
+            }
+            val transport = ScriptedDownloadCreationInterceptor(*steps.toTypedArray())
+            val result = repository(transport).createDownloadFromFileResult(
+                taskFileSource("synthetic".encodeToByteArray()), destination,
+            )
+
+            assertEquals(MutationResultStatus.CONFIRMED_SUCCESS, result.status)
+            val request = transport.requests.single { it.body is MultipartBody }
+            assertEquals(if (destination == null) "1" else "2", request.url.queryParameter("version"))
+            assertEquals(1, transport.methods().count { it == "create" })
+        }
+    }
+
+    @Test
+    fun `任务文件不支持所需版本时不读取文件或发送请求`() = runBlocking {
+        for ((minimum, maximum, destination) in listOf(
+            Triple(1, 1, "/downloads"), Triple(3, 3, null), Triple(3, 3, "/downloads"),
+        )) {
+            val transport = ScriptedDownloadCreationInterceptor()
+            val source = UploadSource(
+                displayName = "synthetic.torrent", contentType = "application/x-bittorrent",
+                contentLength = 1, openInputStream = { error("版本不支持时不得打开任务文件") },
+            )
+            val result = repository(transport, taskMinVersion = minimum, taskMaxVersion = maximum)
+                .createDownloadFromFileResult(source, destination)
+
+            assertEquals(MutationResultStatus.UNSUPPORTED, result.status)
+            assertFalse(result.submitted)
+            assertTrue(transport.requests.isEmpty())
+        }
+    }
+
+    @Test
     fun `链接任务只在新任务回读后确认且请求符合公共契约`() = runBlocking {
         val transport = ScriptedDownloadCreationInterceptor(
             writableDestination("/downloads"),
@@ -490,6 +570,8 @@ class DownloadCreationResultTest {
     private fun repository(
         interceptor: Interceptor,
         supportsTask: Boolean = true,
+        taskMinVersion: Int = 1,
+        taskMaxVersion: Int = 3,
     ) = DsmRepository(
         NasProfile("test", "Test", "https://nas.example.invalid", "tester"),
         DsmSession("test", "test-session", "test-token"),
@@ -504,8 +586,8 @@ class DownloadCreationResultTest {
                 "SYNO.DownloadStation.Task" to ApiCapability(
                     "SYNO.DownloadStation.Task",
                     "entry.cgi",
-                    1,
-                    1,
+                    taskMinVersion,
+                    taskMaxVersion,
                 ),
                 "SYNO.FileStation.List" to ApiCapability(
                     "SYNO.FileStation.List",

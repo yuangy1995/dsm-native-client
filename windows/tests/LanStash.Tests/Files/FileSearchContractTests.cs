@@ -37,18 +37,18 @@ public sealed class FileSearchContractTests
         // 核对启动、轮询、列出结果和清理的完整生命周期。
         Assert.Contains(api.Calls, call => call == "start");
         Assert.Contains(api.Calls, call => call == "list");
-        Assert.Contains(api.Calls, call => call == "stop");
+        Assert.Contains(api.Calls, call => call == "clean");
         // 轮询阶段至少有一次返回完成状态的 list 调用。
         var listCalls = api.Calls.Count(call => call == "list");
         Assert.True(listCalls >= 1);
-        var stopCalls = api.Calls.Count(call => call == "stop");
-        Assert.Equal(1, stopCalls);
+        Assert.Single(api.Calls, call => call == "clean");
+        Assert.DoesNotContain("stop", api.Calls);
     }
 
     [Fact]
     public async Task SearchAsync_NoResults_ReturnsEmptyList()
     {
-        var api = new SearchScriptedApi(fileCount: 0);
+        var api = new SearchScriptedApi(fileCount: 0, totalFileCount: 0);
         var repository = SearchRepository(api);
 
         var request = new FileSearchRequest("/share", "nonexistent", Recursive: true);
@@ -57,11 +57,11 @@ public sealed class FileSearchContractTests
         Assert.Empty(result.Items);
         Assert.Equal(0, result.TotalCount);
         Assert.False(result.IsTruncated);
-        Assert.Contains(api.Calls, call => call == "stop");
+        Assert.Contains(api.Calls, call => call == "clean");
     }
 
     [Fact]
-    public async Task SearchAsync_TruncatedResults_ReturnsTruncatedFlag()
+    public async Task SearchAsync_ResultsBeyondOnePage_AreReadCompletely()
     {
         var api = new SearchScriptedApi(fileCount: 2000, totalFileCount: 3000);
         var repository = SearchRepository(api);
@@ -69,9 +69,10 @@ public sealed class FileSearchContractTests
         var request = new FileSearchRequest("/share", "*.log", Recursive: true);
         var result = await repository.SearchAsync(request);
 
-        Assert.Equal(2000, result.TotalCount);
-        Assert.True(result.IsTruncated);
-        Assert.Equal(2000, result.Items.Count);
+        Assert.Equal(3000, result.TotalCount);
+        Assert.False(result.IsTruncated);
+        Assert.Equal(3000, result.Items.Count);
+        Assert.Equal(3000, result.Items.Select(item => item.Path).Distinct().Count());
     }
 
     [Fact]
@@ -135,7 +136,7 @@ public sealed class FileSearchContractTests
     }
 
     [Fact]
-    public async Task SearchAsync_StopFailure_StillReturnsResults()
+    public async Task SearchAsync_CleanFailure_StillReturnsResults()
     {
         var api = new SearchScriptedApi(throwOnStop: true);
         var repository = SearchRepository(api);
@@ -144,8 +145,8 @@ public sealed class FileSearchContractTests
         var result = await repository.SearchAsync(request);
 
         Assert.Equal(2, result.TotalCount);
-        // 即使清理失败，也确实尝试过 stop。
-        Assert.Contains(api.Calls, call => call == "stop");
+        // 即使清理失败，也确实尝试过 clean。
+        Assert.Contains(api.Calls, call => call == "clean");
     }
 
     [Fact]
@@ -235,8 +236,8 @@ public sealed class FileSearchContractTests
             return method switch
             {
                 "start" => StartAsync(parameters ?? new Dictionary<string, string>(), cancellationToken),
-                "list" => ListAsync(cancellationToken),
-                "stop" => StopAsync(cancellationToken),
+                "list" => ListAsync(parameters!, cancellationToken),
+                "stop" or "clean" => CleanupAsync(method, cancellationToken),
                 _ => throw new NotSupportedException(),
             };
         }
@@ -250,7 +251,7 @@ public sealed class FileSearchContractTests
             return new JsonObject { ["taskid"] = "search-task-42" };
         }
 
-        private async Task<JsonObject> ListAsync(CancellationToken cancellationToken)
+        private async Task<JsonObject> ListAsync(IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken)
         {
             Calls.Add("list");
             await Task.Delay(_delayPerCall, cancellationToken);
@@ -269,9 +270,10 @@ public sealed class FileSearchContractTests
             }
 
             // 后续 list 调用返回实际结果。
-            var boundedCount = Math.Min(_fileCount, _totalFileCount);
+            var offset = int.Parse(parameters["offset"], System.Globalization.CultureInfo.InvariantCulture);
+            var boundedCount = Math.Min(_fileCount, _totalFileCount - offset);
             var items = new JsonArray();
-            for (var i = 0; i < boundedCount; i++)
+            for (var i = offset; i < offset + boundedCount; i++)
             {
                 items.Add(new JsonObject
                 {
@@ -284,20 +286,17 @@ public sealed class FileSearchContractTests
                 });
             }
 
-            var displayCount = Math.Min(boundedCount, 2000);
-            var truncated = _totalFileCount > 2000;
-
             return new JsonObject
             {
                 ["files"] = items,
-                ["offset"] = 0,
-                ["total"] = truncated ? Math.Max(_totalFileCount, 2000) : boundedCount,
+                ["offset"] = offset,
+                ["total"] = _totalFileCount,
             };
         }
 
-        private async Task<JsonObject> StopAsync(CancellationToken cancellationToken)
+        private async Task<JsonObject> CleanupAsync(string method, CancellationToken cancellationToken)
         {
-            Calls.Add("stop");
+            Calls.Add(method);
             if (_throwOnStop)
             {
                 throw new DsmException("cleanup", "stop_failed", 500);

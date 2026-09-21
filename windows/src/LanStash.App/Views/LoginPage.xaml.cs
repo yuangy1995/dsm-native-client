@@ -20,12 +20,14 @@ public sealed partial class LoginPage : Page
         InitializeComponent();
         _viewModel = viewModel;
         DataContext = viewModel;
+        LoginActions.SizeChanged += (_, _) => UpdateFormHeight();
         LoadLanguageOptions();
         UpdateState();
     }
 
     private void LoginPage_Loaded(object sender, RoutedEventArgs e)
     {
+        UpdateFormHeight();
         if (!_isSubscribed)
         {
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -34,6 +36,15 @@ public sealed partial class LoginPage : Page
         }
         DispatcherQueue.TryEnqueue(ShowCertificateTrustIfNeeded);
     }
+
+    private void LoginPage_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        DeviceColumn.Width = new GridLength(e.NewSize.Width < 900 ? 180 : 241);
+        LoginForm.Margin = e.NewSize.Width < 900 ? new Thickness(0, 8, 0, 8) : new Thickness(12, 8, 12, 8);
+        UpdateFormHeight();
+    }
+
+    private void UpdateFormHeight() => FieldsScroll.MaxHeight = Math.Max(80, ActualHeight - LoginActions.ActualHeight - 160);
 
     private void ViewModel_PasswordLoaded(object? sender, string password) =>
         DispatcherQueue.TryEnqueue(() => PasswordInput.Password = password);
@@ -98,6 +109,11 @@ public sealed partial class LoginPage : Page
 
     private void CancelConnect_Click(object sender, RoutedEventArgs e) =>
         _viewModel.CancelConnection();
+
+    private void PasswordInput_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not null) UpdateState();
+    }
 
     private async void ShowCertificateTrustIfNeeded()
     {
@@ -277,7 +293,9 @@ public sealed partial class LoginPage : Page
         {
             return;
         }
-        ConnectButton.IsEnabled = !_viewModel.IsBusy;
+        ConnectButton.IsEnabled = !_viewModel.IsBusy &&
+            !string.IsNullOrWhiteSpace(_viewModel.Host) &&
+            !string.IsNullOrWhiteSpace(_viewModel.Username) && PasswordInput.Password.Length > 0;
         AddNasButton.IsEnabled = !_viewModel.IsBusy;
         ProfileList.IsEnabled = !_viewModel.IsBusy;
         SetControlsEnabled(ConnectionFields, !_viewModel.IsBusy);
@@ -287,6 +305,9 @@ public sealed partial class LoginPage : Page
         BusyIndicator.IsActive = _viewModel.IsBusy;
         ErrorBar.IsOpen = !string.IsNullOrWhiteSpace(_viewModel.ErrorMessage);
         StatusBar.IsOpen = !string.IsNullOrWhiteSpace(_viewModel.ConnectionStatus);
+        ErrorBar.Visibility = ErrorBar.IsOpen ? Visibility.Visible : Visibility.Collapsed;
+        StatusBar.Visibility = StatusBar.IsOpen ? Visibility.Visible : Visibility.Collapsed;
+        BusyIndicator.Visibility = _viewModel.IsBusy ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static void SetControlsEnabled(DependencyObject root, bool isEnabled)

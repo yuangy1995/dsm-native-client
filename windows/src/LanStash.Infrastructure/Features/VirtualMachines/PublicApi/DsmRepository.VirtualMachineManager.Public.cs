@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
 using LanStash.Domain;
 
 namespace LanStash.Infrastructure;
@@ -10,7 +11,6 @@ namespace LanStash.Infrastructure;
 public sealed partial class DsmRepository
 {
     private const int PublicVirtualMachineApiVersion = 1;
-    private const int VirtualMachineManagerSectionLimit = 200;
     private const string PublicGuestApi = "SYNO.Virtualization.API.Guest";
     private const string PublicHostApi = "SYNO.Virtualization.API.Host";
     private const string PublicStorageApi = "SYNO.Virtualization.API.Storage";
@@ -234,12 +234,13 @@ public sealed partial class DsmRepository
         IReadOnlyDictionary<string, string>? parameters,
         CancellationToken cancellationToken)
     {
-        if (!_capabilities.TryGetValue(apiName, out var capability) ||
-            capability.MinVersion > PublicVirtualMachineApiVersion ||
-            capability.MaxVersion < PublicVirtualMachineApiVersion)
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HasPublicVirtualMachineVersion(apiName))
         {
             throw UnavailableVirtualMachineManagerError();
         }
+
+        var capability = _capabilities[apiName];
 
         return _api.CallAsync(
             _profile,
@@ -262,7 +263,14 @@ public sealed partial class DsmRepository
         int maximumVersion,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HasInternalVirtualMachineVersion(apiName, minimumVersion, maximumVersion))
+            throw UnavailableVirtualMachineManagerError();
         var capability = _capabilities[apiName];
+        // 内部日志的分页/日期是数字，筛选和排序字段按声明编码为 JSON 字符串。
+        if (capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) && parameters is not null)
+            parameters = parameters.ToDictionary(pair => pair.Key,
+                pair => pair.Key is "offset" or "limit" or "datefrom" or "dateto" ? pair.Value : JsonSerializer.Serialize(pair.Value), StringComparer.Ordinal);
         return _api.CallAsync(
             _profile,
             _session,
@@ -278,6 +286,7 @@ public sealed partial class DsmRepository
 
     private bool HasPublicVirtualMachineVersion(string apiName) =>
         _capabilities.TryGetValue(apiName, out var capability) &&
+        ValidVirtualMachineCapability(apiName, capability) &&
         capability.MinVersion <= PublicVirtualMachineApiVersion &&
         capability.MaxVersion >= PublicVirtualMachineApiVersion;
 
@@ -286,8 +295,13 @@ public sealed partial class DsmRepository
         int minimumVersion,
         int maximumVersion) =>
         _capabilities.TryGetValue(apiName, out var capability) &&
+        ValidVirtualMachineCapability(apiName, capability) &&
         capability.MaxVersion >= minimumVersion &&
         capability.MinVersion <= maximumVersion;
+
+    private static bool ValidVirtualMachineCapability(string apiName, ApiCapability capability) =>
+        capability.Name == apiName && capability.MinVersion >= 1 && capability.MaxVersion >= capability.MinVersion &&
+        (capability.RequestFormat.Equals("FORM", StringComparison.OrdinalIgnoreCase) || capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase));
 
     private void EnsureVirtualMachineManagerProfile()
     {
@@ -376,8 +390,8 @@ public sealed partial class DsmRepository
                 name,
                 kind,
                 ParseResourceHealth(VirtualMachineOptionalString(item, "status")),
-                item.Long("allocated_size"),
-                item.Long("size"),
+                kind == VirtualizationResourceKind.Storage ? MiBToBytes(item.Long("used")) : item.Long("allocated_size"),
+                kind == VirtualizationResourceKind.Storage ? MiBToBytes(item.Long("size")) : item.Long("size"),
                 kind == VirtualizationResourceKind.Image
                     ? VirtualMachineOptionalString(item, "type")
                     : null));
@@ -439,14 +453,13 @@ public sealed partial class DsmRepository
         VirtualizationResourceKind kind,
         ref bool recognizedRoot)
     {
-        var array = roots.Select(root => data[root]).OfType<JsonArray>().FirstOrDefault();
+        var array = VirtualMachineArray(data, roots);
         if (array is null)
         {
             return;
         }
         recognizedRoot = true;
-        var remaining = VirtualMachineManagerSectionLimit - result.Count;
-        foreach (var node in array.Take(remaining))
+        foreach (var node in array)
         {
             if (node is not JsonObject item)
             {
@@ -515,17 +528,29 @@ public sealed partial class DsmRepository
 
     private static List<JsonObject> RequiredObjectArray(JsonObject data, params string[] roots)
     {
-        var array = roots.Select(root => data[root]).OfType<JsonArray>().FirstOrDefault()
+        var array = VirtualMachineArray(data, roots)
             ?? throw InvalidVirtualMachineManagerResponse();
 
-        var result = new List<JsonObject>(Math.Min(array.Count, VirtualMachineManagerSectionLimit));
-        foreach (var node in array.Take(VirtualMachineManagerSectionLimit))
+        var result = new List<JsonObject>(array.Count);
+        foreach (var node in array)
         {
             if (node is not JsonObject item)
             {
                 throw InvalidVirtualMachineManagerResponse();
             }
             result.Add(item);
+        }
+        return result;
+    }
+
+    private static JsonArray? VirtualMachineArray(JsonObject data, string[] roots)
+    {
+        JsonArray? result = null;
+        foreach (var key in roots.Where(data.ContainsKey))
+        {
+            if (data[key] is not JsonArray array || result is not null && !JsonNode.DeepEquals(result, array))
+                throw InvalidVirtualMachineManagerResponse();
+            result = array;
         }
         return result;
     }
@@ -630,8 +655,8 @@ public sealed partial class DsmRepository
             "running" or "started" or "online" => VirtualMachineOperationalState.Running,
             "shutdown" or "stopped" or "offline" => VirtualMachineOperationalState.Stopped,
             "paused" or "suspended" => VirtualMachineOperationalState.Paused,
-            "creating" or "starting" or "stopping" => VirtualMachineOperationalState.Transitional,
-            "error" or "failed" => VirtualMachineOperationalState.Error,
+            "creating" or "starting" or "stopping" or "booting" or "shutting_down" => VirtualMachineOperationalState.Transitional,
+            "error" or "failed" or "crashed" => VirtualMachineOperationalState.Error,
             _ => VirtualMachineOperationalState.Unknown,
         };
 

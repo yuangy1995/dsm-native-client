@@ -51,6 +51,11 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         _l.LanguageChanged += LanguageChanged;
         Loaded += PageLoaded; Unloaded += PageUnloaded; KeyDown += PageKeyDown;
         LibraryGrid.PointerWheelChanged += LibraryWheelChanged;
+        SizeChanged += (_, _) =>
+        {
+            Sections.MinWidth = ActualWidth >= 760 ? 320 : 160;
+            SearchBox.Width = Math.Clamp(ActualWidth - 540, 100, 280);
+        };
         _ready = true; Localize(); Render();
     }
 
@@ -60,6 +65,8 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
         MaxWidth = 520, Margin = new Thickness(24), HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Center,
     };
+
+    internal Task ShowSectionAsync(SynologyPhotosSection section) => _model.SelectSectionAsync(section);
 
     private async void PageLoaded(object sender, RoutedEventArgs args)
     { if (!_disposed && _windowVisible) await _model.LoadIfNeededAsync(); }
@@ -161,7 +168,8 @@ public sealed partial class SynologyPhotosPage : Page, IDisposable
             EmptyPanel.Visibility = Visible(empty);
             LoadingProgress.IsActive = _model.IsLoading; LoadingProgress.Visibility = Visible(_model.IsLoading);
             EmptyTitle.Text = _l.Get(_model.IsLoading ? "PhotosLoading" : _model.ErrorKey is not null ? "PhotosLoadFailed" : _model.IsFiltering ? "PhotosFilteredEmpty" : "PhotosEmpty");
-            EmptyMessage.Text = _l.Get(_model.IsLoading ? "PhotosLoadingDescription" : _model.IsFiltering ? "PhotosFilteredEmptyDescription" : "PhotosEmptyDescription");
+            EmptyMessage.Text = _l.Get(_model.IsLoading ? "PhotosLoadingDescription" : _model.ErrorKey ??
+                (_model.IsFiltering ? "PhotosFilteredEmptyDescription" : "PhotosEmptyDescription"));
             CountText.Text = _l.Format("PhotosLoadedCount", _model.Items.Count + _model.Collections.Count + _model.SharedEntries.Count);
             RenderPreviewControls();
         }

@@ -166,10 +166,17 @@ public sealed record ChatMessageItem(ChatMessage Message)
     public string Sender => string.IsNullOrWhiteSpace(Message.SenderDisplayName)
         ? LocalizationService.Current.Get("ChatBrowserUnknownSender")
         : Message.SenderDisplayName;
-    public string Text => Message.Text ?? string.Empty;
+    public string Text => Message.Text ?? Message.Poll?.Question ?? string.Empty;
+    public bool CanSetReminder { get; init; }
+    public Visibility ReminderVisibility => CanSetReminder ? Visibility.Visible : Visibility.Collapsed;
+    public string ReminderText => LocalizationService.Current.Get("ChatAdvancedSetReminder");
+    public Visibility PollVisibility => Message.Poll is not null ? Visibility.Visible : Visibility.Collapsed;
+    public string PollSummary => Message.Poll is { } poll ? string.Join(Environment.NewLine,
+        poll.Options.Select(option => LocalizationService.Current.Format("ChatAdvancedPollOptionCount", option.Text, option.VoteCount))) : string.Empty;
     public DateTimeOffset SentAt => Message.SentAt;
     public string SentAtText => SentAt.ToString("g", CultureInfo.CurrentCulture);
     public bool IsFromCurrentUser => Message.IsFromCurrentUser == true;
+    public HorizontalAlignment MessageAlignment => IsFromCurrentUser ? HorizontalAlignment.Right : HorizontalAlignment.Left;
     public bool CanDeleteOwnMessage { get; init; }
     public bool RequiresDeleteReview { get; init; }
     public Visibility DeleteVisibility =>

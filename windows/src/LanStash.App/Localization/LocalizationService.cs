@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Security;
 using LanStash.Domain;
 using Microsoft.Windows.ApplicationModel.Resources;
-using Windows.Globalization;
+using Microsoft.Windows.Globalization;
 using Windows.System.UserProfile;
 
 namespace LanStash.App.Localization;
@@ -29,7 +29,20 @@ internal sealed class WinUiLocalizationPlatform : ILocalizationPlatform
     public void ApplyLanguage(string language) =>
         ApplicationLanguages.PrimaryLanguageOverride = language;
 
-    public string? GetString(string key) => new ResourceLoader().GetString(key);
+    // PRI 将属性分隔点编译为斜杠，但 [using:...] 内的命名空间点属于同一个资源段。
+    public string? GetString(string key) => new ResourceLoader().GetString(ToResourcePath(key));
+
+    internal static string ToResourcePath(string key)
+    {
+        var characters = key.ToCharArray(); var inNamespace = false;
+        for (var index = 0; index < characters.Length; index++)
+        {
+            if (characters[index] == '[') inNamespace = true;
+            else if (characters[index] == ']') inNamespace = false;
+            else if (characters[index] == '.' && !inNamespace) characters[index] = '/';
+        }
+        return new string(characters);
+    }
 }
 
 internal sealed class FileLanguagePreferenceStore(string path) : ILanguagePreferenceStore
@@ -86,13 +99,28 @@ public sealed class LocalizationService
     public string ResolvedLanguage { get; private set; } = "en-US";
 
     private LocalizationService() : this(
-        new FileLanguagePreferenceStore(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LanStash",
-            "language.txt")),
+        CreatePreferenceStore(),
         new WinUiLocalizationPlatform())
     {
     }
+
+    private static ILanguagePreferenceStore CreatePreferenceStore()
+    {
+#if LANSTASH_UI_SMOKE
+        return new SmokeLanguageStore();
+#else
+        return new FileLanguagePreferenceStore(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanStash", "language.txt"));
+#endif
+    }
+#if LANSTASH_UI_SMOKE
+    private sealed class SmokeLanguageStore : ILanguagePreferenceStore
+    {
+        private AppLanguageSelection? _value;
+        public AppLanguageSelection? Load() => _value;
+        public bool Save(AppLanguageSelection value) { _value = value; return true; }
+    }
+#endif
 
     internal LocalizationService(
         ILanguagePreferenceStore preferenceStore,
@@ -115,6 +143,15 @@ public sealed class LocalizationService
         {
             Selection = AppLanguageSelection.System;
         }
+        // 合成宿主仅在内存中覆盖语言，不修改用户偏好文件。
+#if LANSTASH_UI_SMOKE
+        Selection = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_LANGUAGE") switch
+        {
+            "en-US" => AppLanguageSelection.English,
+            "zh-CN" => AppLanguageSelection.SimplifiedChinese,
+            _ => Selection,
+        };
+#endif
         ApplySelection();
     }
 

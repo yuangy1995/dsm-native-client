@@ -23,9 +23,14 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
     private CancellationTokenSource? _lifetimeCancellation;
     private Task? _pollingTask;
     private Task? _refreshTask;
+    private Task? _stopTask;
+    private Task? _disposeTask;
     private long _refreshGeneration = -1;
     private long _generation;
     private bool _disposed;
+    private DownloadTask[] _loadedTasks = [];
+    private int _loadedEndOffset;
+    private int? _nextOffset;
     private DownloadStationActivityRefreshState _state = new(
         IsRunning: false,
         IsRefreshing: false,
@@ -101,39 +106,52 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
         }
     }
 
-    public async Task StopAsync()
+    public bool CanLoadMore
     {
-        CancellationTokenSource? cancellation;
-        Task? pollingTask;
-        Task? refreshTask;
+        get { lock (_sync) return !_disposed && _state.IsRunning && !_state.IsRefreshing && _state.HasSnapshot && _nextOffset is not null && CanReadTasks(); }
+    }
+
+    public Task LoadMoreAsync()
+    {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_state.IsRunning || !_state.HasSnapshot || _nextOffset is null || !CanReadTasks()) return Task.CompletedTask;
+            return GetOrStartRefreshLocked(loadMore: true);
+        }
+    }
+
+    public Task StopAsync()
+    {
         lock (_sync)
         {
             if (!_state.IsRunning)
             {
-                return;
+                return _stopTask ?? Task.CompletedTask;
             }
 
             _generation++;
-            cancellation = _lifetimeCancellation;
-            pollingTask = _pollingTask;
-            refreshTask = _refreshTask;
+            var cancellation = _lifetimeCancellation;
+            var pollingTask = _pollingTask;
+            var refreshTask = _refreshTask;
             _lifetimeCancellation = null;
             _pollingTask = null;
             _state = _state with { IsRunning = false, IsRefreshing = false };
+            _stopTask = DrainStoppedRequestsAsync(_generation, cancellation, pollingTask, refreshTask, _stopTask);
+            return _stopTask;
         }
+    }
 
-        cancellation?.Cancel();
+    private async Task DrainStoppedRequestsAsync(long generation, CancellationTokenSource? cancellation,
+        Task? pollingTask, Task? refreshTask, Task? previousStop)
+    {
+        // 先发布停止状态再离开锁；取消回调和网络等待不得阻塞状态锁。
+        await Task.Yield();
         try
         {
-            if (pollingTask is not null)
-            {
-                await pollingTask.ConfigureAwait(false);
-            }
-
-            if (refreshTask is not null && !ReferenceEquals(refreshTask, pollingTask))
-            {
-                await refreshTask.ConfigureAwait(false);
-            }
+            cancellation?.Cancel();
+            await Task.WhenAll(previousStop ?? Task.CompletedTask, pollingTask ?? Task.CompletedTask,
+                refreshTask ?? Task.CompletedTask).ConfigureAwait(false);
         }
         finally
         {
@@ -145,24 +163,22 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
                     _refreshTask = null;
                     _refreshGeneration = -1;
                 }
+                if (generation == _generation) _stopTask = null;
             }
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         lock (_sync)
         {
-            if (_disposed)
+            if (_disposeTask is null)
             {
-                return;
+                _disposed = true;
+                _loadedTasks = []; _nextOffset = null; _loadedEndOffset = 0;
+                _disposeTask = StopAsync();
             }
-        }
-
-        await StopAsync().ConfigureAwait(false);
-        lock (_sync)
-        {
-            _disposed = true;
+            return new ValueTask(_disposeTask);
         }
     }
 
@@ -170,7 +186,7 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
         _repository.Availability.Status == DownloadStationAvailabilityStatus.Available &&
         _repository.Availability.SupportedFeatures.Contains(DownloadStationReadFeature.Tasks);
 
-    private Task GetOrStartRefreshLocked()
+    private Task GetOrStartRefreshLocked(bool loadMore = false)
     {
         if (_refreshTask is not null && _refreshGeneration == _generation)
         {
@@ -181,18 +197,51 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
         _refreshGeneration = _generation;
         _refreshTask = RefreshCoreAsync(
             _generation,
-            _lifetimeCancellation?.Token ?? CancellationToken.None);
+            _lifetimeCancellation?.Token ?? CancellationToken.None, loadMore);
         return _refreshTask;
     }
 
-    private async Task RefreshCoreAsync(long generation, CancellationToken cancellationToken)
+    private async Task RefreshCoreAsync(long generation, CancellationToken cancellationToken, bool loadMore)
     {
         try
         {
             await Task.Yield();
-            var page = await _repository.ListTasksAsync(0, TaskLimit, cancellationToken)
-                .ConfigureAwait(false);
-            var tasks = page.Tasks.Take(TaskLimit).ToArray();
+            int offset;
+            int refreshEnd;
+            List<DownloadTask> tasks;
+            lock (_sync)
+            {
+                if (!IsCurrent(generation) || cancellationToken.IsCancellationRequested) return;
+                offset = loadMore ? _nextOffset ?? 0 : 0;
+                refreshEnd = Math.Max(TaskLimit, _loadedEndOffset);
+                tasks = loadMore ? new List<DownloadTask>(_loadedTasks) : [];
+            }
+            var positions = tasks.Select((task, index) => (task.Id, index)).ToDictionary(pair => pair.Id, pair => pair.index, StringComparer.Ordinal);
+            int end;
+            int total;
+            bool hasMore;
+            while (true)
+            {
+                lock (_sync) { if (!IsCurrent(generation)) return; }
+                cancellationToken.ThrowIfCancellationRequested();
+                var page = await _repository.ListTasksAsync(offset, TaskLimit, cancellationToken).ConfigureAwait(false);
+                end = checked(page.SourceOffset + page.SourceRecordCount); total = page.SourceTotal; hasMore = page.HasMore || total > end;
+                if (page.NextOffset is { } cursor && cursor != end || page.HasMore && page.NextOffset is null)
+                    throw new InvalidOperationException("activity.pagination.cursor");
+                if (page.SourceOffset != offset || page.Tasks.Count > TaskLimit || total < end || end < offset ||
+                    (long)end - offset > TaskLimit || page.Tasks.Count > (long)end - offset || hasMore && end == offset)
+                    throw new InvalidOperationException("activity.pagination.invalid");
+                var pageIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var task in page.Tasks)
+                {
+                    if (string.IsNullOrWhiteSpace(task.Id) || !pageIds.Add(task.Id)) throw new InvalidOperationException("activity.pagination.identity");
+                    if (positions.TryGetValue(task.Id, out var index)) tasks[index] = task;
+                    else { positions.Add(task.Id, tasks.Count); tasks.Add(task); }
+                }
+                if (loadMore || !hasMore || end >= refreshEnd) break;
+                offset = end;
+            }
+            var snapshot = tasks.ToArray();
 
             lock (_sync)
             {
@@ -201,15 +250,16 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
                     return;
                 }
 
-                _applyTasks(tasks);
+                _applyTasks(snapshot);
+                _loadedTasks = snapshot; _loadedEndOffset = end; _nextOffset = hasMore ? end : null;
                 _state = new DownloadStationActivityRefreshState(
                     IsRunning: true,
                     IsRefreshing: false,
                     HasSnapshot: true,
                     HasFailed: false,
-                    DisplayedTaskCount: tasks.Length,
-                    SourceTotal: page.SourceTotal,
-                    IsTruncated: page.HasMore || page.SourceTotal > tasks.Length);
+                    DisplayedTaskCount: snapshot.Length,
+                    SourceTotal: total,
+                    IsTruncated: hasMore);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -268,5 +318,5 @@ internal sealed class DownloadStationActivityRefresher : IAsyncDisposable
     }
 
     private bool IsCurrent(long generation) =>
-        _state.IsRunning && generation == _generation;
+        !_disposed && _state.IsRunning && generation == _generation;
 }

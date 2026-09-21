@@ -34,20 +34,8 @@ public sealed class DsmQuickConnectResolver(HttpClient httpClient)
         CancellationToken cancellationToken = default)
     {
         ValidateId(id);
-        DsmException? lastError = null;
-        foreach (var controlUrl in ControlUrls)
-        {
-            try
-            {
-                return DecodeEndpoints(await SendAsync(
-                    "get_server_info", false, id, controlUrl, cancellationToken).ConfigureAwait(false));
-            }
-            catch (DsmException error)
-            {
-                lastError = error;
-            }
-        }
-        throw lastError ?? ServiceUnavailable();
+        // 在线但没有直连候选时保留结果，让连接层继续中继，不能被另一区域的失败覆盖。
+        return DecodeEndpoints(await QueryServerInfoAsync(id, cancellationToken).ConfigureAwait(false));
     }
 
     public async Task<QuickConnectEndpoint> RequestRelayAsync(
@@ -121,19 +109,37 @@ public sealed class DsmQuickConnectResolver(HttpClient httpClient)
 
     private async Task<string> ResolveControlUrlAsync(string id, CancellationToken cancellationToken)
     {
+        var response = SuccessfulResponse(await QueryServerInfoAsync(id, cancellationToken).ConfigureAwait(false));
+        var host = response["env"]?["control_host"]?.GetValue<string>()?.ToLowerInvariant();
+        if (host is null || !IsTrustedControlHost(host)) throw InvalidResponse();
+        return $"https://{host}/Serv.php";
+    }
+
+    private async Task<JsonArray> QueryServerInfoAsync(string id, CancellationToken cancellationToken)
+    {
         DsmException? lastError = null;
-        foreach (var controlUrl in ControlUrls)
+        var pending = new Queue<string>(ControlUrls);
+        var scheduled = new HashSet<string>(ControlUrls, StringComparer.OrdinalIgnoreCase);
+        // 官方控制响应的 sites 是后续查询位置，不是设备不存在；限制域名、去重及总请求数。
+        while (pending.TryDequeue(out var controlUrl))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var response = SuccessfulResponse(await SendAsync(
-                    "get_server_info", false, id, controlUrl, cancellationToken).ConfigureAwait(false));
-                var host = response["env"]?["control_host"]?.GetValue<string>()?.ToLowerInvariant();
-                if (host is null || !IsTrustedControlHost(host))
+                var responses = await SendAsync("get_server_info", false, id, controlUrl, cancellationToken).ConfigureAwait(false);
+                if (responses.OfType<JsonObject>().Any(item => item["errno"]?.GetValue<int>() == 0)) return responses;
+                foreach (var response in responses.OfType<JsonObject>())
                 {
-                    throw InvalidResponse();
+                    if (response["sites"] is not JsonArray sites) continue;
+                    foreach (var site in sites)
+                    {
+                        if (site is not JsonValue value || !value.TryGetValue<string>(out var host) || !IsTrustedControlHost(host))
+                            throw InvalidResponse();
+                        var url = $"https://{host.ToLowerInvariant()}/Serv.php";
+                        if (scheduled.Count < 8 && scheduled.Add(url)) pending.Enqueue(url);
+                    }
                 }
-                return $"https://{host}/Serv.php";
+                _ = SuccessfulResponse(responses);
             }
             catch (DsmException error)
             {

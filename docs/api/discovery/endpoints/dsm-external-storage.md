@@ -65,6 +65,11 @@ Fixture 或界面。未来启用前必须取得版本化设备标识、占用检
 - 空列表只在至少一个兼容 `list` 成功后显示为空，不把整体错误解释为没有设备；
 - 无效标识、路径形态名称、负容量和已用容量超过总容量的值会被丢弃或降级。
 
+2026-09-17 Windows/Apple 修正缺失、畸形或冲突容器的空列表误判；两个来源均失败
+时返回错误，不显示没有设备。小数或冲突容量保持未知，认证/取消错误不降级为
+部分目录。Windows 对可读取数组中的无效条目单独提示不完整；Apple 无效数组
+结构使该来源独立不可用，保留其他来源，不改变接口证据等级。
+
 ## 客户端与界面
 
 - Apple 领域：`NasExternalStorageDirectory`、`NasExternalStorageDevice`、
@@ -72,7 +77,9 @@ Fixture 或界面。未来启用前必须取得版本化设备标识、占用检
 - Apple Adapter：`DsmNasAdministrationRepository.loadExternalStorage()`。
 - macOS：NAS 设置中的“外接存储”页，提供全部/USB/eSATA 筛选、手动刷新、只读说明、
   截断与局部降级提示，以及加载、空内容、筛选空、错误和正常五种状态。
-- iPhone、iPad、Android 与 Windows：尚未迁移该页面。
+- Windows：已接 v1 独立读取、64 项边界、只读原生列表/容量/状态/筛选与失败降级，
+  只有合成证据，没有 eject 入口。
+- iPhone、iPad、Android：本波不迁移页面；Apple 移动需回归共享严格读取修正。
 - 状态同时使用图标和文字，不依赖颜色；页面没有弹出或其他写按钮。
 
 ## 版本验证

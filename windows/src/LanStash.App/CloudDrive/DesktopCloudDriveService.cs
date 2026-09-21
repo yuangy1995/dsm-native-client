@@ -96,7 +96,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
         string displayName,
         DesktopDriveScope scope,
         IDsmRepository repository,
-        DesktopDriveCachePolicy? cachePolicy = null)
+        DesktopDriveCachePolicy? cachePolicy = null,
+        bool launchAtLogin = true)
     {
         if (scope.Kind == DesktopDriveScopeKind.Folder)
         {
@@ -126,7 +127,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
             scope,
             DesktopDriveAccessMode.ReadOnly,
             selectedPolicy,
-            true,
+            launchAtLogin,
             DateTimeOffset.UtcNow);
         if (_mappings.Any(item => item.Overlaps(mapping)))
         {
@@ -163,6 +164,10 @@ internal sealed class DesktopCloudDriveService : IDisposable
         {
             return;
         }
+        var sync = new DesktopCloudDriveSyncStore();
+        if ((await sync.ReadChangesAsync(mapping).ConfigureAwait(false)).Any(change => change.IsPending) ||
+            await sync.IsWritebackEnabledAsync(mapping).ConfigureAwait(false))
+            throw new InvalidOperationException("CloudDriveWritebackRemoveBlocked");
         Disconnect(mappingId);
         if (_states.TryGetValue(mappingId, out var state))
         {
@@ -245,7 +250,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
         }
         if (runtime is null)
         {
-            return;
+            throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
         }
         var state = Runtime(mapping);
         var paths = state.CacheEntries.Values
@@ -253,12 +258,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
             .Select(entry => entry.RemotePath)
             .ToArray();
         var released = runtime.Dehydrate(paths);
-        var entries = state.CacheEntries
-            .Where(item => !released.Contains(item.Key, StringComparer.Ordinal))
-            .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
-        await SetRuntimeAsync(
-            mapping.Id,
-            state with { CacheEntries = entries }).ConfigureAwait(false);
+        await _store.ApplyCacheReleaseAsync(mapping.Id, state, released).ConfigureAwait(false);
+        UpdateRuntimeCache(mapping.Id, await _store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
         if (released.Count != paths.Length)
         {
             throw new IOException("One or more cached files could not be released.");
@@ -665,32 +666,22 @@ internal sealed class DesktopCloudDriveService : IDisposable
         {
             _runtimes.TryGetValue(mapping.Id, out runtime);
         }
+        if (runtime is null) throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
         var state = Runtime(mapping);
-        runtime?.SetPinned(state.PinnedPaths, false);
-        await SetRuntimeAsync(
-            mapping.Id,
-            state with { PinnedPaths = [] }).ConfigureAwait(false);
+        runtime.SetPinned(state.PinnedPaths, false);
+        await _store.ApplyCacheReleaseAsync(mapping.Id, state, [], state.PinnedPaths).ConfigureAwait(false);
+        UpdateRuntimeCache(mapping.Id, await _store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
         if (runtime is not null)
         {
             var offlinePaths = state.CacheEntries.Values
                 .Where(entry => entry.Kind == DesktopDriveCacheEntryKind.KeptOffline)
                 .Select(entry => entry.RemotePath)
                 .ToArray();
+            // 第一阶段已更新类型，因此清理以该阶段后的快照比较，不能写回旧缓存清单。
+            var baseline = Runtime(mapping);
             var released = runtime.Dehydrate(offlinePaths);
-            var entries = state.CacheEntries
-                .Where(item => !released.Contains(item.Key, StringComparer.Ordinal))
-                .ToDictionary(
-                    item => item.Key,
-                    item => item.Value with
-                    {
-                        Kind = DesktopDriveCacheEntryKind.Temporary,
-                        UpdatedAt = DateTimeOffset.UtcNow,
-                    },
-                    StringComparer.Ordinal);
-            await SetRuntimeAsync(
-                mapping.Id,
-                Runtime(mapping) with { CacheEntries = entries })
-                .ConfigureAwait(false);
+            await _store.ApplyCacheReleaseAsync(mapping.Id, baseline, released).ConfigureAwait(false);
+            UpdateRuntimeCache(mapping.Id, await _store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
             if (released.Count != offlinePaths.Length)
             {
                 throw new IOException("One or more offline files could not be released.");
@@ -722,7 +713,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
         {
             _runtimes.TryGetValue(mapping.Id, out runtime);
         }
-        runtime?.SetPinned(targets, false);
+        if (runtime is null) throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
+        runtime.SetPinned(targets, false);
         var cachedPaths = state.CacheEntries.Values
             .Where(entry =>
                 entry.Kind == DesktopDriveCacheEntryKind.KeptOffline &&
@@ -732,27 +724,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
                         entry.RemotePath)))
             .Select(entry => entry.RemotePath)
             .ToArray();
-        var released = runtime?.Dehydrate(cachedPaths) ?? [];
-        var entries = state.CacheEntries
-            .Where(item => !released.Contains(item.Key, StringComparer.Ordinal))
-            .ToDictionary(
-                item => item.Key,
-                item => targets.Any(target =>
-                    DesktopDrivePath.IsAncestorOrSame(target, item.Key))
-                        ? item.Value with
-                        {
-                            Kind = DesktopDriveCacheEntryKind.Temporary,
-                            UpdatedAt = DateTimeOffset.UtcNow,
-                        }
-                        : item.Value,
-                StringComparer.Ordinal);
-        await SetRuntimeAsync(
-            mapping.Id,
-            state with
-            {
-                PinnedPaths = remainingPins,
-                CacheEntries = entries,
-            }).ConfigureAwait(false);
+        var released = runtime.Dehydrate(cachedPaths);
+        await _store.ApplyCacheReleaseAsync(mapping.Id, state, released, targets).ConfigureAwait(false);
+        UpdateRuntimeCache(mapping.Id, await _store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
         if (released.Count != cachedPaths.Length)
         {
             throw new IOException("One or more offline files could not be released.");
@@ -803,6 +777,119 @@ internal sealed class DesktopCloudDriveService : IDisposable
         }
     }
 
+    internal async Task<CloudDriveRefreshSummary> RefreshFilesAsync(DesktopDriveMapping mapping, CancellationToken token)
+    {
+        DesktopCloudDriveCapabilityGate.EnsureRegistrationEnabled();
+        MappingRuntime? runtime;
+        lock (_runtimes) { _runtimes.TryGetValue(mapping.Id, out runtime); }
+        if (runtime is null || !_mappings.Contains(mapping)) throw new InvalidOperationException("cloud.refresh.disconnected");
+        return await runtime.RefreshFilesAsync(token).ConfigureAwait(false);
+    }
+
+    internal async Task<CloudDriveWritebackOverview> ReadWritebackAsync(DesktopDriveMapping mapping, CancellationToken token)
+    {
+        if (!_mappings.Contains(mapping)) throw new InvalidOperationException("CloudDriveNotMapped");
+        var sync = new DesktopCloudDriveSyncStore();
+        return new(await sync.IsWritebackEnabledAsync(mapping, token).ConfigureAwait(false),
+            await sync.ReadChangesAsync(mapping, token).ConfigureAwait(false),
+            await sync.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false),
+            await sync.IsDeletionEnabledAsync(mapping, token).ConfigureAwait(false),
+            await sync.ReadDeletionOperationsAsync(mapping, token).ConfigureAwait(false));
+    }
+
+    internal async Task ConfigureDeletionAsync(DesktopDriveMapping mapping, bool enabled, bool confirmed, CancellationToken token)
+    {
+        if (!_mappings.Contains(mapping)) throw new InvalidOperationException("CloudDriveNotMapped");
+        MappingRuntime? runtime; lock (_runtimes) { _runtimes.TryGetValue(mapping.Id, out runtime); }
+        if (runtime is null) throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
+        await runtime.ConfigureDeletionAsync(enabled, confirmed, token).ConfigureAwait(false);
+    }
+
+    internal async Task RecoverDeletionAsync(DesktopDriveMapping mapping, IDsmRepository repository, CloudDriveDeletionOperation expected,
+        CloudDriveDeletionRecoveryAction action, bool confirmed, CancellationToken token)
+    {
+        if (!_mappings.Contains(mapping) || !confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
+        var sync = new DesktopCloudDriveSyncStore();
+        var current = (await sync.ReadDeletionOperationsAsync(mapping, token).ConfigureAwait(false)).SingleOrDefault(item => item.Id == expected.Id);
+        if (current != expected) throw new InvalidOperationException("CloudDriveWritebackChanged");
+        var coordinator = new CloudDriveDeletionCoordinator(mapping, repository, sync);
+        if (action == CloudDriveDeletionRecoveryAction.Review) { await coordinator.ReviewAsync(expected.Id, token).ConfigureAwait(false); return; }
+        if (action == CloudDriveDeletionRecoveryAction.Abandon) { await coordinator.AbandonAsync(expected, true, token).ConfigureAwait(false); return; }
+        MappingRuntime? runtime; lock (_runtimes) { _runtimes.TryGetValue(mapping.Id, out runtime); }
+        if (runtime is null) throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
+        if (action == CloudDriveDeletionRecoveryAction.Confirm)
+        {
+            await runtime.ValidateLocalDeletionAsync(expected, token).ConfigureAwait(false);
+            current = await coordinator.ConfirmAsync(expected, true, token).ConfigureAwait(false);
+        }
+        if (current.Phase == CloudDriveDeletionPhase.ServerVerified) await runtime.CompleteDeletionAsync(current, token).ConfigureAwait(false);
+    }
+
+    internal async Task RecoverRelocationAsync(DesktopDriveMapping mapping, IDsmRepository repository,
+        CloudDriveRelocationOperation expected, CloudDriveRelocationRecoveryAction action, bool confirmed, CancellationToken token)
+    {
+        if (!_mappings.Contains(mapping) || !confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
+        var sync = new DesktopCloudDriveSyncStore();
+        var current = (await sync.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false)).SingleOrDefault(item => item.Id == expected.Id);
+        if (current is null || !DesktopCloudDriveSyncStore.SameOperation(current, expected)) throw new InvalidOperationException("CloudDriveWritebackChanged");
+        var coordinator = new CloudDriveRelocationCoordinator(mapping, repository, sync);
+        if (action == CloudDriveRelocationRecoveryAction.Review) await coordinator.ReviewAsync(expected.Id, true, token).ConfigureAwait(false);
+        else if (action == CloudDriveRelocationRecoveryAction.Continue) await coordinator.ContinueAsync(expected, true, token).ConfigureAwait(false);
+        else if (action == CloudDriveRelocationRecoveryAction.Abandon)
+        {
+            MappingRuntime? runtime;
+            lock (_runtimes) { _runtimes.TryGetValue(mapping.Id, out runtime); }
+            if (runtime is null) throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
+            await runtime.RestoreLocalBeforeAbandonAsync(expected, token).ConfigureAwait(false);
+            await coordinator.AbandonAsync(expected, true, token).ConfigureAwait(false);
+        }
+        else
+        {
+            MappingRuntime? runtime;
+            lock (_runtimes) { _runtimes.TryGetValue(mapping.Id, out runtime); }
+            if (runtime is null) throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
+            await runtime.CompleteRelocationAsync(expected, true, token).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task<CloudDriveWritebackPreparation> ConfigureWritebackAsync(DesktopDriveMapping mapping, bool enabled,
+        bool confirmed, CancellationToken token)
+    {
+        DesktopCloudDriveCapabilityGate.EnsureRegistrationEnabled();
+        MappingRuntime? runtime;
+        lock (_runtimes) { _runtimes.TryGetValue(mapping.Id, out runtime); }
+        if (runtime is null || !_mappings.Contains(mapping)) throw new InvalidOperationException("CloudDriveResumeBeforeWriteback");
+        return await runtime.ConfigureWritebackAsync(enabled, confirmed, token).ConfigureAwait(false);
+    }
+
+    internal async Task RecoverWritebackAsync(DesktopDriveMapping mapping, IDsmRepository repository,
+        CloudDrivePendingChange expected, CloudDriveRecoveryAction action, bool confirmed, CancellationToken token)
+    {
+        if (!_mappings.Contains(mapping)) throw new InvalidOperationException("CloudDriveNotMapped");
+        var sync = new DesktopCloudDriveSyncStore();
+        var current = (await sync.ReadChangesAsync(mapping, token).ConfigureAwait(false)).SingleOrDefault(item => item.Id == expected.Id);
+        if (current != expected) throw new InvalidOperationException("CloudDriveWritebackChanged");
+        var coordinator = new CloudDriveWritebackCoordinator(mapping, repository, sync);
+        switch (action)
+        {
+            case CloudDriveRecoveryAction.Review: await coordinator.ReviewAsync(expected.Id, token, acceptDirectory: confirmed).ConfigureAwait(false); break;
+            case CloudDriveRecoveryAction.Save: await coordinator.SubmitAsync(expected.Id, token).ConfigureAwait(false); break;
+            case CloudDriveRecoveryAction.Retry: await coordinator.RetryAsync(expected, confirmed, token).ConfigureAwait(false); break;
+            case CloudDriveRecoveryAction.KeepLocal: await sync.KeepLocallyAsync(mapping, expected.Id, confirmed, token).ConfigureAwait(false); break;
+        }
+        lock (_runtimes)
+            if (_runtimes.TryGetValue(mapping.Id, out var runtime)) runtime.NotifyWriteback(expected.RemotePath);
+    }
+
+    internal Task ExportWritebackAsync(DesktopDriveMapping mapping, Guid id, string destination, CancellationToken token)
+    {
+        if (!_mappings.Contains(mapping)) throw new InvalidOperationException("CloudDriveNotMapped");
+        var target = Path.GetFullPath(destination);
+        if (_mappings.Any(item => target.StartsWith(MappingPath(item) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("CloudDriveExportOutsideMapping");
+        return new DesktopCloudDriveSyncStore().ExportContentAsync(mapping, id, target, true, token);
+    }
+
     public void Dispose()
     {
         foreach (var mappingId in _runtimes.Keys.ToArray())
@@ -822,7 +909,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
         }
         var itemPaths = await _store.LoadItemPathsAsync(mapping.Id)
             .ConfigureAwait(false);
-        await Task.Run(() =>
+        var localNames = await new DesktopCloudDriveSyncStore().RegisterLocalNamesAsync(mapping,
+            DesktopDriveWindowsNameCodec.BuildSafeSegments(itemPaths.Values), []).ConfigureAwait(false);
+        await Task.Run(async () =>
         {
             var path = MappingPath(mapping);
             Directory.CreateDirectory(path);
@@ -845,8 +934,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 {
                     StructSize = (uint)Marshal.SizeOf<CloudFilesInterop.SyncPolicies>(),
                     Hydration = new() { Primary = 1, Modifier = 0 },
-                    Population = new() { Primary = 0, Modifier = 0 },
-                    InSync = 0x00ffffff,
+                    Population = new() { Primary = CloudFilesInterop.PopulationPolicyFull, Modifier = 0 },
+                    // 数据修改仍由系统清除已同步；名称走独立日志，不把未回传的 Windows 属性当作内容编辑。
+                    InSync = CloudFilesInterop.InSyncPolicyDefault,
                     HardLink = 0,
                     PlaceholderManagement = 0,
                 };
@@ -870,6 +960,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 repository,
                 _store,
                 itemPaths,
+                localNames,
                 state => UpdateRuntimeCache(mapping.Id, state));
             runtime.ContextHandle = GCHandle.Alloc(runtime);
             var callbacks = new[]
@@ -901,6 +992,11 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 },
                 new CloudFilesInterop.CallbackRegistration
                 {
+                    Type = CloudFilesInterop.CallbackNotifyFileCloseCompletion,
+                    Callback = runtime.FileClosedCallback,
+                },
+                new CloudFilesInterop.CallbackRegistration
+                {
                     Type = CloudFilesInterop.CallbackNotifyDelete,
                     Callback = runtime.RejectDeleteCallback,
                 },
@@ -911,6 +1007,11 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 },
                 new CloudFilesInterop.CallbackRegistration
                 {
+                    Type = CloudFilesInterop.CallbackNotifyRenameCompletion,
+                    Callback = runtime.RenameCompletedCallback,
+                },
+                new CloudFilesInterop.CallbackRegistration
+                {
                     Type = CloudFilesInterop.CallbackNone,
                 },
             };
@@ -918,7 +1019,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 path,
                 callbacks,
                 GCHandle.ToIntPtr(runtime.ContextHandle),
-                CloudFilesInterop.ConnectRequireFullPath,
+                    CloudFilesInterop.ConnectRequireFullPath | CloudFilesInterop.ConnectRequireProcessInfo,
                 out var connectionKey);
             if (result < 0)
             {
@@ -931,6 +1032,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
             {
                 _runtimes[mapping.Id] = runtime;
             }
+            try { await runtime.StartWritebackAsync().ConfigureAwait(false); }
+            catch { Disconnect(mapping.Id); throw; }
         }).ConfigureAwait(false);
     }
 
@@ -1061,15 +1164,33 @@ internal sealed class DesktopCloudDriveService : IDisposable
             : value;
     }
 
-    private sealed class MappingRuntime(
-        DesktopDriveMapping mapping,
-        string localRoot,
-        IDsmRepository repository,
-        DesktopCloudDriveStore store,
-        IReadOnlyDictionary<string, string> initialItemPaths,
-        Action<DesktopDriveMappingRuntime> runtimeChanged)
+    private sealed class MappingRuntime
     {
+        private readonly DesktopDriveMapping mapping;
+        private readonly string localRoot;
+        private readonly IDsmRepository repository;
+        private readonly DesktopCloudDriveStore store;
+        private readonly Action<DesktopDriveMappingRuntime> runtimeChanged;
+        internal MappingRuntime(DesktopDriveMapping mapping, string localRoot, IDsmRepository repository,
+            DesktopCloudDriveStore store, IReadOnlyDictionary<string, string> initialItemPaths,
+            IReadOnlyDictionary<string, string> initialLocalNames, Action<DesktopDriveMappingRuntime> runtimeChanged)
+        {
+            this.mapping = mapping; this.localRoot = localRoot; this.repository = repository;
+            this.store = store; this.runtimeChanged = runtimeChanged;
+            _remotePaths = new(initialItemPaths, StringComparer.Ordinal);
+            _safeSegments = new(initialLocalNames, StringComparer.Ordinal);
+            _syncStore = new(identityResolver: (_, path) => ItemIdentity(path));
+        }
         private DesktopDriveMapping Mapping => mapping;
+        private readonly DesktopCloudDriveSyncStore _syncStore;
+        private readonly CancellationTokenSource _refreshLifetime = new();
+        private readonly CloudFileLocalRemovalGate _localRemovals = new();
+        private readonly ConcurrentDictionary<string, string> _localRemotePaths = new(StringComparer.OrdinalIgnoreCase);
+        private CloudDriveWritebackSession? _writebackSession;
+        private readonly SemaphoreSlim _writebackConfiguration = new(1, 1);
+        private readonly SemaphoreSlim _relocationCompletion = new(1, 1);
+        private volatile bool _writebackEnabled;
+        private volatile bool _deletionEnabled;
         internal readonly CloudFilesInterop.Callback FetchDataCallback =
             OnFetchData;
         internal readonly CloudFilesInterop.Callback FetchPlaceholdersCallback =
@@ -1078,20 +1199,17 @@ internal sealed class DesktopCloudDriveService : IDisposable
             OnCancel;
         internal readonly CloudFilesInterop.Callback FileOpenedCallback =
             OnFileOpened;
+        internal readonly CloudFilesInterop.Callback FileClosedCallback = OnFileClosed;
         internal readonly CloudFilesInterop.Callback RejectDeleteCallback =
             OnRejectDelete;
         internal readonly CloudFilesInterop.Callback RejectRenameCallback =
-            OnRejectRename;
+            OnRenameRequested;
+        internal readonly CloudFilesInterop.Callback RenameCompletedCallback = OnRenameCompleted;
         internal GCHandle ContextHandle;
         internal CloudFilesInterop.ConnectionKey ConnectionKey;
         internal CloudFilesInterop.CallbackRegistration[] Callbacks = [];
-        private readonly ConcurrentDictionary<string, string> _remotePaths =
-            new(initialItemPaths, StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, string> _safeSegments =
-            new(
-                DesktopDriveWindowsNameCodec.BuildSafeSegments(
-                    initialItemPaths.Values),
-                StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, string> _remotePaths;
+        private readonly ConcurrentDictionary<string, string> _safeSegments;
         private readonly ConcurrentDictionary<long, ActiveRangeRequest>
             _requestCancellations = [];
         private readonly ConcurrentDictionary<long, CancellationTokenSource>
@@ -1104,6 +1222,287 @@ internal sealed class DesktopCloudDriveService : IDisposable
         private TaskCompletionSource? _callbacksDrained;
         private int _activeCallbacks;
         private bool _acceptingCallbacks = true;
+
+        internal async Task StartWritebackAsync()
+        {
+            try
+            {
+                _writebackEnabled = await _syncStore.IsWritebackEnabledAsync(mapping, _refreshLifetime.Token).ConfigureAwait(false);
+                _deletionEnabled = await _syncStore.IsDeletionEnabledAsync(mapping, _refreshLifetime.Token).ConfigureAwait(false);
+                try { await _syncStore.CleanReleasedContentAsync(mapping, _refreshLifetime.Token).ConfigureAwait(false); }
+                catch (Exception error) when (error is UnauthorizedAccessException or IOException)
+                { await ReportWritebackStateAsync(error).ConfigureAwait(false); }
+                if (_writebackSession is not null || !_writebackEnabled) return;
+                foreach (var path in _remotePaths.Values.Where(path => path != RootRemotePath()))
+                    _localRemotePaths[LocalPath(path)] = path;
+                var session = new CloudDriveWritebackSession(mapping, localRoot, repository, _syncStore,
+                    path => _localRemotePaths.GetValueOrDefault(path), error => _ = ReportWritebackStateAsync(error),
+                    registerNewPath: async (path, token) =>
+                    {
+                        foreach (var operation in (await _syncStore.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false)).Where(item => item.IsPending))
+                        {
+                            var parent = operation.Destination[..Math.Max(1, operation.Destination.LastIndexOf('/'))];
+                            var target = Path.Combine(LocalPath(parent), operation.LocalName);
+                            if (string.Equals(path, target, StringComparison.OrdinalIgnoreCase) ||
+                                operation.IsDirectory && path.StartsWith(target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return null;
+                        }
+                        // 事件溢出或离线改名可能丢失源目标关系；缺少原投影时不猜测新文件身份。
+                        if (HasMissingLocalProjection()) throw new InvalidOperationException("CloudDriveWritebackPending");
+                        var remote = await _syncStore.RegisterLocalCreationAsync(mapping, localRoot, path, _remotePaths.Values.ToArray(), token).ConfigureAwait(false);
+                        var pending = await _syncStore.ReadLocalCreationsAsync(mapping, token).ConfigureAwait(false);
+                        await RegisterPathsAsync(pending.Keys, token).ConfigureAwait(false);
+                        return remote;
+                    }, itemIdentity: ItemIdentity, renamedLocalPath: BindObservedLocalMoveAsync,
+                    resolveExistingPath: ResolveWritebackPathAsync, deletedLocalPath: RecordDeletedLocalPathAsync,
+                    cacheChanged: async (path, length, saved, token) =>
+                    {
+                        token.ThrowIfCancellationRequested();
+                        await RecordCacheEntryAsync(path, length, saved).ConfigureAwait(false);
+                    });
+                _writebackSession = session;
+                session.Start(() => _localRemotePaths.Keys);
+            }
+            catch (OperationCanceledException) when (_refreshLifetime.IsCancellationRequested) { }
+            catch (Exception error)
+            {
+                await ReportWritebackStateAsync(error).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        private bool HasMissingLocalProjection() => _remotePaths.Values.Where(path => path != RootRemotePath())
+            .Any(path => !CloudFileRenamePaths.HasExactLeafName(LocalPath(path)));
+
+        private string RelocationTarget(string source, string targetLocal)
+        {
+            CloudDriveWriteScope.RequireWritable(mapping, source);
+            if (!Path.GetFullPath(targetLocal).StartsWith(Path.GetFullPath(localRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("cloud.relocate.outside_mapping");
+            var parentLocal = Path.GetDirectoryName(targetLocal)!;
+            var parentRemote = string.Equals(parentLocal, localRoot, StringComparison.OrdinalIgnoreCase) ? RootRemotePath() :
+                _localRemotePaths.GetValueOrDefault(parentLocal) ?? throw new InvalidDataException("cloud.relocate.parent_unknown");
+            // 普通文件转换前也检查父目录，不能沿着未知链接将身份写到映射外。
+            for (var parent = parentLocal; !string.Equals(parent, localRoot, StringComparison.OrdinalIgnoreCase); parent = Path.GetDirectoryName(parent)!)
+            {
+                var remote = _localRemotePaths.GetValueOrDefault(parent) ?? throw new InvalidDataException("cloud.relocate.parent_unknown");
+                if ((File.GetAttributes(parent) & FileAttributes.ReparsePoint) != 0 && CloudFilePlaceholderNative.ReadIdentity(parent) != ItemIdentity(remote))
+                    throw new InvalidDataException("cloud.relocate.local_unverified");
+            }
+            var name = Path.GetFileName(targetLocal);
+            var remoteName = name == Path.GetFileName(LocalPath(source)) ? source[(source.LastIndexOf('/') + 1)..] : name;
+            var target = parentRemote.TrimEnd('/') + "/" + remoteName;
+            CloudDriveWriteScope.RequireWritable(mapping, target);
+            return target;
+        }
+
+        private Task BindObservedLocalMoveAsync(string sourceLocal, string targetLocal, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!_writebackEnabled || !_localRemotePaths.TryGetValue(sourceLocal, out var source) ||
+                !File.Exists(targetLocal) || Directory.Exists(targetLocal)) return Task.CompletedTask;
+            if (!string.Equals(sourceLocal, targetLocal, StringComparison.OrdinalIgnoreCase) &&
+                (File.Exists(sourceLocal) || Directory.Exists(sourceLocal))) return Task.CompletedTask;
+            var target = RelocationTarget(source, targetLocal);
+            if (target == source) return Task.CompletedTask;
+            if (_remotePaths.Values.Any(path => path == target)) throw new InvalidDataException("cloud.relocate.destination_exists");
+            CloudFilePlaceholderNative.BindRenamedLocalFile(targetLocal, ItemIdentity(source));
+            return Task.CompletedTask;
+        }
+
+        private async Task<string?> ResolveWritebackPathAsync(string physical, CancellationToken token)
+        {
+            var known = _localRemotePaths.GetValueOrDefault(physical);
+            if ((File.GetAttributes(physical) & FileAttributes.ReparsePoint) == 0) return known;
+            var identity = CloudFilePlaceholderNative.ReadIdentity(physical);
+            if (!_remotePaths.TryGetValue(identity, out var source)) throw new InvalidDataException("cloud.sync.unindexed_placeholder");
+            var expectedLocal = LocalPath(source);
+            if (string.Equals(expectedLocal, physical, StringComparison.OrdinalIgnoreCase) && CloudFileRenamePaths.HasExactLeafName(expectedLocal)) return source;
+            if (!string.Equals(expectedLocal, physical, StringComparison.OrdinalIgnoreCase) && (File.Exists(expectedLocal) || Directory.Exists(expectedLocal)))
+                throw new InvalidDataException("cloud.relocate.local_unverified");
+            var target = RelocationTarget(source, physical);
+            var directory = Directory.Exists(physical);
+            var operation = (await _syncStore.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false))
+                .SingleOrDefault(item => item.IsPending && item.ItemIdentity == identity);
+            if (operation is not null && (operation.Source != source || operation.Destination != target || operation.IsDirectory != directory))
+                throw new InvalidOperationException("cloud.relocate.pending");
+            operation ??= await new CloudDriveRelocationCoordinator(mapping, repository, _syncStore).StartAsync(identity, source, target,
+                Path.GetFileName(physical), true, token, expectedDirectory: directory).ConfigureAwait(false);
+            if (operation.Phase != CloudDriveRelocationPhase.ServerVerified) throw new InvalidOperationException("cloud.relocate.pending");
+            await CompleteRelocationAsync(operation, false, token).ConfigureAwait(false);
+            return target;
+        }
+
+        private async Task RecordDeletedLocalPathAsync(string physical, CancellationToken token)
+        {
+            if (!_deletionEnabled || !_localRemotePaths.TryGetValue(physical, out var path) || File.Exists(physical) || Directory.Exists(physical)) return;
+            var identity = ItemIdentity(path);
+            if ((await _syncStore.ReadDeletionOperationsAsync(mapping, token).ConfigureAwait(false)).Any(item => item.ItemIdentity == identity && item.Phase != CloudDriveDeletionPhase.Abandoned) ||
+                (await _syncStore.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false)).Any(item => item.IsPending &&
+                    (DesktopDrivePath.IsAncestorOrSame(item.Source, path) || DesktopDrivePath.IsAncestorOrSame(item.Destination, path)))) return;
+            await new CloudDriveDeletionCoordinator(mapping, repository, _syncStore).PrepareAsync(identity, path, token).ConfigureAwait(false);
+            await ReportWritebackStateAsync(new InvalidOperationException("cloud.delete.confirmation_pending")).ConfigureAwait(false);
+        }
+
+        private async Task ReportWritebackStateAsync(Exception? error)
+        {
+            if (_refreshLifetime.IsCancellationRequested) return;
+            try
+            {
+                var state = await store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false);
+                if (error is not null)
+                {
+                    state = state with { State = DesktopDriveMappingState.Degraded };
+                    await store.SaveRuntimeAsync(mapping.Id, state).ConfigureAwait(false);
+                }
+                runtimeChanged(state);
+            }
+            catch { /* 状态通知失败不改变上传日志，也不把未知提交重置为未发送。 */ }
+        }
+
+        internal void NotifyWriteback(string remotePath) => _writebackSession?.NotifyChanged(LocalPath(remotePath));
+
+        internal async Task ConfigureDeletionAsync(bool enabled, bool confirmed, CancellationToken token)
+        {
+            if (enabled && (repository is not IFileRecycleRepository recycle || recycle.ProfileId != mapping.ProfileId ||
+                !recycle.Availability.CanMoveToRecycle || recycle.Availability.DeleteVersion != 2)) throw new NotSupportedException("cloud.delete.unsupported");
+            await _syncStore.SetDeletionEnabledAsync(mapping, enabled, confirmed, token).ConfigureAwait(false);
+            _deletionEnabled = enabled;
+        }
+
+        internal async Task CompleteDeletionAsync(CloudDriveDeletionOperation operation, CancellationToken token)
+        {
+            var completion = new CloudDriveDeletionCompletion(mapping, _syncStore, store, (tree, cancellation) =>
+            {
+                foreach (var item in tree.OrderByDescending(item => item.Value.Count(character => character == '/')))
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    var local = LocalPath(item.Value);
+                    if (!CloudFilePlaceholderNative.Remove(local, item.Key, Directory.Exists(local), _localRemovals, confirmedDeletion: true))
+                        throw new InvalidOperationException("cloud.sync.pending_changes");
+                }
+                return Task.CompletedTask;
+            });
+            await completion.CompleteAsync(operation, token).ConfigureAwait(false);
+            var paths = await store.LoadItemPathsAsync(mapping.Id).ConfigureAwait(false);
+            foreach (var key in _remotePaths.Keys.Where(key => !paths.ContainsKey(key)).ToArray()) _remotePaths.TryRemove(key, out _);
+            foreach (var item in _localRemotePaths.Where(item => !paths.Values.Contains(item.Value, StringComparer.Ordinal)).ToArray())
+                _localRemotePaths.TryRemove(item.Key, out _);
+            _writebackSession?.RequestScan();
+            runtimeChanged(await store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
+        }
+
+        internal async Task ValidateLocalDeletionAsync(CloudDriveDeletionOperation operation, CancellationToken token)
+        {
+            var paths = await store.LoadItemPathsAsync(mapping.Id).ConfigureAwait(false);
+            if (!paths.TryGetValue(operation.ItemIdentity, out var source) || source != operation.RemotePath)
+                throw new InvalidDataException("cloud.delete.identity_changed");
+            var physical = LocalPath(source);
+            if (!File.Exists(physical) && !Directory.Exists(physical)) return;
+            if (Directory.Exists(physical) != operation.IsDirectory) throw new InvalidDataException("cloud.delete.identity_changed");
+            var known = paths.Where(item => DesktopDrivePath.IsAncestorOrSame(source, item.Value))
+                .ToDictionary(item => LocalPath(item.Value), item => item.Key, StringComparer.OrdinalIgnoreCase);
+            var pending = new Stack<string>(); pending.Push(physical);
+            while (pending.TryPop(out var local))
+            {
+                token.ThrowIfCancellationRequested();
+                if (!known.TryGetValue(local, out var identity)) throw new InvalidOperationException("cloud.sync.pending_changes");
+                var directory = Directory.Exists(local);
+                // 回收站尝试会清除 InSync；先核对 NAS 与原大小，只接纳数据未改变的元数据状态。
+                var remote = paths[identity];
+                var metadata = await repository.ReadFileMetadataAsync(remote, token).ConfigureAwait(false);
+                if (metadata is null || metadata.Item.Path != remote || metadata.Item.IsDirectory != directory)
+                    throw new InvalidDataException("cloud.delete.target_changed");
+                var baseline = directory ? null : await _syncStore.ReadVersionAsync(mapping, remote, token).ConfigureAwait(false);
+                if (baseline is not null && baseline.Length != metadata.Item.Size ||
+                    !CloudFilePlaceholderNative.AcknowledgeRelocation(local, identity, directory, metadata.Item.Size))
+                    throw new InvalidOperationException("cloud.sync.pending_changes");
+                CloudFilePlaceholderNative.RequireSynchronized(local, identity, directory);
+                if (directory) foreach (var child in Directory.EnumerateFileSystemEntries(local)) pending.Push(child);
+            }
+        }
+
+        internal async Task<CloudDriveWritebackPreparation> ConfigureWritebackAsync(bool enabled, bool confirmed, CancellationToken token)
+        {
+            if (!confirmed) throw new InvalidOperationException("cloud.sync.confirmation_required");
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _refreshLifetime.Token);
+            await _writebackConfiguration.WaitAsync(linked.Token).ConfigureAwait(false);
+            try
+            {
+                var paths = _remotePaths.Values.Distinct(StringComparer.Ordinal).Where(path => path != RootRemotePath() && File.Exists(LocalPath(path))).ToArray();
+                if (!enabled)
+                {
+                    // 已绑定原身份但还没取得 NAS 改名预检的目标可能不在旧路径；不能漏过它而关闭写回。
+                    if (HasMissingLocalProjection())
+                        throw new InvalidOperationException("CloudDriveWritebackPending");
+                    var changes = await _syncStore.ReadChangesAsync(mapping, linked.Token).ConfigureAwait(false);
+                    if (changes.Any(change => change.IsPending))
+                        throw new InvalidOperationException("CloudDriveWritebackPending");
+                    // 先逐项恢复只读，再落盘关闭；任何正在编辑或未同步内容都会保留启用状态。
+                    foreach (var path in paths)
+                    {
+                        linked.Token.ThrowIfCancellationRequested();
+                        var identity = ItemIdentity(path);
+                        if (changes.LastOrDefault(change => change.RemotePath == path)?.Phase == CloudDriveChangePhase.KeptLocally)
+                            CloudFilePlaceholderNative.PreserveLocallyReadOnly(LocalPath(path), identity);
+                        else CloudFilePlaceholderNative.SetWritable(LocalPath(path), identity, false);
+                    }
+                    await _syncStore.SetWritebackEnabledAsync(mapping, false, true, linked.Token).ConfigureAwait(false);
+                    _writebackEnabled = false;
+                    _deletionEnabled = false;
+                    if (_writebackSession is { } session) { await session.DisposeAsync().ConfigureAwait(false); _writebackSession = null; }
+                    return new(paths.Length, 0);
+                }
+                await _syncStore.SetWritebackEnabledAsync(mapping, true, true, linked.Token).ConfigureAwait(false);
+                await StartWritebackAsync().ConfigureAwait(false);
+                var ready = 0; var unavailable = 0;
+                foreach (var path in paths)
+                {
+                    linked.Token.ThrowIfCancellationRequested();
+                    try { await PrepareEditableFileCoreAsync(path, linked.Token).ConfigureAwait(false); ready++; }
+                    catch (OperationCanceledException) when (linked.IsCancellationRequested) { throw; }
+                    catch { unavailable++; }
+                }
+                return new(ready, unavailable);
+            }
+            finally { _writebackConfiguration.Release(); }
+        }
+
+        private async Task PrepareEditableFileAsync(string path, CancellationToken token)
+        {
+            await _writebackConfiguration.WaitAsync(token).ConfigureAwait(false);
+            try { if (_writebackEnabled) await PrepareEditableFileCoreAsync(path, token).ConfigureAwait(false); }
+            finally { _writebackConfiguration.Release(); }
+        }
+
+        private async Task PrepareEditableFileCoreAsync(string path, CancellationToken token)
+        {
+            var gate = _rangeTransferGates.GetOrAdd(path, static _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                var local = LocalPath(path);
+                var state = ReadPlaceholderState(path);
+                if (state.ModifiedDataSize != 0 || state.InSyncState != 1) throw new InvalidDataException("cloud.sync.pending_changes");
+                if (state.OnDiskDataSize < new FileInfo(local).Length) throw new InvalidDataException("cloud.writeback.open_first");
+                var known = await _syncStore.ReadVersionAsync(mapping, path, token).ConfigureAwait(false);
+                var candidate = await new CloudDriveWritebackCoordinator(mapping, repository, _syncStore).ReadEditableCandidateAsync(path, token).ConfigureAwait(false)
+                    ?? throw new FileNotFoundException();
+                if (new FileInfo(local).Length != candidate.Item.Size) throw new InvalidDataException("cloud.sync.version_conflict");
+                if (candidate.Version is { } version)
+                {
+                    if (known is null && state.OnDiskDataSize == 0) await _syncStore.BindVersionAsync(mapping, version, token).ConfigureAwait(false);
+                    else if (known != version) throw new InvalidDataException("cloud.sync.version_conflict");
+                }
+                else
+                {
+                    if (candidate.Item.ModifiedAt is not { } time) throw new InvalidDataException("cloud.sync.baseline_missing");
+                    await _syncStore.BindEmptyFileBaselineAsync(mapping, path, time, token).ConfigureAwait(false);
+                }
+                token.ThrowIfCancellationRequested();
+                CloudFilePlaceholderNative.SetWritable(local, ItemIdentity(path), true);
+            }
+            finally { gate.Release(); }
+        }
 
         private static void OnFetchData(
             in CloudFilesInterop.CallbackInfo info,
@@ -1125,6 +1524,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 var transferKey = info.TransferKey;
                 var requestKey = info.RequestKey;
                 var fileSize = info.FileSize;
+                var fileId = info.FileId;
+                var syncRootFileId = info.SyncRootFileId;
                 _ = runtime.RunCallbackAsync(() => runtime.TransferDataAsync(
                         connectionKey,
                         transferKey,
@@ -1132,7 +1533,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
                         remotePath,
                         parameters.RequiredFileOffset,
                         parameters.RequiredLength,
-                        fileSize));
+                        fileSize,
+                        fileId,
+                        syncRootFileId));
             }
             catch
             {
@@ -1239,19 +1642,197 @@ internal sealed class DesktopCloudDriveService : IDisposable
             }
         }
 
-        private static void OnRejectDelete(
-            in CloudFilesInterop.CallbackInfo info,
-            IntPtr parametersPointer) =>
-            RejectMutationWithLifetime(
-                info,
-                CloudFilesInterop.OperationAckDelete);
+        private static void OnFileClosed(in CloudFilesInterop.CallbackInfo info, IntPtr parametersPointer)
+        {
+            try
+            {
+                if (info.FileIdentity == IntPtr.Zero || info.FileIdentityLength == 0 ||
+                    info.ProcessInfo != IntPtr.Zero && Marshal.ReadInt32(info.ProcessInfo) >= 8 &&
+                    Marshal.ReadInt32(info.ProcessInfo, 4) == Environment.ProcessId) return;
+                var runtime = FromContext(info.CallbackContext);
+                if (!runtime._writebackEnabled) return;
+                var path = runtime.RemotePath(CopyIdentity(info.FileIdentity, info.FileIdentityLength));
+                if (!runtime.TryBeginCallback()) return;
+                _ = runtime.RunCallbackAsync(async () =>
+                {
+                    try
+                    {
+                        if ((await runtime._syncStore.ReadRelocationOperationsAsync(runtime.Mapping, runtime._refreshLifetime.Token).ConfigureAwait(false))
+                            .Any(item => item.IsPending && item.ItemIdentity == runtime.ItemIdentity(path))) return;
+                        if (!File.Exists(runtime.LocalPath(path))) return;
+                        runtime.NotifyWriteback(path);
+                        if (!CloudFilePlaceholderNative.IsModified(runtime.LocalPath(path), runtime.ItemIdentity(path)))
+                            await runtime.PrepareEditableFileAsync(path, runtime._refreshLifetime.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (runtime._refreshLifetime.IsCancellationRequested) { }
+                    catch (Exception error) { await runtime.ReportWritebackStateAsync(error).ConfigureAwait(false); }
+                });
+            }
+            catch { /* 关闭通知不阻塞用户应用，异常不能越过原生边界。 */ }
+        }
 
-        private static void OnRejectRename(
-            in CloudFilesInterop.CallbackInfo info,
-            IntPtr parametersPointer) =>
-            RejectMutationWithLifetime(
-                info,
-                CloudFilesInterop.OperationAckRename);
+        private static void OnRejectDelete(in CloudFilesInterop.CallbackInfo info, IntPtr parametersPointer)
+        {
+            try
+            {
+                var request = CloudFilePlaceholderNative.ReadDeleteRequest(parametersPointer);
+                if (request.Undelete) { RejectMutation(info, CloudFilesInterop.OperationAckDelete); return; }
+                var runtime = FromContext(info.CallbackContext);
+                if (runtime._localRemovals.TryConsume(info)) { RejectMutation(info, CloudFilesInterop.OperationAckDelete, true); return; }
+                if (!runtime._writebackEnabled || !runtime._deletionEnabled || info.FileIdentity == IntPtr.Zero || info.FileIdentityLength == 0)
+                { RejectMutation(info, CloudFilesInterop.OperationAckDelete); return; }
+                var identity = CopyIdentity(info.FileIdentity, info.FileIdentityLength);
+                var path = runtime.RemotePath(identity);
+                if (request.Directory != Directory.Exists(runtime.LocalPath(path))) { RejectMutation(info, CloudFilesInterop.OperationAckDelete); return; }
+                var state = runtime.ReadPlaceholderState(path, request.Directory);
+                if (state.FileId != info.FileId || state.SyncRootFileId != info.SyncRootFileId || state.ModifiedDataSize != 0 || !runtime.TryBeginCallback())
+                { RejectMutation(info, CloudFilesInterop.OperationAckDelete); return; }
+                // 先保留本机文件。此通知只登记待确认项，用户在同步恢复窗口确认后才删除 NAS。
+                RejectMutation(info, CloudFilesInterop.OperationAckDelete);
+                _ = runtime.RunCallbackAsync(async () =>
+                {
+                    try
+                    {
+                        var operations = await runtime._syncStore.ReadDeletionOperationsAsync(runtime.Mapping, runtime._refreshLifetime.Token).ConfigureAwait(false);
+                        if (!operations.Any(item => item.IsPending && item.ItemIdentity == identity))
+                            await new CloudDriveDeletionCoordinator(runtime.Mapping, runtime.repository, runtime._syncStore)
+                                .PrepareAsync(identity, path, runtime._refreshLifetime.Token).ConfigureAwait(false);
+                        await runtime.ReportWritebackStateAsync(new InvalidOperationException("cloud.delete.confirmation_pending")).ConfigureAwait(false);
+                    }
+                    catch (Exception error) { await runtime.ReportWritebackStateAsync(error).ConfigureAwait(false); }
+                });
+            }
+            catch { RejectMutation(info, CloudFilesInterop.OperationAckDelete); }
+        }
+
+        private static void OnRenameRequested(in CloudFilesInterop.CallbackInfo info, IntPtr parametersPointer)
+        {
+            try
+            {
+                var runtime = FromContext(info.CallbackContext);
+                if (!runtime._writebackEnabled || info.FileIdentity == IntPtr.Zero || info.FileIdentityLength == 0)
+                { RejectMutation(info, CloudFilesInterop.OperationAckRename); return; }
+                var request = CloudFileRenamePaths.Read(info, parametersPointer, runtime.localRoot);
+                var identity = CopyIdentity(info.FileIdentity, info.FileIdentityLength);
+                var source = runtime.RemotePath(identity);
+                var state = runtime.ReadPlaceholderState(source, request.Directory);
+                if (state.FileId != info.FileId || state.SyncRootFileId != info.SyncRootFileId || !runtime.TryBeginCallback())
+                { RejectMutation(info, CloudFilesInterop.OperationAckRename); return; }
+                var copied = info;
+                _ = runtime.RunCallbackAsync(() => runtime.RequestRelocationAsync(copied, identity, source, request.Target, request.Directory));
+            }
+            catch { RejectMutation(info, CloudFilesInterop.OperationAckRename); }
+        }
+
+        private async Task RequestRelocationAsync(CloudFilesInterop.CallbackInfo info, string identity, string source,
+            string targetLocal, bool directory)
+        {
+            var allowed = false;
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_refreshLifetime.Token);
+            cancellation.CancelAfter(TimeSpan.FromSeconds(50));
+            try
+            {
+                var sourceLocal = LocalPath(source);
+                var localName = Path.GetFileName(targetLocal);
+                var target = RelocationTarget(source, targetLocal);
+                if (!string.Equals(sourceLocal, targetLocal, StringComparison.OrdinalIgnoreCase) && (File.Exists(targetLocal) || Directory.Exists(targetLocal)))
+                    throw new InvalidDataException("cloud.relocate.destination_exists");
+                var existing = (await _syncStore.ReadRelocationOperationsAsync(mapping, cancellation.Token).ConfigureAwait(false))
+                    .SingleOrDefault(item => item.IsPending && item.ItemIdentity == identity);
+                var coordinator = new CloudDriveRelocationCoordinator(mapping, repository, _syncStore);
+                CloudDriveRelocationOperation result;
+                if (existing is not null)
+                {
+                    if (existing.Source != source || existing.Destination != target || existing.LocalName != localName || existing.IsDirectory != directory)
+                        throw new InvalidOperationException("cloud.relocate.pending");
+                    result = existing.Phase == CloudDriveRelocationPhase.ServerVerified ? existing :
+                        await coordinator.ContinueAsync(existing, true, cancellation.Token).ConfigureAwait(false);
+                }
+                else result = await coordinator.StartAsync(identity, source, target, localName, true, cancellation.Token, expectedDirectory: directory).ConfigureAwait(false);
+                allowed = result.Phase == CloudDriveRelocationPhase.ServerVerified && !cancellation.IsCancellationRequested;
+                if (!allowed) await ReportWritebackStateAsync(new IOException("cloud.relocate.pending")).ConfigureAwait(false);
+            }
+            catch (Exception error) { await ReportWritebackStateAsync(error).ConfigureAwait(false); }
+            finally { RejectMutation(info, CloudFilesInterop.OperationAckRename, allowed); }
+        }
+
+        private static void OnRenameCompleted(in CloudFilesInterop.CallbackInfo info, IntPtr parametersPointer)
+        {
+            try
+            {
+                var runtime = FromContext(info.CallbackContext);
+                if (info.FileIdentity == IntPtr.Zero || info.FileIdentityLength == 0) return;
+                var identity = CopyIdentity(info.FileIdentity, info.FileIdentityLength);
+                if (!runtime.TryBeginCallback()) return;
+                _ = runtime.RunCallbackAsync(async () =>
+                {
+                    try
+                    {
+                        var operation = (await runtime._syncStore.ReadRelocationOperationsAsync(runtime.Mapping, runtime._refreshLifetime.Token).ConfigureAwait(false))
+                            .SingleOrDefault(item => item.ItemIdentity == identity && item.Phase == CloudDriveRelocationPhase.ServerVerified);
+                        if (operation is not null) await runtime.CompleteRelocationAsync(operation, false, runtime._refreshLifetime.Token).ConfigureAwait(false);
+                    }
+                    catch (Exception error) { await runtime.ReportWritebackStateAsync(error).ConfigureAwait(false); }
+                });
+            }
+            catch { /* 完成通知不回应内核，但未完成的日志继续留给恢复入口。 */ }
+        }
+
+        internal async Task RestoreLocalBeforeAbandonAsync(CloudDriveRelocationOperation operation, CancellationToken token)
+        {
+            if (operation.Step != 0 || operation.Phase is not (CloudDriveRelocationPhase.Prepared or CloudDriveRelocationPhase.Rejected))
+                throw new InvalidOperationException("cloud.relocate.result_unknown");
+            using var writeback = await _syncStore.AcquireWritebackAsync(mapping, token).ConfigureAwait(false);
+            var current = (await _syncStore.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false)).SingleOrDefault(item => item.Id == operation.Id);
+            if (current is null || !DesktopCloudDriveSyncStore.SameOperation(current, operation)) throw new InvalidOperationException("cloud.relocate.state_changed");
+            var parent = operation.Destination[..Math.Max(1, operation.Destination.LastIndexOf('/'))];
+            var target = Path.Combine(LocalPath(parent), operation.LocalName);
+            CloudFileRenamePaths.CompleteLocalMove(target, LocalPath(operation.Source), operation.IsDirectory, true,
+                path => VerifyLocalRelocationItem(path, operation));
+        }
+
+        internal async Task CompleteRelocationAsync(CloudDriveRelocationOperation operation, bool moveLocal, CancellationToken token)
+        {
+            await _relocationCompletion.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                var current = (await _syncStore.ReadRelocationOperationsAsync(mapping, token).ConfigureAwait(false)).SingleOrDefault(item => item.Id == operation.Id);
+                if (current is null || !DesktopCloudDriveSyncStore.SameOperation(current, operation) || operation.Phase != CloudDriveRelocationPhase.ServerVerified)
+                    throw new InvalidOperationException("cloud.relocate.result_unknown");
+                var parent = operation.Destination[..Math.Max(1, operation.Destination.LastIndexOf('/'))];
+                var target = Path.Combine(LocalPath(parent), operation.LocalName);
+                CloudFileRenamePaths.CompleteLocalMove(LocalPath(operation.Source), target, operation.IsDirectory, moveLocal,
+                    path => VerifyLocalRelocationItem(path, operation));
+                _ = CloudFilePlaceholderNative.AcknowledgeRelocation(target, operation.ItemIdentity, operation.IsDirectory, operation.Length);
+                var completion = new CloudDriveRelocationCompletion(mapping, _syncStore, store, item =>
+                {
+                    if (!CloudFileRenamePaths.HasExactLeafName(target)) return false;
+                    VerifyLocalRelocationItem(target, item); return true;
+                });
+                await completion.CompleteAsync(operation.Id, token).ConfigureAwait(false);
+                var paths = await store.LoadItemPathsAsync(mapping.Id).ConfigureAwait(false);
+                var names = await _syncStore.RegisterLocalNamesAsync(mapping, new Dictionary<string, string>(), paths.Values, token).ConfigureAwait(false);
+                foreach (var item in names) _safeSegments[item.Key] = item.Value;
+                foreach (var key in _safeSegments.Keys.Where(key => !names.ContainsKey(key)).ToArray()) _safeSegments.TryRemove(key, out _);
+                foreach (var item in paths) _remotePaths[item.Key] = item.Value;
+                foreach (var key in _remotePaths.Keys.Where(key => !paths.ContainsKey(key)).ToArray()) _remotePaths.TryRemove(key, out _);
+                _localRemotePaths.Clear();
+                foreach (var path in paths.Values.Where(path => path != RootRemotePath())) _localRemotePaths[LocalPath(path)] = path;
+                foreach (var path in paths.Values.Where(path => DesktopDrivePath.IsAncestorOrSame(operation.Destination, path))) NotifyWriteback(path);
+                _writebackSession?.RequestScan();
+                runtimeChanged(await store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
+            }
+            finally { _relocationCompletion.Release(); }
+        }
+
+        private static void VerifyLocalRelocationItem(string path, CloudDriveRelocationOperation operation)
+        {
+            if (Directory.Exists(path) != operation.IsDirectory) throw new InvalidDataException("cloud.relocate.local_unverified");
+            using var handle = CloudFilesInterop.CreateFile(path, 0x80, CloudFilesInterop.FileShareReadWriteDelete, IntPtr.Zero,
+                CloudFilesInterop.OpenExisting, CloudFilesInterop.FileFlagOpenReparsePoint | (operation.IsDirectory ? CloudFilesInterop.FileFlagBackupSemantics : 0), IntPtr.Zero);
+            if (handle.IsInvalid) throw new IOException("cloud.relocate.local_unavailable");
+            _ = CloudFilePlaceholderNative.Read(handle, operation.ItemIdentity);
+        }
 
         private static void RejectMutationWithLifetime(
             CloudFilesInterop.CallbackInfo info,
@@ -1267,7 +1848,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 }
                 try
                 {
-                    RejectMutation(info, operationType);
+                    RejectMutation(info, operationType, operationType == CloudFilesInterop.OperationAckDelete && runtime._localRemovals.TryConsume(info));
                 }
                 finally
                 {
@@ -1282,7 +1863,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
 
         private static void RejectMutation(
             CloudFilesInterop.CallbackInfo info,
-            uint operationType)
+            uint operationType,
+            bool authorizedLocalRemoval = false)
         {
             try
             {
@@ -1294,7 +1876,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 var parameters = new CloudFilesInterop.AcknowledgeParameters
                 {
                     ParamSize = (uint)Marshal.SizeOf<CloudFilesInterop.AcknowledgeParameters>(),
-                    CompletionStatus = CloudFilesInterop.StatusAccessDenied,
+                    CompletionStatus = authorizedLocalRemoval ? CloudFilesInterop.StatusSuccess : CloudFilesInterop.StatusAccessDenied,
                 };
                 Execute(operation, parameters);
             }
@@ -1346,6 +1928,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
             lock (_callbackGate)
             {
                 _acceptingCallbacks = false;
+                _refreshLifetime.Cancel();
                 foreach (var cancellation in _requestCancellations.Values)
                 {
                     cancellation.Cancellation.Cancel();
@@ -1357,11 +1940,11 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 }
                 if (_activeCallbacks == 0)
                 {
-                    return Task.CompletedTask;
+                    return _writebackSession?.DisposeAsync().AsTask() ?? Task.CompletedTask;
                 }
                 _callbacksDrained ??= new(
                     TaskCreationOptions.RunContinuationsAsynchronously);
-                return _callbacksDrained.Task;
+                return Task.WhenAll(_callbacksDrained.Task, _writebackSession?.DisposeAsync().AsTask() ?? Task.CompletedTask);
             }
         }
 
@@ -1409,7 +1992,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
             string remotePath,
             long offset,
             long length,
-            long fileSize)
+            long fileSize,
+            long fileId,
+            long syncRootFileId)
         {
             var operation = Operation(
                 CloudFilesInterop.OperationTransferData,
@@ -1432,18 +2017,22 @@ internal sealed class DesktopCloudDriveService : IDisposable
             var enteredTransferGate = false;
             try
             {
+                (offset, transferLength) = CloudFileHydrationGuard.AlignRange(offset, transferLength, fileSize);
                 EnsureFreeSpace(transferLength);
                 await transferGate.WaitAsync(cancellation.Token)
                     .ConfigureAwait(false);
                 enteredTransferGate = true;
+                var knownVersion = await _syncStore.ReadVersionAsync(mapping, remotePath, cancellation.Token).ConfigureAwait(false);
+                var placeholder = ReadPlaceholderState(remotePath);
+                CloudFileHydrationGuard.Validate(placeholder, fileId, syncRootFileId, knownVersion, fileSize);
                 var outcome = await CloudFileRangeTransfer.ExecuteAsync(
                     remotePath,
                     offset,
                     transferLength,
                     fileSize,
                     DownloadChunkBytes,
-                    null,
-                    null,
+                    knownVersion?.Version,
+                    knownVersion?.Length,
                     (requestOffset,
                         requestLength,
                         expectedContentVersion,
@@ -1478,7 +2067,9 @@ internal sealed class DesktopCloudDriveService : IDisposable
                         failureOffset,
                         failureLength,
                         CloudFilesInterop.StatusUnsuccessful),
-                    cancellation.Token).ConfigureAwait(false);
+                    cancellation.Token,
+                    (version, total, token) => _syncStore.BindVersionAsync(mapping,
+                        new(remotePath, version, total), token)).ConfigureAwait(false);
                 if (outcome.Succeeded)
                 {
                     try
@@ -1552,7 +2143,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
 
         private async Task RecordCacheEntryAsync(
             string remotePath,
-            long logicalSizeBytes)
+            long logicalSizeBytes, bool touch = true)
         {
             var allocated = AllocatedSize(LocalPath(remotePath));
             await store.UpdateRuntimeAsync(mapping.Id, current =>
@@ -1568,7 +2159,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                         : DesktopDriveCacheEntryKind.Temporary,
                     Math.Max(logicalSizeBytes, 0),
                     allocated,
-                    DateTimeOffset.UtcNow,
+                    touch ? DateTimeOffset.UtcNow : current.CacheEntries.GetValueOrDefault(remotePath)?.LastAccessedAt ?? DateTimeOffset.UtcNow,
                     DateTimeOffset.UtcNow);
                 return current with { CacheEntries = entries };
             }).ConfigureAwait(false);
@@ -1594,18 +2185,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
             {
                 return;
             }
-            await store.UpdateRuntimeAsync(mapping.Id, current =>
-            {
-                var entries = current.CacheEntries
-                    .Where(item => !released.Contains(
-                        item.Key,
-                        StringComparer.Ordinal))
-                    .ToDictionary(
-                        item => item.Key,
-                        item => item.Value,
-                        StringComparer.Ordinal);
-                return current with { CacheEntries = entries };
-            }).ConfigureAwait(false);
+            await store.ApplyCacheReleaseAsync(mapping.Id, state, released).ConfigureAwait(false);
             runtimeChanged(
                 await store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
         }
@@ -1617,32 +2197,12 @@ internal sealed class DesktopCloudDriveService : IDisposable
             foreach (var remotePath in remotePaths)
             {
                 var localPath = LocalPath(remotePath);
-                if (!File.Exists(localPath))
-                {
-                    released.Add(remotePath);
-                    continue;
-                }
-                using var handle = CloudFilesInterop.CreateFile(
-                    localPath,
-                    0,
-                    CloudFilesInterop.FileShareReadWriteDelete,
-                    IntPtr.Zero,
-                    CloudFilesInterop.OpenExisting,
-                    CloudFilesInterop.FileFlagOpenReparsePoint,
-                    IntPtr.Zero);
-                if (handle.IsInvalid)
-                {
-                    continue;
-                }
-                if (CloudFilesInterop.CfDehydratePlaceholder(
-                    handle.DangerousGetHandle(),
-                    0,
-                    -1,
-                    0,
-                    IntPtr.Zero) >= 0)
-                {
-                    released.Add(remotePath);
-                }
+                try { _ = File.GetAttributes(localPath); }
+                catch (FileNotFoundException) { released.Add(remotePath); continue; }
+                catch (DirectoryNotFoundException) { released.Add(remotePath); continue; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { continue; }
+                try { if (CloudFilePlaceholderNative.ReleaseCachedContent(localPath, ItemIdentity(remotePath))) released.Add(remotePath); }
+                catch (Exception error) when (error is IOException or InvalidDataException or ExternalException) { /* 保留失败项，调用方报告部分释放。 */ }
             }
             return released;
         }
@@ -1681,24 +2241,12 @@ internal sealed class DesktopCloudDriveService : IDisposable
                     remotePath == "/" && mapping.Scope.Kind == DesktopDriveScopeKind.AllShares
                         ? string.Empty
                         : remotePath;
-                var offset = 0;
-                var allItems = new List<FileItem>();
-                do
-                {
-                    var page = await repository.ListFilesAsync(
-                        listPath,
-                        offset,
-                        500,
-                        cancellation.Token).ConfigureAwait(false);
-                    allItems.AddRange(page.Items);
-                    offset += page.Items.Count;
-                    if (page.Items.Count == 0 || offset >= page.Total)
-                    {
-                        break;
-                    }
-                } while (true);
-                await RegisterPathsAsync(allItems.Select(item => item.Path))
+                var directory = await CloudDriveRemoteRefresh.ReadDirectoryAsync(remotePath,
+                    (offset, token) => repository.ListFilesAsync(listPath, offset, 500, token), cancellation.Token).ConfigureAwait(false);
+                var allItems = directory.Values.ToList();
+                await RegisterPathsAsync(allItems.Select(item => item.Path), cancellation.Token)
                     .ConfigureAwait(false);
+                cancellation.Token.ThrowIfCancellationRequested();
 
                 if (allItems.Count == 0)
                 {
@@ -1709,6 +2257,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                             ParamSize = (uint)Marshal.SizeOf<CloudFilesInterop.TransferPlaceholdersParameters>(),
                             CompletionStatus = CloudFilesInterop.StatusSuccess,
                             PlaceholderTotalCount = 0,
+                            Flags = CloudFilesInterop.TransferPlaceholdersComplete,
                         });
                 }
                 foreach (var batch in allItems.Chunk(500))
@@ -1722,11 +2271,18 @@ internal sealed class DesktopCloudDriveService : IDisposable
                         ParamSize = (uint)Marshal.SizeOf<CloudFilesInterop.TransferPlaceholdersParameters>(),
                         CompletionStatus = CloudFilesInterop.StatusSuccess,
                         PlaceholderTotalCount = allItems.Count,
+                        Flags = CloudFilesInterop.TransferPlaceholdersComplete,
                         PlaceholderArray = arrayPointer,
                         PlaceholderCount = (uint)placeholders.Length,
                     };
                     Execute(operation, parameters);
                 }
+                if (_writebackEnabled)
+                    foreach (var item in allItems.Where(item => !item.IsDirectory))
+                    {
+                        try { await PrepareEditableFileAsync(item.Path, cancellation.Token).ConfigureAwait(false); }
+                        catch (Exception error) { await ReportWritebackStateAsync(error).ConfigureAwait(false); }
+                    }
             }
             catch
             {
@@ -1757,11 +2313,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 ?? DesktopDriveWindowsNameCodec.EscapeSegment(item.Name);
             var namePointer = Marshal.StringToHGlobalUni(fileName);
             allocations.Add(namePointer);
-            var identityValue = DesktopDriveItemIdentity.Identifier(
-                    mapping.Id,
-                    item.Path)
-                ?? throw new InvalidOperationException();
-            _remotePaths[identityValue] = item.Path;
+            var identityValue = ItemIdentity(item.Path);
             var identity = Encoding.UTF8.GetBytes(identityValue);
             var identityPointer = Marshal.AllocHGlobal(identity.Length);
             Marshal.Copy(identity, 0, identityPointer, identity.Length);
@@ -1824,28 +2376,23 @@ internal sealed class DesktopCloudDriveService : IDisposable
             throw new FileNotFoundException();
         }
 
-        private async Task RegisterPathsAsync(IEnumerable<string> remotePaths)
+        private string ItemIdentity(string path) => _remotePaths.SingleOrDefault(item => item.Value == path).Key
+            ?? throw new InvalidDataException("cloud.sync.identity_missing");
+
+        private async Task RegisterPathsAsync(IEnumerable<string> remotePaths, CancellationToken token = default)
         {
-            var values = remotePaths
-                .Select(DesktopDrivePath.Normalize)
-                .OfType<string>()
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
-            foreach (var path in values)
-            {
-                var identity = DesktopDriveItemIdentity.Identifier(mapping.Id, path);
-                if (identity is not null)
-                {
-                    _remotePaths[identity] = path;
-                }
-            }
-            foreach (var item in DesktopDriveWindowsNameCodec.BuildSafeSegments(
-                         _remotePaths.Values))
+            var values = remotePaths.Distinct(StringComparer.Ordinal).ToArray();
+            if (values.Any(path => DesktopDrivePath.Normalize(path) != path))
+                throw new InvalidDataException("cloud.sync.invalid_path");
+            var names = await _syncStore.RegisterLocalNamesAsync(mapping, _safeSegments, values, token).ConfigureAwait(false);
+            var registered = await store.RegisterItemPathsAsync(mapping.Id, values).ConfigureAwait(false);
+            foreach (var item in registered) _remotePaths[item.Key] = item.Value;
+            foreach (var item in names)
             {
                 _safeSegments[item.Key] = item.Value;
             }
-            await store.RegisterItemPathsAsync(mapping.Id, values)
-                .ConfigureAwait(false);
+            foreach (var path in values.Where(path => path != RootRemotePath()))
+                _localRemotePaths[LocalPath(path)] = path;
         }
 
         internal async Task EnsurePlaceholderTreeAsync(
@@ -1877,6 +2424,172 @@ internal sealed class DesktopCloudDriveService : IDisposable
                     file.SizeBytes,
                     file.ModifiedAt);
             }
+        }
+
+        internal async Task<CloudDriveRefreshSummary> RefreshFilesAsync(CancellationToken cancellationToken)
+        {
+            if (!TryBeginCallback()) throw new InvalidOperationException("cloud.refresh.disconnected");
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _refreshLifetime.Token);
+            var token = lifetime.Token;
+            var refreshed = 0; var failed = 0; var removed = 0; var retained = 0;
+            try
+            {
+                var knownPaths = _remotePaths.Values.Distinct(StringComparer.Ordinal).Where(path => path != RootRemotePath()).ToArray();
+                var paths = knownPaths
+                    .Where(path => File.Exists(LocalPath(path))).Order(StringComparer.Ordinal).ToArray();
+                var directories = new Dictionary<string, Task<IReadOnlyDictionary<string, FileItem>>>(StringComparer.Ordinal);
+                var blockedParents = new HashSet<string>(StringComparer.Ordinal);
+                var parents = _remotePaths.Values.Where(path => Directory.Exists(LocalPath(path))).Append(RootRemotePath())
+                    .Distinct(StringComparer.Ordinal).OrderBy(path => path.Count(value => value == '/')).ToArray();
+                foreach (var parent in parents)
+                {
+                    token.ThrowIfCancellationRequested();
+                    try
+                    {
+                        if (blockedParents.Any(blocked => DesktopDrivePath.IsAncestorOrSame(blocked, parent)))
+                            throw new InvalidDataException("cloud.sync.parent_unavailable");
+                        if (parent != RootRemotePath()) _ = ReadPlaceholderState(parent, directory: true);
+                        var listing = CloudDriveRemoteRefresh.ReadDirectoryAsync(parent,
+                            (offset, cancellation) => repository.ListFilesAsync(parent == "/" ? "" : parent, offset, 500, cancellation), token);
+                        directories[parent] = listing;
+                        var entries = await listing.ConfigureAwait(false);
+                        await RegisterPathsAsync(entries.Keys, token).ConfigureAwait(false);
+                        foreach (var item in entries.Values)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            var gate = _rangeTransferGates.GetOrAdd(item.Path, static _ => new SemaphoreSlim(1, 1));
+                            await gate.WaitAsync(token).ConfigureAwait(false);
+                            try
+                            {
+                                if (EnsurePlaceholder(item.Path, item.IsDirectory, item.Size, item.ModifiedAt))
+                                {
+                                    if (!item.IsDirectory)
+                                    {
+                                        // 重新创建的是空占位，不能沿用已消失旧占位的内容版本。
+                                        var old = await _syncStore.ReadVersionAsync(mapping, item.Path, token).ConfigureAwait(false);
+                                        if (old is not null) await _syncStore.RefreshVersionAsync(mapping, item.Path, old, null,
+                                            _ => Task.CompletedTask, token).ConfigureAwait(false);
+                                    }
+                                    refreshed++;
+                                }
+                            }
+                            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                            catch { failed++; }
+                            finally { gate.Release(); }
+                        }
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                    catch (DsmException error) when (error.AuthenticationFailure) { throw; }
+                    catch { blockedParents.Add(parent); failed++; }
+                }
+                var absentRoots = knownPaths.Where(path =>
+                {
+                    var parent = path[..Math.Max(1, path.LastIndexOf('/'))];
+                    return directories.TryGetValue(parent, out var listing) && listing.IsCompletedSuccessfully && !listing.Result.ContainsKey(path);
+                }).ToArray();
+                var removalCandidates = knownPaths.Where(path => absentRoots.Any(root => DesktopDrivePath.IsAncestorOrSame(root, path)))
+                    .OrderByDescending(path => path.Count(value => value == '/')).ToArray();
+                var handledRemovals = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var path in removalCandidates)
+                {
+                    token.ThrowIfCancellationRequested(); handledRemovals.Add(path);
+                    try
+                    {
+                        if (await repository.ProbeFilePresenceAsync(path, token).ConfigureAwait(false) != FilePresence.Missing)
+                            throw new InvalidDataException("cloud.remove.remote_changed");
+                        if ((await store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false)).KeepsOffline(path)) { retained++; continue; }
+                        var gate = _rangeTransferGates.GetOrAdd(path, static _ => new SemaphoreSlim(1, 1));
+                        await gate.WaitAsync(token).ConfigureAwait(false);
+                        try
+                        {
+                            var local = LocalPath(path);
+                            if (File.Exists(local) || Directory.Exists(local))
+                            {
+                                var parent = path[..Math.Max(1, path.LastIndexOf('/'))];
+                                while (parent != RootRemotePath() && parent != "/")
+                                {
+                                    _ = ReadPlaceholderState(parent, directory: true);
+                                    parent = parent[..Math.Max(1, parent.LastIndexOf('/'))];
+                                }
+                            }
+                            var removedLocal = await _syncStore.TryRemoveLocalProjectionAsync(mapping, path,
+                                cancellation => Task.Run(() =>
+                                {
+                                    cancellation.ThrowIfCancellationRequested();
+                                    return CloudFilePlaceholderNative.Remove(local, ItemIdentity(path),
+                                        Directory.Exists(local), _localRemovals);
+                                }, cancellation), token).ConfigureAwait(false);
+                            if (!removedLocal) { retained++; continue; }
+                            await store.UnregisterItemPathAsync(mapping.Id, path).ConfigureAwait(false);
+                            foreach (var item in _remotePaths.Where(item => DesktopDrivePath.IsAncestorOrSame(path, item.Value)).ToArray())
+                                _remotePaths.TryRemove(item.Key, out _);
+                            foreach (var item in _localRemotePaths.Where(item => DesktopDrivePath.IsAncestorOrSame(path, item.Value)).ToArray())
+                                _localRemotePaths.TryRemove(item.Key, out _);
+                            await store.UpdateRuntimeAsync(mapping.Id, state => state with
+                            {
+                                CacheEntries = state.CacheEntries.Where(item => !DesktopDrivePath.IsAncestorOrSame(path, item.Key))
+                                    .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal)
+                            }).ConfigureAwait(false);
+                            runtimeChanged(await store.LoadRuntimeAsync(mapping.Id).ConfigureAwait(false));
+                            removed++;
+                        }
+                        finally { gate.Release(); }
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                    catch (DsmException error) when (error.AuthenticationFailure) { throw; }
+                    catch { failed++; }
+                }
+                foreach (var path in paths.Where(path => !handledRemovals.Contains(path)))
+                {
+                    token.ThrowIfCancellationRequested();
+                    try
+                    {
+                        var parent = path[..Math.Max(1, path.LastIndexOf('/'))];
+                        if (blockedParents.Any(blocked => DesktopDrivePath.IsAncestorOrSame(blocked, parent)))
+                            throw new InvalidDataException("cloud.sync.parent_unavailable");
+                        if (!directories.TryGetValue(parent, out var listing))
+                        {
+                            listing = CloudDriveRemoteRefresh.ReadDirectoryAsync(parent,
+                                (offset, cancellation) => repository.ListFilesAsync(parent == "/" ? "" : parent, offset, 500, cancellation), token);
+                            directories.Add(parent, listing);
+                        }
+                        var files = await listing.ConfigureAwait(false);
+                        if (!files.TryGetValue(path, out var item) || item.IsDirectory)
+                            throw new InvalidDataException("cloud.refresh.remote_missing");
+                        var gate = _rangeTransferGates.GetOrAdd(path, static _ => new SemaphoreSlim(1, 1));
+                        var rehydrate = false;
+                        await gate.WaitAsync(token).ConfigureAwait(false);
+                        try
+                        {
+                            await CloudDriveRemoteRefresh.RefreshAsync(mapping, item, repository, _syncStore,
+                                (candidate, invalidate, cancellation) => Task.Run(() =>
+                                {
+                                    cancellation.ThrowIfCancellationRequested();
+                                    rehydrate = CloudFilePlaceholderNative.Update(LocalPath(path),
+                                        ItemIdentity(path), new()
+                                        {
+                                            FileSize = candidate.Item.Size,
+                                            BasicInfo = new() { LastWriteTime = candidate.Item.ModifiedAt?.UtcDateTime.ToFileTimeUtc() ?? 0 }
+                                        }, invalidate);
+                                }, cancellation), token).ConfigureAwait(false);
+                        }
+                        finally { gate.Release(); }
+                        if (rehydrate)
+                        {
+                            // 版本发布且独占句柄释放后，回调才能安全获取新版本的固定离线内容。
+                            var file = new DesktopDrivePlannedFile(path, item.Size, item.ModifiedAt);
+                            await Task.Run(() => HydrateAsync(new([file], [], [], item.Size, item.Size, 0), null, token), token).ConfigureAwait(false);
+                        }
+                        await RecordCacheEntryAsync(path, item.Size).ConfigureAwait(false);
+                        refreshed++;
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                    catch (DsmException error) when (error.AuthenticationFailure) { throw; }
+                    catch { failed++; }
+                }
+                return new(refreshed, failed, removed, retained);
+            }
+            finally { EndCallback(); }
         }
 
         internal void SetPinned(
@@ -1973,7 +2686,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
             }
         }
 
-        private void EnsurePlaceholder(
+        private bool EnsurePlaceholder(
             string remotePath,
             bool isDirectory,
             long size,
@@ -1982,7 +2695,14 @@ internal sealed class DesktopCloudDriveService : IDisposable
             var localPath = LocalPath(remotePath);
             if (File.Exists(localPath) || Directory.Exists(localPath))
             {
-                return;
+                var actualDirectory = (File.GetAttributes(localPath) & FileAttributes.Directory) != 0;
+                if (actualDirectory != isDirectory) throw new InvalidDataException("cloud.sync.local_type_conflict");
+                using var handle = CloudFilesInterop.CreateFile(localPath, 0x80, CloudFilesInterop.FileShareReadWriteDelete,
+                    IntPtr.Zero, CloudFilesInterop.OpenExisting, CloudFilesInterop.FileFlagOpenReparsePoint |
+                    (isDirectory ? CloudFilesInterop.FileFlagBackupSemantics : 0), IntPtr.Zero);
+                if (handle.IsInvalid) throw new IOException("cloud.sync.local_item_unavailable");
+                _ = CloudFilePlaceholderNative.Read(handle, ItemIdentity(remotePath));
+                return false;
             }
             var parentPath = Path.GetDirectoryName(localPath)
                 ?? throw new IOException("The local cloud path is invalid.");
@@ -1996,11 +2716,7 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 var namePointer = Marshal.StringToHGlobalUni(
                     Path.GetFileName(localPath));
                 allocations.Add(namePointer);
-                var identityValue = DesktopDriveItemIdentity.Identifier(
-                        mapping.Id,
-                        remotePath)
-                    ?? throw new InvalidOperationException();
-                _remotePaths[identityValue] = remotePath;
+                var identityValue = ItemIdentity(remotePath);
                 var identity = Encoding.UTF8.GetBytes(identityValue);
                 var identityPointer = Marshal.AllocHGlobal(identity.Length);
                 Marshal.Copy(identity, 0, identityPointer, identity.Length);
@@ -2040,6 +2756,8 @@ internal sealed class DesktopCloudDriveService : IDisposable
                 {
                     throw new IOException("The cloud placeholder was not created.");
                 }
+                CloudFilesInterop.ThrowIfFailed(placeholders[0].Result, "CfCreatePlaceholders.item");
+                return true;
             }
             finally
             {
@@ -2054,6 +2772,15 @@ internal sealed class DesktopCloudDriveService : IDisposable
             mapping.Scope.Kind == DesktopDriveScopeKind.AllShares
                 ? "/"
                 : DesktopDrivePath.Normalize(mapping.Scope.FolderPath) ?? "/";
+
+        private CloudFilesInterop.PlaceholderStandardInfo ReadPlaceholderState(string remotePath, bool directory = false)
+        {
+            using var handle = CloudFilesInterop.CreateFile(LocalPath(remotePath), 0x80, // FILE_READ_ATTRIBUTES
+                CloudFilesInterop.FileShareReadWriteDelete, IntPtr.Zero, CloudFilesInterop.OpenExisting,
+                CloudFilesInterop.FileFlagOpenReparsePoint | (directory ? CloudFilesInterop.FileFlagBackupSemantics : 0), IntPtr.Zero);
+            if (handle.IsInvalid) throw new IOException("cloud.sync.placeholder_unavailable");
+            return CloudFilePlaceholderNative.Read(handle, ItemIdentity(remotePath));
+        }
 
         private string LocalPath(string remotePath)
         {
@@ -2201,6 +2928,9 @@ internal static class DesktopCloudDriveCapabilityGate
     internal static bool IsRegistrationEnabled =>
         AppContext.TryGetSwitch(RegistrationSwitch, out var enabled) && enabled;
 
+    // 用户确认后仅在本进程内开放只读测试，不写入设置，也不执行任何注册操作。
+    internal static void EnableForCurrentProcess() => AppContext.SetSwitch(RegistrationSwitch, true);
+
     internal static void EnsureRegistrationEnabled()
     {
         if (!IsRegistrationEnabled)
@@ -2250,6 +2980,33 @@ internal static class CloudFileCancelRange
     }
 }
 
+internal static class CloudFileHydrationGuard
+{
+    internal static (long Offset, long Length) AlignRange(long offset, long length, long fileSize)
+    {
+        if (offset < 0 || length <= 0 || offset >= fileSize || length > fileSize - offset)
+            throw new ArgumentOutOfRangeException(nameof(length));
+        const long alignment = 4096;
+        var start = offset / alignment * alignment;
+        var end = offset + length;
+        var padding = (alignment - end % alignment) % alignment;
+        end = padding > fileSize - end ? fileSize : end + padding;
+        return (start, end - start);
+    }
+
+    internal static void Validate(CloudFilesInterop.PlaceholderStandardInfo placeholder, long fileId,
+        long syncRootFileId, CloudDriveContentVersion? knownVersion, long fileSize)
+    {
+        if (placeholder.FileId != fileId || placeholder.SyncRootFileId != syncRootFileId ||
+            placeholder.OnDiskDataSize < 0 || placeholder.ValidatedDataSize < 0 || placeholder.ModifiedDataSize != 0)
+            throw new InvalidDataException("cloud.sync.placeholder_changed");
+        if (knownVersion is null && (placeholder.OnDiskDataSize != 0 || placeholder.ValidatedDataSize != 0))
+            throw new InvalidDataException("cloud.sync.legacy_content_unverified");
+        if (knownVersion is not null && knownVersion.Length != fileSize)
+            throw new InvalidDataException("cloud.sync.version_conflict");
+    }
+}
+
 internal static class CloudFileRangeTransfer
 {
     internal const long MaximumBufferedTransferBytes = 64L * 1024 * 1024;
@@ -2266,7 +3023,8 @@ internal static class CloudFileRangeTransfer
             Task<FileRangeReadResult>> readRange,
         Action<long, byte[]> submitData,
         Action<long, long> submitFailure,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, long, CancellationToken, Task>? persistVersion = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
@@ -2280,24 +3038,24 @@ internal static class CloudFileRangeTransfer
 
         var strongContentVersion = expectedContentVersion;
         var totalLength = expectedTotalLength;
+        var currentOffset = offset;
+        var remaining = length;
         try
         {
-            if (offset != 0 ||
-                length != fileSize ||
-                length > MaximumBufferedTransferBytes)
+            if (persistVersion is null)
             {
                 throw new FileRangeContractException(
                     FileRangeContractFailure.UnsafeSegmentedRead,
-                    "Cloud Files hydration remains disabled for partial or unbounded transfers until content versions can be persisted across callbacks.");
+                    "Cloud Files hydration requires durable content version storage.");
             }
+            if (offset > fileSize || length > fileSize - offset || totalLength is not null && totalLength != fileSize)
+                throw new FileRangeContractException(FileRangeContractFailure.UnexpectedTotalLength, "The requested range is outside the placeholder.");
 
-            var buffered = new byte[checked((int)length)];
-            var currentOffset = offset;
-            var remaining = length;
+            var versionPersisted = false;
             while (remaining > 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var requestLength = Math.Min(remaining, chunkSize);
+                var requestLength = Math.Min(remaining, Math.Min(chunkSize, MaximumBufferedTransferBytes));
                 var result = await readRange(
                     currentOffset,
                     requestLength,
@@ -2350,25 +3108,25 @@ internal static class CloudFileRangeTransfer
                         result.StatusCode);
                 }
 
-                Buffer.BlockCopy(
-                    result.Bytes,
-                    0,
-                    buffered,
-                    checked((int)(currentOffset - offset)),
-                    checked((int)result.ActualByteCount));
+                if (!versionPersisted)
+                {
+                    await persistVersion(strongContentVersion, totalLength.Value, cancellationToken).ConfigureAwait(false);
+                    versionPersisted = true;
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                // 官方允许同次回调多次交付；只交付已核对且版本先行落盘的块，不累计整个文件。
+                submitData(currentOffset, result.Bytes);
                 currentOffset = checked(currentOffset + result.ActualByteCount);
                 remaining -= result.ActualByteCount;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            submitData(offset, buffered);
             return new(true, strongContentVersion, totalLength!.Value);
         }
         catch
         {
             try
             {
-                submitFailure(offset, length);
+                submitFailure(currentOffset, remaining);
             }
             catch
             {

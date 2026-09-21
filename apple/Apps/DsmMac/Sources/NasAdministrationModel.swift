@@ -374,6 +374,7 @@ final class NasSettingsModel {
     @ObservationIgnored private var storageAnalysisTask: Task<Void, Never>?
     @ObservationIgnored private var requestGenerations: [NasSettingsPage: Int] = [:]
     @ObservationIgnored private var performanceGeneration = 0
+    @ObservationIgnored private var diskStatusGenerations: [String: Int] = [:]
 
     init(
         repository: any NasSettingsRepository = UnavailableNasAdministrationRepository(),
@@ -403,7 +404,7 @@ final class NasSettingsModel {
         taskOperationIDs.removeAll()
         connectionOperationIDs.removeAll()
         accountOperationIDs.removeAll()
-        diskOperationIDs.removeAll()
+        // 已发出的硬盘操作仍持有锁，直到原调用结束，不能通过关开模块重复提交。
         ddnsOperationIDs.removeAll()
         networkOperationIDs.removeAll()
         diskTestStatuses.removeAll()
@@ -586,6 +587,12 @@ final class NasSettingsModel {
     }
 
     private func applyStorage(_ snapshot: NasStorageSnapshot) {
+        let previousDisks = storage?.disks ?? []
+        diskTestStatuses = diskTestStatuses.filter { id, _ in
+            guard let previous = previousDisks.first(where: { $0.id == id }),
+                  let current = snapshot.disks.first(where: { $0.id == id }) else { return false }
+            return sameDiskTarget(previous, current)
+        }
         storage = snapshot
         let now = Date()
         let points = snapshot.volumes.compactMap { volume -> StorageUsagePoint? in
@@ -680,6 +687,7 @@ final class NasSettingsModel {
         } catch {
             guard isCurrent(page, generation) else { return }
             loadingPages.remove(page)
+            if page == .storage { diskTestStatuses.removeAll() }
             errors[page] = userMessage(for: error, fallback: L10n.string("ui.f1217f463299df23"))
         }
     }
@@ -690,13 +698,41 @@ final class NasSettingsModel {
 
     @discardableResult
     func loadDiskTestStatus(diskID: String) async throws -> NasDiskTestStatus {
-        let status = try await repository.loadDiskTestStatus(diskID: diskID)
-        guard isModuleEnabled else { throw CancellationError() }
-        diskTestStatuses[diskID] = status
-        return status
+        guard isModuleEnabled, !isLoading(.storage), errors[.storage] == nil,
+              let disk = storage?.disks.first(where: { $0.id == diskID }) else { throw CancellationError() }
+        let storageGeneration = requestGenerations[.storage, default: 0]
+        diskStatusGenerations[diskID, default: 0] += 1
+        let generation = diskStatusGenerations[diskID, default: 0]
+        do {
+            let status = try await repository.loadDiskTestStatus(diskID: diskID)
+            try Task.checkCancellation()
+            guard diskContextIsCurrent(disk, storageGeneration: storageGeneration),
+                  diskStatusGenerations[diskID] == generation else { throw CancellationError() }
+            guard status.diskID == diskID else {
+                throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("ui.75f623dd62397b99"))
+            }
+            diskTestStatuses[diskID] = status
+            return status
+        } catch {
+            if diskContextIsCurrent(disk, storageGeneration: storageGeneration), diskStatusGenerations[diskID] == generation {
+                diskTestStatuses[diskID] = nil
+            }
+            throw error
+        }
+    }
+
+    private func sameDiskTarget(_ left: NasDisk, _ right: NasDisk) -> Bool {
+        left.id == right.id && left.deviceID == right.deviceID && left.supportsSmartTest == right.supportsSmartTest
+    }
+
+    private func diskContextIsCurrent(_ disk: NasDisk, storageGeneration: Int) -> Bool {
+        guard isCurrent(.storage, storageGeneration), errors[.storage] == nil,
+              let current = storage?.disks.first(where: { $0.id == disk.id }) else { return false }
+        return sameDiskTarget(disk, current)
     }
 
     func startDiskTest(diskID: String, type: NasDiskTestType) async throws {
+        guard isModuleEnabled, !isLoading(.storage), errors[.storage] == nil else { throw CancellationError() }
         guard diskOperationIDs.insert(diskID).inserted else {
             throw AppError(
                 category: .serverBusy,
@@ -720,30 +756,26 @@ final class NasSettingsModel {
             )
         }
 
+        let storageGeneration = requestGenerations[.storage, default: 0]
+        diskStatusGenerations[diskID, default: 0] += 1
+        diskTestStatuses[diskID] = nil
         let result = try await repository.startDiskTestResult(
             diskID: diskID,
             type: type
         )
-        if result.requiresRefresh || result.status == .confirmedSuccess,
-           let refreshed = try? await repository.loadDiskTestStatus(diskID: diskID) {
-            diskTestStatuses[diskID] = refreshed
+        guard diskContextIsCurrent(disk, storageGeneration: storageGeneration) else { throw CancellationError() }
+        if result.requiresRefresh || result.status == .confirmedSuccess {
+            _ = try? await loadDiskTestStatus(diskID: diskID)
         }
-        if diskTestStatuses[diskID]?.isRunning == true
-            || result.status == .confirmedSuccess {
-            if diskTestStatuses[diskID]?.isRunning != true {
-                diskTestStatuses[diskID] = diskTestStatus(
-                    diskID: diskID,
-                    isRunning: true,
-                    runningType: type
-                )
-            }
-            return
-        }
+        guard diskContextIsCurrent(disk, storageGeneration: storageGeneration) else { throw CancellationError() }
+        if result.status == .confirmedSuccess { return }
         guard result.status != .cancelledBeforeSubmission else { return }
         throw diskTestError(for: result.status, isStarting: true)
     }
 
     func stopDiskTest(diskID: String) async throws {
+        guard isModuleEnabled, !isLoading(.storage), errors[.storage] == nil,
+              let disk = storage?.disks.first(where: { $0.id == diskID }) else { throw CancellationError() }
         guard diskOperationIDs.insert(diskID).inserted else {
             throw AppError(
                 category: .serverBusy,
@@ -759,22 +791,16 @@ final class NasSettingsModel {
                 safeUserMessage: L10n.string("ui.1022d6b5423a7d10")
             )
         }
+        let storageGeneration = requestGenerations[.storage, default: 0]
+        diskStatusGenerations[diskID, default: 0] += 1
+        diskTestStatuses[diskID] = nil
         let result = try await repository.stopDiskTestResult(diskID: diskID)
-        if result.requiresRefresh || result.status == .confirmedSuccess,
-           let refreshed = try? await repository.loadDiskTestStatus(diskID: diskID) {
-            diskTestStatuses[diskID] = refreshed
+        guard diskContextIsCurrent(disk, storageGeneration: storageGeneration) else { throw CancellationError() }
+        if result.requiresRefresh || result.status == .confirmedSuccess {
+            _ = try? await loadDiskTestStatus(diskID: diskID)
         }
-        if diskTestStatuses[diskID]?.isRunning == false
-            || result.status == .confirmedSuccess {
-            if diskTestStatuses[diskID]?.isRunning != false {
-                diskTestStatuses[diskID] = diskTestStatus(
-                    diskID: diskID,
-                    isRunning: false,
-                    runningType: nil
-                )
-            }
-            return
-        }
+        guard diskContextIsCurrent(disk, storageGeneration: storageGeneration) else { throw CancellationError() }
+        if result.status == .confirmedSuccess { return }
         guard result.status != .cancelledBeforeSubmission else { return }
         throw diskTestError(for: result.status, isStarting: false)
     }
@@ -839,25 +865,6 @@ final class NasSettingsModel {
             category: feedback.category,
             isRetryable: false,
             safeUserMessage: L10n.string(feedback.resourceKey)
-        )
-    }
-
-    private func diskTestStatus(
-        diskID: String,
-        isRunning: Bool,
-        runningType: NasDiskTestType?
-    ) -> NasDiskTestStatus {
-        let previous = diskTestStatuses[diskID]
-        return NasDiskTestStatus(
-            diskID: diskID,
-            isRunning: isRunning,
-            isBusyWithOtherTest: false,
-            runningType: runningType,
-            progressDescription: nil,
-            lastQuickTest: previous?.lastQuickTest,
-            lastExtendedTest: previous?.lastExtendedTest,
-            lastResult: previous?.lastResult,
-            isHistoryAvailable: previous?.isHistoryAvailable ?? false
         )
     }
 
@@ -1069,19 +1076,48 @@ final class NasSettingsModel {
         }
         defer { connectionOperationIDs.remove(connection.id) }
 
-        try await repository.disconnectConnection(connection)
+        do { try await repository.disconnectConnection(connection) }
+        catch let error as AppError {
+            switch error.category {
+            case .networkUnavailable, .timeout, .serverBusy, .invalidResponse, .unknown, .cancelled:
+                throw connectionVerificationError()
+            default: throw error
+            }
+        } catch { throw connectionVerificationError() }
         for attempt in 0..<4 {
-            await activate(.connections, force: true)
-            if connections?.connections.contains(where: { $0.id == connection.id }) == false {
+            var verified: NasConnectionPage?
+            await loadPage(.connections, operation: { [repository] in
+                try await repository.loadConnections(offset: 0, limit: 500)
+            }, apply: { page in connections = page; verified = page })
+            if let verified, verified.connections.count < 500, verified.total <= verified.connections.count,
+               !verified.connections.contains(where: { Self.connectionMayRemain($0, target: connection) }) {
                 return
             }
             if attempt < 3 {
-                try await Task.sleep(for: .milliseconds(500))
+                do { try await Task.sleep(for: .milliseconds(500)) }
+                catch { throw connectionVerificationError() }
             }
         }
-        throw AppError(
+        throw connectionVerificationError()
+    }
+
+    private static func connectionMayRemain(_ current: NasConnection, target: NasConnection) -> Bool {
+        let web = target.type?.uppercased() == "HTTP/HTTPS"
+        let raw = web ? current.deviceID : current.processID
+        let expected = web ? target.deviceID : target.processID
+        if expected == nil || raw == expected { return true }
+        if raw?.isEmpty == false { return false }
+        // 标识缺失的相似条目无法排除，不因派生行 ID 改变就报告已断开。
+        return current.account == target.account
+            && (current.source == nil || target.source == nil || current.source == target.source)
+            && (current.description == nil || target.description == nil || current.description == target.description)
+            && (current.connectedAt == nil || target.connectedAt == nil || current.connectedAt == target.connectedAt)
+    }
+
+    private func connectionVerificationError() -> AppError {
+        AppError(
             category: .invalidResponse,
-            isRetryable: true,
+            isRetryable: false,
             safeUserMessage: L10n.string("ui.f0b77bcbb861e723")
         )
     }
@@ -1097,7 +1133,7 @@ final class NasSettingsModel {
         }
         return try await repository.loadScheduledTaskDraft(
             id: id,
-            realOwner: task?.realOwner ?? task?.owner
+            realOwner: task?.realOwner
         )
     }
 
@@ -1115,17 +1151,38 @@ final class NasSettingsModel {
         )
     }
 
-    func saveTask(_ draft: NasScheduledTaskDraft) async throws {
+    func saveTask(_ draft: NasScheduledTaskDraft, baseline: NasScheduledTaskDraft) async throws {
         let operationID = draft.id.map(String.init) ?? "new"
         try beginTaskOperation(operationID)
         defer { taskOperationIDs.remove(operationID) }
-        try await repository.saveScheduledTask(draft)
-        await activate(.tasks, force: true)
-        let matched = tasks.contains {
-            if let id = draft.id { return $0.id == String(id) }
-            return $0.name == draft.name && $0.owner == draft.owner
+        guard draft.id == baseline.id, draft.realOwner == baseline.realOwner,
+              !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !draft.owner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !draft.script.isEmpty,
+              (0...23).contains(draft.schedule.hour), (0...59).contains(draft.schedule.minute) else {
+            throw taskVerificationError(submitted: false)
         }
-        guard matched else {
+        let currentList = try await repository.loadScheduledTasks()
+        if let id = draft.id {
+            guard let current = currentList.first(where: { $0.id == String(id) }), current.canEdit, current.type == "script",
+                  current.name == baseline.name, current.owner == baseline.owner else { throw taskVerificationError(submitted: false) }
+        } else if currentList.contains(where: { $0.name == draft.name.trimmingCharacters(in: .whitespacesAndNewlines) && $0.owner == draft.owner.trimmingCharacters(in: .whitespacesAndNewlines) }) {
+            throw taskVerificationError(submitted: false)
+        }
+        let currentDetail = try await repository.loadScheduledTaskDraft(id: baseline.id, realOwner: baseline.realOwner)
+        guard currentDetail == baseline else { throw taskVerificationError(submitted: false) }
+        try await executeTaskCommand { try await self.repository.saveScheduledTask(draft) }
+        let verified = try await readTaskCommandResult()
+        let matches = verified.filter {
+            if let id = draft.id { return $0.id == String(id) }
+            return $0.name == draft.name.trimmingCharacters(in: .whitespacesAndNewlines) && $0.owner == draft.owner.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard matches.count == 1, let target = matches.first, let id = Int(target.id), target.type == "script" else { throw taskVerificationError() }
+        let saved: NasScheduledTaskDraft
+        do { saved = try await repository.loadScheduledTaskDraft(id: id, realOwner: target.realOwner) }
+        catch { throw taskVerificationError() }
+        guard saved.name == draft.name.trimmingCharacters(in: .whitespacesAndNewlines), saved.owner == draft.owner.trimmingCharacters(in: .whitespacesAndNewlines),
+              saved.isEnabled == draft.isEnabled, saved.script == draft.script, saved.notifyOnError == draft.notifyOnError,
+              saved.notificationEmails == draft.notificationEmails, saved.schedule == draft.schedule else {
             throw taskVerificationError()
         }
     }
@@ -1134,13 +1191,13 @@ final class NasSettingsModel {
         let id = try taskNumericID(task)
         try beginTaskOperation(task.id)
         defer { taskOperationIDs.remove(task.id) }
-        try await repository.setScheduledTaskEnabled(
-            id: id,
-            realOwner: task.realOwner ?? task.owner,
-            enabled: enabled
-        )
-        await activate(.tasks, force: true)
-        guard tasks.first(where: { $0.id == task.id })?.isEnabled == enabled else {
+        try await prepareTaskCommand(task, running: false)
+        guard task.isEnabled != enabled else { throw taskVerificationError(submitted: false) }
+        try await executeTaskCommand {
+            try await self.repository.setScheduledTaskEnabled(id: id, realOwner: task.realOwner, enabled: enabled)
+        }
+        let verified = try await readTaskCommandResult()
+        guard verified.first(where: { $0.id == task.id && $0.realOwner == task.realOwner })?.isEnabled == enabled else {
             throw taskVerificationError()
         }
     }
@@ -1149,35 +1206,50 @@ final class NasSettingsModel {
         let id = try taskNumericID(task)
         try beginTaskOperation(task.id)
         defer { taskOperationIDs.remove(task.id) }
-        try await repository.runScheduledTask(
-            id: id,
-            realOwner: task.realOwner ?? task.owner
-        )
+        try await prepareTaskCommand(task, running: true)
+        // 此调用只表示运行请求被接受，脚本是否成功必须另看运行记录。
+        try await executeTaskCommand { try await self.repository.runScheduledTask(id: id, realOwner: task.realOwner) }
     }
 
     func deleteTask(_ task: NasScheduledTask) async throws {
         let id = try taskNumericID(task)
         try beginTaskOperation(task.id)
         defer { taskOperationIDs.remove(task.id) }
-        try await repository.deleteScheduledTask(
-            id: id,
-            realOwner: task.realOwner ?? task.owner
-        )
-        await activate(.tasks, force: true)
-        guard !tasks.contains(where: { $0.id == task.id }) else {
+        try await prepareTaskCommand(task, running: false)
+        try await executeTaskCommand { try await self.repository.deleteScheduledTask(id: id, realOwner: task.realOwner) }
+        let verified = try await readTaskCommandResult()
+        guard !verified.contains(where: { $0.id == task.id }) else {
             throw taskVerificationError()
         }
     }
 
     func saveAccount(_ draft: NasAccountDraft) async throws {
-        let operationID = draft.originalName ?? "new"
+        let name = draft.originalName ?? draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseline = draft.originalName.flatMap { original in accounts?.users.first { $0.name == original } }
+        let operationID = Self.accountOperationKey(kind: .user, name: name)
         guard accountOperationIDs.insert(operationID).inserted else {
             throw busyAccountError()
         }
         defer { accountOperationIDs.remove(operationID) }
-        try await repository.saveAccount(draft)
-        await activate(.accounts, force: true)
-        guard accounts?.users.contains(where: { $0.name == draft.name }) == true else {
+        guard !name.isEmpty, draft.originalName == nil || (draft.name == name && baseline?.canEdit == true),
+              draft.originalName != nil || !draft.password.isEmpty,
+              (draft.password.isEmpty ? draft.passwordConfirmation.isEmpty : draft.password == draft.passwordConfirmation) else {
+            throw accountVerificationError(submitted: false)
+        }
+        let current = try await prepareDirectoryChange(kind: .user, name: name, baseline: baseline)
+        if let groups = draft.groups {
+            guard baseline == nil || baseline?.groups != nil, Set(groups).count == groups.count,
+                  groups.allSatisfy({ name in current.groups.contains { $0.name == name } }) else {
+                throw accountVerificationError(submitted: false)
+            }
+        }
+        if let baseline, draft.password.isEmpty, accountSavedFieldsMatch(baseline, draft, name: name) {
+            throw accountVerificationError(submitted: false)
+        }
+        let verified = try await saveAndReloadDirectory { try await self.repository.saveAccount(draft) }
+        guard let saved = verified.users.first(where: { $0.name == name }),
+              baseline == nil || saved.numericID == baseline?.numericID,
+              accountSavedFieldsMatch(saved, draft, name: name) else {
             throw accountVerificationError()
         }
     }
@@ -1190,16 +1262,17 @@ final class NasSettingsModel {
                 safeUserMessage: L10n.string("ui.917cb22bc73cc211")
             )
         }
-        guard accountOperationIDs.insert(account.id).inserted else {
+        let operationID = Self.accountOperationKey(kind: .user, name: account.name)
+        guard accountOperationIDs.insert(operationID).inserted else {
             throw busyAccountError()
         }
-        defer { accountOperationIDs.remove(account.id) }
+        defer { accountOperationIDs.remove(operationID) }
         let result = try await repository.deleteAccountResult(name: account.name)
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.accounts, force: true)
         }
-        if accounts?.users.contains(where: { $0.id == account.id }) == false
-            || result.status == .confirmedSuccess
+        // 目录可能已被其他操作改变，不能覆盖适配器的拒绝或未知结果。
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -1207,14 +1280,22 @@ final class NasSettingsModel {
     }
 
     func saveGroup(_ draft: NasGroupDraft) async throws {
-        let operationID = draft.originalName.map { "group:\($0)" } ?? "new-group"
+        let name = draft.originalName ?? draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseline = draft.originalName.flatMap { original in accounts?.groups.first { $0.name == original } }
+        let operationID = Self.accountOperationKey(kind: .group, name: name)
         guard accountOperationIDs.insert(operationID).inserted else {
             throw busyAccountError()
         }
         defer { accountOperationIDs.remove(operationID) }
-        try await repository.saveGroup(draft)
-        await activate(.accounts, force: true)
-        guard accounts?.groups.contains(where: { $0.name == draft.name }) == true else {
+        guard !name.isEmpty, draft.originalName == nil || (draft.name == name && baseline?.canEdit == true),
+              baseline == nil || baseline?.description != draft.description else {
+            throw accountVerificationError(submitted: false)
+        }
+        _ = try await prepareDirectoryChange(kind: .group, name: name, baseline: baseline)
+        let verified = try await saveAndReloadDirectory { try await self.repository.saveGroup(draft) }
+        guard let saved = verified.groups.first(where: { $0.name == name }),
+              baseline == nil || saved.numericID == baseline?.numericID,
+              saved.description == draft.description else {
             throw accountVerificationError()
         }
     }
@@ -1227,16 +1308,16 @@ final class NasSettingsModel {
                 safeUserMessage: L10n.string("ui.966bbfaa2a0d098a")
             )
         }
-        guard accountOperationIDs.insert(group.id).inserted else {
+        let operationID = Self.accountOperationKey(kind: .group, name: group.name)
+        guard accountOperationIDs.insert(operationID).inserted else {
             throw busyAccountError()
         }
-        defer { accountOperationIDs.remove(group.id) }
+        defer { accountOperationIDs.remove(operationID) }
         let result = try await repository.deleteGroupResult(name: group.name)
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.accounts, force: true)
         }
-        if accounts?.groups.contains(where: { $0.id == group.id }) == false
-            || result.status == .confirmedSuccess
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -1312,11 +1393,64 @@ final class NasSettingsModel {
         )
     }
 
-    private func accountVerificationError() -> AppError {
+    nonisolated static func accountOperationKey(kind: NasAccount.Kind, name: String) -> String {
+        "\(kind.rawValue):\(name.lowercased())"
+    }
+
+    private func prepareDirectoryChange(kind: NasAccount.Kind, name: String, baseline: NasAccount?) async throws -> NasAccountDirectory {
+        let current = try await repository.loadAccountsAndGroups()
+        let existing = (kind == .user ? current.users : current.groups).first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        if let baseline {
+            guard let existing, accountSnapshotMatches(existing, baseline) else { throw accountVerificationError(submitted: false) }
+        } else if existing != nil { throw accountVerificationError(submitted: false) }
+        return current
+    }
+
+    private func saveAndReloadDirectory(_ operation: () async throws -> Void) async throws -> NasAccountDirectory {
+        do { try await operation() }
+        catch let error as AppError {
+            switch error.category {
+            case .networkUnavailable, .timeout, .serverBusy, .invalidResponse, .unknown, .cancelled:
+                await activate(.accounts, force: true)
+                throw accountVerificationError()
+            default: throw error
+            }
+        } catch {
+            await activate(.accounts, force: true)
+            throw accountVerificationError()
+        }
+        var verified: NasAccountDirectory?
+        await loadPage(.accounts, operation: { [repository] in
+            try await repository.loadAccountsAndGroups()
+        }, apply: { directory in
+            accounts = directory
+            verified = directory
+        })
+        // 失败或过期的加载不会调用 apply，不能用页面保留的旧列表确认保存。
+        guard let verified else { throw accountVerificationError() }
+        return verified
+    }
+
+    private func accountSnapshotMatches(_ current: NasAccount, _ baseline: NasAccount) -> Bool {
+        current.id == baseline.id && current.name == baseline.name && current.kind == baseline.kind
+            && current.numericID == baseline.numericID && current.description == baseline.description
+            && current.email == baseline.email && current.isExpired == baseline.isExpired
+            && current.canEdit == baseline.canEdit && current.canDelete == baseline.canDelete
+            && current.groups?.sorted() == baseline.groups?.sorted()
+    }
+
+    private func accountSavedFieldsMatch(_ current: NasAccount, _ draft: NasAccountDraft, name: String) -> Bool {
+        // 旧领域的停用值不可空；解析器仅在必需字段完整且许可明确时保留可编辑状态。
+        current.canEdit && current.name == name && current.description == draft.description && current.email == draft.email
+            && current.isExpired == draft.isExpired
+            && (draft.groups == nil || current.groups?.sorted() == draft.groups?.sorted())
+    }
+
+    private func accountVerificationError(submitted: Bool = true) -> AppError {
         AppError(
-            category: .invalidResponse,
-            isRetryable: true,
-            safeUserMessage: L10n.string("ui.188f52a0f8ffb8c9")
+            category: submitted ? .unknown : .invalidResponse,
+            isRetryable: false,
+            safeUserMessage: L10n.string(submitted ? "account.save.unverified" : "account.save.conflict")
         )
     }
 
@@ -1331,21 +1465,48 @@ final class NasSettingsModel {
     }
 
     private func taskNumericID(_ task: NasScheduledTask) throws -> Int {
-        guard let id = Int(task.id) else {
+        guard let id = Int(task.id), id >= 0 else {
             throw AppError(
                 category: .invalidResponse,
-                isRetryable: true,
+                isRetryable: false,
                 safeUserMessage: L10n.string("ui.06669846e8a043c1")
             )
         }
         return id
     }
 
-    private func taskVerificationError() -> AppError {
+    private func prepareTaskCommand(_ expected: NasScheduledTask, running: Bool) async throws {
+        guard running ? expected.canRun : expected.canEdit else { throw taskVerificationError(submitted: false) }
+        let current = try await repository.loadScheduledTasks()
+        guard let task = current.first(where: { $0.id == expected.id && $0.realOwner == expected.realOwner }),
+              task.name == expected.name, task.owner == expected.owner, task.type == expected.type,
+              task.action == expected.action, task.isEnabled == expected.isEnabled, task.canRun == expected.canRun,
+              task.canEdit == expected.canEdit else { throw taskVerificationError(submitted: false) }
+    }
+
+    private func executeTaskCommand(_ operation: () async throws -> Void) async throws {
+        do { try await operation() }
+        catch let error as AppError {
+            switch error.category {
+            case .networkUnavailable, .timeout, .serverBusy, .invalidResponse, .unknown, .cancelled: throw taskVerificationError()
+            default: throw error
+            }
+        } catch { throw taskVerificationError() }
+    }
+
+    private func readTaskCommandResult() async throws -> [NasScheduledTask] {
+        var verified: [NasScheduledTask]?
+        await loadPage(.tasks, operation: { [repository] in try await repository.loadScheduledTasks() },
+            apply: { values in tasks = values; verified = values })
+        guard let verified else { throw taskVerificationError() }
+        return verified
+    }
+
+    private func taskVerificationError(submitted: Bool = true) -> AppError {
         AppError(
-            category: .invalidResponse,
-            isRetryable: true,
-            safeUserMessage: L10n.string("ui.ca959824992ffae0")
+            category: submitted ? .unknown : .invalidResponse,
+            isRetryable: false,
+            safeUserMessage: L10n.string(submitted ? "task.command.unverified" : "task.command.changed")
         )
     }
 
@@ -1770,17 +1931,19 @@ final class NasSettingsModel {
     }
 
     func saveRemoteAccess(_ settings: NasRemoteAccessSettings) async throws {
+        guard isModuleEnabled else { throw CancellationError() }
         guard !isSavingServiceSettings else { throw settingsBusyError() }
         isSavingServiceSettings = true
         defer { isSavingServiceSettings = false }
+        let generation = requestGenerations[.remoteAccess, default: 0]
         let result = try await repository.saveRemoteAccessSettingsResult(settings)
+        guard isCurrent(.remoteAccess, generation) else { throw CancellationError() }
         if result.requiresRefresh || result.status == .confirmedSuccess {
+            let refreshGeneration = requestGenerations[.remoteAccess, default: 0] + 1
             await activate(.remoteAccess, force: true)
+            guard isCurrent(.remoteAccess, refreshGeneration) else { throw CancellationError() }
         }
-        if remoteAccess.map({
-            Self.remoteAccessSettings($0, match: settings)
-        }) == true
-            || result.status == .confirmedSuccess
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -1837,17 +2000,6 @@ final class NasSettingsModel {
                 category: .cancelled
             )
         }
-    }
-
-    private static func remoteAccessSettings(
-        _ actual: NasRemoteAccessSettings,
-        match expected: NasRemoteAccessSettings
-    ) -> Bool {
-        (expected.isRelayEnabled == nil
-            || actual.isRelayEnabled == expected.isRelayEnabled)
-            && (expected.isRouterConfigurationEnabled == nil
-                || actual.isRouterConfigurationEnabled
-                    == expected.isRouterConfigurationEnabled)
     }
 
     func saveSecurity(_ settings: NasSecuritySettings) async throws {
@@ -2053,14 +2205,8 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.ddns, force: true)
         }
-        if ddns?.records.contains(where: {
-            $0.providerID == draft.normalizedProviderID
-                && $0.hostname.lowercased() == draft.normalizedHostname
-                && $0.username == draft.normalizedUsername
-                && $0.isEnabled == draft.isEnabled
-                && $0.heartbeat == draft.heartbeat
-        }) == true
-            || result.status == .confirmedSuccess
+        // 列表匹配可能只是旧配置，不能覆盖适配器的拒绝或凭据未确认结果。
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }
@@ -2082,10 +2228,8 @@ final class NasSettingsModel {
         if result.requiresRefresh || result.status == .confirmedSuccess {
             await activate(.ddns, force: true)
         }
-        if ddns?.records.contains(where: {
-            $0.providerID == record.providerID
-        }) == false
-            || result.status == .confirmedSuccess
+        // 记录消失可能来自其他操作，只接受适配器已核对的结果。
+        if result.status == .confirmedSuccess
             || result.status == .cancelledBeforeSubmission {
             return
         }

@@ -913,8 +913,10 @@ final class WorkspacePresentationTests: XCTestCase {
         for language in [AppLanguageSelection.simplifiedChinese, .english] {
             AppLanguageStore.shared.selection = language
             for scheme in [ColorScheme.light, .dark] {
+                let pullRepository = ServiceManagementRepositoryStub()
+                let pullTracking = ContainerImagePullModel(repository: pullRepository)
                 let pages: [(String, NSSize, AnyView)] = [
-                    ("pull-image", NSSize(width: 620, height: 540), AnyView(PullImageSheet(search: { _ in [] }, loadTags: { _ in [] }, submit: { _, _ in XCTFail("不能自动下载镜像"); return nil }))),
+                    ("pull-image", NSSize(width: 620, height: 540), AnyView(PullImageSheet(search: { _ in [] }, loadTags: { _ in [] }, tracking: pullTracking))),
                     ("create-vm", NSSize(width: 620, height: 500), AnyView(CreateVirtualMachineSheet(snapshot: nil, submit: { _ in XCTFail("不能自动创建虚拟机"); return false }))),
                     ("edit-vm-stopped", NSSize(width: 560, height: 460), AnyView(EditVirtualMachineSheet(machine: VirtualMachine(id: "synthetic-vm", name: "Synthetic virtual machine", status: "stopped", cpuCount: 2, memoryBytes: 2_147_483_648), submit: { _ in XCTFail("不能自动修改虚拟机"); return false }))),
                     ("edit-vm-running", NSSize(width: 560, height: 460), AnyView(EditVirtualMachineSheet(machine: VirtualMachine(id: "synthetic-vm", name: "Synthetic virtual machine", status: "running", cpuCount: 2, memoryBytes: 2_147_483_648), submit: { _ in XCTFail("不能自动修改运行中虚拟机"); return false }))),
@@ -936,6 +938,8 @@ final class WorkspacePresentationTests: XCTestCase {
                     defer { window.contentView = nil; window.close() }
                     try await settle(host)
                     try snapshot(host, name: "download-sheet-\(name)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                    let pullRequests = await pullRepository.pullRequests
+                    XCTAssertTrue(pullRequests.isEmpty, "不能自动下载镜像")
                     XCTAssertEqual(host.bounds.width, size.width, accuracy: 1)
                     if name == "create-vm" {
                         func findEditableField(_ view: NSView) -> NSTextField? {

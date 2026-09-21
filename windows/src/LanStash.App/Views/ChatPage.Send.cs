@@ -15,8 +15,16 @@ public sealed partial class ChatPage
         {
             return;
         }
-        _composer.Configure(_repository, _viewModel.SelectedConversation);
-        _attachmentComposer.Configure(_repository, _viewModel.SelectedConversation);
+        _isConfiguringComposer = true;
+        try
+        {
+            _composer.Configure(_repository, _viewModel.SelectedConversation);
+            _attachmentComposer.Configure(_repository, _viewModel.SelectedConversation);
+        }
+        finally
+        {
+            _isConfiguringComposer = false;
+        }
         UpdateAttachmentState();
         ComposerPanel.Visibility = Visible(_composer.IsAvailable || _attachmentComposer.IsAvailable);
         if (!string.Equals(ComposerInput.Text, _composer.DraftText, StringComparison.Ordinal))

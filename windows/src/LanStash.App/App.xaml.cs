@@ -11,6 +11,9 @@ public partial class App : Application
 
     public App()
     {
+#if LANSTASH_UI_SMOKE
+        UnhandledException += (_, args) => ViewModels.SmokeSnapshot.RecordFailure(args.Exception);
+#endif
         LocalizationService.Current.Initialize();
         InitializeComponent();
     }

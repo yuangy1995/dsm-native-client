@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-09-10",
+  "updatedAt": "2026-09-20",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -72,7 +72,7 @@
       "apiNames": ["SYNO.Foto.BackgroundTask.File"],
       "paths": ["/webapi/entry.cgi"],
       "methods": ["POST"],
-      "fallback": "接口不支持或权限不足时不发送删除；不按 DSM／Photos 版本白名单拦截；未知结果只核对，不重放，不回退 File Station。",
+      "fallback": "接口不支持或权限不足时不发送删除；不按 DSM／Photos 版本白名单拦截；未知结果只核对，不重放，不回退 File Station。2026-09-19 Apple 删除身份预检去除无关媒体详情解析依赖；明确 DSM 105/106/107/119 拒绝显示原因并按操作标识缓存、不重发，其他提交异常保留未知。接口与权限检查不变；仅源码修正，Swift/macOS 回归及用户具体失败提示待验证。",
       "documentRef": "docs/api/discovery/endpoints/photos-item-deletion.md",
       "verifications": []
     },
@@ -87,7 +87,7 @@
       "apiNames": ["SYNO.Foto.UserInfo", "SYNO.Foto.Setting.User", "SYNO.Foto.Setting.Admin", "SYNO.Foto.Setting.TeamSpace", "SYNO.Foto.Browse.Timeline", "SYNO.Foto.Browse.Item", "SYNO.Foto.Browse.Folder", "SYNO.Foto.Browse.RecentlyAdded", "SYNO.Foto.Browse.Person", "SYNO.Foto.Browse.Concept", "SYNO.Foto.Browse.Geocoding", "SYNO.Foto.Browse.GeneralTag", "SYNO.Foto.Browse.Album", "SYNO.Foto.Browse.Category", "SYNO.Foto.Search.Filter", "SYNO.Foto.Search.Search", "SYNO.Foto.Streaming", "SYNO.Foto.Download", "SYNO.Foto.Browse.Unit", "SYNO.Foto.Sharing.Misc", "SYNO.Foto.PhotoRequest"],
       "paths": ["/webapi/entry.cgi", "/synofoto/api/v2/p/Thumbnail/get"],
       "methods": ["POST", "GET"],
-      "fallback": "照片不可用时提示恢复步骤，不回退 File Station 扫描。共享空间正向权限和全部写操作未验证；浏览器观察环境与 lab-a 关系待确认，verifications 不冒用旧环境。",
+      "fallback": "照片不可用时提示恢复步骤，不回退 File Station 扫描。共享空间正向权限和全部写操作未验证；浏览器观察环境与 lab-a 关系待确认，verifications 不冒用旧环境。2026-09-19 Apple 原件中间文件移至应用临时区，系统协调导出，网络参数不变；Mac 面板已确认替换后可保存，Repository 无覆盖契约保留，实际沙盒行为待验。",
       "documentRef": "docs/api/discovery/endpoints/photos-library-read.md",
       "verifications": []
     },
@@ -125,7 +125,7 @@
         "POST"
       ],
       "fallback": "直连候选全部失败时才尝试；中继或身份核对失败则停止连接。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "documentRef": "docs/api/discovery/endpoints/quickconnect-relay-control.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -149,10 +149,11 @@
       "scope": "File Station",
       "capability": "SMB/NFS 远程位置创建、重连与断开",
       "classification": "internal",
-      "operation": "write",
+      "operation": "mixed",
       "risk": "high",
       "apiNames": [
-        "SYNO.FileStation.Mount"
+        "SYNO.FileStation.Mount",
+        "SYNO.FileStation.Mount.List"
       ],
       "paths": [
         "runtime-discovered-via-SYNO.API.Info"
@@ -160,8 +161,8 @@
       "methods": [
         "POST"
       ],
-      "fallback": "接口缺失、无权限或无法用公开 getinfo 回读时关闭入口。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "fallback": "接口缺失或无权限不提交；提交结果不明只核查，不自动重发。2026-09-20 待归属 DSM 7.2.1-69057 U12 / File Station 1.4.1-1559 官方静态字段为 mount_type/server_ip/mount_point/user_set/auto_mount，CIFS account/passwd，NFS nfs_version/protocol；Mount.List.get 空清单与配置布尔已只读核查，Mount.List.unmount/reconnect 用挂载点数组。Windows 阶段式核心与原生管理已接通，按会话/能力/确认开放用户验证。Mac 已在源码纠正别名、断开端点、NFS 选项并移除无证据只读保证，保留输入校验/确认/取消/回查及不盲目回滚；Mac 已补严格清单与写后源身份/目录双重核查，确认前旧连接绑定、目标可用性和结束时新连接核查已接窗口/仓库源码；本次 Repository 内未知结果记录、只读核查、明确继续及结束未执行步骤已接核心/窗口源码，记录不含密码且不跨重连/进程，Swift/App 未编译，不能宣称已兼容。没有执行真实挂载或断开，不升级旧 lab-a 证据。",
+      "documentRef": "docs/api/discovery/endpoints/file-station-remote-mount.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -223,7 +224,7 @@
             "docs/api/discovery/endpoints/dsm-current-connection.md",
             "docs/api/discovery/endpoints/dsm-system-update-check.md"
           ],
-          "notes": "连接断开属于写行为，本环境未执行，不能继承只读证据等级；系统更新只读检查已记录，下载与安装保持关闭。"
+          "notes": "连接断开属于写行为，本环境未执行，不能继承只读证据等级；系统更新只读检查已记录，下载与安装保持关闭。Windows 连接固定 v1 严格读取、完整目标预检、网页 DID/服务 PID 请求、当前或未知会话更强确认及原始标识回读已有合成证据，原生列表/搜索/当前会话额外确认/关闭取消/只读恢复已有合成证据，关联原始身份不能绕过挂起阻止，写门关闭。Mac 同步修正派生 ID、畸形列表、用户名当前状态推断和缓存回读误报；新 Swift 回归未运行，不提升真实断开行为证据。"
         }
       ]
     },
@@ -297,7 +298,7 @@
             "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-power-schedule.md"
           ],
-          "notes": "合成响应只验证字段白名单、128 条上限、歧义星期降级、能力缺失零请求和零 save，不提升真实环境证据等级。"
+          "notes": "合成响应只验证字段白名单、128 条上限、歧义星期降级、能力缺失零请求和零 save，不提升真实环境证据等级。Windows 已接固定 v1 读取与原生筛选/五态页面；Apple 缺失/冲突根、时间整数、未知启用状态和不完整提示修正待 Mac 回归，仍为 static 候选，未执行真实读取或保存。"
         }
       ]
     },
@@ -335,7 +336,7 @@
             "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/api/discovery/endpoints/dsm-external-storage.md"
           ],
-          "notes": "合成响应只验证字段白名单、明确字节单位、每类 64 项上限、局部降级、能力缺失零请求和零 eject，不提升真实环境证据等级。"
+          "notes": "合成响应只验证字段白名单、明确字节单位、每类 64 项上限、局部降级、能力缺失零请求和零 eject，不提升真实环境证据等级。Windows 已接独立读取和原生筛选/五态列表；整体失败不当空目录，未知容量不补零。Apple 严格容器/字节字段和整体失败、认证错误修正待 Mac 回归。保持 static 候选，未执行真实列表或弹出。"
         }
       ]
     },
@@ -372,7 +373,7 @@
             "docs/api/discovery/endpoints/dsm-zram.md",
             "docs/api/discovery/environments/2026-07-29-lab-a-dsm-69057-u12.md"
           ],
-          "notes": "2026-08-03 只在同一匿名设备观察到官方设置控件，当日未重新核实 DSM 版本；未捕获或保存 API 请求/响应。合成响应只验证字段白名单、明确字节单位、算法归一、能力缺失零请求和零 set，不提升真实环境证据等级。"
+          "notes": "2026-08-03 只在同一匿名设备观察到官方设置控件，当日未重新核实 DSM 版本；未捕获或保存 API 请求/响应。合成响应只验证字段白名单、明确字节单位、算法归一、能力缺失零请求和零 set，不提升真实环境证据等级。Windows 已接 v1 读取和原生只读摘要；Apple 原生布尔、整数容量、冲突别名与错误根修正待 Mac 回归。没有开关或 set 入口，保持 static 候选。"
         }
       ]
     },
@@ -438,7 +439,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。",
+      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {
@@ -460,7 +461,7 @@
             "docs/api/discovery/endpoints/dsm-smart-test.md",
             "docs/api/discovery/endpoints/dsm-hardware-settings.md"
           ],
-          "notes": "S.M.A.R.T. 启停、硬件和 UPS 设置没有为发现而执行。"
+          "notes": "S.M.A.R.T. 启停、硬件和 UPS 设置没有为发现而执行。Windows 新增固定 v1 目标/状态/最近历史读取及正确启停核心合成证据，旧猜测写入口已移除；确认基线、稳定设备互斥、有限回读及不重放恢复已有故障注入覆盖，原生选择/状态/历史/确认/恢复面板已有合成证据，运行中只读刷新且生产门关闭。Apple 不再伪造设备身份、从健康推断许可或把缺失检测状态当作空闲，固定 v1、严格解码、设备/代次缓存绑定与不以旧状态冒充成功的修正均待 Mac 回归。均不提升真实环境证据等级，Android 本波未修改。"
         }
       ]
     },
@@ -482,7 +483,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或权限不足时关闭账号管理；写请求结果无法回读时提示核对，不自动重放。",
+      "fallback": "能力缺失或权限不足时关闭账号管理；写请求结果无法回读时提示核对，不自动重放。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。",
       "documentRef": "docs/api/discovery/endpoints/dsm-account-directory.md",
       "verifications": [
         {
@@ -499,7 +500,7 @@
             "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "只读结构与网页请求已有脱敏记录；共享请求 Fixture 和源码测试不提升当前环境的写行为证据等级。"
+          "notes": "只读结构与网页请求已有脱敏记录；共享请求 Fixture 和源码测试不提升当前环境的写行为证据等级。Windows User/Group 固定 v1 严格读取、完整确认基线删除、同请求不重放和同客户端未知恢复已有合成证据，旧工作区分别保留读取状态；新建/编辑核心已有明确管理员检查、完整基线和密码/字段结果区分的合成证据，复用删除互斥与恢复；原生管理已接目录切换、明确组关系修改、草稿绑定确认、密码清除与未知恢复并有合成证据，保存和删除生产门独立关闭。Mac 修正缺失许可默认放行、根与额外字段解析及目录为空覆盖删除未知结果，保存模型另加完整基线预检、真实新回读和不可重试的未知结果提示，新回归尚未在 Mac 运行；不提升任何真实账号写行为证据等级。"
         }
       ]
     },
@@ -654,7 +655,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按能力逐项隐藏或只读降级；不得自动尝试管理员权限或批量回写完整配置。",
+      "fallback": "按能力逐项隐藏或只读降级；不得自动尝试管理员权限或批量回写完整配置。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {
@@ -666,6 +667,7 @@
             "SYNO.Core.System": "info/shutdown/reboot 客户端使用能力发现版本；关机与重启真实行为未验证",
             "SYNO.Core.Package.Control / Uninstallation / Thumb": "v1；启动/停止已实现列表状态预检、可行性检查、同 ID 防重复和写后回读，真实写行为未验证",
             "SYNO.Core.TaskScheduler": "列表/运行 v3；详情/创建/修改 v4",
+            "SYNO.Core.EventScheduler": "result_list / result_get_file v1；新增读取仅有源码与合成证据",
             "SYNO.Core.EventScheduler": "v1",
             "SYNO.Core.Terminal / FileServ.SMB / FileServ.NFS": "客户端范围 v1-v3",
             "SYNO.Core.Network.Proxy": "客户端范围 v1；写行为未验证",
@@ -690,9 +692,10 @@
             "docs/api/discovery/endpoints/dsm-ddns-settings.md",
             "docs/api/discovery/endpoints/dsm-system-power-actions.md",
             "docs/api/discovery/endpoints/dsm-package-control.md",
-            "docs/api/discovery/endpoints/dsm-package-installation.md"
+            "docs/api/discovery/endpoints/dsm-package-installation.md",
+            "docs/api/discovery/endpoints/dsm-task-scheduler.md"
           ],
-          "notes": "只读结构和网页请求已有记录；套件启动/停止及 Android 远程访问设置的合成请求、故障注入、持久反馈和回读测试不提升当前环境的写行为证据等级。兼容结论仍为 observed/degraded；未执行真实 NAS 或路由器写操作，既有登录、QuickConnect 隧道和 SYNO.API.Info 证据不得外推。"
+          "notes": "只读结构和网页请求已有记录；套件启动/停止及 Android 远程访问设置的合成请求、故障注入、持久反馈和回读测试不提升当前环境的写行为证据等级。Windows 终端/代理已有固定版本读取、原生表单、基线绑定保存、同请求不重放和逐字段回读核心的源码/合成证据；同一客户端重建页面或 Repository 后可只读核对未知保存，生产行为门仍关闭。Windows 文件服务已有字段位图、独立 FTPS、六组整体预检/基线提交/整体回读核心的源码与合成证据；终端、代理、文件服务行为门分别关闭，不因其他功能验收而自动开放。区域时间新增 Windows 固定读取、基线保存/条件校时核心与原生编辑，生产门关闭且不重发未知校时；Apple 解码修复待 Mac 回归，不将 NAS 接受校时请求当作精度验证。Windows 物理网卡 list v2/get v1、明确数组变体和部分读取状态已有合成回归与只读入口，单目标 configs 写入/回读及新地址的新会话+同 NAS 确认恢复已有合成证据，生产网络行为门关闭。Windows 安全四分区基线保存、按网卡 DoS、防火墙任务/完成后清理与原生编辑已有合成证据；旧假成功已移除，生产行为门关闭，未知任务不盲目重发或清理。Windows 硬件/UPS 六组基线保存、LED 两阶段、可信字段规则与原生编辑已有合成证据，生产门关闭，未知 LED 阶段不重发且真实副作用未验收。Windows DDNS 双 v1 读取、服务商身份与只读入口及凭据显示保护已有合成证据，四操作核心已有基线确认、固定请求和故障恢复合成证据，原生四操作确认/反馈/恢复已有合成证据，生产门关闭；Apple 适配器及 Mac 界面层同步修正拒绝/未知被旧配置覆盖和仅换密码超时误报成功，Mac 回归未运行。Windows 套件固定 v2 严格读取、三操作基线预检/不重放回读核心及升级只读提示已有合成证据，原生确认/持续反馈/恢复已有合成证据，启停与卸载能力分离且写门关闭；Mac 列表缺失许可默认放行与畸形列表误作空目录修正待 Swift 回归。Windows 电源固定 v3 预检、单次命令与原生确认已有合成证据，接受/未知都不推断最终设备状态；新登录与用户设备核对后才允许解除本地阻止，生产电源门关闭。Windows 任务计划 list v3/get v4 与 EventScheduler 结果/输出 v1 已有方法级严格读取合成证据，脚本及输出不默认导出，v3 启停/运行/删除核心另有基线与脚本预览核对合成证据，运行接受不等于脚本成功，模糊运行不重放；v4 创建/编辑核心已有服务器模板/双基线和完整配置回读合成证据，脚本不进恢复缓存；原生列表/编辑/命令确认与记录输出已有合成场景证据，生产门关闭。Mac 保存快照/完整新回读修正待回归。Windows 远程访问 v3/v1 独立严格读取、基线保存、可信中继保护及不重放恢复核心已有合成证据，原生表单已有字段失败隔离、确认与部分/未知恢复合成证据且写门关闭；Apple 读取与明确拒绝/未知计数及旧缓存误报修正待 Mac 回归。兼容结论仍为 observed/degraded；未执行真实 NAS 或路由器写操作，既有登录、QuickConnect 隧道和 SYNO.API.Info 证据不得外推。"
         }
       ]
     },
@@ -743,7 +746,7 @@
       "id": "vmm-internal",
       "componentId": "virtual-machine-manager",
       "scope": "Virtual Machine Manager",
-      "capability": "VMM 网页端读取、日志与隔离写能力",
+      "capability": "VMM 网页端读取、日志与受控高级设置；Windows 已纠正内部日志编码及清单截断，2026-09-20 已接五档 CPU 优先级编辑、一次提交与同源核查。同日待归属观察重新核实 DSM 7.2.1-69057 Update 12 / VMM 2.6.5-12202，Network.list/get v2 与 list_avail_interface v1 只读成功；Network.set/delete v1、增量 interfaces_add/interfaces_remove、Guest.create v1 和 unmounted 空槽为官方静态线索，详见 environments/2026-09-20-vmm-network-read-observation.md。此前未执行相关写操作；同日后续有单台专用创建样本（见高级创建观察），不提升历史 lab-a 或发布兼容等级；用户主动验证入口仍需能力/字段/确认/互锁与回读；Windows 现已接网络单项改名/多选删除、完整 list/get 快照与关联 VM 确认、set/delete v1、模块互锁和未知只读恢复。external 改名仅发空 interfaces_add/remove，private 保持 host_id，不改 VLAN/拓扑。仅有合成回归，未执行真实网络写。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -755,15 +758,19 @@
         "SYNO.Virtualization.Repo",
         "SYNO.Virtualization.Network",
         "SYNO.Virtualization.GuestProtect.Plan",
-        "SYNO.Virtualization.Log"
+        "SYNO.Virtualization.Log",
+        "SYNO.Virtualization.Setting.General",
+        "SYNO.Virtualization.Cluster"
       ],
       "paths": [
-        "runtime-discovered-via-SYNO.API.Info"
+        "runtime-discovered-via-SYNO.API.Info",
+        "webman/3rdparty/Virtualization/noVNC/vnc.html"
       ],
       "methods": [
-        "POST"
+        "POST",
+        "GET"
       ],
-      "fallback": "优先公开 SYNO.Virtualization.API.* v1；内部读取失败时显示不可用，写能力保持关闭。",
+      "fallback": "优先公开 SYNO.Virtualization.API.* v1；内部读取失败不阻断无关主流程。2026-09-20 待归属环境 DSM 7.2.1-69057 Update 12 / VMM 2.6.5-12202 已只读核查 Guest v1-v2 JSON 元数据及 get v2/get_setting v1；前端静态确认 set v1、autorun 0/1/2 与 cpu_weight 五档，未保存。Apple 三态/五档/固定 set v1 及移动只读显示已修源码但未构建；Windows 已接一次内部优先级保存、同源回读及未知恢复，其他基础设置仍公开。Windows 控制台独立窗口已接新鲜身份/运行状态、Default 键盘布局 General.get v1、既有证书 HTML 读取、每窗口 InPrivate 与同源 CSP、关闭清理。系统信任连接按实际能力提供主动验证入口。固定指纹根路径连接已接原生 WSS/受限静态资源和二进制消息桥，不给网页 Cookie，CSP 禁止直接连接，按能力提供用户验证入口；2026-09-21 已从官方 app.js 确认 alias 前缀及 app_id 查询并接入托管 URI；语言 JSON 经受限原生桥读取，connect-src none 保持，补齐已观察铃声/图标资源。域名/单段别名/IPv4/IPv6 的真实 WebView2 合成验证通过，实际别名门户仍待验。真实 WebView2 合成回归通过，但实际 NAS noVNC 资源和键鼠未验证，没有连接真实 VNC，不提升历史 lab-a 或发布兼容等级；其他四端未改。同日高级创建续查已取得 get_setting v1 的固件/ISO/磁盘/网卡字段类型，以及 Repo.list v2 的 allocated_size 数字、size/used 字符串；来源仍是待归属的已登录官方页面，不提升历史设备等级。后续用户已授权所有不涉及真实数据的隔离测试，本次专用 Linux/UEFI VM 按向导最低 10 GiB 创建一次，保持 1 CPU/512 MiB、断网、无 ISO、不开机。实际 create v1 回 task_id，Cluster.get_total_progress v1 的任务 finish/success/data.guest_id 及 info.param.synovmm_ui_id 已精确关联并回读配置；只证明该样本，不提升历史基线。内部 Guest.get/list v2、get_setting v1 读内存 KiB，create/set 写 MiB；Windows 正规化内部读取，Mac 按来源换算并纠正保存核查及 allocated_size 原生整数。Swift/Mac 尚未构建。2026-09-21 Windows 高级空白盘创建已接原窗口，支持系统预设/固件/ISO，按 task_id/UUID/完整参数绑定并核对最终配置后才进入已有开机流程；只读恢复不写，已按能力开放测试入口。全量 3593 及原生中英文各 36 场景通过；真实 App 行为仍待验，不提升历史设备等级。详见 endpoints/vmm-internal.md 与 environments/2026-09-20-vmm-parity-read-observation.md。",
       "documentRef": "docs/api/discovery/endpoints/vmm-internal.md",
       "verifications": [
         {
@@ -789,7 +796,7 @@
       "id": "container-manager-internal",
       "componentId": "container-manager",
       "scope": "Container Manager",
-      "capability": "容器、映像、仓库、网络与只读详情、项目和日志",
+      "capability": "容器、映像、仓库、网络与只读详情、项目和日志；2026-09-17 待归属观察只读核实 Image.list 的 offset=0/limit=-1/show_dsm=false 及 tags 数组结构，Windows/macOS 已有请求同步修正。Image.pull_status 与 Entry.Request.Polling.list 仅有官方脚本静态线索；后续兼容模型已获授权，Windows 已接 task_id 绑定进度与恢复，不采用 admin 聚合任务猜测绑定，旧 lab-a 验证与写等级不提升，见端点文档",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -797,6 +804,7 @@
         "SYNO.Docker.Container",
         "SYNO.Docker.Image",
         "SYNO.Docker.Registry",
+        "SYNO.Entry.Request.Polling",
         "SYNO.Docker.Network",
         "SYNO.Docker.Project",
         "SYNO.Docker.Log"
@@ -807,7 +815,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "读取按能力逐项降级；日志失败/不可用不得显示为空，网络缺失关联数量不得默认为零，项目空键值对象是正常空列表。1.0.5 按用户要求移除创建的包类型限制，保留接口检查、确认、校验、互斥和回读；网络删除使用 networks 对象数组，默认及有连接的网络禁止删除。限定实机证据见端点文档，不外推其他环境。",
+      "fallback": "读取按能力逐项降级；日志失败/不可用不得显示为空，网络缺失关联数量不得默认为零，项目空键值对象是正常空列表。1.0.5 按用户要求移除创建的包类型限制，保留接口检查、确认、校验、互斥和回读；网络删除使用 networks 对象数组，默认及有连接的网络禁止删除。限定实机证据见端点文档，不外推其他环境。2026-09-19 Windows 网络创建/删除按用户授权开放，不强加 DSM 管理员身份。2026-09-20 Mac 源码已纠正容器 name 寻址和 delete 的 force=false/preserve_profile=false，增加确认与状态核查；Windows 四操作、筛选多选确认、逐项反馈及会话内恢复原生窗口已接，未知中止批次且核查不重发，已有双语原生合成证据。两端均排除容器或所属项目 is_package 托管实例，未知只核查不重放；只有 Windows 合成证据，Swift/Mac 未构建。Windows Image.delete 已接 images 仓库/标签数组或裸 identity，标签展开、原 ID/标签快照确认、容器占用预检、部分结果与只读恢复；Mac 同日已修 images 参数、多标签身份、占用预检、固定选择确认与独立只读恢复源码，新增 Swift/共享请求测试未在本机执行，无 Mac 修复包。Windows 拉取按标签确认和 task_id 查询，finished/回显匹配/完整列表共同核查；未知不重发，关闭仅停止本地查询，已知任务读取不依赖 Registry 能力，正式验证入口按能力开放。旧镜像删除 fixture 已同步 images/identity，Mac 已补拉取请求/进度/独立只读核查、兼容入口委托、搜索与任务分区、确认及可见轮询源码，恢复限当前仓库实例内存；数字任务编号超过 Double 安全整数范围时不回传。Swift/App 测试未执行，无 Mac 包，不提升行为等级。State 字段只读来源设备待归属，未提升任何写行为验证，详见端点文档。",
       "documentRef": "docs/api/discovery/endpoints/container-manager-internal.md",
       "verifications": [
         {
@@ -825,7 +833,7 @@
             "docs/api/DSM_WEB_API_REFERENCE_ZH.md",
             "docs/compatibility/DSM_COMPATIBILITY_MATRIX.md"
           ],
-          "notes": "当前组件版本为 24.0.2-1535；镜像拉取请求在发送前终止。"
+          "notes": "当前组件版本为 24.0.2-1535；镜像拉取请求在发送前终止。Windows 2026-09-17 已补网络列表的关联数量/名称、驱动、IPv4/CIDR 与 IPv6 可选详情及原生展开合成证据。网络创建核心另有完整配置校验、重名互斥和只核查不重放的合成证据；高级选项回读仍未确认，生产门关闭，原生创建表单/确认/核查已有合成证据。删除核心与原生多选/确认/核查已接对象数组、系统和占用保护、创建删除互斥、原 ID 最终回读与未知不重放，批量仍只有合成证据，生产删除门关闭。Registry.search/tags v1 已接 Windows 只读首批搜索、严格标签解析与原生取消/迟到隔离合成证据，没有增加拉取验证。缺失关联不补零，Apple 同类非整数/冲突计数及字符串标签丢失修正待 Mac 回归；不提升真实环境证据等级。"
         }
       ]
     },
@@ -833,7 +841,7 @@
       "id": "chat-internal",
       "componentId": "synology-chat-server",
       "scope": "Synology Chat Server",
-      "capability": "普通用户会话、消息、附件、提醒、投票与定时消息",
+      "capability": "普通用户会话、消息、附件、提醒、投票与定时消息；Windows 提醒/定时/投票、批量关闭/转发/本人消息删除、新联系人转发与群公告已接入会话/接口能力门、确认和回读，只有合成证据；2026-09-16 元数据观察不提升写行为等级，见端点文档及高级动作记录",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
@@ -856,7 +864,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "内部普通用户接口缺失或精确版本不支持时关闭对应能力，不用公开 Bot/Webhook API 替代。会话创建按能力声明使用 FORM 或 JSON 参数编码，不因 JSON 声明误禁用；2026-09-09 待归属观察及五端影响见 documentRef 的编码纠正节，未提升创建写入证据等级。",
+      "fallback": "内部普通用户接口缺失或精确版本不支持时关闭对应能力，不用公开 Bot/Webhook API 替代。会话创建按能力声明使用 FORM 或 JSON 参数编码，不因 JSON 声明误禁用；2026-09-09 待归属观察及五端影响见 documentRef 的编码纠正节，未提升创建写入证据等级。2026-09-19 Windows 按用户授权移除单一 DSM/套件 build 白名单及系统套件管理读取依赖，保留绑定会话、接口版本/格式、目标/归属预检、防重复及结果核查；其他四端不变，不提升真实验证。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {
@@ -887,7 +895,7 @@
       "id": "chat-realtime",
       "componentId": "synology-chat-server",
       "scope": "Synology Chat Server",
-      "capability": "聊天实时事件与轮询降级",
+      "capability": "聊天实时事件与轮询降级；Windows 已接入原生 WebSocket、EIO 4/3、同源认证与现有证书策略、事件合并及隐藏取消，仅源码/合成证据",
       "classification": "internal",
       "operation": "read",
       "risk": "medium",
@@ -901,7 +909,7 @@
         "WebSocket"
       ],
       "fallback": "连接失败时每 5 秒轮询，连接稳定时每 30 秒 API 校准。",
-      "documentRef": "docs/api/discovery/endpoints/INDEX.md",
+      "documentRef": "docs/api/discovery/endpoints/chat-realtime.md",
       "verifications": [
         {
           "environmentId": "lab-a-dsm-7-2-1-69057-u12-20260729",

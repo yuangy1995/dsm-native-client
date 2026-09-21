@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.download-selection.synthetic-selection",
+  "module": "file-station",
+  "operation": "downloadArchive",
+  "api": { "name": "SYNO.FileStation.Download", "method": "download", "preferredVersion": 2, "resolvedVersion": 2, "resolvedPath": "entry.cgi" },
+  "transport": { "httpMethod": "GET", "requestFormat": "form" },
+  "parameters": [
+    { "name": "mode", "valueType": "string", "encodedValue": "download" },
+    { "name": "path", "valueType": "stringArray", "encodedValue": "[\"<synthetic-file>\",\"<synthetic-folder>\"]" }
+  ],
+  "authentication": { "required": true, "synoTokenRequired": false, "sessionLocations": ["query"], "synoTokenLocations": ["header"] },
+  "policy": { "retryPolicy": "never", "risk": "read", "readbackPolicy": "none" },
+  "source": { "kind": "synthetic", "evidence": "publicDocumentation" }
+}

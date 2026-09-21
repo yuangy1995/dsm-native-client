@@ -75,7 +75,7 @@ public sealed partial class FilesPage
             .Where(item => _batchSelection.Contains(item.Path))
             .Select(item => item.Item)
             .ToArray();
-        if (sources.Length is < 1 or > 20 ||
+        if (sources.Length == 0 ||
             sources.Any(item => !CanSelectForArchiveCompression(item)))
         {
             ShowBatchSelectionMessage(
@@ -98,29 +98,62 @@ public sealed partial class FilesPage
         AutomationProperties.SetName(
             nameBox,
             localization.Get("FileArchiveCompressionNameAutomationName"));
+        var formatBox = new ComboBox { Header = localization.Get("ArchiveFormatLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        formatBox.Items.Add(new ComboBoxItem { Content = localization.Get("ArchiveFormatZip"), Tag = FileArchiveFormat.Zip });
+        formatBox.Items.Add(new ComboBoxItem { Content = localization.Get("ArchiveFormat7z"), Tag = FileArchiveFormat.SevenZip });
+        formatBox.SelectedIndex = 0;
+        var levelBox = new ComboBox { Header = localization.Get("ArchiveLevelLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var (level, key) in new[]
+        {
+            (FileArchiveCompressionLevel.Moderate, "ArchiveLevelModerate"),
+            (FileArchiveCompressionLevel.Store, "ArchiveLevelStore"),
+            (FileArchiveCompressionLevel.Fastest, "ArchiveLevelFastest"),
+            (FileArchiveCompressionLevel.Best, "ArchiveLevelBest"),
+        })
+            levelBox.Items.Add(new ComboBoxItem { Content = localization.Get(key), Tag = level });
+        levelBox.SelectedIndex = 0;
+        var passwordBox = new PasswordBox { Header = localization.Get("ArchivePasswordLabel") };
+        AutomationProperties.SetName(formatBox, localization.Get("ArchiveFormatLabel"));
+        AutomationProperties.SetName(levelBox, localization.Get("ArchiveLevelLabel"));
+        AutomationProperties.SetName(passwordBox, localization.Get("ArchivePasswordLabel"));
+        FileArchiveCompressionOptions SelectedOptions() => new(
+            (FileArchiveFormat)((ComboBoxItem)formatBox.SelectedItem).Tag,
+            (FileArchiveCompressionLevel)((ComboBoxItem)levelBox.SelectedItem).Tag,
+            string.IsNullOrEmpty(passwordBox.Password) ? null : passwordBox.Password);
+        void UpdateArchiveName()
+        {
+            if (SelectedOptions().TryNormalizeName(nameBox.Text, out var normalizedName)) nameBox.Text = normalizedName;
+        }
+        formatBox.SelectionChanged += (_, _) => UpdateArchiveName();
+        nameBox.LostFocus += (_, _) => UpdateArchiveName();
         var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
+        var validationNotice = new InfoBar { IsOpen = false, IsClosable = false, Severity = InfoBarSeverity.Error };
+        panel.Children.Add(validationNotice);
         panel.Children.Add(new TextBlock
         {
             Text = localization.Format("FileArchiveCompressionConfirmMessage", sources.Length),
             TextWrapping = TextWrapping.WrapWholeWords,
         });
         panel.Children.Add(nameBox);
+        panel.Children.Add(formatBox);
+        panel.Children.Add(levelBox);
+        panel.Children.Add(passwordBox);
         panel.Children.Add(new TextBlock
         {
             Text = localization.Get("FileArchiveCompressionFormatNote"),
             TextWrapping = TextWrapping.WrapWholeWords,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[
-                "TextFillColorSecondaryBrush"],
+            Opacity = 0.8,
         });
 
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = localization.Get("FileArchiveCompressionTitle"),
             PrimaryButtonText = localization.Get("FileArchiveCompressionCreateAction"),
             CloseButtonText = localization.Get("ActionCancel"),
             DefaultButton = ContentDialogButton.Primary,
-            Content = panel,
+            Content = new ScrollViewer { Content = panel, MaxHeight = 480 },
         };
         _archiveCompressionDialog = dialog;
         FileArchiveCompressionOutcome? outcome = null;
@@ -132,18 +165,21 @@ public sealed partial class FilesPage
             {
                 return;
             }
-            if (!ValidArchiveName(nameBox.Text) ||
+            var options = SelectedOptions();
+            var nameValid = options.TryNormalizeName(nameBox.Text, out var archiveName);
+            if (!nameValid ||
                 !ArchiveCompressionSourcesAreCurrent(repository, sourceParent, sources))
             {
-                ShowBatchSelectionMessage(
-                    ValidArchiveName(nameBox.Text)
+                validationNotice.Message = localization.Get(nameValid
                         ? "FileArchiveCompressionSourceChanged"
-                        : "FileArchiveCompressionNameInvalid",
-                    InfoBarSeverity.Error);
+                        : "FileArchiveCompressionNameInvalid");
+                validationNotice.IsOpen = true;
                 return;
             }
 
+            validationNotice.IsOpen = false;
             var deferral = args.GetDeferral();
+            passwordBox.Password = string.Empty;
             _isArchiveCompressionSubmitting = true;
             _archiveCompressionCancellation = new CancellationTokenSource();
             dialog.PrimaryButtonText = string.Empty;
@@ -171,7 +207,7 @@ public sealed partial class FilesPage
                     new FileArchiveCompressionRequest(
                         _profileId,
                         sources.Select(item => new FileArchiveCompressionSource(item)).ToArray(),
-                        nameBox.Text),
+                        archiveName) { Options = options },
                     _archiveCompressionCancellation.Token);
                 dialog.Content = BuildArchiveCompressionResult(outcome.Result, localization);
                 dialog.CloseButtonText = localization.Get("FileRecycleCloseAction");
@@ -214,6 +250,7 @@ public sealed partial class FilesPage
         }
         finally
         {
+            passwordBox.Password = string.Empty;
             _archiveCompressionCancellation?.Cancel();
             _archiveCompressionCancellation?.Dispose();
             _archiveCompressionCancellation = null;
@@ -234,21 +271,13 @@ public sealed partial class FilesPage
     private bool ArchiveCompressionSourcesAreCurrent(
         IFileArchiveCompressionRepository repository,
         string parent,
-        IReadOnlyList<FileItem> sources) =>
-        !_disposed && repository.ProfileId == _profileId &&
-        string.Equals(parent, _viewModel.CurrentPath, StringComparison.Ordinal) &&
-        sources.All(source => _viewModel.Items.Any(current =>
-            current.Item == source && CanSelectForArchiveCompression(current.Item)));
-
-    private static bool ValidArchiveName(string value)
+        IReadOnlyList<FileItem> sources)
     {
-        var name = value.Trim();
-        while (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            name = name[..^4];
-        }
-        return name.Length > 0 && name is not ("." or "..") &&
-            name.IndexOfAny(['/', '\\', '\r', '\n', '\0']) < 0;
+        if (_disposed || repository.ProfileId != _profileId ||
+            !string.Equals(parent, _viewModel.CurrentPath, StringComparison.Ordinal)) return false;
+        var currentItems = _viewModel.Items.Where(item => CanSelectForArchiveCompression(item.Item))
+            .Select(item => item.Item).ToHashSet();
+        return sources.All(currentItems.Contains);
     }
 
     private static FrameworkElement BuildArchiveCompressionResult(

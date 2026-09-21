@@ -11,13 +11,19 @@ internal static class CloudFilesInterop
     internal const uint CallbackFetchPlaceholders = 3;
     internal const uint CallbackCancelFetchPlaceholders = 4;
     internal const uint CallbackNotifyFileOpenCompletion = 5;
+    internal const uint CallbackNotifyFileCloseCompletion = 6;
     internal const uint CallbackNotifyDelete = 9;
     internal const uint CallbackNotifyRename = 11;
+    internal const uint CallbackNotifyRenameCompletion = 12;
     internal const uint CallbackNone = uint.MaxValue;
     internal const uint RegisterUpdate = 0x1;
     internal const uint RegisterMarkRootInSync = 0x4;
     internal const uint ConnectRequireFullPath = 0x4;
+    internal const uint ConnectRequireProcessInfo = 0x2;
     internal const uint PlaceholderMarkInSync = 0x2;
+    internal const uint InSyncPolicyDefault = 0;
+    internal const uint PopulationPolicyFull = 2;
+    internal const uint TransferPlaceholdersComplete = 2;
     internal const uint OperationTransferData = 0;
     internal const uint OperationTransferPlaceholders = 4;
     internal const uint OperationAckDelete = 6;
@@ -138,6 +144,31 @@ internal static class CloudFilesInterop
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct FileStandardInfo
+    {
+        internal long AllocationSize;
+        internal long EndOfFile;
+        internal uint NumberOfLinks;
+        internal byte DeletePending;
+        internal byte Directory;
+    }
+
+    // CF_PLACEHOLDER_STANDARD_INFO 的固定前缀；FileIdentity 位于偏移 60，长度由返回值提供。
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct PlaceholderStandardInfo
+    {
+        internal long OnDiskDataSize;
+        internal long ValidatedDataSize;
+        internal long ModifiedDataSize;
+        internal long PropertiesSize;
+        internal uint PinState;
+        internal uint InSyncState;
+        internal long FileId;
+        internal long SyncRootFileId;
+        internal uint FileIdentityLength;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct FileSystemMetadata
     {
         internal FileBasicInfo BasicInfo;
@@ -202,6 +233,16 @@ internal static class CloudFilesInterop
         internal int CompletionStatus;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RenameCallbackParameters
+    {
+        internal uint ParamSize;
+        internal uint Padding;
+        internal uint Flags;
+        internal uint FlagsPadding;
+        internal IntPtr Path;
+    }
+
     [DllImport("cldapi.dll", CharSet = CharSet.Unicode)]
     internal static extern int CfRegisterSyncRoot(
         string syncRootPath,
@@ -222,6 +263,25 @@ internal static class CloudFilesInterop
 
     [DllImport("cldapi.dll")]
     internal static extern int CfDisconnectSyncRoot(ConnectionKey connectionKey);
+
+    [DllImport("cldapi.dll")]
+    internal static extern int CfGetPlaceholderInfo(SafeFileHandle fileHandle, uint infoClass,
+        IntPtr infoBuffer, uint infoBufferLength, out uint returnedLength);
+
+    [DllImport("cldapi.dll")]
+    internal static extern int CfUpdatePlaceholder(SafeFileHandle fileHandle, in FileSystemMetadata metadata,
+        IntPtr fileIdentity, uint fileIdentityLength, IntPtr dehydrateRanges, uint dehydrateRangeCount,
+        uint flags, IntPtr updateUsn, IntPtr overlapped);
+
+    [DllImport("cldapi.dll")]
+    internal static extern int CfSetInSyncState(SafeFileHandle fileHandle, uint state, uint flags, IntPtr usn);
+
+    [DllImport("cldapi.dll")]
+    internal static extern int CfConvertToPlaceholder(SafeFileHandle fileHandle, byte[] fileIdentity,
+        uint fileIdentityLength, uint flags, IntPtr convertUsn, IntPtr overlapped);
+
+    [DllImport("cldapi.dll")]
+    internal static extern int CfRevertPlaceholder(SafeFileHandle fileHandle, uint flags, IntPtr overlapped);
 
     [DllImport("cldapi.dll", CharSet = CharSet.Unicode)]
     internal static extern int CfCreatePlaceholders(
@@ -273,6 +333,26 @@ internal static class CloudFilesInterop
         uint creationDisposition,
         uint flagsAndAttributes,
         IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetFileInformationByHandle(SafeFileHandle fileHandle, int informationClass,
+        in uint information, uint informationSize);
+
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "GetFileInformationByHandleEx")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetFileStandardInfo(SafeFileHandle fileHandle, int informationClass,
+        out FileStandardInfo information, uint informationSize);
+
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "GetFileInformationByHandleEx")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetFileBasicInfo(SafeFileHandle fileHandle, int informationClass,
+        out FileBasicInfo information, uint informationSize);
+
+    [DllImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetFileBasicInfo(SafeFileHandle handle, int informationClass,
+        in FileBasicInfo information, uint informationSize);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

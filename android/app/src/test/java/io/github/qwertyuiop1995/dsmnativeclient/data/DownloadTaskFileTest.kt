@@ -64,6 +64,7 @@ class DownloadTaskFileTest {
         val request = transport.requests[requestIndex]
         assertEquals("SYNO.DownloadStation.Task", request.url.queryParameter("api"))
         assertEquals("create", request.url.queryParameter("method"))
+        assertEquals("2", request.url.queryParameter("version"))
         assertFalse(request.url.toString().contains("REDACTED_SESSION"))
         val body = transport.bodies[requestIndex]
         assertTrue(body.contains("name=\"destination\""))

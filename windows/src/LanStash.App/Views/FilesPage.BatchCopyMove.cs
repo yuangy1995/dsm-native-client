@@ -1,3 +1,4 @@
+using LanStash.App.Features.Files;
 using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Localization;
 using LanStash.Domain;
@@ -78,8 +79,8 @@ public sealed partial class FilesPage
             _batchSelectionOperation != (operation == FileCopyMoveOperation.Copy
                 ? FileBatchSelectionOperation.Copy
                 : FileBatchSelectionOperation.Move) ||
-            _copyMoveRepository is not { } repository ||
-            _copyMoveFolderSource is not { } folders)
+            _copyMoveRepository is null ||
+            _copyMoveFolderSource is null)
         {
             return;
         }
@@ -88,6 +89,21 @@ public sealed partial class FilesPage
             .Where(item => _batchSelection.Contains(item.Path))
             .Select(item => item.Item)
             .ToArray();
+        if (sources.Length != _batchSelection.Count || !BatchCopyMoveSourcesAreCurrent(sources, requireSelection: true))
+        {
+            ShowBatchSelectionMessage("FileCopyMoveBatchSelectionInvalid", InfoBarSeverity.Error);
+            return;
+        }
+        await ShowBatchCopyMoveDialogAsync(operation, sources);
+    }
+
+    private async Task ShowBatchCopyMoveDialogAsync(FileCopyMoveOperation operation, IReadOnlyList<FileItem> selectedSources,
+        string? initialDestination = null, bool requireVisibleSources = true, bool offerUndo = false,
+        bool allowConflictChoices = true, bool requireSelectedItem = false)
+    {
+        if (_disposed || IsReadOnlyLocation() || _batchCopyMoveDialog is not null || _fileOperationRecoveryDialog is not null || _isClosingBatchCopyMove || XamlRoot is null ||
+            _copyMoveRepository is not { } repository || _copyMoveFolderSource is not { } folders) return;
+        var sources = selectedSources.ToArray();
         if (FileCopyMoveBatchViewModel.Validate(sources, operation) !=
             FileCopyMoveBatchValidationStatus.Valid)
         {
@@ -98,6 +114,8 @@ public sealed partial class FilesPage
         }
 
         var sourceParent = _viewModel.CurrentPath;
+        var selectionOperation = _batchSelectionOperation;
+        var requireSelection = requireVisibleSources && _isSelectingCopyMove;
         var model = new FileCopyMoveBatchViewModel(
             repository,
             folders,
@@ -105,14 +123,30 @@ public sealed partial class FilesPage
             sources,
             operation,
             _copyMoveReviewBlocker);
+        if (allowConflictChoices) model.SetConflictPolicy(FileCopyMoveConflictPolicy.Skip);
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            DefaultButton = ContentDialogButton.Primary,
+            RequestedTheme = ActualTheme,
+            DefaultButton = ContentDialogButton.Close,
         };
         _batchCopyMoveModel = model;
         _batchCopyMoveDialog = dialog;
         var localization = LocalizationService.Current;
+        var progressQueued = false;
+        void ProgressChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName != nameof(FileCopyMoveBatchViewModel.ProcessedCount) || progressQueued) return;
+            progressQueued = true;
+            if (!DispatcherQueue.TryEnqueue(() =>
+            {
+                progressQueued = false;
+                if (_disposed || _batchCopyMoveModel != model || model.State != FileCopyMoveBatchState.Submitting || dialog.Content is not StackPanel panel) return;
+                var progress = panel.Children.OfType<TextBlock>().FirstOrDefault(item => item.Name == "BatchCopyMoveProgress");
+                if (progress is not null) progress.Text = FormatBatchCopyMoveProgress(model, localization);
+            })) progressQueued = false;
+        }
+        model.PropertyChanged += ProgressChanged;
 
         async Task RenderAsync()
         {
@@ -136,11 +170,12 @@ public sealed partial class FilesPage
                         : "FileCopyMoveBatchMoveButton",
                     sources.Length)
                 : string.Empty;
+            if (model.State == FileCopyMoveBatchState.ChoosingDestination && model.ConflictPolicy == FileCopyMoveConflictPolicy.Overwrite)
+                dialog.PrimaryButtonText = localization.Format(operation == FileCopyMoveOperation.Copy
+                    ? "FileCopyMoveCopyOverwriteAction" : "FileCopyMoveMoveOverwriteAction", sources.Length);
             dialog.IsPrimaryButtonEnabled = model.CanSubmit;
-            dialog.DefaultButton = string.IsNullOrEmpty(dialog.PrimaryButtonText)
-                ? ContentDialogButton.Close
-                : ContentDialogButton.Primary;
-            dialog.Content = BuildBatchCopyMoveContent(model, localization, RenderAsync);
+            dialog.DefaultButton = ContentDialogButton.Close;
+            dialog.Content = BuildBatchCopyMoveContent(model, localization, RenderAsync, allowConflictChoices);
             await Task.CompletedTask;
         }
 
@@ -150,9 +185,13 @@ public sealed partial class FilesPage
             if (_disposed || repository.ProfileId != _profileId ||
                 folders.ProfileId != _profileId || IsReadOnlyLocation() ||
                 !string.Equals(_viewModel.CurrentPath, sourceParent, StringComparison.Ordinal) ||
-                sources.Any(source => !_viewModel.Items.Any(item =>
-                    SameCopyMoveItem(source, item.Item))))
+                requireSelection && _batchSelectionOperation != selectionOperation ||
+                requireSelectedItem && !SameCopyMoveItem(sources[0], _viewModel.SelectedItem?.Item) ||
+                requireVisibleSources && !BatchCopyMoveSourcesAreCurrent(sources, requireSelection))
             {
+                dialog.Content = new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Error,
+                    Message = localization.Get("FileCopyMoveBatchSelectionInvalid") };
+                dialog.PrimaryButtonText = string.Empty; dialog.DefaultButton = ContentDialogButton.Close;
                 return;
             }
             var deferral = args.GetDeferral();
@@ -188,9 +227,11 @@ public sealed partial class FilesPage
                 return;
             }
             loaded = true;
-            var load = model.LoadFoldersAsync(string.Empty);
+            var load = model.LoadFoldersAsync(initialDestination is null ? string.Empty : MutationParent(initialDestination));
             await RenderAsync();
             await load;
+            if (initialDestination is not null && model.Folders.FirstOrDefault(folder => folder.Path == initialDestination && folder.CanWrite) is { } destination)
+                await model.LoadFoldersAsync(destination.Path, destination.CanWrite);
             await RenderAsync();
         };
 
@@ -200,6 +241,7 @@ public sealed partial class FilesPage
         }
         finally
         {
+            model.PropertyChanged -= ProgressChanged;
             model.Dispose();
             if (ReferenceEquals(_batchCopyMoveModel, model))
             {
@@ -214,6 +256,7 @@ public sealed partial class FilesPage
 
         var completed = model.State == FileCopyMoveBatchState.Completed;
         var summary = model.Summary;
+        var confirmedItems = model.ConfirmedItems;
         ExitDownloadSelectionMode();
         if (!completed)
         {
@@ -229,13 +272,32 @@ public sealed partial class FilesPage
         if (!_disposed)
         {
             UpdateState();
+            if (offerUndo && model.ConflictPolicy != FileCopyMoveConflictPolicy.Overwrite && summary.ConfirmedCount == sources.Length && summary.NeedsReviewCount == 0 && confirmedItems.Count == sources.Length && confirmedItems.All(item => item.CanDelete))
+                ShowDragMoveUndo(confirmedItems, MutationParent(sources[0].Path), model.DestinationPath);
         }
     }
+
+    private bool BatchCopyMoveSourcesAreCurrent(IReadOnlyList<FileItem> sources, bool requireSelection)
+    {
+        var current = new Dictionary<string, FileItem>(StringComparer.Ordinal);
+        foreach (var item in _viewModel.Items)
+            if (!current.TryAdd(item.Path, item.Item)) return false;
+        if (sources.Any(source => !current.TryGetValue(source.Path, out var item) || source.Name != item.Name || !SameCopyMoveItem(source, item))) return false;
+        if (!requireSelection) return true;
+        var visible = VisibleFilesControl().SelectedItems;
+        var selected = visible.OfType<FileBrowserEntry>().Select(item => item.Path).ToHashSet(StringComparer.Ordinal);
+        return !_isSynchronizingDownloadSelection && _batchSelection.Count == sources.Count && visible.Count == sources.Count && selected.Count == sources.Count &&
+            sources.All(source => _batchSelection.Contains(source.Path) && selected.Contains(source.Path));
+    }
+
+    private static string FormatBatchCopyMoveProgress(FileCopyMoveBatchViewModel model, LocalizationService localization) =>
+        localization.Format(model.Operation == FileCopyMoveOperation.Copy ? "FileCopyMoveBatchCopying" : "FileCopyMoveBatchMoving",
+            Math.Min(model.ProcessedCount + 1, model.Sources.Count), model.Sources.Count);
 
     internal static FrameworkElement BuildBatchCopyMoveContent(
         FileCopyMoveBatchViewModel model,
         LocalizationService localization,
-        Func<Task> render)
+        Func<Task> render, bool allowConflictChoices = false)
     {
         var panel = new StackPanel
         {
@@ -253,10 +315,32 @@ public sealed partial class FilesPage
         };
         AutomationProperties.SetHeadingLevel(selected, AutomationHeadingLevel.Level2);
         panel.Children.Add(selected);
+        panel.Children.Add(new ScrollViewer { MaxHeight = 100, Content = new TextBlock
+            { Text = string.Join(Environment.NewLine, model.Sources.Select(source => source.Name)), TextWrapping = TextWrapping.Wrap } });
 
         if (model.State is FileCopyMoveBatchState.ChoosingDestination or
             FileCopyMoveBatchState.LoadingFolders)
         {
+            if (allowConflictChoices)
+            {
+                var replace = new CheckBox
+                {
+                    Name = "CopyMoveOverwriteChoice", Content = localization.Get("FileCopyMoveOverwriteChoice"),
+                    IsChecked = model.ConflictPolicy == FileCopyMoveConflictPolicy.Overwrite,
+                    IsEnabled = model.State == FileCopyMoveBatchState.ChoosingDestination,
+                };
+                replace.Click += async (_, _) =>
+                {
+                    model.SetConflictPolicy(replace.IsChecked == true ? FileCopyMoveConflictPolicy.Overwrite : FileCopyMoveConflictPolicy.Skip);
+                    await render();
+                };
+                panel.Children.Add(replace);
+                panel.Children.Add(new TextBlock
+                {
+                    Text = localization.Get(model.ConflictPolicy == FileCopyMoveConflictPolicy.Overwrite
+                        ? "FileCopyMoveOverwriteWarning" : "FileCopyMoveSkipHint"), TextWrapping = TextWrapping.Wrap,
+                });
+            }
             var hint = new TextBlock
             {
                 Text = localization.Get("FileCopyMoveBatchDestinationHint"),
@@ -281,10 +365,8 @@ public sealed partial class FilesPage
                 MinHeight = 48,
                 IsEnabled = FileCopyMoveViewModel.IsDestination(model.DestinationPath),
             };
-            AutomationProperties.SetName(
-                up,
-                localization.Get(
-                    "FileBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name"));
+            var upLabel = localization.Get("FileBrowserUp.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name");
+            AutomationProperties.SetName(up, upLabel);
             up.Click += async (_, _) =>
             {
                 var separator = model.DestinationPath.LastIndexOf('/');
@@ -347,12 +429,8 @@ public sealed partial class FilesPage
             });
             var progress = new TextBlock
             {
-                Text = localization.Format(
-                    model.Operation == FileCopyMoveOperation.Copy
-                        ? "FileCopyMoveBatchCopying"
-                        : "FileCopyMoveBatchMoving",
-                    Math.Min(model.ProcessedCount + 1, model.Sources.Count),
-                    model.Sources.Count),
+                Name = "BatchCopyMoveProgress",
+                Text = FormatBatchCopyMoveProgress(model, localization),
                 TextWrapping = TextWrapping.WrapWholeWords,
             };
             AutomationProperties.SetLiveSetting(progress, AutomationLiveSetting.Polite);
@@ -380,6 +458,10 @@ public sealed partial class FilesPage
             localization.Get("FileCopyMove_A11y_Status"));
         AutomationProperties.SetLiveSetting(message, AutomationLiveSetting.Assertive);
         panel.Children.Add(message);
+        if (summary.NeedsReviewCount > 0)
+            panel.Children.Add(new TextBlock { Text = localization.Get("FileCopyMoveBatchReviewHint"), TextWrapping = TextWrapping.Wrap });
+        if (model.RequiresSignIn)
+            panel.Children.Add(new TextBlock { Name = "BatchCopyMoveSignIn", Text = localization.Get("FileCopyMoveBatchSignIn"), TextWrapping = TextWrapping.Wrap });
         return panel;
     }
 
@@ -388,6 +470,12 @@ public sealed partial class FilesPage
         FileCopyMoveOperation operation)
     {
         FileCopyMoveBatchStatus.ActionButton = null;
+        if (summary.NeedsReviewCount > 0 && _copyMoveRepository?.SupportsCopyMoveReview == true)
+        {
+            var review = new Button { Content = LocalizationService.Current.Get("FileOperationReviewNow") };
+            review.Click += async (_, _) => await ShowCopyMoveRecoveryAsync();
+            FileCopyMoveBatchStatus.ActionButton = review;
+        }
         FileCopyMoveBatchStatus.Severity = summary.NeedsReviewCount > 0 ||
             summary.FailedCount > 0 || summary.CancelledCount > 0 ||
             summary.NotStartedCount > 0
@@ -412,7 +500,8 @@ public sealed partial class FilesPage
         summary.NeedsReviewCount,
         summary.FailedCount,
         summary.CancelledCount,
-        summary.NotStartedCount);
+        summary.NotStartedCount,
+        summary.SkippedCount);
 
     private void UpdateBatchCopyMoveControls()
     {
@@ -430,8 +519,7 @@ public sealed partial class FilesPage
             _batchSelectionOperation == FileBatchSelectionOperation.Move
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-        var validSelection = _batchSelection.Count is > 0 and <=
-            FileCopyMoveBatchViewModel.MaximumItemCount;
+        var validSelection = _batchSelection.Count > 0;
         CopySelectedItemsButton.IsEnabled = validSelection && _batchCopyMoveDialog is null;
         MoveSelectedItemsButton.IsEnabled = validSelection && _batchCopyMoveDialog is null;
     }

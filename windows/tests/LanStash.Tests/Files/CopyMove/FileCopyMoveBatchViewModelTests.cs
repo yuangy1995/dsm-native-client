@@ -15,11 +15,6 @@ public sealed class FileCopyMoveBatchViewModelTests
             FileCopyMoveBatchValidationStatus.Empty,
             FileCopyMoveBatchViewModel.Validate([], FileCopyMoveOperation.Copy));
         Assert.Equal(
-            FileCopyMoveBatchValidationStatus.TooMany,
-            FileCopyMoveBatchViewModel.Validate(
-                Enumerable.Range(0, 21).Select(index => File($"item-{index}.txt")).ToArray(),
-                FileCopyMoveOperation.Copy));
-        Assert.Equal(
             FileCopyMoveBatchValidationStatus.Duplicate,
             FileCopyMoveBatchViewModel.Validate(
                 [File("same.txt"), File("SAME.TXT")],
@@ -224,6 +219,7 @@ public sealed class FileCopyMoveBatchViewModelTests
             repository.Requests.Select(request => request.Target.Name));
         Assert.Equal(1, repository.MaximumConcurrency);
         Assert.Equal(new FileCopyMoveBatchSummary(2, 2, 0, 0, 0, 0), model.Summary);
+        Assert.Equal(new[] { "/share/target/first.txt", "/share/target/second.txt" }, model.ConfirmedItems.Select(item => item.Path));
         Assert.Equal(FileCopyMoveBatchState.Completed, model.State);
     }
 
@@ -241,6 +237,7 @@ public sealed class FileCopyMoveBatchViewModelTests
 
         Assert.Equal(2, repository.Requests.Count);
         Assert.Equal(new FileCopyMoveBatchSummary(2, 1, 0, 1, 0, 0), model.Summary);
+        Assert.Equal("/share/target/second.txt", Assert.Single(model.ConfirmedItems).Path);
     }
 
     [Theory]
@@ -265,6 +262,7 @@ public sealed class FileCopyMoveBatchViewModelTests
 
         Assert.Single(repository.Requests);
         Assert.Equal(new FileCopyMoveBatchSummary(3, 0, 1, 0, 0, 2), model.Summary);
+        Assert.Empty(model.ConfirmedItems);
         Assert.NotNull(blocker.Find(
             ProfileId,
             FileCopyMoveOperation.Copy,
@@ -371,16 +369,129 @@ public sealed class FileCopyMoveBatchViewModelTests
             "/share/target"));
     }
 
+    [Theory]
+    [InlineData(21, FileCopyMoveOperation.Copy)]
+    [InlineData(205, FileCopyMoveOperation.Copy)]
+    [InlineData(1001, FileCopyMoveOperation.Copy)]
+    [InlineData(21, FileCopyMoveOperation.Move)]
+    [InlineData(205, FileCopyMoveOperation.Move)]
+    [InlineData(1001, FileCopyMoveOperation.Move)]
+    public async Task LargeSelectionsRunCompletelyWithoutReplayingItems(int count, FileCopyMoveOperation operation)
+    {
+        var sources = Enumerable.Range(0, count).Select(index => index % 5 == 0 ? Folder($"d{index}") : File($"f{index}")).ToArray();
+        var repository = new StubRepository(ProfileId);
+        using var model = new FileCopyMoveBatchViewModel(repository, new StubFolders(ProfileId), ProfileId, sources, operation, new FileCopyMoveReviewBlocker());
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true); await model.SubmitAsync(); await model.SubmitAsync();
+        Assert.Equal(count, repository.Requests.Count); Assert.Equal(1, repository.MaximumConcurrency);
+        Assert.Equal(sources.Select(item => item.Path), repository.Requests.Select(item => item.Target.Path));
+        Assert.Equal(count, model.Summary.ConfirmedCount); Assert.Equal(0, model.Summary.NotStartedCount);
+    }
+
+    [Fact]
+    public void LargeNestedAndBoundarySelectionsRetainSafetyAndImmutableSnapshot()
+    {
+        var sources = Enumerable.Range(0, 1001).Select(index => Folder($"d{index}")).ToArray();
+        sources[^1] = File("deep", "/share/source/d0/child");
+        Assert.Equal(FileCopyMoveBatchValidationStatus.NestedSelection, FileCopyMoveBatchViewModel.Validate(sources, FileCopyMoveOperation.Copy));
+        sources[^1] = File("deep", "/share/source/d0-other");
+        Assert.Equal(FileCopyMoveBatchValidationStatus.Valid, FileCopyMoveBatchViewModel.Validate(sources, FileCopyMoveOperation.Copy,
+            "/share/source", FileCopyMoveBatchSourceScope.DescendantsOfRoot));
+        var original = sources.ToArray();
+        using var model = new FileCopyMoveBatchViewModel(new StubRepository(ProfileId), new StubFolders(ProfileId), ProfileId, sources,
+            FileCopyMoveOperation.Copy, "/share/source", FileCopyMoveBatchSourceScope.DescendantsOfRoot, new FileCopyMoveReviewBlocker());
+        sources[0] = File("changed"); Assert.Equal(original, model.Sources);
+        Assert.Throws<NotSupportedException>(() => ((IList<FileItem>)model.Sources)[0] = File("changed"));
+    }
+
+    [Fact]
+    public async Task UnknownResultBeyondTwentyStopsAndPreservesRemainingCount()
+    {
+        var calls = 0; var blocker = new FileCopyMoveReviewBlocker();
+        var repository = new StubRepository(ProfileId, request => Task.FromResult(++calls == 23 ? Outcome(MutationResultStatus.SubmittedButUnverified) : Success(request)));
+        using var model = Model(repository, sources: Enumerable.Range(0, 1001).Select(index => File($"f{index}")).ToArray(), blocker: blocker);
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true); await model.SubmitAsync(); await model.SubmitAsync();
+        Assert.Equal(23, calls); Assert.Equal(22, model.Summary.ConfirmedCount); Assert.Equal(1, model.Summary.NeedsReviewCount); Assert.Equal(978, model.Summary.NotStartedCount);
+        Assert.NotNull(blocker.Find(ProfileId, FileCopyMoveOperation.Copy, "/share/source/f22", "/share/target"));
+    }
+
+    [Fact]
+    public async Task AuthenticationFailureStopsTheRestOfALargeBatch()
+    {
+        var calls = 0;
+        var repository = new StubRepository(ProfileId, request => Task.FromResult(++calls == 23
+            ? new FileCopyMoveOutcome(new MutationResult(1, MutationResultStatus.ConfirmedFailure, "copy", false, false, new(0, 1, 0), MutationErrorCategory.Authentication)) : Success(request)));
+        using var model = Model(repository, sources: Enumerable.Range(0, 205).Select(index => File($"f{index}")).ToArray());
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true); await model.SubmitAsync();
+        Assert.Equal(23, calls); Assert.Equal(22, model.Summary.ConfirmedCount); Assert.Equal(1, model.Summary.FailedCount); Assert.Equal(182, model.Summary.NotStartedCount);
+        Assert.True(model.RequiresSignIn);
+    }
+
+    [Fact]
+    public async Task AuthenticationExceptionStopsAndPreservesUnknownResult()
+    {
+        var calls = 0;
+        var repository = new StubRepository(ProfileId, request => ++calls == 23
+            ? throw new DsmException("synthetic", "synthetic", authenticationFailure: true)
+            : Task.FromResult(Success(request)));
+        using var model = Model(repository, sources: Enumerable.Range(0, 205).Select(index => File($"f{index}")).ToArray());
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true); await model.SubmitAsync();
+        Assert.True(model.RequiresSignIn);
+        Assert.Equal(23, calls);
+        Assert.Equal(22, model.Summary.ConfirmedCount);
+        Assert.Equal(1, model.Summary.NeedsReviewCount);
+        Assert.Equal(0, model.Summary.FailedCount);
+        Assert.Equal(182, model.Summary.NotStartedCount);
+    }
+
+    [Theory]
+    [InlineData(FileCopyMoveOperation.Copy)]
+    [InlineData(FileCopyMoveOperation.Move)]
+    public async Task SkipsAreSeparateFromSuccessFailureAndUndoItems(FileCopyMoveOperation operation)
+    {
+        var calls = 0;
+        var repository = new StubRepository(ProfileId, request => Task.FromResult(++calls % 2 == 0
+            ? new FileCopyMoveOutcome(new MutationResult(1, MutationResultStatus.ConfirmedFailure, "copy", false, false, new(0, 1, 0), MutationErrorCategory.Conflict)) { SkippedExisting = true }
+            : Success(request)));
+        using var model = Model(repository, operation: operation, sources: Enumerable.Range(0, 205).Select(index => File($"f{index}")).ToArray());
+        model.SetConflictPolicy(FileCopyMoveConflictPolicy.Skip);
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true);
+        await model.SubmitAsync();
+        Assert.Equal(205, calls);
+        Assert.Equal(103, model.Summary.ConfirmedCount);
+        Assert.Equal(102, model.Summary.SkippedCount);
+        Assert.Equal(0, model.Summary.FailedCount);
+        Assert.Equal(0, model.Summary.NotStartedCount);
+        Assert.Equal(103, model.ConfirmedItems.Count);
+        Assert.All(repository.Requests, request => Assert.Equal(FileCopyMoveConflictPolicy.Skip, request.ConflictPolicy));
+    }
+
+    [Fact]
+    public async Task OverwritePolicyIsFrozenWhileSubmitting()
+    {
+        FileCopyMoveBatchViewModel? model = null;
+        var repository = new StubRepository(ProfileId, request =>
+        {
+            model!.SetConflictPolicy(FileCopyMoveConflictPolicy.Skip);
+            return Task.FromResult(Success(request));
+        });
+        using var value = Model(repository, sources: [File("first"), File("second")]); model = value;
+        model.SetConflictPolicy(FileCopyMoveConflictPolicy.Overwrite);
+        await model.LoadFoldersAsync("/share/target", destinationCanWrite: true); await model.SubmitAsync();
+        Assert.Equal(2, model.Summary.ConfirmedCount);
+        Assert.All(repository.Requests, request => Assert.Equal(FileCopyMoveConflictPolicy.Overwrite, request.ConflictPolicy));
+    }
+
     private static FileCopyMoveBatchViewModel Model(
         StubRepository repository,
         StubFolders? folders = null,
         IReadOnlyList<FileItem>? sources = null,
-        FileCopyMoveReviewBlocker? blocker = null) => new(
+        FileCopyMoveReviewBlocker? blocker = null,
+        FileCopyMoveOperation operation = FileCopyMoveOperation.Copy) => new(
             repository,
             folders ?? new StubFolders(ProfileId),
             ProfileId,
             sources ?? [File("first.txt"), File("second.txt")],
-            FileCopyMoveOperation.Copy,
+            operation,
             blocker ?? new FileCopyMoveReviewBlocker());
 
     private static FileItem File(string name, string parent = "/share/source") =>

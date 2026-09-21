@@ -1,0 +1,21 @@
+<UserControl
+    x:Class="LanStash.App.Views.FileEntryIcon"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw">
+    <Viewbox Stretch="Uniform">
+        <Grid Width="64" Height="64">
+            <Grid x:Name="FolderVisual" Width="60" Height="48">
+                <Path Data="M 1,9 Q 1,2 6,2 L 20,2 Q 23,2 25,5 L 28,8 L 55,8 Q 59,8 59,13 L 59,42 Q 59,47 54,47 L 6,47 Q 1,47 1,42 Z" Fill="#619EF3" />
+                <Rectangle Margin="4,11,4,8" RadiusX="2" RadiusY="2" Fill="#D4E7FF" />
+                <Path Data="M 1,16 Q 1,13 5,13 L 55,13 Q 59,13 59,17 L 59,43 Q 59,47 55,47 L 5,47 Q 1,47 1,43 Z">
+                    <Path.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#8DBDFF" Offset="0"/><GradientStop Color="#5997EC" Offset="1"/></LinearGradientBrush></Path.Fill>
+                </Path>
+            </Grid>
+            <Grid x:Name="DocumentVisual" Visibility="Collapsed" Width="42" Height="54">
+                <Path Data="M 4,1 L 28,1 L 41,14 L 41,49 Q 41,53 37,53 L 4,53 Q 1,53 1,49 L 1,5 Q 1,1 4,1 Z" Fill="#F4F7FC" Stroke="#A9BCD5" StrokeThickness="1" />
+                <Path Data="M 28,1 L 28,14 L 41,14 M 10,27 L 32,27 M 10,34 L 32,34 M 10,41 L 26,41" Stroke="#A9BCD5" StrokeThickness="2" />
+            </Grid>
+        </Grid>
+    </Viewbox>
+</UserControl>

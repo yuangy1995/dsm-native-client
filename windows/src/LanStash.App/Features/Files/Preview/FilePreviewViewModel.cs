@@ -346,15 +346,20 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
         Guid profileId,
         (long Generation, CancellationToken Token, IFilePreviewRepository Repository) request)
     {
+        var progressGate = new object();
+        var acceptsProgress = true;
         var progress = new Progress<ForegroundTransferProgress>(value =>
         {
-            if (IsCurrent(request.Generation, request.Token, request.Repository))
+            lock (progressGate)
             {
-                Snapshot = Snapshot with
+                if (acceptsProgress && IsCurrent(request.Generation, request.Token, request.Repository))
                 {
-                    CompletedBytes = value.BytesTransferred,
-                    TotalBytes = value.TotalBytes,
-                };
+                    Snapshot = Snapshot with
+                    {
+                        CompletedBytes = value.BytesTransferred,
+                        TotalBytes = value.TotalBytes,
+                    };
+                }
             }
         });
         IFilePreviewArtifact? artifact = null;
@@ -367,23 +372,20 @@ public sealed class FilePreviewViewModel : ObservableObject, IDisposable
                 request.Token).ConfigureAwait(true);
             var metadata = await TryReadMetadataAsync(artifact, kind, request.Token)
                 .ConfigureAwait(true);
-            if (!IsCurrent(request.Generation, request.Token, request.Repository))
+            lock (progressGate)
             {
-                return;
+                // 进度和最终快照使用同一个交接点，迟到回调不能覆盖产物/元数据。
+                acceptsProgress = false;
+                if (!IsCurrent(request.Generation, request.Token, request.Repository)) return;
+                Snapshot = new FilePreviewSnapshot(
+                    profileId, item, kind, FilePreviewPhase.Ready,
+                    Artifact: artifact, MediaMetadata: metadata, CompletedBytes: item.Size, TotalBytes: item.Size);
+                artifact = null;
             }
-            Snapshot = new FilePreviewSnapshot(
-                profileId,
-                item,
-                kind,
-                FilePreviewPhase.Ready,
-                Artifact: artifact,
-                MediaMetadata: metadata,
-                CompletedBytes: item.Size,
-                TotalBytes: item.Size);
-            artifact = null;
         }
         finally
         {
+            lock (progressGate) acceptsProgress = false;
             if (artifact is not null)
             {
                 await artifact.DisposeAsync().ConfigureAwait(true);

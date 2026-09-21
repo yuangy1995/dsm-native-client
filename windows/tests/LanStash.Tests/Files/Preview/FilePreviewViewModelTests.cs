@@ -225,6 +225,29 @@ public sealed class FilePreviewViewModelTests
     }
 
     [Fact]
+    public async Task LateArtifactProgressCannotMutateReadySnapshot()
+    {
+        var store = new ArtifactStoreStub(); var profile = Guid.NewGuid();
+        using var model = new FilePreviewViewModel(store, new MetadataReaderStub(new(100, 200, null, null, null)));
+        var queue = new QueuedProgressContext(); var previous = SynchronizationContext.Current;
+        Task opening;
+        try { SynchronizationContext.SetSynchronizationContext(queue); opening = model.OpenAsync(new PreviewRepository(profile), profile, Item("photo.jpg", 10)); }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+        Assert.True(opening.IsCompleted); await opening;
+        store.LastProgress!.Report(new(1, 10)); queue.Drain();
+        Assert.Equal(FilePreviewPhase.Ready, model.Snapshot.Phase);
+        Assert.Equal(10, model.Snapshot.CompletedBytes);
+        Assert.NotNull(model.Snapshot.Artifact); Assert.Equal(100, model.Snapshot.MediaMetadata!.PixelWidth);
+    }
+
+    private sealed class QueuedProgressContext : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Work, object? State)> _pending = [];
+        public override void Post(SendOrPostCallback d, object? state) => _pending.Enqueue((d, state));
+        public void Drain() { while (_pending.TryDequeue(out var item)) item.Work(item.State); }
+    }
+
+    [Fact]
     public async Task ImageArtifactCarriesMetadataFromReader()
     {
         var profile = Guid.NewGuid();
@@ -715,6 +738,7 @@ public sealed class FilePreviewViewModelTests
     private sealed class ArtifactStoreStub : IFilePreviewArtifactStore
     {
         public List<ArtifactStub> Artifacts { get; } = [];
+        public IProgress<ForegroundTransferProgress>? LastProgress { get; private set; }
 
         public Task<IFilePreviewArtifact> PrepareAsync(
             IFileRangeReader repository,
@@ -725,6 +749,7 @@ public sealed class FilePreviewViewModelTests
             cancellationToken.ThrowIfCancellationRequested();
             var artifact = new ArtifactStub();
             Artifacts.Add(artifact);
+            LastProgress = progress;
             progress?.Report(new ForegroundTransferProgress(item.Size, item.Size));
             return Task.FromResult<IFilePreviewArtifact>(artifact);
         }

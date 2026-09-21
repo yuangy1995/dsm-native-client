@@ -135,6 +135,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.machines.first?.memoryBytes, 2_147_483_648)
         XCTAssertEqual(snapshot.machines.first?.storageBytes, 10_737_418_240)
         XCTAssertEqual(snapshot.machines.first?.autoStart, true)
+        XCTAssertEqual(snapshot.machines.first?.startupBehavior, .restorePreviousState)
         let requests = await transport.recordedRequests()
         XCTAssertEqual(requests.count, 1)
         let request = try XCTUnwrap(requests.first)
@@ -196,7 +197,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertTrue(emptySnapshot.machines.isEmpty)
 
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试","status":"running","vcpu_num":2,"vram_size":1024,"vdisks":[{"vdisk_size":2048}],"autorun":true,"host_id":"private-host","ip":"192.0.2.1","description":"must-not-cross","logs":["must-not-cross"]}]}}"#)
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试","status":"running","vcpu_num":2,"vram_size":1024,"vdisks":[{"vdisk_size":2048}],"autorun":2,"host_id":"private-host","ip":"192.0.2.1","description":"must-not-cross","logs":["must-not-cross"]}]}}"#)
         ])
         let repository = try makeRepository(
             apiNames: [DsmAPIName.virtualizationAPIGuest],
@@ -211,7 +212,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 cpuCount: 2,
                 memoryBytes: 1_073_741_824,
                 storageBytes: 2_147_483_648,
-                autoStart: true
+                startupBehavior: .powerOn
             )
         ])
     }
@@ -632,7 +633,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         )
     }
 
-    func test链接创建固定官方V1且必须回读稳定任务ID() async throws {
+    func test指定目录链接使用官方V2且必须回读稳定任务ID() async throws {
         let transport = MockHTTPTransport(responses: [
             downloadTaskListResponse(ids: []),
             response(#"{"success":true,"data":{"taskid":"task-1"}}"#),
@@ -668,7 +669,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             requestValue("method", in: $0) == "create"
         })
         XCTAssertEqual(requestValue("api", in: create), DsmAPIName.downloadStationTask)
-        XCTAssertEqual(requestValue("version", in: create), "1")
+        XCTAssertEqual(requestValue("version", in: create), "2")
         XCTAssertEqual(requestValue("uri", in: create), "https://example.invalid/synthetic.iso")
         XCTAssertEqual(requestValue("destination", in: create), "downloads")
         XCTAssertFalse(requests.contains {
@@ -773,7 +774,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         try await repository.createDownloadTask(
             fileURL: fileURL,
             destination: "downloads",
-            unzipPassword: "example"
+            unzipPassword: "  example  "
         )
 
         let requests = await transport.recordedRequests()
@@ -781,13 +782,14 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(requestValue("api", in: request), DsmAPIName.downloadStationTask)
         XCTAssertEqual(requestValue("method", in: request), "create")
+        XCTAssertEqual(requestValue("version", in: request), "2")
         XCTAssertNil(requestValue("unzip_password", in: request))
         XCTAssertFalse(request.url?.absoluteString.contains("REDACTED_SESSION") == true)
         let bodies = await transport.recordedUploadBodies()
         let body = try XCTUnwrap(bodies.first)
         let bodyText = try XCTUnwrap(String(data: body, encoding: .utf8))
         XCTAssertTrue(bodyText.contains("name=\"destination\"\r\n\r\ndownloads"))
-        XCTAssertTrue(bodyText.contains("name=\"unzip_password\"\r\n\r\nexample"))
+        XCTAssertTrue(bodyText.contains("name=\"unzip_password\"\r\n\r\n  example  \r\n"))
         XCTAssertTrue(bodyText.contains("name=\"file\""))
         XCTAssertTrue(bodyText.contains(fileURL.lastPathComponent))
     }
@@ -815,7 +817,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         }
     }
 
-    func test任务文件创建结果固定官方V1且回读确认任务() async throws {
+    func test指定目录任务文件创建使用官方V2且回读确认任务() async throws {
         let transport = MockHTTPTransport(responses: [
             downloadTaskListResponse(ids: []),
             response(#"{"success":true,"data":{"taskid":"task-file-1"}}"#),
@@ -852,7 +854,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             requestValue("method", in: $0) == "create"
         })
         XCTAssertEqual(requestValue("api", in: create), DsmAPIName.downloadStationTask)
-        XCTAssertEqual(requestValue("version", in: create), "1")
+        XCTAssertEqual(requestValue("version", in: create), "2")
         XCTAssertNil(requestValue("unzip_password", in: create))
         XCTAssertFalse(create.url?.absoluteString.contains("REDACTED_SESSION") == true)
         let bodies = await transport.recordedUploadBodies()
@@ -905,7 +907,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(requestValue("method", in: requests[3]), "getconfig")
     }
 
-    func test下载任务删除回读确认并保留删除数据选项() async throws {
+    func test结束任务使用ForceComplete并仅确认任务已移除() async throws {
         let task = #"{"id":"task-1","title":"示例任务","status":"paused"}"#
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"tasks":[\#(task)]}}"#),
@@ -930,6 +932,10 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         })
         XCTAssertEqual(requestValue("id", in: deletion), "task-1")
         XCTAssertEqual(requestValue("force_complete", in: deletion), "true")
+        XCTAssertNil(requestValue("remove_data", in: deletion))
+        XCTAssertFalse(requests.contains {
+            requestValue("api", in: $0)?.hasPrefix("SYNO.FileStation.") == true
+        })
     }
 
     func test下载任务删除提交超时返回未确认且不自动重放() async throws {
@@ -1181,6 +1187,18 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertTrue(requests.allSatisfy { requestValue("method", in: $0) == "list" })
     }
 
+    func test网络计数拒绝布尔小数溢出和冲突别名() async throws {
+        for fields in [#""container_count":false"#, #""container_count":0.5"#, #""container_count":1e30"#, #""container_count":0,"using":1"#] {
+            let transport = ServiceRoutingTransport(responses: [
+                DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
+                DsmAPIName.dockerNetwork: response("{\"success\":true,\"data\":{\"network\":[{\"id\":\"synthetic\",\"name\":\"Synthetic\",\(fields)}]}}")
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerNetwork], transport: transport)
+            let snapshot = try await repository.loadContainerManager()
+            XCTAssertTrue(snapshot.networks.isEmpty); XCTAssertTrue(snapshot.failedSections.contains(.networks))
+        }
+    }
+
     func test官方项目空对象是正常空列表而不是加载失败() async throws {
         let transport = ServiceRoutingTransport(responses: [
             DsmAPIName.dockerContainer: response(containerListResponse(ids: [])),
@@ -1424,6 +1442,170 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertFalse(snapshot.failedSections.contains(.logs))
     }
 
+    func test容器主清单显示真实重启过渡态() async throws {
+        let transport = MockHTTPTransport(responses: [response(containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z", restarting: true))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertEqual(snapshot.containers.first?.status, "restarting")
+    }
+
+    func test重启过渡态仍能停止或重启但不能删除() async throws {
+        for running in [false, true] {
+            for action in [ContainerAction.stop, .restart] {
+                let transport = MockHTTPTransport(responses: [
+                    response(containerControlResponse(running: running, startedAt: "2026-01-01T00:00:00Z", restarting: true)),
+                    response(#"{"success":true}"#),
+                    response(containerControlResponse(running: action == .restart, startedAt: "2026-01-01T01:00:00Z")),
+                ])
+                let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+                try await repository.controlContainers(ids: ["synthetic-id"], action: action)
+                let requests = await transport.recordedRequests()
+                XCTAssertEqual(requests.filter { requestValue("method", in: $0) == action.rawValue }.count, 1)
+            }
+        }
+        let transport = MockHTTPTransport(responses: [response(containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z", restarting: true))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        let result = try await repository.deleteContainersResult(ids: ["synthetic-id"])
+        XCTAssertFalse(result.submitted)
+        let requests = await transport.recordedRequests()
+        XCTAssertFalse(requests.contains { requestValue("method", in: $0) == "delete" })
+    }
+
+    func test停止后仍在重启不误报成功也不重发() async throws {
+        let looping = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z", restarting: true)
+        let transport = MockHTTPTransport(responses: [response(looping), response(#"{"success":true}"#), response(looping),
+            response(containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z"))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        do { try await repository.controlContainers(ids: ["synthetic-id"], action: .stop); XCTFail("过渡状态不能确认停止") }
+        catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        try await repository.controlContainers(ids: ["synthetic-id"], action: .stop)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "stop" }.count, 1)
+    }
+
+    func test容器操作使用名称并按状态回读支持两种编码() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            for action in [ContainerAction.start, .stop, .restart] {
+                let initialRunning = action != .start
+                let transport = MockHTTPTransport(responses: [
+                    response(containerControlResponse(running: initialRunning, startedAt: "2026-01-01T00:00:00.000Z")),
+                    response(#"{"success":true}"#),
+                    response(containerControlResponse(running: action != .stop, startedAt: "2026-01-01T01:00:00.000Z")),
+                ])
+                let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer],
+                    requestFormatOverrides: [DsmAPIName.dockerContainer: format], transport: transport)
+                try await repository.controlContainers(ids: ["synthetic-id"], action: action)
+                let requests = await transport.recordedRequests()
+                XCTAssertEqual(requests.count, 3)
+                let sent = requests[1]
+                XCTAssertEqual(requestValue("name", in: sent), format == .json ? #""synthetic-worker""# : "synthetic-worker")
+                XCTAssertNil(requestValue("id", in: sent))
+                XCTAssertEqual(requestValue("method", in: sent), action.rawValue)
+                XCTAssertEqual(requestValue("version", in: sent), "1")
+            }
+        }
+    }
+
+    func test容器重启必须启动时间变化且未确认不能重放() async throws {
+        let before = containerControlResponse(running: true, startedAt: "2026-01-01T00:00:00Z")
+        let transport = MockHTTPTransport(responses: [response(before), response(#"{"success":true}"#), response(before),
+            response(containerControlResponse(running: true, startedAt: "2026-01-01T01:00:00Z"))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        do { try await repository.controlContainers(ids: ["synthetic-id"], action: .restart); XCTFail("未确认重启被误报成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        try await repository.controlContainers(ids: ["synthetic-id"], action: .restart)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "restart" }.count, 1)
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "list" }.count, 3)
+    }
+
+    func test容器启动断线后只能回读不能再次提交() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z"))),
+            .urlError(.networkConnectionLost),
+            .response(response(containerControlResponse(running: true, startedAt: "2026-01-01T01:00:00Z"))),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        do { try await repository.controlContainers(ids: ["synthetic-id"], action: .start); XCTFail("断线应保留未确认") }
+        catch { }
+        try await repository.controlContainers(ids: ["synthetic-id"], action: .start)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "start" }.count, 1)
+    }
+
+    func test容器删除按名称且不强制删除或保留配置() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            let transport = MockHTTPTransport(responses: [
+                response(containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")),
+                response(#"{"success":true}"#), response(containerListResponse(ids: [])),
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer],
+                requestFormatOverrides: [DsmAPIName.dockerContainer: format], transport: transport)
+            let result = try await repository.deleteContainersResult(ids: ["synthetic-id"])
+            XCTAssertEqual(result.status, .confirmedSuccess)
+            let requests = await transport.recordedRequests()
+            let sent = requests[1]
+            XCTAssertEqual(requestValue("name", in: sent), format == .json ? #""synthetic-worker""# : "synthetic-worker")
+            XCTAssertNil(requestValue("id", in: sent))
+            XCTAssertEqual(requestValue("force", in: sent), "false")
+            XCTAssertEqual(requestValue("preserve_profile", in: sent), "false")
+        }
+    }
+
+    func test容器删除断线后的显式重试只读取列表() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(containerListResponse(ids: ["container-1"]))), .urlError(.networkConnectionLost),
+            .response(response(containerListResponse(ids: []))),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        let first = try await repository.deleteContainersResult(ids: ["container-1"])
+        XCTAssertEqual(first.status, .submittedButUnverified)
+        let reviewed = try await repository.deleteContainersResult(ids: ["container-1"])
+        XCTAssertEqual(reviewed.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+    }
+
+    func test未知删除期间同名新实例不能接管操作() async throws {
+        let original = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")
+        let replacement = original.replacingOccurrences(of: "synthetic-id", with: "replacement-id")
+        let transport = MockHTTPTransport(steps: [.response(response(original)), .urlError(.networkConnectionLost), .response(response(replacement))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer], transport: transport)
+        let first = try await repository.deleteContainersResult(ids: ["synthetic-id"])
+        XCTAssertEqual(first.status, .submittedButUnverified)
+        do { try await repository.controlContainers(ids: ["replacement-id"], action: .start); XCTFail("同名新实例不应绕过未知锁") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "start" }.count, 0)
+    }
+
+    func test套件托管容器及项目均不能提交启停或删除() async throws {
+        for viaProject in [false, true] {
+            let list = containerControlResponse(running: false, startedAt: "2026-01-01T00:00:00Z")
+                .replacingOccurrences(of: #""is_package":false"#, with: viaProject ? #""is_package":false"# : #""is_package":true"#)
+                .replacingOccurrences(of: #""Labels":{}"#, with: viaProject ? #""Labels":{"com.docker.compose.project":"synthetic-project"}"# : #""Labels":{}"#)
+            let replies = viaProject ? [response(list), response(#"{"success":true,"data":{"synthetic-project-id":{"name":"synthetic-project","is_package":true}}}"#)] : [response(list)]
+            let transport = MockHTTPTransport(responses: replies)
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerProject], transport: transport)
+            do { try await repository.controlContainers(ids: ["synthetic-id"], action: .start); XCTFail("托管容器不应提交") }
+            catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
+            let requests = await transport.recordedRequests()
+            XCTAssertTrue(requests.allSatisfy { requestValue("method", in: $0) == "list" })
+
+            let deletionTransport = MockHTTPTransport(responses: replies)
+            let deletionRepository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerProject], transport: deletionTransport)
+            let deleted = try await deletionRepository.deleteContainersResult(ids: ["synthetic-id"])
+            XCTAssertEqual(deleted.status, .permissionDenied)
+            let deleteRequests = await deletionTransport.recordedRequests()
+            XCTAssertTrue(deleteRequests.allSatisfy { requestValue("method", in: $0) == "list" })
+        }
+    }
+
+    private func containerControlResponse(running: Bool, startedAt: String, restarting: Bool = false) -> String {
+        let state = running ? "running" : "stopped"
+        return #"{"success":true,"data":{"containers":[{"id":"synthetic-id","name":"synthetic-worker","status":"\#(state)","image":"synthetic:latest","is_package":false,"Labels":{},"State":{"Running":\#(running),"Paused":false,"Restarting":\#(restarting),"StartedAt":"\#(startedAt)"}}]}}"#
+    }
+
     func test容器删除回读确认后返回成功() async throws {
         let transport = MockHTTPTransport(responses: [
             response(containerListResponse(ids: ["container-1"])),
@@ -1446,6 +1628,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         let transport = MockHTTPTransport(responses: [
             response(containerListResponse(ids: ["container-1", "container-2"])),
             response(#"{"success":true}"#),
+            response(containerListResponse(ids: ["container-2"])),
             response(#"{"success":true}"#),
             response(containerListResponse(ids: ["container-2"])),
         ])
@@ -1602,25 +1785,100 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(requestValue("repo", in: request), #""nginx""#)
     }
 
-    func test下载镜像使用已验证的启动方法且不重复提交() async throws {
+    func test镜像标签兼容字符串和对象数组且保留顺序() async throws {
+        for payload in [
+            #"{"success":true,"data":["latest",{"tag":"stable"},"latest",{"name":"V1"}]}"#,
+            #"{"success":true,"data":{"tags":["latest",{"name":"stable"},"latest","V1"]}}"#
+        ] {
+            let transport = MockHTTPTransport(responses: [response(payload)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerRegistry], transport: transport)
+            let tags = try await repository.loadContainerImageTags(repository: "synthetic/image")
+            XCTAssertEqual(tags, ["latest", "stable", "V1"])
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertEqual(requestValue("method", in: try XCTUnwrap(requests.first)), "tags")
+        }
+    }
+
+    func test镜像标签畸形响应不能冒充空列表或部分成功() async throws {
+        for data in [
+            #"{}"#, #"{"tags":{}}"#, #"["valid",1]"#, #"["valid",null]"#,
+            #"[{"tag":"a","name":"b"}]"#, #"{"data":[],"tags":["different"]}"#,
+            #"[" "]"#, #"["bad\nvalue"]"#
+        ] {
+            let transport = MockHTTPTransport(responses: [response("{\"success\":true,\"data\":\(data)}")])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerRegistry], transport: transport)
+            do {
+                _ = try await repository.loadContainerImageTags(repository: "synthetic/image")
+                XCTFail("畸形标签响应不得成功")
+            } catch let error as AppError {
+                XCTAssertEqual(error.category, .invalidResponse)
+            }
+        }
+    }
+
+    func test下载镜像兼容入口保留任务且不重复提交() async throws {
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true}"#)
+            response(#"{"success":true,"data":{"tags":["latest"]}}"#),
+            response(#"{"success":true,"data":{"images":[]}}"#),
+            response(#"{"success":true,"data":{"task_id":"synthetic-task"}}"#),
+            response(#"{"success":true,"data":{"finished":false,"repository":"nginx","tag":"latest","current":1,"total":4}}"#)
         ])
         let repository = try makeRepository(
-            apiNames: [DsmAPIName.dockerImage],
+            apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerRegistry],
             requestFormatOverrides: [DsmAPIName.dockerImage: .json],
             transport: transport
         )
 
         try await repository.pullContainerImage(repository: "nginx", tag: "latest")
+        do {
+            try await repository.pullContainerImage(repository: "nginx", tag: "latest")
+            XCTFail("兼容入口不得重复启动同一未结束目标")
+        } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
 
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 1)
-        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(requests.count, 4)
+        let starts = requests.filter { requestValue("method", in: $0) == "pull_start" }
+        XCTAssertEqual(starts.count, 1)
+        let request = try XCTUnwrap(starts.first)
         XCTAssertEqual(requestValue("api", in: request), DsmAPIName.dockerImage)
         XCTAssertEqual(requestValue("method", in: request), "pull_start")
         XCTAssertEqual(requestValue("repository", in: request), #""nginx""#)
         XCTAssertEqual(requestValue("tag", in: request), #""latest""#)
+    }
+
+    func test容器映像完整列表使用官方分页和布尔参数() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: [response(containerListResponse(ids: []))],
+            DsmAPIName.dockerImage: [response(#"{"success":true,"data":{"images":[],"total":0,"offset":0,"limit":-1}}"#)]
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerImage],
+            requestFormatOverrides: [DsmAPIName.dockerImage: .json], transport: transport
+        )
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertTrue(snapshot.images.isEmpty)
+        XCTAssertFalse(snapshot.failedSections.contains(.images))
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first { requestValue("api", in: $0) == DsmAPIName.dockerImage })
+        XCTAssertEqual(requestValue("offset", in: request), "0")
+        XCTAssertEqual(requestValue("limit", in: request), "-1")
+        XCTAssertEqual(requestValue("show_dsm", in: request), "false")
+    }
+
+    func test容器映像分页不完整或类型错误仅使映像分区失败() async throws {
+        for metadata in [#""total":1"#, #""total":true"#, #""total":"0""#, #""total":0.5"#, #""offset":1"#, #""offset":null"#] {
+            let transport = SequencedServiceRoutingTransport(responses: [
+                DsmAPIName.dockerContainer: [response(containerListResponse(ids: []))],
+                DsmAPIName.dockerImage: [response("{\"success\":true,\"data\":{\"images\":[],\(metadata)}}")]
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerContainer, DsmAPIName.dockerImage], transport: transport)
+            let snapshot = try await repository.loadContainerManager()
+            XCTAssertTrue(snapshot.images.isEmpty)
+            XCTAssertTrue(snapshot.failedSections.contains(.images))
+            XCTAssertEqual(snapshot.failedSections, [.images])
+            XCTAssertTrue(snapshot.containers.isEmpty)
+        }
     }
 
     func test容器映像删除回读确认后返回成功() async throws {
@@ -1631,7 +1889,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             ],
             DsmAPIName.dockerImage: [
                 response(
-                    #"{"success":true,"data":{"images":[{"id":"image-1","repository":"demo","tag":"latest"}]}}"#
+                    #"{"success":true,"data":{"images":[{"id":"image-1","repository":"demo","tags":["latest"]}]}}"#
                 ),
                 response(#"{"success":true}"#),
                 response(#"{"success":true,"data":{"images":[]}}"#),
@@ -1646,7 +1904,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         )
 
         let result = try await repository.deleteContainerImagesResult(
-            ids: ["image-1"]
+            ids: [ContainerImage.selectionID(imageID: "image-1", repository: "demo", tag: "latest")]
         )
 
         XCTAssertEqual(result.status, .confirmedSuccess)
@@ -1661,7 +1919,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         )
     }
 
-    func test容器映像逐项删除被拒绝后回读为部分成功() async throws {
+    func test容器映像批量删除后按标签回读为部分成功() async throws {
         let transport = SequencedServiceRoutingTransport(responses: [
             DsmAPIName.dockerContainer: [
                 response(containerListResponse(ids: [])),
@@ -1669,12 +1927,11 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             ],
             DsmAPIName.dockerImage: [
                 response(
-                    #"{"success":true,"data":{"images":[{"id":"image-1","repository":"demo","tag":"one"},{"id":"image-2","repository":"demo","tag":"two"}]}}"#
+                    #"{"success":true,"data":{"images":[{"id":"image-1","repository":"demo","tags":["one"]},{"id":"image-2","repository":"demo","tags":["two"]}]}}"#
                 ),
                 response(#"{"success":true}"#),
-                response(#"{"success":false,"error":{"code":105}}"#),
                 response(
-                    #"{"success":true,"data":{"images":[{"id":"image-2","repository":"demo","tag":"two"}]}}"#
+                    #"{"success":true,"data":{"images":[{"id":"image-2","repository":"demo","tags":["two"]}]}}"#
                 ),
             ],
         ])
@@ -1687,7 +1944,8 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         )
 
         let result = try await repository.deleteContainerImagesResult(
-            ids: ["image-2", "image-1"]
+            ids: [ContainerImage.selectionID(imageID: "image-2", repository: "demo", tag: "two"),
+                  ContainerImage.selectionID(imageID: "image-1", repository: "demo", tag: "one")]
         )
 
         XCTAssertEqual(result.status, .partialSuccess)
@@ -1911,6 +2169,8 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             response(virtualMachineListResponse(ids: ["vm-1", "vm-2"])),
             response(#"{"success":true}"#),
             response(virtualMachineListResponse(ids: ["vm-2"])),
+            response(#"{"success":true}"#),
+            response(virtualMachineListResponse(ids: ["vm-2"])),
         ])
         let repository = try makeRepository(
             apiNames: [DsmAPIName.virtualizationAPIGuest],
@@ -1925,6 +2185,9 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(result.counts.succeeded, 1)
         XCTAssertEqual(result.counts.unknown, 1)
         XCTAssertTrue(result.requiresRefresh)
+        let allRequests = await transport.recordedRequests()
+        let requests = allRequests.filter { requestValue("method", in: $0) == "delete" }
+        XCTAssertEqual(requests.compactMap { requestValue("guest_id", in: $0) }, ["vm-1", "vm-2"])
     }
 
     func test虚拟机删除提交时断网返回未确认且不自动重放() async throws {
@@ -2078,6 +2341,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 DsmAPIName.virtualizationRepo: .json,
                 DsmAPIName.virtualizationNetwork: .json
             ],
+            selectedVersionOverrides: [DsmAPIName.virtualizationGuest: 2],
             transport: transport
         )
         let initial = try await repository.loadVirtualMachineManager()
@@ -2092,7 +2356,8 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 networkID: "network-1",
                 cpuCount: 2,
                 memoryMiB: 2_048,
-                diskGiB: 20
+                diskGiB: 20,
+                autoStart: true
             )
         )
 
@@ -2101,19 +2366,47 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
             requests.first(where: { requestValue("method", in: $0) == "create" })
         )
         XCTAssertEqual(requestValue("api", in: createRequest), DsmAPIName.virtualizationGuest)
+        XCTAssertEqual(requestValue("version", in: createRequest), "1")
+        XCTAssertEqual(requestValue("iso_images", in: createRequest), #"["unmounted","unmounted"]"#)
+        XCTAssertEqual(requestValue("usbs", in: createRequest), #"["unmounted","unmounted","unmounted","unmounted"]"#)
+        XCTAssertEqual(requestValue("boot_from", in: createRequest), #""disk""#)
         XCTAssertEqual(requestValue("name", in: createRequest), #""新虚拟机""#)
         XCTAssertEqual(requestValue("vcpu_num", in: createRequest), "2")
         XCTAssertEqual(requestValue("vram_size", in: createRequest), "2048")
+        XCTAssertEqual(requestValue("allocated_size", in: createRequest), "100")
         XCTAssertEqual(requestValue("repo_id", in: createRequest), #""repo-1""#)
         XCTAssertEqual(requestValue("poweron_after_create", in: createRequest), "false")
+        XCTAssertEqual(requestValue("autorun", in: createRequest), "2")
         XCTAssertFalse(createRequest.url?.absoluteString.contains("REDACTED_SESSION") == true)
+    }
+
+    func test虚拟机内部读取KiB与公开读取MiB分别转换() async throws {
+        for (api, rawMemory) in [(DsmAPIName.virtualizationGuest, 524_288), (DsmAPIName.virtualizationAPIGuest, 512)] {
+            let transport = MockHTTPTransport(responses: [response("{\"success\":true,\"data\":{\"guests\":[{\"guest_id\":\"vm-1\",\"name\":\"Synthetic\",\"guest_name\":\"Synthetic\",\"status\":\"shutdown\",\"vcpu_num\":1,\"vram_size\":\(rawMemory)}]}}")])
+            let repository = try makeRepository(apiNames: [api], selectedVersionOverrides: [DsmAPIName.virtualizationGuest: 2], transport: transport)
+            let snapshot = try await repository.loadVirtualMachineManager()
+            XCTAssertEqual(snapshot.machines.first?.memoryBytes, 536_870_912)
+        }
+    }
+
+    func test内部内存回读不能将MiB数值误认为已保存() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"shutdown","vcpu_num":2,"vram_size":2097152}]}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"shutdown","vcpu_num":2,"vram_size":4096}]}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], selectedVersionOverrides: [DsmAPIName.virtualizationGuest: 2], transport: transport)
+        do {
+            try await repository.updateVirtualMachine(id: "vm-1", configuration: VirtualMachineUpdate(memoryMiB: 4096))
+            XCTFail("内部读取必须核对对应的 KiB，不能误报成功")
+        } catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
     }
 
     func test修改虚拟机只提交变化并回读确认() async throws {
         let transport = MockHTTPTransport(responses: [
-            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"旧名称","status":"shutdown","vcpu_num":2,"vram_size":2048}]}}"#),
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"旧名称","status":"shutdown","vcpu_num":2,"vram_size":2097152}]}}"#),
             response(#"{"success":true}"#),
-            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"新名称","status":"shutdown","vcpu_num":4,"vram_size":4096}]}}"#)
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"新名称","status":"shutdown","vcpu_num":4,"vram_size":4194304}]}}"#)
         ])
         let repository = try makeRepository(
             apiNames: [DsmAPIName.virtualizationGuest],
@@ -2137,6 +2430,250 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
         XCTAssertEqual(requestValue("name", in: requests[1]), #""新名称""#)
         XCTAssertEqual(requestValue("vcpu_num", in: requests[1]), "4")
         XCTAssertEqual(requestValue("vram_size", in: requests[1]), "4096")
+    }
+
+    func test虚拟机修改核查全部发送字段并保留空说明() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"旧名称","status":"shutdown","vcpu_num":2,"vram_size":2097152}]}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"新名称","desc":"","vcpu_num":4,"vram_size":4194304,"cpu_weight":64,"autorun":0}]}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+        try await repository.updateVirtualMachine(id: "vm-1", configuration: VirtualMachineUpdate(
+            name: " 新名称 ", description: "", cpuCount: 4, memoryMiB: 4096, cpuWeight: 64, autoStart: false
+        ))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requestValue("name", in: requests[1]), "新名称")
+        XCTAssertEqual(requestValue("desc", in: requests[1]), "")
+        XCTAssertEqual(requestValue("cpu_weight", in: requests[1]), "64")
+        XCTAssertEqual(requestValue("autorun", in: requests[1]), "0")
+        XCTAssertEqual(requestValue("api", in: requests[2]), DsmAPIName.virtualizationGuest)
+        XCTAssertEqual(requestValue("method", in: requests[2]), "list")
+    }
+
+    func test镜像多标签按独立身份展开且分页对原始记录计数() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [
+            DsmAPIName.dockerContainer: [response(containerListResponse(ids: []))],
+            DsmAPIName.dockerImage: [response(#"{"success":true,"data":{"offset":0,"total":2,"images":[{"id":"same-id","repository":"demo","tags":["latest","stable"]},{"id":"same-id","repository":"alias","tags":["v1"]}]}}"#)]
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer],
+            selectedVersionOverrides: [DsmAPIName.dockerImage: 2, DsmAPIName.dockerContainer: 2], transport: transport)
+        let snapshot = try await repository.loadContainerManager()
+        XCTAssertFalse(snapshot.failedSections.contains(.images))
+        XCTAssertEqual(snapshot.images.map(\.tag), ["latest", "stable", "v1"])
+        XCTAssertEqual(Set(snapshot.images.map(\.id)).count, 3)
+        XCTAssertTrue(snapshot.images.allSatisfy { $0.sourceImageID == "same-id" })
+        let requests = await transport.recordedRequests()
+        let imageRequest = try XCTUnwrap(requests.first { requestValue("api", in: $0) == DsmAPIName.dockerImage })
+        XCTAssertEqual(requestValue("version", in: imageRequest), "1")
+        let containerRequest = try XCTUnwrap(requests.first { requestValue("api", in: $0) == DsmAPIName.dockerContainer })
+        XCTAssertEqual(requestValue("version", in: containerRequest), "1")
+    }
+
+    func test镜像删除两种编码均按标签提交且保留同ID其他标签仍算成功() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            let transport = MockHTTPTransport(responses: [
+                response(imageTagList()), response(containerListResponse(ids: [])), response(#"{"success":true}"#),
+                response(imageTagList(tags: "\"latest\""))
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer],
+                requestFormatOverrides: [DsmAPIName.dockerImage: format], transport: transport)
+            let result = try await repository.deleteContainerImagesResult(ids: [imageTagID()])
+            XCTAssertEqual(result.status, .confirmedSuccess)
+            let requests = await transport.recordedRequests()
+            let deletion = try XCTUnwrap(requests.first { requestValue("method", in: $0) == "delete" })
+            XCTAssertEqual(requestValue("version", in: deletion), "1")
+            XCTAssertNil(requestValue("id", in: deletion)); XCTAssertNil(requestValue("force", in: deletion))
+            let payload = try XCTUnwrap(requestValue("images", in: deletion))
+            let objects = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [[String: Any]])
+            XCTAssertEqual(objects.count, 1); XCTAssertEqual(objects[0]["repository"] as? String, "demo")
+            XCTAssertEqual(objects[0]["tags"] as? [String], ["stable"])
+            XCTAssertEqual(requests.count, 4)
+        }
+    }
+
+    func test镜像明确拒绝不会回读成成功且核查入口绝不发送删除() async throws {
+        for code in [105, 9999] {
+            let transport = MockHTTPTransport(responses: [response(imageTagList()), response(containerListResponse(ids: [])),
+                response("{\"success\":false,\"error\":{\"code\":\(code)}}")])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+            let result = try await repository.deleteContainerImagesResult(ids: [imageTagID()])
+            XCTAssertEqual(result.status, code == 105 ? .permissionDenied : .confirmedFailure)
+            XCTAssertEqual(result.counts.failed, 1); XCTAssertEqual(result.counts.unknown, 0)
+            let review = try await repository.reviewContainerImageDeletion(ids: [imageTagID()])
+            XCTAssertFalse(review.submitted)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, 3)
+        }
+    }
+
+    func test镜像回执丢失后重复调用和独立核查都只读() async throws {
+        let transport = MockHTTPTransport(steps: [.response(response(imageTagList())), .response(response(containerListResponse(ids: []))),
+            .urlError(.timedOut), .response(response(imageTagList())), .response(response(imageTagList())),
+            .response(response(imageTagList(tags: "\"latest\"")))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+        let first = try await repository.deleteContainerImagesResult(ids: [imageTagID()])
+        let repeated = try await repository.deleteContainerImagesResult(ids: [imageTagID()])
+        let reviewed = try await repository.reviewContainerImageDeletion(ids: [imageTagID()])
+        XCTAssertEqual(first.status, .submittedButUnverified); XCTAssertEqual(repeated.status, .submittedButUnverified)
+        XCTAssertEqual(reviewed.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+    }
+
+    func test镜像标签换ID后不能重放且不能凭旧ID消失确认删除() async throws {
+        let transport = MockHTTPTransport(steps: [.response(response(imageTagList())), .response(response(containerListResponse(ids: []))),
+            .urlError(.timedOut), .response(response(imageTagList(id: "replacement"))), .response(response(imageTagList(id: "replacement"))),
+            .response(response(imageTagList(id: "replacement")))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+        let first = try await repository.deleteContainerImagesResult(ids: [imageTagID()])
+        let replacement = try await repository.deleteContainerImagesResult(ids: [imageTagID(id: "replacement")])
+        let reviewed = try await repository.reviewContainerImageDeletion(ids: [imageTagID()])
+        XCTAssertEqual(first.status, .submittedButUnverified)
+        XCTAssertFalse(replacement.submitted); XCTAssertEqual(replacement.errorCategory, .conflict)
+        XCTAssertEqual(reviewed.status, .submittedButUnverified)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+    }
+
+    func test镜像删除拒绝停止容器占用并归一官方仓库前缀() async throws {
+        for name in ["demo:stable", "docker.io/demo:stable", "index.docker.io/demo:stable"] {
+            let transport = MockHTTPTransport(responses: [response(imageTagList()),
+                response("{\"success\":true,\"data\":{\"containers\":[{\"image\":\"\(name)\",\"status\":\"stopped\"}]}}")])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+            let result = try await repository.deleteContainerImagesResult(ids: [imageTagID()])
+            XCTAssertFalse(result.submitted)
+            let requests = await transport.recordedRequests()
+            XCTAssertFalse(requests.contains { requestValue("method", in: $0) == "delete" })
+        }
+    }
+
+    func test镜像删除拒绝畸形身份重复标签和不完整列表() async throws {
+        let values = [
+            #"{"images":[{"id":123,"repository":"demo","tags":["stable"]}]}"#,
+            #"{"images":[{"id":"image-1","repository":123,"tags":["stable"]}]}"#,
+            #"{"images":[{"id":"image-1","repository":"demo","tags":["stable",true]}]}"#,
+            #"{"images":[{"id":"image-1","repository":"demo","tags":["stable","stable"]}]}"#,
+            #"{"images":[{"id":"image-1","repository":"demo","tag":"stable"}]}"#,
+            #"{"total":2,"images":[{"id":"image-1","repository":"demo","tags":["stable"]}]}"#
+        ]
+        for value in values {
+            let transport = MockHTTPTransport(responses: [response("{\"success\":true,\"data\":\(value)}")])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+            let result = try await repository.deleteContainerImagesResult(ids: [imageTagID()])
+            XCTAssertFalse(result.submitted)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, 1)
+        }
+    }
+
+    func test裸镜像使用identity删除但不能隐含删除有效标签() async throws {
+        for otherTag in [false, true] {
+            let transport = MockHTTPTransport(responses: [response(imageTagList(tags: otherTag ? "\"<none>\",\"stable\"" : "\"<none>\"")),
+                response(containerListResponse(ids: [])), response(#"{"success":true}"#), response(#"{"success":true,"data":{"images":[]}}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+            let result = try await repository.deleteContainerImagesResult(ids: [imageTagID(tag: "<none>")])
+            XCTAssertEqual(result.submitted, !otherTag)
+            let requests = await transport.recordedRequests()
+            if !otherTag {
+                XCTAssertEqual(result.status, .confirmedSuccess)
+                let deletion = try XCTUnwrap(requests.first { requestValue("method", in: $0) == "delete" })
+                let payload = try XCTUnwrap(requestValue("images", in: deletion))
+                let objects = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [[String: String]])
+                XCTAssertEqual(objects, [["identity": "image-1"]])
+            } else { XCTAssertEqual(requests.count, 1) }
+        }
+    }
+
+    func test镜像核查从未提交的目标不会调用任何接口() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+        let result = try await repository.reviewContainerImageDeletion(ids: [imageTagID()])
+        XCTAssertFalse(result.submitted)
+        let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test镜像提交后取消保留原范围且下一次只读核查() async throws {
+        let transport = MockHTTPTransport(steps: [.response(response(imageTagList())), .response(response(containerListResponse(ids: []))),
+            .waitUntilCancelled, .response(response(imageTagList(tags: "\"latest\"")))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+        let ids = [imageTagID()]
+        let operation = Task { try await repository.deleteContainerImagesResult(ids: ids) }
+        let deadline = Date().addingTimeInterval(2)
+        while await transport.recordedRequests().count < 3 && Date() < deadline { await Task.yield() }
+        let beforeCancellation = await transport.recordedRequests()
+        operation.cancel()
+        let result = try await operation.value
+        XCTAssertEqual(beforeCancellation.count, 3)
+        XCTAssertEqual(result.status, .cancellationRequestedAfterSubmission)
+        let reviewed = try await repository.reviewContainerImageDeletion(ids: ids)
+        XCTAssertEqual(reviewed.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+    }
+
+    private func imageTagID(id: String = "image-1", tag: String = "stable") -> String {
+        ContainerImage.selectionID(imageID: id, repository: "demo", tag: tag)
+    }
+    private func imageTagList(id: String = "image-1", tags: String = "\"latest\",\"stable\"") -> String {
+        "{\"success\":true,\"data\":{\"images\":[{\"id\":\"\(id)\",\"repository\":\"demo\",\"tags\":[\(tags)]}]}}"
+    }
+
+    func test虚拟机说明权重或自动启动未保存不能报成功() async throws {
+        let cases: [(VirtualMachineUpdate, String)] = [
+            (VirtualMachineUpdate(description: "new"), #""desc":"old""#),
+            (VirtualMachineUpdate(description: ""), #""desc":null"#),
+            (VirtualMachineUpdate(description: ""), #""unrelated":0"#),
+            (VirtualMachineUpdate(cpuWeight: 64), #""cpu_weight":63"#),
+            (VirtualMachineUpdate(cpuWeight: 64), #""cpu_weight":64.5"#),
+            (VirtualMachineUpdate(cpuWeight: 8), #""cpu_weight":true"#),
+            (VirtualMachineUpdate(autoStart: false), #""unrelated":0"#),
+            (VirtualMachineUpdate(autoStart: false), #""autorun":false"#),
+            (VirtualMachineUpdate(autoStart: false), #""autorun":"0""#),
+            (VirtualMachineUpdate(autoStart: true), #""autorun":1"#)
+        ]
+        for (configuration, fields) in cases {
+            let transport = MockHTTPTransport(responses: [
+                response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"测试","status":"shutdown"}]}}"#),
+                response(#"{"success":true}"#),
+                response("{\"success\":true,\"data\":{\"guests\":[{\"guest_id\":\"vm-1\",\"name\":\"测试\",\(fields)}]}}")
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            do { try await repository.updateVirtualMachine(id: "vm-1", configuration: configuration); XCTFail("没有精确回读证据不能报告保存成功") }
+            catch let error as AppError { XCTAssertEqual(error.category, .conflict); XCTAssertFalse(error.isRetryable) }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "set" }.count, 1)
+        }
+    }
+
+    func test虚拟机内部修改不使用公开清单确认内部字段() async throws {
+        let transport = SequencedServiceRoutingTransport(responses: [
+            DsmAPIName.virtualizationAPIGuest: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"测试","status":"shutdown"}]}}"#)],
+            DsmAPIName.virtualizationGuest: [response(#"{"success":true}"#), response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","desc":"new","cpu_weight":64,"autorun":2}]}}"#)]
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest], transport: transport)
+        try await repository.updateVirtualMachine(id: "vm-1", configuration: VirtualMachineUpdate(description: "new", cpuWeight: 64, autoStart: true))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requestValue("api", in: requests[0]), DsmAPIName.virtualizationAPIGuest)
+        XCTAssertEqual(requestValue("api", in: requests[2]), DsmAPIName.virtualizationGuest)
+        XCTAssertEqual(requestValue("method", in: requests[2]), "list")
+    }
+
+    func test虚拟机修改不能以错误或重复身份确认() async throws {
+        for guests in [
+            #"[{"guest_id":"other","desc":"new"}]"#,
+            #"[{"guest_id":"vm-1","desc":"new"},{"guest_id":"vm-1","desc":"new"}]"#
+        ] {
+            let transport = MockHTTPTransport(responses: [
+                response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"测试","status":"shutdown"}]}}"#),
+                response(#"{"success":true}"#), response("{\"success\":true,\"data\":{\"guests\":\(guests)}}")
+            ])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            do { try await repository.updateVirtualMachine(id: "vm-1", configuration: VirtualMachineUpdate(description: "new")); XCTFail("目标身份不明确不能确认") }
+            catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        }
     }
 
     func test远程控制台地址不包含会话凭据并使用虚拟机通道() async throws {
@@ -2238,7 +2775,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 response(
                     #"{"success":true,"data":{"images":[{"image_id":"image-1","image_name":"安装映像"}]}}"#
                 ),
-                response(#"{"success":true,"data":{"task_id":"task-1"}}"#),
+                response(#"{"success":true}"#),
                 response(#"{"success":true,"data":{"images":[]}}"#)
             ]
         ])
@@ -2258,6 +2795,8 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 && requestValue("method", in: $0) == "delete"
         })
         XCTAssertEqual(requestValue("image_id", in: deletion), "image-1")
+        XCTAssertEqual(requestValue("version", in: deletion), "1")
+        XCTAssertFalse(requests.contains { requestValue("api", in: $0) == DsmAPIName.virtualizationAPITaskInfo })
     }
 
     func test虚拟机映像统一删除结果回读确认后返回成功() async throws {
@@ -2311,6 +2850,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 DsmAPIName.virtualizationNetwork
             ],
             requestFormatOverrides: [DsmAPIName.virtualizationNetwork: .json],
+            selectedVersionOverrides: [DsmAPIName.virtualizationNetwork: 2],
             transport: transport
         )
 
@@ -2325,6 +2865,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 && requestValue("method", in: $0) == "set"
         })
         XCTAssertEqual(requestValue("network_id", in: update), #""network-1""#)
+        XCTAssertEqual(requestValue("version", in: update), "1")
         XCTAssertEqual(requestValue("name", in: update), #""新名称""#)
     }
 
@@ -2347,6 +2888,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 DsmAPIName.virtualizationNetwork
             ],
             requestFormatOverrides: [DsmAPIName.virtualizationNetwork: .json],
+            selectedVersionOverrides: [DsmAPIName.virtualizationNetwork: 2],
             transport: transport
         )
 
@@ -2358,6 +2900,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 && requestValue("method", in: $0) == "delete"
         })
         XCTAssertEqual(requestValue("network_id", in: deletion), #""network-1""#)
+        XCTAssertEqual(requestValue("version", in: deletion), "1")
     }
 
     func test虚拟机网络统一删除结果回读确认后返回成功() async throws {
@@ -2380,6 +2923,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 DsmAPIName.virtualizationNetwork,
             ],
             requestFormatOverrides: [DsmAPIName.virtualizationNetwork: .json],
+            selectedVersionOverrides: [DsmAPIName.virtualizationNetwork: 2],
             transport: transport
         )
 
@@ -2389,11 +2933,415 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
 
         XCTAssertEqual(result.status, .confirmedSuccess)
         XCTAssertEqual(result.operation, "virtualMachineNetworkDelete")
+        let requests = await transport.recordedRequests()
+        let deletion = try XCTUnwrap(requests.first { requestValue("method", in: $0) == "delete" })
+        XCTAssertEqual(requestValue("version", in: deletion), "1")
+    }
+
+    func test内部网络写不支持V1时不发送请求() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let api = DsmAPIName.virtualizationNetwork
+        let repository = try makeRepository(apiNames: [api], minimumVersionOverrides: [api: 2],
+            selectedVersionOverrides: [api: 2], transport: transport)
+        do { try await repository.updateVirtualMachineNetwork(id: "network-1", configuration: .init(name: "Synthetic")); XCTFail("不能使用只读版本写入") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+        do { try await repository.deleteVirtualMachineNetworks(ids: ["network-1"]); XCTFail("不能使用只读版本删除") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test公开虚拟机多项删除固定版本逐项回读() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(virtualMachineListResponse(ids: ["vm-1", "vm-2"])),
+            response(#"{"success":true}"#), response(virtualMachineListResponse(ids: ["vm-2"])),
+            response(#"{"success":true}"#), response(virtualMachineListResponse(ids: [])),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest],
+            selectedVersionOverrides: [DsmAPIName.virtualizationAPIGuest: 2], transport: transport)
+        try await repository.deleteVirtualMachines(ids: ["vm-2", "vm-1"])
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["list", "delete", "list", "delete", "list"])
+        XCTAssertTrue(requests.allSatisfy { requestValue("api", in: $0) == DsmAPIName.virtualizationAPIGuest && requestValue("version", in: $0) == "1" })
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.compactMap { requestValue("guest_id", in: $0) }, ["vm-1", "vm-2"])
+    }
+
+    func test公开映像删除空响应和附加字段都不启动任务轮询() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            for acknowledgement in [#"{"success":true}"#, #"{"success":true,"data":{"task_id":"unrelated"}}"#] {
+                let transport = MockHTTPTransport(responses: [
+                    response(#"{"success":true,"data":{"images":[{"image_id":"image-1"}]}}"#),
+                    response(acknowledgement), response(#"{"success":true,"data":{"images":[]}}"#),
+                ])
+                let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestImage, DsmAPIName.virtualizationAPITaskInfo],
+                    requestFormatOverrides: [DsmAPIName.virtualizationAPIGuestImage: format],
+                    selectedVersionOverrides: [DsmAPIName.virtualizationAPIGuestImage: 2], transport: transport)
+                try await repository.deleteVirtualMachineImages(ids: ["image-1"])
+                let requests = await transport.recordedRequests()
+                XCTAssertEqual(requests.count, 3)
+                XCTAssertTrue(requests.allSatisfy { requestValue("api", in: $0) == DsmAPIName.virtualizationAPIGuestImage && requestValue("version", in: $0) == "1" })
+                let deletion = try XCTUnwrap(requests.first { requestValue("method", in: $0) == "delete" })
+                XCTAssertEqual(requestValue("image_id", in: deletion), format == .json ? #""image-1""# : "image-1")
+            }
+        }
+    }
+
+    func test公开删除未知后重复调用只读且不启动未执行项() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(virtualMachineListResponse(ids: ["vm-1", "vm-2"]))), .urlError(.timedOut),
+            .response(response(virtualMachineListResponse(ids: ["vm-1", "vm-2"]))),
+            .response(response(virtualMachineListResponse(ids: ["vm-1", "vm-2"]))),
+            .response(response(virtualMachineListResponse(ids: ["vm-2"]))),
+            .response(response(virtualMachineListResponse(ids: ["vm-2"]))), .response(response(#"{"success":true}"#)),
+            .response(response(virtualMachineListResponse(ids: []))),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let first = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
+        XCTAssertEqual(first.status, .submittedButUnverified); XCTAssertEqual(first.counts.unknown, 1); XCTAssertEqual(first.counts.failed, 1)
+        let retry = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
+        XCTAssertEqual(retry.counts.unknown, 1)
+        let reviewed = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
+        XCTAssertEqual(reviewed.status, .partialSuccess); XCTAssertEqual(reviewed.counts.succeeded, 1); XCTAssertEqual(reviewed.counts.failed, 1)
+        var requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+        let remaining = try await repository.deleteVirtualMachinesResult(ids: ["vm-2"])
+        XCTAssertEqual(remaining.status, .confirmedSuccess)
+        requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.compactMap { requestValue("guest_id", in: $0) }, ["vm-1", "vm-2"])
+    }
+
+    func test公开删除明确拒绝停止整批且不以他人删除覆盖拒绝() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(virtualMachineListResponse(ids: ["vm-1", "vm-2"])),
+            response(#"{"success":false,"error":{"code":105}}"#),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let result = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
+        XCTAssertEqual(result.status, .permissionDenied); XCTAssertEqual(result.counts.failed, 2); XCTAssertEqual(result.counts.succeeded, 0)
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 2)
+    }
+
+    func test公开映像删除回读缺少数组不能冒充成功() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"images":[{"image_id":"image-1"},{"image_id":"image-2"}]}}"#),
+            response(#"{"success":true}"#), response(#"{"success":true,"data":{}}"#),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestImage], transport: transport)
+        let result = try await repository.deleteVirtualMachineImagesResult(ids: ["image-1", "image-2"])
+        XCTAssertEqual(result.status, .submittedButUnverified); XCTAssertEqual(result.counts.unknown, 1); XCTAssertEqual(result.counts.failed, 1)
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+    }
+
+    func test公开映像身份数组畸形在写入前失败() async throws {
+        for payload in [#"{"images":[{"image_id":7}]}"#, #"{"images":[{"image_id":"image-1"},{"image_id":"image-1"}]}"#, #"{"images":{}}"#] {
+            let transport = MockHTTPTransport(responses: [response("{\"success\":true,\"data\":\(payload)}")])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestImage], transport: transport)
+            let result = try await repository.deleteVirtualMachineImagesResult(ids: ["image-1"])
+            XCTAssertFalse(result.submitted)
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 1)
+        }
+    }
+
+    func test公开删除复合身份不发送请求() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let result = try await repository.deleteVirtualMachinesResult(ids: ["vm-1,vm-2"])
+        XCTAssertFalse(result.submitted)
+        let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test公开多项删除取消保留成功未知和未执行计数() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(response(virtualMachineListResponse(ids: ["vm-1", "vm-2", "vm-3"]))),
+            .response(response(#"{"success":true}"#)), .response(response(virtualMachineListResponse(ids: ["vm-2", "vm-3"]))),
+            .waitUntilCancelled,
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let task = Task { try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2", "vm-3"]) }
+        while await transport.recordedRequests().count < 4 { await Task.yield() }
+        task.cancel(); let result = try await task.value
+        XCTAssertEqual(result.status, .cancellationRequestedAfterSubmission)
+        XCTAssertEqual(result.counts.succeeded, 1); XCTAssertEqual(result.counts.unknown, 1); XCTAssertEqual(result.counts.failed, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.compactMap { requestValue("guest_id", in: $0) }, ["vm-1", "vm-2"])
+    }
+
+    func test公开删除认证失效保留认证语义() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(virtualMachineListResponse(ids: ["vm-1"])),
+            response(#"{"success":false,"error":{"code":106}}"#),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        do {
+            try await repository.deleteVirtualMachines(ids: ["vm-1"])
+            XCTFail("认证失败不得冒充删除成功")
+        } catch let error as AppError { XCTAssertEqual(error.category, .authenticationRequired) }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 2)
+    }
+
+    func test公开删除不支持固定版本时不降级内部删除() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest],
+            minimumVersionOverrides: [DsmAPIName.virtualizationAPIGuest: 2],
+            selectedVersionOverrides: [DsmAPIName.virtualizationAPIGuest: 2], transport: transport)
+        let result = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        XCTAssertEqual(result.status, .unsupported); XCTAssertFalse(result.submitted)
+        let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test公开删除后续目标已消失时不再发送删除() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(virtualMachineListResponse(ids: ["vm-1", "vm-2"])),
+            response(#"{"success":true}"#), response(virtualMachineListResponse(ids: [])),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let result = try await repository.deleteVirtualMachinesResult(ids: ["vm-1", "vm-2"])
+        XCTAssertEqual(result.status, .partialSuccess); XCTAssertEqual(result.counts.succeeded, 1); XCTAssertEqual(result.counts.failed, 1)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "delete" }.count, 1)
+    }
+
+    func test公开电源按单台身份固定版本并严格回读() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            for (action, method) in [(VirtualMachinePowerAction.powerOn, "poweron"), (.shutdown, "shutdown"), (.powerOff, "poweroff")] {
+                let initial = action == .powerOn ? "shutdown" : "running"
+                let desired = action == .powerOn ? "running" : "shutdown"
+                let transport = MockHTTPTransport(responses: [
+                    powerTarget("vm-1", initial), powerTarget("vm-2", initial),
+                    powerTarget("vm-1", initial), response(#"{"success":true}"#), powerTarget("vm-1", desired),
+                    powerTarget("vm-2", initial), response(#"{"success":true}"#), powerTarget("vm-2", desired),
+                ])
+                let apis = [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationAPIGuestAction]
+                let repository = try makeRepository(apiNames: apis,
+                    requestFormatOverrides: Dictionary(uniqueKeysWithValues: apis.map { ($0, format) }),
+                    selectedVersionOverrides: Dictionary(uniqueKeysWithValues: apis.map { ($0, 2) }), transport: transport)
+                try await repository.controlVirtualMachines(ids: ["vm-2", "vm-1", "vm-1"], action: action)
+                let requests = await transport.recordedRequests()
+                XCTAssertEqual(requests.count, 8)
+                XCTAssertTrue(requests.allSatisfy { requestValue("version", in: $0) == "1" })
+                XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["get", "get", "get", method, "get", "get", method, "get"])
+                let actions = requests.filter { requestValue("api", in: $0) == DsmAPIName.virtualizationAPIGuestAction }
+                XCTAssertEqual(actions.compactMap { requestValue("guest_id", in: $0) }, format == .json ? [#""vm-1""#, #""vm-2""#] : ["vm-1", "vm-2"])
+            }
+        }
+    }
+
+    func test公开电源重启不猜测方法或自动转为强制开关机() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction,
+            DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuestAction], transport: transport)
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .restart); XCTFail("公开 v1 没有重启契约") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test公开电源非法身份和缺固定版本均零请求() async throws {
+        for ids in [[String](), ["vm-1,vm-2"], [" vm-1"], ["vm\\1"], ["vm\n1"]] {
+            let transport = MockHTTPTransport(responses: [])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+            do { try await repository.controlVirtualMachines(ids: ids, action: .powerOn); XCTFail("非法身份不得发送请求") } catch {}
+            let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+        for missing in [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationAPIGuestAction] {
+            let transport = MockHTTPTransport(responses: [])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest],
+                minimumVersionOverrides: [missing: 2], selectedVersionOverrides: [missing: 2], transport: transport)
+            do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn); XCTFail("不支持 v1 时不得改用 v2") }
+            catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+            let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test公开电源尾项不满足状态时整批零写() async throws {
+        let transport = MockHTTPTransport(responses: [powerTarget("vm-1", "shutdown"), powerTarget("vm-2", "running")])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+        do { try await repository.controlVirtualMachines(ids: ["vm-1", "vm-2"], action: .powerOn); XCTFail("必须先检查全部目标") } catch {}
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["get", "get"])
+    }
+
+    func test公开电源提交前身份变化不能继续() async throws {
+        let transport = MockHTTPTransport(responses: [powerTarget("vm-1", "shutdown"), powerTarget("vm-1", "shutdown", name: "renamed")])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn); XCTFail("身份变化必须重新确认") } catch {}
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["get", "get"])
+    }
+
+    func test公开电源畸形读取不当作默认关机() async throws {
+        for data in [#"{"guest_id":1,"guest_name":"vm-1","status":"shutdown"}"#,
+                     #"{"guest_id":"vm-1","status":"shutdown"}"#,
+                     #"{"guest_id":"vm-2","guest_name":"vm-1","status":"shutdown"}"#,
+                     #"{"guest_id":"vm-1","guest_name":"vm-1","status":false}"#] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":\#(data)}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+            do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn); XCTFail("畸形回读不能执行电源") }
+            catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 1)
+        }
+    }
+
+    func test公开电源丢回执后整批只核对不继续尾项() async throws {
+        let transport = MockHTTPTransport(steps: [
+            .response(powerTarget("vm-1", "shutdown")), .response(powerTarget("vm-2", "shutdown")),
+            .response(powerTarget("vm-1", "shutdown")), .urlError(.timedOut), .response(powerTarget("vm-1", "running")),
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+        for _ in 0..<2 {
+            do { try await repository.controlVirtualMachines(ids: ["vm-1", "vm-2"], action: .powerOn); XCTFail("丢回执及仅恢复部分目标不应报告整批完成") } catch {}
+        }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["get", "get", "get", "poweron", "get"])
+    }
+
+    func test公开电源未确认时反向动作删除和编辑零请求() async throws {
+        let transport = MockHTTPTransport(responses: [powerTarget("vm-1", "running"), powerTarget("vm-1", "running"),
+            response(#"{"success":true}"#), powerTarget("vm-1", "shutting_down"), powerTarget("vm-1", "shutdown")])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest,
+            DsmAPIName.virtualizationGuest], transport: transport)
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .shutdown); XCTFail("回执不等于状态已改变") } catch {}
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOff); XCTFail("未知操作不能升级为断电") } catch {}
+        let deletion = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        XCTAssertNotEqual(deletion.status, .confirmedSuccess)
+        do { try await repository.updateVirtualMachine(id: "vm-1", configuration: VirtualMachineUpdate(name: "changed")); XCTFail("未知电源期间不编辑") } catch {}
+        let beforeReview = await transport.recordedRequests(); XCTAssertEqual(beforeReview.count, 4)
+        try await repository.controlVirtualMachines(ids: ["vm-1"], action: .shutdown)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["get", "get", "shutdown", "get", "get"])
+    }
+
+    func test公开电源明确拒绝保留认证语义且不回读伪成功() async throws {
+        let transport = MockHTTPTransport(responses: [powerTarget("vm-1", "shutdown"), powerTarget("vm-1", "shutdown"),
+            response(#"{"success":false,"error":{"code":119}}"#)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn); XCTFail("拒绝不得转为成功") }
+        catch let error as AppError { XCTAssertEqual(error.category, .authenticationRequired) }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 3)
+    }
+
+    func test公开电源提交后取消再次操作只读() async throws {
+        let transport = MockHTTPTransport(steps: [.response(powerTarget("vm-1", "shutdown")), .response(powerTarget("vm-1", "shutdown")),
+            .waitUntilCancelled, .response(powerTarget("vm-1", "running"))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let task = Task { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn) }
+        while await transport.recordedRequests().count < 3 { await Task.yield() }
+        task.cancel()
+        do { try await task.value; XCTFail("取消不得报告已完成") } catch {}
+        try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["get", "get", "poweron", "get"])
+    }
+
+    func test公开电源在途重复操作和删除不发请求() async throws {
+        let base = MockHTTPTransport(responses: [powerTarget("vm-1", "shutdown"), powerTarget("vm-1", "shutdown"),
+            response(#"{"success":true}"#), powerTarget("vm-1", "running")])
+        let transport = HoldingServiceReadTransport(base: base)
+        let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuestAction, DsmAPIName.virtualizationAPIGuest], transport: transport)
+        let task = Task { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn) }
+        await transport.waitForRead()
+        do { try await repository.controlVirtualMachines(ids: ["vm-1"], action: .powerOn); XCTFail("重复提交不能进入读取或写入") } catch {}
+        let deletion = try await repository.deleteVirtualMachinesResult(ids: ["vm-1"])
+        XCTAssertNotEqual(deletion.status, .confirmedSuccess)
+        let heldRequests = await base.recordedRequests(); XCTAssertTrue(heldRequests.isEmpty)
+        await transport.release()
+        try await task.value
+        let requests = await base.recordedRequests(); XCTAssertEqual(requests.count, 4)
+    }
+
+    private func powerTarget(_ id: String, _ status: String, name: String? = nil) -> DsmHTTPResponse {
+        response(#"{"success":true,"data":{"guest_id":"\#(id)","guest_name":"\#(name ?? id)","status":"\#(status)"}}"#)
+    }
+
+    func test公开和内部管理清单保留启动三态() async throws {
+        for api in [DsmAPIName.virtualizationAPIGuest, DsmAPIName.virtualizationGuest] {
+            for mode in VirtualMachineStartupBehavior.allCases {
+                let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"Synthetic","name":"Synthetic","status":"shutdown","autorun":\#(mode.rawValue)}]}}"#)])
+                let repository = try makeRepository(apiNames: [api], transport: transport)
+                let snapshot = try await repository.loadVirtualMachineManager()
+                XCTAssertEqual(snapshot.machines.first?.startupBehavior, mode)
+            }
+        }
+    }
+
+    func test未知启动值不被管理清单显示为关闭或启动() async throws {
+        for raw in ["true", "false", "\"2\"", "3", "0.5", "null"] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"shutdown","autorun":\#(raw)}]}}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            let snapshot = try await repository.loadVirtualMachineManager()
+            XCTAssertEqual(snapshot.machines.count, 1)
+            XCTAssertNil(snapshot.machines.first?.startupBehavior)
+        }
+    }
+
+    func test公开只读摘要支持三态并拒绝布尔字符串或越界值() async throws {
+        for mode in VirtualMachineStartupBehavior.allCases {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"Synthetic","status":"shutdown","autorun":\#(mode.rawValue)}]}}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+            let snapshot = try await repository.loadVirtualMachineInventory()
+            XCTAssertEqual(snapshot.machines.first?.startupBehavior, mode)
+        }
+        for raw in ["true", "false", "\"1\"", "3", "-1", "1.5"] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","guest_name":"Synthetic","status":"shutdown","autorun":\#(raw)}]}}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationAPIGuest], transport: transport)
+            do { _ = try await repository.loadVirtualMachineInventory(); XCTFail("不猜测非三态 autorun") }
+            catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        }
+    }
+
+    func test优先级读取保留原生整数而不截断或转换其他类型() async throws {
+        for (raw, expected) in [("1024", Optional(1024)), ("128", Optional(128)), ("64.5", nil), ("true", nil), ("\"64\"", nil), ("-1", nil)] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"shutdown","cpu_weight":\#(raw)}]}}"#)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.virtualizationGuest], transport: transport)
+            let snapshot = try await repository.loadVirtualMachineManager()
+            XCTAssertEqual(snapshot.machines.first?.cpuWeight, expected)
+        }
+    }
+
+    func test内部设置三态和五档优先级固定V1且严格回读() async throws {
+        for format in [DsmRequestFormat.form, .json] {
+            for (weight, mode) in [(8, VirtualMachineStartupBehavior.off), (64, .restorePreviousState), (256, .powerOn), (512, .off), (1024, .powerOn)] {
+                let transport = MockHTTPTransport(responses: [
+                    response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"shutdown"}]}}"#),
+                    response(#"{"success":true}"#),
+                    response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","cpu_weight":\#(weight),"autorun":\#(mode.rawValue)}]}}"#),
+                ])
+                let api = DsmAPIName.virtualizationGuest
+                let repository = try makeRepository(apiNames: [api], requestFormatOverrides: [api: format], selectedVersionOverrides: [api: 2], transport: transport)
+                try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(cpuWeight: weight, startupBehavior: mode))
+                let requests = await transport.recordedRequests()
+                XCTAssertEqual(requests.count, 3)
+                XCTAssertEqual(requestValue("version", in: requests[1]), "1")
+                XCTAssertEqual(requestValue("version", in: requests[2]), "2")
+                XCTAssertEqual(requestValue("cpu_weight", in: requests[1]), String(weight))
+                XCTAssertEqual(requestValue("autorun", in: requests[1]), String(mode.rawValue))
+            }
+        }
+    }
+
+    func test内部编辑不支持V1时零请求且未记录权重零写() async throws {
+        let unavailable = MockHTTPTransport(responses: [])
+        let api = DsmAPIName.virtualizationGuest
+        let repository = try makeRepository(apiNames: [api], minimumVersionOverrides: [api: 2], selectedVersionOverrides: [api: 2], transport: unavailable)
+        do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(startupBehavior: .powerOn)); XCTFail("不能猜 v2 保存") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+        let unsupportedRequests = await unavailable.recordedRequests(); XCTAssertTrue(unsupportedRequests.isEmpty)
+        for weight in [1, 128, 1025] {
+            let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"guests":[{"guest_id":"vm-1","name":"Synthetic","status":"shutdown"}]}}"#)])
+            let repository = try makeRepository(apiNames: [api], transport: transport)
+            do { try await repository.updateVirtualMachine(id: "vm-1", configuration: .init(cpuWeight: weight)); XCTFail("新写仅使用已记录档位") }
+            catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, 1)
+            XCTAssertFalse(requests.contains { requestValue("method", in: $0) == "set" })
+        }
     }
 
     private func makeRepository(
         apiNames: [String],
         requestFormatOverrides: [String: DsmRequestFormat] = [:],
+        minimumVersionOverrides: [String: Int] = [:],
+        selectedVersionOverrides: [String: Int] = [:],
         containerNetworkCreationEnabled: Bool = false,
         transport: any DsmHTTPTransport
     ) throws -> DsmServiceManagementRepository {
@@ -2403,10 +3351,10 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
                 ApiCapability(
                     name: name,
                     path: "entry.cgi",
-                    minVersion: 1,
+                    minVersion: minimumVersionOverrides[name] ?? 1,
                     maxVersion: 2,
                     requestFormat: requestFormatOverrides[name] ?? .form,
-                    selectedVersion: name.contains("DownloadStation2") ? 2 : 1
+                    selectedVersion: selectedVersionOverrides[name] ?? (name.contains("DownloadStation2") ? 2 : 1)
                 )
             )
         })
@@ -2459,7 +3407,7 @@ final class DsmServiceManagementRepositoryTests: XCTestCase {
 
     private func containerListResponse(ids: [String]) -> String {
         let containers = ids.map {
-            #"{"id":"\#($0)","name":"\#($0)","image":"demo:latest","status":"stopped"}"#
+            #"{"id":"\#($0)","name":"\#($0)","image":"demo:latest","status":"stopped","is_package":false,"Labels":{},"State":{"Running":false,"Paused":false,"Restarting":false}}"#
         }.joined(separator: ",")
         return #"{"success":true,"data":{"containers":[\#(containers)]}}"#
     }

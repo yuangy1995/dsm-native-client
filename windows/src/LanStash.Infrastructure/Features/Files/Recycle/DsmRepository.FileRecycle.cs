@@ -8,7 +8,6 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    private const int FileRecyclePollLimit = 8;
     private static readonly ConditionalWeakTable<IDsmApiClient, FileRecycleApiState>
         FileRecycleApiStates = new();
 
@@ -19,6 +18,45 @@ public sealed partial class DsmRepository
         CopyMoveVersion: CopyMoveCapabilityAvailable ? 3 : null);
 
     FileRecycleAvailability IFileRecycleRepository.Availability => FileRecycleAvailability;
+
+    public bool SupportsRecycleReview => true;
+    public Task<IReadOnlyList<FileRecyclePendingReview>> GetRecycleReviewsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var state = FileRecycleState();
+        lock (state.Sync)
+            return Task.FromResult<IReadOnlyList<FileRecyclePendingReview>>(Array.AsReadOnly(state.Reviews.Values.Select(review =>
+                new FileRecyclePendingReview(review.Id, ProfileId, review.Operation == "restoreFromRecycle", review.SourcePath,
+                    review.DestinationPath, review.Name, review.IsDirectory, review.Size, review.ModifiedAt)).ToArray()));
+    }
+
+    public async Task<FileRecycleOutcome?> ReviewRecycleAsync(Guid reviewId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var state = FileRecycleState();
+        FileRecycleReview? review;
+        lock (state.Sync)
+        {
+            review = state.Reviews.Values.SingleOrDefault(item => item.Id == reviewId);
+            if (review is null) return null;
+            if (FileRecycleTargetsOverlap(state.ActiveTargets, review.Targets))
+                return RecycleOutcome(review.Operation, MutationResultStatus.SubmittedButUnverified, true, true,
+                    review.SourcePath, review.DestinationPath, MutationErrorCategory.Conflict, "file.recycle.review-busy");
+            state.ActiveTargets.UnionWith(review.Targets);
+        }
+        try { return await ReviewFileRecycleAsync(review, cancellationToken, retainConfirmation: true).ConfigureAwait(false); }
+        finally { ReleaseFileRecycle(review.Targets); }
+    }
+
+    public void AcknowledgeRecycleReview(Guid reviewId)
+    {
+        var state = FileRecycleState();
+        lock (state.Sync)
+        {
+            var review = state.Reviews.Values.SingleOrDefault(item => item.Id == reviewId && item.ConfirmedItem is not null);
+            if (review is not null) state.Reviews.Remove(review.Key);
+        }
+    }
 
     private bool RecycleMoveCapabilityAvailable =>
         MutationCapability("SYNO.FileStation.Delete", 2) && MutationListAvailable;
@@ -48,10 +86,11 @@ public sealed partial class DsmRepository
                 false, false, source.Path, destinationPath, MutationErrorCategory.Conflict,
                 "file.recycle.move.target-busy");
 
+        var enteredSubmission = reservation.PendingReview is not null;
         try
         {
             if (reservation.PendingReview is not null)
-                return await ReviewFileRecycleAsync(reservation.PendingReview)
+                return await ReviewFileRecycleAsync(reservation.PendingReview, cancellationToken)
                     .ConfigureAwait(false);
 
             var baseline = await LoadMutationItemsByPathAsync(
@@ -67,23 +106,30 @@ public sealed partial class DsmRepository
                     false, false, source.Path, destinationPath, MutationErrorCategory.Permission,
                     "file.recycle.move.permission-denied");
 
+            enteredSubmission = true;
             return await SubmitMoveToRecycleAsync(review, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            if (enteredSubmission) return RecycleOutcome(operation, MutationResultStatus.CancellationRequestedAfterSubmission,
+                true, true, source.Path, destinationPath, null, "file.recycle.review-cancelled");
             return RecycleOutcome(operation, MutationResultStatus.CancelledBeforeSubmission,
                 false, false, source.Path, destinationPath, null,
                 "file.recycle.move.cancelled-before-submit");
         }
         catch (DsmException error) when (IsMutationAuthenticationFailure(error))
         {
+            if (!enteredSubmission) return RecycleOutcome(operation, MutationResultStatus.ConfirmedFailure,
+                false, false, source.Path, destinationPath, MutationErrorCategory.Authentication, "file.recycle.sign-in-required");
             throw;
         }
         catch (Exception error) when (IsRecycleReadFailure(error))
         {
+            if (enteredSubmission) return RecycleOutcome(operation, MutationResultStatus.SubmittedButUnverified,
+                true, true, source.Path, destinationPath, MutationErrorCategory.Unknown, "file.recycle.review-unavailable");
             return RecycleOutcome(operation, MutationResultStatus.ConfirmedFailure,
-                false, false, source.Path, destinationPath, MutationErrorCategory.Unknown,
+                false, false, source.Path, destinationPath, error is HttpRequestException or IOException ? MutationErrorCategory.Network : MutationErrorCategory.Unknown,
                 "file.recycle.move.preflight-invalid");
         }
         finally
@@ -118,10 +164,11 @@ public sealed partial class DsmRepository
                 false, false, source.Path, destinationPath, MutationErrorCategory.Conflict,
                 "file.recycle.restore.target-busy");
 
+        var enteredSubmission = reservation.PendingReview is not null;
         try
         {
             if (reservation.PendingReview is not null)
-                return await ReviewFileRecycleAsync(reservation.PendingReview)
+                return await ReviewFileRecycleAsync(reservation.PendingReview, cancellationToken)
                     .ConfigureAwait(false);
 
             var baseline = await LoadMutationItemsByPathAsync(
@@ -148,23 +195,30 @@ public sealed partial class DsmRepository
             if (permission.Status != FilePermissionTransportStatus.Allowed)
                 return RecyclePermissionOutcome(operation, source.Path, destinationPath, permission);
 
+            enteredSubmission = true;
             return await SubmitRestoreFromRecycleAsync(
                 review, destinationParent, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            if (enteredSubmission) return RecycleOutcome(operation, MutationResultStatus.CancellationRequestedAfterSubmission,
+                true, true, source.Path, destinationPath, null, "file.recycle.review-cancelled");
             return RecycleOutcome(operation, MutationResultStatus.CancelledBeforeSubmission,
                 false, false, source.Path, destinationPath, null,
                 "file.recycle.restore.cancelled-before-submit");
         }
         catch (DsmException error) when (IsMutationAuthenticationFailure(error))
         {
+            if (!enteredSubmission) return RecycleOutcome(operation, MutationResultStatus.ConfirmedFailure,
+                false, false, source.Path, destinationPath, MutationErrorCategory.Authentication, "file.recycle.sign-in-required");
             throw;
         }
         catch (Exception error) when (IsRecycleReadFailure(error))
         {
+            if (enteredSubmission) return RecycleOutcome(operation, MutationResultStatus.SubmittedButUnverified,
+                true, true, source.Path, destinationPath, MutationErrorCategory.Unknown, "file.recycle.review-unavailable");
             return RecycleOutcome(operation, MutationResultStatus.ConfirmedFailure,
-                false, false, source.Path, destinationPath, MutationErrorCategory.Unknown,
+                false, false, source.Path, destinationPath, error is HttpRequestException or IOException ? MutationErrorCategory.Network : MutationErrorCategory.Unknown,
                 "file.recycle.restore.preflight-invalid");
         }
         finally
@@ -231,13 +285,18 @@ public sealed partial class DsmRepository
         {
             try
             {
-                taskFinished = await PollFileRecycleAsync(start.TaskId).ConfigureAwait(false);
+                taskFinished = await PollFileRecycleAsync(start.TaskId, cancellationToken).ConfigureAwait(false);
                 postSubmitFailure = !taskFinished;
             }
             catch (DsmException error) when (IsMutationAuthenticationFailure(error))
             {
                 StoreFileRecycleReview(review);
                 throw;
+            }
+            catch (OperationCanceledException)
+            {
+                requestedCancellationAfterSubmission = true;
+                postSubmitFailure = true;
             }
             catch (Exception)
             {
@@ -310,13 +369,18 @@ public sealed partial class DsmRepository
         {
             try
             {
-                taskFinished = await PollFileCopyMoveAsync(start.TaskId).ConfigureAwait(false);
+                taskFinished = await PollFileCopyMoveAsync(start.TaskId, cancellationToken).ConfigureAwait(false);
                 postSubmitFailure = !taskFinished;
             }
             catch (DsmException error) when (IsMutationAuthenticationFailure(error))
             {
                 StoreFileRecycleReview(review);
                 throw;
+            }
+            catch (OperationCanceledException)
+            {
+                requestedCancellationAfterSubmission = true;
+                postSubmitFailure = true;
             }
             catch (Exception)
             {
@@ -372,29 +436,29 @@ public sealed partial class DsmRepository
             diagnosticTag ?? "file.recycle.readback-unverified");
     }
 
-    private async Task<bool> PollFileRecycleAsync(string taskId)
+    private async Task<bool> PollFileRecycleAsync(string taskId, CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < FileRecyclePollLimit; attempt++)
+        var delay = 100;
+        while (true)
         {
             var status = await _api.ReadFileRecycleStatusAsync(_profile, _session,
-                _capabilities["SYNO.FileStation.Delete"], taskId, CancellationToken.None)
+                _capabilities["SYNO.FileStation.Delete"], taskId, cancellationToken)
                 .ConfigureAwait(false);
             if (status.ErrorCategory == MutationErrorCategory.Authentication)
                 throw MutationAuthenticationException();
             if (status.Status == FileRecycleTaskTransportStatus.Finished) return true;
             if (status.Status != FileRecycleTaskTransportStatus.Running) return false;
-            await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(1000, 100 * (1 << attempt))))
-                .ConfigureAwait(false);
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            delay = Math.Min(1000, delay * 2);
         }
-        return false;
     }
 
-    private async Task<FileItem?> TryReadBackFileRecycleAsync(FileRecycleReview review)
+    private async Task<FileItem?> TryReadBackFileRecycleAsync(FileRecycleReview review, CancellationToken cancellationToken = default)
     {
         try
         {
             var items = await LoadMutationItemsByPathAsync(
-                [review.SourcePath, review.DestinationPath], CancellationToken.None)
+                [review.SourcePath, review.DestinationPath], cancellationToken)
                 .ConfigureAwait(false);
             var target = items.SingleOrDefault(item =>
                 item.Path == review.DestinationPath &&
@@ -402,10 +466,7 @@ public sealed partial class DsmRepository
                 (review.IsDirectory || item.Size == review.Size) &&
                 item.ModifiedAt == review.ModifiedAt && item.Name == review.Name);
             if (target is null) return null;
-            var sourceStillMatches = items.Any(item =>
-                item.Path == review.SourcePath && item.IsDirectory == review.IsDirectory &&
-                (review.IsDirectory || item.Size == review.Size));
-            return sourceStillMatches ? null : target;
+            return items.Any(item => item.Path == review.SourcePath) ? null : target;
         }
         catch (DsmException error) when (IsMutationAuthenticationFailure(error))
         {
@@ -417,12 +478,13 @@ public sealed partial class DsmRepository
         }
     }
 
-    private async Task<FileRecycleOutcome> ReviewFileRecycleAsync(FileRecycleReview review)
+    private async Task<FileRecycleOutcome> ReviewFileRecycleAsync(FileRecycleReview review, CancellationToken cancellationToken = default, bool retainConfirmation = false)
     {
-        var confirmed = await TryReadBackFileRecycleAsync(review).ConfigureAwait(false);
+        var confirmed = review.ConfirmedItem ?? await TryReadBackFileRecycleAsync(review, cancellationToken).ConfigureAwait(false);
         if (confirmed is not null)
         {
-            RemoveFileRecycleReview(review);
+            if (retainConfirmation) StoreFileRecycleReview(review with { ConfirmedItem = confirmed });
+            else RemoveFileRecycleReview(review);
             return RecycleOutcome(review.Operation, MutationResultStatus.ConfirmedSuccess,
                 true, false, review.SourcePath, review.DestinationPath, null, null, confirmed);
         }
@@ -470,12 +532,9 @@ public sealed partial class DsmRepository
             var canDelete = false;
             if (additional?["perm"] is not null)
             {
-                if (additional["perm"] is not JsonObject permission)
-                    throw new InvalidDataException("file.recycle.invalid-permission");
-                if (!NativeBool(permission, "write", out canWrite))
-                    canWrite = false;
-                if (!NativeBool(permission, "delete", out canDelete))
-                    canDelete = false;
+                var permission = FileStationPermissions.Parse(additional["perm"]);
+                canWrite = permission.Write ?? false;
+                canDelete = permission.Delete ?? false;
             }
             items.Add(new FileItem(itemPath, name, isDir, size, modified, null, canWrite, canDelete));
         }
@@ -603,7 +662,7 @@ public sealed partial class DsmRepository
 
     private static bool IsRecycleReadFailure(Exception error) =>
         error is DsmException or JsonException or InvalidDataException or OverflowException or
-            InvalidOperationException or ArgumentException;
+            InvalidOperationException or ArgumentException or IOException or HttpRequestException;
 
     private static FileRecycleOutcome RecyclePermissionOutcome(string operation,
         string sourcePath, string destinationPath, FilePermissionTransportResult result) =>
@@ -643,6 +702,8 @@ public sealed partial class DsmRepository
         DateTimeOffset? ModifiedAt,
         HashSet<string> Targets)
     {
+        public Guid Id { get; init; } = Guid.NewGuid();
+        public FileItem? ConfirmedItem { get; init; }
         public string Key { get; } = $"{Operation}|{SourcePath}|{DestinationPath}";
     }
 

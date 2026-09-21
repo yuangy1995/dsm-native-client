@@ -34,22 +34,28 @@ internal sealed class SafeFolderArchiveDownloadService
         _cleanupDiagnostic = cleanupDiagnostic;
     }
 
-    public async Task DownloadAsync(
+    public Task DownloadAsync(
         IFileArchiveReader repository,
         string remotePath,
         ITransactionalDownloadDestination destination,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        DownloadAsync(repository, new[] { remotePath }, destination, cancellationToken);
+
+    public async Task DownloadAsync(IFileArchiveReader repository, IReadOnlyList<string> remotePaths,
+        ITransactionalDownloadDestination destination, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(repository);
-        ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
+        ArgumentNullException.ThrowIfNull(remotePaths);
+        var paths = remotePaths.ToArray();
+        if (!FileArchivePaths.IsValidSelection(paths)) throw new ArgumentException("Invalid archive source selection.", nameof(remotePaths));
         ArgumentNullException.ThrowIfNull(destination);
 
         var committed = false;
         Exception? primaryFailure = null;
         try
         {
-            await repository.StreamFolderArchiveAsync(
-                remotePath,
+            await repository.StreamArchiveAsync(
+                paths,
                 destination.WriteAsync,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();

@@ -43,7 +43,7 @@ struct MobileVirtualMachineItem: Identifiable, Equatable, Sendable {
     let cpuCount: Int?
     let memoryBytes: Int64?
     let storageBytes: Int64?
-    let autoStart: Bool
+    let startupBehavior: VirtualMachineStartupBehavior?
 
     init(_ value: VirtualMachine) {
         id = value.id
@@ -52,7 +52,7 @@ struct MobileVirtualMachineItem: Identifiable, Equatable, Sendable {
         cpuCount = value.cpuCount
         memoryBytes = value.memoryBytes
         storageBytes = value.storageBytes
-        autoStart = value.autoStart
+        startupBehavior = value.startupBehavior
     }
 }
 

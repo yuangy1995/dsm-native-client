@@ -55,7 +55,7 @@ public sealed class ContainerManagerRepositoryContractTests
         Assert.Equal(1, request.Version);
         Assert.Equal(3, request.Parameters.Count);
         Assert.Equal("0", request.Parameters["offset"]);
-        Assert.Equal("200", request.Parameters["limit"]);
+        Assert.Equal("-1", request.Parameters["limit"]);
         Assert.Equal("all", request.Parameters["type"]);
         Assert.Equal(ProfileId, snapshot.ProfileId);
         Assert.Collection(
@@ -154,6 +154,7 @@ public sealed class ContainerManagerRepositoryContractTests
             {
                 ["network_id"] = "network",
                 ["name"] = "Frontend",
+                ["containers"] = new JsonArray(),
                 ["address"] = "private-address",
             }),
             "SYNO.Docker.Project" => Resources("projects", new JsonObject
@@ -191,7 +192,14 @@ public sealed class ContainerManagerRepositoryContractTests
         });
         var eventRequest = Assert.Single(api.Requests, request => request.ApiName == "SYNO.Docker.Log");
         Assert.Equal("0", eventRequest.Parameters["offset"]);
-        Assert.Equal("200", eventRequest.Parameters["limit"]);
+        Assert.Equal("1000", eventRequest.Parameters["limit"]);
+        Assert.Equal("load", eventRequest.Parameters.GetValueOrDefault("action"));
+        Assert.Equal("time", eventRequest.Parameters.GetValueOrDefault("sort_by"));
+        Assert.Equal("DESC", eventRequest.Parameters.GetValueOrDefault("sort_dir"));
+        Assert.Equal("", eventRequest.Parameters.GetValueOrDefault("loglevel"));
+        Assert.Equal("", eventRequest.Parameters.GetValueOrDefault("filter_content"));
+        Assert.Equal("0", eventRequest.Parameters.GetValueOrDefault("datefrom"));
+        Assert.Equal("0", eventRequest.Parameters.GetValueOrDefault("dateto"));
         Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Containers.Status);
         Assert.Equal("example/web", Assert.Single(snapshot.Images.Items).Name);
         Assert.Equal("Frontend", Assert.Single(snapshot.Networks.Items).Name);
@@ -232,6 +240,32 @@ public sealed class ContainerManagerRepositoryContractTests
     }
 
     [Theory]
+    [InlineData("{}", 0)]
+    [InlineData("{\"synthetic-project\":{\"name\":\"Example\",\"status\":\"running\",\"containerIds\":[]}}", 1)]
+    public async Task RecordedProjectObjectIsNotRejectedAsAMissingArray(string json, int count)
+    {
+        var api = new RecordingApiClient(request => request.ApiName == "SYNO.Docker.Project"
+            ? (JsonObject)JsonNode.Parse(json)! : Containers());
+        var repository = CreateRepository(api, Capability("SYNO.Docker.Container"), Capability("SYNO.Docker.Project"));
+        var snapshot = await repository.LoadSnapshotAsync();
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Projects.Status);
+        Assert.Equal(count, snapshot.Projects.Items.Count);
+        if (count > 0) Assert.Equal("synthetic-project", Assert.Single(snapshot.Projects.Items).Id);
+    }
+
+    [Fact]
+    public async Task JsonContainerParametersEncodeStringsButNotNumbersTwice()
+    {
+        var api = new RecordingApiClient(_ => Containers());
+        var repository = CreateRepository(api, Capability("SYNO.Docker.Container") with { RequestFormat = "JSON" });
+        await repository.LoadSnapshotAsync();
+        var request = Assert.Single(api.Requests);
+        Assert.Equal("\"all\"", request.Parameters["type"]);
+        Assert.Equal("0", request.Parameters["offset"]);
+        Assert.Equal("-1", request.Parameters["limit"]);
+    }
+
+    [Theory]
     [InlineData(106)]
     [InlineData(107)]
     [InlineData(119)]
@@ -248,7 +282,7 @@ public sealed class ContainerManagerRepositoryContractTests
     }
 
     [Fact]
-    public async Task EverySectionLimitsArrayMappingToTwoHundredItems()
+    public async Task EverySectionPreservesAllReturnedItemsBeyondTheFormerSummaryLimit()
     {
         var api = new RecordingApiClient(request => request.ApiName switch
         {
@@ -256,7 +290,7 @@ public sealed class ContainerManagerRepositoryContractTests
                 .Select(index => Container($"container-{index}", $"Container {index}", "running", "image"))
                 .ToArray()),
             "SYNO.Docker.Image" => Resources("images", ResourceItems("image_id", "repository")),
-            "SYNO.Docker.Network" => Resources("networks", ResourceItems("network_id", "name")),
+            "SYNO.Docker.Network" => Resources("networks", ResourceItems("network_id", "name").Select(item => { item["containers"] = new JsonArray(); return item; }).ToArray()),
             "SYNO.Docker.Project" => Resources("projects", ResourceItems("project_id", "project_name")),
             "SYNO.Docker.Log" => Resources("logs", Enumerable.Range(0, 201)
                 .Select(index => new JsonObject { ["log_id"] = $"event-{index}" })
@@ -273,11 +307,77 @@ public sealed class ContainerManagerRepositoryContractTests
 
         var snapshot = await repository.LoadSnapshotAsync();
 
-        Assert.Equal(200, snapshot.Containers.Items.Count);
-        Assert.Equal(200, snapshot.Images.Items.Count);
-        Assert.Equal(200, snapshot.Networks.Items.Count);
-        Assert.Equal(200, snapshot.Projects.Items.Count);
-        Assert.Equal(200, snapshot.Events.Items.Count);
+        Assert.Equal(201, snapshot.Containers.Items.Count);
+        Assert.Equal(201, snapshot.Images.Items.Count);
+        Assert.Equal(201, snapshot.Networks.Items.Count);
+        Assert.Equal(201, snapshot.Projects.Items.Count);
+        Assert.Equal(201, snapshot.Events.Items.Count);
+    }
+
+    [Fact]
+    public async Task LogsFollowTotalAcrossShortPagesAndKeepUniqueSyntheticIds()
+    {
+        var api = new RecordingApiClient(request =>
+        {
+            if (request.ApiName != "SYNO.Docker.Log") return Containers();
+            var offset = int.Parse(request.Parameters["offset"], System.Globalization.CultureInfo.InvariantCulture);
+            var response = Resources("logs", Enumerable.Range(offset, Math.Min(137, 1205 - offset))
+                .Select(_ => new JsonObject { ["time"] = "2026/09/16 12:00:00", ["level"] = "info" }).ToArray());
+            response["offset"] = offset;
+            response["total"] = 1205;
+            return response;
+        });
+        var repository = CreateRepository(api, Capability("SYNO.Docker.Container"), Capability("SYNO.Docker.Log"));
+        var snapshot = await repository.LoadSnapshotAsync();
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Events.Status);
+        Assert.Equal(1205, snapshot.Events.Items.Count);
+        Assert.Equal(1205, snapshot.Events.Items.Select(item => item.Id).Distinct().Count());
+        Assert.Equal(Enumerable.Range(0, 9).Select(index => (index * 137).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            api.Requests.Where(call => call.ApiName == "SYNO.Docker.Log").Select(call => call.Parameters["offset"]));
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("offset")]
+    [InlineData("duplicate")]
+    [InlineData("malformed-total")]
+    [InlineData("failure")]
+    public async Task InvalidOrFailedLaterLogPageDoesNotPretendThePartialListIsComplete(string problem)
+    {
+        var api = new RecordingApiClient(request =>
+        {
+            if (request.ApiName != "SYNO.Docker.Log") return Containers();
+            var offset = int.Parse(request.Parameters["offset"], System.Globalization.CultureInfo.InvariantCulture);
+            if (offset > 0 && problem == "failure") throw new DsmException("synthetic", "retry", 500);
+            var response = Resources("logs", offset > 0 && problem == "empty" ? [] :
+                [new JsonObject { ["id"] = problem == "duplicate" ? "same" : $"event-{offset}" }]);
+            response["offset"] = offset > 0 && problem == "offset" ? 0 : offset;
+            response["total"] = offset > 0 && problem == "malformed-total" ? JsonValue.Create("2") : JsonValue.Create(2);
+            return response;
+        });
+        var repository = CreateRepository(api, Capability("SYNO.Docker.Container"), Capability("SYNO.Docker.Log"));
+        var snapshot = await repository.LoadSnapshotAsync();
+        Assert.Equal(ContainerManagerSectionStatus.Failed, snapshot.Events.Status);
+        Assert.Empty(snapshot.Events.Items);
+        Assert.Equal(ContainerManagerSectionStatus.Available, snapshot.Containers.Status);
+        Assert.Equal(2, api.Requests.Count(call => call.ApiName == "SYNO.Docker.Log"));
+    }
+
+    [Fact]
+    public async Task CancellationStopsBeforeRequestingTheNextLogPage()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var api = new RecordingApiClient(request =>
+        {
+            if (request.ApiName != "SYNO.Docker.Log") return Containers();
+            cancellation.Cancel();
+            var response = Resources("logs", new JsonObject { ["id"] = "first" });
+            response["total"] = 2;
+            return response;
+        });
+        var repository = CreateRepository(api, Capability("SYNO.Docker.Container"), Capability("SYNO.Docker.Log"));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.LoadSnapshotAsync(cancellation.Token));
+        Assert.Single(api.Requests, call => call.ApiName == "SYNO.Docker.Log");
     }
 
     [Fact]
@@ -298,11 +398,12 @@ public sealed class ContainerManagerRepositoryContractTests
     }
 
     [Fact]
-    public void ContractSurfaceContainsOnlyRecordedReadAreasAndNoWriteMethods()
+    public void ContractSurfaceContainsRecordedReadAreasAndNoUnrelatedWriteMethods()
     {
         var combined =
             Read("windows/src/LanStash.Domain/Containers/ContainerManagerModels.cs") +
             Read("windows/src/LanStash.Domain/Containers/IContainerManagerRepository.cs") +
+            Read("windows/src/LanStash.Infrastructure/Features/Containers/PrivateApi/DsmRepository.ContainerRegistry.cs") +
             Read("windows/src/LanStash.Infrastructure/Features/Containers/PrivateApi/DsmRepository.ContainerManager.Private.cs") +
             Read("windows/src/LanStash.App/Features/Containers/ContainerManagerState.cs") +
             Read("windows/src/LanStash.App/Features/Containers/ContainerManagerViewModel.cs");
@@ -310,14 +411,14 @@ public sealed class ContainerManagerRepositoryContractTests
         foreach (var required in new[]
         {
             "SYNO.Docker.Container", "SYNO.Docker.Image", "SYNO.Docker.Network",
-            "SYNO.Docker.Project", "SYNO.Docker.Log"
+            "SYNO.Docker.Project", "SYNO.Docker.Log", "SYNO.Docker.Registry", "SearchRegistryAsync", "LoadRegistryTagsAsync"
         })
         {
             Assert.Contains(required, combined, StringComparison.Ordinal);
         }
         foreach (var forbidden in new[]
         {
-            "Registry", "Process", "CreateContainer", "DeleteContainer", "StartContainer",
+            "Process", "CreateContainer", "DeleteContainer", "StartContainer",
             "StopContainer", "RestartContainer", "ControlContainer", "pull_start",
             "WebView", "noVNC", "RawResponse"
         })
@@ -325,6 +426,8 @@ public sealed class ContainerManagerRepositoryContractTests
             Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);
         }
         Assert.Contains("\"list\"", combined, StringComparison.Ordinal);
+        Assert.Contains("\"search\"", combined, StringComparison.Ordinal);
+        Assert.Contains("\"tags\"", combined, StringComparison.Ordinal);
         Assert.DoesNotContain("\"create\"", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\"delete\"", combined, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\"start\"", combined, StringComparison.OrdinalIgnoreCase);

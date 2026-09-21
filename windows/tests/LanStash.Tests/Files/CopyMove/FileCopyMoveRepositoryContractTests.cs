@@ -326,6 +326,225 @@ public sealed class FileCopyMoveRepositoryContractTests
         Assert.Equal(1, api.StartCount);
     }
 
+    [Theory]
+    [InlineData(FileCopyMoveOperation.Copy, false)]
+    [InlineData(FileCopyMoveOperation.Move, false)]
+    [InlineData(FileCopyMoveOperation.Copy, true)]
+    [InlineData(FileCopyMoveOperation.Move, true)]
+    public async Task ExplicitSkipDoesNotWriteOrClaimCopiedItem(FileCopyMoveOperation operation, bool folder)
+    {
+        var source = folder ? Folder("/share/source/album", "album", 10) : File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = folder ? Folder("/share/destination/album", "album", 9) : File("/share/destination/item.txt", "item.txt", 8, 9);
+        var api = new FakeApi(Page(source), Page(target));
+        var outcome = await Repository(api).CopyMoveAsync(Request(operation, folder) with { ConflictPolicy = FileCopyMoveConflictPolicy.Skip });
+        Assert.True(outcome.SkippedExisting);
+        Assert.Null(outcome.ConfirmedItem);
+        Assert.False(outcome.Result.Submitted);
+        Assert.Equal(0, api.StartCount);
+        Assert.Equal(0, api.PermissionCount);
+    }
+
+    [Theory]
+    [InlineData(FileCopyMoveOperation.Copy, false)]
+    [InlineData(FileCopyMoveOperation.Move, false)]
+    [InlineData(FileCopyMoveOperation.Copy, true)]
+    [InlineData(FileCopyMoveOperation.Move, true)]
+    public async Task OverwriteRequiresTaskAndExactReadback(FileCopyMoveOperation operation, bool folder)
+    {
+        var source = folder ? Folder("/share/source/album", "album", 10) : File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = folder ? Folder("/share/destination/album", "album", 10) : File("/share/destination/item.txt", "item.txt", 7, 10);
+        var api = new FakeApi(Page(source), Page(target), operation == FileCopyMoveOperation.Copy ? Page(source) : Page(), Page(target));
+        var result = await Repository(api).CopyMoveAsync(Request(operation, folder) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite });
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(1, api.StartCount);
+        Assert.True(api.Overwrite);
+        Assert.StartsWith(".lanstash-permission-", api.PermissionName);
+        Assert.Equal(1, api.StatusCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task OverwriteCannotSucceedFromOldTargetWithoutFinishedTask(bool hasTask)
+    {
+        var source = File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = File("/share/destination/item.txt", "item.txt", 7, 10);
+        var api = new FakeApi(Page(source), Page(target), Page(source), Page(target))
+        {
+            StartResult = new(FileMutationTransportStatus.ResponseReceived, hasTask ? "task-1" : null),
+            StatusResult = new(FileCopyMoveTaskTransportStatus.ConfirmedFailure),
+        };
+        var request = Request(FileCopyMoveOperation.Copy) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite };
+        var result = await Repository(api).CopyMoveAsync(request);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result.Result.Status);
+        Assert.Null(result.ConfirmedItem);
+        Assert.Equal(2, api.ListCount);
+        api.StatusResult = new(FileCopyMoveTaskTransportStatus.Finished);
+        var reviewed = await Repository(api).CopyMoveAsync(request);
+        Assert.Equal(hasTask ? MutationResultStatus.ConfirmedSuccess : MutationResultStatus.SubmittedButUnverified, reviewed.Result.Status);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    [Fact]
+    public async Task OverwriteRejectsReadOnlyTargetBeforeSubmission()
+    {
+        var source = File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = File("/share/destination/item.txt", "item.txt", 7, 10);
+        target["additional"]!["perm"]!["write"] = false;
+        var api = new FakeApi(Page(source), Page(target));
+        var result = await Repository(api).CopyMoveAsync(Request(FileCopyMoveOperation.Copy) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite });
+        Assert.Equal(MutationResultStatus.PermissionDenied, result.Result.Status);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
+    public async Task HealthyLongCopyWaitsBeyondOldEightPollLimit()
+    {
+        var source = File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = File("/share/destination/item.txt", "item.txt", 7, 10);
+        var api = new FakeApi(Page(source), Page(target), Page(source), Page(target));
+        api.StatusFactory = () => new(api.StatusCount < 10 ? FileCopyMoveTaskTransportStatus.Running : FileCopyMoveTaskTransportStatus.Finished);
+        var result = await Repository(api).CopyMoveAsync(Request(FileCopyMoveOperation.Copy) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite });
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(10, api.StatusCount);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    [Fact]
+    public async Task CancellingOverwritePollingKeepsTaskForReadOnlyReview()
+    {
+        var source = File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = File("/share/destination/item.txt", "item.txt", 7, 10);
+        using var cancellation = new CancellationTokenSource();
+        var api = new FakeApi(Page(source), Page(target), Page(source), Page(target))
+        {
+            StatusFactory = () => { cancellation.Cancel(); return new(FileCopyMoveTaskTransportStatus.Running); },
+        };
+        var request = Request(FileCopyMoveOperation.Copy) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite };
+        var result = await Repository(api).CopyMoveAsync(request, cancellation.Token);
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, result.Result.Status);
+        Assert.Equal(2, api.ListCount);
+        api.StatusFactory = null;
+        var reviewed = await Repository(api).CopyMoveAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    [Fact]
+    public async Task RejectedOverwriteCannotBeProvedByIdenticalExistingFile()
+    {
+        var api = new FakeApi(Page(File("/share/source/item.txt", "item.txt", 7, 10)),
+            Page(File("/share/destination/item.txt", "item.txt", 7, 10)))
+        { StartResult = new(FileMutationTransportStatus.ConfirmedFailure, ErrorCategory: MutationErrorCategory.Permission) };
+        var result = await Repository(api).CopyMoveAsync(Request(FileCopyMoveOperation.Copy) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite });
+        Assert.Equal(MutationResultStatus.PermissionDenied, result.Result.Status);
+        Assert.Null(result.ConfirmedItem);
+        Assert.Equal(2, api.ListCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentFolderOverwriteBlocksDescendantOperations()
+    {
+        var source = Folder("/share/source/album", "album", 10);
+        var target = Folder("/share/destination/album", "album", 10);
+        var api = new FakeApi(Page(source), Page(target), Page(source), Page(target)) { HoldFirstList = true };
+        var request = Request(FileCopyMoveOperation.Copy, true) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite };
+        var repository = Repository(api);
+        var first = repository.CopyMoveAsync(request);
+        await api.FirstListEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var child = request with { Target = request.Target with { Path = "/share/source/album/child", Name = "child" } };
+        var blocked = await repository.CopyMoveAsync(child);
+        api.ReleaseFirstList.SetResult(true);
+        Assert.Equal(MutationErrorCategory.Conflict, blocked.Result.ErrorCategory);
+        Assert.False(blocked.Result.Submitted);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await first).Result.Status);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    [Fact]
+    public async Task DedicatedReviewUsesStableIdentityAndNeverStartsAgain()
+    {
+        var source = File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = File("/share/destination/item.txt", "item.txt", 7, 10);
+        var api = new FakeApi(Page(source), Page(target), Page(source), Page(target))
+        { StatusResult = new(FileCopyMoveTaskTransportStatus.ConfirmedFailure) };
+        var repository = Repository(api);
+        await repository.CopyMoveAsync(Request(FileCopyMoveOperation.Copy) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite });
+        var pending = Assert.Single(await repository.GetCopyMoveReviewsAsync());
+        Assert.Equal(pending, Assert.Single(await Repository(api).GetCopyMoveReviewsAsync()));
+        Assert.Null(await repository.ReviewCopyMoveAsync(Guid.NewGuid()));
+        Assert.Equal(2, api.ListCount);
+        Assert.Empty(await Repository(api, Session with { Sid = "synthetic-other-session" }).GetCopyMoveReviewsAsync());
+        Assert.Null(await Repository(api, Session with { Sid = "synthetic-other-session" }).ReviewCopyMoveAsync(pending.Id));
+        api.StatusResult = new(FileCopyMoveTaskTransportStatus.Finished);
+        var result = await repository.ReviewCopyMoveAsync(pending.Id);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result!.Result.Status);
+        Assert.Single(await repository.GetCopyMoveReviewsAsync());
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await repository.ReviewCopyMoveAsync(pending.Id))!.Result.Status);
+        Assert.Equal(4, api.ListCount);
+        repository.AcknowledgeCopyMoveReview(pending.Id);
+        Assert.Empty(await repository.GetCopyMoveReviewsAsync());
+        Assert.Null(await repository.ReviewCopyMoveAsync(pending.Id));
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(4, api.ListCount);
+    }
+
+    [Fact]
+    public async Task UnknownIdAndPreCancelledReviewSendNoNetworkRequests()
+    {
+        var api = new FakeApi(); var repository = Repository(api);
+        Assert.Null(await repository.ReviewCopyMoveAsync(Guid.NewGuid()));
+        using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.ReviewCopyMoveAsync(Guid.NewGuid(), cancellation.Token));
+        Assert.Equal(0, api.ListCount);
+        Assert.Equal(0, api.StatusCount);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
+    public async Task PreflightAuthenticationDoesNotCreateAnUnresolvableReview()
+    {
+        var api = new FakeApi(AuthenticationFailure()); var repository = Repository(api);
+        var result = await repository.CopyMoveAsync(Request(FileCopyMoveOperation.Copy));
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Result.Status);
+        Assert.Equal(MutationErrorCategory.Authentication, result.Result.ErrorCategory);
+        Assert.False(result.Result.Submitted);
+        Assert.Empty(await repository.GetCopyMoveReviewsAsync());
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentReadOnlyReviewKeepsReservationWithoutASecondReadOrWrite()
+    {
+        var source = File("/share/source/item.txt", "item.txt", 7, 10);
+        var target = File("/share/destination/item.txt", "item.txt", 7, 10);
+        var api = new FakeApi(Page(source), Page(target), Page(source), Page(target))
+        { StatusResult = new(FileCopyMoveTaskTransportStatus.ConfirmedFailure), HoldFirstList = true, HoldListAt = 3 };
+        var repository = Repository(api);
+        await repository.CopyMoveAsync(Request(FileCopyMoveOperation.Copy) with { ConflictPolicy = FileCopyMoveConflictPolicy.Overwrite });
+        var pending = Assert.Single(await repository.GetCopyMoveReviewsAsync());
+        api.StatusResult = new(FileCopyMoveTaskTransportStatus.Finished);
+        var first = repository.ReviewCopyMoveAsync(pending.Id);
+        await api.FirstListEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var second = await repository.ReviewCopyMoveAsync(pending.Id);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, second!.Result.Status);
+        Assert.Equal(3, api.ListCount);
+        api.ReleaseFirstList.SetResult(true);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await first)!.Result.Status);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    [Fact]
+    public async Task PreflightNetworkFailureDoesNotCreatePendingWrite()
+    {
+        var api = new FakeApi(new HttpRequestException("synthetic")); var repository = Repository(api);
+        var result = await repository.CopyMoveAsync(Request(FileCopyMoveOperation.Move));
+        Assert.False(result.Result.Submitted);
+        Assert.Equal(MutationErrorCategory.Network, result.Result.ErrorCategory);
+        Assert.Empty(await repository.GetCopyMoveReviewsAsync());
+        Assert.Equal(0, api.StartCount);
+    }
+
     private static readonly NasProfile Profile = new(
         Guid.Parse("11111111-1111-1111-1111-111111111111"),
         "NAS", "nas.example.invalid", null, "user");
@@ -340,8 +559,8 @@ public sealed class FileCopyMoveRepositoryContractTests
             false, false, false),
         "/share/destination", operation, true, false, false, false);
 
-    private static DsmRepository Repository(IDsmApiClient api) => new(
-        Profile, Session, api, new Dictionary<string, ApiCapability>
+    private static DsmRepository Repository(IDsmApiClient api, DsmSession? session = null) => new(
+        Profile, session ?? Session, api, new Dictionary<string, ApiCapability>
         {
             ["SYNO.FileStation.CopyMove"] = Capability("SYNO.FileStation.CopyMove", 3),
             ["SYNO.FileStation.CheckPermission"] = Capability("SYNO.FileStation.CheckPermission", 3),
@@ -427,11 +646,15 @@ public sealed class FileCopyMoveRepositoryContractTests
         public FileCopyMoveTaskTransportResult StatusResult { get; set; } =
             new(FileCopyMoveTaskTransportStatus.Finished);
         public bool HoldFirstList { get; init; }
+        public int HoldListAt { get; init; } = 1;
         public TaskCompletionSource<bool> FirstListEntered { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> ReleaseFirstList { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public List<CancellationToken> ListTokens { get; } = [];
+        public bool Overwrite { get; private set; }
+        public Func<FileCopyMoveTaskTransportResult>? StatusFactory { get; set; }
+        public string? PermissionName { get; private set; }
 
         public Uri GetBaseUri(NasProfile profile) => new("https://nas.example.invalid/");
         public Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
@@ -461,7 +684,7 @@ public sealed class FileCopyMoveRepositoryContractTests
                 return (JsonObject)RootMountResponse.DeepClone();
             }
             var count = Interlocked.Increment(ref _listCount);
-            if (HoldFirstList && count == 1)
+            if (HoldFirstList && count == HoldListAt)
             {
                 FirstListEntered.TrySetResult(true);
                 await ReleaseFirstList.Task.WaitAsync(cancellationToken);
@@ -477,6 +700,7 @@ public sealed class FileCopyMoveRepositoryContractTests
             string folderPath, string name, CancellationToken cancellationToken = default)
         {
             PermissionCount++;
+            PermissionName = name;
             return Task.FromResult(new FilePermissionTransportResult(
                 FilePermissionTransportStatus.Allowed));
         }
@@ -492,11 +716,21 @@ public sealed class FileCopyMoveRepositoryContractTests
                 Task.FromException<FileCopyMoveStartTransportResult>(error);
         }
 
+        public Task<FileCopyMoveStartTransportResult> StartFileCopyMoveAsync(
+            NasProfile profile, DsmSession session, ApiCapability capability,
+            string sourcePath, string destinationDirectoryPath, bool removeSource, bool overwrite,
+            CancellationToken cancellationToken = default)
+        {
+            Overwrite = overwrite;
+            return StartFileCopyMoveAsync(profile, session, capability, sourcePath, destinationDirectoryPath, removeSource, cancellationToken);
+        }
+
         public Task<FileCopyMoveTaskTransportResult> ReadFileCopyMoveStatusAsync(
             NasProfile profile, DsmSession session, ApiCapability capability, string taskId,
             CancellationToken cancellationToken = default)
         {
             StatusCount++;
+            if (StatusFactory is not null) return Task.FromResult(StatusFactory());
             var error = StatusException;
             return error is null ? Task.FromResult(StatusResult) :
                 Task.FromException<FileCopyMoveTaskTransportResult>(error);

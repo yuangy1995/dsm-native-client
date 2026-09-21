@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.unmount-remote.synthetic-location",
+  "module": "file-station",
+  "operation": "unmountRemote",
+  "api": {
+    "name": "SYNO.FileStation.Mount.List",
+    "method": "unmount",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "mount_point",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-mount-point>\"]"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

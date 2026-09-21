@@ -3,8 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:viewModels="using:LanStash.App.ViewModels"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-    <Grid Padding="28,20,28,28" RowSpacing="12">
+    Background="{ThemeResource WorkspaceSurfaceBrush}">
+    <Grid Padding="{StaticResource WorkspacePagePadding}" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -18,7 +18,7 @@
                 <ColumnDefinition Width="360" />
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="{Binding Title}" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="{Binding Title}" Style="{StaticResource WorkspaceTitleStyle}" />
                 <TextBlock
                     x:Name="PathText"
                     Margin="0,4,0,0"

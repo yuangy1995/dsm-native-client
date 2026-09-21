@@ -6,6 +6,111 @@ namespace LanStash.Tests.Files.Archive;
 
 public sealed class FileArchiveCompressionRepositoryContractTests
 {
+    [Theory]
+    [InlineData(21)]
+    [InlineData(205)]
+    [InlineData(1001)]
+    public async Task LargeSelectionReadsAllPagesAndCreatesOneCompleteArchive(int count)
+    {
+        var request = LargeRequest(count);
+        var rows = request.Sources.Select(source => Item(source.Item.Path, source.Item.Name, source.Item.Size)).ToArray();
+        var after = rows.Append(Item("/share/docs/archive.zip", "archive.zip", 12)).ToArray();
+        var api = new FakeApi(Pages(rows).Concat(Pages(after)).ToArray());
+        var result = await Repository(api).CompressAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(request.Sources.Select(source => source.Item.Path), api.Paths);
+        Assert.Equal(1, api.StartCount); Assert.Equal(1, api.PermissionCount);
+        Assert.Equal((count + 99) / 100 + (count + 100) / 100, api.ListCount);
+        Assert.Equal("/share/docs/archive.zip", result.ConfirmedItem!.Path);
+    }
+
+    [Theory]
+    [InlineData("metadata")]
+    [InlineData("permission")]
+    public async Task ChangedSourceBeyondFirstPagePreventsWholeSubmission(string kind)
+    {
+        var request = LargeRequest(205);
+        var rows = request.Sources.Select(source => Item(source.Item.Path, source.Item.Name, source.Item.Size)).ToArray();
+        if (kind == "metadata") rows[^1]["additional"]!["time"]!["mtime"] = 11L;
+        else rows[^1]["additional"]!["perm"]!["read"] = false;
+        var api = new FakeApi(Pages(rows));
+        var result = await Repository(api).CompressAsync(request);
+        Assert.False(result.Result.Submitted); Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Result.Status);
+        Assert.Equal(3, api.ListCount); Assert.Equal(0, api.PermissionCount); Assert.Equal(0, api.StartCount);
+    }
+
+    [Theory]
+    [InlineData("duplicate")]
+    [InlineData("parent-child")]
+    [InlineData("remote")]
+    public async Task InvalidTailOfLargeSelectionStillRejectsBeforeReading(string kind)
+    {
+        var request = LargeRequest(21); var sources = request.Sources.ToArray();
+        if (kind == "duplicate") sources[^1] = sources[0];
+        if (kind == "remote") sources[^1] = sources[^1] with { SourceKind = FileArchiveCompressionSourceKind.Remote };
+        if (kind == "parent-child")
+        {
+            sources[0] = new(new("/share/docs/folder", "folder", true, 0, DateTimeOffset.FromUnixTimeSeconds(10), null, false, false));
+            sources[^1] = new(new("/share/docs/folder/child", "child", false, 7, DateTimeOffset.FromUnixTimeSeconds(10), null, false, false));
+        }
+        var api = new FakeApi(); var result = await Repository(api).CompressAsync(request with { Sources = sources });
+        Assert.False(result.Result.Submitted); Assert.Equal(0, api.ListCount); Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
+    public async Task ChangingTailOfUnknownLargeOperationCannotReplay()
+    {
+        var request = LargeRequest(205);
+        var rows = request.Sources.Select(source => Item(source.Item.Path, source.Item.Name, source.Item.Size)).ToArray();
+        var api = new FakeApi(Pages(rows).Concat(Pages(rows)).ToArray()) { StatusException = new IOException("synthetic") };
+        var first = await Repository(api).CompressAsync(request);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        var sources = request.Sources.ToArray(); sources[^1] = new(new("/share/docs/changed.txt", "changed.txt", false, 7, DateTimeOffset.FromUnixTimeSeconds(10), null, false, false));
+        var second = await Repository(api).CompressAsync(request with { Sources = sources });
+        Assert.False(second.Result.Submitted); Assert.Equal(MutationErrorCategory.Conflict, second.Result.ErrorCategory);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    private FileArchiveCompressionRequest LargeRequest(int count) => new(Profile.Id,
+        Enumerable.Range(0, count).Select(index => new FileArchiveCompressionSource(new FileItem($"/share/docs/f{index:D4}.txt", $"f{index:D4}.txt", false,
+            7, DateTimeOffset.FromUnixTimeSeconds(10), null, false, false))).ToArray(), "archive");
+
+    private static JsonObject[] Pages(JsonObject[] rows) => rows.Chunk(100).Select((chunk, page) => new JsonObject
+    { ["offset"] = page * 100, ["total"] = rows.Length, ["files"] = new JsonArray(chunk.Select(item => item.DeepClone()).ToArray()) }).ToArray();
+
+    [Fact]
+    public async Task AdvancedSelectionReachesTransportAndReadbackUsesSelectedExtension()
+    {
+        var api = new FakeApi(Page(Item("/share/docs/a.txt", "a.txt", 7)),
+            Page(Item("/share/docs/a.txt", "a.txt", 7), Item("/share/docs/advanced.7z", "advanced.7z", 12)));
+        var request = Request() with { DestinationName = "advanced.zip",
+            Options = new(FileArchiveFormat.SevenZip, FileArchiveCompressionLevel.Best, " synthetic ") };
+        var result = await Repository(api).CompressAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal("/share/docs/advanced.7z", result.ConfirmedItem!.Path);
+        Assert.Equal(request.Options, api.Options);
+        Assert.Equal("/share/docs/advanced.7z", api.Destination);
+        Assert.DoesNotContain(" synthetic ", request.ToString());
+    }
+
+    [Fact]
+    public async Task ChangingPasswordDuringUnknownOperationCannotReplayOrAdoptIt()
+    {
+        var api = new FakeApi(Page(Item("/share/docs/a.txt", "a.txt", 7)),
+            Page(Item("/share/docs/a.txt", "a.txt", 7)),
+            Page(Item("/share/docs/a.txt", "a.txt", 7), Item("/share/docs/protected.7z", "protected.7z", 12)))
+            { StatusException = new IOException("synthetic") };
+        var request = Request() with { DestinationName = "protected",
+            Options = new(FileArchiveFormat.SevenZip, FileArchiveCompressionLevel.Best, "synthetic-first") };
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await Repository(api).CompressAsync(request)).Result.Status);
+        var changed = await Repository(api).CompressAsync(request with { Options = request.Options with { Password = "synthetic-other" } });
+        Assert.Equal(MutationErrorCategory.Conflict, changed.Result.ErrorCategory);
+        Assert.False(changed.Result.Submitted);
+        api.StatusException = null;
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await Repository(api).CompressAsync(request)).Result.Status);
+        Assert.Equal(1, api.StartCount);
+    }
+
     [Fact]
     public async Task PreflightSubmitPollAndIndependentReadbackConfirmArchive()
     {
@@ -41,7 +146,7 @@ public sealed class FileArchiveCompressionRepositoryContractTests
     }
 
     [Fact]
-    public async Task UnknownSubmissionIsNeverReplayedAndLaterCallOnlyReadsBack()
+    public async Task LostStartReceiptCannotBeConfirmedByAnExistingFileOrReplayed()
     {
         var api = new FakeApi(
             Page(Item("/share/docs/a.txt", "a.txt", 7)),
@@ -58,7 +163,8 @@ public sealed class FileArchiveCompressionRepositoryContractTests
         var reviewed = await Repository(api).CompressAsync(Request());
 
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, reviewed.Result.Status);
+        Assert.Null(reviewed.ConfirmedItem);
         Assert.Equal(1, api.StartCount);
         Assert.Equal(0, api.StatusCount);
     }
@@ -82,10 +188,38 @@ public sealed class FileArchiveCompressionRepositoryContractTests
 
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
         Assert.Equal(1, api.StartCount);
-        Assert.Equal(1, api.StatusCount);
+        Assert.Equal(2, api.StatusCount);
     }
 
-    private static DsmRepository Repository(IDsmApiClient api) => new(
+    [Fact]
+    public async Task PartialOutputWithoutFinishedTaskIsNotSuccessAndLaterStatusCanConfirm()
+    {
+        var output = Page(Item("/share/docs/a.txt", "a.txt", 7), Item("/share/docs/archive.zip", "archive.zip", 12));
+        var api = new FakeApi(Page(Item("/share/docs/a.txt", "a.txt", 7)), output, (JsonObject)output.DeepClone())
+            { TaskStatus = FileArchiveCompressionTaskTransportStatus.Unsupported };
+        var first = await Repository(api).CompressAsync(Request());
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Null(first.ConfirmedItem);
+        api.TaskStatus = FileArchiveCompressionTaskTransportStatus.Finished;
+        var reviewed = await Repository(api).CompressAsync(Request());
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(2, api.StatusCount);
+    }
+
+    [Fact]
+    public async Task FailedTaskWithPartialOutputIsFailure()
+    {
+        var api = new FakeApi(Page(Item("/share/docs/a.txt", "a.txt", 7)),
+            Page(Item("/share/docs/a.txt", "a.txt", 7), Item("/share/docs/archive.zip", "archive.zip", 12)))
+            { TaskStatus = FileArchiveCompressionTaskTransportStatus.ConfirmedFailure };
+        var result = await Repository(api).CompressAsync(Request());
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Result.Status);
+        Assert.Null(result.ConfirmedItem);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    private DsmRepository Repository(IDsmApiClient api) => new(
         Profile,
         Session,
         api,
@@ -99,7 +233,7 @@ public sealed class FileArchiveCompressionRepositoryContractTests
                 "SYNO.FileStation.CheckPermission", "entry.cgi", 3, 3, "FORM"),
         });
 
-    private static FileArchiveCompressionRequest Request() => new(
+    private FileArchiveCompressionRequest Request() => new(
         Profile.Id,
         [new FileArchiveCompressionSource(new FileItem(
             "/share/docs/a.txt", "a.txt", false, 7,
@@ -131,10 +265,10 @@ public sealed class FileArchiveCompressionRepositoryContractTests
         },
     };
 
-    private static readonly NasProfile Profile = new(
-        Guid.Parse("11111111-1111-1111-1111-111111111111"),
+    private readonly NasProfile Profile = new(
+        Guid.NewGuid(),
         "NAS", "nas.example.invalid", null, "user");
-    private static readonly DsmSession Session = new(Profile.Id, "synthetic", null, null);
+    private DsmSession Session => new(Profile.Id, "synthetic", null, null);
 
     private sealed class FakeApi(params JsonObject[] pages) : IDsmApiClient
     {
@@ -143,8 +277,12 @@ public sealed class FileArchiveCompressionRepositoryContractTests
         public int PermissionCount { get; private set; }
         public int StartCount { get; private set; }
         public int StatusCount { get; private set; }
+        public FileArchiveCompressionOptions? Options { get; private set; }
+        public string? Destination { get; private set; }
+        public IReadOnlyList<string>? Paths { get; private set; }
         public Exception? StartException { get; set; }
         public Exception? StatusException { get; set; }
+        public FileArchiveCompressionTaskTransportStatus TaskStatus { get; set; } = FileArchiveCompressionTaskTransportStatus.Finished;
 
         public Uri GetBaseUri(NasProfile profile) => new("https://nas.example.invalid/");
         public Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
@@ -188,6 +326,16 @@ public sealed class FileArchiveCompressionRepositoryContractTests
                 FilePermissionTransportStatus.Allowed));
         }
 
+        public Task<FileArchiveCompressionStartTransportResult> StartFileArchiveCompressionAsync(
+            NasProfile profile, DsmSession session, ApiCapability capability,
+            IReadOnlyList<string> sourcePaths, string destinationPath, FileArchiveCompressionOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            Options = options;
+            Destination = destinationPath;
+            return StartFileArchiveCompressionAsync(profile, session, capability, sourcePaths, destinationPath, cancellationToken);
+        }
+
         public Task<FileArchiveCompressionStartTransportResult>
             StartFileArchiveCompressionAsync(
                 NasProfile profile, DsmSession session, ApiCapability capability,
@@ -195,6 +343,7 @@ public sealed class FileArchiveCompressionRepositoryContractTests
                 CancellationToken cancellationToken = default)
         {
             StartCount++;
+            Paths = sourcePaths.ToArray();
             if (StartException is not null)
             {
                 return Task.FromException<FileArchiveCompressionStartTransportResult>(
@@ -216,7 +365,7 @@ public sealed class FileArchiveCompressionRepositoryContractTests
                     StatusException);
             }
             return Task.FromResult(new FileArchiveCompressionTaskTransportResult(
-                FileArchiveCompressionTaskTransportStatus.Finished));
+                TaskStatus));
         }
     }
 }

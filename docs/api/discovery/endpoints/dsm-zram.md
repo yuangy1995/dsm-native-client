@@ -63,6 +63,10 @@
 内核参数、交换设备名称、设备路径、命令、进程、账号、网络地址及未知字段不会进入
 领域模型，也不会出现在默认界面。
 
+2026-09-17 Windows/Apple 字段读取补充：启用状态仅接受原生 Boolean；容量只接受
+非负整数，不截断小数；同义字段冲突保持未知，非对象 data 为错误。单字段未知
+不清空其他可信摘要，全部不可识别时显示无信息，而不是停用或零容量。
+
 ## 写操作关闭边界
 
 `set` 会改变内存管理行为，可能影响内存压力、系统响应、服务稳定性和重启后的状态。
@@ -80,7 +84,9 @@
 - Apple Adapter：`DsmNasAdministrationRepository.loadZRAM()`；
 - macOS：NAS 设置中的“内存压缩”只读页，显示启用状态、明确字节容量和受限算法，
   支持手动刷新以及加载、空内容、错误和正常状态；该标量页面没有筛选场景；
-- iPhone、iPad、Android 与 Windows：尚未迁移该页面。
+- Windows：已接固定 v1 读取、标量状态/空信息/错误/不可用与双语只读原生页面，
+  只有合成证据，没有 set 方法或开关。
+- iPhone、iPad、Android：本波不迁移页面，Apple 移动需回归共享严格读取修正。
 
 界面没有开关、保存或其他写入口，并提示需要修改时前往 DSM。状态同时使用文字与系统
 图标，不依赖颜色；中英文用户可见文案均通过语言资源提供。
@@ -101,7 +107,7 @@
 - Apple 领域：`apple/Packages/DsmCore/Sources/NasAdministration.swift`；
 - macOS 模型与界面：`apple/Apps/DsmMac/Sources/NasAdministrationModel.swift`、
   `apple/Apps/DsmMac/Sources/NasAdministrationView.swift`；
-- Android / Windows Adapter：尚未实现；
+- Windows Adapter：`DsmRepository.NasSettings.Zram.cs`；Android 本波未实现；
 - Schema：没有保存真实响应，因此没有响应 Schema；机器兼容索引由
   `contracts/schemas/private-api-compatibility.schema.json` 校验；
 - 脱敏 fixture：没有真实响应，未创建 fixture；合成响应只存在于正式自动化测试；

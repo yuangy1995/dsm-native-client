@@ -36,6 +36,7 @@ public sealed partial class ChatPage
         var dialog = _announcementsDialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = localization.Get("ChatAnnouncementsDialogTitle"),
             CloseButtonText = localization.Get("ChatAnnouncementsClose"),
             DefaultButton = ContentDialogButton.Close,

@@ -159,6 +159,8 @@ def scan_visible_literal_calls(validation: Validation) -> None:
         r'(?:Text|Content|Header|Label|PlaceholderText|Title|AutomationProperties\.Name)="([^"{][^"]*)"'
     )
     for path in (ROOT / "windows/src/LanStash.App").rglob("*.xaml"):
+        if not path.is_file() or any(part in {"bin", "obj"} for part in path.parts):
+            continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             match = xaml_attribute.search(line)
             if match:
@@ -191,6 +193,8 @@ def validate_references(
 ) -> None:
     for base in paths:
         for path in base.rglob(f"*{suffix}"):
+            if not path.is_file() or any(part in {".build", "build", "bin", "obj"} for part in path.parts):
+                continue
             for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 for key in pattern.findall(line):
                     validation.require(
@@ -202,6 +206,8 @@ def validate_references(
 def validate_windows_xuid_references(keys: set[str], validation: Validation) -> None:
     uid_attribute = "{http://schemas.microsoft.com/winfx/2006/xaml}Uid"
     for path in (ROOT / "windows/src/LanStash.App").rglob("*.xaml"):
+        if not path.is_file() or any(part in {"bin", "obj"} for part in path.parts):
+            continue
         for node in ET.parse(path).getroot().iter():
             uid = node.attrib.get(uid_attribute)
             if uid:

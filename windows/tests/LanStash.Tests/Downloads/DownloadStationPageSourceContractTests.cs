@@ -44,10 +44,10 @@ public sealed class DownloadStationPageSourceContractTests
         var xaml = Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml.cs");
 
-        Assert.Contains("DownloadStationFilterAll", xaml);
-        Assert.Contains("DownloadStationFilterActive", xaml);
-        Assert.Contains("DownloadStationFilterFinished", xaml);
-        Assert.Contains("DownloadStationFilterPaused", xaml);
+        Assert.Contains("WorkspaceFilterAll", xaml);
+        Assert.Contains("WorkspaceFilterActive", xaml);
+        Assert.Contains("WorkspaceFilterFinished", xaml);
+        Assert.Contains("WorkspaceFilterPaused", xaml);
         Assert.Contains("x:Name=\"LoadMoreButton\"", xaml);
         Assert.Contains("_viewModel.LoadMoreAsync", source);
         Assert.Contains("SelectedTask.DownloadSpeedText", xaml);
@@ -92,7 +92,7 @@ public sealed class DownloadStationPageSourceContractTests
         Assert.True(Count(xaml, "AutomationProperties.LiveSetting=\"Polite\"") >= 6);
         Assert.Contains("AutomationProperties.Name=\"{x:Bind AutomationName}\"", xaml);
         Assert.Contains("AutomationProperties.HeadingLevel=\"Level1\"", xaml);
-        Assert.Contains("ThemeResource CardBackgroundFillColorDefaultBrush", xaml);
+        Assert.Contains("ThemeResource WorkspaceTileBrush", xaml);
         Assert.Contains("TextWrapping=\"Wrap\"", xaml);
         Assert.DoesNotContain("Background=\"#", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Foreground=\"#", xaml, StringComparison.OrdinalIgnoreCase);
@@ -101,7 +101,7 @@ public sealed class DownloadStationPageSourceContractTests
     }
 
     [Fact]
-    public void PageOnlyExposesLinkCreateSingleTaskPauseResumeAndSafeDelete()
+    public void PageKeepsSafeTaskControlsAndAddsSeparateConfirmedSettings()
     {
         var downloadFeature =
             Read("windows/src/LanStash.App/Views/DownloadStationPage.xaml") +
@@ -114,15 +114,22 @@ public sealed class DownloadStationPageSourceContractTests
         foreach (var forbidden in new[]
         {
             "DeleteDownloaded", "DeleteDownloadData",
-            "SaveSettings", "LoadSettings", "ControlDownloads", "create_click",
-            "settings_click", "force_complete", "removeData"
+            "ControlDownloads", "create_click", "force_complete", "removeData"
         })
         {
             Assert.DoesNotContain(forbidden, downloadFeature, StringComparison.OrdinalIgnoreCase);
         }
         Assert.Contains("DownloadStationCreateTask", downloadFeature, StringComparison.Ordinal);
+        var settings = Read("windows/src/LanStash.App/Views/DownloadStationPage.Settings.cs");
+        var editor = Read("windows/src/LanStash.App/Views/DownloadSettingsDialogContent.xaml.cs");
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", settings);
+        Assert.Contains("Confirmation.IsChecked == true", editor);
+        Assert.Contains("_model.ReviewAsync()", editor);
+        Assert.Contains("_model.ContinueAsync()", editor);
+        Assert.DoesNotContain("setserverconfig", settings + editor);
         Assert.Contains("ShowCreateTaskDialogAsync", downloadFeature, StringComparison.Ordinal);
-        Assert.Contains("_viewModel.CreateTaskAsync(uriBox.Text)", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("_viewModel.CreateTaskAsync(uriBox.Text, optionsModel.Destination)", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("taskFile: false", downloadFeature);
         Assert.Contains("new DownloadTaskCreateRequest(", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("DownloadStationCreateFileTask", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("CreateFileTask_Click", downloadFeature, StringComparison.Ordinal);
@@ -131,7 +138,9 @@ public sealed class DownloadStationPageSourceContractTests
         Assert.Contains("\".torrent\"", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("\".nzb\"", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("\".txt\"", downloadFeature, StringComparison.Ordinal);
-        Assert.Contains("_viewModel.CreateTaskFromFileAsync(filePath)", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("_viewModel.CreateTaskFromFileAsync(filePath, destination, password)", downloadFeature, StringComparison.Ordinal);
+        Assert.Contains("content.TakePassword()", downloadFeature);
+        Assert.Contains("password = null", downloadFeature);
         Assert.Contains("new DownloadTaskFileCreateRequest(", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("Pause_Click", downloadFeature, StringComparison.Ordinal);
         Assert.Contains("Resume_Click", downloadFeature, StringComparison.Ordinal);

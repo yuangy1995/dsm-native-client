@@ -28,6 +28,7 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
     private var deletionLocks: Set<SynologyPhotoID> = []
     private var pendingDeletions: [SynologyPhotoID: SynologyPhoto] = [:]
     private var deletionOperations: [UUID: SynologyPhotoID] = [:]
+    private var rejectedDeletionOperations: [UUID: AppError] = [:]
     private var confirmedDeletions: [SynologyPhotoID: SynologyPhoto] = [:]
 
     public init(
@@ -353,7 +354,7 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
             "item_id": .integerArray([photo.id.unitID]), "force_download": .boolean(true), "download_type": .string("source")
         ])
         // 在随机临时文件中校验再提升；失败不覆盖用户目标文件。
-        let staging = destination.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).photos-download")
+        let staging = FileManager.default.temporaryDirectory.appendingPathComponent(".\(UUID().uuidString).photos-download")
         defer { try? FileManager.default.removeItem(at: staging) }
         let response = try await binary.download(request, to: staging, progress: progress)
         guard response.statusCode == 200 else { throw DsmErrorMapper.map(.httpStatus(code: response.statusCode, requestID: UUID())) }
@@ -362,7 +363,7 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
         let size = (try FileManager.default.attributesOfItem(atPath: staging.path)[.size] as? NSNumber)?.int64Value
         guard size == photo.sizeBytes else { throw Self.failure(.invalidResponse) }
         try Task.checkCancellation()
-        try FileManager.default.moveItem(at: staging, to: destination)
+        try await DownloadedFileExporter.export(from: staging, to: destination, replaceExisting: false)
     }
 
     private func requirePhoto(_ photo: SynologyPhoto) throws {
@@ -380,8 +381,11 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
               deleteCapability.requestFormat == .json else {
             throw deletionError(.versionUnsupported, "photos.delete.unverified")
         }
-        let current = try await details(for: photo)
-        guard Self.sameDeletionTarget(photo, current) else { throw deletionError(.conflict, "photos.delete.changed") }
+        // 删除身份核查不依赖 EXIF、地址或视频转换等可选详情的解析。
+        let identity: DeletionItemList = try await call("SYNO.Foto.Browse.Item", version: 5, method: "get",
+            parameters: ["id": .integerArray([photo.id.unitID])])
+        guard identity.list.count == 1, let current = identity.list.first,
+              current.matches(photo) else { throw deletionError(.conflict, "photos.delete.changed") }
         let folder: FolderPayload = try await call("SYNO.Foto.Browse.Folder", version: 2, method: "get", parameters: [
             "id": .integer(photo.folderID), "additional": .stringArray(["access_permission"])
         ])
@@ -394,6 +398,7 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
     public func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult {
         try requirePhoto(photo)
         if let previous = deletionOperations[operationID], previous != photo.id { throw deletionError(.conflict, "photos.delete.changed") }
+        if let rejection = rejectedDeletionOperations[operationID] { throw rejection }
         if let confirmed = confirmedDeletions[photo.id], Self.sameDeletionTarget(confirmed, photo) { return .confirmed }
         guard deletionLocks.insert(photo.id).inserted else { return .pendingReview }
         defer { deletionLocks.remove(photo.id) }
@@ -412,6 +417,15 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
             try await client.callVoid(path: capability.path, api: capability.name, version: 1, method: "delete",
                 requestFormat: .json, parameters: ["item_id": .integerArray([photo.id.unitID]), "folder_id": .integerArray([])],
                 credential: credential)
+        } catch let error as DsmNetworkError {
+            // 明确的会话/权限拒绝没有启动删除，不能伪装成永久待核查；未知错误仍不重放。
+            if case .api(let code, _) = error, [105, 106, 107, 119].contains(code) {
+                let rejection = DsmErrorMapper.map(error)
+                pendingDeletions.removeValue(forKey: photo.id)
+                rejectedDeletionOperations[operationID] = rejection
+                throw rejection
+            }
+            return .pendingReview
         } catch {
             // 提交后的错误或取消不能证明未执行；保留待核对记录，不自动重放。
             return .pendingReview
@@ -425,7 +439,7 @@ public actor SynologyPhotosRepository: SynologyPhotosServing {
         guard let pending = pendingDeletions[photo.id], Self.sameDeletionTarget(pending, photo) else {
             throw deletionError(.conflict, "photos.delete.changed")
         }
-        let payload: ItemList = try await call("SYNO.Foto.Browse.Item", version: 5, method: "get",
+        let payload: DeletionItemList = try await call("SYNO.Foto.Browse.Item", version: 5, method: "get",
             parameters: ["id": .integerArray([photo.id.unitID])])
         // 只有成功空响应表示原件已不存在；权限错误、失败响应和其他项目都不能视为删除成功。
         if payload.list.isEmpty {
@@ -627,6 +641,24 @@ private struct TimelinePayload: Decodable, Sendable {
     struct Day: Decodable, Sendable { let year: Int; let month: Int; let day: Int; let item_count: Int }
 }
 private struct ItemList: Decodable, Sendable { let list: [ItemPayload] }
+private struct DeletionItemList: Decodable, Sendable {
+    let list: [Identity]
+    struct Identity: Decodable, Sendable {
+        let id: Int
+        let filename: String
+        let filesize: Int64
+        let time: Double
+        let indexed_time: Double
+        let folder_id: Int
+        let type: String
+        func matches(_ photo: SynologyPhoto) -> Bool {
+            id == photo.id.unitID && filename == photo.filename && filesize == photo.sizeBytes
+                && Date(timeIntervalSince1970: time) == photo.takenAt
+                && Date(timeIntervalSince1970: indexed_time) == photo.indexedAt
+                && folder_id == photo.folderID && type == photo.mediaType
+        }
+    }
+}
 private struct ItemPayload: Decodable, Sendable {
     let id: Int
     let filename: String

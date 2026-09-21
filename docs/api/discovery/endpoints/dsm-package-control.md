@@ -100,7 +100,26 @@
   间隔回读十次，模糊提交只回读三次，提交阶段取消执行一次 `NonCancellable` 专项回读，
   均不重放写请求。确认目标、操作类型、确认框、提交结果、专项刷新结果和失败通过持久状态
   保存并提供分级反馈。三类操作均使用原生确认框；该实现不提升真实环境证据等级。
-- Windows、iPhone 与 iPad：复用领域结果类型，套件控制调用链尚未迁移。
+- iPhone 与 iPad：复用领域结果类型，套件控制调用链尚未迁移。
+- 2026-09-17 Windows：固定 v2 严格读取及三操作核心已迁移。确认绑定完整可读基线、
+  profile/账号/地址与请求 ID，先重读、再 feasibility_check、再专用 v1 写；启动/卸载的
+  dsm_apps 必须来自已知列表，停止不发送该字段。旧无基线签名保持 Unsupported，
+  移除错误 Package.start/stop/uninstall 和空回读假成功路径。普通摘要及旧工作区共用
+  严格读取，旧工作区显式保留失败状态；不把失败当空列表。原生三动作调用链已接：
+  本地搜索、目标/动作确认、进度与持续反馈，刷新只核对，不重发。启停与卸载能力分开。
+- Windows 恢复摘要从同客户端的按账号/NAS 隔离协调器读取，包含可能已从目录消失
+  的卸载目标；新页面先枚举挂起目标再逐项回读，不从当前列表推断先前操作成功。
+  确认后的选择/搜索变化会撤销确认；页面关闭或换 NAS 取消旧任务并忽略迟到结果。
+  升级只提供非交互提示，没有安装或升级写入口。
+- Windows 核心复用现有 NAS 协调器及按目标挂起记录；同请求只返回缓存或只读恢复，
+  未知目标不能用新请求 ID 绕过。明确接受最多十次、模糊提交最多三次、间隔一秒；
+  提交后取消做一次独立且十五秒超时的回读。明确权限/认证拒绝不被匹配列表覆盖；
+  DSM 繁忙与未知错误码只读核对、不重发。生产套件行为门独立关闭。
+- Mac 同类修正：缺失 startable/available_operation 不再默认允许启停，未知状态不能
+  推断 stopped，status_origin 的 inactive 不能因包含 active 被当作 running；缺失
+  安装类型或卸载许可不再默认允许，明确 ctl_uninstall=false 始终阻止卸载。畸形根、
+  无稳定 id、重复 id、非对象项及触及 1000 条源边界的列表失败，不伪造卸载成功。
+  新增共享 Swift 回归未在当前 Windows 环境运行，不能提升 Mac 验证等级。
 - 合成 Fixture（`retryPolicy=queryStateBeforeDecision`、`readbackPolicy=required`）：
   - `contracts/request-fixtures/packages/start/synthetic-package/request.json`
   - `contracts/request-fixtures/packages/stop/synthetic-package/request.json`
@@ -126,6 +145,7 @@
   QuickConnect 中继下的真实行为尚未验收。
 - 部分套件可能返回过渡状态或需要超过十秒才能稳定，当前没有权威的统一任务 ID。
 - 系统套件、依赖链和正在处理存储或备份任务的套件可能有额外拒绝语义。
-- Windows、iPhone 与 iPad 调用链尚未迁移；Android 仍待真实 DSM 与设备验收。
+- Windows 三操作核心和原生调用链已有合成证据；iPhone 与 iPad 用户调用链
+  尚未迁移，Apple 共享解析变更仍需三端回归；Android 本波未改，仍待真实 DSM 与设备验收。
 - 第 53 批新增的 Android 严格基线、固定版本、权限失败关闭、专项回读和持久反馈均只通过
   合成响应与自动化故障注入验证，真实 NAS 上的启动、停止、卸载和取消行为仍未验证。

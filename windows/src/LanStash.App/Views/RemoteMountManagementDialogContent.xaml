@@ -1,0 +1,63 @@
+<UserControl x:Class="LanStash.App.Views.RemoteMountManagementDialogContent"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ >
+ <ScrollViewer x:Name="BodyScroller" MaxHeight="570" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel MinWidth="340" MaxWidth="560" Spacing="10">
+   <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" Visibility="Collapsed"/>
+   <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
+   <InfoBar x:Name="FeedbackNotice" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite"/>
+   <TextBlock x:Name="ReadOnlyNotice" x:Uid="RemoteMountReadOnly" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <TextBox x:Name="FilterInput" x:Uid="RemoteMountFilter" TextChanged="Filter_Changed"/>
+   <TextBlock x:Name="EmptyNotice" TextWrapping="Wrap"/>
+   <ListView x:Name="ConnectionList" MaxHeight="140" SelectionMode="Single" SelectionChanged="Connection_Changed"
+    x:Uid="RemoteMountConnectionList" HorizontalContentAlignment="Stretch">
+    <ListView.ItemTemplate><DataTemplate><StackPanel>
+     <TextBlock Text="{Binding MountPoint}" TextTrimming="CharacterEllipsis"/>
+     <TextBlock Text="{Binding RemoteSource}" TextTrimming="CharacterEllipsis" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+    </StackPanel></DataTemplate></ListView.ItemTemplate>
+   </ListView>
+   <ComboBox x:Name="PendingList" x:Uid="RemoteMountPending" DisplayMemberPath="MountPoint" SelectionChanged="Pending_Changed" HorizontalAlignment="Stretch" Visibility="Collapsed"/>
+   <StackPanel Orientation="Horizontal" Spacing="8">
+    <Button x:Name="NewButton" x:Uid="RemoteMountNew" Click="New_Click" MinHeight="48"/>
+    <Button x:Name="ReviewButton" x:Uid="RemoteMountReview" Click="Review_Click" MinHeight="48" Visibility="Collapsed"/>
+   </StackPanel>
+   <ComboBox x:Name="ActionInput" x:Uid="RemoteMountAction" HorizontalAlignment="Stretch" SelectionChanged="Action_Changed" Visibility="Collapsed">
+    <ComboBoxItem x:Uid="RemoteMountEditChoice"/><ComboBoxItem x:Uid="RemoteMountDisconnectChoice"/>
+   </ComboBox>
+   <StackPanel x:Name="ConnectionFields" Spacing="10">
+    <ComboBox x:Name="ProtocolInput" x:Uid="RemoteMountProtocol" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="Protocol_Changed">
+     <ComboBoxItem x:Uid="RemoteMountCifs"/><ComboBoxItem x:Uid="RemoteMountNfs"/>
+    </ComboBox>
+    <Grid ColumnSpacing="12" RowSpacing="10">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <TextBox x:Name="ServerInput" x:Uid="RemoteMountServer" TextChanged="Fields_Changed"/>
+     <TextBox x:Name="RemotePathInput" x:Uid="RemoteMountSource" Grid.Column="1" TextChanged="Fields_Changed"/>
+     <TextBox x:Name="TargetInput" x:Uid="RemoteMountTarget" Grid.Row="1" Grid.ColumnSpan="2" TextChanged="Fields_Changed"/>
+    </Grid>
+    <Grid x:Name="CifsFields" ColumnSpacing="12" RowSpacing="10">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <TextBox x:Name="UsernameInput" x:Uid="RemoteMountUsername" TextChanged="Fields_Changed"/>
+     <TextBox x:Name="DomainInput" x:Uid="RemoteMountDomain" Grid.Column="1" TextChanged="Fields_Changed"/>
+     <PasswordBox x:Name="PasswordInput" x:Uid="RemoteMountPassword" Grid.Row="1" Grid.ColumnSpan="2" PasswordChanged="Password_Changed"/>
+    </Grid>
+    <Grid x:Name="NfsFields" ColumnSpacing="12" Visibility="Collapsed">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+     <ComboBox x:Name="NfsVersionInput" x:Uid="RemoteMountNfsVersion" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="Modes_Changed">
+      <ComboBoxItem x:Uid="RemoteMountNfs3"/><ComboBoxItem x:Uid="RemoteMountNfs4"/>
+     </ComboBox>
+     <ComboBox x:Name="NfsTransportInput" x:Uid="RemoteMountNfsTransport" Grid.Column="1" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="Modes_Changed">
+      <ComboBoxItem x:Uid="RemoteMountTcp"/><ComboBoxItem x:Uid="RemoteMountUdp"/>
+     </ComboBox>
+    </Grid>
+    <TextBlock x:Name="PasswordAgainNotice" x:Uid="RemoteMountPasswordAgain" Visibility="Collapsed" TextWrapping="Wrap"/>
+    <TextBlock x:Name="ValidationNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
+   </StackPanel>
+   <TextBlock x:Name="RiskNotice" TextWrapping="Wrap"/>
+   <CheckBox x:Name="RiskAcknowledgement" x:Uid="RemoteMountConfirm" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="Confirm_Changed" Unchecked="Confirm_Changed">
+    <CheckBox.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></CheckBox.ContentTemplate>
+   </CheckBox>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

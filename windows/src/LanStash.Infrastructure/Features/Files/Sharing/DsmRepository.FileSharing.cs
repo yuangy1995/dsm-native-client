@@ -541,11 +541,12 @@ public sealed partial class DsmRepository
             JsonValue => additional.String("owner"),
             _ => null,
         };
-        var canRead = StrictBool(permissions, "read")
+        var decodedPermissions = FileStationPermissions.Parse(permissions);
+        var canRead = decodedPermissions.Read
             ?? throw new InvalidDataException("file.share.invalid-target-response");
-        var canWrite = StrictBool(permissions, "write")
+        var canWrite = decodedPermissions.Write
             ?? throw new InvalidDataException("file.share.invalid-target-response");
-        var canDelete = StrictBool(permissions, "delete")
+        var canDelete = decodedPermissions.Delete
             ?? throw new InvalidDataException("file.share.invalid-target-response");
         var size = isDirectory
             ? 0

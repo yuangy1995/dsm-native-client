@@ -50,14 +50,10 @@ public sealed partial class DsmRepository
         _capabilities.TryGetValue("SYNO.Chat.Channel.Member", out var capability) &&
         capability.MinVersion <= ChatMemberReadVersion &&
         capability.MaxVersion >= ChatMemberReadVersion &&
-        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+        capability.Name == "SYNO.Chat.Channel.Member" && HasChatConversationFormat(capability);
 
     private bool HasPinnedMessageReadContract =>
-        HasReadableChatContract &&
-        _capabilities.TryGetValue("SYNO.Chat.Post", out var capability) &&
-        capability.MinVersion <= ChatPinnedMessageReadVersion &&
-        capability.MaxVersion >= ChatPinnedMessageReadVersion &&
-        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+        HasReadableChatContract && HasAdvancedApi("SYNO.Chat.Post", ChatPinnedMessageReadVersion);
 
     public ChatAvailability Availability => HasReadableChatContract
         ? new(
@@ -107,7 +103,7 @@ public sealed partial class DsmRepository
             "get",
             new Dictionary<string, string>
             {
-                ["channel_id"] = normalizedConversationId,
+                ["channel_id"] = ChatConversationString("SYNO.Chat.Channel.Member", normalizedConversationId),
             },
             cancellationToken).ConfigureAwait(false);
         var memberIds = StableIdArray(memberData, "user_ids");
@@ -145,24 +141,7 @@ public sealed partial class DsmRepository
         }
 
         var normalizedConversationId = conversationId.Trim();
-        var data = await CallChatExactVersionAsync(
-            "SYNO.Chat.Post",
-            "search",
-            ChatPinnedMessageReadVersion,
-            new Dictionary<string, string>
-            {
-                ["channel_id"] = normalizedConversationId,
-                ["offset"] = "0",
-                ["limit"] = "100",
-                ["has"] = "[\"pin\"]",
-                ["sort_by"] = "last_pin_at",
-                ["sort_by_array"] = "[\"is_sticky\",\"last_pin_at\"]",
-            },
-            cancellationToken).ConfigureAwait(false);
-        var searchResults = ContainerObjects(data, "search_results").ToArray();
-        var source = searchResults.Length == 0
-            ? ContainerObjects(data, "posts")
-            : searchResults;
+        var source = await ReadAllPinnedPayloadAsync(normalizedConversationId, cancellationToken).ConfigureAwait(false);
         var values = new List<ChatPinnedMessage>();
         foreach (var item in source)
         {
@@ -183,8 +162,10 @@ public sealed partial class DsmRepository
         return values.OrderByDescending(value => value.PinnedAt).ToArray();
     }
 
-    public async Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(
-        CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ChatConversation>> ListConversationsAsync(CancellationToken cancellationToken = default) =>
+        LoadChatConversationsAsync(requireComplete: false, cancellationToken);
+
+    private async Task<IReadOnlyList<ChatConversation>> LoadChatConversationsAsync(bool requireComplete, CancellationToken cancellationToken)
     {
         EnsureReadableChatContract();
         var usersData = await CallChatAsync(
@@ -215,18 +196,27 @@ public sealed partial class DsmRepository
             "list",
             parameters: null,
             cancellationToken).ConfigureAwait(false);
-        return ContainerObjects(channelsData, "channels", "channel_list", "items", "results")
+        string[] roots = ["channels", "channel_list", "items", "results", DsmApiResponseKeys.RootArray];
+        if (requireComplete && !roots.Any(key => channelsData[key] is JsonArray or JsonObject)) throw InvalidChatResponse();
+        var source = ContainerObjects(channelsData, "channels", "channel_list", "items", "results").ToArray();
+        var result = source
             .Select(item => ParseConversation(item, userNames, currentUserId))
             .OfType<ChatConversation>()
             .OrderByDescending(item => item.LastActivityAt ?? DateTimeOffset.MinValue)
             .ToArray();
+        if (requireComplete && (result.Length != source.Length || result.Select(item => item.Id).Distinct().Count() != result.Length)) throw InvalidChatResponse();
+        return result;
     }
 
-    public async Task<ChatMessagePage> ListMessagesAsync(
+    public Task<ChatMessagePage> ListMessagesAsync(
         string conversationId,
         string? beforeCursor,
         int limit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ListMessagesCoreAsync(conversationId, beforeCursor, limit, cancellationToken);
+
+    private async Task<ChatMessagePage> ListMessagesCoreAsync(string conversationId, string? beforeCursor,
+        int limit, CancellationToken cancellationToken, ISet<string>? verifiedIds = null, string? verifiedMessageId = null)
     {
         EnsureReadableChatContract();
         ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
@@ -245,9 +235,12 @@ public sealed partial class DsmRepository
             },
             cancellationToken).ConfigureAwait(false);
         var sourceOffset = ValidateResponseOffset(data, offset);
+        if (verifiedIds is not null && !new[] { "posts", "post_list", "items", "results", DsmApiResponseKeys.RootArray }.Any(key => data[key] is JsonArray or JsonObject))
+            throw InvalidChatResponse();
         var sourcePosts = ContainerObjects(data, "posts", "post_list", "items", "results").ToArray();
         foreach (var post in sourcePosts)
         {
+            if (verifiedIds is not null && (FirstStableId(post, "post_id", "id") is not { } id || !verifiedIds.Add(id))) throw InvalidChatResponse();
             foreach (var explicitConversationKey in new[] { "channel_id", "conversation_id" })
             {
                 if (post.ContainsKey(explicitConversationKey) &&
@@ -267,6 +260,11 @@ public sealed partial class DsmRepository
             .ToArray();
         var total = data.Int("total");
         var nextOffset = checked(sourceOffset + sourcePosts.Length);
+        if (verifiedIds is not null && (sourcePosts.Length > safeLimit ||
+            (data.ContainsKey("total") && total is null) || total < 0 ||
+            (total is { } count && (nextOffset > count || (sourcePosts.Length == 0 && offset < count))) ||
+            (sourcePosts.Any(item => FirstStableId(item, "post_id", "id") == verifiedMessageId) && !messages.Any(item => item.Id == verifiedMessageId))))
+            throw InvalidChatResponse();
         var hasMore = nextOffset > sourceOffset && (total is not null
             ? nextOffset < Math.Max(0, total.Value)
             : sourcePosts.Length == safeLimit);
@@ -469,12 +467,14 @@ public sealed partial class DsmRepository
     {
         var verified = ChatReadVersions[apiName];
         return _capabilities.TryGetValue(apiName, out var capability) &&
+               capability.Name == apiName && capability.MinVersion >= 1 && capability.MaxVersion >= capability.MinVersion && HasChatConversationFormat(capability) &&
                capability.MaxVersion >= verified.Minimum &&
                capability.MinVersion <= verified.Maximum;
     }
 
     private bool HasExactChatVersion(string apiName, int version) =>
         _capabilities.TryGetValue(apiName, out var capability) &&
+        capability.Name == apiName && capability.MinVersion >= 1 && capability.MaxVersion >= capability.MinVersion && HasChatConversationFormat(capability) &&
         capability.MinVersion <= version &&
         capability.MaxVersion >= version;
 
@@ -511,7 +511,7 @@ public sealed partial class DsmRepository
                 MaxVersion = selectedVersion,
             },
             method,
-            parameters,
+            EncodeChatParameters(capability, parameters),
             cancellationToken);
     }
 
@@ -536,8 +536,17 @@ public sealed partial class DsmRepository
             _session,
             capability with { MinVersion = version, MaxVersion = version },
             method,
-            parameters,
+            EncodeChatParameters(capability, parameters),
             cancellationToken);
+    }
+
+    private static IReadOnlyDictionary<string, string>? EncodeChatParameters(ApiCapability capability,
+        IReadOnlyDictionary<string, string>? parameters)
+    {
+        if (parameters is null || !capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)) return parameters;
+        // 这些已有读取/创建方法的字符串字段统一编码一次；数组、布尔与分页数字保持原类型。
+        return parameters.ToDictionary(pair => pair.Key, pair => pair.Key is "channel_id" or "message" or "name" or "type" or "sort_by"
+            ? System.Text.Json.JsonSerializer.Serialize(pair.Value) : pair.Value, StringComparer.Ordinal);
     }
 
     private static int ParseCursor(string? cursor)
@@ -644,7 +653,8 @@ public sealed partial class DsmRepository
         var encrypted = FirstBool(item, "encrypted", "is_encrypted") ?? false;
         var attachments = ParseAttachments(item, id);
         var text = encrypted ? null : FirstNonEmpty(item, "message", "text", "content");
-        if (!encrypted && string.IsNullOrWhiteSpace(text) && attachments.Count == 0)
+        var poll = encrypted ? null : ParseChatPoll(item, id);
+        if (!encrypted && string.IsNullOrWhiteSpace(text) && attachments.Count == 0 && poll is null)
         {
             return null;
         }
@@ -664,7 +674,7 @@ public sealed partial class DsmRepository
             FirstDate(item, "create_at", "created_at", "timestamp") ?? DateTimeOffset.UnixEpoch,
             text,
             attachments,
-            encrypted ? ChatEncryptionState.Locked : ChatEncryptionState.NotEncrypted);
+            encrypted ? ChatEncryptionState.Locked : ChatEncryptionState.NotEncrypted) { Poll = poll };
     }
 
     private static ChatPinnedMessage? ParsePinnedMessage(

@@ -286,7 +286,7 @@ public sealed class VirtualMachineManagerRepositoryContractTests
     }
 
     [Fact]
-    public async Task ProtectionLimitsAllKnownRootArraysToTwoHundredItemsTotal()
+    public async Task ProtectionPreservesAllKnownRootArraysWithoutClientTruncation()
     {
         var protection = new JsonObject
         {
@@ -308,12 +308,12 @@ public sealed class VirtualMachineManagerRepositoryContractTests
         var snapshot = await repository.LoadSnapshotAsync();
 
         Assert.Equal(VirtualMachineManagerSectionStatus.Available, snapshot.Protection.Status);
-        Assert.Equal(200, snapshot.Protection.Items.Count);
+        Assert.Equal(270, snapshot.Protection.Items.Count);
         Assert.Equal(90, snapshot.Protection.Items.Count(item =>
             item.Kind == VirtualizationResourceKind.ProtectionPlan));
         Assert.Equal(90, snapshot.Protection.Items.Count(item =>
             item.Kind == VirtualizationResourceKind.ProtectionSchedule));
-        Assert.Equal(20, snapshot.Protection.Items.Count(item =>
+        Assert.Equal(90, snapshot.Protection.Items.Count(item =>
             item.Kind == VirtualizationResourceKind.ProtectionRetention));
     }
 
@@ -472,6 +472,18 @@ public sealed class VirtualMachineManagerRepositoryContractTests
             new DsmSession(ProfileId, "synthetic-sid", null, null),
             api,
             capabilities.ToDictionary(item => item.Name, StringComparer.Ordinal));
+
+    [Theory]
+    [InlineData("booting", VirtualMachineOperationalState.Transitional)]
+    [InlineData("shutting_down", VirtualMachineOperationalState.Transitional)]
+    [InlineData("crashed", VirtualMachineOperationalState.Error)]
+    public async Task OfficialPowerTransitionStatesAreNotReportedAsUnknown(string status, VirtualMachineOperationalState expected)
+    {
+        var api = new VirtualMachineRecordingApiClient(_ => Guests(new JsonObject { ["guest_id"] = "synthetic-vm", ["guest_name"] = "Synthetic", ["status"] = status }));
+        var repository = CreateRepository(api, Capability("SYNO.Virtualization.API.Guest"));
+        var snapshot = await repository.LoadSnapshotAsync();
+        Assert.Equal(expected, Assert.Single(snapshot.Machines.Items).State);
+    }
 
     private static ApiCapability Capability(
         string name,

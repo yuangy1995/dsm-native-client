@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "vmm.create-guest.synthetic-internal-advanced",
+  "module": "vmm",
+  "operation": "createGuest",
+  "api": {
+    "name": "SYNO.Virtualization.Guest",
+    "method": "create",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "guest_privilege",
+      "valueType": "objectArray",
+      "encodedValue": "[]"
+    },
+    {
+      "name": "iso_images",
+      "valueType": "stringArray",
+      "encodedValue": "[\"unmounted\",\"unmounted\"]"
+    },
+    {
+      "name": "autorun",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "boot_from",
+      "valueType": "string",
+      "encodedValue": "\"disk\""
+    },
+    {
+      "name": "bios",
+      "valueType": "string",
+      "encodedValue": "\"uefi\""
+    },
+    {
+      "name": "kb_layout",
+      "valueType": "string",
+      "encodedValue": "\"Default\""
+    },
+    {
+      "name": "usb_version",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "usbs",
+      "valueType": "stringArray",
+      "encodedValue": "[\"unmounted\",\"unmounted\",\"unmounted\",\"unmounted\"]"
+    },
+    {
+      "name": "is_windows_vm",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "use_ovmf",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "vnics",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"prefer_sriov\":false,\"vnic_type\":1,\"type\":\"add\",\"mac\":\"02:00:00:00:00:01\",\"network_id\":\"\"}]"
+    },
+    {
+      "name": "is_general_vm",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "increaseAllocatedSize",
+      "valueType": "integer",
+      "encodedValue": "10"
+    },
+    {
+      "name": "vdisks",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"type\":\"add\",\"vdisk_mode\":1,\"name\":\"<synthetic-disk-name>\",\"unmap\":false,\"iops_enable\":false,\"dev_limit\":0,\"dev_reservation\":0,\"dev_weight\":3,\"vdisk_size\":10,\"idx\":0}]"
+    },
+    {
+      "name": "auto_switch",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "vdisk_struct",
+      "valueType": "objectArray",
+      "encodedValue": "[]"
+    },
+    {
+      "name": "name",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-virtual-machine-name>\""
+    },
+    {
+      "name": "vcpu_num",
+      "valueType": "integer",
+      "encodedValue": "1"
+    },
+    {
+      "name": "vram_size",
+      "valueType": "integer",
+      "encodedValue": "512"
+    },
+    {
+      "name": "video_card",
+      "valueType": "string",
+      "encodedValue": "\"vmvga\""
+    },
+    {
+      "name": "cpu_weight",
+      "valueType": "integer",
+      "encodedValue": "256"
+    },
+    {
+      "name": "desc",
+      "valueType": "string",
+      "encodedValue": "\"\""
+    },
+    {
+      "name": "cpu_passthru",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "hyperv_enlighten",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "cpu_pin_num",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "repo_id",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-storage>\""
+    },
+    {
+      "name": "repo_name",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-storage-name>\""
+    },
+    {
+      "name": "host_id",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-host>\""
+    },
+    {
+      "name": "repo_host_name",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-host-name>\""
+    },
+    {
+      "name": "allocated_size",
+      "valueType": "integer",
+      "encodedValue": "1073741824"
+    },
+    {
+      "name": "size",
+      "valueType": "string",
+      "encodedValue": "\"107374182400\""
+    },
+    {
+      "name": "poweron_after_create",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "synovmm_ui_id",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-ui-request>\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "taskPoll"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

@@ -21,21 +21,21 @@ public sealed class FileCopyMovePageSourceContractTests
         Assert.Contains("MinHeight=\"48\"", xaml);
         Assert.DoesNotContain("CopyMoveAsync", page);
         Assert.Contains("CopyMoveAsync", partial);
-        Assert.Contains("ContentDialog", partial);
+        Assert.Contains("ShowBatchCopyMoveDialogAsync(operation, [source], requireSelectedItem: true)", partial);
         Assert.Contains("IFileCopyMoveFolderSource", partial);
         Assert.Contains("AutomationLiveSetting.Assertive", dialog);
-        Assert.Contains("FileCopyMoveDialogContent.Build", partial);
-        Assert.Contains("model.State != FileCopyMovePresentationState.ConfirmedSuccess", partial);
+        Assert.Contains("CloseBatchCopyMoveDialog()", partial);
+        Assert.Contains("SameCopyMoveItem(source, _viewModel.SelectedItem?.Item)", partial);
         Assert.DoesNotContain("ReviewAsync", partial);
         Assert.DoesNotContain("FileCopyMove_Review_Button", partial);
         Assert.Contains("IsReadOnlyLocation()", partial);
         Assert.Contains("FileCopyMoveViewModel.IsDestination(item.Path)", partial);
         Assert.DoesNotContain("IsDirectory: false", partial);
-        Assert.Contains("FileCopyMoveDialogContent.TitleKey(model.Source.IsDirectory", partial);
+        Assert.Contains("FileCopyMoveOperation.Copy", partial);
     }
 
     [Fact]
-    public void BatchPartialKeepsBoundedSelectionAndTypedSummary()
+    public void BatchPartialKeepsCompleteSelectionAndTypedSummary()
     {
         var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
         var page = Read("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
@@ -46,7 +46,9 @@ public sealed class FileCopyMovePageSourceContractTests
 
         Assert.Contains("x:Name=\"FileCopyMoveBatchStatus\"", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
-        Assert.Contains("FileCopyMoveBatchViewModel.MaximumItemCount", partial);
+        Assert.DoesNotContain("FileCopyMoveBatchViewModel.MaximumItemCount", partial);
+        Assert.Contains("BatchCopyMoveSourcesAreCurrent", partial);
+        Assert.Contains("visible.Count == sources.Count", partial);
         Assert.Contains("FileCopyMoveBatchViewModel.Validate", partial);
         Assert.Contains("FileBatchSelectionOperation.Copy", selection);
         Assert.Contains("FileBatchSelectionOperation.Move", selection);
@@ -55,11 +57,15 @@ public sealed class FileCopyMovePageSourceContractTests
         Assert.Contains("model.Cancel()", partial);
         Assert.Contains("CloseBatchCopyMoveDialog();", page);
         Assert.Contains("NeedsReviewCount", partial);
-        Assert.Contains("MaximumItemCount = 20", model);
+        Assert.DoesNotContain("sources.Count > MaximumItemCount", model);
+        Assert.Contains("Array.AsReadOnly(snapshot)", model);
+        Assert.Contains("model.PropertyChanged -= ProgressChanged", partial);
         Assert.Contains("await _repository.CopyMoveAsync", model);
         Assert.Contains("BlockReview(source, destination)", model);
         Assert.DoesNotContain("Task.WhenAll", model);
-        Assert.DoesNotContain("overwrite", partial, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FileCopyMoveOverwriteWarning", partial);
+        Assert.Contains("model.ConflictPolicy != FileCopyMoveConflictPolicy.Overwrite", partial);
+        Assert.Contains("ContentDialogButton.Close", partial);
     }
 
     [Fact]
@@ -72,8 +78,25 @@ public sealed class FileCopyMovePageSourceContractTests
         Assert.DoesNotContain("DeleteFileAsync", partial);
         Assert.DoesNotContain("RemoveAsync", partial);
         Assert.DoesNotContain("overwrite", partial, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(1, Count(partial, "_viewModel.RefreshAsync"));
-        Assert.Contains("string.Equals(_viewModel.CurrentPath, sourceParent", partial);
+        Assert.DoesNotContain("_viewModel.RefreshAsync", partial);
+        Assert.Contains("string.Equals(sourceParent, _viewModel.CurrentPath", partial);
+    }
+
+    [Fact]
+    public void RecoveryEntryUsesOnlyDedicatedReadAndLocalAcknowledgement()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/FilesPage.xaml");
+        var page = Read("windows/src/LanStash.App/Views/FilesPage.FileOperationRecovery.cs");
+        var model = Read("windows/src/LanStash.App/Features/Files/Recovery/FileOperationRecoveryViewModel.cs");
+        Assert.Contains("CopyMoveRecoveryButton", xaml);
+        Assert.Contains("RequestedTheme = ActualTheme", page);
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", page);
+        Assert.Contains("dialog.Closing += (_, _) => model.Dispose()", page);
+        Assert.Contains("repository.ReviewCopyMoveAsync(entry.Id, token)", model);
+        Assert.Contains("repository.AcknowledgeCopyMoveReview", model);
+        Assert.DoesNotContain("_repository.CopyMoveAsync(", model);
+        Assert.DoesNotContain("SubmitAsync", page);
+        Assert.Contains("Current(generation, token)", model);
     }
 
     private static string Read(string relativePath) =>

@@ -74,7 +74,10 @@
 
 - Apple Adapter：`DsmNasAdministrationRepository`。
 - Android Adapter：`DsmRepository`、`AppViewModel` 与 `NasSecuritySettingsScreen`；四个子操作使用原始/目标双基线、固定版本能力预检、共享 NAS 设置原子门闩、逐步取消检查、配置档任务轮询/清理、整体回读、持久结果与专项刷新，部分成功和未知结果不得清除后重放。
-- Windows Adapter：复用领域结果类型，调用链尚未迁移。
+- Windows Adapter：已接四分区固定读取、DoS 按网卡 configs/重复状态覆盖及原生只读
+  入口及四段基线保存/防火墙任务核心，未知值不猜测。所有变化一次预检，中途失败停止
+  后续配置；开启使用预检配置档，完成状态后才 stop 清理，未知任务/清理不重发。
+  旧 fire-and-forget 假成功已移除，生产行为门独立关闭，源码/合成不等于真实验收。
 - Schema：复用 `MutationResult` 与请求 Fixture Schema。
 - 脱敏 Fixture：
   - `contracts/request-fixtures/security/set-auto-block/synthetic-settings/request.json`
@@ -99,4 +102,6 @@
 - 当前环境未在专用测试目标完成自动封锁、DoS、防端口扫描、防火墙启停、权限不足、
   中途断网、配置档任务超时和回滚行为验收。
 - 不同 DSM build 的任务状态字段、接口错误码和防火墙生效时序尚未验证。
-- Windows 以及 iPhone、iPad 调用链尚未迁移；Android 自动化与 API 35 模拟器门禁已通过，仍待真实设备、真实 DSM 和权限矩阵验收。
+- Windows 四段安全写/任务核心与表单有合成回归，但生产门关闭、真实副作用未验收；iPhone/iPad
+  用户调用链未迁移。Android 仍待真实设备、真实 DSM 和权限矩阵验收，不以本波 Windows
+  回归提升其或当前 NAS 的证据等级。

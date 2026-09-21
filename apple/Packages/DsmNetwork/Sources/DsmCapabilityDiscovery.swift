@@ -29,6 +29,8 @@ public enum DsmAPIName {
     public static let fileStationBackgroundTask = "SYNO.FileStation.BackgroundTask"
     /// DSM File Station 的未公开挂载接口；只在能力发现明确返回时启用。
     public static let fileStationMount = "SYNO.FileStation.Mount"
+    /// 同组内部挂载清单及断开接口，固定 v1；不复用 Mount 的文件树卸载变体。
+    public static let fileStationMountList = "SYNO.FileStation.Mount.List"
     /// Synology Chat 套件内部接口；仅在 DSM 能力发现明确返回时启用。
     public static let chatChannel = "SYNO.Chat.Channel"
     /// Synology Chat 命名会话内部接口；用于创建群聊和邀请成员。
@@ -222,6 +224,7 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.fileStationSharing,
         DsmAPIName.fileStationVirtualFolder,
         DsmAPIName.fileStationMount,
+        DsmAPIName.fileStationMountList,
         DsmAPIName.fileStationBackgroundTask,
         DsmAPIName.chatChannel,
         DsmAPIName.chatChannelNamed,
@@ -420,6 +423,7 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.fileStationSharing: 1...3,
         DsmAPIName.fileStationVirtualFolder: 2...2,
         DsmAPIName.fileStationMount: 1...1,
+        DsmAPIName.fileStationMountList: 1...1,
         DsmAPIName.fileStationBackgroundTask: 3...3,
         // Chat Server 没有公开普通用户聊天契约，范围按运行时返回值与已验证实现取交集。
         DsmAPIName.chatChannel: 1...5,

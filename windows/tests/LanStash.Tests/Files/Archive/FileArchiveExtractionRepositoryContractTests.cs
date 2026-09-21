@@ -7,6 +7,184 @@ namespace LanStash.Tests.Files.Archive;
 public sealed class FileArchiveExtractionRepositoryContractTests
 {
     [Fact]
+    public async Task FolderWithOverFiveThousandItemsIsCompletelyChecked()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([ArchiveItem("new.txt", false)]);
+        api.ReadProvider = (method, parameters) =>
+        {
+            if (method == "getinfo") return Destination();
+            var offset = int.Parse(parameters!["offset"]);
+            var limit = int.Parse(parameters["limit"]);
+            var total = api.StartCount == 0 ? 5001 : 5002;
+            return new JsonObject { ["offset"] = offset, ["total"] = total,
+                ["files"] = new JsonArray(Enumerable.Range(offset, Math.Min(limit, total - offset))
+                    .Select(index => (JsonNode)(index == 0 ? Source() : File(index == 5001 ? "new.txt" : $"other-{index}.txt", 0))).ToArray()) };
+        };
+        var result = await Repository(profile, api).ExtractAsync(Request(profile));
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal("new.txt", Assert.Single(result.ConfirmedItems!).Name);
+        Assert.Equal(103, api.FileListCount);
+        Assert.Equal(1, api.StartCount);
+    }
+
+    [Fact]
+    public async Task SubfolderAndNestedContentsAreReadBackIncludingSizes()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([ArchiveItem("dir", true), ArchiveItem("a.txt", false) with { RelativePath = "dir/a.txt", Size = 12 }],
+            FolderPage(Source()), Destination(), FolderPage(Source(), Folder("archive")),
+            FolderPage(Item("/share/docs/archive/dir", "dir", true, 0, true)),
+            FolderPage(Item("/share/docs/archive/dir/a.txt", "a.txt", false, 12, true)));
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with { Options = new() { CreateSubfolder = true } });
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(3, result.ConfirmedItems!.Count);
+        Assert.True(api.StartedOptions!.CreateSubfolder);
+        Assert.Equal(5, api.FileListCount);
+    }
+
+    [Fact]
+    public async Task ParentDirectoryAloneCannotConfirmNestedFiles()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([ArchiveItem("dir", true), ArchiveItem("a.txt", false) with { RelativePath = "dir/a.txt", Size = 12 }],
+            FolderPage(Source()), Destination(), FolderPage(Source(), Folder("dir")),
+            FolderPage(Item("/share/docs/dir/a.txt", "a.txt", false, 4, true)));
+        var result = await Repository(profile, api).ExtractAsync(Request(profile));
+        Assert.Equal(MutationResultStatus.PartialSuccess, result.Result.Status);
+        Assert.Equal(1, result.Result.Counts.Unknown);
+        Assert.DoesNotContain(result.ConfirmedItems!, item => !item.IsDirectory);
+    }
+
+    [Fact]
+    public async Task FlatteningUsesLeafNamesAndRejectsCollisionsBeforeWrite()
+    {
+        var profile = NewProfile();
+        var entries = new[] { ArchiveItem("dir", true), ArchiveItem("a.txt", false) with { RelativePath = "dir/a.txt", Size = 12 } };
+        var api = new FakeApi(entries, FolderPage(Source()), Destination(), FolderPage(Source(), File("a.txt", 12)));
+        var request = Request(profile) with { Options = new() { KeepDirectoryStructure = false } };
+        var result = await Repository(profile, api).ExtractAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal("/share/docs/a.txt", Assert.Single(result.ConfirmedItems!).Path);
+        Assert.False(api.StartedOptions!.KeepDirectoryStructure);
+
+        var otherProfile = NewProfile();
+        var collision = new FakeApi([.. entries, ArchiveItem("a.txt", false)]);
+        var rejected = await Repository(otherProfile, collision).ExtractAsync(request with { ProfileId = otherProfile.Id });
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, rejected.Result.Status);
+        Assert.Equal(0, collision.StartCount);
+        Assert.Equal(0, collision.FileListCount);
+    }
+
+    [Theory]
+    [InlineData(false, true, false, MutationResultStatus.ConfirmedFailure)]
+    [InlineData(true, false, false, MutationResultStatus.PermissionDenied)]
+    [InlineData(true, true, true, MutationResultStatus.ConfirmedFailure)]
+    [InlineData(true, true, false, MutationResultStatus.ConfirmedSuccess)]
+    public async Task OverwriteNeedsExplicitConfirmationPermissionAndMatchingType(bool confirmed, bool writable, bool directory, MutationResultStatus expected)
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([ArchiveItem("a.txt", false) with { Size = 12 }],
+            FolderPage(Source(), Item("/share/docs/a.txt", "a.txt", directory, 3, writable)), Destination(), FolderPage(Source(), File("a.txt", 12)));
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with
+            { Options = new() { Overwrite = true }, OverwriteConfirmed = confirmed });
+        Assert.Equal(expected, result.Result.Status);
+        Assert.Equal(expected == MutationResultStatus.ConfirmedSuccess ? 1 : 0, api.StartCount);
+        if (!confirmed) Assert.Equal(0, api.ArchiveListCount);
+    }
+
+    [Fact]
+    public async Task OverwriteCannotReplaceSourceArchive()
+    {
+        var profile = NewProfile(); var api = new FakeApi([ArchiveItem("archive.zip", false)]);
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with { Options = new() { Overwrite = true }, OverwriteConfirmed = true });
+        Assert.False(result.Result.Submitted);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Fact]
+    public async Task ExistingSubdirectoryChecksNestedFilePermissionBeforeWrite()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([ArchiveItem("dir", true), ArchiveItem("a.txt", false) with { RelativePath = "dir/a.txt" }],
+            FolderPage(Source(), Folder("dir")), Destination(), FolderPage(Item("/share/docs/dir/a.txt", "a.txt", false, 3, false)));
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with { Options = new() { Overwrite = true }, OverwriteConfirmed = true });
+        Assert.Equal(MutationResultStatus.PermissionDenied, result.Result.Status);
+        Assert.Equal(0, api.StartCount);
+    }
+
+    [Theory]
+    [InlineData(null, "Ã¤.txt", "中文.txt", "chs", 2)]
+    [InlineData(null, "normal.txt", "中文.txt", null, 1)]
+    [InlineData(null, "Ã¤.txt", "Ã¤.txt", null, 2)]
+    [InlineData("jpn", "日本語.txt", "中文.txt", "jpn", 1)]
+    public async Task SelectedEncodingIsSharedByPreflightAndStart(string? requested, string original, string chinese, string? expected, int reads)
+    {
+        var profile = NewProfile();
+        var output = expected == "chs" ? chinese : original;
+        var api = new FakeApi([], FolderPage(Source()), Destination(), FolderPage(Source(), File(output, 0)))
+        { ListProvider = options => [ArchiveItem(options.Codepage == "chs" ? chinese : original, false)] };
+        var request = Request(profile) with { Options = new(" synthetic ", requested) };
+        var result = await Repository(profile, api).ExtractAsync(request);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(reads, api.ArchiveListCount);
+        Assert.Equal(expected, api.StartedOptions?.Codepage);
+        Assert.Equal(" synthetic ", api.StartedOptions?.Password);
+        Assert.All(api.ListedOptions, options => Assert.Equal(" synthetic ", options.Password));
+        Assert.DoesNotContain(" synthetic ", request.ToString());
+    }
+
+    [Fact]
+    public async Task WrongPasswordReturnsRecoverableErrorBeforeAnyWrite()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([]) { ListProvider = _ => throw new DsmException("synthetic", "synthetic", 1403) };
+        var result = await Repository(profile, api).ExtractAsync(Request(profile) with { Options = new("synthetic") });
+        Assert.False(result.Result.Submitted);
+        Assert.Equal("file.archive-extraction.password-required", result.Result.DiagnosticTag);
+        Assert.Equal(0, api.StartCount);
+        Assert.Equal(0, api.FileListCount);
+    }
+
+    [Fact]
+    public async Task OptionalEncodingComparisonFailureKeepsOriginalButAuthenticationFailureStops()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([], FolderPage(Source()), Destination(), FolderPage(Source(), File("Ã¤.txt", 0)))
+        { ListProvider = options => options.Codepage == "chs" ? throw new IOException("synthetic") : [ArchiveItem("Ã¤.txt", false)] };
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await Repository(profile, api).ExtractAsync(Request(profile))).Result.Status);
+        Assert.Null(api.StartedOptions?.Codepage);
+        Assert.Equal(2, api.ArchiveListCount);
+
+        var otherProfile = NewProfile();
+        var denied = new FakeApi([])
+        { ListProvider = options => options.Codepage == "chs" ? throw new DsmException("synthetic", "synthetic", authenticationFailure: true) : [ArchiveItem("Ã¤.txt", false)] };
+        await Assert.ThrowsAsync<DsmException>(() => Repository(otherProfile, denied).ExtractAsync(Request(otherProfile)));
+        Assert.Equal(0, denied.StartCount);
+        Assert.Equal(0, denied.FileListCount);
+    }
+
+    [Fact]
+    public async Task ExistingOutputNeedsFinishedTaskAndChangedPasswordCannotAdoptPendingOperation()
+    {
+        var profile = NewProfile();
+        var api = new FakeApi([ArchiveItem("output.txt", false)], FolderPage(Source()), Destination(),
+            FolderPage(Source(), File("output.txt", 0)), FolderPage(Source(), File("output.txt", 0)))
+            { StatusResult = new(FileArchiveExtractionTaskTransportStatus.Unsupported) };
+        var request = Request(profile) with { Options = new("synthetic") };
+        var repository = Repository(profile, api);
+        var first = await repository.ExtractAsync(request);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
+        Assert.Null(first.ConfirmedItems);
+        var changed = await repository.ExtractAsync(request with { Options = new("different") });
+        Assert.Equal(MutationErrorCategory.Conflict, changed.Result.ErrorCategory);
+        api.StatusResult = new(FileArchiveExtractionTaskTransportStatus.Finished);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await repository.ExtractAsync(request)).Result.Status);
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(2, api.StatusCount);
+    }
+
+    [Fact]
     public async Task PreflightSubmitPollAndReadbackConfirmAllTopLevelOutputs()
     {
         var profile = NewProfile();
@@ -28,19 +206,22 @@ public sealed class FileArchiveExtractionRepositoryContractTests
     }
 
     [Fact]
-    public async Task TwoHundredItemsAreRejectedAsPossiblyTruncatedBeforeSubmit()
+    public async Task CompleteArchiveWithMoreThanTwoHundredItemsIsExtractedAndReadBack()
     {
         var profile = NewProfile();
-        var items = Enumerable.Range(0, 200)
+        var items = Enumerable.Range(0, 250)
             .Select(index => ArchiveItem($"item-{index}.txt", false)).ToArray();
-        var api = new FakeApi(items);
+        var outputs = items.Select(item => File(item.Name, 0)).Prepend(Source()).ToArray();
+        var pages = Enumerable.Range(0, 3).Select(page => new JsonObject { ["offset"] = page * 100, ["total"] = outputs.Length,
+            ["files"] = new JsonArray(outputs.Skip(page * 100).Take(100).Select(item => (JsonNode)item).ToArray()) });
+        var api = new FakeApi(items, new[] { FolderPage(Source()), Destination() }.Concat(pages).ToArray());
 
         var result = await Repository(profile, api).ExtractAsync(Request(profile));
 
-        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Result.Status);
-        Assert.Equal("file.archive-extraction.archive-list-truncated", result.Result.DiagnosticTag);
-        Assert.Equal(0, api.StartCount);
-        Assert.Equal(0, api.FileListCount);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(250, result.ConfirmedItems!.Count);
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(5, api.FileListCount);
     }
 
     [Theory]
@@ -157,7 +338,7 @@ public sealed class FileArchiveExtractionRepositoryContractTests
     }
 
     [Fact]
-    public async Task ExplicitTaskFailureWithPartialOutputReportsRemainingFailure()
+    public async Task ExplicitTaskFailureCannotConfirmPartialOutputContents()
     {
         var profile = NewProfile();
         var api = new FakeApi(
@@ -174,11 +355,11 @@ public sealed class FileArchiveExtractionRepositoryContractTests
 
         var result = await Repository(profile, api).ExtractAsync(Request(profile));
 
-        Assert.Equal(MutationResultStatus.PartialSuccess, result.Result.Status);
-        Assert.Equal(1, result.Result.Counts.Succeeded);
-        Assert.Equal(1, result.Result.Counts.Failed);
+        Assert.Equal(MutationResultStatus.ConfirmedFailure, result.Result.Status);
+        Assert.Equal(0, result.Result.Counts.Succeeded);
+        Assert.Equal(2, result.Result.Counts.Failed);
         Assert.Equal(0, result.Result.Counts.Unknown);
-        Assert.Single(result.ConfirmedItems!);
+        Assert.Null(result.ConfirmedItems);
     }
 
     [Fact]
@@ -205,7 +386,7 @@ public sealed class FileArchiveExtractionRepositoryContractTests
     }
 
     [Fact]
-    public async Task UnknownReviewSurvivesDifferentApiClientAndRepositoryForSameProfile()
+    public async Task LostReceiptStaysUnknownAcrossRepositoryRecreationEvenIfOutputExists()
     {
         var profile = NewProfile();
         var firstApi = new FakeApi(
@@ -224,11 +405,12 @@ public sealed class FileArchiveExtractionRepositoryContractTests
         var reviewed = await Repository(profile, secondApi).ExtractAsync(Request(profile));
 
         Assert.Equal(MutationResultStatus.SubmittedButUnverified, first.Result.Status);
-        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed.Result.Status);
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, reviewed.Result.Status);
         Assert.Equal(1, firstApi.StartCount);
         Assert.Equal(0, secondApi.StartCount);
         Assert.Equal(0, secondApi.ArchiveListCount);
-        Assert.Equal(1, secondApi.FileListCount);
+        Assert.Equal(0, secondApi.StatusCount);
+        Assert.Equal(0, secondApi.FileListCount);
     }
 
     [Fact]
@@ -483,8 +665,12 @@ public sealed class FileArchiveExtractionRepositoryContractTests
         public Exception? StatusException { get; init; }
         public Exception? FileReadException { get; init; }
         public int FileReadExceptionOnCall { get; init; }
-        public FileArchiveExtractionTaskTransportResult StatusResult { get; init; } = new(
+        public Func<string, IReadOnlyDictionary<string, string>?, JsonObject>? ReadProvider { get; set; }
+        public FileArchiveExtractionTaskTransportResult StatusResult { get; set; } = new(
             FileArchiveExtractionTaskTransportStatus.Finished);
+        public List<FileArchiveExtractionOptions> ListedOptions { get; } = [];
+        public FileArchiveExtractionOptions? StartedOptions { get; private set; }
+        public Func<FileArchiveExtractionOptions, IReadOnlyList<FileArchiveExtractionListedItem>>? ListProvider { get; init; }
         public Action? OnStart { get; init; }
         public TaskCompletionSource<FileArchiveExtractionStartTransportResult>? StartGate
         {
@@ -528,6 +714,24 @@ public sealed class FileArchiveExtractionRepositoryContractTests
             return Task.FromResult(archiveItems);
         }
 
+        public Task<IReadOnlyList<FileArchiveExtractionListedItem>> ListFileArchiveExtractionItemsAsync(
+            NasProfile profile, DsmSession session, ApiCapability capability, string sourcePath,
+            FileArchiveExtractionOptions options, CancellationToken cancellationToken = default)
+        {
+            ListedOptions.Add(options);
+            if (ListProvider is null) return ListFileArchiveExtractionItemsAsync(profile, session, capability, sourcePath, cancellationToken);
+            ArchiveListCount++;
+            return Task.FromResult(ListProvider(options));
+        }
+
+        public Task<FileArchiveExtractionStartTransportResult> StartFileArchiveExtractionAsync(
+            NasProfile profile, DsmSession session, ApiCapability capability, string sourcePath, string destinationFolder,
+            FileArchiveExtractionOptions options, CancellationToken cancellationToken = default)
+        {
+            StartedOptions = options;
+            return StartFileArchiveExtractionAsync(profile, session, capability, sourcePath, destinationFolder, cancellationToken);
+        }
+
         public Task<JsonObject> CallReadJsonObjectAsync(
             NasProfile profile,
             DsmSession session,
@@ -540,6 +744,7 @@ public sealed class FileArchiveExtractionRepositoryContractTests
             FileListCount++;
             if (FileReadException is not null && FileListCount == FileReadExceptionOnCall)
                 return Task.FromException<JsonObject>(FileReadException);
+            if (ReadProvider is not null) return Task.FromResult(ReadProvider(method, parameters));
             return Task.FromResult(_fileReads.Dequeue());
         }
 

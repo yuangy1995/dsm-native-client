@@ -24,7 +24,7 @@ internal enum FileUploadBatchValidationStatus
 {
     Valid,
     Empty,
-    TooMany,
+    TooMany, // 保留既有枚举值，不再由数量检查产生。
     InvalidPath,
     DuplicateTarget,
     TargetBusy,
@@ -32,8 +32,6 @@ internal enum FileUploadBatchValidationStatus
 
 internal static class BoundedFileUploadBatch
 {
-    internal const int MaximumFileCount = 20;
-
     internal static FileUploadBatchValidationStatus ValidatePaths(IReadOnlyList<string> paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -41,11 +39,6 @@ internal static class BoundedFileUploadBatch
         if (paths.Count == 0)
         {
             return FileUploadBatchValidationStatus.Empty;
-        }
-
-        if (paths.Count > MaximumFileCount)
-        {
-            return FileUploadBatchValidationStatus.TooMany;
         }
 
         var targetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -86,8 +79,10 @@ internal static class BoundedFileUploadBatch
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(attempt);
+        ArgumentNullException.ThrowIfNull(paths);
+        var snapshot = paths.ToArray();
 
-        if (ValidatePaths(paths) != FileUploadBatchValidationStatus.Valid)
+        if (ValidatePaths(snapshot) != FileUploadBatchValidationStatus.Valid)
         {
             throw new ArgumentException("upload.batch_invalid", nameof(paths));
         }
@@ -98,7 +93,7 @@ internal static class BoundedFileUploadBatch
         var cancelled = 0;
         var started = 0;
 
-        foreach (var path in paths)
+        foreach (var path in snapshot)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -149,11 +144,11 @@ internal static class BoundedFileUploadBatch
         }
 
         return new FileUploadBatchSummary(
-            paths.Count,
+            snapshot.Length,
             confirmed,
             needsReview,
             failed,
             cancelled,
-            paths.Count - started);
+            snapshot.Length - started);
     }
 }

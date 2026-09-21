@@ -10,27 +10,33 @@ using WinRT.Interop;
 
 namespace LanStash.App.Views;
 
-public sealed partial class LanguageSettingsPage : Page
+public sealed partial class CloudDriveSettingsPage : Page
 {
     private readonly AppViewModel _app;
-    private bool _isLoading = true;
+    private readonly Func<DesktopDriveMapping, CancellationToken, Task<CloudDriveRefreshSummary>> _refreshFiles;
+    private bool _active;
+    private bool _busy;
+    private CancellationTokenSource? _refreshCancellation;
+    private readonly Guid? _profileId;
+    private ContentDialog? _confirmation;
+    public event EventHandler? BackRequested;
     private DesktopDriveCacheLocation _cacheLocation =
         DesktopDriveCacheLocation.SystemDefault;
     private sealed record CacheLimitChoice(long Bytes, string DisplayName);
 
-    public LanguageSettingsPage(AppViewModel app)
+    public CloudDriveSettingsPage(AppViewModel app) : this(app, app.RefreshDesktopDriveFilesAsync) { }
+
+    internal CloudDriveSettingsPage(AppViewModel app, Func<DesktopDriveMapping, CancellationToken, Task<CloudDriveRefreshSummary>> refreshFiles)
     {
         _app = app;
+        _refreshFiles = refreshFiles;
+        _profileId = app.ActiveProfile?.Id;
         InitializeComponent();
         var localization = LocalizationService.Current;
-        TitleText.Text = localization.Get("ModuleSettings");
-        FieldLabel.Text = localization.Get("LanguageTitle");
-        NoteText.Text = localization.Get("LanguageFallbackNote");
-        var choices = localization.Choices();
-        LanguageSelector.ItemsSource = choices;
-        LanguageSelector.SelectedItem = choices.First(choice =>
-            choice.Value == localization.Selection);
-        CloudDriveTitle.Text = localization.Get("CloudDriveTitle");
+        TitleText.Text = localization.Get("CloudDriveTitle");
+        BackButton.Content = localization.Get("CloudDriveBackToSettings");
+        EnableTestButton.Content = localization.Get("CloudDriveEnableSessionTest");
+        CancelRefreshButton.Content = localization.Get("CloudDriveCancelRefresh");
         CloudDriveDescription.Text = localization.Get("CloudDriveDescription");
         MappingNameTextBox.Header = localization.Get("CloudDriveMappingName");
         MappingNameTextBox.PlaceholderText =
@@ -45,26 +51,64 @@ public sealed partial class LanguageSettingsPage : Page
         CacheLimitSelector.Header = localization.Get("CloudDriveCacheLimit");
         CacheLimitSelector.ItemsSource = CacheLimitChoices();
         CacheLimitSelector.SelectedIndex = 1;
+        LaunchAtLoginChoice.Content = localization.Get("CloudDriveLaunchAtLogin");
         CacheDiskText.Text = localization.Get("CloudDriveCacheDiskDefault");
         ChooseCacheDiskButton.Content = localization.Get("CloudDriveChooseCacheDisk");
         UseDefaultCacheDiskButton.Content =
             localization.Get("CloudDriveUseDefaultCacheDisk");
-        _app.DesktopDriveProgressChanged += DesktopDriveProgressChanged;
-        Unloaded += (_, _) =>
+        Loaded += (_, _) =>
+        {
+            _active = true;
             _app.DesktopDriveProgressChanged -= DesktopDriveProgressChanged;
+            _app.DesktopDriveProgressChanged += DesktopDriveProgressChanged;
+            UpdateValidationState();
+            RenderMappings();
+        };
+        Unloaded += (_, _) =>
+        {
+            _active = false;
+            _refreshCancellation?.Cancel();
+            _app.DesktopDriveProgressChanged -= DesktopDriveProgressChanged;
+            _confirmation?.Hide();
+        };
         RenderMappings();
-        _isLoading = false;
+        UpdateValidationState();
     }
 
-    private void LanguageSelector_SelectionChanged(
-        object sender,
-        SelectionChangedEventArgs e)
+    private bool IsCurrent => _active && _profileId is not null && _app.ActiveProfile?.Id == _profileId && _app.Repository is not null;
+    private bool CanManage => IsCurrent && !_busy && DesktopCloudDriveCapabilityGate.IsRegistrationEnabled;
+
+    private void BackButton_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
+
+    private void UpdateValidationState()
     {
-        if (_isLoading || LanguageSelector.SelectedItem is not LanguageChoice choice)
+        var enabled = DesktopCloudDriveCapabilityGate.IsRegistrationEnabled;
+        ValidationNotice.Message = LocalizationService.Current.Get(!IsCurrent ? "CloudDriveSignInRequired" : enabled ? "CloudDriveSessionTestEnabled" : "CloudDriveSessionTestNotice");
+        EnableTestButton.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+        EnableTestButton.IsEnabled = IsCurrent && !_busy;
+        SetBusy(_busy);
+    }
+
+    private async void EnableTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!IsCurrent || _busy || _confirmation is not null) return;
+        var localization = LocalizationService.Current;
+        var dialog = new ContentDialog
         {
-            return;
+            XamlRoot = XamlRoot, RequestedTheme = ActualTheme,
+            Title = localization.Get("CloudDriveEnableSessionTest"),
+            Content = localization.Get("CloudDriveSessionTestConfirm"),
+            PrimaryButtonText = localization.Get("CloudDriveEnableSessionTest"),
+            CloseButtonText = localization.Get("ActionCancel"), DefaultButton = ContentDialogButton.Close,
+        };
+        _confirmation = dialog;
+        try
+        {
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary || !IsCurrent) return;
+            DesktopCloudDriveCapabilityGate.EnableForCurrentProcess();
+            UpdateValidationState();
         }
-        LocalizationService.Current.SetSelection(choice.Value);
+        finally { _confirmation = null; }
     }
 
     private async void AddNasButton_Click(object sender, RoutedEventArgs e) =>
@@ -75,6 +119,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private async Task AddMappingAsync(string? folderPath)
     {
+        if (!IsCurrent || _busy || !DesktopCloudDriveCapabilityGate.IsRegistrationEnabled) return;
         SetBusy(true);
         try
         {
@@ -83,7 +128,8 @@ public sealed partial class LanguageSettingsPage : Page
             await _app.AddDesktopDriveAsync(
                 MappingNameTextBox.Text,
                 folderPath,
-                new DesktopDriveCachePolicy(_cacheLocation, limit));
+                new DesktopDriveCachePolicy(_cacheLocation, limit),
+                launchAtLogin: LaunchAtLoginChoice.IsChecked == true);
             FolderPathTextBox.Text = string.Empty;
             MappingNameTextBox.Text = string.Empty;
             ShowMessage("CloudDriveAdded", InfoBarSeverity.Success);
@@ -108,15 +154,13 @@ public sealed partial class LanguageSettingsPage : Page
         var localization = LocalizationService.Current;
         CloudDriveList.Children.Clear();
         var mappings = _app.DesktopDriveMappings
-            .Where(item => item.ProfileId == _app.ActiveProfile?.Id)
+            .Where(item => item.ProfileId == _profileId)
             .ToArray();
         if (mappings.Length == 0)
         {
             CloudDriveList.Children.Add(new TextBlock
             {
                 Text = localization.Get("CloudDriveEmpty"),
-                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[
-                    "TextFillColorSecondaryBrush"],
                 TextWrapping = TextWrapping.Wrap,
             });
             return;
@@ -133,14 +177,12 @@ public sealed partial class LanguageSettingsPage : Page
             };
             var detail = new TextBlock
             {
-                Text = $"{scope} · {localization.Get("CloudDriveReadOnlyOnline")}\n" +
+                Text = $"{scope} · {localization.Get("CloudDriveOnDemand")}\n" +
                     CacheText(mapping) +
                     "\n" + CacheDiskDescription(mapping) +
                     "\n" + localization.Get(
                         $"CloudDriveState{_app.DesktopDriveRuntime(mapping).State}") +
                     ProgressText(mapping),
-                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[
-                    "TextFillColorSecondaryBrush"],
                 TextWrapping = TextWrapping.Wrap,
             };
             var open = MappingButton(
@@ -189,13 +231,16 @@ public sealed partial class LanguageSettingsPage : Page
                         or DesktopDriveOfflinePhase.Downloading
                         ? CancelOffline_Click
                         : KeepOffline_Click);
+            var needsResume = _app.IsDesktopDrivePaused(mapping) || _app.DesktopDriveRuntime(mapping).State is
+                DesktopDriveMappingState.Offline or DesktopDriveMappingState.AuthenticationRequired or
+                DesktopDriveMappingState.CacheVolumeUnavailable or DesktopDriveMappingState.Failed;
             var pause = MappingButton(
                 localization.Get(
-                    _app.IsDesktopDrivePaused(mapping)
+                    needsResume
                         ? "CloudDriveResume"
                         : "CloudDrivePause"),
                 mapping,
-                _app.IsDesktopDrivePaused(mapping)
+                needsResume
                     ? ResumeMapping_Click
                     : PauseMapping_Click);
             var remove = MappingButton(
@@ -204,17 +249,21 @@ public sealed partial class LanguageSettingsPage : Page
                 RemoveMapping_Click);
             var primaryActions = new StackPanel
             {
-                Orientation = Orientation.Horizontal,
+                Orientation = Orientation.Vertical,
                 Spacing = 8,
             };
             primaryActions.Children.Add(open);
             primaryActions.Children.Add(keep);
             primaryActions.Children.Add(pause);
+            var refresh = MappingButton(localization.Get("CloudDriveRefresh"), mapping, RefreshMapping_Click);
+            refresh.IsEnabled = !needsResume;
+            primaryActions.Children.Add(refresh);
+            primaryActions.Children.Add(MappingButton(localization.Get("CloudDriveWritebackTitle"), mapping, WritebackSettings_Click));
             primaryActions.Children.Add(clear);
             primaryActions.Children.Add(remove);
             var cacheOptions = new StackPanel
             {
-                Orientation = Orientation.Horizontal,
+                Orientation = Orientation.Vertical,
                 Spacing = 12,
             };
             cacheOptions.Children.Add(limit);
@@ -229,8 +278,7 @@ public sealed partial class LanguageSettingsPage : Page
             CloudDriveList.Children.Add(new Border
             {
                 Padding = new Thickness(12),
-                BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[
-                    "CardStrokeColorDefaultBrush"],
+                Style = (Style)Resources["CloudDriveMappingCard"],
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
                 Child = content,
@@ -242,6 +290,7 @@ public sealed partial class LanguageSettingsPage : Page
         object sender,
         SelectionChangedEventArgs e)
     {
+        if (!CanManage) return;
         if (sender is not ComboBox
             {
                 Tag: DesktopDriveMapping mapping,
@@ -266,6 +315,7 @@ public sealed partial class LanguageSettingsPage : Page
         object sender,
         RoutedEventArgs e)
     {
+        if (!CanManage) return;
         if (sender is not ToggleSwitch
             {
                 Tag: DesktopDriveMapping mapping,
@@ -298,6 +348,7 @@ public sealed partial class LanguageSettingsPage : Page
         object sender,
         RoutedEventArgs e)
     {
+        if (!IsCurrent || _busy) return;
         var picker = new FolderPicker
         {
             SuggestedStartLocation = PickerLocationId.ComputerFolder,
@@ -311,7 +362,7 @@ public sealed partial class LanguageSettingsPage : Page
             picker,
             WindowNative.GetWindowHandle(window));
         var folder = await picker.PickSingleFolderAsync();
-        if (folder is null)
+        if (folder is null || !IsCurrent)
         {
             return;
         }
@@ -355,13 +406,14 @@ public sealed partial class LanguageSettingsPage : Page
         DesktopDriveMapping mapping,
         RoutedEventHandler handler)
     {
-        var button = new Button { Content = text, Tag = mapping };
+        var button = new Button { Content = text, Tag = mapping, MinHeight = 44 };
         button.Click += handler;
         return button;
     }
 
     private void OpenMapping_Click(object sender, RoutedEventArgs e)
     {
+        if (!CanManage) return;
         if ((sender as Button)?.Tag is DesktopDriveMapping mapping)
         {
             try
@@ -377,6 +429,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private async void ClearCache_Click(object sender, RoutedEventArgs e)
     {
+        if (!CanManage) return;
         if ((sender as Button)?.Tag is DesktopDriveMapping mapping)
         {
             try
@@ -394,6 +447,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private async void KeepOffline_Click(object sender, RoutedEventArgs e)
     {
+        if (!CanManage) return;
         if ((sender as Button)?.Tag is not DesktopDriveMapping mapping)
         {
             return;
@@ -435,6 +489,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void CancelOffline_Click(object sender, RoutedEventArgs e)
     {
+        if (!IsCurrent) return;
         if ((sender as Button)?.Tag is DesktopDriveMapping mapping)
         {
             _app.CancelDesktopDriveTask(mapping);
@@ -443,6 +498,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private async void ReleaseOffline_Click(object sender, RoutedEventArgs e)
     {
+        if (!CanManage) return;
         if ((sender as Button)?.Tag is not DesktopDriveMapping mapping)
         {
             return;
@@ -461,6 +517,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private async void PauseMapping_Click(object sender, RoutedEventArgs e)
     {
+        if (!CanManage) return;
         if ((sender as Button)?.Tag is not DesktopDriveMapping mapping)
         {
             return;
@@ -479,6 +536,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private async void ResumeMapping_Click(object sender, RoutedEventArgs e)
     {
+        if (!CanManage) return;
         if ((sender as Button)?.Tag is not DesktopDriveMapping mapping)
         {
             return;
@@ -495,8 +553,66 @@ public sealed partial class LanguageSettingsPage : Page
         }
     }
 
+    private async void RefreshMapping_Click(object sender, RoutedEventArgs e)
+    {
+        if (!CanManage || _refreshCancellation is not null || (sender as Button)?.Tag is not DesktopDriveMapping mapping) return;
+        using var cancellation = new CancellationTokenSource();
+        _refreshCancellation = cancellation;
+        SetBusy(true); CancelRefreshButton.Visibility = Visibility.Visible;
+        ShowMessage("CloudDriveRefreshing", InfoBarSeverity.Informational);
+        CloudDriveMessage.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
+        try
+        {
+            var result = await _refreshFiles(mapping, cancellation.Token);
+            if (!IsCurrent) return;
+            var localization = LocalizationService.Current;
+            CloudDriveMessage.Message = result.Removed + result.Retained > 0 ?
+                localization.Format("CloudDriveRefreshReconciled", result.Refreshed, result.Removed, result.Retained, result.Failed) :
+                result.Refreshed + result.Failed == 0 ? localization.Get("CloudDriveRefreshEmpty") :
+                result.Failed == 0 ? localization.Format("CloudDriveRefreshDone", result.Refreshed) :
+                localization.Format("CloudDriveRefreshPartial", result.Refreshed, result.Failed);
+            CloudDriveMessage.Severity = result.Failed + result.Retained == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+            CloudDriveMessage.IsOpen = true;
+        }
+        catch (OperationCanceledException) { if (IsCurrent) ShowMessage("CloudDriveRefreshCancelled", InfoBarSeverity.Informational); }
+        catch { if (IsCurrent) ShowMessage("CloudDriveGenericError", InfoBarSeverity.Error); }
+        finally
+        {
+            _refreshCancellation = null; CancelRefreshButton.Visibility = Visibility.Collapsed;
+            SetBusy(false); if (IsCurrent) RenderMappings();
+        }
+    }
+
+    private void CancelRefresh_Click(object sender, RoutedEventArgs e) => _refreshCancellation?.Cancel();
+
+    private async void WritebackSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (!CanManage || _confirmation is not null || (sender as Button)?.Tag is not DesktopDriveMapping mapping) return;
+        var dialog = new CloudDriveWritebackDialog(
+            token => _app.ReadDesktopDriveWritebackAsync(mapping, token),
+            (enabled, confirmed, token) => _app.ConfigureDesktopDriveWritebackAsync(mapping, enabled, confirmed, token),
+            (change, action, confirmed, token) => _app.RecoverDesktopDriveWritebackAsync(mapping, change, action, confirmed, token),
+            async (change, token) =>
+            {
+                var picker = new Features.Transfers.WindowsTransferSavePicker(() => (Application.Current as App)?.MainWindow);
+                var destination = await picker.PickSavePathAsync(Path.GetFileName(change.RemotePath));
+                if (destination is null || !IsCurrent) return false;
+                token.ThrowIfCancellationRequested();
+                await _app.ExportDesktopDriveWritebackAsync(mapping, change.Id, destination, token);
+                return true;
+            }, () => IsCurrent, CloudDriveWriteScope.CanEnable(mapping),
+            (operation, action, confirmed, token) => _app.RecoverDesktopDriveRelocationAsync(mapping, operation, action, confirmed, token),
+            (enabled, confirmed, token) => _app.ConfigureDesktopDriveDeletionAsync(mapping, enabled, confirmed, token),
+            (operation, action, confirmed, token) => _app.RecoverDesktopDriveDeletionAsync(mapping, operation, action, confirmed, token))
+            { XamlRoot = XamlRoot, RequestedTheme = ActualTheme };
+        _confirmation = dialog;
+        try { await dialog.ShowAsync(); }
+        finally { _confirmation = null; if (IsCurrent) RenderMappings(); }
+    }
+
     private async void RemoveMapping_Click(object sender, RoutedEventArgs e)
     {
+        if (!CanManage || _confirmation is not null) return;
         if ((sender as Button)?.Tag is not DesktopDriveMapping mapping)
         {
             return;
@@ -505,22 +621,29 @@ public sealed partial class LanguageSettingsPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = localization.Get("CloudDriveRemoveTitle"),
             Content = localization.Get("CloudDriveRemoveMessage"),
             PrimaryButtonText = localization.Get("CloudDriveRemove"),
             CloseButtonText = localization.Get("ActionCancel"),
             DefaultButton = ContentDialogButton.Close,
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        _confirmation = dialog;
+        try
         {
-            return;
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary || !CanManage) return;
         }
+        finally { _confirmation = null; }
         SetBusy(true);
         try
         {
             await _app.RemoveDesktopDriveAsync(mapping);
             ShowMessage("CloudDriveRemoved", InfoBarSeverity.Success);
             RenderMappings();
+        }
+        catch (InvalidOperationException error) when (error.Message == "CloudDriveWritebackRemoveBlocked")
+        {
+            ShowMessage("CloudDriveWritebackRemoveBlocked", InfoBarSeverity.Warning);
         }
         catch
         {
@@ -534,6 +657,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void ShowMessage(string key, InfoBarSeverity severity)
     {
+        if (!IsCurrent) return;
         CloudDriveMessage.Message = LocalizationService.Current.Get(key);
         CloudDriveMessage.Severity = severity;
         CloudDriveMessage.IsOpen = true;
@@ -541,7 +665,7 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void DesktopDriveProgressChanged(object? sender, EventArgs e)
     {
-        DispatcherQueue.TryEnqueue(RenderMappings);
+        DispatcherQueue.TryEnqueue(() => { if (IsCurrent) RenderMappings(); });
     }
 
     private string ProgressText(DesktopDriveMapping mapping)
@@ -604,8 +728,15 @@ public sealed partial class LanguageSettingsPage : Page
 
     private void SetBusy(bool busy)
     {
-        AddNasButton.IsEnabled = !busy;
-        AddFolderButton.IsEnabled = !busy;
+        _busy = busy;
+        AddNasButton.IsEnabled = !busy && IsCurrent && DesktopCloudDriveCapabilityGate.IsRegistrationEnabled;
+        AddFolderButton.IsEnabled = AddNasButton.IsEnabled;
+        MappingsHost.IsEnabled = AddNasButton.IsEnabled;
+        MappingNameTextBox.IsEnabled = !busy;
+        FolderPathTextBox.IsEnabled = !busy;
+        CacheLimitSelector.IsEnabled = !busy;
+        LaunchAtLoginChoice.IsEnabled = !busy;
+        ChooseCacheDiskButton.IsEnabled = !busy;
         CloudDriveProgress.IsActive = busy;
         CloudDriveProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
     }

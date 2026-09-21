@@ -78,7 +78,10 @@
 
 - Apple Adapter：`DsmNasAdministrationRepository`。
 - Android Adapter：`DsmRepository`、`AppViewModel` 与 `NasHardwareSettingsScreen`；六组设置使用原始/目标双基线、固定 v1 能力与字段可信预检、共享 NAS 设置原子门闩、逐步取消检查、整体回读、持久结果和专项刷新，部分成功与未知结果不得清除后重放。
-- Windows Adapter：复用领域结果类型，调用链尚未迁移。
+- Windows Adapter：已接六组 v1 读取、LED 设备范围、蜂鸣器真实字段名和 UPS 可信空值，
+  原生编辑支持局部失败/恢复。旧聚合 Hardware 和猜测写路径已移除；六组基线保存、
+  LED 设置/更新、可信字段预检和整体回读已有源码/合成证据，生产行为门独立关闭。
+  LED 阶段未知不重发，也不凭暂存亮度匹配宣称物理更新完成。
 - Schema：复用 `MutationResult` 与请求 Fixture Schema。
 - 脱敏 Fixture：
   - `contracts/request-fixtures/hardware/set-power-recovery/synthetic-settings/request.json`
@@ -105,4 +108,5 @@
 - 当前环境未在专用测试目标完成断电恢复、亮度、风扇、提示音、休眠、UPS、权限不足、
   中途断网及物理设备副作用验收。
 - LED `update` 生效时序、不同机型风扇模式、蜂鸣器字段和 UPS 模式差异尚未跨设备验证。
-- Windows 以及 iPhone、iPad 调用链尚未迁移；Android 自动化与 API 35 模拟器门禁已通过，仍待真实设备、真实 DSM 和硬件矩阵验收。
+- Windows 六组保存核心与原生编辑有合成证据，真实物理副作用尚未验收；iPhone/iPad
+  用户调用链未迁移。Android 仍待真实设备、真实 DSM 和硬件矩阵验收，本波不提升证据。

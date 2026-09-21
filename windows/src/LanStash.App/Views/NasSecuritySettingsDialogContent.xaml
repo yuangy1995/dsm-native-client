@@ -1,0 +1,50 @@
+<UserControl x:Class="LanStash.App.Views.NasSecuritySettingsDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer MaxHeight="520" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel MinWidth="300" MaxWidth="500" Spacing="14">
+      <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" IsActive="False" Visibility="Collapsed"/>
+      <InfoBar x:Name="StatusNotice" IsOpen="False" IsClosable="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="ReadOnlyNotice" x:Uid="NasServiceReadOnly" TextWrapping="Wrap" Visibility="Collapsed"/>
+      <StackPanel x:Name="AutoBlockSection" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Uid="NasSecurityAutoBlock" FontWeight="SemiBold"/>
+        <StackPanel x:Name="AutoBlockReadValues" Spacing="8">
+          <TextBlock x:Name="AutoBlockValue"/>
+          <TextBlock x:Name="AttemptsValue" TextWrapping="Wrap"/>
+          <TextBlock x:Name="ExpirationValue"/>
+        </StackPanel>
+        <StackPanel x:Name="AutoBlockEditor" Spacing="8" Visibility="Collapsed">
+          <ToggleSwitch x:Name="AutoBlockToggle" x:Uid="NasSecurityAutoBlockToggle" Toggled="Fields_Changed"/>
+          <TextBox x:Name="AttemptsInput" x:Uid="NasSecurityAttemptsInput" InputScope="Number" TextChanged="Text_Changed"/>
+          <TextBox x:Name="MinutesInput" x:Uid="NasSecurityMinutesInput" InputScope="Number" TextChanged="Text_Changed"/>
+          <TextBox x:Name="ExpirationInput" x:Uid="NasSecurityExpirationInput" InputScope="Number" TextChanged="Text_Changed"/>
+        </StackPanel>
+      </StackPanel>
+      <StackPanel x:Name="DosSection" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Uid="NasSecurityDos" FontWeight="SemiBold"/>
+        <TextBlock x:Name="DosEmpty" x:Uid="NasSecurityDosEmpty" TextWrapping="Wrap" Visibility="Collapsed"/>
+        <ItemsControl x:Name="DosItems">
+          <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,3"/></DataTemplate></ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ItemsControl x:Name="DosEditors" Visibility="Collapsed"/>
+      </StackPanel>
+      <StackPanel x:Name="FirewallSection" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Uid="NasSecurityFirewall" FontWeight="SemiBold"/>
+        <TextBlock x:Name="FirewallValue"/>
+        <ToggleSwitch x:Name="FirewallToggle" x:Uid="NasSecurityFirewallToggle" Toggled="Fields_Changed" Visibility="Collapsed"/>
+        <TextBlock x:Name="ProfileValue" TextWrapping="Wrap"/>
+      </StackPanel>
+      <StackPanel x:Name="PortScanSection" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Uid="NasSecurityPortScan" FontWeight="SemiBold"/>
+        <TextBlock x:Name="PortScanValue"/>
+        <ToggleSwitch x:Name="PortScanToggle" x:Uid="NasSecurityPortScanToggle" Toggled="Fields_Changed" Visibility="Collapsed"/>
+      </StackPanel>
+      <StackPanel x:Name="ConfirmationPanel" Spacing="10" Visibility="Collapsed">
+        <TextBlock x:Name="ValidationNotice" x:Uid="NasSecurityInvalid" TextWrapping="Wrap" Visibility="Collapsed"/>
+        <TextBlock x:Uid="NasSecurityRisk" TextWrapping="Wrap"/>
+        <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasServiceRiskConfirmed" Checked="Acknowledgement_Changed" Unchecked="Acknowledgement_Changed">
+          <CheckBox.Content><TextBlock x:Uid="NasServiceRiskConfirmedText" TextWrapping="Wrap"/></CheckBox.Content>
+        </CheckBox>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

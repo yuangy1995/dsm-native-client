@@ -4,14 +4,33 @@ import Foundation
 
 extension DsmNasAdministrationRepository {
     public func loadStorage() async throws -> NasStorageSnapshot {
-        let value = try await call(DsmAPIName.storageOverview, method: "load_info")
-        let disks = value.objects("disks").enumerated().map { index, raw in
-            let item = DsmDynamicJSON.object(raw)
-            let id = item.string(["id", "device", "name"]) ?? "disk-\(index)"
+        storageReadGeneration += 1
+        let generation = storageReadGeneration
+        var loaded = false
+        defer {
+            if !loaded, generation == storageReadGeneration { cacheStorageDisks([]) }
+        }
+        let value = try await call(DsmAPIName.storageOverview, method: "load_info", version: 1)
+        try Task.checkCancellation()
+        guard generation == storageReadGeneration else { throw CancellationError() }
+        guard case .array(let rawDisks) = value["disks"] else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        var diskIDs = Set<String>(), deviceIDs = Set<String>()
+        let disks = try rawDisks.enumerated().map { index, item in
+            guard case .object = item, case .string(let id) = item["id"], case .string(let device) = item["device"],
+                  !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !device.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  diskIDs.insert(id).inserted, deviceIDs.insert(device).inserted else {
+                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            }
+            let supportsSmartTest: Bool
+            if let support = item["smart_test_support"], support != .null {
+                guard case .boolean(let flag) = support else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                supportsSmartTest = flag
+            } else { supportsSmartTest = false }
             let smartStatus = item.string(["smart_status"])
             return NasDisk(
                 id: id,
-                deviceID: item.string(["device"]) ?? id,
+                deviceID: device,
                 name: item.string(["longName", "name", "device"]) ?? L10n.string("shared.c89654ab90e80308", String(describing: index + 1)),
                 vendor: item.string(["vendor"]),
                 model: item.string(["model"]),
@@ -27,7 +46,7 @@ extension DsmNasAdministrationRepository {
                 temperatureCelsius: item.number(["temp"]),
                 isSSD: item.boolean(["isSsd"]) ?? false,
                 usedBy: item.string(["used_by", "allocation_role"]),
-                supportsSmartTest: item.boolean(["smart_test_support"]) ?? (smartStatus != nil),
+                supportsSmartTest: supportsSmartTest,
                 serialNumber: item.string(["serial"]),
                 firmwareVersion: item.string(["firm"]),
                 location: item["container"]?.string(["str"]),
@@ -40,9 +59,7 @@ extension DsmNasAdministrationRepository {
                 }
             )
         }
-        storageDisks = disks.reduce(into: [:]) { result, disk in
-            result[disk.id] = disk
-        }
+        cacheStorageDisks(disks)
         let pools = value.objects("storagePools").enumerated().map { index, raw in
             let item = DsmDynamicJSON.object(raw)
             let id = item.string(["id", "uuid", "num_id"]) ?? "pool-\(index)"
@@ -79,6 +96,7 @@ extension DsmNasAdministrationRepository {
                 path: item.string(["vol_path"])
             )
         }
+        loaded = true
         return NasStorageSnapshot(
             overallStatus: value["overview_data"]?.string(["status_level"])
                 ?? value["env"]?.string(["status"]),

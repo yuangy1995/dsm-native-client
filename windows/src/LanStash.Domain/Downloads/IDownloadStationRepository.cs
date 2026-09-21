@@ -5,6 +5,13 @@ public interface IDownloadStationRepository
     Guid ProfileId { get; }
     DownloadStationAvailability Availability { get; }
 
+    Task<DownloadSettingsSnapshot> LoadSettingsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<DownloadSettingsSnapshot>(new NotSupportedException("download.settings.unavailable"));
+
+    Task<DownloadSettingsSaveOutcome> SaveSettingsAsync(DownloadSettingsSaveRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new DownloadSettingsSaveOutcome(new(1, MutationResultStatus.Unsupported, "downloadSettings", false, false,
+            new(0, 1, 0), MutationErrorCategory.Unsupported), null, DownloadSettingsComponentState.Rejected, DownloadSettingsComponentState.Unchanged));
+
     Task<DownloadTaskPage> ListTasksAsync(
         int offset,
         int limit,

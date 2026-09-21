@@ -255,7 +255,7 @@ public sealed class DesktopCloudDriveTests
             },
             (offset, bytes) => submissions.Add((offset, bytes.Length)),
             (offset, length) => failures.Add((offset, length)),
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.True(outcome.Succeeded);
         Assert.Equal("\"v1\"", outcome.StrongContentVersion);
@@ -267,7 +267,7 @@ public sealed class DesktopCloudDriveTests
                 (8L, 2L, "\"v1\"", 10L),
             ],
             reads);
-        Assert.Equal([(0L, 10)], submissions);
+        Assert.Equal([(0L, 4), (4L, 4), (8L, 2)], submissions);
         Assert.Empty(failures);
     }
 
@@ -289,7 +289,7 @@ public sealed class DesktopCloudDriveTests
                 Range(offset, length, 10, version: null, safe: false)),
             (_, _) => submissions++,
             (offset, length) => failures.Add((offset, length)),
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.False(outcome.Succeeded);
         Assert.Equal(0, submissions);
@@ -314,7 +314,7 @@ public sealed class DesktopCloudDriveTests
                 Range(offset, length, 10, version: null, safe: false)),
             (_, _) => submissions++,
             (offset, length) => failures.Add((offset, length)),
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.False(outcome.Succeeded);
         Assert.Equal(0, submissions);
@@ -339,7 +339,7 @@ public sealed class DesktopCloudDriveTests
                 Range(offset, length, 3, version: null, safe: false)),
             (offset, bytes) => submissions.Add((offset, bytes.Length)),
             (offset, length) => failures.Add((offset, length)),
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.False(outcome.Succeeded);
         Assert.Null(outcome.StrongContentVersion);
@@ -366,11 +366,11 @@ public sealed class DesktopCloudDriveTests
                 Range(offset, length, 8, readCount++ == 0 ? "\"v1\"" : "\"v2\"")),
             (offset, _) => submissions.Add(offset),
             (offset, length) => failures.Add((offset, length)),
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.False(outcome.Succeeded);
-        Assert.Empty(submissions);
-        Assert.Equal([(0L, 8L)], failures);
+        Assert.Equal([0L], submissions);
+        Assert.Equal([(4L, 4L)], failures);
     }
 
     [Fact]
@@ -392,11 +392,11 @@ public sealed class DesktopCloudDriveTests
                 Range(offset, length, readCount++ == 0 ? 8 : 9, "\"v1\"")),
             (offset, _) => submissions.Add(offset),
             (offset, length) => failures.Add((offset, length)),
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.False(outcome.Succeeded);
-        Assert.Empty(submissions);
-        Assert.Equal([(0L, 8L)], failures);
+        Assert.Equal([0L], submissions);
+        Assert.Equal([(4L, 4L)], failures);
     }
 
     [Fact]
@@ -423,7 +423,7 @@ public sealed class DesktopCloudDriveTests
             },
             (_, _) => submissions++,
             (offset, length) => failures.Add((offset, length)),
-            cancellation.Token);
+            cancellation.Token, (_, _, _) => Task.CompletedTask);
 
         Assert.False(outcome.Succeeded);
         Assert.Equal(0, reads);
@@ -452,14 +452,14 @@ public sealed class DesktopCloudDriveTests
                 failures++;
                 throw new IOException("Synthetic native failure");
             },
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.False(outcome.Succeeded);
         Assert.Equal(1, failures);
     }
 
     [Fact]
-    public async Task PartialCallbacksRemainRejectedAcrossARuntimeRestart()
+    public async Task PartialCallbacksWithoutDurableStorageRemainRejectedAcrossARuntimeRestart()
     {
         var submissions = 0;
         var failures = new List<(long Offset, long Length)>();
@@ -487,7 +487,7 @@ public sealed class DesktopCloudDriveTests
     }
 
     [Fact]
-    public async Task UnboundedWholeFileIsRejectedBeforeReadingOrSubmitting()
+    public async Task LargeWholeFileWithoutDurableStorageIsRejectedBeforeReadingOrSubmitting()
     {
         var reads = 0;
         var submissions = 0;
@@ -548,7 +548,7 @@ public sealed class DesktopCloudDriveTests
     }
 
     [Fact]
-    public async Task WholeFileEofLengthIsNormalizedAndSubmittedOnce()
+    public async Task WholeFileEofLengthIsNormalizedAndSubmittedInVerifiedChunks()
     {
         var submissions = new List<(long Offset, int Length)>();
         var failures = new List<(long Offset, long Length)>();
@@ -565,10 +565,10 @@ public sealed class DesktopCloudDriveTests
                 Range(offset, length, 6, "\"v1\"")),
             (offset, bytes) => submissions.Add((offset, bytes.Length)),
             (offset, length) => failures.Add((offset, length)),
-            CancellationToken.None);
+            CancellationToken.None, (_, _, _) => Task.CompletedTask);
 
         Assert.True(outcome.Succeeded);
-        Assert.Equal([(0L, 6)], submissions);
+        Assert.Equal([(0L, 4), (4L, 2)], submissions);
         Assert.Empty(failures);
     }
 

@@ -18,6 +18,9 @@ public enum ChatReadFeature
     AttachmentThumbnail,
     AttachmentContent,
     EncryptedContentMetadata,
+    Reminders,
+    ScheduledMessages,
+    Polls,
 }
 
 public enum ChatWriteFeature
@@ -27,6 +30,12 @@ public enum ChatWriteFeature
     DirectConversation,
     PrivateGroup,
     DeleteOwnMessage,
+    Reminders,
+    ScheduledMessages,
+    Polls,
+    CloseConversation,
+    ForwardMessage,
+    PinnedMessages,
 }
 
 public sealed record ChatAvailability(
@@ -103,7 +112,10 @@ public sealed record ChatMessage(
     DateTimeOffset SentAt,
     string? Text,
     IReadOnlyList<ChatAttachment> Attachments,
-    ChatEncryptionState EncryptionState);
+    ChatEncryptionState EncryptionState)
+{
+    public ChatPoll? Poll { get; init; }
+}
 
 public sealed record ChatPinnedMessage(
     string Id,
@@ -281,14 +293,26 @@ public sealed record ChatForwardRequest(
     string MessageId,
     string SourceConversationId,
     IReadOnlyList<string> TargetConversationIds,
-    Guid ClientRequestId);
+    Guid ClientRequestId)
+{
+    public ChatMessage? ExpectedMessage { get; init; }
+}
+
+public sealed record ChatPinMessageRequest(string ConversationId, string MessageId, bool IsPinned, Guid ClientRequestId)
+{
+    public ChatMessage? ExpectedMessage { get; init; }
+    public ChatPinnedMessage? ExpectedPin { get; init; }
+}
 
 // ── 消息删除 ──
 
 public sealed record ChatDeleteMessageRequest(
     string MessageId,
     string ConversationId,
-    Guid ClientRequestId);
+    Guid ClientRequestId)
+{
+    public ChatMessage? ExpectedMessage { get; init; }
+}
 
 // ── 会话关闭 ──
 

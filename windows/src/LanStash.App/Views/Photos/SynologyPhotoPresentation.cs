@@ -21,6 +21,7 @@ public sealed class SynologyPhotoCell
     public string Subtitle => Collection?.Count is { } count ? LocalizationService.Current.Format("PhotosItemCount", count) : "";
     public string CopyLinkTitle => LocalizationService.Current.Get("PhotosCopyLink");
     public Visibility LinkVisibility => Shared?.Url is not null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility MediaLabelVisibility => Photo?.MediaType is "video" or "live" ? Visibility.Visible : Visibility.Collapsed;
     public string MediaLabel => Photo?.MediaType switch
     {
         "video" => LocalizationService.Current.Get("PhotosMediaVideo"),

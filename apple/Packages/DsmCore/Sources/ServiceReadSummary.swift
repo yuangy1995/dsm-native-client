@@ -9,6 +9,7 @@ public struct VirtualMachineInventoryItem: Identifiable, Equatable, Sendable {
     public let memoryBytes: Int64?
     public let storageBytes: Int64?
     public let autoStart: Bool
+    public let startupBehavior: VirtualMachineStartupBehavior?
 
     public init(
         id: String,
@@ -17,7 +18,8 @@ public struct VirtualMachineInventoryItem: Identifiable, Equatable, Sendable {
         cpuCount: Int? = nil,
         memoryBytes: Int64? = nil,
         storageBytes: Int64? = nil,
-        autoStart: Bool = false
+        autoStart: Bool = false,
+        startupBehavior: VirtualMachineStartupBehavior? = nil
     ) {
         self.id = id
         self.name = name
@@ -25,7 +27,8 @@ public struct VirtualMachineInventoryItem: Identifiable, Equatable, Sendable {
         self.cpuCount = cpuCount
         self.memoryBytes = memoryBytes
         self.storageBytes = storageBytes
-        self.autoStart = autoStart
+        self.autoStart = startupBehavior.map { $0 != .off } ?? autoStart
+        self.startupBehavior = startupBehavior
     }
 }
 

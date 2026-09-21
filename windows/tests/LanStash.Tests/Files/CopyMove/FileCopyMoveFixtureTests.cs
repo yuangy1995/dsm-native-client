@@ -5,12 +5,14 @@ namespace LanStash.Tests.Files.CopyMove;
 public sealed class FileCopyMoveFixtureTests
 {
     [Theory]
-    [InlineData("copy", "false")]
-    [InlineData("move", "true")]
-    public void NoOverwriteFixturesFreezePublicV3Wire(string operation, string removeSource)
+    [InlineData("copy", "false", "synthetic-no-overwrite", "false")]
+    [InlineData("move", "true", "synthetic-no-overwrite", "false")]
+    [InlineData("copy", "false", "synthetic-overwrite", "true")]
+    [InlineData("move", "true", "synthetic-overwrite", "true")]
+    public void FixturesFreezePublicV3Wire(string operation, string removeSource, string variant, string overwrite)
     {
         var fixture = JsonNode.Parse(ReadRepositoryFile(
-            $"contracts/request-fixtures/file-station/{operation}/synthetic-no-overwrite/request.json"))!
+            $"contracts/request-fixtures/file-station/{operation}/{variant}/request.json"))!
             .AsObject();
         var api = fixture["api"]!.AsObject();
         var transport = fixture["transport"]!.AsObject();
@@ -24,7 +26,8 @@ public sealed class FileCopyMoveFixtureTests
         Assert.Equal(3, api["resolvedVersion"]!.GetValue<int>());
         Assert.Equal("POST", transport["httpMethod"]!.GetValue<string>());
         Assert.Equal("form", transport["requestFormat"]!.GetValue<string>());
-        Assert.Equal("false", parameters["overwrite"]);
+        Assert.Equal(overwrite, parameters["overwrite"]);
+        if (overwrite == "true") Assert.Equal("highRisk", fixture["policy"]!["risk"]!.GetValue<string>());
         Assert.Equal(removeSource, parameters["remove_src"]);
         Assert.Equal("true", parameters["accurate_progress"]);
     }

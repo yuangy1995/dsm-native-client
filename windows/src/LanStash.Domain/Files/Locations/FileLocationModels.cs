@@ -110,7 +110,15 @@ public enum FileLocationMutationTransportStatus
 public sealed record FileLocationMutationRequest(
     FileLocationMutationKind Kind,
     string Method,
-    IReadOnlyDictionary<string, string> Parameters);
+    IReadOnlyDictionary<string, string> Parameters)
+{
+    public override string ToString() => nameof(FileLocationMutationRequest);
+}
+
+public sealed record FileFavoriteMutationRecovery(Guid ProfileId, string Path, string? Name, bool IsAddition)
+{
+    public override string ToString() => nameof(FileFavoriteMutationRecovery);
+}
 
 public sealed record FileLocationMutationTransportResult(
     FileLocationMutationTransportStatus Status,
@@ -143,7 +151,10 @@ public sealed record RemoteMountConfiguration(
     string? Password,
     string? Domain,
     bool ReadOnly,
-    FileRemoteProtocol Protocol);
+    FileRemoteProtocol Protocol)
+{
+    public override string ToString() => nameof(RemoteMountConfiguration);
+}
 
 /// <summary>
 /// 用于创建或编辑远程挂载并执行校验的草稿。
@@ -159,17 +170,21 @@ public sealed record RemoteMountDraft
         string? domain,
         bool readOnly,
         FileRemoteProtocol protocol,
-        string? existingMountPoint = null)
+        string? existingMountPoint = null,
+        RemoteMountNfsVersion nfsVersion = RemoteMountNfsVersion.V3,
+        RemoteMountNfsTransport nfsTransport = RemoteMountNfsTransport.Tcp)
     {
-        Server = server?.Trim() ?? string.Empty;
-        RemotePath = remotePath?.Trim() ?? string.Empty;
-        MountPoint = mountPoint?.Trim() ?? string.Empty;
-        Username = username?.Trim();
-        Password = password; // deliberately not trimmed — password may contain leading/trailing whitespace
-        Domain = domain?.Trim();
+        // 只整理普通空格，保留控制字符交给校验拒绝，不能把非法目标悄悄变成另一个目标。
+        Server = server?.Trim(' ') ?? string.Empty;
+        RemotePath = remotePath?.Trim(' ') ?? string.Empty;
+        MountPoint = mountPoint?.Trim(' ') ?? string.Empty;
+        Username = username?.Trim(' ');
+        Password = password; // 密码可能包含首尾空白，不得修剪。
+        Domain = domain?.Trim(' ');
         ReadOnly = readOnly;
         Protocol = protocol;
-        ExistingMountPoint = existingMountPoint?.Trim();
+        ExistingMountPoint = existingMountPoint?.Trim(' ');
+        NfsVersion = nfsVersion; NfsTransport = nfsTransport;
     }
 
     public string Server { get; }
@@ -181,19 +196,22 @@ public sealed record RemoteMountDraft
     public bool ReadOnly { get; }
     public FileRemoteProtocol Protocol { get; }
     public string? ExistingMountPoint { get; }
+    public RemoteMountNfsVersion NfsVersion { get; }
+    public RemoteMountNfsTransport NfsTransport { get; }
+    public override string ToString() => nameof(RemoteMountDraft);
 
     public bool IsValidForSubmission =>
         !string.IsNullOrWhiteSpace(Server) &&
-        Server.Length <= 256 &&
+        Server.Length <= 256 && !Server.Any(char.IsControl) &&
         !string.IsNullOrWhiteSpace(RemotePath) &&
-        RemotePath.Length <= 4096 &&
+        RemotePath.Length <= 4096 && !RemotePath.Any(char.IsControl) &&
         !string.IsNullOrWhiteSpace(MountPoint) &&
         MountPoint.StartsWith('/') &&
         MountPoint.Length <= 4096 &&
         !MountPoint.EndsWith('/') &&
         !MountPoint.Contains("//") &&
-        !MountPoint.Contains('\\') &&
+        !MountPoint.Contains('\\') && !MountPoint.Any(char.IsControl) &&
         Enum.IsDefined(Protocol) &&
-        (Username is null || Username.Length <= 128) &&
-        (Domain is null || Domain.Length <= 128);
+        (Username is null || Username.Length <= 128 && !Username.Any(char.IsControl)) &&
+        (Domain is null || Domain.Length <= 128 && !Domain.Any(char.IsControl));
 }

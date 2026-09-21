@@ -6,6 +6,7 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
     enum Step: Sendable {
         case response(DsmHTTPResponse)
         case urlError(URLError.Code)
+        case cocoaError(Int)
         case responseTooLarge
         case waitUntilCancelled
     }
@@ -36,6 +37,8 @@ actor MockHTTPTransport: DsmBinaryHTTPTransport {
             return response
         case .urlError(let code):
             throw URLError(code)
+        case .cocoaError(let code):
+            throw CocoaError(CocoaError.Code(rawValue: code))
         case .responseTooLarge:
             throw DsmTransportError.responseTooLarge
         case .waitUntilCancelled:

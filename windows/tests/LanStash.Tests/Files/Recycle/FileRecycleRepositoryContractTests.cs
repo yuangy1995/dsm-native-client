@@ -214,10 +214,104 @@ public sealed class FileRecycleRepositoryContractTests
         Assert.Equal(0, api.StartCopyMoveCount);
     }
 
-    private static DsmRepository MakeRepository(FakeApi api)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DedicatedReviewKeepsStableEvidenceUntilAcknowledged(bool restore)
+    {
+        var source = restore ? "/share/#recycle/docs/a.txt" : "/share/docs/a.txt";
+        var destination = restore ? "/share/docs/a.txt" : "/share/#recycle/docs/a.txt";
+        var baseline = restore ? Page(Item(source, "a.txt", false, 12), Item("/share/docs", "docs", true, 0)) : Page(Item(source, "a.txt", false, 12));
+        var api = new FakeApi(baseline, Page(), Page(Item(destination, "a.txt", false, 12)));
+        var repository = MakeRepository(api);
+        var result = restore ? await repository.RestoreFromRecycleAsync(new(Target(source, true)))
+            : await repository.MoveToRecycleAsync(new(Target(source, false), new("/share", "/share/#recycle")));
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result.Result.Status);
+        var pending = Assert.Single(await repository.GetRecycleReviewsAsync());
+        Assert.Equal(restore, pending.IsRestore);
+        Assert.Equal(pending, Assert.Single(await MakeRepository(api).GetRecycleReviewsAsync()));
+        Assert.Null(await repository.ReviewRecycleAsync(Guid.NewGuid()));
+        Assert.Empty(await MakeRepository(api, "synthetic-other").GetRecycleReviewsAsync());
+        Assert.Null(await MakeRepository(api, "synthetic-other").ReviewRecycleAsync(pending.Id));
+        var reviewed = await repository.ReviewRecycleAsync(pending.Id);
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, reviewed!.Result.Status);
+        Assert.Single(await repository.GetRecycleReviewsAsync());
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await repository.ReviewRecycleAsync(pending.Id))!.Result.Status);
+        Assert.Equal(3, api.ListCount);
+        repository.AcknowledgeRecycleReview(pending.Id);
+        Assert.Empty(await repository.GetRecycleReviewsAsync());
+        Assert.Null(await repository.ReviewRecycleAsync(pending.Id));
+        Assert.Equal(1, api.StartRecycleCount + api.StartCopyMoveCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ChangedSourceIsNotEquivalentToAbsentSource(bool restore)
+    {
+        var source = restore ? "/share/#recycle/docs/a.txt" : "/share/docs/a.txt";
+        var destination = restore ? "/share/docs/a.txt" : "/share/#recycle/docs/a.txt";
+        var baseline = restore ? Page(Item(source, "a.txt", false, 12), Item("/share/docs", "docs", true, 0)) : Page(Item(source, "a.txt", false, 12));
+        var changed = Page(Item(source, "a.txt", false, 99), Item(destination, "a.txt", false, 12));
+        var api = new FakeApi(baseline, changed, changed);
+        var repository = MakeRepository(api);
+        var result = restore ? await repository.RestoreFromRecycleAsync(new(Target(source, true)))
+            : await repository.MoveToRecycleAsync(new(Target(source, false), new("/share", "/share/#recycle")));
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, result.Result.Status);
+        var pending = Assert.Single(await repository.GetRecycleReviewsAsync());
+        Assert.Equal(MutationResultStatus.SubmittedButUnverified, (await repository.ReviewRecycleAsync(pending.Id))!.Result.Status);
+        repository.AcknowledgeRecycleReview(pending.Id);
+        Assert.Single(await repository.GetRecycleReviewsAsync());
+        Assert.Equal(1, api.StartRecycleCount + api.StartCopyMoveCount);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task PreflightFailuresAreNotPendingWrites(bool restore, bool authentication)
+    {
+        var api = new FakeApi { ListError = authentication ? new DsmException("synthetic", "synthetic", 119) : new HttpRequestException("synthetic") };
+        var repository = MakeRepository(api);
+        var result = restore ? await repository.RestoreFromRecycleAsync(new(Target("/share/#recycle/docs/a.txt", true)))
+            : await repository.MoveToRecycleAsync(new(Target("/share/docs/a.txt", false), new("/share", "/share/#recycle")));
+        Assert.False(result.Result.Submitted);
+        Assert.Equal(authentication ? MutationErrorCategory.Authentication : MutationErrorCategory.Network, result.Result.ErrorCategory);
+        Assert.Empty(await repository.GetRecycleReviewsAsync());
+        Assert.Equal(0, api.StartRecycleCount + api.StartCopyMoveCount);
+    }
+
+    [Fact]
+    public async Task HealthyRecycleTaskWaitsPastEightPolls()
+    {
+        var api = new FakeApi(Page(Item("/share/docs/a.txt", "a.txt", false, 12)), Page(Item("/share/#recycle/docs/a.txt", "a.txt", false, 12)));
+        api.RecycleStatus = () => new(api.RecycleStatusCount < 10 ? FileRecycleTaskTransportStatus.Running : FileRecycleTaskTransportStatus.Finished);
+        var result = await MakeRepository(api).MoveToRecycleAsync(new(Target("/share/docs/a.txt", false), new("/share", "/share/#recycle")));
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, result.Result.Status);
+        Assert.Equal(10, api.RecycleStatusCount);
+        Assert.Equal(1, api.StartRecycleCount);
+    }
+
+    [Fact]
+    public async Task CancelledRecycleWaitRemainsUnknownAndNeverResubmits()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var source = Item("/share/docs/a.txt", "a.txt", false, 12);
+        var api = new FakeApi(Page(source), Page(source), Page(Item("/share/#recycle/docs/a.txt", "a.txt", false, 12)))
+        { RecycleStatus = () => { cancellation.Cancel(); return new(FileRecycleTaskTransportStatus.Running); } };
+        var repository = MakeRepository(api);
+        var result = await repository.MoveToRecycleAsync(new(Target("/share/docs/a.txt", false), new("/share", "/share/#recycle")), cancellation.Token);
+        Assert.Equal(MutationResultStatus.CancellationRequestedAfterSubmission, result.Result.Status);
+        var pending = Assert.Single(await repository.GetRecycleReviewsAsync());
+        Assert.Equal(MutationResultStatus.ConfirmedSuccess, (await repository.ReviewRecycleAsync(pending.Id))!.Result.Status);
+        Assert.Equal(1, api.StartRecycleCount);
+    }
+
+    private static DsmRepository MakeRepository(FakeApi api, string session = "sid")
     {
         var profile = new NasProfile(ProfileId, "NAS", "nas.example.invalid", null, "user");
-        return new DsmRepository(profile, new DsmSession(ProfileId, "sid", null, null), api,
+        return new DsmRepository(profile, new DsmSession(ProfileId, session, null, null), api,
             new Dictionary<string, ApiCapability>(StringComparer.Ordinal)
             {
                 ["SYNO.FileStation.Delete"] = new("SYNO.FileStation.Delete", "entry.cgi", 2, 2, "FORM"),
@@ -278,6 +372,8 @@ public sealed class FileRecycleRepositoryContractTests
     {
         private readonly Queue<JsonObject> _pages = new(pages);
         public int ListCount { get; private set; }
+        public Exception? ListError { get; init; }
+        public Func<FileRecycleTaskTransportResult>? RecycleStatus { get; set; }
         public int PermissionCount { get; private set; }
         public int StartRecycleCount { get; private set; }
         public int RecycleStatusCount { get; private set; }
@@ -314,6 +410,7 @@ public sealed class FileRecycleRepositoryContractTests
             CancellationToken cancellationToken = default)
         {
             ListCount++;
+            if (ListError is { } error) throw error;
             if (HoldFirstList && ListCount == 1)
             {
                 FirstListEntered.TrySetResult(true);
@@ -345,6 +442,7 @@ public sealed class FileRecycleRepositoryContractTests
             CancellationToken cancellationToken = default)
         {
             RecycleStatusCount++;
+            if (RecycleStatus is not null) return Task.FromResult(RecycleStatus());
             return Task.FromResult(new FileRecycleTaskTransportResult(
                 FileRecycleTaskTransportStatus.Finished));
         }

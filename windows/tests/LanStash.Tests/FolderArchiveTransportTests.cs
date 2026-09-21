@@ -9,6 +9,99 @@ namespace LanStash.Tests;
 
 public sealed class FolderArchiveTransportTests
 {
+    [Fact]
+    public async Task SelectionRequestMatchesSharedFixture()
+    {
+        string? fixturePath = null;
+        for (var directory = new DirectoryInfo(Directory.GetCurrentDirectory()); directory is not null; directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, "contracts/request-fixtures/file-station/download-selection/synthetic-selection/request.json");
+            if (File.Exists(candidate)) { fixturePath = candidate; break; }
+        }
+        Assert.NotNull(fixturePath);
+        using var fixture = JsonDocument.Parse(File.ReadAllText(fixturePath));
+        using var handler = new StubHttpMessageHandler((request, cancellationToken) =>
+        {
+            var query = ParseQuery(request.RequestUri!.Query); var root = fixture.RootElement;
+            Assert.Equal(root.GetProperty("transport").GetProperty("httpMethod").GetString(), request.Method.Method);
+            Assert.Equal(root.GetProperty("api").GetProperty("name").GetString(), query["api"]);
+            Assert.Equal(root.GetProperty("api").GetProperty("method").GetString(), query["method"]);
+            Assert.Equal(root.GetProperty("api").GetProperty("resolvedVersion").GetInt32().ToString(), query["version"]);
+            foreach (var field in root.GetProperty("parameters").EnumerateArray())
+            {
+                var name = field.GetProperty("name").GetString()!; var expected = field.GetProperty("encodedValue").GetString()!
+                    .Replace("<synthetic-file>", "/synthetic/file", StringComparison.Ordinal).Replace("<synthetic-folder>", "/synthetic/folder", StringComparison.Ordinal);
+                if (name == "path") Assert.Equal(JsonSerializer.Deserialize<string[]>(expected), JsonSerializer.Deserialize<string[]>(query[name]));
+                else Assert.Equal(expected, query[name]);
+            }
+            Assert.Equal(new[] { "_sid", "api", "method", "mode", "path", "version" }, query.Keys.Order(StringComparer.Ordinal));
+            return Task.FromResult(ArchiveResponse(ZipPayload(8), "application/zip"));
+        });
+        using var http = new HttpClient(handler);
+        await new DsmApiClient(http).StreamArchiveAsync(Profile(), Session(), Capability(), ["/synthetic/file", "/synthetic/folder"], (_, _) => ValueTask.CompletedTask);
+    }
+
+    [Theory]
+    [InlineData(21)]
+    [InlineData(205)]
+    [InlineData(1001)]
+    public async Task FullSelectionIsOneDownloadRequestWithEveryPath(int count)
+    {
+        var paths = Enumerable.Range(0, count).Select(index => $"/synthetic/item-{index:D4}").ToArray();
+        var requests = 0; var chunks = 0;
+        using var handler = new StubHttpMessageHandler((request, cancellationToken) =>
+        {
+            requests++;
+            Assert.Equal(HttpMethod.Get, request.Method);
+            var query = ParseQuery(request.RequestUri!.Query);
+            Assert.Equal("SYNO.FileStation.Download", query["api"]); Assert.Equal("2", query["version"]);
+            Assert.Equal("download", query["method"]); Assert.Equal("download", query["mode"]);
+            Assert.Equal(paths, JsonSerializer.Deserialize<string[]>(query["path"])); Assert.Null(request.Headers.Range);
+            Assert.True(WindowsCertificateTrustHandler.TryGetConnectionContext(request, out var id, out _)); Assert.Equal(ProfileId, id);
+            return Task.FromResult(ArchiveResponse(ZipPayload(4096), "application/zip"));
+        });
+        using var http = new HttpClient(handler);
+        IFileArchiveReader repository = new DsmRepository(Profile(), Session(), new DsmApiClient(http),
+            new Dictionary<string, ApiCapability> { ["SYNO.FileStation.Download"] = Capability() });
+        await repository.StreamArchiveAsync(paths, (chunk, _) => { chunks += chunk.Length; return ValueTask.CompletedTask; });
+        Assert.Equal(1, requests); Assert.Equal(4096, chunks);
+    }
+
+    [Fact]
+    public async Task UnicodeAndQueryCharactersRemainLiteralPaths()
+    {
+        var paths = new[] { "/share/中文 & #?.txt", "/share/other" };
+        using var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            var query = ParseQuery(request.RequestUri!.Query);
+            Assert.Equal(paths, JsonSerializer.Deserialize<string[]>(query["path"]));
+            Assert.Equal("nas.invalid", request.RequestUri.Host); Assert.Equal("download", query["method"]);
+            return Task.FromResult(ArchiveResponse(ZipPayload(8), "application/zip"));
+        });
+        using var http = new HttpClient(handler);
+        await new DsmApiClient(http).StreamArchiveAsync(Profile(), Session(), Capability(), paths, (_, _) => ValueTask.CompletedTask);
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("duplicate")]
+    [InlineData("traversal")]
+    [InlineData("session")]
+    [InlineData("api")]
+    [InlineData("host")]
+    public async Task InvalidSelectionOrContextNeverSends(string reason)
+    {
+        var calls = 0;
+        using var handler = new StubHttpMessageHandler((_, _) => { calls++; throw new InvalidOperationException(); });
+        using var http = new HttpClient(handler);
+        var paths = reason switch { "empty" => Array.Empty<string>(), "duplicate" => ["/share/a", "/share/a"], "traversal" => ["/share/../a"], _ => new[] { "/share/a", "/share/b" } };
+        var session = reason == "session" ? Session() with { ProfileId = Guid.NewGuid() } : Session();
+        var capability = reason == "api" ? Capability() with { Name = "SYNO.FileStation.Delete" } :
+            reason == "host" ? Capability() with { Path = "https://other.invalid/entry.cgi" } : Capability();
+        await Assert.ThrowsAnyAsync<Exception>(() => new DsmApiClient(http).StreamArchiveAsync(Profile(), session, capability, paths, (_, _) => ValueTask.CompletedTask));
+        Assert.Equal(0, calls);
+    }
+
     private static readonly Guid ProfileId =
         Guid.Parse("11111111-1111-1111-1111-111111111111");
 

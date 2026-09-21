@@ -3,6 +3,10 @@ namespace LanStash.Domain;
 public interface IDsmRepository : IFileRangeReader, IFileArchiveReader
 {
     IReadOnlyList<AppModule> AvailableModules { get; }
+    Task<FilePresence> ProbeFilePresenceAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromException<FilePresence>(new NotSupportedException("file.presence.unsupported"));
+    Task<FileEntryMetadata?> ReadFileMetadataAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromException<FileEntryMetadata?>(new NotSupportedException("file.metadata.unsupported"));
     Task<FilePage> ListFilesAsync(
         string path,
         CancellationToken cancellationToken = default);

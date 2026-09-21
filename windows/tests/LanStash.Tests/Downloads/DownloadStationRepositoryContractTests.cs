@@ -255,7 +255,7 @@ public sealed class DownloadStationRepositoryContractTests
     }
 
     [Fact]
-    public async Task SnapshotReadsSettingsAndRssSummaryWithOfficialV1Only()
+    public async Task SnapshotUsesInfoV2ForDestinationAndV1ForOtherOfficialApis()
     {
         var api = new DownloadRecordingApiClient(request => request.ApiName switch
         {
@@ -296,7 +296,7 @@ public sealed class DownloadStationRepositoryContractTests
         var repository = (IDownloadStationRepository)CreateRepository(
             api,
             Capability(PublicTaskApi),
-            Capability(PublicInfoApi),
+            Capability(PublicInfoApi, 1, 2),
             Capability(PublicScheduleApi),
             Capability(PublicRssSiteApi),
             Capability(PublicRssFeedApi),
@@ -330,7 +330,7 @@ public sealed class DownloadStationRepositoryContractTests
             {
                 Assert.Equal(PublicInfoApi, request.ApiName);
                 Assert.Equal("getconfig", request.Method);
-                Assert.Equal(1, request.Version);
+                Assert.Equal(2, request.Version);
                 Assert.Empty(request.Parameters);
             },
             request =>
@@ -904,7 +904,19 @@ public sealed class DownloadStationRepositoryContractTests
     }
 
     [Fact]
-    public async Task CreateLinkUsesOfficialTaskV1AndRequiresStableTaskReadback()
+    public async Task ChosenDestinationRequiresTaskV2BeforeAnyRequest()
+    {
+        var api = new DownloadRecordingApiClient(_ => throw new InvalidOperationException("No request is expected."));
+        var repository = (IDownloadStationRepository)CreateRepository(api, Capability(PublicTaskApi));
+        var outcome = await repository.CreateTaskAsync(new(ProfileId, "https://example.invalid/synthetic.iso", "chosen"));
+        Assert.Equal(MutationResultStatus.Unsupported, outcome.Result.Status);
+        Assert.False(outcome.Result.Submitted); Assert.Empty(api.Requests);
+    }
+
+    [Theory]
+    [InlineData(null, 1)]
+    [InlineData("/synthetic", 2)]
+    public async Task CreateLinkChoosesVersionByDestinationAndRequiresStableTaskReadback(string? destination, int version)
     {
         var listPages = new Queue<JsonObject>(new[]
         {
@@ -928,7 +940,7 @@ public sealed class DownloadStationRepositoryContractTests
         var outcome = await repository.CreateTaskAsync(new(
             ProfileId,
             "https://example.invalid/synthetic.iso",
-            "/synthetic"));
+            destination));
 
         Assert.Equal(MutationResultStatus.ConfirmedSuccess, outcome.Result.Status);
         Assert.Equal("downloadCreate", outcome.Result.Operation);
@@ -940,13 +952,13 @@ public sealed class DownloadStationRepositoryContractTests
             request =>
             {
                 Assert.Equal(PublicTaskApi, request.ApiName);
-                Assert.Equal(1, request.Version);
+                Assert.Equal(version, request.Version);
                 Assert.Equal("create", request.Method);
                 Assert.Equal(
-                    new[] { "destination", "uri" },
+                    destination is null ? new[] { "uri" } : new[] { "destination", "uri" },
                     request.Parameters.Keys.Order(StringComparer.Ordinal));
                 Assert.Equal("https://example.invalid/synthetic.iso", request.Parameters["uri"]);
-                Assert.Equal("/synthetic", request.Parameters["destination"]);
+                if (destination is not null) Assert.Equal(destination, request.Parameters["destination"]);
             },
             request => Assert.Equal("list", request.Method));
         Assert.DoesNotContain(

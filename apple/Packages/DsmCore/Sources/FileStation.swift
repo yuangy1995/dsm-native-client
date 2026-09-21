@@ -514,8 +514,38 @@ public enum RemoteMountProtocol: String, Codable, CaseIterable, Sendable {
     case nfs
 }
 
+public enum RemoteMountNFSVersion: String, CaseIterable, Sendable { case v3 = "3", v4 = "4" }
+public enum RemoteMountNFSTransport: String, CaseIterable, Sendable { case tcp, udp }
+
+/// 只包含挂载身份，不收集 actor、账号或凭据；自动挂载字段缺失时保留未知。
+public struct RemoteMountConnection: Sendable, Equatable, Identifiable, CustomStringConvertible, CustomDebugStringConvertible {
+    public let profileID: UUID
+    public let mountPoint: String
+    public let source: String
+    public let protocolType: RemoteMountProtocol
+    public let automaticMount: Bool?
+    public var id: String { mountPoint }
+    public var description: String { "RemoteMountConnection" }
+    public var debugDescription: String { description }
+    public init(profileID: UUID, mountPoint: String, source: String, protocolType: RemoteMountProtocol, automaticMount: Bool?) {
+        self.profileID = profileID; self.mountPoint = mountPoint; self.source = source
+        self.protocolType = protocolType; self.automaticMount = automaticMount
+    }
+}
+
+public struct RemoteMountInventory: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
+    public let profileID: UUID
+    public let isRemoteMountingEnabled: Bool
+    public let connections: [RemoteMountConnection]
+    public var description: String { "RemoteMountInventory" }
+    public var debugDescription: String { description }
+    public init(profileID: UUID, isRemoteMountingEnabled: Bool, connections: [RemoteMountConnection]) {
+        self.profileID = profileID; self.isRemoteMountingEnabled = isRemoteMountingEnabled; self.connections = connections
+    }
+}
+
 /// 挂载密码只在当前请求内存中使用，不得编码、记录或持久化。
-public struct RemoteMountConfiguration: Sendable, Equatable {
+public struct RemoteMountConfiguration: Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     public let protocolType: RemoteMountProtocol
     public let server: String
     public let remotePath: String
@@ -524,6 +554,10 @@ public struct RemoteMountConfiguration: Sendable, Equatable {
     public let password: String
     public let domain: String
     public let readOnly: Bool
+    public let nfsVersion: RemoteMountNFSVersion
+    public let nfsTransport: RemoteMountNFSTransport
+    public var description: String { "RemoteMountConfiguration" }
+    public var debugDescription: String { description }
 
     public init(
         protocolType: RemoteMountProtocol,
@@ -533,7 +567,9 @@ public struct RemoteMountConfiguration: Sendable, Equatable {
         username: String = "",
         password: String = "",
         domain: String = "",
-        readOnly: Bool = false
+        readOnly: Bool = false,
+        nfsVersion: RemoteMountNFSVersion = .v3,
+        nfsTransport: RemoteMountNFSTransport = .tcp
     ) {
         self.protocolType = protocolType
         self.server = server
@@ -543,6 +579,8 @@ public struct RemoteMountConfiguration: Sendable, Equatable {
         self.password = password
         self.domain = domain
         self.readOnly = readOnly
+        self.nfsVersion = nfsVersion
+        self.nfsTransport = nfsTransport
     }
 }
 
@@ -924,12 +962,19 @@ public protocol FileRepository: PhotoFileServing, Sendable {
     func createShareLink(paths: [String], password: String?, expiresAt: String?) async throws -> FileShareLink
     func deleteShareLinks(ids: [String]) async throws
     func storageSpaceSummary() async throws -> StorageSpaceSummary?
+    func remoteMountInventory() async throws -> RemoteMountInventory
     func createRemoteMount(_ configuration: RemoteMountConfiguration) async throws
     func updateRemoteMount(
         existingMountPoint: String,
         configuration: RemoteMountConfiguration
     ) async throws
     func removeRemoteMount(mountPoint: String) async throws
+    func updateRemoteMount(expectedConnection: RemoteMountConnection, configuration: RemoteMountConfiguration) async throws
+    func removeRemoteMount(expectedConnection: RemoteMountConnection) async throws
+    func pendingRemoteMountOperations() async -> [RemoteMountOperation]
+    func reviewRemoteMountOperation(id: UUID) async throws -> RemoteMountOperation?
+    func continueRemoteMountOperation(id: UUID, password: String, confirmed: Bool) async throws -> RemoteMountOperation?
+    func abandonRemoteMountOperation(id: UUID, confirmed: Bool) async throws -> RemoteMountOperation?
 }
 
 public extension FileRepository {
@@ -1192,6 +1237,27 @@ public extension FileRepository {
     }
 
     func storageSpaceSummary() async throws -> StorageSpaceSummary? { nil }
+
+    func pendingRemoteMountOperations() async -> [RemoteMountOperation] { [] }
+    func reviewRemoteMountOperation(id: UUID) async throws -> RemoteMountOperation? { nil }
+    func continueRemoteMountOperation(id: UUID, password: String, confirmed: Bool) async throws -> RemoteMountOperation? {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+    }
+    func abandonRemoteMountOperation(id: UUID, confirmed: Bool) async throws -> RemoteMountOperation? {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+    }
+
+    func updateRemoteMount(expectedConnection: RemoteMountConnection, configuration: RemoteMountConfiguration) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+    }
+
+    func removeRemoteMount(expectedConnection: RemoteMountConnection) async throws {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+    }
+
+    func remoteMountInventory() async throws -> RemoteMountInventory {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+    }
 
     func createRemoteMount(_ configuration: RemoteMountConfiguration) async throws {
         throw AppError(

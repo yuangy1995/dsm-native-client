@@ -46,6 +46,7 @@ public enum ContainerOperationalState
     Stopped,
     Attention,
     Unknown,
+    Restarting,
 }
 
 public sealed record ContainerSummary(
@@ -65,7 +66,17 @@ public sealed record ContainerResourceSummary(
     string Id,
     string Name,
     ContainerResourceKind Kind,
-    ContainerOperationalState State);
+    ContainerOperationalState State)
+{
+    public ContainerNetworkDetails? Network { get; init; }
+    public ContainerImageReference? Image { get; init; }
+}
+
+public sealed record ContainerNetworkDetails(string? Driver, int ConnectedContainerCount, IReadOnlyList<string>? ConnectedContainerNames,
+    string? Subnet, string? Gateway, string? IpRange, bool? IsIpv6Enabled)
+{
+    public override string ToString() => nameof(ContainerNetworkDetails);
+}
 
 public enum ServiceEventLevel
 {

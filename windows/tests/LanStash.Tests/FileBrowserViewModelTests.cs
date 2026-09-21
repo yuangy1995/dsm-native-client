@@ -5,6 +5,87 @@ namespace LanStash.Tests;
 
 public sealed class FileBrowserViewModelTests
 {
+    [Theory]
+    [InlineData(0, "0 B")]
+    [InlineData(2048, "2.00 KB")]
+    [InlineData(1099511627776, "1.00 TB")]
+    public void FileSizeContainsBothNumberAndUnit(long bytes, string expected) =>
+        Assert.Equal(expected, FileBrowserViewModel.FormatBytes(bytes));
+
+    [Fact]
+    public async Task DeviceNameDoesNotChangeRootNavigationPath()
+    {
+        var source = new FakeFileBrowserDataSource();
+        source.Enqueue(Page(0, 1, Directory("/Documents", "Documents")));
+        using var model = new FileBrowserViewModel(source);
+        model.SetRootDisplayName("Demo NAS");
+        await model.InitializeAsync();
+        Assert.Equal("Demo NAS", model.Breadcrumbs[0].Name);
+        Assert.Equal(string.Empty, model.Breadcrumbs[0].Path);
+    }
+
+    [Fact]
+    public async Task HistoryCacheEvictsOldLocationsAndKeepsRecentlyVisitedLocation()
+    {
+        var source = new FakeFileBrowserDataSource();
+        for (var index = 0; index < 20; index++) source.Enqueue(Page(0, 0));
+        using var model = new FileBrowserViewModel(source);
+        await model.InitializeAsync();
+        for (var index = 0; index < 13; index++)
+            await model.NavigateToBreadcrumbAsync(new("Demo", $"/folder-{index}"));
+        var before = source.Requests.Count;
+        await model.NavigateToBreadcrumbAsync(new("Demo", "/folder-2"));
+        Assert.Equal(before, source.Requests.Count);
+        await model.NavigateToBreadcrumbAsync(new("Demo", "/extra"));
+        Assert.Equal(before + 1, source.Requests.Count);
+        await model.NavigateToBreadcrumbAsync(new("Demo", "/folder-2"));
+        Assert.Equal(before + 1, source.Requests.Count);
+        await model.NavigateToBreadcrumbAsync(new("Demo", "/folder-0"));
+        Assert.Equal(before + 2, source.Requests.Count);
+    }
+
+    [Fact]
+    public async Task AppendingPagePreservesExistingContainersAndSelectionWithoutReset()
+    {
+        var source = new FakeFileBrowserDataSource();
+        source.Enqueue(Page(0, 4, File("/share/a.txt", "a.txt"), File("/share/b.txt", "b.txt")));
+        source.Enqueue(Page(2, 4, File("/share/b.txt", "b.txt"), File("/share/c.txt", "c.txt")));
+        using var model = new FileBrowserViewModel(source, pageSize: 2);
+        await model.InitializeAsync();
+        var first = model.Items[0];
+        model.SelectedItem = first;
+        var changes = new List<System.Collections.Specialized.NotifyCollectionChangedAction>();
+        model.Items.CollectionChanged += (_, args) => changes.Add(args.Action);
+
+        await model.LoadMoreAsync();
+
+        Assert.Same(first, model.Items[0]);
+        Assert.Same(first, model.SelectedItem);
+        Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Add], changes);
+        Assert.Equal(["a.txt", "b.txt", "c.txt"], model.Items.Select(item => item.Name));
+    }
+
+    [Fact]
+    public async Task UnchangedFilterDoesNotRebuildCollection()
+    {
+        var source = new FakeFileBrowserDataSource();
+        source.Enqueue(Page(0, 2, File("/share/a.txt", "a.txt"), File("/share/b.txt", "b.txt")));
+        using var model = new FileBrowserViewModel(source);
+        await model.InitializeAsync();
+        var notifications = 0;
+        model.Items.CollectionChanged += (_, _) => notifications++;
+
+        model.SetFilter(".txt");
+        model.SetFilter(".txt");
+
+        Assert.Equal(0, notifications);
+        Assert.Equal(2, model.Items.Count);
+        model.SetFilter("a");
+        Assert.Single(model.Items);
+        model.SetFilter(string.Empty);
+        Assert.Equal(2, model.Items.Count);
+    }
+
     [Fact]
     public async Task LoadsSharedRootAndUsesRealOffsetAndLimitForMore()
     {

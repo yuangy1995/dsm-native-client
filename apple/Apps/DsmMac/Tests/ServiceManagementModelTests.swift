@@ -6,6 +6,38 @@ import XCTest
 
 @MainActor
 final class ServiceManagementModelTests: XCTestCase {
+    func test虚拟机电源确认后选择改变不提交() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        model.virtualMachineSelection = ["changed-id"]
+        let result = await model.controlVirtualMachines(.powerOff, confirmedIDs: ["confirmed-id"])
+        XCTAssertFalse(result)
+        XCTAssertTrue(model.messageIsError)
+        let calls = await repository.virtualMachinePowerCalls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func test虚拟机电源选择仍一致时只提交已确认身份() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        model.virtualMachineSelection = ["vm-2", "vm-1"]
+        _ = await model.controlVirtualMachines(.shutdown, confirmedIDs: ["vm-1", "vm-2"])
+        let calls = await repository.virtualMachinePowerCalls
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.ids, ["vm-1", "vm-2"])
+        XCTAssertEqual(calls.first?.action, .shutdown)
+    }
+
+    func test容器确认后选择改变不提交() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        model.containerSelection = ["changed-id"]
+        let result = await model.controlContainers(.stop, confirmedIDs: ["confirmed-id"])
+        XCTAssertFalse(result)
+        XCTAssertTrue(model.messageIsError)
+        let calls = await repository.containerControlCalls
+        XCTAssertTrue(calls.isEmpty)
+    }
     func test测试包开放能力后填写名称会进入创建流程() async {
         let repository = ServiceManagementRepositoryStub(containerSnapshot: .init(
             containers: [], images: [], networks: [], projects: [], events: [], canCreateNetworks: true))
@@ -164,7 +196,7 @@ final class ServiceManagementModelTests: XCTestCase {
         XCTAssertTrue(unsupported.isError)
     }
 
-    func test下载任务删除未确认时保留选择并提示刷新() async {
+    func test结束未完成下载未确认时保留选择并提示核对() async {
         let repository = ServiceManagementRepositoryStub(
             secondaryStatus: .submittedButUnverified
         )
@@ -172,15 +204,35 @@ final class ServiceManagementModelTests: XCTestCase {
         await model.activate(.downloads)
         model.downloadSelection = ["task-1"]
 
-        let succeeded = await model.deleteDownloads(removeData: true)
+        let succeeded = await model.deleteDownloads(forceComplete: true)
 
         XCTAssertFalse(succeeded)
         XCTAssertEqual(model.downloadSelection, ["task-1"])
         XCTAssertEqual(
             model.message,
-            L10n.string("download-task.delete.unverified")
+            L10n.string("download-task.finish-incomplete.unverified")
         )
         XCTAssertTrue(model.messageIsError)
+    }
+
+    func test任务移除和结束下载分别传递官方标记并使用不同结果文案() async {
+        for forceComplete in [false, true] {
+            let repository = ServiceManagementRepositoryStub()
+            let model = ServiceManagementModel(repository: repository)
+            await model.activate(.downloads)
+            model.downloadSelection = ["task-1"]
+
+            let succeeded = await model.deleteDownloads(forceComplete: forceComplete)
+            let calls = await repository.downloadRemovalCalls
+
+            XCTAssertTrue(succeeded)
+            XCTAssertEqual(calls.count, 1)
+            XCTAssertEqual(calls.first?.ids, ["task-1"])
+            XCTAssertEqual(calls.first?.forceComplete, forceComplete)
+            XCTAssertEqual(model.message, L10n.string(forceComplete
+                ? "download-task.finish-incomplete.completed" : "download-task.delete.completed"))
+            XCTAssertTrue(model.downloadSelection.isEmpty)
+        }
     }
 
     func test容器映像删除确认成功后清空选择() async {
@@ -198,6 +250,41 @@ final class ServiceManagementModelTests: XCTestCase {
             model.message,
             L10n.string("container-image.delete.completed")
         )
+    }
+
+    func test镜像删除确认后选择变化不得发送() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.containers); model.imageSelection = ["image-1"]
+        let succeeded = await model.deleteImages(confirmedIDs: ["other-image"])
+        XCTAssertFalse(succeeded)
+        let calls = await repository.imageDeleteCalls
+        XCTAssertEqual(calls, 0)
+        XCTAssertFalse(model.canReviewImageDeletion)
+    }
+
+    func test镜像旧条目消失不能覆盖未确认结果且独立核查不重发() async {
+        let repository = ServiceManagementRepositoryStub(secondaryStatus: .submittedButUnverified, removeSecondaryOnDelete: true)
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.containers); model.imageSelection = ["image-1"]
+        let succeeded = await model.deleteImages(confirmedIDs: ["image-1"])
+        XCTAssertFalse(succeeded)
+        XCTAssertTrue(model.containers?.images.isEmpty == true)
+        XCTAssertTrue(model.canReviewImageDeletion); XCTAssertFalse(model.canDeleteImages)
+        let reviewed = await model.reviewImageDeletion()
+        XCTAssertTrue(reviewed); XCTAssertFalse(model.canReviewImageDeletion)
+        let deletes = await repository.imageDeleteCalls; let reviews = await repository.imageReviewCalls
+        XCTAssertEqual(deletes, 1); XCTAssertEqual(reviews, 1)
+    }
+
+    func test镜像无未知操作时核查不会调用仓库() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.containers)
+        let reviewed = await model.reviewImageDeletion()
+        XCTAssertFalse(reviewed)
+        let reviews = await repository.imageReviewCalls
+        XCTAssertEqual(reviews, 0)
     }
 
     func test容器网络部分成功时保留仍存在的选择() async {
@@ -259,6 +346,53 @@ final class ServiceManagementModelTests: XCTestCase {
 
 // 共用合成套件数据，供模型与页面回归使用。
 actor ServiceManagementRepositoryStub: ServiceManagementRepository {
+    private(set) var pullRequests: [ContainerImagePullRequest] = []
+    private(set) var pullReviewCalls = 0
+    private var pullValues: [UUID: ContainerImagePullProgress] = [:]
+    private var pullStage: ContainerImagePullStage = .downloading
+    private var pullSupported = true
+    private var pullShouldThrow = false
+    private var pullShouldHold = false
+    private var pullContinuation: CheckedContinuation<ContainerImagePullProgress, Error>?
+    private var cachedPullStage: ContainerImagePullStage?
+
+    func configurePull(stage: ContainerImagePullStage = .downloading, hold: Bool = false, fail: Bool = false, supported: Bool = true) {
+        pullStage = stage; pullShouldHold = hold; pullShouldThrow = fail; pullSupported = supported
+    }
+    func overrideCachedPullStage(_ stage: ContainerImagePullStage) { cachedPullStage = stage }
+    func canStartContainerImagePull() async -> Bool { pullSupported }
+    func startContainerImagePull(_ request: ContainerImagePullRequest) async throws -> ContainerImagePullProgress {
+        pullRequests.append(request)
+        if pullShouldThrow { throw unavailable() }
+        if pullShouldHold { return try await withCheckedThrowingContinuation { pullContinuation = $0 } }
+        let value = try pullProgress(request, stage: pullStage); pullValues[request.id] = value; return value
+    }
+    func finishHeldPull(stage: ContainerImagePullStage) throws {
+        guard let request = pullRequests.last, let continuation = pullContinuation else { throw unavailable() }
+        let value = try pullProgress(request, stage: stage); pullValues[request.id] = value; pullContinuation = nil
+        continuation.resume(returning: value)
+    }
+    func loadContainerImagePulls() async throws -> [ContainerImagePullProgress] {
+        if let cachedPullStage {
+            return try pullValues.values.map { value in
+                try pullProgress(.init(id: value.id, repository: value.repository, tag: value.tag, isConfirmed: true), stage: cachedPullStage)
+            }
+        }
+        return pullValues.values.filter { !$0.stage.isTerminal }
+    }
+    func reviewContainerImagePull(id: UUID) async throws -> ContainerImagePullProgress? {
+        pullReviewCalls += 1
+        guard pullContinuation == nil, pullValues[id] != nil,
+              let request = pullRequests.first(where: { $0.id == id }) else { return nil }
+        let value = try pullProgress(request, stage: pullStage); pullValues[id] = value; return value
+    }
+    private func pullProgress(_ request: ContainerImagePullRequest, stage: ContainerImagePullStage) throws -> ContainerImagePullProgress {
+        try ContainerImagePullProgress(id: request.id, repository: request.repository, tag: request.tag, stage: stage,
+            percentage: stage == .ready ? 100 : stage == .downloading ? 25 : nil,
+            outcome: result(status: stage == .ready ? .confirmedSuccess : stage == .rejected ? .confirmedFailure : .submittedButUnverified,
+                operation: "containerImagePull", count: 1))
+    }
+
     private(set) var networkCreationRequests: [ContainerNetworkCreation] = []
     private let virtualMachineStorages: [VirtualizationResource]
     private let containerSnapshot: ContainerManagerSnapshot?
@@ -282,7 +416,8 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         ContainerImage(
             id: "image-1",
             repository: "demo",
-            tag: "latest"
+            tag: "latest",
+            sourceImageID: "source-image-1"
         )
     ]
     private var containerNetworks = [
@@ -465,6 +600,7 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
     ) async throws {
         downloadControlCalls.append((ids, action))
     }
+    private(set) var downloadRemovalCalls: [(ids: [String], forceComplete: Bool)] = []
     func deleteDownloadTasks(ids: [String], removeData: Bool) async throws {
         throw unavailable()
     }
@@ -472,6 +608,7 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         ids: [String],
         removeData: Bool
     ) async throws -> MutationResult {
+        downloadRemovalCalls.append((ids, removeData))
         if secondaryStatus == .confirmedSuccess || removeSecondaryOnDelete {
             downloadTasks.removeAll { ids.contains($0.id) }
         }
@@ -481,7 +618,9 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
             count: ids.count
         )
     }
+    private(set) var containerControlCalls: [(ids: [String], action: ContainerAction)] = []
     func controlContainers(ids: [String], action: ContainerAction) async throws {
+        containerControlCalls.append((ids, action))
         throw unavailable()
     }
     func deleteContainers(ids: [String]) async throws { throw unavailable() }
@@ -495,7 +634,10 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         throw unavailable()
     }
     func deleteContainerImages(ids: [String]) async throws { throw unavailable() }
+    private(set) var imageDeleteCalls = 0
+    private(set) var imageReviewCalls = 0
     func deleteContainerImagesResult(ids: [String]) async throws -> MutationResult {
+        imageDeleteCalls += 1
         if secondaryStatus == .confirmedSuccess || removeSecondaryOnDelete {
             containerImages.removeAll { ids.contains($0.id) }
         }
@@ -504,6 +646,11 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
             operation: "containerImageDelete",
             count: ids.count
         )
+    }
+    func reviewContainerImageDeletion(ids: [String]) async throws -> MutationResult {
+        imageReviewCalls += 1
+        let absent = !containerImages.contains { ids.contains($0.id) }
+        return try result(status: absent ? .confirmedSuccess : .submittedButUnverified, operation: "containerImageDelete", count: ids.count)
     }
     func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws {
         networkCreationRequests.append(configuration)
@@ -530,10 +677,14 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
     func openVirtualMachineConsole(id: String) async throws -> VirtualMachineConsoleSession {
         throw unavailable()
     }
+    private(set) var virtualMachinePowerCalls: [(ids: [String], action: VirtualMachinePowerAction)] = []
     func controlVirtualMachines(
         ids: [String],
         action: VirtualMachinePowerAction
-    ) async throws { throw unavailable() }
+    ) async throws {
+        virtualMachinePowerCalls.append((ids, action))
+        throw unavailable()
+    }
     func deleteVirtualMachines(ids: [String]) async throws { throw unavailable() }
     func updateVirtualMachineNetwork(
         id: String,

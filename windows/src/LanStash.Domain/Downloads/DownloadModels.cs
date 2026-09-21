@@ -19,7 +19,10 @@ public enum DownloadStationReadFeature
 
 public sealed record DownloadStationAvailability(
     DownloadStationAvailabilityStatus Status,
-    IReadOnlySet<DownloadStationReadFeature> SupportedFeatures);
+    IReadOnlySet<DownloadStationReadFeature> SupportedFeatures)
+{
+    public bool SupportsCreateDestination { get; init; }
+}
 
 public enum DownloadTaskState
 {
@@ -122,9 +125,9 @@ public sealed record DownloadTask(
             "downloading" => DownloadTaskState.Downloading,
             "paused" => DownloadTaskState.Paused,
             "finished" => DownloadTaskState.Finished,
-            "hash_checking" or "filehosting_waiting" or "extracting" =>
+            "checking" or "hash_checking" or "filehosting_waiting" or "extracting" =>
                 DownloadTaskState.Checking,
-            "seeding" => DownloadTaskState.Seeding,
+            "seeding" or "uploading" => DownloadTaskState.Seeding,
             "error" => DownloadTaskState.Error,
             _ => DownloadTaskState.Unknown,
         };
@@ -225,13 +228,15 @@ public sealed class DownloadTaskFileCreateRequest
     public long Length { get; }
     public string FileName { get; }
     public string? Destination { get; }
+    public string? UnzipPassword { get; }
 
     public DownloadTaskFileCreateRequest(
         Guid profileId,
         Stream content,
         long length,
         string fileName,
-        string? destination)
+        string? destination,
+        string? unzipPassword = null)
     {
         ArgumentNullException.ThrowIfNull(content);
         if (!content.CanRead)
@@ -261,6 +266,8 @@ public sealed class DownloadTaskFileCreateRequest
         Length = length;
         FileName = fileName.Trim();
         Destination = normalizedDestination;
+        if (unzipPassword?.Contains('\0') == true) throw new ArgumentException("download.create.file.invalid_password", nameof(unzipPassword));
+        UnzipPassword = string.IsNullOrEmpty(unzipPassword) ? null : unzipPassword;
     }
 
     public override string ToString() => nameof(DownloadTaskFileCreateRequest);
@@ -376,7 +383,11 @@ public sealed record DownloadTaskFileCreateTransportResult(
 
 public sealed record DownloadTaskDeleteRequest(
     Guid ProfileId,
-    DownloadTask Task);
+    DownloadTask Task)
+{
+    /// <summary>结束任务并移出未完成文件；不是删除数据，调用方必须单独确认。</summary>
+    public bool ForceComplete { get; init; }
+}
 
 public sealed record DownloadTaskDeleteOutcome(
     MutationResult Result,

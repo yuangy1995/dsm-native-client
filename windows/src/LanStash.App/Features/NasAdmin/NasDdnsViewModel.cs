@@ -10,401 +10,214 @@ public sealed class NasDdnsViewModel : ObservableObject, IDisposable
     private INasSettingsRepository? _repository;
     private CancellationTokenSource? _requestCancellation;
     private long _generation;
-    private bool _disposed;
-
-    private bool _isLoading;
-    private bool _isEditing;
-    private bool _isSaving;
-    private bool _isTesting;
-    private NasDDNSDraft _draft = new();
-    private string? _errorMessage;
-    private string? _testResult;
-    private MutationResult? _lastResult;
-
+    private bool _disposed, _loaded;
+    private NasDdnsMutationRequest? _confirmation;
+    private string? _confirmedPassword;
+    private NasDDNSRecord? _baseline, _target;
     public ObservableCollection<NasDDNSProvider> Providers { get; } = [];
     public ObservableCollection<NasDDNSRecord> Records { get; } = [];
-
-    public bool IsLoading
-    {
-        get => _isLoading;
-        private set => SetProperty(ref _isLoading, value);
-    }
-
-    public bool IsEditing
-    {
-        get => _isEditing;
-        private set => SetProperty(ref _isEditing, value);
-    }
-
-    public bool IsSaving
-    {
-        get => _isSaving;
-        private set => SetProperty(ref _isSaving, value);
-    }
-
-    public bool IsTesting
-    {
-        get => _isTesting;
-        private set => SetProperty(ref _isTesting, value);
-    }
-
-    public NasDDNSDraft Draft
-    {
-        get => _draft;
-        private set => SetProperty(ref _draft, value);
-    }
-
-    public string? ErrorMessage
-    {
-        get => _errorMessage;
-        private set => SetProperty(ref _errorMessage, value);
-    }
-
-    public string? TestResult
-    {
-        get => _testResult;
-        private set => SetProperty(ref _testResult, value);
-    }
-
-    public MutationResult? LastResult
-    {
-        get => _lastResult;
-        private set
-        {
-            if (SetProperty(ref _lastResult, value))
-            {
-                RaisePropertyChanged(nameof(WasSuccessful));
-            }
-        }
-    }
-
+    public bool IsLoading { get; private set; }
+    public bool IsEditing { get; private set; }
+    public bool IsSaving { get; private set; }
+    public bool IsTesting { get; private set; }
+    public bool IsBusy => IsLoading || IsSaving || IsTesting;
+    public bool NeedsReview { get; private set; }
+    public NasDDNSDraft Draft { get; private set; } = new();
+    public bool IsExisting => _baseline is not null;
+    public string? ErrorMessage { get; private set; }
+    public MutationResult? LastResult { get; private set; }
+    public NasDdnsAction? SelectedAction { get; private set; }
+    public NasDdnsAction? LastAction { get; private set; }
     public bool WasSuccessful => LastResult?.Status == MutationResultStatus.ConfirmedSuccess;
-    public bool CanSave => _repository?.WriteAvailability.CanSaveDDNS == true &&
-                           Draft.IsValidForSubmission && !IsSaving;
     public bool IsUnsupported => _repository?.WriteAvailability.CanSaveDDNS != true;
+    public bool CanEdit => !_disposed && _loaded && !IsBusy && !NeedsReview && !IsUnsupported && ErrorMessage is null;
+    public bool CanExecute => CanEdit && ConfirmationStillMatches();
+    public bool HasValidAction => BuildRequest(Guid.Empty) is { } request &&
+        NasDdnsMutationRules.IsValid(request, Draft.Password) && TargetsStillPresent(request);
+    public bool CanSave => SelectedAction == NasDdnsAction.Save && CanExecute;
+    public string? TestResult => LastAction == NasDdnsAction.Test ? FeedbackMessage : null;
+    public string? FeedbackMessage => LastResult is null ? null : L.Get(LastResult.Status switch
+    {
+        MutationResultStatus.ConfirmedSuccess => LastAction switch
+        {
+            NasDdnsAction.Test => "NasDdnsTestAccepted", NasDdnsAction.Save => "NasDdnsSaved",
+            NasDdnsAction.Delete => "NasDdnsDeleted", NasDdnsAction.UpdateAddress => "NasDdnsUpdated", _ => "NasDdnsReviewed",
+        },
+        MutationResultStatus.SubmittedButUnverified or MutationResultStatus.CancellationRequestedAfterSubmission => "NasDdnsUnknown",
+        MutationResultStatus.CancelledBeforeSubmission => "NasDdnsNotSubmitted",
+        MutationResultStatus.PermissionDenied => "NasDdnsPermission",
+        MutationResultStatus.Unsupported => "NasSettingsUnavailable",
+        _ => LastResult.ErrorCategory switch
+        {
+            MutationErrorCategory.Authentication => "NasDdnsAuthentication", MutationErrorCategory.Permission => "NasDdnsPermission",
+            MutationErrorCategory.Conflict => "NasDdnsConflict", MutationErrorCategory.Validation => "NasSettingsDdnsValidationError", _ => "NasDdnsFailed",
+        },
+    });
 
     public async Task ActivateAsync(INasSettingsRepository repository)
     {
-        ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(repository);
-        CancelRequest();
-        _repository = repository;
-
-        if (!repository.WriteAvailability.CanSaveDDNS)
-        {
-            return;
-        }
-
-        await LoadAllAsync();
+        ObjectDisposedException.ThrowIf(_disposed, this); ArgumentNullException.ThrowIfNull(repository);
+        Deactivate(); _repository = repository; await LoadAllAsync();
     }
-
-    public async Task RefreshAsync()
+    public Task RefreshAsync()
     {
-        ThrowIfDisposed();
-        if (_repository is null)
-        {
-            return;
-        }
-        await LoadAllAsync();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _repository is null || IsBusy ? Task.CompletedTask : LoadAllAsync();
     }
-
     private async Task LoadAllAsync()
     {
-        var repository = RequireRepository();
-        var request = BeginRequest();
-        IsLoading = true;
-        ErrorMessage = null;
-
+        var repository = _repository!; var request = BeginRequest();
+        ResetEditor(); IsLoading = true; ErrorMessage = null; _loaded = false; Providers.Clear(); Records.Clear(); Notify();
         try
         {
-            var providers = await repository.LoadDDNSProvidersAsync(
-                request.Cancellation.Token);
-            var records = await repository.LoadDDNSRecordsAsync(
-                request.Cancellation.Token);
-
-            if (!IsCurrent(request.Generation, repository))
-            {
-                return;
-            }
-
-            Providers.Clear();
-            foreach (var provider in providers)
-            {
-                Providers.Add(provider);
-            }
-
-            Records.Clear();
-            foreach (var record in records)
-            {
-                Records.Add(record);
-            }
+            await repository.PrepareServiceSettingsAsync(request.Token);
+            if (!IsCurrent(request.Generation, repository)) return;
+            var review = await repository.ReviewServiceSettingsAsync(NasServiceSettingsKind.Ddns, request.Token);
+            if (!IsCurrent(request.Generation, repository)) return;
+            NeedsReview = review is not null && (review.Counts.Unknown > 0 || review.ErrorCategory == MutationErrorCategory.Conflict ||
+                review.Status == MutationResultStatus.CancelledBeforeSubmission);
+            if (review is not null) { LastResult = review; LastAction = null; }
+            await LoadDirectoryAsync(repository, request);
         }
-        catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            if (IsCurrent(request.Generation, repository))
-            {
-                ErrorMessage = L.Get("NasSettingsLoadError");
-            }
-        }
-        finally
-        {
-            if (IsCurrent(request.Generation, repository))
-            {
-                IsLoading = false;
-            }
-        }
+        catch (OperationCanceledException) when (request.Token.IsCancellationRequested) { }
+        catch { if (IsCurrent(request.Generation, repository)) ErrorMessage = L.Get("NasSettingsLoadError"); }
+        finally { if (IsCurrent(request.Generation, repository)) { IsLoading = false; Notify(); } }
     }
-
+    private async Task LoadDirectoryAsync(INasSettingsRepository repository, RequestState request)
+    {
+        var providers = await repository.LoadDDNSProvidersAsync(request.Token);
+        if (!IsCurrent(request.Generation, repository)) return;
+        var records = await repository.LoadDDNSRecordsAsync(request.Token);
+        if (!IsCurrent(request.Generation, repository)) return;
+        Providers.Clear(); foreach (var item in providers) Providers.Add(item);
+        Records.Clear(); foreach (var item in records) Records.Add(item);
+        _loaded = true;
+    }
     public void BeginCreate()
     {
-        Draft = new NasDDNSDraft { IsEnabled = true };
-        IsEditing = true;
-        ErrorMessage = null;
-        LastResult = null;
+        if (IsBusy || NeedsReview || _disposed) return;
+        ResetEditor(); IsEditing = true; SelectedAction = NasDdnsAction.Save; ErrorMessage = null; Notify();
     }
-
     public void BeginEdit(NasDDNSRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
-        Draft = new NasDDNSDraft
-        {
-            ProviderId = record.ProviderId,
-            Hostname = record.Hostname,
-            Username = record.Username,
-            ExternalIp = record.ExternalIp,
-            IsEnabled = record.IsEnabled,
-            Heartbeat = record.Heartbeat,
-        };
-        IsEditing = true;
-        ErrorMessage = null;
-        LastResult = null;
+        if (IsBusy || NeedsReview || _disposed) return;
+        ResetEditor(); _baseline = record;
+        Draft = new() { ProviderId = record.ProviderId, Hostname = record.Hostname, Username = record.Username,
+            ExternalIp = record.ExternalIp, IsEnabled = record.IsEnabled, Heartbeat = record.Heartbeat };
+        IsEditing = true; SelectedAction = NasDdnsAction.Save; ErrorMessage = null; Notify();
     }
-
-    public void CancelEdit()
+    public void CancelEdit() { if (IsBusy) return; ResetEditor(); ErrorMessage = null; Notify(); }
+    public void SelectAction(NasDdnsAction action, NasDDNSRecord? target = null)
     {
-        Draft = new NasDDNSDraft();
-        IsEditing = false;
-        ErrorMessage = null;
+        if (IsBusy || NeedsReview || _disposed) return;
+        InvalidateConfirmation(); SelectedAction = action; _target = target; Notify();
     }
-
-    public async Task SaveAsync(string? existingRecordId = null)
+    public void InvalidateConfirmation() { _confirmation = null; _confirmedPassword = null; }
+    public void DraftChanged()
     {
-        ThrowIfDisposed();
-        if (IsSaving)
-        {
-            return;
-        }
-        var repository = RequireRepository();
-        if (!Draft.IsValidForSubmission)
-        {
-            ErrorMessage = L.Get("NasSettingsDdnsValidationError");
-            return;
-        }
-
-        var request = BeginRequest();
-        IsSaving = true;
-        ErrorMessage = null;
-        LastResult = null;
-
+        if (IsBusy || _disposed) return;
+        InvalidateConfirmation(); ErrorMessage = null;
+        if (LastAction == NasDdnsAction.Test) { LastResult = null; LastAction = null; }
+        Notify();
+    }
+    public bool ConfirmAction()
+    {
+        InvalidateConfirmation(); var candidate = BuildRequest(Guid.NewGuid());
+        if (!CanEdit || candidate is null || !NasDdnsMutationRules.IsValid(candidate, Draft.Password) || !TargetsStillPresent(candidate))
+        { Notify(); return false; }
+        _confirmation = candidate;
+        _confirmedPassword = candidate.Action is NasDdnsAction.Save or NasDdnsAction.Test ? Draft.Password : null;
+        Notify(); return true;
+    }
+    private NasDdnsMutationRequest? BuildRequest(Guid id)
+    {
+        if (_repository is null || SelectedAction is null) return null;
+        var action = SelectedAction.Value;
+        var desired = action is NasDdnsAction.Save or NasDdnsAction.Test && IsEditing
+            ? (_baseline ?? new NasDDNSRecord(Draft.ProviderId?.Trim() ?? "", Draft.ProviderId?.Trim() ?? "", "", "", "0.0.0.0", null, true)
+                { NetworkType = "auto", Ipv6 = "0:0:0:0:0:0:0:0", InterfaceV4 = "", InterfaceV6 = "" }) with
+                { Id = Draft.ProviderId?.Trim() ?? "", ProviderId = Draft.ProviderId?.Trim() ?? "", Hostname = Draft.Hostname?.Trim().ToLowerInvariant() ?? "",
+                    Username = Draft.Username?.Trim() ?? "", IsEnabled = Draft.IsEnabled, Heartbeat = Draft.Heartbeat }
+            : null;
+        return new(_repository.ProfileId, action, action == NasDdnsAction.Delete ? _target : action == NasDdnsAction.UpdateAddress ? null : _baseline,
+            desired, action == NasDdnsAction.UpdateAddress ? Records.Select(r => r.ProviderId).Order(StringComparer.Ordinal).ToArray() : [], id, true);
+    }
+    private bool TargetsStillPresent(NasDdnsMutationRequest request)
+    {
+        if (request.Action == NasDdnsAction.UpdateAddress) return Records.Count > 0;
+        if (request.Baseline is { } baseline && !Records.Contains(baseline)) return false;
+        return request.Desired is not { } desired || Providers.Any(p => p.Id == desired.ProviderId) &&
+            (request.Baseline is not null || !Records.Any(r => r.ProviderId == desired.ProviderId));
+    }
+    private bool ConfirmationStillMatches()
+    {
+        if (_confirmation is not { } confirmed || BuildRequest(confirmed.RequestId) is not { } current) return false;
+        return current.ProfileId == confirmed.ProfileId && current.Action == confirmed.Action && current.Baseline == confirmed.Baseline &&
+            current.Desired == confirmed.Desired && current.ExpectedProviderIds.SequenceEqual(confirmed.ExpectedProviderIds) &&
+            (current.Action is not (NasDdnsAction.Save or NasDdnsAction.Test) || Draft.Password == _confirmedPassword) && TargetsStillPresent(current);
+    }
+    public Task SaveAsync(string? existingRecordId = null) => existingRecordId is null || existingRecordId == _baseline?.Id
+        ? ExecuteForActionAsync(NasDdnsAction.Save) : Task.CompletedTask;
+    public Task DeleteAsync(string recordId) => _confirmation?.Baseline?.Id == recordId ? ExecuteForActionAsync(NasDdnsAction.Delete) : Task.CompletedTask;
+    public Task TestAsync(string recordId) => _confirmation?.Desired?.ProviderId == recordId ? ExecuteForActionAsync(NasDdnsAction.Test) : Task.CompletedTask;
+    private Task ExecuteForActionAsync(NasDdnsAction action)
+    {
+        if (SelectedAction == action && CanExecute) return ExecuteConfirmedAsync();
+        if (!IsBusy) { ErrorMessage = L.Get("NasDdnsConfirmAgain"); Notify(); }
+        return Task.CompletedTask;
+    }
+    public async Task ExecuteConfirmedAsync()
+    {
+        if (!CanExecute || _repository is null || _confirmation is null) return;
+        var repository = _repository; var confirmation = _confirmation; var password = _confirmedPassword;
+        var request = BeginRequest(); LastAction = confirmation.Action; LastResult = null; ErrorMessage = null;
+        IsTesting = confirmation.Action == NasDdnsAction.Test; IsSaving = !IsTesting;
+        Draft.Password = null; InvalidateConfirmation(); Notify();
         try
         {
-            var result = await repository.SaveDDNSRecordAsync(
-                Draft, existingRecordId, request.Cancellation.Token);
-
-            if (!IsCurrent(request.Generation, repository))
+            var pending = repository.MutateDdnsAsync(confirmation, password, request.Token); password = null;
+            var result = await pending;
+            if (!IsCurrent(request.Generation, repository)) return;
+            LastResult = result; NeedsReview = result.Counts.Unknown > 0 || result.ErrorCategory == MutationErrorCategory.Conflict;
+            if (result.Status == MutationResultStatus.ConfirmedSuccess && confirmation.Action != NasDdnsAction.Test)
             {
-                return;
+                ResetEditor();
+                try { await LoadDirectoryAsync(repository, request); }
+                catch { if (IsCurrent(request.Generation, repository)) { _loaded = false; ErrorMessage = L.Get("NasSettingsLoadError"); } }
             }
-
-            LastResult = result;
-            if (result.Status == MutationResultStatus.ConfirmedSuccess)
-            {
-                IsEditing = false;
-                Draft = new NasDDNSDraft();
-                await LoadAllAsync();
-            }
-            else
-            {
-                ErrorMessage = L.Get("NasSettingsSaveError");
-            }
-        }
-        catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
-        {
         }
         catch
         {
             if (IsCurrent(request.Generation, repository))
             {
-                ErrorMessage = L.Get("NasSettingsSaveError");
+                LastResult = new(1, MutationResultStatus.SubmittedButUnverified, "ddnsMutation", true, true, new(0, 0, 1)); NeedsReview = true;
             }
         }
-        finally
-        {
-            if (IsCurrent(request.Generation, repository))
-            {
-                IsSaving = false;
-            }
-        }
+        finally { password = null; if (IsCurrent(request.Generation, repository)) { IsSaving = false; IsTesting = false; Notify(); } }
     }
-
-    public async Task DeleteAsync(string recordId)
+    private void ResetEditor()
     {
-        ThrowIfDisposed();
-        if (IsSaving)
-        {
-            return;
-        }
-        var repository = RequireRepository();
-        var request = BeginRequest();
-        IsSaving = true;
-        ErrorMessage = null;
-        LastResult = null;
-
-        try
-        {
-            var result = await repository.DeleteDDNSRecordAsync(
-                recordId, request.Cancellation.Token);
-
-            if (!IsCurrent(request.Generation, repository))
-            {
-                return;
-            }
-
-            LastResult = result;
-            if (result.Status == MutationResultStatus.ConfirmedSuccess)
-            {
-                await LoadAllAsync();
-            }
-            else
-            {
-                ErrorMessage = L.Get("NasSettingsDeleteError");
-            }
-        }
-        catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            if (IsCurrent(request.Generation, repository))
-            {
-                ErrorMessage = L.Get("NasSettingsDeleteError");
-            }
-        }
-        finally
-        {
-            if (IsCurrent(request.Generation, repository))
-            {
-                IsSaving = false;
-            }
-        }
+        Draft.Password = null; Draft = new(); _baseline = null; _target = null; IsEditing = false;
+        SelectedAction = null; InvalidateConfirmation();
     }
-
-    public async Task TestAsync(string recordId)
-    {
-        ThrowIfDisposed();
-        if (IsTesting)
-        {
-            return;
-        }
-        var repository = RequireRepository();
-        var request = BeginRequest();
-        IsTesting = true;
-        TestResult = null;
-        ErrorMessage = null;
-
-        try
-        {
-            var result = await repository.TestDDNSRecordAsync(
-                recordId, request.Cancellation.Token);
-
-            if (!IsCurrent(request.Generation, repository))
-            {
-                return;
-            }
-
-            if (result.Status == MutationResultStatus.ConfirmedSuccess)
-            {
-                TestResult = L.Get("NasSettingsDdnsTestSuccess");
-            }
-            else
-            {
-                TestResult = L.Get("NasSettingsDdnsTestFailed");
-            }
-        }
-        catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            if (IsCurrent(request.Generation, repository))
-            {
-                TestResult = L.Get("NasSettingsDdnsTestFailed");
-            }
-        }
-        finally
-        {
-            if (IsCurrent(request.Generation, repository))
-            {
-                IsTesting = false;
-            }
-        }
-    }
-
     public void Deactivate()
     {
-        CancelRequest();
-        _repository = null;
-        Providers.Clear();
-        Records.Clear();
-        Draft = new NasDDNSDraft();
-        IsEditing = false;
-        IsLoading = false;
+        CancelRequest(); _repository = null; _loaded = false; ResetEditor(); Providers.Clear(); Records.Clear();
+        IsLoading = false; IsSaving = false; IsTesting = false; NeedsReview = false; ErrorMessage = null;
+        LastResult = null; LastAction = null; Notify();
     }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-        _disposed = true;
-        CancelRequest();
-    }
-
+    public void Dispose() { if (_disposed) return; _disposed = true; Deactivate(); }
     private RequestState BeginRequest()
     {
-        CancelRequest();
-        var cancellation = new CancellationTokenSource();
-        _requestCancellation = cancellation;
-        return new RequestState(++_generation, cancellation);
+        CancelRequest(); _requestCancellation = new(); return new(++_generation, _requestCancellation.Token);
     }
-
     private void CancelRequest()
     {
-        _generation++;
-        var cancellation = _requestCancellation;
-        _requestCancellation = null;
-        cancellation?.Cancel();
-        cancellation?.Dispose();
+        _generation++; var cancellation = _requestCancellation; _requestCancellation = null; cancellation?.Cancel(); cancellation?.Dispose();
     }
-
-    private bool IsCurrent(long generation, INasSettingsRepository repository) =>
-        !_disposed &&
-        generation == _generation &&
-        ReferenceEquals(repository, _repository);
-
-    private INasSettingsRepository RequireRepository() =>
-        _repository ?? throw new InvalidOperationException("DDNS editor is inactive.");
-
-    private void ThrowIfDisposed() =>
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
+    private bool IsCurrent(long generation, INasSettingsRepository repository) => !_disposed && generation == _generation && ReferenceEquals(repository, _repository);
+    private void Notify() => RaisePropertyChanged(string.Empty);
+    private sealed record RequestState(long Generation, CancellationToken Token);
     private static LocalizationService L => LocalizationService.Current;
-
-    private sealed record RequestState(
-        long Generation,
-        CancellationTokenSource Cancellation);
 }

@@ -3,6 +3,50 @@ namespace LanStash.Tests.Settings;
 public sealed class AppSettingsPageSourceContractTests
 {
     [Fact]
+    public void CloudRefreshUsesBoundProductionActionCancellationAndLocalizedResults()
+    {
+        var source = Read("windows/src/LanStash.App/Views/CloudDriveSettingsPage.xaml.cs");
+        var xaml = Read("windows/src/LanStash.App/Views/CloudDriveSettingsPage.xaml");
+        var service = Read("windows/src/LanStash.App/CloudDrive/DesktopCloudDriveService.cs");
+        var native = Read("windows/src/LanStash.App/CloudDrive/CloudFilePlaceholderNative.cs");
+        Assert.Contains("this(app, app.RefreshDesktopDriveFilesAsync)", source);
+        Assert.Contains("MappingButton(localization.Get(\"CloudDriveRefresh\")", source);
+        Assert.Contains("await _refreshFiles(mapping, cancellation.Token)", source);
+        Assert.Contains("_refreshCancellation?.Cancel()", source);
+        Assert.Contains("if (!IsCurrent) return", source);
+        Assert.Contains("CloudDriveRefreshPartial", source);
+        Assert.Contains("DesktopDriveMappingState.Offline or DesktopDriveMappingState.AuthenticationRequired", source);
+        Assert.Contains("refresh.IsEnabled = !needsResume", source);
+        Assert.Contains("x:Name=\"CancelRefreshButton\"", xaml);
+        Assert.Contains("_refreshLifetime.Cancel()", service);
+        Assert.Contains("CloudDriveRemoteRefresh.RefreshAsync", service);
+        Assert.Contains("0x00040081, 0", native);
+        Assert.Contains("state.InSyncState != 1 || state.ModifiedDataSize != 0", native);
+        Assert.DoesNotContain("File.SetAttributes", native);
+    }
+
+    [Fact]
+    public void CloudManagementReusesExistingActionsAndRequiresSessionConsent()
+    {
+        var source = Read("windows/src/LanStash.App/Views/CloudDriveSettingsPage.xaml.cs");
+        var gate = Read("windows/src/LanStash.App/CloudDrive/DesktopCloudDriveService.cs");
+        var confirmation = Slice(source, "private async void EnableTestButton_Click", "private async void AddNasButton_Click");
+        Assert.Contains("ContentDialogButton.Close", confirmation);
+        Assert.Contains("ContentDialogResult.Primary || !IsCurrent", confirmation);
+        Assert.Contains("EnableForCurrentProcess()", confirmation);
+        Assert.DoesNotContain("AddDesktopDriveAsync", confirmation);
+        Assert.Contains("AppContext.SetSwitch(RegistrationSwitch, true)", gate);
+        Assert.Contains("_app.DesktopDriveProgressChanged -= DesktopDriveProgressChanged", source);
+        Assert.Contains("_confirmation?.Hide()", source);
+        Assert.Contains("if (!CanManage || _confirmation is not null) return", source);
+        Assert.Contains("item.ProfileId == _profileId", source);
+        Assert.Contains("launchAtLogin: LaunchAtLoginChoice.IsChecked == true", source);
+        Assert.Contains("selectedPolicy,\n            launchAtLogin,", gate.Replace("\r\n", "\n"));
+        foreach (var method in new[] { "AddDesktopDriveAsync", "RemoveDesktopDriveAsync", "KeepDesktopDriveOfflineAsync", "ReleaseDesktopDriveOfflineAsync", "PauseDesktopDriveAsync", "ResumeDesktopDriveAsync" })
+            Assert.Contains("_app." + method, source);
+    }
+
+    [Fact]
     public void SettingsPageUsesNativeAccessibleControlsAndOnlyLocalizedVisibleText()
     {
         var xaml = Read("windows/src/LanStash.App/Views/AppSettingsPage.xaml");
@@ -24,7 +68,9 @@ public sealed class AppSettingsPageSourceContractTests
         Assert.Contains("ShowSaveFailure", source);
         Assert.Contains("Settings.SaveFailedTitle", source);
         Assert.Contains("Settings.SaveFailedMessage", source);
-        Assert.DoesNotContain("CloudDrive", source);
+        Assert.Contains("CloudDriveRequested?.Invoke", source);
+        Assert.DoesNotContain("DesktopCloudDriveService", source);
+        Assert.DoesNotContain("AddDesktopDriveAsync", source);
         Assert.DoesNotContain("Credential", source);
         Assert.DoesNotContain("Repository", source);
     }
@@ -38,10 +84,13 @@ public sealed class AppSettingsPageSourceContractTests
         Assert.Contains("_app.AvailableModules", method);
         Assert.Contains("module != AppModule.Settings", method);
         Assert.Contains(".Where(_settings.IsModuleVisible)", method);
-        Assert.Contains("Navigation.SelectedItem = Navigation.SettingsItem", method);
-        Assert.Contains("ContentFrame.Content = new AppSettingsPage()", method);
+        Assert.Contains("Navigation.SelectedItem = SettingsItem", method);
+        Assert.Contains("ContentFrame.Content = CreateSettingsPage()", method);
         Assert.DoesNotContain("_workspace", method);
-        Assert.Contains("ContentFrame.Content = new AppSettingsPage();", shell);
+        Assert.Contains("var settings = new AppSettingsPage();", shell);
+        Assert.Contains("new CloudDriveSettingsPage(_app)", shell);
+        Assert.Contains("ReferenceEquals(ContentFrame.Content, settings)", shell);
+        Assert.Contains("cloud.BackRequested", shell);
         Assert.DoesNotContain("new LanguageSettingsPage(_app)", shell);
     }
 
@@ -59,7 +108,8 @@ public sealed class AppSettingsPageSourceContractTests
         Assert.Contains("ElementTheme.Light", app);
         Assert.Contains("ElementTheme.Dark", app);
         Assert.Contains("AppSettingsModulePolicy.CanHide", settings);
-        Assert.DoesNotContain("CloudDrive", page);
+        Assert.DoesNotContain("DesktopCloudDriveService", page);
+        Assert.DoesNotContain("AddDesktopDriveAsync", page);
         Assert.DoesNotContain("Profiles", page);
         Assert.DoesNotContain("Password", page);
         Assert.DoesNotContain("Transfer", page);

@@ -3,6 +3,51 @@ namespace LanStash.Tests;
 public sealed class ChatPageSourceContractTests
 {
     [Fact]
+    public void AdvancedChatUsesNativeConfirmationFiveStatesAndReviewWithoutChangingTheDraft()
+    {
+        var page = Read("windows/src/LanStash.App/Views/ChatPage.Advanced.cs");
+        var xaml = Read("windows/src/LanStash.App/Views/ChatAdvancedDialogContent.xaml");
+        var content = Read("windows/src/LanStash.App/Views/ChatAdvancedDialogContent.xaml.cs");
+        var model = Read("windows/src/LanStash.App/Features/Chat/ChatAdvancedViewModel.cs");
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", page);
+        Assert.Contains("RequestedTheme = ActualTheme", page);
+        Assert.Contains("model.IsBusy && !_disposed", page);
+        foreach (var state in new[] { "LoadingRing", "ErrorPanel", "EmptyText", "FilterBox", "EntryList", "ConfirmationPanel" })
+            Assert.Contains($"x:Name=\"{state}\"", xaml);
+        Assert.Contains("ChatAdvancedConfirmCancelReminder", content);
+        Assert.Contains("ChatAdvancedConfirmCancelSchedule", content);
+        Assert.Contains("_submissionCompleted = true", content);
+        Assert.Contains("_model.RequiresReview", content);
+        Assert.Contains("pending.Submit!(pending.Id)", model);
+        var batch = Read("windows/src/LanStash.App/Features/Chat/ChatAdvancedViewModel.Batch.cs");
+        Assert.Contains("step.Execute(step.RequestId)", batch);
+        Assert.Contains("reviewOnly && step.State == ChatBatchItemState.Pending", batch);
+        Assert.Contains("DefaultButton = ContentDialogButton.Close", page);
+        Assert.Contains("if (_disposed || IsBusy || RequiresReview) return", model);
+        Assert.DoesNotContain("File.Write", model);
+    }
+
+    [Fact]
+    public void LocalReadStateRequiresVisibleMessagePaneAndNeverWritesServerReadStatus()
+    {
+        var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        var model = Read("windows/src/LanStash.App/Features/Chat/ChatBrowserViewModel.cs");
+        Assert.Contains("_isLoaded && _isWindowVisible && MessagePane.Visibility == Visibility.Visible", page);
+        Assert.Contains("UpdateMessageReadVisibility();", Slice(page, "private async void ChatPage_Unloaded", "private void ViewModel_PropertyChanged"));
+        Assert.Contains("UpdateMessageReadVisibility();", Slice(page, "private void ShowConversationList()", "private void UpdateSelectedPinAction()"));
+        Assert.Contains("SetMessagePaneVisible", page);
+        var selection = Slice(page, "private async void ConversationList_ItemClick", "private async void Refresh_Click");
+        Assert.True(selection.IndexOf("SetMessagePaneVisible(false)", StringComparison.Ordinal) <
+            selection.IndexOf("SelectConversationAsync", StringComparison.Ordinal));
+        Assert.Contains("private static ChatConversation ApplyLocalReadState", model);
+        Assert.Contains("activity <= readThrough", model);
+        Assert.DoesNotContain("DateTimeOffset.Now", model);
+        Assert.DoesNotContain("DateTimeOffset.UtcNow", model);
+        Assert.DoesNotContain("mark_read", page + model);
+        Assert.DoesNotContain("read_at", page + model);
+    }
+
+    [Fact]
     public void EmojiPickerOnlyEditsLocalDraftAndKeepsKeyboardAccessibility()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
@@ -70,7 +115,20 @@ public sealed class ChatPageSourceContractTests
     }
 
     [Fact]
-    public void PageHasTextSingleAttachmentConversationCreationAndForegroundRefreshWithoutSocket()
+    public void RealtimeMessageScrollingFollowsBottomButPreservesHistoricalReading()
+    {
+        var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
+        var scrolling = Read("windows/src/LanStash.App/Views/ChatPage.Scrolling.cs");
+        var page = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
+        Assert.Contains("ItemsUpdatingScrollMode=\"KeepLastItemInView\"", xaml);
+        Assert.Contains("ItemsUpdatingScrollMode.KeepItemsInView", scrolling);
+        Assert.Contains("ViewChanged -= MessageScroll_Changed", scrolling);
+        Assert.Contains("DetachMessageScrolling();", page);
+        Assert.Contains("nameof(ChatBrowserViewModel.SelectedConversation)", page);
+    }
+
+    [Fact]
+    public void PageHasTextSingleAttachmentConversationCreationAndRepositoryOwnedRealtime()
     {
         var xaml = Read("windows/src/LanStash.App/Views/ChatPage.xaml");
         var source = Read("windows/src/LanStash.App/Views/ChatPage.xaml.cs");
@@ -106,7 +164,7 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("ChatAttachmentSendReviewBlocker", attachmentComposer);
         Assert.Contains("MinHeight=\"48\"", xaml);
         Assert.Contains("ChatForegroundRefresher", source);
-        Assert.Contains("TimeSpan.FromSeconds(30)", foreground);
+        Assert.Contains("TimeSpan.FromSeconds(5)", foreground);
         Assert.Contains("await _refreshConversations()", foreground);
         Assert.Contains("await _refreshMessages()", foreground);
         Assert.Contains("viewModel.CancelForegroundRefreshes", source);
@@ -115,7 +173,9 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("CreatePrivateGroupAsync", create);
         Assert.Contains("CreateDirectAsync", create);
         Assert.DoesNotContain("Socket", combined, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Realtime", combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("observeRealtime: repository.ObserveRealtimeAsync", source);
+        Assert.Contains("TimeSpan.FromSeconds(30)", foreground);
+        Assert.Contains("ChatRealtimeEvent.ContentChanged", foreground);
     }
 
     [Fact]
@@ -277,9 +337,12 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("MinWidth=\"44\"", xaml);
         Assert.Contains("ChatDeleteOwnMessageVersion = 5", repository);
         Assert.Contains("\"delete\"", repository);
-        Assert.Contains("[\"post_id\"]", repository);
+        Assert.Contains("(\"post_id\", request.MessageId)", repository);
         Assert.Contains("IsFromCurrentUser != true", repository);
-        Assert.Contains("ChatAdvancedWritesEnabled = false", repository);
+        var advanced = Read("windows/src/LanStash.Infrastructure/Features/Chat/DsmRepository.ChatAdvanced.cs");
+        Assert.Contains("if (!HasBoundChatSession)", advanced);
+        Assert.Contains("RequireAdvancedConversationAsync", advanced);
+        Assert.Contains("HasAdvancedApi(api, requiredVersion)", advanced);
         foreach (var key in new[]
         {
             "ChatMessageDeleteAction",
@@ -405,10 +468,12 @@ public sealed class ChatPageSourceContractTests
         Assert.Contains("CanViewAnnouncements", combined);
         Assert.Contains("IsEncrypted: false", model);
         Assert.Contains("CancelConversationAnnouncementsLoad", announcementsSource);
-        Assert.Contains("\"search\"", repository);
-        Assert.Contains("[\"has\"] = \"[\\\"pin\\\"]\"", repository);
-        Assert.DoesNotContain("\"pin\",", repository);
-        Assert.DoesNotContain("\"unpin\",", repository);
+        var actions = Read("windows/src/LanStash.Infrastructure/Features/Chat/DsmRepository.ChatActions.cs");
+        var pinnedRead = actions[actions.IndexOf("private async Task<IReadOnlyList<JsonObject>> ReadAllPinnedPayloadAsync", StringComparison.Ordinal)..];
+        Assert.Contains("ReadAllPinnedPayloadAsync", repository);
+        Assert.Contains("\"search\"", pinnedRead);
+        Assert.Contains("(\"has\", new[] { \"pin\" })", pinnedRead);
+        Assert.DoesNotContain("\"unpin\"", pinnedRead);
         foreach (var key in new[]
         {
             "ChatBrowserAnnouncementsButton",

@@ -239,7 +239,7 @@ private struct DownloadStationView: View {
 
     private enum DeleteChoice {
         case taskOnly
-        case taskAndData
+        case finishIncomplete
     }
 
     private var tasks: [DownloadStationTask] {
@@ -294,7 +294,7 @@ private struct DownloadStationView: View {
                             deleteChoice = .taskOnly
                         }
                         Button(L10n.string("ui.810ad53a1c16de5d"), role: .destructive) {
-                            deleteChoice = .taskAndData
+                            deleteChoice = .finishIncomplete
                         }
                     } label: {
                         Label(L10n.string("ui.6135d4159e892541"), systemImage: "trash")
@@ -394,24 +394,26 @@ private struct DownloadStationView: View {
             )
         }
         .confirmationDialog(
-            L10n.string("ui.f0b382eeac27d246"),
+            deleteChoice == .finishIncomplete
+                ? L10n.string("download-task.finish-incomplete.confirm-title")
+                : L10n.string("ui.f0b382eeac27d246"),
             isPresented: Binding(
                 get: { deleteChoice != nil },
                 set: { if !$0 { deleteChoice = nil } }
             )
         ) {
             Button(
-                deleteChoice == .taskAndData ? L10n.string("ui.631851c80f615dc3") : L10n.string("ui.3a72267129185266"),
+                deleteChoice == .finishIncomplete ? L10n.string("ui.631851c80f615dc3") : L10n.string("ui.3a72267129185266"),
                 role: .destructive
             ) {
-                let removeData = deleteChoice == .taskAndData
+                let forceComplete = deleteChoice == .finishIncomplete
                 deleteChoice = nil
-                Task { await model.deleteDownloads(removeData: removeData) }
+                Task { await model.deleteDownloads(forceComplete: forceComplete) }
             }
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { deleteChoice = nil }
         } message: {
             Text(
-                deleteChoice == .taskAndData
+                deleteChoice == .finishIncomplete
                     ? L10n.string("ui.7ee4c98525fb52f7")
                     : L10n.string("ui.3719b045e8772446")
             )
@@ -1026,7 +1028,11 @@ private struct ContainerManagerView: View {
     let pane: ContainerManagerPane
     let onSelectPane: @MainActor @Sendable (ContainerManagerPane) -> Void
     @State private var confirmsContainerDelete = false
+    @State private var confirmsContainerControl = false
+    @State private var pendingContainerAction: ContainerAction = .start
+    @State private var pendingContainerSelection: Set<String> = []
     @State private var confirmsImageDelete = false
+    @State private var pendingImageSelection: Set<String> = []
     @State private var confirmsNetworkDelete = false
     @State private var showsPullImage = false
     @State private var showsCreateNetwork = false
@@ -1071,6 +1077,16 @@ private struct ContainerManagerView: View {
             .buttonStyle(MacToolbarButtonStyle())
             .fillsAvailableContentArea(alignment: .topLeading)
         }
+        .confirmationDialog(L10n.string("container.control.confirm.title"), isPresented: $confirmsContainerControl) {
+            Button(containerControlTitle, role: pendingContainerAction == .start ? nil : .destructive) {
+                let action = pendingContainerAction
+                let ids = pendingContainerSelection
+                Task { await model.controlContainers(action, confirmedIDs: ids) }
+            }
+            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
+        } message: {
+            Text(L10n.string("container.control.confirm.message", pendingContainerSelection.count))
+        }
         .confirmationDialog(L10n.string("ui.e63f7b537862f807"), isPresented: $confirmsContainerDelete) {
             Button(L10n.string("ui.60fc3386091b5647"), role: .destructive) {
                 Task { await model.deleteContainers() }
@@ -1081,11 +1097,12 @@ private struct ContainerManagerView: View {
         }
         .confirmationDialog(L10n.string("ui.08e648b8e120039f"), isPresented: $confirmsImageDelete) {
             Button(L10n.string("ui.17f38b5ced278466"), role: .destructive) {
-                Task { await model.deleteImages() }
+                let ids = pendingImageSelection
+                Task { await model.deleteImages(confirmedIDs: ids) }
             }
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
         } message: {
-            Text(L10n.string("ui.0b16ae28e158fd97"))
+            Text(L10n.string("container-image.delete.confirm", pendingImageSelection.count))
         }
         .confirmationDialog(L10n.string("ui.ee4929b66715cd3c"), isPresented: $confirmsNetworkDelete) {
             Button(L10n.string("ui.8e3a6be52ed69dde"), role: .destructive) {
@@ -1099,15 +1116,11 @@ private struct ContainerManagerView: View {
             PullImageSheet(
                 search: { try await model.searchImages(query: $0) },
                 loadTags: { try await model.loadImageTags(repositoryName: $0) },
-                submit: { repository, tag in
-                    let succeeded = await model.pullImage(repositoryName: repository, tag: tag)
-                    if succeeded {
-                        showsPullImage = false
-                        return nil
-                    }
-                    return model.message ?? L10n.string("ui.181d86c6f58ca795")
-                }
+                tracking: model.imagePulls
             )
+        }
+        .onChange(of: showsPullImage) { _, visible in
+            if !visible, model.imagePulls.takeParentRefreshRequest() { Task { await model.activate(.containers, force: true) } }
         }
         .macSheet(isPresented: $showsCreateNetwork) {
             CreateNetworkSheet(canSubmit: model.containers?.canCreateNetworks == true) { configuration in
@@ -1172,12 +1185,26 @@ private struct ContainerManagerView: View {
         .padding(.top, 8)
     }
 
+    private var containerControlTitle: String {
+        switch pendingContainerAction {
+        case .start: L10n.string("ui.56410fc65314dfb5")
+        case .stop: L10n.string("ui.ca4d973c0b006b75")
+        case .restart: L10n.string("ui.4c7c6cc2eb16ec30")
+        }
+    }
+
+    private func confirmContainerControl(_ action: ContainerAction) {
+        pendingContainerAction = action
+        pendingContainerSelection = model.containerSelection
+        confirmsContainerControl = true
+    }
+
     private var containerList: some View {
         VStack(spacing: 10) {
             HStack {
-                Button(L10n.string("ui.56410fc65314dfb5")) { Task { await model.controlContainers(.start) } }
-                Button(L10n.string("ui.ca4d973c0b006b75")) { Task { await model.controlContainers(.stop) } }
-                Button(L10n.string("ui.4c7c6cc2eb16ec30")) { Task { await model.controlContainers(.restart) } }
+                Button(L10n.string("ui.56410fc65314dfb5")) { confirmContainerControl(.start) }
+                Button(L10n.string("ui.ca4d973c0b006b75")) { confirmContainerControl(.stop) }
+                Button(L10n.string("ui.4c7c6cc2eb16ec30")) { confirmContainerControl(.restart) }
                 Spacer()
                 Button(L10n.string("ui.2f9daa828907b93f"), role: .destructive) { confirmsContainerDelete = true }
             }
@@ -1216,8 +1243,14 @@ private struct ContainerManagerView: View {
         VStack(spacing: 10) {
             HStack {
                 Spacer()
-                Button(L10n.string("ui.2f9daa828907b93f"), role: .destructive) { confirmsImageDelete = true }
-                    .disabled(model.imageSelection.isEmpty || model.isPerformingAction)
+                if model.canReviewImageDeletion {
+                    Button(L10n.string("container-image.delete.review")) { Task { await model.reviewImageDeletion() } }
+                }
+                Button(L10n.string("ui.2f9daa828907b93f"), role: .destructive) {
+                    pendingImageSelection = model.imageSelection
+                    confirmsImageDelete = true
+                }
+                    .disabled(!model.canDeleteImages)
                 Button {
                     model.clearMessage()
                     showsPullImage = true
@@ -1437,6 +1470,7 @@ private struct VirtualMachineManagerView: View {
     let onSelectPane: @MainActor @Sendable (VirtualMachineManagerPane) -> Void
     @State private var protectionPane: ProtectionPane = .plans
     @State private var pendingPowerAction: VirtualMachinePowerAction?
+    @State private var pendingPowerIDs: [String] = []
     @State private var confirmsDelete = false
     @State private var confirmsNetworkDelete = false
     @State private var confirmsImageDelete = false
@@ -1494,8 +1528,9 @@ private struct VirtualMachineManagerView: View {
         ) {
             Button(powerConfirmationButton, role: pendingPowerAction == .powerOff ? .destructive : nil) {
                 guard let action = pendingPowerAction else { return }
+                let ids = pendingPowerIDs
                 pendingPowerAction = nil
-                Task { await model.controlVirtualMachines(action) }
+                Task { await model.controlVirtualMachines(action, confirmedIDs: ids) }
             }
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { pendingPowerAction = nil }
         } message: {
@@ -1631,13 +1666,13 @@ private struct VirtualMachineManagerView: View {
                 )
                 Divider().frame(height: 18)
                 Group {
-                Button(L10n.string("ui.56410fc65314dfb5")) { pendingPowerAction = .powerOn }
-                Button(L10n.string("ui.0c6d079c4c60bcf5")) { pendingPowerAction = .shutdown }
+                Button(L10n.string("ui.56410fc65314dfb5")) { confirmPowerAction(.powerOn) }
+                Button(L10n.string("ui.0c6d079c4c60bcf5")) { confirmPowerAction(.shutdown) }
                 Menu(L10n.string("ui.38844b135cf70dfc")) {
-                    Button(L10n.string("ui.4c7c6cc2eb16ec30")) { pendingPowerAction = .restart }
+                    Button(L10n.string("ui.4c7c6cc2eb16ec30")) { confirmPowerAction(.restart) }
                     Divider()
                     Button(L10n.string("ui.b775502757e1b262"), role: .destructive) {
-                        pendingPowerAction = .powerOff
+                        confirmPowerAction(.powerOff)
                     }
                     Button(L10n.string("ui.0552e329ccf875fb"), role: .destructive) { confirmsDelete = true }
                 }
@@ -1981,6 +2016,12 @@ private struct VirtualMachineManagerView: View {
         }
     }
 
+    private func confirmPowerAction(_ action: VirtualMachinePowerAction) {
+        // 确认绑定当时选择，弹窗期间的新选择不得扩大操作范围。
+        pendingPowerIDs = model.virtualMachineSelection.sorted()
+        pendingPowerAction = action
+    }
+
     private var powerConfirmationTitle: String {
         switch pendingPowerAction {
         case .powerOn: L10n.string("ui.5999db1c5bcd59ea")
@@ -2086,7 +2127,7 @@ struct CreateVirtualMachineSheet: View {
     @State private var networkID = ""
     @State private var imageID = ""
     @State private var firmware: VirtualMachineFirmware = .legacy
-    @State private var autoStart = false
+    @State private var startupBehavior = VirtualMachineStartupBehavior.off
     @State private var powerOnAfterCreation = false
     @State private var confirmsCreation = false
     @State private var isSubmitting = false
@@ -2160,7 +2201,11 @@ struct CreateVirtualMachineSheet: View {
                             Text(L10n.string("firmware.legacy_bios")).tag(VirtualMachineFirmware.legacy)
                             Text(L10n.string("firmware.uefi")).tag(VirtualMachineFirmware.uefi)
                         }
-                        Toggle(L10n.string("ui.3c399a5b5ecdd522"), isOn: $autoStart)
+                        Picker(L10n.string("virtual-machine.startup.title"), selection: $startupBehavior) {
+                            ForEach(VirtualMachineStartupBehavior.allCases, id: \.self) { behavior in
+                                Text(L10n.string(behavior.localizationKey)).tag(behavior)
+                            }
+                        }
                         Toggle(L10n.string("ui.e6f251f0421991aa"), isOn: $powerOnAfterCreation)
                     }
                 }
@@ -2256,8 +2301,8 @@ struct CreateVirtualMachineSheet: View {
             diskGiB: diskGiB,
             description: description.trimmingCharacters(in: .whitespacesAndNewlines),
             firmware: firmware,
-            autoStart: autoStart,
-            powerOnAfterCreation: powerOnAfterCreation
+            powerOnAfterCreation: powerOnAfterCreation,
+            startupBehavior: startupBehavior
         )
     }
 }
@@ -2270,8 +2315,8 @@ struct EditVirtualMachineSheet: View {
     @State private var description: String
     @State private var cpuCount: Int
     @State private var memoryGiB: Int
-    @State private var priority: Int
-    @State private var autoStart: Bool
+    @State private var priority: Int?
+    @State private var startupBehavior: VirtualMachineStartupBehavior?
     @State private var confirmsSave = false
     @State private var isSubmitting = false
 
@@ -2287,8 +2332,8 @@ struct EditVirtualMachineSheet: View {
         _memoryGiB = State(
             initialValue: max(1, Int((machine.memoryBytes ?? 1_073_741_824) / 1_073_741_824))
         )
-        _priority = State(initialValue: machine.cpuWeight ?? 256)
-        _autoStart = State(initialValue: machine.autoStart)
+        _priority = State(initialValue: machine.cpuWeight)
+        _startupBehavior = State(initialValue: machine.startupBehavior)
     }
 
     var body: some View {
@@ -2309,11 +2354,25 @@ struct EditVirtualMachineSheet: View {
                     TextField(L10n.string("ui.19ad97a6aca8b249"), text: $description, axis: .vertical)
                         .lineLimit(2...4)
                     Picker(L10n.string("ui.74e92edaaa85d6a3"), selection: $priority) {
-                        Text(L10n.string("ui.552f8f8b1402dc6d")).tag(128)
-                        Text(L10n.string("ui.6bea77acefb364ac")).tag(256)
-                        Text(L10n.string("ui.dfbad24e7f4a9cb8")).tag(512)
+                        if machine.cpuWeight == nil {
+                            Text(L10n.string("virtual-machine.setting.unknown")).tag(Int?.none)
+                        } else if let weight = machine.cpuWeight, ![8, 64, 256, 512, 1024].contains(weight) {
+                            Text(L10n.string("virtual-machine.priority.current", String(describing: weight))).tag(Optional(weight))
+                        }
+                        Text(L10n.string("virtual-machine.priority.low")).tag(Optional(8))
+                        Text(L10n.string("virtual-machine.priority.below-normal")).tag(Optional(64))
+                        Text(L10n.string("ui.6bea77acefb364ac")).tag(Optional(256))
+                        Text(L10n.string("virtual-machine.priority.above-normal")).tag(Optional(512))
+                        Text(L10n.string("virtual-machine.priority.high")).tag(Optional(1024))
                     }
-                    Toggle(L10n.string("ui.3c399a5b5ecdd522"), isOn: $autoStart)
+                    Picker(L10n.string("virtual-machine.startup.title"), selection: $startupBehavior) {
+                        if machine.startupBehavior == nil {
+                            Text(L10n.string("virtual-machine.setting.unknown")).tag(VirtualMachineStartupBehavior?.none)
+                        }
+                        ForEach(VirtualMachineStartupBehavior.allCases, id: \.self) { behavior in
+                            Text(L10n.string(behavior.localizationKey)).tag(Optional(behavior))
+                        }
+                    }
                 }
                 Section(L10n.string("ui.7f5cc0a851ac4208")) {
                     Stepper(L10n.string("ui.bb5b9e48a5da55ca", String(describing: cpuCount)), value: $cpuCount, in: 1...64)
@@ -2382,8 +2441,8 @@ struct EditVirtualMachineSheet: View {
     private var hasChanges: Bool {
         normalizedName != machine.name
             || description != (machine.description ?? "")
-            || priority != (machine.cpuWeight ?? 256)
-            || autoStart != machine.autoStart
+            || priority != machine.cpuWeight
+            || startupBehavior != machine.startupBehavior
             || (!isRunning && cpuCount != (machine.cpuCount ?? 1))
             || (!isRunning
                 && memoryGiB
@@ -2400,8 +2459,8 @@ struct EditVirtualMachineSheet: View {
                     != max(1, Int((machine.memoryBytes ?? 1_073_741_824) / 1_073_741_824))
                 ? memoryGiB * 1_024
                 : nil,
-            cpuWeight: priority == (machine.cpuWeight ?? 256) ? nil : priority,
-            autoStart: autoStart == machine.autoStart ? nil : autoStart
+            cpuWeight: priority == machine.cpuWeight ? nil : priority,
+            startupBehavior: startupBehavior == machine.startupBehavior ? nil : startupBehavior
         )
     }
 }
@@ -2587,10 +2646,11 @@ private struct StatusDot: View {
     }
 }
 
+@MainActor
 struct PullImageSheet: View {
     let search: (String) async throws -> [ContainerRegistryImage]
     let loadTags: (String) async throws -> [String]
-    let submit: (String, String) async -> String?
+    @Bindable var tracking: ContainerImagePullModel
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var results: [ContainerRegistryImage] = []
@@ -2603,6 +2663,9 @@ struct PullImageSheet: View {
     @State private var isLoadingTags = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var showingDownloads = false
+    @State private var startingTask: Task<Void, Never>?
+    @State private var checkingTask: Task<Void, Never>?
 
     private var tagSuggestions: [String] {
         let normalized = tag.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2619,9 +2682,19 @@ struct PullImageSheet: View {
                 Text(L10n.string("ui.ca0af0bbf50d2b45"))
                     .font(.title2.weight(.semibold))
 
+                Picker(L10n.string("container-image.pull.section"), selection: $showingDownloads) {
+                    Text(L10n.string("container-image.pull.search")).tag(false)
+                    Text(L10n.string("container-image.pull.tasks")).tag(true)
+                }
+                .pickerStyle(.segmented)
+                if tracking.isBusy { ProgressView().controlSize(.small) }
+                else if !tracking.isAvailable { Text(L10n.string("container-image.pull.unavailable")).font(.caption).foregroundStyle(.secondary) }
+
+                if !showingDownloads {
                 HStack(spacing: 8) {
                     TextField(L10n.string("ui.41b3f0900cf8fd0f"), text: $query)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(isSubmitting)
                         .onSubmit { Task { await performSearch() } }
                         .accessibilityHint(L10n.string("ui.cf00ba193f6977fa"))
                     Button {
@@ -2641,6 +2714,7 @@ struct PullImageSheet: View {
                     )
                     .keyboardShortcut(.defaultAction)
                 }
+                }
             }
             .padding(18)
             .background(MacGlassSurface(role: .toolbar))
@@ -2649,7 +2723,9 @@ struct PullImageSheet: View {
 
             // 中央主列表区：充满剩余的全部垂直高度！
             Group {
-                if isSearching {
+                if showingDownloads {
+                    downloadTasks
+                } else if isSearching {
                     VStack(spacing: 12) {
                         ProgressView()
                         Text(L10n.string("ui.326539c4b5681140"))
@@ -2714,12 +2790,13 @@ struct PullImageSheet: View {
                     }
                     .listStyle(.inset)
                     .macThemedScrollContent(selection: selectedImageID)
+                    .disabled(isSubmitting)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // 已选镜像与标签选择框
-            if !repository.isEmpty {
+            if !showingDownloads, !repository.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Label(L10n.string("ui.389d1756df651b7c", String(describing: repository)), systemImage: "checkmark.circle.fill")
@@ -2751,7 +2828,11 @@ struct PullImageSheet: View {
                             }
                         }
                         .scrollIndicators(.hidden)
+                        .disabled(isSubmitting)
                     }
+                    Text(L10n.string("container-image.pull.risk")).font(.caption).foregroundStyle(.secondary)
+                    Toggle(L10n.string("container-image.pull.confirm"), isOn: Binding(get: { tracking.isConfirmed }, set: { tracking.confirm($0) }))
+                        .toggleStyle(.checkbox).disabled(!tracking.canConfirm)
                 }
                 .padding(12)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
@@ -2759,7 +2840,7 @@ struct PullImageSheet: View {
                 .padding(.vertical, 8)
             }
 
-            if let errorMessage {
+            if let errorMessage = showingDownloads ? tracking.errorMessage : errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
                     .foregroundStyle(.red)
@@ -2775,17 +2856,27 @@ struct PullImageSheet: View {
                 Spacer()
                 Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                if showingDownloads {
+                    Button(L10n.string("container-image.pull.review")) {
+                        checkingTask?.cancel()
+                        checkingTask = Task { await tracking.refresh() }
+                    }
+                    .buttonStyle(MacToolbarButtonStyle(prominent: true)).disabled(!tracking.canReview)
+                } else {
                 Button(L10n.string("ui.ca0af0bbf50d2b45")) {
+                    tracking.setTarget(repository: repository, tag: tag)
+                    guard tracking.canSubmit else { return }
                     isSubmitting = true
                     errorMessage = nil
-                    Task {
-                        errorMessage = await submit(repository, tag)
+                    startingTask = Task {
+                        await tracking.submit()
                         isSubmitting = false
+                        if !Task.isCancelled { showingDownloads = true }
                     }
                 }
                 .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
-                    repository.isEmpty
+                    !tracking.canSubmit || repository.isEmpty
                         || tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || !tags.contains(
                             tag.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2793,14 +2884,20 @@ struct PullImageSheet: View {
                         || isLoadingTags
                         || isSubmitting
                 )
+                }
             }
             .padding(16)
             .buttonStyle(MacToolbarButtonStyle())
             .background(MacGlassSurface(role: .toolbar))
         }
-        .frame(width: 620, height: 540)
+        .frame(width: 620, height: 640)
         .macThemedScrollContent()
         .background(MacGlassSurface(role: .sidebar))
+        .task { await tracking.watch() }
+        .onAppear { if !tracking.results.isEmpty { showingDownloads = true } }
+        .onDisappear { startingTask?.cancel(); checkingTask?.cancel(); tracking.deactivate() }
+        .onChange(of: repository) { _, value in tracking.setTarget(repository: value, tag: tag) }
+        .onChange(of: tag) { _, value in tracking.setTarget(repository: repository, tag: value) }
         .onChange(of: selectedImageID) { _, newValue in
             guard let image = results.first(where: { $0.id == newValue }) else { return }
             repository = image.name
@@ -2809,6 +2906,29 @@ struct PullImageSheet: View {
             errorMessage = nil
             Task { await performTagLoad(for: image.name) }
         }
+    }
+
+    private var downloadTasks: some View {
+        Group {
+            if tracking.results.isEmpty {
+                ContentUnavailableView(L10n.string("container-image.pull.empty"), systemImage: "arrow.down.circle",
+                    description: Text(L10n.string("container-image.pull.empty-message")))
+            } else {
+                List(tracking.results) { value in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(value.repository):\(value.tag)").fontWeight(.medium)
+                        Text(ContainerImagePullModel.statusText(value)).font(.callout).foregroundStyle(.secondary)
+                        if let percentage = value.percentage { ProgressView(value: percentage, total: 100) }
+                        else if value.stage == .downloading { ProgressView().controlSize(.small) }
+                    }
+                    .padding(.vertical, 6)
+                    .accessibilityElement(children: .combine)
+                }
+                .listStyle(.inset)
+                .macThemedScrollContent()
+            }
+        }
+        .fillsAvailableContentArea()
     }
 
     @MainActor
@@ -2973,6 +3093,7 @@ private enum ServiceFormat {
     static func status(_ raw: String) -> String {
         switch raw.lowercased() {
         case "running", "started", "up": L10n.string("ui.9273b8cc8f40fabd")
+        case "restarting": L10n.string("container.status.restarting")
         case "stopped", "shutdown", "offline": L10n.string("ui.f006455e3baf2b0b")
         case "paused": L10n.string("ui.eb0c326b60ae897a")
         case "waiting": L10n.string("ui.7a287e16547c1189")

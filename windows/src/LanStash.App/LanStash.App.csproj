@@ -10,10 +10,19 @@
     <Platforms>x64;arm64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
+    <!-- unpackaged 应用仍需生成并发布 XAML 与语言资源索引。 -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <ProjectPriFileName>resources.pri</ProjectPriFileName>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
-    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <WindowsAppSDKSelfContained Condition="'$(LanStashStandalone)' == 'true'">true</WindowsAppSDKSelfContained>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(LanStashUiSmoke)' == 'true'">
+    <DefineConstants>$(DefineConstants);LANSTASH_UI_SMOKE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(LanStashUiSmoke)' == 'true'">
+    <Compile Include="..\..\tests\UiSmoke\SmokeWorkspace.cs" Link="Testing\SmokeWorkspace.cs" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\LanStash.Application\LanStash.Application.csproj" />
     <ProjectReference Include="..\LanStash.Domain\LanStash.Domain.csproj" />
@@ -49,8 +58,5 @@
     <Content Include="Assets\AppIcon.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-  </ItemGroup>
-  <ItemGroup>
-    <PRIResource Include="Strings\**\*.resw" />
   </ItemGroup>
 </Project>

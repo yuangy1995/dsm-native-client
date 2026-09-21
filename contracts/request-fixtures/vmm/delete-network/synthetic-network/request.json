@@ -6,7 +6,7 @@
   "api": {
     "name": "SYNO.Virtualization.Network",
     "method": "delete",
-    "preferredVersion": 2,
+    "preferredVersion": 1,
     "resolvedVersion": 1,
     "resolvedPath": "entry.cgi"
   },

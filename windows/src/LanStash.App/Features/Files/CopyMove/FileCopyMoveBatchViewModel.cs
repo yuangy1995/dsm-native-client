@@ -37,10 +37,14 @@ public sealed record FileCopyMoveBatchSummary(
     int NeedsReviewCount,
     int FailedCount,
     int CancelledCount,
-    int NotStartedCount);
+    int NotStartedCount)
+{
+    public int SkippedCount { get; init; }
+}
 
 public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
 {
+    // 仅供旧 File Station 照片页面保留选择行为；通用批次及正式文件页不按此值截断。
     public const int MaximumItemCount = 20;
 
     private readonly IFileCopyMoveRepository _repository;
@@ -48,6 +52,8 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
     private readonly FileCopyMoveReviewBlocker _blocker;
     private readonly Guid _profileId;
     private readonly IReadOnlyList<FileItem> _sources;
+    private readonly HashSet<string> _sourceParents;
+    private readonly HashSet<string> _sourceDirectories;
     private CancellationTokenSource? _request;
     private FileCopyMoveBatchState _state;
     private IReadOnlyList<FileCopyMoveFolder> _folderItems = [];
@@ -60,6 +66,18 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
     private string? _submittedDestination;
     private long _generation;
     private bool _disposed;
+    private bool _requiresSignIn;
+    private int _skippedCount;
+    public FileCopyMoveConflictPolicy ConflictPolicy { get; private set; } = FileCopyMoveConflictPolicy.Fail;
+    public void SetConflictPolicy(FileCopyMoveConflictPolicy policy)
+    {
+        if (State != FileCopyMoveBatchState.ChoosingDestination || !Enum.IsDefined(policy)) return;
+        ConflictPolicy = policy;
+        RaisePropertyChanged(nameof(ConflictPolicy));
+    }
+    public bool RequiresSignIn { get => _requiresSignIn; private set => SetProperty(ref _requiresSignIn, value); }
+    private readonly List<FileItem> _confirmedItems = [];
+    internal IReadOnlyList<FileItem> ConfirmedItems => _confirmedItems.ToArray();
 
     public FileCopyMoveBatchViewModel(
         IFileCopyMoveRepository repository,
@@ -98,7 +116,8 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         {
             throw new ArgumentException("file.copy-move.batch.profile-mismatch");
         }
-        var validation = Validate(sources, operation, sourceRoot, sourceScope);
+        var snapshot = sources.ToArray();
+        var validation = Validate(snapshot, operation, sourceRoot, sourceScope);
         if (validation != FileCopyMoveBatchValidationStatus.Valid)
         {
             throw new ArgumentException($"file.copy-move.batch.{validation}", nameof(sources));
@@ -107,7 +126,9 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         _repository = repository;
         _folders = folders;
         _profileId = profileId;
-        _sources = sources.ToArray();
+        _sources = Array.AsReadOnly(snapshot);
+        _sourceParents = snapshot.Select(source => MutationParent(source.Path)).ToHashSet(StringComparer.Ordinal);
+        _sourceDirectories = snapshot.Where(source => source.IsDirectory).Select(source => source.Path).ToHashSet(StringComparer.Ordinal);
         Operation = operation;
         SourceRoot = sourceRoot;
         SourceScope = sourceScope;
@@ -197,10 +218,6 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         {
             return FileCopyMoveBatchValidationStatus.Empty;
         }
-        if (sources.Count > MaximumItemCount)
-        {
-            return FileCopyMoveBatchValidationStatus.TooMany;
-        }
         if (operation is not FileCopyMoveOperation.Copy and not FileCopyMoveOperation.Move)
         {
             return FileCopyMoveBatchValidationStatus.InvalidSource;
@@ -230,16 +247,12 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         {
             return FileCopyMoveBatchValidationStatus.Duplicate;
         }
-        for (var index = 0; index < sources.Count; index++)
+        var directories = sources.Where(source => source.IsDirectory).Select(source => source.Path).ToHashSet(StringComparer.Ordinal);
+        foreach (var source in sources)
         {
-            if (!sources[index].IsDirectory)
+            for (var parent = MutationParent(source.Path); parent.Length > 0; parent = MutationParent(parent))
             {
-                continue;
-            }
-            for (var candidate = 0; candidate < sources.Count; candidate++)
-            {
-                if (index != candidate &&
-                    sources[candidate].Path.StartsWith(sources[index].Path + "/", StringComparison.Ordinal))
+                if (directories.Contains(parent))
                 {
                     return FileCopyMoveBatchValidationStatus.NestedSelection;
                 }
@@ -333,6 +346,9 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         }
 
         var destination = DestinationPath;
+        RequiresSignIn = false;
+        _skippedCount = 0;
+        _confirmedItems.Clear();
         var generation = BeginRequest(out var cancellation);
         _submittedDestination = destination;
         State = FileCopyMoveBatchState.Submitting;
@@ -371,8 +387,13 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
                     return;
                 }
 
+                RequiresSignIn = outcome.Result.ErrorCategory == MutationErrorCategory.Authentication;
                 switch (Classify(outcome, source, destination))
                 {
+                    case BatchItemResult.Skipped:
+                        _skippedCount++;
+                        ClearReview(source, destination);
+                        break;
                     case BatchItemResult.Confirmed:
                         confirmed++;
                         ClearReview(source, destination);
@@ -397,14 +418,16 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
                 ProcessedCount = index + 1;
                 UpdateSummary(confirmed, needsReview, failed, cancelled);
                 _activeSource = null;
+                if (outcome.Result.ErrorCategory == MutationErrorCategory.Authentication) return;
             }
         }
-        catch
+        catch (Exception error)
         {
             if (!IsCurrent(generation))
             {
                 return;
             }
+            RequiresSignIn = error is DsmException dsm && (dsm.AuthenticationFailure || dsm.Code is 106 or 107 or 119 or 401);
             if (_activeSource is { } active)
             {
                 needsReview++;
@@ -466,17 +489,22 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
         DestinationCanWrite,
         false,
         false,
-        false);
+        false) { ConflictPolicy = ConflictPolicy };
 
     private BatchItemResult Classify(
         FileCopyMoveOutcome outcome,
         FileItem source,
         string destination)
     {
+        if (ConflictPolicy == FileCopyMoveConflictPolicy.Skip && outcome.SkippedExisting &&
+            !outcome.Result.Submitted && outcome.Result.Status == MutationResultStatus.ConfirmedFailure &&
+            outcome.Result.ErrorCategory == MutationErrorCategory.Conflict && outcome.ConfirmedItem is null)
+            return BatchItemResult.Skipped;
         if (outcome.Result.Status == MutationResultStatus.ConfirmedSuccess &&
             outcome.ConfirmedItem is { } item &&
             IsExactConfirmation(item, source, destination))
         {
+            _confirmedItems.Add(item);
             return BatchItemResult.Confirmed;
         }
         return outcome.Result.Status switch
@@ -498,25 +526,25 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
     private bool IsSafeDestination(string path)
     {
         if (!FileCopyMoveViewModel.IsDestination(path) ||
-            _sources.Any(source => string.Equals(MutationParent(source.Path), path, StringComparison.Ordinal)))
+            _sourceParents.Contains(path))
         {
             return false;
         }
-        return _sources.Where(source => source.IsDirectory).All(source =>
-            !string.Equals(path, source.Path, StringComparison.Ordinal) &&
-            !path.StartsWith(source.Path + "/", StringComparison.Ordinal));
+        for (var candidate = path; candidate.Length > 0; candidate = MutationParent(candidate))
+            if (_sourceDirectories.Contains(candidate)) return false;
+        return true;
     }
 
     private void UpdateSummary(int confirmed, int needsReview, int failed, int cancelled)
     {
-        var accounted = confirmed + needsReview + failed + cancelled;
+        var accounted = confirmed + needsReview + failed + cancelled + _skippedCount;
         Summary = new(
             _sources.Count,
             confirmed,
             needsReview,
             failed,
             cancelled,
-            Math.Max(0, _sources.Count - accounted));
+            Math.Max(0, _sources.Count - accounted)) { SkippedCount = _skippedCount };
     }
 
     private void BlockReview(FileItem source, string destination) =>
@@ -587,6 +615,7 @@ public sealed class FileCopyMoveBatchViewModel : ObservableObject, IDisposable
 
     private enum BatchItemResult
     {
+        Skipped,
         Confirmed,
         Failed,
         Cancelled,

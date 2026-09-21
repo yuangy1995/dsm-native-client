@@ -20,6 +20,24 @@
 
 ## 待归属观察
 
+- [2026-09-21 VMM 控制台资源与别名](2026-09-21-vmm-console-resource-observation.md)：只读核实 app_alias/app_id 地址规则及语言、铃声、图标资源；没有连接 VM 或修改门户配置。
+
+- [2026-09-20 VMM 高级创建续查](2026-09-20-vmm-creation-read-observation.md)：初次绑定失败后已恢复，只读字段及后续获授权的单台隔离创建样本均已记录；明确任务身份及内存读写单位，不提升历史设备基线。
+
+- [2026-09-20 VMM 网络契约核查](2026-09-20-vmm-network-read-observation.md)：浏览器恢复后核实 DSM/VMM 版本、管理员、Network.list/get v2 与 list_avail_interface v1；set/delete v1 和接口增删数组为官方静态线索，未修改网络或创建虚拟机。
+
+- [2026-09-20 VMM 高级设置与控制台核查](2026-09-20-vmm-parity-read-observation.md)：DSM/VMM 版本、Guest 能力及 get/get_setting 已只读核查；三态启动、五档 CPU 优先级、set v1 和控制台路径仅有静态线索，未保存配置或连接控制台。
+
+- [2026-09-20 远程挂载契约核查](2026-09-20-remote-mount-read-observation.md)：当前 File Station 1.4.1-1559 的官方静态参数与两端旧实现不同；空挂载列表和版本/能力元数据已只读验证，无挂载或断开行为验证。
+
+- [2026-09-17 VMM 设置回读核查](2026-09-17-vmm-settings-read-observation.md)：浏览器连接失败，未获得新环境证据；仅完成已有字段的源码核查修正，不能视为真实读写验证。
+
+- [2026-09-17 Container 映像下载契约核查](2026-09-17-container-image-pull-read-observation.md)：当前版本/能力与 Image.list 精确参数、字段类型已只读验证；pull_start/pull_status/聚合任务列表只有静态线索，没有执行下载，不提升写行为等级。
+
+- [2026-09-16 Windows 对齐只读核查](2026-09-16-windows-parity-read-observation.md)：当前 DSM/Chat/Container/Photos 版本已核实；Chat 创建/成员及 Docker 容器/日志声明 JSON，只有能力元数据 read-verified，未执行建群或容器写操作。
+
+- [2026-09-16 QuickConnect 客户端只读复验](2026-09-16-quickconnect-client-observation.md)：区域转介后得到在线连接候选，Windows 登录前认证接口发现通过；未提交凭据，DSM 版本和设备归属未确认。
+
 - [2026-09-10 Container Manager 日志与网络读取观察](2026-09-10-container-read-observation.md)：官方日志 `load` 参数和网络关联数组已核对；版本与设备关系未重新确认，不归入历史基线；没有执行写操作。
 
 - [2026-09-10 Photos 单项删除受控验证](2026-09-10-photos-deletion-observation.md)：唯一合成图已单次删除，任务完成，刷新后原件回读为空；macOS 按用户要求跨版本依接口能力开放供测试，App 重启和异常路径待验证。

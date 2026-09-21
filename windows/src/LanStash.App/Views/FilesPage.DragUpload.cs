@@ -131,7 +131,7 @@ public sealed partial class FilesPage
             {
                 return new DroppedUpload(null, folder.Path);
             }
-            if (items.Count == 0 || items.Count > BoundedFileUploadBatch.MaximumFileCount)
+            if (items.Count == 0)
             {
                 return null;
             }
@@ -179,8 +179,6 @@ public sealed partial class FilesPage
         {
             FileUploadBatchValidationStatus.Valid =>
                 localization.Format("FileUploadBatchStartedMessage", selectedCount),
-            FileUploadBatchValidationStatus.TooMany =>
-                localization.Get("FileUploadBatchTooManyMessage"),
             FileUploadBatchValidationStatus.DuplicateTarget =>
                 localization.Get("FileUploadBatchDuplicateMessage"),
             FileUploadBatchValidationStatus.TargetBusy =>

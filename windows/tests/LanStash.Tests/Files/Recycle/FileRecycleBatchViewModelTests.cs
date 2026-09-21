@@ -16,7 +16,7 @@ public sealed class FileRecycleBatchViewModelTests
             FileRecycleBatchValidationStatus.Empty,
             Validate([]));
         Assert.Equal(
-            FileRecycleBatchValidationStatus.TooMany,
+            FileRecycleBatchValidationStatus.Valid,
             Validate(Enumerable.Range(0, 21).Select(index => File($"item-{index}.txt")).ToArray()));
         Assert.Equal(
             FileRecycleBatchValidationStatus.InvalidSource,
@@ -532,6 +532,111 @@ public sealed class FileRecycleBatchViewModelTests
 
         Assert.Equal(FileRecycleBatchState.Unsupported, model.State);
         Assert.False(model.CanSubmit);
+    }
+
+    [Theory]
+    [InlineData(21, false)]
+    [InlineData(205, false)]
+    [InlineData(1001, false)]
+    [InlineData(21, true)]
+    [InlineData(205, true)]
+    [InlineData(1001, true)]
+    public async Task FullSelectionIsFrozenAndExecutedSerially(int count, bool restore)
+    {
+        var sources = Enumerable.Range(0, count).Select(index => File($"item-{index}.txt",
+            restore ? "/share/#recycle/album" : "/share/source")).ToArray();
+        var paths = sources.Select(item => item.Path).ToArray();
+        var repository = new StubRepository(ProfileId,
+            outcome: async (request, _) => { await Task.Yield(); return Success(request); },
+            restoreOutcome: async (request, _) => { await Task.Yield(); return RestoreSuccess(request); },
+            availability: new(true, true, 2, 3));
+        using var model = restore ? RestoreModel(repository, sources) : Model(repository, sources);
+        sources[0] = File("replacement.txt");
+        Assert.Throws<NotSupportedException>(() => ((IList<FileItem>)model.Sources)[0] = sources[0]);
+
+        await model.SubmitAsync();
+        await model.SubmitAsync();
+
+        var actual = restore ? repository.RestoreRequests.Select(item => item.Target.Path)
+            : repository.Requests.Select(item => item.Target.Path);
+        Assert.Equal(paths, actual);
+        Assert.Equal(1, repository.MaximumConcurrency);
+        Assert.Equal(new FileRecycleBatchSummary(count, count, 0, 0, 0, 0), model.Summary);
+        Assert.Equal(count, model.ProcessedCount);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task LargeBatchStopsAtUnknownOrAuthenticationFailure(bool restore, bool authentication)
+    {
+        var calls = 0;
+        FileRecycleOutcome Respond(FileRecycleOutcome success)
+        {
+            if (++calls != 23) return success;
+            return success with
+            {
+                ConfirmedItem = null,
+                Result = authentication
+                    ? new MutationResult(1, MutationResultStatus.ConfirmedFailure, "recycle", false, false, new(0, 1, 0), MutationErrorCategory.Authentication)
+                    : Result(MutationResultStatus.SubmittedButUnverified),
+            };
+        }
+        var repository = new StubRepository(ProfileId,
+            outcome: (request, _) => Task.FromResult(Respond(Success(request))),
+            restoreOutcome: (request, _) => Task.FromResult(Respond(RestoreSuccess(request))),
+            availability: new(true, true, 2, 3));
+        var sources = Enumerable.Range(0, 205).Select(index => File($"item-{index}.txt",
+            restore ? "/share/#recycle/album" : "/share/source")).ToArray();
+        var blocker = new FileRecycleReviewBlocker();
+        using var model = restore ? RestoreModel(repository, sources, blocker) : Model(repository, sources, blocker: blocker);
+        await model.SubmitAsync();
+        await model.SubmitAsync();
+        Assert.Equal(23, calls);
+        Assert.Equal(authentication, model.RequiresSignIn);
+        Assert.Equal(new FileRecycleBatchSummary(205, 22, authentication ? 0 : 1, authentication ? 1 : 0, 0, 182), model.Summary);
+        if (!authentication)
+            Assert.NotNull(blocker.Find(ProfileId, model.Operation, sources[22].Path,
+                restore ? "/share/album/item-22.txt" : Destination(sources[22])));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AuthenticationExceptionKeepsUnknownItemAndShowsSignIn(bool restore)
+    {
+        var calls = 0;
+        FileRecycleOutcome Respond(FileRecycleOutcome success) => ++calls == 23
+            ? throw new DsmException("synthetic", "synthetic", 119) : success;
+        var repository = new StubRepository(ProfileId,
+            outcome: (request, _) => Task.FromResult(Respond(Success(request))),
+            restoreOutcome: (request, _) => Task.FromResult(Respond(RestoreSuccess(request))),
+            availability: new(true, true, 2, 3));
+        var sources = Enumerable.Range(0, 205).Select(index => File($"item-{index}.txt",
+            restore ? "/share/#recycle/album" : "/share/source")).ToArray();
+        var blocker = new FileRecycleReviewBlocker();
+        using var model = restore ? RestoreModel(repository, sources, blocker) : Model(repository, sources, blocker: blocker);
+        await model.SubmitAsync();
+        Assert.True(model.RequiresSignIn);
+        Assert.Equal(23, calls);
+        Assert.Equal(new FileRecycleBatchSummary(205, 22, 1, 0, 0, 182), model.Summary);
+        Assert.NotNull(blocker.Find(ProfileId, model.Operation, sources[22].Path,
+            restore ? "/share/album/item-22.txt" : Destination(sources[22])));
+    }
+
+    [Fact]
+    public void LargeNestedSelectionRetainsExactAncestorBoundaries()
+    {
+        var items = Enumerable.Range(0, 1001).Select(index => File($"item-{index}.txt")).ToList();
+        items.Add(Folder("parent"));
+        items.Add(File("child.txt", "/share/source/parent-other"));
+        Assert.Equal(FileRecycleBatchValidationStatus.Valid, FileRecycleBatchViewModel.Validate(ProfileId, items,
+            "/share/source", FileLocationSource.Browser, [RecycleLocation], FileRecycleBatchSourceScope.DescendantsOfRoot));
+        items.Add(File("child.txt", "/share/source/parent"));
+        Assert.Equal(FileRecycleBatchValidationStatus.NestedSelection, FileRecycleBatchViewModel.Validate(ProfileId, items,
+            "/share/source", FileLocationSource.Browser, [RecycleLocation], FileRecycleBatchSourceScope.DescendantsOfRoot));
     }
 
     private static FileRecycleBatchValidationStatus Validate(

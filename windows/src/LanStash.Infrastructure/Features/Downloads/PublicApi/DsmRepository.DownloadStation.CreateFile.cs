@@ -33,7 +33,7 @@ public sealed partial class DsmRepository
                 diagnosticTag: "download-station.create.profile-mismatch");
         }
 
-        if (!HasControllablePublicDownloadStationContract)
+        if (!HasControllablePublicDownloadStationContract || !HasPublicDownloadVersion(PublicDownloadTaskApi, request.Destination is null ? 1 : 2))
         {
             return DownloadCreateOutcome(
                 MutationResultStatus.Unsupported,

@@ -1,0 +1,47 @@
+<UserControl x:Class="LanStash.App.Views.VirtualMachineCreationDialogContent" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <ScrollViewer x:Name="FormScroll" MaxHeight="550" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel MinWidth="340" MaxWidth="540" Spacing="12" Margin="0,0,8,0">
+   <ProgressRing x:Name="BusyIndicator" Width="30" Height="30" Visibility="Collapsed"/>
+   <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
+   <InfoBar x:Name="FeedbackNotice" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite"/>
+   <ProgressBar x:Name="TaskProgress" Minimum="0" Maximum="100" Visibility="Collapsed"/>
+   <TextBlock x:Name="ReadOnlyNotice" x:Uid="VmCreateReadOnly" TextWrapping="Wrap"/>
+   <ComboBox x:Name="RecoveryInput" x:Uid="VmCreateRecovery" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectionChanged="Recovery_Changed" Visibility="Collapsed"/>
+   <ComboBox x:Name="OperatingSystemInput" x:Uid="VmCreateOperatingSystem" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="OperatingSystem_Changed">
+    <ComboBoxItem x:Uid="VmCreateDefaultPreset"/><ComboBoxItem x:Uid="VmCreateWindowsPreset"/><ComboBoxItem x:Uid="VmCreateLinuxPreset"/><ComboBoxItem x:Uid="VmCreateOtherPreset"/>
+   </ComboBox>
+   <TextBlock x:Name="AdvancedUnavailableNotice" x:Uid="VmCreateAdvancedUnavailable" TextWrapping="Wrap"/>
+   <StackPanel x:Name="AdvancedFields" Spacing="12" Visibility="Collapsed">
+    <ComboBox x:Name="FirmwareInput" x:Uid="VmCreateFirmware" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="Choice_Changed">
+     <ComboBoxItem x:Uid="VmCreateLegacyFirmware"/><ComboBoxItem x:Uid="VmCreateUefiFirmware"/>
+    </ComboBox>
+    <ComboBox x:Name="BootImageInput" x:Uid="VmCreateBootImage" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectionChanged="Choice_Changed"/>
+    <TextBlock x:Uid="VmCreateAdvancedHint" TextWrapping="Wrap"/>
+   </StackPanel>
+   <TextBox x:Name="NameInput" x:Uid="VmSettingsName" TextChanged="Fields_Changed"/>
+   <TextBox x:Name="DescriptionInput" x:Uid="VmSettingsDescription" TextChanged="Fields_Changed" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="90"/>
+   <ComboBox x:Name="StorageInput" x:Uid="VmCreateStorage" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectionChanged="Choice_Changed"/>
+   <TextBox x:Name="CpuInput" x:Uid="VmSettingsCpu" TextChanged="Fields_Changed"/>
+   <TextBox x:Name="MemoryInput" x:Uid="VmSettingsMemory" TextChanged="Fields_Changed"/>
+   <ComboBox x:Name="StartupInput" x:Uid="VmSettingsStartup" HorizontalAlignment="Stretch" SelectionChanged="Choice_Changed">
+    <ComboBoxItem x:Uid="VmSettingsStartupOff"/><ComboBoxItem x:Uid="VmSettingsStartupPrevious"/><ComboBoxItem x:Uid="VmSettingsStartupOn"/>
+   </ComboBox>
+   <TextBlock x:Uid="VmCreateDisks" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2"/>
+   <StackPanel x:Name="DiskRows" Spacing="12"/>
+   <Button x:Name="AddDiskButton" x:Uid="VmCreateAddDisk" MinHeight="44" Click="AddDisk_Click"/>
+   <TextBlock x:Uid="VmCreateNetworks" FontWeight="SemiBold" AutomationProperties.HeadingLevel="Level2"/>
+   <StackPanel x:Name="NetworkRows" Spacing="12"/>
+   <Button x:Name="AddNetworkButton" x:Uid="VmCreateAddNetwork" MinHeight="44" Click="AddNetwork_Click"/>
+   <TextBlock x:Name="CreationModeHint" x:Uid="VmCreateLimitations" TextWrapping="Wrap"/>
+   <CheckBox x:Name="PowerOnInput" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="PowerOn_Changed" Unchecked="PowerOn_Changed">
+    <TextBlock x:Uid="VmCreatePowerOn" TextWrapping="Wrap"/>
+   </CheckBox>
+   <TextBlock x:Name="PowerUnavailableNotice" x:Uid="VmCreatePowerUnavailable" TextWrapping="Wrap"/>
+   <TextBlock x:Name="ValidationNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <TextBlock x:Name="ConfirmationSummary" TextWrapping="Wrap" FontWeight="SemiBold"/>
+   <CheckBox x:Name="RiskAcknowledgement" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="Confirm_Changed" Unchecked="Confirm_Changed">
+    <TextBlock x:Uid="VmCreateAcknowledgement" TextWrapping="Wrap"/>
+   </CheckBox>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

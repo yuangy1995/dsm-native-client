@@ -8,7 +8,6 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    private const int FileCopyMovePollLimit = 8;
     private static readonly ConditionalWeakTable<IDsmApiClient, FileCopyMoveApiState>
         FileCopyMoveApiStates = new();
 
@@ -20,6 +19,50 @@ public sealed partial class DsmRepository
     FileCopyMoveAvailability IFileCopyMoveRepository.Availability => FileCopyMoveAvailability;
 
     CrossNasCopyMoveAvailability IFileCopyMoveRepository.CrossNasAvailability => CrossNasAvailability;
+
+    public bool SupportsCopyMoveReview => true;
+
+    public Task<IReadOnlyList<FileCopyMovePendingReview>> GetCopyMoveReviewsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var state = FileCopyMoveState();
+        lock (state.Sync)
+            return Task.FromResult<IReadOnlyList<FileCopyMovePendingReview>>(Array.AsReadOnly(state.Reviews.Values.Select(review =>
+                new FileCopyMovePendingReview(review.Id, ProfileId, review.Kind, review.SourcePath,
+                    review.DestinationPath, review.Name, review.IsDirectory, review.Size)).ToArray()));
+    }
+
+    public async Task<FileCopyMoveOutcome?> ReviewCopyMoveAsync(Guid reviewId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var state = FileCopyMoveState();
+        FileCopyMoveReview? review;
+        lock (state.Sync)
+        {
+            review = state.Reviews.Values.SingleOrDefault(item => item.Id == reviewId);
+            if (review is null) return null;
+            if (CopyMoveTargetsOverlap(state.ActiveTargets, review.Targets))
+                return CopyMoveOutcome(review.Operation, MutationResultStatus.SubmittedButUnverified,
+                    true, true, MutationErrorCategory.Conflict, "file.copy-move.review-busy");
+            state.ActiveTargets.UnionWith(review.Targets);
+        }
+        try
+        {
+            // 只读核对绝不经过 CopyMoveAsync 的启动分支；过期身份也不能创建新操作。
+            return await ReviewFileCopyMoveAsync(review, cancellationToken, retainConfirmation: true).ConfigureAwait(false);
+        }
+        finally { ReleaseFileCopyMove(review.Targets); }
+    }
+
+    public void AcknowledgeCopyMoveReview(Guid reviewId)
+    {
+        var state = FileCopyMoveState();
+        lock (state.Sync)
+        {
+            var review = state.Reviews.Values.SingleOrDefault(item => item.Id == reviewId && item.ConfirmedItem is not null);
+            if (review is not null) state.Reviews.Remove(review.Key);
+        }
+    }
 
     private bool CopyMoveCapabilityAvailable =>
         MutationCapability("SYNO.FileStation.CopyMove", 3) &&
@@ -49,16 +92,18 @@ public sealed partial class DsmRepository
         var review = new FileCopyMoveReview(operation, source.Path, sourceParent,
             request.DestinationDirectoryPath, destinationPath, source.Name, source.Size,
             source.ModifiedAt, source.IsDirectory, request.Operation,
-            new HashSet<string>([source.Path, destinationPath], StringComparer.Ordinal));
+            new HashSet<string>([source.Path, destinationPath], StringComparer.Ordinal))
+        { RequiresTaskProof = request.ConflictPolicy == FileCopyMoveConflictPolicy.Overwrite };
         var reservation = ReserveFileCopyMove(review);
         if (!reservation.Acquired)
             return CopyMoveOutcome(operation, MutationResultStatus.ConfirmedFailure, false, false,
                 MutationErrorCategory.Conflict, "file.copy-move.target-busy");
 
+        var enteredSubmission = reservation.PendingReview is not null;
         try
         {
             if (reservation.PendingReview is not null)
-                return await ReviewFileCopyMoveAsync(reservation.PendingReview).ConfigureAwait(false);
+                return await ReviewFileCopyMoveAsync(reservation.PendingReview, cancellationToken).ConfigureAwait(false);
 
             if (!await CopyMoveMountsAreLocalAsync(source.Path,
                     request.DestinationDirectoryPath, cancellationToken).ConfigureAwait(false))
@@ -81,35 +126,52 @@ public sealed partial class DsmRepository
                 ? sourceItems
                 : await LoadMutationFolderAsync(request.DestinationDirectoryPath, cancellationToken)
                     .ConfigureAwait(false);
-            if (destinationItems.Any(item => item.Path == destinationPath))
+            var existing = destinationItems.SingleOrDefault(item => item.Path == destinationPath);
+            if (existing is not null && request.ConflictPolicy != FileCopyMoveConflictPolicy.Overwrite)
                 return CopyMoveOutcome(operation, MutationResultStatus.ConfirmedFailure,
-                    false, false, MutationErrorCategory.Conflict, "file.copy-move.conflict");
+                    false, false, MutationErrorCategory.Conflict, "file.copy-move.conflict")
+                    with { SkippedExisting = request.ConflictPolicy == FileCopyMoveConflictPolicy.Skip };
+            if (existing is not null && (!existing.CanWrite || existing.IsDirectory != source.IsDirectory))
+                return CopyMoveOutcome(operation, existing.CanWrite ? MutationResultStatus.ConfirmedFailure : MutationResultStatus.PermissionDenied,
+                    false, false, existing.CanWrite ? MutationErrorCategory.Conflict : MutationErrorCategory.Permission,
+                    "file.copy-move.overwrite-target-rejected");
 
             var permission = await _api.CheckFileMutationPermissionAsync(
                 _profile, _session, _capabilities["SYNO.FileStation.CheckPermission"],
-                request.DestinationDirectoryPath, source.Name, cancellationToken)
+                request.DestinationDirectoryPath,
+                existing is null ? source.Name : $".lanstash-permission-{Guid.NewGuid():N}", cancellationToken)
                 .ConfigureAwait(false);
             if (permission.ErrorCategory == MutationErrorCategory.Authentication)
                 throw MutationAuthenticationException();
             if (permission.Status != FilePermissionTransportStatus.Allowed)
                 return CopyMovePermissionOutcome(operation, permission);
 
+            enteredSubmission = true;
             return await SubmitFileCopyMoveAsync(request, review, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            if (enteredSubmission)
+                return CopyMoveOutcome(operation, MutationResultStatus.CancellationRequestedAfterSubmission,
+                    true, true, null, "file.copy-move.review-cancelled");
             return CopyMoveOutcome(operation, MutationResultStatus.CancelledBeforeSubmission,
                 false, false, null, "file.copy-move.cancelled-before-submit");
         }
         catch (DsmException error) when (IsMutationAuthenticationFailure(error))
         {
+            if (!enteredSubmission)
+                return CopyMoveOutcome(operation, MutationResultStatus.ConfirmedFailure, false, false,
+                    MutationErrorCategory.Authentication, "file.copy-move.sign-in-required");
             throw;
         }
         catch (Exception error) when (IsCopyMoveReadFailure(error))
         {
+            if (enteredSubmission)
+                return CopyMoveOutcome(operation, MutationResultStatus.SubmittedButUnverified,
+                    true, true, MutationErrorCategory.Unknown, "file.copy-move.review-unavailable");
             return CopyMoveOutcome(operation, MutationResultStatus.ConfirmedFailure,
-                false, false, MutationErrorCategory.Unknown,
+                false, false, error is HttpRequestException or IOException ? MutationErrorCategory.Network : MutationErrorCategory.Unknown,
                 "file.copy-move.preflight-invalid");
         }
         finally
@@ -130,7 +192,8 @@ public sealed partial class DsmRepository
             start = await _api.StartFileCopyMoveAsync(_profile, _session,
                 _capabilities["SYNO.FileStation.CopyMove"], request.Target.Path,
                 request.DestinationDirectoryPath,
-                request.Operation == FileCopyMoveOperation.Move, cancellationToken)
+                request.Operation == FileCopyMoveOperation.Move,
+                request.ConflictPolicy == FileCopyMoveConflictPolicy.Overwrite, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -176,15 +239,22 @@ public sealed partial class DsmRepository
 
         if (start.Status == FileMutationTransportStatus.ResponseReceived && start.TaskId is not null)
         {
+            review = review with { TaskId = start.TaskId };
             try
             {
-                taskFinished = await PollFileCopyMoveAsync(start.TaskId).ConfigureAwait(false);
+                taskFinished = await PollFileCopyMoveAsync(start.TaskId, cancellationToken).ConfigureAwait(false);
+                review = review with { TaskFinished = taskFinished };
                 postSubmitFailure = !taskFinished;
             }
             catch (DsmException error) when (IsMutationAuthenticationFailure(error))
             {
                 StoreFileCopyMoveReview(review);
                 throw;
+            }
+            catch (OperationCanceledException)
+            {
+                requestedCancellationAfterSubmission = true;
+                postSubmitFailure = true;
             }
             catch (Exception)
             {
@@ -226,32 +296,34 @@ public sealed partial class DsmRepository
             start.DiagnosticTag ?? "file.copy-move.readback-unverified");
     }
 
-    private async Task<bool> PollFileCopyMoveAsync(string taskId)
+    private async Task<bool> PollFileCopyMoveAsync(string taskId, CancellationToken cancellationToken, bool waitForCompletion = true)
     {
-        for (var attempt = 0; attempt < FileCopyMovePollLimit; attempt++)
+        var delay = 100;
+        while (true)
         {
             var status = await _api.ReadFileCopyMoveStatusAsync(_profile, _session,
-                _capabilities["SYNO.FileStation.CopyMove"], taskId, CancellationToken.None)
+                _capabilities["SYNO.FileStation.CopyMove"], taskId, cancellationToken)
                 .ConfigureAwait(false);
             if (status.ErrorCategory == MutationErrorCategory.Authentication)
                 throw MutationAuthenticationException();
             if (status.Status == FileCopyMoveTaskTransportStatus.Finished) return true;
-            if (status.Status != FileCopyMoveTaskTransportStatus.Running) return false;
-            await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(1000, 100 * (1 << attempt))))
-                .ConfigureAwait(false);
+            if (status.Status != FileCopyMoveTaskTransportStatus.Running || !waitForCompletion) return false;
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            delay = Math.Min(1000, delay * 2);
         }
-        return false;
     }
 
-    private async Task<FileItem?> TryReadBackFileCopyMoveAsync(FileCopyMoveReview review)
+    private async Task<FileItem?> TryReadBackFileCopyMoveAsync(FileCopyMoveReview review, CancellationToken cancellationToken = default)
     {
+        // 覆盖前目标本来存在，只有新任务确实完成才能将回读作为本次成功证据。
+        if (review.RequiresTaskProof && !review.TaskFinished) return null;
         try
         {
             var sourceItems = await LoadMutationFolderAsync(review.SourceParent,
-                CancellationToken.None).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             var destinationItems = review.SourceParent == review.DestinationParent
                 ? sourceItems
-                : await LoadMutationFolderAsync(review.DestinationParent, CancellationToken.None)
+                : await LoadMutationFolderAsync(review.DestinationParent, cancellationToken)
                     .ConfigureAwait(false);
             var target = destinationItems.SingleOrDefault(item =>
                 item.Path == review.DestinationPath &&
@@ -264,7 +336,7 @@ public sealed partial class DsmRepository
             return review.Kind switch
             {
                 FileCopyMoveOperation.Copy when sourceStillMatches => target,
-                FileCopyMoveOperation.Move when !sourceStillMatches => target,
+                FileCopyMoveOperation.Move when !sourceItems.Any(item => item.Path == review.SourcePath) => target,
                 _ => null,
             };
         }
@@ -278,12 +350,18 @@ public sealed partial class DsmRepository
         }
     }
 
-    private async Task<FileCopyMoveOutcome> ReviewFileCopyMoveAsync(FileCopyMoveReview review)
+    private async Task<FileCopyMoveOutcome> ReviewFileCopyMoveAsync(FileCopyMoveReview review, CancellationToken cancellationToken, bool retainConfirmation = false)
     {
-        var confirmed = await TryReadBackFileCopyMoveAsync(review).ConfigureAwait(false);
+        if (review.RequiresTaskProof && !review.TaskFinished && review.TaskId is { } taskId)
+        {
+            review = review with { TaskFinished = await PollFileCopyMoveAsync(taskId, cancellationToken, waitForCompletion: false).ConfigureAwait(false) };
+            StoreFileCopyMoveReview(review);
+        }
+        var confirmed = review.ConfirmedItem ?? await TryReadBackFileCopyMoveAsync(review, cancellationToken).ConfigureAwait(false);
         if (confirmed is not null)
         {
-            RemoveFileCopyMoveReview(review);
+            if (retainConfirmation) StoreFileCopyMoveReview(review with { ConfirmedItem = confirmed });
+            else RemoveFileCopyMoveReview(review);
             return CopyMoveOutcome(review.Operation, MutationResultStatus.ConfirmedSuccess,
                 true, false, null, null, confirmed);
         }
@@ -295,6 +373,7 @@ public sealed partial class DsmRepository
     {
         var target = request.Target;
         return request.Operation is FileCopyMoveOperation.Copy or FileCopyMoveOperation.Move &&
+            request.ConflictPolicy is FileCopyMoveConflictPolicy.Fail or FileCopyMoveConflictPolicy.Skip or FileCopyMoveConflictPolicy.Overwrite &&
             target.ProfileId == ProfileId && ValidMutationObjectPath(target.Path) &&
             ValidMutationItemName(target.Name) && MutationParent(target.Path).Length > 0 &&
             target.Path.EndsWith("/" + target.Name, StringComparison.Ordinal) &&
@@ -389,16 +468,20 @@ public sealed partial class DsmRepository
         {
             if (state.Reviews.TryGetValue(requested.Key, out var pending))
             {
-                if (state.ActiveTargets.Overlaps(requested.Targets)) return default;
+                if (CopyMoveTargetsOverlap(state.ActiveTargets, requested.Targets)) return default;
                 state.ActiveTargets.UnionWith(requested.Targets);
                 return new(true, pending);
             }
-            if (state.Reviews.Values.Any(review => review.Targets.Overlaps(requested.Targets)) ||
-                state.ActiveTargets.Overlaps(requested.Targets)) return default;
+            if (state.Reviews.Values.Any(review => CopyMoveTargetsOverlap(review.Targets, requested.Targets)) ||
+                CopyMoveTargetsOverlap(state.ActiveTargets, requested.Targets)) return default;
             state.ActiveTargets.UnionWith(requested.Targets);
             return new(true, null);
         }
     }
+
+    private static bool CopyMoveTargetsOverlap(IEnumerable<string> left, IEnumerable<string> right) =>
+        left.Any(first => right.Any(second => first == second ||
+            first.StartsWith(second + "/", StringComparison.Ordinal) || second.StartsWith(first + "/", StringComparison.Ordinal)));
 
     private void ReleaseFileCopyMove(HashSet<string> targets)
     {
@@ -433,7 +516,7 @@ public sealed partial class DsmRepository
     }
 
     private static bool IsCopyMoveReadFailure(Exception error) =>
-        error is DsmException or JsonException or InvalidDataException or OverflowException;
+        error is DsmException or JsonException or InvalidDataException or IOException or HttpRequestException or OverflowException;
 
     private static FileCopyMoveOutcome CopyMovePermissionOutcome(string operation,
         FilePermissionTransportResult result) => CopyMoveOutcome(operation,
@@ -473,6 +556,11 @@ public sealed partial class DsmRepository
         FileCopyMoveOperation Kind,
         HashSet<string> Targets)
     {
+        public Guid Id { get; init; } = Guid.NewGuid();
+        public FileItem? ConfirmedItem { get; init; }
+        public bool RequiresTaskProof { get; init; }
+        public string? TaskId { get; init; }
+        public bool TaskFinished { get; init; }
         public string Key { get; } = $"{Operation}|{SourcePath}|{DestinationPath}";
     }
 

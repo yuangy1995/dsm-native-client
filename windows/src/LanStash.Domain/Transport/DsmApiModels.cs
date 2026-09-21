@@ -24,6 +24,8 @@ public enum DsmErrorKind
     QuickConnectRelayDisabled,
     QuickConnectRelayUnavailable,
     QuickConnectIdentityMismatch,
+    NetworkUnavailable,
+    RequestTimeout,
 }
 
 public static class UserText
@@ -69,6 +71,21 @@ public sealed class DsmReadContractUnsupportedException() :
 
 public interface IDsmApiClient
 {
+    bool CanConnectConsoleSocket => false;
+    bool CanReadConsoleAssets => false;
+    Task<VirtualMachineConsoleDocument> ReadConsoleAssetAsync(NasProfile profile, DsmSession session,
+        VirtualMachineConsolePolicy policy, Uri resource, CancellationToken cancellationToken = default) =>
+        Task.FromException<VirtualMachineConsoleDocument>(new NotSupportedException());
+    Task<System.Net.WebSockets.WebSocket> ConnectConsoleSocketAsync(NasProfile profile, DsmSession session,
+        VirtualMachineConsolePolicy policy, CancellationToken cancellationToken = default) =>
+        Task.FromException<System.Net.WebSockets.WebSocket>(new NotSupportedException());
+    bool CanReadConsoleDocument => false;
+    Task<VirtualMachineConsoleDocument> ReadConsoleDocumentAsync(NasProfile profile, DsmSession session,
+        VirtualMachineConsolePolicy policy, CancellationToken cancellationToken = default) =>
+        Task.FromException<VirtualMachineConsoleDocument>(new NotSupportedException());
+    IAsyncEnumerable<ChatRealtimeEvent> ObserveChatRealtimeAsync(NasProfile profile, DsmSession session,
+        CancellationToken cancellationToken = default) => ChatRealtimeStreams.Empty(cancellationToken);
+
     Uri GetBaseUri(NasProfile profile);
     Task<IReadOnlyDictionary<string, ApiCapability>> DiscoverAsync(
         NasProfile profile,
@@ -122,6 +139,7 @@ public interface IDsmApiClient
     /// <summary>
     /// 使用契约指定的固定版本执行只读调用，并要求 DSM 返回严格的对象型 JSON data。
     /// 旧测试替身默认不支持此窄契约，以免在未验证版本和响应形态时静默降级。
+    /// 网卡 list v2 的已记录数组变体仅规整为 interfaces 对象，不放宽其他响应。
     /// </summary>
     Task<System.Text.Json.Nodes.JsonObject> CallReadJsonObjectAsync(
         NasProfile profile,
@@ -228,6 +246,14 @@ public interface IDsmApiClient
             ErrorCategory: MutationErrorCategory.Unsupported,
             DiagnosticTag: "file.copy-move.unsupported"));
 
+    Task<FileCopyMoveStartTransportResult> StartFileCopyMoveAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        string sourcePath, string destinationDirectoryPath, bool removeSource, bool overwrite,
+        CancellationToken cancellationToken = default) => overwrite
+        ? Task.FromResult(new FileCopyMoveStartTransportResult(FileMutationTransportStatus.Unsupported,
+            ErrorCategory: MutationErrorCategory.Unsupported))
+        : StartFileCopyMoveAsync(profile, session, capability, sourcePath, destinationDirectoryPath, removeSource, cancellationToken);
+
     Task<FileCopyMoveTaskTransportResult> ReadFileCopyMoveStatusAsync(
         NasProfile profile,
         DsmSession session,
@@ -273,6 +299,15 @@ public interface IDsmApiClient
             ErrorCategory: MutationErrorCategory.Unsupported,
             DiagnosticTag: "file.archive-compression.unsupported"));
 
+    Task<FileArchiveCompressionStartTransportResult> StartFileArchiveCompressionAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability,
+        IReadOnlyList<string> sourcePaths, string destinationPath, FileArchiveCompressionOptions options,
+        CancellationToken cancellationToken = default) =>
+        options == new FileArchiveCompressionOptions()
+            ? StartFileArchiveCompressionAsync(profile, session, capability, sourcePaths, destinationPath, cancellationToken)
+            : Task.FromResult(new FileArchiveCompressionStartTransportResult(FileMutationTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported, DiagnosticTag: "file.archive-compression.options-unsupported"));
+
     Task<FileArchiveCompressionTaskTransportResult> ReadFileArchiveCompressionStatusAsync(
         NasProfile profile,
         DsmSession session,
@@ -317,6 +352,21 @@ public interface IDsmApiClient
             FileMutationTransportStatus.Unsupported,
             ErrorCategory: MutationErrorCategory.Unsupported,
             DiagnosticTag: "file.archive-extraction.unsupported"));
+
+    Task<IReadOnlyList<FileArchiveExtractionListedItem>> ListFileArchiveExtractionItemsAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability, string sourcePath,
+        FileArchiveExtractionOptions options, CancellationToken cancellationToken = default) =>
+        options == new FileArchiveExtractionOptions()
+            ? ListFileArchiveExtractionItemsAsync(profile, session, capability, sourcePath, cancellationToken)
+            : Task.FromException<IReadOnlyList<FileArchiveExtractionListedItem>>(new NotSupportedException());
+
+    Task<FileArchiveExtractionStartTransportResult> StartFileArchiveExtractionAsync(
+        NasProfile profile, DsmSession session, ApiCapability capability, string sourcePath, string destinationFolder,
+        FileArchiveExtractionOptions options, CancellationToken cancellationToken = default) =>
+        options == new FileArchiveExtractionOptions()
+            ? StartFileArchiveExtractionAsync(profile, session, capability, sourcePath, destinationFolder, cancellationToken)
+            : Task.FromResult(new FileArchiveExtractionStartTransportResult(FileMutationTransportStatus.Unsupported,
+                ErrorCategory: MutationErrorCategory.Unsupported));
 
     Task<FileArchiveExtractionTaskTransportResult> ReadFileArchiveExtractionStatusAsync(
         NasProfile profile,
@@ -382,6 +432,12 @@ public interface IDsmApiClient
         CancellationToken cancellationToken = default) =>
         Task.FromException(new NotSupportedException(
             "The API client does not implement folder archive downloads."));
+
+    Task StreamArchiveAsync(NasProfile profile, DsmSession session, ApiCapability capability, IReadOnlyList<string> remotePaths,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync,
+        CancellationToken cancellationToken = default) => remotePaths.Count == 1
+            ? StreamFolderArchiveAsync(profile, session, capability, remotePaths[0], writeChunkAsync, cancellationToken)
+            : Task.FromException(new NotSupportedException("The API client does not implement selection archive downloads."));
 
     Task<FileUploadTransportResult> UploadFileAsync(
         NasProfile profile,

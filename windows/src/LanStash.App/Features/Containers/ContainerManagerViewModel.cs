@@ -30,6 +30,8 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
     public ObservableCollection<ContainerResourceItem> Networks { get; } = [];
     public ObservableCollection<ContainerResourceItem> Projects { get; } = [];
     public ObservableCollection<ContainerEventItem> Events { get; } = [];
+    public int? TotalContainerCount => CurrentProfile?.ContainersBaseState is ContainerManagerContentState.Content or ContainerManagerContentState.Empty
+        ? CurrentProfile.Containers.Count : null;
 
     public Guid? ActiveProfileId
     {
@@ -409,7 +411,7 @@ public sealed class ContainerManagerViewModel : ObservableObject, IDisposable
 
     private bool MatchesFilter(ContainerItem item) => Filter switch
     {
-        ContainerManagerFilter.Running => item.State == ContainerOperationalState.Running,
+        ContainerManagerFilter.Running => item.State is ContainerOperationalState.Running or ContainerOperationalState.Restarting,
         ContainerManagerFilter.Stopped => item.State == ContainerOperationalState.Stopped,
         ContainerManagerFilter.Attention => item.State is ContainerOperationalState.Attention or ContainerOperationalState.Unknown,
         _ => true,

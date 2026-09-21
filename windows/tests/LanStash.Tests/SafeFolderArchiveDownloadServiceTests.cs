@@ -7,6 +7,34 @@ namespace LanStash.Tests;
 public sealed class SafeFolderArchiveDownloadServiceTests
 {
     [Fact]
+    public async Task SelectionArchivesStreamAllPathsAndCommitOnlyOnce()
+    {
+        var paths = Enumerable.Range(0, 205).Select(index => $"/share/item-{index}").ToArray();
+        var reader = new SelectionArchiveReader(); var destination = new RecordingDestination();
+        await new SafeFolderArchiveDownloadService().DownloadAsync(reader, paths, destination);
+        Assert.Equal(paths, reader.Paths); Assert.Equal(1, reader.Calls); Assert.True(destination.Committed); Assert.False(destination.Aborted);
+        Assert.True(destination.Disposed);
+    }
+
+    [Fact]
+    public async Task SelectionFailureNeverPublishesPartialArchive()
+    {
+        var reader = new SelectionArchiveReader { FailAfterChunk = true }; var destination = new RecordingDestination();
+        await Assert.ThrowsAsync<IOException>(() => new SafeFolderArchiveDownloadService().DownloadAsync(reader, new[] { "/share/a", "/share/b" }, destination));
+        Assert.False(destination.Committed); Assert.True(destination.Aborted); Assert.True(destination.Disposed); Assert.Single(destination.Writes);
+    }
+
+    private sealed class SelectionArchiveReader : IFileArchiveReader
+    {
+        public string[]? Paths; public int Calls; public bool FailAfterChunk;
+        public async Task StreamArchiveAsync(IReadOnlyList<string> paths, Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> write, CancellationToken token = default)
+        {
+            Calls++; Paths = paths.ToArray(); await write(new byte[] { 0x50, 0x4B, 0x03, 0x04 }, token);
+            if (FailAfterChunk) throw new IOException("synthetic archive interrupted");
+        }
+    }
+
+    [Fact]
     public void ArchiveValidatorAcceptsCompleteZipAndRejectsTruncation()
     {
         using var complete = new MemoryStream();

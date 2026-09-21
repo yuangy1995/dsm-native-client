@@ -177,7 +177,7 @@
 | `android-app-view-model` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModel.kt` | 16473 | 12000 |
 | `android-app-view-model-support` | `io/github/qwertyuiop1995/dsmnativeclient/AppViewModelSupport.kt` | 1699 | 1200 |
 | `android-dsm-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/DsmRepository.kt` | 14934 | 11000 |
-| `android-download-station-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2299 | 1800 |
+| `android-download-station-repository` | `io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt` | 2295 | 1800 |
 | `android-file-browser-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FileBrowserScreen.kt` | 1044 | 1000 |
 | `android-file-preview-dialog` | `io/github/qwertyuiop1995/dsmnativeclient/ui/FilePreviewDialog.kt` | 1060 | 1000 |
 | `android-nas-service-settings-screen` | `io/github/qwertyuiop1995/dsmnativeclient/ui/nas/NasServiceSettingsScreen.kt` | 1297 | 1000 |

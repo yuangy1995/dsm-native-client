@@ -583,6 +583,84 @@ public sealed class ChatBrowserViewModelTests
     }
 
     [Fact]
+    public async Task LatestRefreshPreservesEarlierHistoryCursorAndUpdatesExistingMessages()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [Message("m3", "a", 3)], "50", true));
+        repository.MessageResults.Enqueue(Page("a", [Message("m1", "a", 1), Message("m2", "a", 2)], "100", true, 50));
+        repository.MessageResults.Enqueue(Page("a", [Message("m3", "a", 3) with { Text = "updated" }, Message("m4", "a", 4)], "50", true));
+        repository.MessageResults.Enqueue(Page("a", [Message("m0", "a", 0)], null, false, 100));
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        await model.LoadEarlierAsync();
+        await model.RefreshMessagesAsync();
+        Assert.Equal(new[] { "m1", "m2", "m3", "m4" }, model.Messages.Select(item => item.Id));
+        Assert.Equal("updated", model.Messages.Single(item => item.Id == "m3").Text);
+        await model.LoadEarlierAsync();
+        Assert.Equal("100", repository.MessageRequests[^1].Cursor);
+        Assert.Equal(new[] { "m0", "m1", "m2", "m3", "m4" }, model.Messages.Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task ForegroundRefreshDoesNotCancelAnEarlierPageAlreadyLoading()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], "50", true));
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        var delayed = new TaskCompletionSource<ChatMessagePage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.MessageTasks.Enqueue(delayed.Task);
+        var earlier = model.LoadEarlierAsync();
+        await model.RefreshMessagesAsync();
+        Assert.Equal(2, repository.MessageRequests.Count);
+        delayed.SetResult(Page("a", [Message("m1", "a", 1)], null, false, 50));
+        await earlier;
+        Assert.Equal(new[] { "m1", "m2" }, model.Messages.Select(item => item.Id));
+        Assert.False(model.HasMessageError);
+    }
+
+    [Fact]
+    public async Task LatestRefreshReopensPagingWhenNewActivityExceedsThePreviouslyCompleteCache()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [Message("m1", "a", 1)], null, false));
+        repository.MessageResults.Enqueue(Page("a", [Message("m4", "a", 4)], "50", true));
+        repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2), Message("m3", "a", 3)], null, false, 50));
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        await model.RefreshMessagesAsync();
+        Assert.True(model.CanLoadEarlier);
+        Assert.Contains(model.Messages, item => item.Id == "m1");
+        await model.LoadEarlierAsync();
+        Assert.Equal(new[] { "m1", "m2", "m3", "m4" }, model.Messages.Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task LatestPageCannotClearDeleteReviewForAnOlderMessageItDidNotRead()
+    {
+        var repository = Available(Guid.NewGuid(), canDeleteOwnMessages: true);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [Message("mine", "a", 1, fromCurrentUser: true)], "50", true));
+        repository.MessageResults.Enqueue(Page("a", [Message("new", "a", 100)], "50", true));
+        repository.DeleteResults.Enqueue(new MutationResult(1, MutationResultStatus.SubmittedButUnverified,
+            "deleteOwnMessage", true, true, new MutationResultCounts(0, 0, 1)));
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        await model.DeleteOwnMessageAsync(model.Messages.Single());
+        await model.RefreshMessagesAsync();
+        Assert.True(model.Messages.Single(item => item.Id == "mine").RequiresDeleteReview);
+        Assert.True(model.HasMessageDeleteReview);
+        Assert.Single(repository.DeleteRequests);
+    }
+
+    [Fact]
     public async Task ConversationBecomingEncryptedPurgesItsCachedMessages()
     {
         var repository = Available(Guid.NewGuid());
@@ -607,6 +685,149 @@ public sealed class ChatBrowserViewModelTests
 
         Assert.Equal("fresh", Assert.Single(model.Messages).Id);
         Assert.Equal(2, repository.MessageRequests.Count);
+    }
+
+    [Fact]
+    public async Task SuccessfulVisibleReadClearsUnreadButLaterActivityWaitsForTheNextMessageRead()
+    {
+        var repository = Available(Guid.NewGuid());
+        var conversation = Conversation("a", "Alpha") with { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(2), UnreadCount = 4 };
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation with { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(3), UnreadCount = 5 }]);
+        repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], "50", true));
+        repository.MessageResults.Enqueue(Page("a", [Message("m3", "a", 3)], "50", true));
+        using var model = new ChatBrowserViewModel();
+        model.SetMessagePaneVisible(true);
+        await model.ActivateAsync(repository);
+        Assert.Equal(4, model.Conversations.Single().UnreadCount);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        Assert.Equal(0, model.Conversations.Single().UnreadCount);
+        await model.RefreshConversationsAsync();
+        Assert.Equal(0, model.Conversations.Single().UnreadCount);
+        await model.RefreshConversationsAsync();
+        Assert.Equal(5, model.Conversations.Single().UnreadCount);
+        await model.RefreshMessagesAsync();
+        Assert.Equal(0, model.Conversations.Single().UnreadCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task HiddenOrFailedReadDoesNotClearUnread(bool failure)
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha") with
+            { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(2), UnreadCount = 4 }]);
+        repository.MessageResults.Enqueue(failure ? new IOException("synthetic") : Page("a", [Message("m2", "a", 2)], null, false));
+        using var model = new ChatBrowserViewModel();
+        model.SetMessagePaneVisible(failure);
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        Assert.Equal(4, model.Conversations.Single().UnreadCount);
+        if (!failure)
+        {
+            model.SetMessagePaneVisible(true);
+            Assert.Equal(0, model.Conversations.Single().UnreadCount);
+        }
+    }
+
+    [Fact]
+    public async Task CancelledMessageResponseCannotMarkTheConversationRead()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha") with
+            { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(2), UnreadCount = 4 }]);
+        var delayed = new TaskCompletionSource<ChatMessagePage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.MessageTasks.Enqueue(delayed.Task);
+        using var model = new ChatBrowserViewModel();
+        model.SetMessagePaneVisible(true);
+        await model.ActivateAsync(repository);
+        var loading = model.SelectConversationAsync(model.Conversations.Single());
+        model.CancelForegroundRefreshes();
+        delayed.SetResult(Page("a", [Message("m2", "a", 2)], null, false));
+        await loading;
+        Assert.Equal(4, model.Conversations.Single().UnreadCount);
+        Assert.Empty(model.Messages);
+    }
+
+    [Fact]
+    public async Task EarlierHistoryDoesNotAcknowledgeNewerUnreadActivity()
+    {
+        var repository = Available(Guid.NewGuid());
+        var conversation = Conversation("a", "Alpha") with { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(2), UnreadCount = 4 };
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation with { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(3), UnreadCount = 5 }]);
+        repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], "50", true));
+        repository.MessageResults.Enqueue(Page("a", [Message("m1", "a", 1)], null, false, 50));
+        using var model = new ChatBrowserViewModel();
+        model.SetMessagePaneVisible(true);
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        await model.RefreshConversationsAsync();
+        await model.LoadEarlierAsync();
+        model.SetMessagePaneVisible(true);
+        Assert.Equal(5, model.Conversations.Single().UnreadCount);
+    }
+
+    [Fact]
+    public async Task ReadStateIsIsolatedByProfileAndDiscardedWhenTheConversationDisappears()
+    {
+        var first = Available(Guid.NewGuid());
+        var second = Available(Guid.NewGuid());
+        var conversation = Conversation("a", "Alpha") with { LastActivityAt = DateTimeOffset.UnixEpoch.AddMinutes(2), UnreadCount = 4 };
+        first.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
+        first.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[]);
+        first.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
+        second.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[conversation]);
+        first.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], null, false));
+        using var model = new ChatBrowserViewModel();
+        model.SetMessagePaneVisible(true);
+        await model.ActivateAsync(first);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        await model.ActivateAsync(second);
+        Assert.Equal(4, model.Conversations.Single().UnreadCount);
+        await model.ActivateAsync(first);
+        await model.RefreshConversationsAsync();
+        await model.RefreshConversationsAsync();
+        Assert.Equal(4, model.Conversations.Single().UnreadCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EncryptedOrUnknownActivityDoesNotGetAnInventedReadBoundary(bool encrypted)
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha", encrypted: encrypted) with
+            { LastActivityAt = null, UnreadCount = 4 }]);
+        repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], null, false));
+        using var model = new ChatBrowserViewModel();
+        model.SetMessagePaneVisible(true);
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        Assert.Equal(4, model.Conversations.Single().UnreadCount);
+        if (encrypted) Assert.Empty(repository.MessageRequests);
+    }
+
+    [Fact]
+    public async Task BackgroundRefreshUpdatesCollectionsWithoutResettingTheirScrollAnchors()
+    {
+        var repository = Available(Guid.NewGuid());
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha")]);
+        repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2)], "50", true));
+        repository.MessageResults.Enqueue(Page("a", [Message("m2", "a", 2), Message("m3", "a", 3)], "50", true));
+        using var model = new ChatBrowserViewModel();
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single());
+        var resets = 0;
+        model.Messages.CollectionChanged += (_, args) => { if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++; };
+        model.Conversations.CollectionChanged += (_, args) => { if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++; };
+        await model.RefreshConversationsAsync();
+        await model.RefreshMessagesAsync();
+        Assert.Equal(0, resets);
+        Assert.Equal(new[] { "m2", "m3" }, model.Messages.Select(item => item.Id));
     }
 
     [Fact]
@@ -665,6 +886,26 @@ public sealed class ChatBrowserViewModelTests
         Assert.Single(repository.DeleteRequests);
         Assert.False(model.HasMessageDeleteError);
         Assert.False(model.HasMessageDeleteReview);
+    }
+
+    [Fact]
+    public async Task ConfirmedBatchDeletesRemoveHistoricalRowsAndClosedConversationPinsWithoutDependingOnRefresh()
+    {
+        var repository = Available(Guid.NewGuid(), canDeleteOwnMessages: true);
+        repository.ConversationResults.Enqueue((IReadOnlyList<ChatConversation>)[Conversation("a", "Alpha"), Conversation("b", "Beta")]);
+        repository.MessageResults.Enqueue(Page("a", [Message("old", "a", 1, fromCurrentUser: true), Message("keep", "a", 2)], "50", true));
+        var pins = new MemoryPinStore(); pins.Saved[repository.ProfileId] = ["a", "b"];
+        using var model = new ChatBrowserViewModel(50, pins);
+        await model.ActivateAsync(repository);
+        await model.SelectConversationAsync(model.Conversations.Single(item => item.Id == "a"));
+        await model.ApplyConfirmedChatActionsAsync(Guid.NewGuid(), "a", new HashSet<string> { "old" }, new HashSet<string> { "a" });
+        Assert.Equal(2, model.Messages.Count);
+        await model.ApplyConfirmedChatActionsAsync(repository.ProfileId, "a", new HashSet<string> { "old" }, new HashSet<string>());
+        Assert.Equal("keep", Assert.Single(model.Messages).Id);
+        await model.ApplyConfirmedChatActionsAsync(repository.ProfileId, "a", new HashSet<string>(), new HashSet<string> { "a" });
+        Assert.DoesNotContain(model.Conversations, item => item.Id == "a");
+        Assert.Equal("b", Assert.Single(pins.Saved[repository.ProfileId]));
+        Assert.Empty(repository.DeleteRequests);
     }
 
     [Fact]

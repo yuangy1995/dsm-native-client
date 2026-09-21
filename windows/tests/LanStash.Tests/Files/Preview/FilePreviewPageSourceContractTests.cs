@@ -145,7 +145,7 @@ public sealed class FilePreviewPageSourceContractTests
         Assert.Contains("x:Name=\"BrowserColumn\"", xaml);
         Assert.Contains("x:Name=\"PreviewColumn\"", xaml);
         Assert.Contains(
-            "ActualWidth >= (_locationsAreWide == true ? 1280 : 1000)",
+            "ActualWidth >= (LocationsSplitView.IsPaneOpen && _locationsAreWide == true ? 1280 : 1000)",
             source);
         Assert.Contains("BrowserSurface.Visibility = isOpen && !isWide", source);
         Assert.Contains("OpenPreviewAsync(entry)", source);

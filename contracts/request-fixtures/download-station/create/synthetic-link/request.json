@@ -6,8 +6,8 @@
   "api": {
     "name": "SYNO.DownloadStation.Task",
     "method": "create",
-    "preferredVersion": 1,
-    "resolvedVersion": 1,
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
     "resolvedPath": "entry.cgi"
   },
   "transport": {

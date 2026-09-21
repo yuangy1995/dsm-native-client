@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-09-15 -->
+<!-- last-reviewed: 2026-09-20 -->
 
 # iPhone 与 iPad 移动精选功能长期计划
 
@@ -79,6 +79,12 @@ apple/Apps/DsmMac/            只读 macOS 参考实现
 - 真实 Chat Server、选择器、大附件、系统权限和无障碍行为均后置给用户验证。
 
 ### M4：只读管理与发布收口
+
+2026-09-20 VMM 同类读取语义修正：原来把 autorun 作为开关，会混淆恢复原状态与
+开机。共享启动策略和 iPhone/iPad 详情改为三态/未知投影，继续原生 LabeledContent；
+七字段隐私白名单将 autoStart 布尔替换为 startupBehavior，不新增身份、事件或写
+方法。Mac 对应源码修复与官方只读证据见 Windows 持续账本和 VMM 发现记录。两种
+设备范围相同，不引入桌面创建/编辑/控制台；共享、Mac 与移动回归待 Apple 工具链。
 
 - Download Station、NAS、Container 和 VMM 保持当前受限只读摘要；新增写能力需要独立
   契约、安全和验收切片。

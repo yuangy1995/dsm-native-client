@@ -7,7 +7,8 @@ namespace LanStash.App;
 internal sealed class TrayIcon : IDisposable
 {
     private const uint CallbackMessage = 0x8001;
-    private const uint WindowCommandMessage = 0x0111;
+    private const uint SelectMessage = 0x0400;
+    private const uint KeySelectMessage = 0x0401;
     private const uint LeftButtonUpMessage = 0x0202;
     private const uint LeftButtonDoubleClickMessage = 0x0203;
     private const uint RightButtonUpMessage = 0x0205;
@@ -28,12 +29,17 @@ internal sealed class TrayIcon : IDisposable
     private readonly Func<bool> _allMappingsPaused;
     private readonly Func<int> _issueCount;
     private readonly WindowProcedure _windowProcedure;
+    private readonly NotifyIcon _notifyIcon;
+    private readonly uint _taskbarCreatedMessage;
     private nint _previousWindowProcedure;
     private string _openText;
     private string _pauseText;
     private string _resumeText;
     private string _issuesText;
     private string _exitText;
+    private string _tooltip;
+    private bool _usesVersion4;
+    private bool _registered;
     private bool _disposed;
 
     public TrayIcon(
@@ -51,13 +57,15 @@ internal sealed class TrayIcon : IDisposable
         Action showWindow,
         Action toggleMappings,
         Action showIssues,
-        Action exitApplication)
+        Action exitApplication,
+        NotifyIcon? notifyIcon = null)
     {
         _windowHandle = windowHandle;
         _showWindow = showWindow;
         _toggleMappings = toggleMappings;
         _showIssues = showIssues;
         _exitApplication = exitApplication;
+        _notifyIcon = notifyIcon ?? ShellNotifyIcon;
         _mappingCount = mappingCount;
         _allMappingsPaused = allMappingsPaused;
         _issueCount = issueCount;
@@ -66,6 +74,9 @@ internal sealed class TrayIcon : IDisposable
         _resumeText = resumeText;
         _issuesText = issuesText;
         _exitText = exitText;
+        _tooltip = tooltip;
+        _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
+        if (_taskbarCreatedMessage == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
         _windowProcedure = HandleWindowMessage;
         Marshal.SetLastPInvokeError(0);
         _previousWindowProcedure = SetWindowLongPtr(
@@ -91,15 +102,23 @@ internal sealed class TrayIcon : IDisposable
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
 
-        var data = CreateData(tooltip);
-        if (!ShellNotifyIcon(0, ref data))
+        // Shell 暂时不可用不阻止主窗口启动；关闭时必须仍保留可达入口。
+        EnsureRegistered();
+    }
+
+    internal bool EnsureRegistered()
+    {
+        if (_disposed) return false;
+        if (_registered) return true;
+        var data = CreateData(_tooltip);
+        _registered = _notifyIcon(0, ref data);
+        _usesVersion4 = false;
+        if (_registered)
         {
-            DestroyIcon(_iconHandle);
-            RestoreWindowProcedure();
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+            data.TimeoutOrVersion = 4;
+            _usesVersion4 = _notifyIcon(4, ref data);
         }
-        data.TimeoutOrVersion = 4;
-        _ = ShellNotifyIcon(4, ref data);
+        return _registered;
     }
 
     public void UpdateText(
@@ -110,13 +129,16 @@ internal sealed class TrayIcon : IDisposable
         string issuesText,
         string exitText)
     {
+        if (_disposed) return;
+        _tooltip = tooltip;
         _openText = openText;
         _pauseText = pauseText;
         _resumeText = resumeText;
         _issuesText = issuesText;
         _exitText = exitText;
         var data = CreateData(tooltip);
-        _ = ShellNotifyIcon(1, ref data);
+        _registered = _notifyIcon(1, ref data);
+        if (!_registered && !EnsureRegistered()) _showWindow();
     }
 
     public void Dispose()
@@ -126,8 +148,9 @@ internal sealed class TrayIcon : IDisposable
             return;
         }
         _disposed = true;
+        _registered = false;
         var data = CreateData(string.Empty);
-        _ = ShellNotifyIcon(2, ref data);
+        _ = _notifyIcon(2, ref data);
         if (_iconHandle != 0)
         {
             DestroyIcon(_iconHandle);
@@ -142,7 +165,7 @@ internal sealed class TrayIcon : IDisposable
             Size = (uint)Marshal.SizeOf<NotificationIconData>(),
             WindowHandle = _windowHandle,
             Id = 1,
-            Flags = 0x0001 | 0x0002 | 0x0004,
+            Flags = 0x0001 | 0x0002 | 0x0004 | 0x0080,
             CallbackMessage = CallbackMessage,
             IconHandle = _iconHandle,
             Tooltip = tooltip.Length > 127 ? tooltip[..127] : tooltip,
@@ -156,10 +179,19 @@ internal sealed class TrayIcon : IDisposable
         nint wordParameter,
         nint longParameter)
     {
-        if (message == CallbackMessage)
+        if (!_disposed && message == _taskbarCreatedMessage)
+        {
+            _registered = false;
+            // 广播也可能来自主显示器 DPI 变化；已有图标先尝试更新，缺失时重新添加。
+            var data = CreateData(_tooltip);
+            _registered = _notifyIcon(1, ref data);
+            if (!_registered && !EnsureRegistered()) _showWindow();
+        }
+        else if (!_disposed && message == CallbackMessage &&
+            (_usesVersion4 ? unchecked((uint)(longParameter.ToInt64() >> 16)) & 0xFFFF : unchecked((uint)wordParameter.ToInt64())) == 1)
         {
             var mouseMessage = unchecked((uint)(longParameter.ToInt64() & 0xFFFF));
-            if (mouseMessage is LeftButtonUpMessage or LeftButtonDoubleClickMessage)
+            if (mouseMessage is LeftButtonUpMessage or LeftButtonDoubleClickMessage or SelectMessage or KeySelectMessage)
             {
                 _showWindow();
                 return 0;
@@ -170,11 +202,7 @@ internal sealed class TrayIcon : IDisposable
                 return 0;
             }
         }
-        else if (message == WindowCommandMessage)
-        {
-            HandleCommand(unchecked((int)(wordParameter.ToInt64() & 0xFFFF)));
-            return 0;
-        }
+        // 本菜单使用 TPM_RETURNCMD；其他窗口控件的 WM_COMMAND 不属于托盘。
         return CallWindowProc(
             _previousWindowProcedure,
             windowHandle,
@@ -230,16 +258,17 @@ internal sealed class TrayIcon : IDisposable
 
     private void HandleCommand(int command)
     {
+        if (_disposed) return;
         switch (command)
         {
             case OpenCommand:
                 _showWindow();
                 break;
             case ToggleMappingsCommand:
-                _toggleMappings();
+                if (_mappingCount() > 0) _toggleMappings();
                 break;
             case ShowIssuesCommand:
-                _showIssues();
+                if (_issueCount() > 0) _showIssues();
                 break;
             case ExitCommand:
                 _exitApplication();
@@ -261,7 +290,7 @@ internal sealed class TrayIcon : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct NotificationIconData
+    internal struct NotificationIconData
     {
         public uint Size;
         public nint WindowHandle;
@@ -302,11 +331,16 @@ internal sealed class TrayIcon : IDisposable
         nint wordParameter,
         nint longParameter);
 
+    internal delegate bool NotifyIcon(uint message, ref NotificationIconData data);
+
     [DllImport("shell32.dll", EntryPoint = "Shell_NotifyIconW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShellNotifyIcon(
         uint message,
         ref NotificationIconData data);
+
+    [DllImport("user32.dll", EntryPoint = "RegisterWindowMessageW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint RegisterWindowMessage(string message);
 
     [DllImport("user32.dll", EntryPoint = "LoadImageW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint LoadImage(

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.mount-nfs.synthetic-location",
+  "module": "file-station",
+  "operation": "mountRemote",
+  "api": {
+    "name": "SYNO.FileStation.Mount",
+    "method": "mount_remote",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "mount_type",
+      "valueType": "string",
+      "encodedValue": "NFS"
+    },
+    {
+      "name": "server_ip",
+      "valueType": "string",
+      "encodedValue": "server.invalid:/share/folder"
+    },
+    {
+      "name": "mount_point",
+      "valueType": "string",
+      "encodedValue": "<synthetic-mount-point>"
+    },
+    {
+      "name": "user_set",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "auto_mount",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "nfs_version",
+      "valueType": "string",
+      "encodedValue": "3"
+    },
+    {
+      "name": "protocol",
+      "valueType": "string",
+      "encodedValue": "tcp"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

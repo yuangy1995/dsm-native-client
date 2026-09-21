@@ -15,11 +15,13 @@
     "requestFormat": "form"
   },
   "parameters": [
+    { "name": "force", "valueType": "boolean", "encodedValue": "false" },
     {
-      "name": "id",
+      "name": "name",
       "valueType": "string",
       "encodedValue": "<synthetic-container>"
-    }
+    },
+    { "name": "preserve_profile", "valueType": "boolean", "encodedValue": "false" }
   ],
   "authentication": {
     "required": true,

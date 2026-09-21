@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "vmm.update-guest.synthetic-startup-priority",
+  "module": "vmm",
+  "operation": "updateGuest",
+  "api": {
+    "name": "SYNO.Virtualization.Guest",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": { "httpMethod": "POST", "requestFormat": "json" },
+  "parameters": [
+    { "name": "guest_id", "valueType": "string", "encodedValue": "\"<synthetic-virtual-machine>\"" },
+    { "name": "synovmm_ui_id", "valueType": "string", "encodedValue": "\"<synthetic-ui-request>\"" },
+    { "name": "cpu_weight", "valueType": "integer", "encodedValue": "1024" },
+    { "name": "autorun", "valueType": "integer", "encodedValue": "2" }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": ["cookie", "form"],
+    "synoTokenLocations": ["header", "form"]
+  },
+  "policy": { "retryPolicy": "queryStateBeforeDecision", "risk": "highRisk", "readbackPolicy": "required" },
+  "source": { "kind": "synthetic", "evidence": "sourceReviewed" }
+}

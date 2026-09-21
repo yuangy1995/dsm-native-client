@@ -152,6 +152,7 @@ public sealed partial class ChatPage
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
+                RequestedTheme = ActualTheme,
                 Title = LocalizationService.Current.Get("ChatAttachmentPreviewTitle"),
                 CloseButtonText = LocalizationService.Current.Get("ChatAttachmentClose"),
                 Content = preview,

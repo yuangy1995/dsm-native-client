@@ -1,0 +1,20 @@
+<UserControl x:Class="LanStash.App.Views.NasZramDialogContent"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <ScrollViewer MaxHeight="550" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel MinWidth="340" MaxWidth="520" Spacing="16">
+   <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" Visibility="Collapsed"/>
+   <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
+   <TextBlock x:Name="UnsupportedNotice" x:Uid="NasZramUnavailable" Visibility="Collapsed" TextWrapping="Wrap"/>
+   <TextBlock x:Uid="NasZramReadOnly" TextWrapping="Wrap"/>
+   <TextBlock x:Name="EmptyNotice" x:Uid="NasZramEmpty" Visibility="Collapsed" TextWrapping="Wrap"/>
+   <StackPanel x:Name="ContentPanel" Spacing="14" Visibility="Collapsed">
+    <TextBlock x:Uid="NasZramStatusTitle" FontWeight="SemiBold"/>
+    <TextBlock x:Name="StatusText" TextWrapping="Wrap"/>
+    <TextBlock x:Uid="NasZramCapacityTitle" FontWeight="SemiBold"/>
+    <TextBlock x:Name="CapacityText" TextWrapping="Wrap"/>
+    <TextBlock x:Uid="NasZramAlgorithmTitle" FontWeight="SemiBold"/>
+    <TextBlock x:Name="AlgorithmText" TextWrapping="Wrap"/>
+   </StackPanel>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

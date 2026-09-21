@@ -78,11 +78,13 @@ public sealed partial class DownloadStationViewModel
             ? destination
             : LocalizationService.Current.Get("DownloadStationCreateDefaultDestination");
 
-    public async Task CreateTaskAsync(string? uri)
+    public Task CreateTaskAsync(string? uri) => CreateTaskAsync(uri, null);
+
+    public async Task CreateTaskAsync(string? uri, string? destination)
     {
         ThrowIfDisposed();
         var trimmedUri = uri?.Trim() ?? string.Empty;
-        if (trimmedUri.Length == 0 ||
+        if (IsCreatingTask || trimmedUri.Length == 0 ||
             _repository is not { Availability.Status: DownloadStationAvailabilityStatus.Available } repository ||
             CurrentProfile is not { } profile)
         {
@@ -101,7 +103,7 @@ public sealed partial class DownloadStationViewModel
                 new DownloadTaskCreateRequest(
                     repository.ProfileId,
                     trimmedUri,
-                    DestinationForCreate(profile)),
+                    destination),
                 request.Cancellation.Token);
             if (!IsCurrentCreate(request.Generation, repository))
             {
@@ -136,10 +138,12 @@ public sealed partial class DownloadStationViewModel
         }
     }
 
-    public async Task CreateTaskFromFileAsync(string? filePath)
+    public Task CreateTaskFromFileAsync(string? filePath) => CreateTaskFromFileAsync(filePath, null, null);
+
+    public async Task CreateTaskFromFileAsync(string? filePath, string? destination, string? unzipPassword)
     {
         ThrowIfDisposed();
-        if (string.IsNullOrWhiteSpace(filePath) ||
+        if (IsCreatingTask || string.IsNullOrWhiteSpace(filePath) ||
             _repository is not { Availability.Status: DownloadStationAvailabilityStatus.Available } repository ||
             CurrentProfile is not { } profile)
         {
@@ -162,7 +166,7 @@ public sealed partial class DownloadStationViewModel
                     stream,
                     fileInfo.Length,
                     fileInfo.Name,
-                    DestinationForCreate(profile)),
+                    destination, unzipPassword),
                 request.Cancellation.Token);
             if (!IsCurrentCreate(request.Generation, repository))
             {

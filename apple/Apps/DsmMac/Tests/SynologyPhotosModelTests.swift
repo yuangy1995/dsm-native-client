@@ -205,6 +205,38 @@ final class SynologyPhotosModelTests: XCTestCase {
         XCTAssertEqual(count, 2)
     }
 
+    func test保存先写临时副本且面板确认后可替换已有文件() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("photo.jpg")
+        try Data("old".utf8).write(to: destination)
+        let expected = Data(repeating: 0x7f, count: 128)
+        let repository = PhotoServiceStub(pages: [], saveData: expected)
+        let model = SynologyPhotosModel(repository: repository)
+        model.save(Self.photo, to: destination)
+        for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(try Data(contentsOf: destination), expected)
+        let requested = await repository.savedURLs
+        XCTAssertEqual(requested.count, 1)
+        XCTAssertNotEqual(requested.first, destination)
+        XCTAssertEqual(requested.first?.deletingLastPathComponent().standardizedFileURL, FileManager.default.temporaryDirectory.standardizedFileURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(requested.first).path))
+    }
+
+    func test照片下载失败不覆盖用户原文件() async throws {
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        try Data("old".utf8).write(to: destination)
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let repository = PhotoServiceStub(pages: [])
+        let model = SynologyPhotosModel(repository: repository)
+        model.save(Self.photo, to: destination)
+        for _ in 0..<200 where model.isSaving { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(try Data(contentsOf: destination), Data("old".utf8))
+    }
+
     private static let photo = SynologyPhoto(
         id: SynologyPhotoID(profileID: UUID(), space: .personal, unitID: 7),
         filename: "sample.jpg", sizeBytes: 128,
@@ -259,6 +291,8 @@ private actor DatePhotoServiceStub: SynologyPhotosServing {
 }
 
 private actor PhotoServiceStub: SynologyPhotosServing {
+    private let saveData: Data?
+    var savedURLs: [URL] = []
     var pageRequestCount = 0
     var requestedOffsets: [Int] = []
     var requestedQueries: [SynologyPhotoQuery] = []
@@ -272,12 +306,14 @@ private actor PhotoServiceStub: SynologyPhotosServing {
     init(
         pages: [[SynologyPhoto]], holdsFirstPage: Bool = false,
         days: [SynologyPhotoDay] = [SynologyPhotoDay(year: 2020, month: 1, day: 1, itemCount: 1)],
-        failsFirstAccess: Bool = false
+        failsFirstAccess: Bool = false,
+        saveData: Data? = nil
     ) {
         self.pages = pages
         self.holdsFirstPage = holdsFirstPage
         self.days = days
         self.failsFirstAccess = failsFirstAccess
+        self.saveData = saveData
     }
 
     func access() async throws -> SynologyPhotosAccess {
@@ -319,6 +355,13 @@ private actor PhotoServiceStub: SynologyPhotosServing {
     }
 
     func holdNextPage() { holdsFirstPage = true }
+
+    func downloadOriginal(_ photo: SynologyPhoto, to destination: URL, progress: @escaping FileTransferProgress) async throws {
+        savedURLs.append(destination)
+        guard let saveData else { throw URLError(.networkConnectionLost) }
+        try saveData.write(to: destination)
+        progress(Int64(saveData.count), Int64(saveData.count))
+    }
 
     func releasePage(_ items: [SynologyPhoto]) {
         held?.resume(returning: items)

@@ -5,6 +5,14 @@ public interface IChatRepository
     Guid ProfileId { get; }
     ChatAvailability Availability { get; }
 
+    /// <summary>旧提供者默认不提供实时流，调用方继续轮询；取消枚举须释放连接。</summary>
+    IAsyncEnumerable<ChatRealtimeEvent> ObserveRealtimeAsync(CancellationToken cancellationToken = default) =>
+        ChatRealtimeStreams.Empty(cancellationToken);
+
+    /// <summary>只读核对高级功能所需环境；不修改服务器配置，不开启未验证的版本。</summary>
+    Task<ChatAvailability> PrepareAdvancedFeaturesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(Availability);
+
     Task<IReadOnlyList<ChatUser>> ListUsersAsync(
         CancellationToken cancellationToken = default);
 
@@ -26,6 +34,10 @@ public interface IChatRepository
         string? beforeCursor,
         int limit,
         CancellationToken cancellationToken = default);
+
+    /// <summary>按现有历史分页读取指定消息，供确认前刷新；不代表新增 NAS get 接口。</summary>
+    Task<ChatMessage> GetMessageAsync(string conversationId, string messageId, CancellationToken cancellationToken = default) =>
+        Task.FromException<ChatMessage>(new NotSupportedException("Chat message lookup is not implemented."));
 
     Task<ChatTextSendOutcome> SendTextAsync(
         ChatTextSendRequest request,
@@ -146,6 +158,11 @@ public interface IChatRepository
             MutationErrorCategory.Unsupported,
             diagnosticTag: "chat.deleteReminder"));
 
+    /// <summary>带确认时的提醒基线；新实现须在提交前核对该基线。</summary>
+    Task<MutationResult> DeleteReminderAsync(ChatReminder expected, Guid clientRequestId,
+        CancellationToken cancellationToken = default) =>
+        DeleteReminderAsync(expected.MessageId, expected.ConversationId, clientRequestId, cancellationToken);
+
     // ── 定时消息 ──
 
     Task<ChatScheduledMessageCreateOutcome> CreateScheduledMessageAsync(
@@ -175,6 +192,11 @@ public interface IChatRepository
             MutationErrorCategory.Unsupported,
             diagnosticTag: "chat.deleteScheduledMessage"));
 
+    /// <summary>带确认时的消息内容和时间基线，避免取消已被其他客户端修改的定时消息。</summary>
+    Task<MutationResult> DeleteScheduledMessageAsync(ChatScheduledMessage expected, Guid clientRequestId,
+        CancellationToken cancellationToken = default) =>
+        DeleteScheduledMessageAsync(expected.Id, expected.ConversationId, clientRequestId, cancellationToken);
+
     // ── 投票 ──
 
     Task<ChatPollCreateOutcome> CreatePollAsync(
@@ -188,6 +210,10 @@ public interface IChatRepository
             draft.ClientRequestId, ConfirmedMessage: null));
 
     // ── 消息转发 ──
+
+    Task<MutationResult> SetMessagePinnedAsync(ChatPinMessageRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new MutationResult(1, MutationResultStatus.Unsupported, "setMessagePinned", false, false,
+            new MutationResultCounts(0, 1, 0), MutationErrorCategory.Unsupported, diagnosticTag: "chat.pin.unsupported"));
 
     Task<MutationResult> ForwardMessageAsync(
         ChatForwardRequest request,

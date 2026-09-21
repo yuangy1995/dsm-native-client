@@ -304,6 +304,8 @@ class DsmApiClient(
         openInputStream: () -> InputStream,
     ): JsonObject = withContext(Dispatchers.IO) {
         require(contentLength in 0..MAX_DOWNLOAD_TASK_FILE_BYTES)
+        val version = if (destination.isNullOrBlank()) 1 else 2
+        if (version !in capability.minVersion..capability.maxVersion) throw mapFailure(103)
         val safeFilename = filename.replace(Regex("[\\r\\n\"]"), "_")
         val multipart = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -338,7 +340,7 @@ class DsmApiClient(
         }
         val url = "${endpoint(profile)}$path".toHttpUrl().newBuilder()
             .addQueryParameter("api", capability.name)
-            .addQueryParameter("version", capability.maxVersion.toString())
+            .addQueryParameter("version", version.toString())
             .addQueryParameter("method", "create")
             .build()
         val request = Request.Builder()

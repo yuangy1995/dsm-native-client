@@ -28,28 +28,41 @@ extension DsmNasAdministrationRepository {
             ]
         )
 
+        // 写后回读也使用此列表；畸形/截断目录不能被解释为目标已经卸载。
+        guard let rows = value["packages"]?.array, rows.count < 1_000 else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+        var seenIDs: Set<String> = []
         var metadata: [String: PackageControlMetadata] = [:]
-        var packages = value.objects("packages").compactMap { raw -> NasPackage? in
+        var packages = try rows.map { entry -> NasPackage in
+            guard let raw = entry.object, case .string(let id)? = raw["id"],
+                  !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+                  seenIDs.insert(id).inserted else {
+                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            }
             let item = DsmDynamicJSON.object(raw)
-            guard let id = item.string(["id", "name"]) else { return nil }
             let additional = item["additional"] ?? .object([:])
             let rawStatus = additional.string(["status", "status_code"])
             let rawOrigin = additional.string(["status_origin"])
             let rawDesc = additional.string(["status_description"])
-            let isRunning = (rawStatus?.lowercased() == "running" || rawStatus?.lowercased() == "active" || rawOrigin?.lowercased().contains("active") == true)
-            let startable = additional.boolean(["startable"]) ?? true
+            let isRunning = rawStatus?.lowercased() == "running" || rawStatus?.lowercased() == "active"
+            let isStopped = rawStatus?.lowercased() == "stopped" || rawStatus?.lowercased() == "inactive"
+            let startable: Bool
+            if case .boolean(let flag)? = additional["startable"] { startable = flag } else { startable = false }
             let installType = additional.string(["install_type"])
             let availableOperations = Set(additional.strings(["available_operation"]).map {
                 $0.lowercased()
             })
-            let hasOperationList = !availableOperations.isEmpty
-            let canStart = startable && !isRunning
-                && (!hasOperationList || availableOperations.contains("start"))
+            let canStart = startable && isStopped && availableOperations.contains("start")
             let canStop = startable && isRunning
-                && (!hasOperationList || availableOperations.contains("stop"))
-            let canUninstall = installType?.lowercased() != "system"
-                && (additional.boolean(["ctl_uninstall"]) ?? true)
-                && (!hasOperationList || availableOperations.contains("uninstall"))
+                && availableOperations.contains("stop")
+            let uninstallAllowed: Bool?
+            if case .boolean(let flag)? = additional["ctl_uninstall"] { uninstallAllowed = flag }
+            else { uninstallAllowed = additional["ctl_uninstall"] == nil ? nil : false }
+            let canUninstall = installType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false && installType?.lowercased() != "system"
+                && uninstallAllowed != false
+                && (uninstallAllowed == true || availableOperations.contains("uninstall"))
             let isUpgradeAvailable = availableOperations.contains("upgrade")
 
             metadata[id] = PackageControlMetadata(

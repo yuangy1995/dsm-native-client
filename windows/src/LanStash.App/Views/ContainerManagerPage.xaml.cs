@@ -27,9 +27,9 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(viewModel);
-        InitializeComponent();
         _repository = repository;
         _viewModel = viewModel;
+        InitializeComponent();
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += ContainerManagerPage_Loaded;
@@ -54,10 +54,16 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.RefreshAsync);
 
+    private void OverviewCard_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string tag } && int.TryParse(tag, out var index))
+            SectionPivot.SelectedIndex = index;
+    }
+
     private void FilterPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updatingFilter ||
-            FilterPicker.SelectedItem is not ComboBoxItem { Tag: string tag } ||
+            sender is not ComboBox { SelectedItem: ComboBoxItem { Tag: string tag } } ||
             !Enum.TryParse<ContainerManagerFilter>(tag, out var filter))
         {
             return;
@@ -127,6 +133,14 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         {
             return;
         }
+        CreateNetworkButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect &&
+            _repository.ProfileId == _viewModel.ActiveProfileId && _repository.Availability.Features.Contains(ContainerManagerReadFeature.Networks);
+        ManageContainersButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect &&
+            _repository.ProfileId == _viewModel.ActiveProfileId && _repository.Availability.Features.Contains(ContainerManagerReadFeature.Containers);
+        DeleteNetworksButton.IsEnabled = CreateNetworkButton.IsEnabled;
+        DeleteImagesButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect &&
+            _repository.ProfileId == _viewModel.ActiveProfileId && _repository.Availability.Features.Contains(ContainerManagerReadFeature.Images);
+        BrowseRegistryButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect && _repository.ProfileId == _viewModel.ActiveProfileId;
         LoadingState.Visibility = Visible(
             _viewModel.ContentState == ContainerManagerContentState.Loading);
         EmptyState.Visibility = Visible(_viewModel.IsEmpty);
@@ -146,6 +160,14 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
         NoSelectionState.Visibility = Visible(!_viewModel.HasSelection);
         DetailState.Visibility = Visible(_viewModel.HasSelection);
         SyncFilterPicker();
+        string Count(int? value) => value?.ToString("N0", System.Globalization.CultureInfo.CurrentCulture)
+            ?? Localization.LocalizationService.Current.Get("UnknownValue");
+        int? AvailableCount(ContainerManagerContentState state, int count) =>
+            state is ContainerManagerContentState.Content or ContainerManagerContentState.Empty ? count : null;
+        OverviewContainersCount.Text = Count(_viewModel.TotalContainerCount);
+        OverviewImagesCount.Text = Count(AvailableCount(_viewModel.ImagesState, _viewModel.Images.Count));
+        OverviewNetworksCount.Text = Count(AvailableCount(_viewModel.NetworksState, _viewModel.Networks.Count));
+        OverviewProjectsCount.Text = Count(AvailableCount(_viewModel.ProjectsState, _viewModel.Projects.Count));
         UpdateAdaptiveLayout();
     }
 
@@ -215,6 +237,11 @@ public sealed partial class ContainerManagerPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        CloseNetworkCreation();
+        CloseNetworkDeletion();
+        CloseImageDeletion();
+        CloseContainerMutations();
+        CloseRegistry();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
     }

@@ -5,86 +5,92 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
+    // DSM 内部六组只读契约；不调用未记录的聚合 FileServ/get 或猜测 load。
     public async Task<NasFileServiceSettings> LoadFileServiceSettingsAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!Supports("SYNO.Core.FileServ"))
+        var result = new NasFileServiceSettings();
+        var discovered = false;
+        foreach (var group in FileServiceReadGroups)
         {
-            return new NasFileServiceSettings();
-        }
-
-        try
-        {
-            var data = await CallFirstAsync(
-                "SYNO.Core.FileServ",
-                ["get", "load"],
-                parameters: null,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            var smb = data.Object("smb") ?? data.Object("SMB");
-            var nfs = data.Object("nfs") ?? data.Object("NFS");
-            var ftp = data.Object("ftp") ?? data.Object("FTP");
-            var sftp = data.Object("sftp") ?? data.Object("SFTP");
-            var ssdp = data.Bool("ssdp_enabled") ?? data.Bool("wsd_enabled");
-            var bonjour = data.Bool("bonjour_enabled") ?? data.Bool("mdns_enabled");
-            var timeMachine = data.Bool("timemachine_enabled") ?? data.Bool("afp_enabled");
-
-            return new NasFileServiceSettings
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_capabilities.ContainsKey(group.Api)) continue;
+            discovered = true;
+            try
             {
-                SmbEnabled = smb?.Bool("enable") ?? smb?.Bool("enabled") ?? false,
-                SmbMinProtocol = smb?.Int("min_protocol") ?? smb?.Int("min_smb"),
-                SmbMaxProtocol = smb?.Int("max_protocol") ?? smb?.Int("max_smb"),
-                SmbTransportEncryption = smb?.Bool("transport_encryption") ?? smb?.Bool("encrypt_transport"),
-                NfsEnabled = nfs?.Bool("enable") ?? nfs?.Bool("enabled") ?? false,
-                NfsMinProtocol = nfs?.Int("min_protocol") ?? nfs?.Int("min_nfs"),
-                NfsMaxProtocol = nfs?.Int("max_protocol") ?? nfs?.Int("max_nfs"),
-                FtpEnabled = ftp?.Bool("enable") ?? ftp?.Bool("enabled") ?? false,
-                FtpPort = ftp?.Int("port") ?? ftp?.Int("ftp_port"),
-                FtpSslOnly = ftp?.Bool("ssl_only") ?? ftp?.Bool("sslonly"),
-                FtpAnonymous = ftp?.Bool("allow_anonymous") ?? ftp?.Bool("anonymous"),
-                SftpEnabled = sftp?.Bool("enable") ?? sftp?.Bool("enabled") ?? false,
-                SftpPort = sftp?.Int("port") ?? sftp?.Int("sftp_port"),
-                SsdpEnabled = ssdp ?? false,
-                BonjourEnabled = bonjour ?? false,
-                TimeMachineEnabled = timeMachine ?? false,
-            };
+                var data = await ReadNasServiceSettingsAsync(group.Api, group.MaximumVersion,
+                    cancellationToken, group.MinimumVersion).ConfigureAwait(false);
+                foreach (var field in group.Fields)
+                {
+                    if (field.Port)
+                    {
+                        var port = data.Int(field.Key);
+                        // sftp_portnum 是已记录的读取别名，写入仍只使用 portnum。
+                        if (port is null && field.Field == NasFileServiceFields.SftpPort) port = data.Int("sftp_portnum");
+                        if (port is > 0 and <= 65535)
+                        {
+                            result = field.Field == NasFileServiceFields.FtpPort
+                                ? result with { FtpPort = port } : result with { SftpPort = port };
+                            result = result with { AvailableFields = result.AvailableFields | field.Field };
+                        }
+                        else if (data.ContainsKey(field.Key) ||
+                            field.Field == NasFileServiceFields.SftpPort && data.ContainsKey("sftp_portnum"))
+                            result = result with { FailedFields = result.FailedFields | field.Field };
+                        continue;
+                    }
+                    if (data.Bool(field.Key) is not bool enabled)
+                    {
+                        result = result with { FailedFields = result.FailedFields | field.Field };
+                        continue;
+                    }
+                    result = field.Field switch
+                    {
+                        NasFileServiceFields.Smb => result with { SmbEnabled = enabled },
+                        NasFileServiceFields.Nfs => result with { NfsEnabled = enabled },
+                        NasFileServiceFields.Ftp => result with { FtpEnabled = enabled },
+                        NasFileServiceFields.Ftps => result with { FtpsEnabled = enabled },
+                        NasFileServiceFields.Sftp => result with { SftpEnabled = enabled },
+                        NasFileServiceFields.Ssdp => result with { SsdpEnabled = enabled },
+                        NasFileServiceFields.Bonjour => result with { BonjourEnabled = enabled },
+                        NasFileServiceFields.TimeMachine => result with { TimeMachineEnabled = enabled },
+                        _ => result,
+                    };
+                    result = result with { AvailableFields = result.AvailableFields | field.Field };
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (DsmException error) when (error.AuthenticationFailure) { throw; }
+            catch (Exception)
+            {
+                // 单个组失败只影响自身，不能把其默认布尔值当作已读取。
+                result = result with { FailedFields = result.FailedFields | group.AllFields };
+            }
         }
-        catch (DsmException)
-        {
-            return new NasFileServiceSettings();
-        }
+        if (!discovered)
+            throw new DsmException(UserText.Key("NasSettingsLoadError"), UserText.Key("WinShared371d84f48836296f"), 102);
+        return result;
     }
 
-    public Task<MutationResult> SaveFileServiceSettingsAsync(
-        NasFileServiceSettings settings,
+    public Task<MutationResult> SaveFileServiceSettingsAsync(NasFileServiceSettings settings,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["smb_enable"] = settings.SmbEnabled ? "true" : "false",
-            ["nfs_enable"] = settings.NfsEnabled ? "true" : "false",
-            ["ftp_enable"] = settings.FtpEnabled ? "true" : "false",
-            ["sftp_enable"] = settings.SftpEnabled ? "true" : "false",
-            ["ssdp_enable"] = settings.SsdpEnabled ? "true" : "false",
-            ["bonjour_enable"] = settings.BonjourEnabled ? "true" : "false",
-            ["timemachine_enable"] = settings.TimeMachineEnabled ? "true" : "false",
-        };
-
-        if (settings.FtpPort is int ftpPort && ftpPort is > 0 and <= 65535)
-        {
-            parameters["ftp_port"] = ftpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        if (settings.SftpPort is int sftpPort && sftpPort is > 0 and <= 65535)
-        {
-            parameters["sftp_port"] = sftpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        return SaveSettingsAsync(
-            "SYNO.Core.FileServ", "set", parameters, "saveFileService",
-            ct => Task.CompletedTask,
-            cancellationToken);
+        // 无基线的旧签名不能绕过新的确认/原值核对/整体回读流程。
+        return Task.FromResult(UnsupportedResult("saveFileService"));
     }
+
+    private sealed record FileServiceReadField(NasFileServiceFields Field, string Key, bool Port = false);
+    private sealed record FileServiceReadGroup(string Api, int MinimumVersion, int MaximumVersion, FileServiceReadField[] Fields)
+    {
+        public NasFileServiceFields AllFields => Fields.Aggregate(NasFileServiceFields.None, (all, item) => all | item.Field);
+    }
+    private static readonly FileServiceReadGroup[] FileServiceReadGroups =
+    [
+        new("SYNO.Core.FileServ.SMB", 1, 3, [new(NasFileServiceFields.Smb, "enable_samba")]),
+        new("SYNO.Core.FileServ.NFS", 1, 3, [new(NasFileServiceFields.Nfs, "enable_nfs")]),
+        new("SYNO.Core.FileServ.FTP", 1, 1, [new(NasFileServiceFields.Ftp, "enable_ftp"), new(NasFileServiceFields.Ftps, "enable_ftps"), new(NasFileServiceFields.FtpPort, "portnum", true)]),
+        new("SYNO.Core.FileServ.FTP.SFTP", 1, 1, [new(NasFileServiceFields.Sftp, "enable"), new(NasFileServiceFields.SftpPort, "portnum", true)]),
+        new("SYNO.Core.Web.DSM", 2, 2, [new(NasFileServiceFields.Ssdp, "enable_ssdp"), new(NasFileServiceFields.Bonjour, "enable_avahi")]),
+        new("SYNO.Core.FileServ.ServiceDiscovery", 1, 1, [new(NasFileServiceFields.TimeMachine, "enable_smb_time_machine")]),
+    ];
 }

@@ -32,7 +32,6 @@ import io.github.qwertyuiop1995.dsmnativeclient.network.objectValue
 import io.github.qwertyuiop1995.dsmnativeclient.network.string
 import java.io.InputStream
 import java.net.URI
-import java.security.MessageDigest
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -643,6 +642,20 @@ internal class DownloadStationRepository(
                 errorCategory = MutationErrorCategory.UNSUPPORTED,
                 diagnosticTag = "download-station.create.unsupported",
             )
+        // 公开 API 的 destination 自 v2 提供，不能降级后忽略用户选择的目录。
+        val version = if (apiName == "SYNO.DownloadStation.Task") {
+            if (normalizedDestination == null) 1 else 2
+        } else null
+        if (version != null && !gateway.supportsVersion(apiName, version)) {
+            return downloadMutationResult(
+                operation = "downloadCreate",
+                status = MutationResultStatus.UNSUPPORTED,
+                submitted = false,
+                failed = 1,
+                errorCategory = MutationErrorCategory.UNSUPPORTED,
+                diagnosticTag = "download-station.create.unsupported-version",
+            )
+        }
         val key = downloadCreationKey("uri", normalized, normalizedDestination.orEmpty())
         return createDownloadTaskResult("downloadCreate", key, normalizedDestination) {
             gateway.call(
@@ -652,6 +665,7 @@ internal class DownloadStationRepository(
                     put("uri", normalized)
                     normalizedDestination?.let { put("destination", it) }
                 },
+                version = version,
             )
         }
     }
@@ -693,7 +707,9 @@ internal class DownloadStationRepository(
                 diagnosticTag = "download-station.file-create.invalid-input",
             )
         }
+        val version = if (normalizedDestination == null) 1 else 2
         val capability = gateway.capability("SYNO.DownloadStation.Task")
+            ?.takeIf { version in it.minVersion..it.maxVersion }
             ?: return downloadMutationResult(
                 operation = "downloadFileCreate",
                 status = MutationResultStatus.UNSUPPORTED,
@@ -1003,26 +1019,6 @@ internal class DownloadStationRepository(
                 // 某些 DSM 响应不返回 detail；若返回了目标目录，必须与请求一致。
                 (expectedDestination == null || task.destination == null ||
                     task.destination.trim() == expectedDestination)
-        }
-    }
-
-    /** 活动集合只保留不可逆的摘要，不留存 URI、密码或目标路径。 */
-    private fun downloadCreationKey(kind: String, vararg values: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        sequenceOf(kind, *values).forEach { value ->
-            val bytes = value.encodeToByteArray()
-            digest.update(
-                byteArrayOf(
-                    (bytes.size ushr 24).toByte(),
-                    (bytes.size ushr 16).toByte(),
-                    (bytes.size ushr 8).toByte(),
-                    bytes.size.toByte(),
-                ),
-            )
-            digest.update(bytes)
-        }
-        return digest.digest().joinToString(separator = "") { byte ->
-            (byte.toInt() and 0xff).toString(16).padStart(2, '0')
         }
     }
 

@@ -58,13 +58,13 @@ public sealed class NasDetailsRepositoryContractTests
             {"packages":[{"id":"pkg-drive","name":"Drive","version":"3.0","status":"running","description":"hidden"}]}
             """);
         api.Responses["SYNO.Core.TaskScheduler"] = Json("""
-            {"tasks":[{"id":"task-1","name":"Backup","enable":true,"next_trigger_time":"Tonight","script":"secret"}]}
+            {"tasks":[{"id":12,"name":"Backup","enable":true,"next_trigger_time":"Tonight","script":"secret"}]}
             """);
         api.Responses["SYNO.LogCenter.History"] = Json("""
             {"logs":[{"id":"log-1","source":"System","level":"info","message":"sensitive log body","user":"admin","time":0}]}
             """);
         api.Responses["SYNO.Core.CurrentConnection"] = Json("""
-            {"connections":[{"id":"conn-1","protocol":"DSM","type":"web","source":"192.0.2.1","device_id":"secret","is_current":true,"time":0}]}
+            {"items":[{"pid":"synthetic-process","did":"synthetic-secret-device","who":"synthetic-user","protocol":"DSM","type":"HTTP/HTTPS","from":"192.0.2.1","descr":"DSM","is_current_connected":true,"time":"2026-09-17 10:00:00"}]}
             """);
         var repository = Repository(api);
 
@@ -306,7 +306,7 @@ public sealed class NasDetailsRepositoryContractTests
         api.Errors["SYNO.Storage.CGI.Storage"] = new DsmException("failed", "retry");
         api.Errors["SYNO.FileStation.List"] = new DsmException("failed", "retry");
         api.Responses["SYNO.LogCenter.History"] = Json("""{"logs":[]}""");
-        api.Responses["SYNO.Core.CurrentConnection"] = Json("""{"connections":[]}""");
+        api.Responses["SYNO.Core.CurrentConnection"] = Json("""{"items":[]}""");
         var repository = Repository(api);
 
         var snapshot = await repository.LoadDetailsAsync();
@@ -530,7 +530,7 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses["SYNO.Core.Package"] = Json($"{{\"packages\":[{packageItems}]}}");
         api.Responses["SYNO.Core.TaskScheduler"] = Json("""{"tasks":[]}""");
         api.Responses["SYNO.LogCenter.History"] = Json("""{"logs":[]}""");
-        api.Responses["SYNO.Core.CurrentConnection"] = Json("""{"connections":[]}""");
+        api.Responses["SYNO.Core.CurrentConnection"] = Json("""{"items":[]}""");
         var repository = Repository(api);
 
         var snapshot = await repository.LoadDetailsAsync();
@@ -574,7 +574,7 @@ public sealed class NasDetailsRepositoryContractTests
         api.Responses.TryAdd("SYNO.Core.Package", Json("""{"packages":[]}"""));
         api.Responses.TryAdd("SYNO.Core.TaskScheduler", Json("""{"tasks":[]}"""));
         api.Responses.TryAdd("SYNO.LogCenter.History", Json("""{"logs":[]}"""));
-        api.Responses.TryAdd("SYNO.Core.CurrentConnection", Json("""{"connections":[]}"""));
+        api.Responses.TryAdd("SYNO.Core.CurrentConnection", Json("""{"items":[]}"""));
         var capabilities = new Dictionary<string, ApiCapability>(StringComparer.Ordinal)
         {
             ["SYNO.Core.System"] = Capability("SYNO.Core.System", max: 3),

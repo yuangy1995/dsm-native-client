@@ -1923,7 +1923,7 @@
       {
         "id": "android-download-station-repository",
         "file": "io/github/qwertyuiop1995/dsmnativeclient/data/downloads/DownloadStationRepository.kt",
-        "maxLines": 2299,
+        "maxLines": 2295,
         "targetLines": 1800
       },
       {

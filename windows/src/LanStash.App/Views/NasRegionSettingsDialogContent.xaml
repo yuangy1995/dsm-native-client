@@ -1,0 +1,42 @@
+<UserControl x:Class="LanStash.App.Views.NasRegionSettingsDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="540">
+    <StackPanel MinWidth="300" MaxWidth="480" Spacing="14">
+      <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" IsActive="False" Visibility="Collapsed"/>
+      <InfoBar x:Name="StatusNotice" IsClosable="False" IsOpen="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+      <TextBox x:Name="ClockValue" x:Uid="NasRegionClock" IsReadOnly="True" Visibility="Collapsed"/>
+      <StackPanel x:Name="Fields" Spacing="12" Visibility="Collapsed">
+        <TextBlock x:Uid="NasServiceReadOnly" TextWrapping="Wrap"/>
+        <TextBox x:Name="DateFormatValue" x:Uid="NasRegionDateFormat" IsReadOnly="True"/>
+        <TextBox x:Name="TimeFormatValue" x:Uid="NasRegionTimeFormat" IsReadOnly="True"/>
+        <TextBox x:Name="TimezoneValue" x:Uid="NasRegionTimezone" IsReadOnly="True"/>
+        <TextBox x:Name="ModeValue" x:Uid="NasRegionMode" IsReadOnly="True"/>
+        <TextBox x:Name="ServersValue" x:Uid="NasRegionServers" IsReadOnly="True" AcceptsReturn="True" MaxHeight="100"/>
+      </StackPanel>
+      <StackPanel x:Name="Editor" Spacing="12" Visibility="Collapsed">
+        <ComboBox x:Name="DatePatternChoice" x:Uid="NasRegionDateFormatChoice" HorizontalAlignment="Stretch" SelectionChanged="DatePattern_Changed"/>
+        <ComboBox x:Name="TimePatternChoice" x:Uid="NasRegionTimeFormatChoice" HorizontalAlignment="Stretch" SelectionChanged="TimePattern_Changed"/>
+        <Expander x:Uid="NasRegionCustomFormats" HorizontalAlignment="Stretch">
+          <StackPanel Spacing="10">
+            <TextBox x:Name="DatePatternCode" x:Uid="NasRegionDateCode" TextChanged="Text_Changed"/>
+            <TextBox x:Name="TimePatternCode" x:Uid="NasRegionTimeCode" TextChanged="Text_Changed"/>
+          </StackPanel>
+        </Expander>
+        <ComboBox x:Name="TimezoneChoice" x:Uid="NasRegionTimezone" HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed"/>
+        <ComboBox x:Name="ModeChoice" x:Uid="NasRegionMode" HorizontalAlignment="Stretch" SelectionChanged="Selection_Changed"/>
+        <TextBox x:Name="ServersInput" x:Uid="NasRegionServersInput" AcceptsReturn="True" MaxHeight="100" TextChanged="Text_Changed"/>
+        <CheckBox x:Name="EditClock" x:Uid="NasRegionEditClock" Checked="Fields_Changed" Unchecked="Fields_Changed"/>
+        <StackPanel x:Name="ManualClockFields" Spacing="8" Visibility="Collapsed">
+          <DatePicker x:Name="NewDate" x:Uid="NasRegionNewDate" SelectedDateChanged="Date_Changed"/>
+          <TimePicker x:Name="NewTime" x:Uid="NasRegionNewTime" SelectedTimeChanged="Time_Changed"/>
+        </StackPanel>
+        <TextBlock x:Name="ValidationNotice" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+        <TextBlock x:Uid="NasRegionRisk" TextWrapping="Wrap"/>
+        <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasServiceRiskConfirmed" Checked="Acknowledgement_Changed" Unchecked="Acknowledgement_Changed">
+          <CheckBox.Content><TextBlock x:Uid="NasServiceRiskConfirmedText" TextWrapping="Wrap"/></CheckBox.Content>
+        </CheckBox>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

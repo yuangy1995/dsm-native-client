@@ -31,7 +31,7 @@ public sealed partial class DsmApiClient
         // JSON 指业务参数；外层仍是表单。固定路由不接受能力响应注入的外部地址。
         using var request = PhotoRequest(profile, session, HttpMethod.Post,
             ResolveSafeApiUri(profile, $"entry.cgi/{capability.Name}"), "application/json");
-        request.Content = new FormUrlEncodedContent(values);
+        request.Content = CreateSessionFormContent(values, session);
         SetNasConnectionContext(request, profile);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ValidatePhotoResponse(response, HttpStatusCode.OK);

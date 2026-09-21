@@ -9,11 +9,14 @@ namespace LanStash.App.Features.Files;
 public sealed class FileBrowserViewModel : ObservableObject, IDisposable
 {
     public const int DefaultPageSize = 100;
+    internal const int MaximumCachedLocations = 12;
+    internal const int MaximumCachedEntries = 4096;
 
     private readonly IFileBrowserDataSource _dataSource;
     private readonly int _pageSize;
     private readonly Stack<FileBrowserLocation> _backHistory = new();
     private readonly Dictionary<FileBrowserRequestKey, PageSnapshot> _pageCache = [];
+    private readonly List<FileBrowserRequestKey> _pageCacheOrder = [];
     private readonly Dictionary<string, FileListOptions> _preferredOptionsByPath =
         new(StringComparer.Ordinal);
     private readonly List<FileBrowserEntry> _loadedItems = [];
@@ -29,7 +32,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     private FileListOptions _preferredOptions = FileListOptions.Default;
     private FileListOptions _currentOptions = FileListOptions.Default.NormalizeForSharedRoot();
     private FileBrowserContentState _contentState = FileBrowserContentState.Loading;
-    private FileBrowserLayout _layout = FileBrowserLayout.List;
+    private FileBrowserLayout _layout = FileBrowserLayout.Grid;
     private FileBrowserEntry? _selectedItem;
     private StorageSpaceSummary? _storageSpace;
     private bool _isLoadingStorageSpace;
@@ -293,6 +296,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
     {
         ThrowIfDisposed();
         _pageCache.Remove(CurrentRequestKey);
+        _pageCacheOrder.Remove(CurrentRequestKey);
         await LoadFirstPageAsync();
     }
 
@@ -659,10 +663,11 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
                 "File page did not advance while more items were reported.");
         }
 
+        // 每页只构建一次索引，避免目录越大逐项查重越慢。
+        var paths = _loadedItems.Select(item => item.Path).ToHashSet(StringComparer.Ordinal);
         foreach (var item in page.Items)
         {
-            if (_loadedItems.Any(existing =>
-                    string.Equals(existing.Path, item.Path, StringComparison.Ordinal)))
+            if (!paths.Add(item.Path))
             {
                 continue;
             }
@@ -698,10 +703,27 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
                 .Where(item => item.Name.Contains(FilterText, StringComparison.CurrentCultureIgnoreCase))
                 .ToList();
 
-        Items.Clear();
-        foreach (var item in filtered)
+        // 分页与无变化的筛选保留已有容器、选择和滚动位置。
+        var sharedPrefix = 0;
+        while (sharedPrefix < Items.Count && sharedPrefix < filtered.Count &&
+               ReferenceEquals(Items[sharedPrefix], filtered[sharedPrefix]))
         {
-            Items.Add(item);
+            sharedPrefix++;
+        }
+        if (sharedPrefix == 0 && Items.Count > 0)
+        {
+            Items.Clear();
+        }
+        else
+        {
+            while (Items.Count > sharedPrefix)
+            {
+                Items.RemoveAt(Items.Count - 1);
+            }
+        }
+        for (var index = sharedPrefix; index < filtered.Count; index++)
+        {
+            Items.Add(filtered[index]);
         }
 
         SelectedItem = selectedPath is null
@@ -720,10 +742,25 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         FilterText,
         SelectedItem?.Path);
 
-    private void SaveCurrentPage() => _pageCache[CurrentRequestKey] = new PageSnapshot(
-        _loadedItems.ToArray(),
-        _nextOffset,
-        _total);
+    private void SaveCurrentPage()
+    {
+        var key = CurrentRequestKey;
+        _pageCache.Remove(key);
+        _pageCacheOrder.Remove(key);
+        // 缓存只加速返回；大目录仍可浏览，不能让历史目录无限保留内存。
+        if (_loadedItems.Count > MaximumCachedEntries)
+        {
+            return;
+        }
+        while (_pageCache.Count >= MaximumCachedLocations ||
+               _pageCache.Values.Sum(page => page.Items.Count) + _loadedItems.Count > MaximumCachedEntries)
+        {
+            _pageCache.Remove(_pageCacheOrder[0]);
+            _pageCacheOrder.RemoveAt(0);
+        }
+        _pageCache[key] = new PageSnapshot(_loadedItems.ToArray(), _nextOffset, _total);
+        _pageCacheOrder.Add(key);
+    }
 
     private bool TryRestorePage(FileBrowserRequestKey key, string? selectedPath)
     {
@@ -731,6 +768,9 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         {
             return false;
         }
+
+        _pageCacheOrder.Remove(key);
+        _pageCacheOrder.Add(key);
 
         _loadedItems.Clear();
         _loadedItems.AddRange(snapshot.Items);
@@ -769,10 +809,19 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         generation == Volatile.Read(ref _generation) &&
         key == CurrentRequestKey;
 
+    private string _rootDisplayName = LocalizationService.Current.Get("ModuleFiles");
+
+    public void SetRootDisplayName(string displayName)
+    {
+        if (_rootDisplayName == displayName) return;
+        _rootDisplayName = displayName;
+        RebuildBreadcrumbs();
+    }
+
     private void RebuildBreadcrumbs()
     {
         Breadcrumbs.Clear();
-        Breadcrumbs.Add(new FileBrowserBreadcrumb("/", string.Empty));
+        Breadcrumbs.Add(new FileBrowserBreadcrumb(_rootDisplayName, string.Empty));
 
         var segments = CurrentPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var path = string.Empty;
@@ -838,7 +887,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(StorageScopeText));
     }
 
-    private static string FormatBytes(long bytes)
+    internal static string FormatBytes(long bytes)
     {
         string[] unitKeys =
         [
@@ -857,8 +906,9 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         }
         var format = unit == 0 ? "N0" : scaled >= 10 ? "N1" : "N2";
         return LocalizationService.Current.Format(
-            unitKeys[unit],
-            scaled.ToString(format, CultureInfo.CurrentCulture));
+            "NasDetailsByteValue",
+            scaled.ToString(format, CultureInfo.CurrentCulture),
+            LocalizationService.Current.Get(unitKeys[unit]));
     }
 
     public void Dispose()
@@ -871,6 +921,7 @@ public sealed class FileBrowserViewModel : ObservableObject, IDisposable
         _disposed = true;
         CancelCurrentRequest();
         _pageCache.Clear();
+        _pageCacheOrder.Clear();
         _preferredOptionsByPath.Clear();
     }
 

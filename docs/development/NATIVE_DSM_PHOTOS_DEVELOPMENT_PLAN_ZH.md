@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-09-15 -->
+<!-- last-reviewed: 2026-09-19 -->
 
 # Synology Photos 开发与迁移计划
 
@@ -7,11 +7,73 @@
 
 ## 当前决策与交付范围
 
+- 2026-09-19 用户报告 macOS 1.0.9 文件下载提示“文件操作没有完成”，照片保存/删除也失败，
+  上传正常。本轮优先修复已确认源码缺口；真实失败日志、单文件/新文件名范围及删除
+  具体提示仍待用户补充，不把源码假设宣称为已复现全部真实故障。
+
 - macOS 是业务与安全语义基线；Android、iPhone、iPad、Windows 正式入口已切换为原生 Synology Photos。套件不可用时提示恢复操作，不退回 File Station 扫描，也不把协议失败伪装为空图库。
 - 本轮包含用户明确授权的 Android 照片迁移；macOS App 和 Apple 共享 Package 生产源码不变，不改依赖、应用标识、最低系统、权限、后台任务名称或存储格式。
 - 用户已明确授权个人空间单项原件删除按接口支持、实际权限和目标一致性开放，不按 DSM／Photos 版本白名单拦截。所有平台保留确认、防重复和最终回读；未测版本仍未验证。此授权不扩展到共享空间或其他写操作。
 - “源码迁移完成”“目标构建／合成回归通过”“真机／NAS 验收”分别记录。PR 的 Checks 是精确提交的自动化结果；下方 `PENDING_USER_VALIDATION` 不是已通过证据。
 - 旧 File Station 文件导入、备份及其通用组件和回归仍保留，但不再连接正式 Photos 浏览路由，也不充当 Photos 上传、相册管理或分享 API。临时集成工作流不进入交付树。
+
+## 2026-09-19 macOS 1.0.9 下载与照片操作反馈
+
+证据路径：DsmFileRepository.performDownload 在所选文件旁创建 part/segment，
+URLSessionDsmTransport 又在同目录暂存；NSSavePanel 只保证所选文件的沙盒访问，
+不能据此假定可写任意兄弟临时文件。普通文件提示来自 translate 的未知错误兜底，
+不是已证实的 NAS API 拒绝。Photos 原件保存同样在目标旁暂存；Mac save 未显式持有
+选择位置的安全作用域，且面板确认同名替换后仍调用无覆盖下载，必然不能完成替换。
+删除 prepareDeletion 调用全量 details，导致 EXIF/地址/视频等非删除所需字段的
+解码失败也阻断预检。以上为源码证据，尚未在用户 Mac 复现具体 NSError 或 NAS 回执。
+
+当前修改范围为 Apple 共享下载落盘、Mac 照片保存、最小删除身份回读及正式测试，
+不改上传、登录、证书、权限、应用身份、删除端点或删除开放范围。新
+DownloadedFileExporter 统一使用系统 itemReplacementDirectory 与 NSFileCoordinator
+保存已校验内容，失败不先删除目标；File Station 继续严格核对长度、Range 和版本。
+下载缓存移至应用 temporaryDirectory，目标路径摘要隔离同名不同输出位置，断点
+元数据结构不变；旧目标旁缓存不自动迁移，新尝试从零开始，旧片段只在用户移除任务
+时按旧范围清理。该变化仅影响可丢弃缓存，不变更传输队列/用户数据格式；回滚本次
+源码不会删除已保存文件，新临时缓存可由对应任务清理。临时区可能被系统清理，不能
+承诺跨系统清理后的续传。
+
+Photos Repository 仍默认无覆盖；Mac 面板确认后先下载到应用临时副本，持有目标
+访问作用域直到系统协调保存完成，才显示成功。取消/网络失败不覆盖旧文件。
+删除只用既有 Browse.Item.get v5 核对 ID、名称、大小、日期、目录、类型，忽略
+无关附加详情；仍要求目录 view/manage、个人空间、确认、防重复和成功空回读。
+没有执行任何真实删除，也没有用“管理员”绕过权限。
+
+五端影响：macOS 新保存接线；iPhone/iPad 与 File Provider 共享下载基础层受到兼容
+行为修正，协议签名和 UI 不变，但需 Apple 回归；Windows/Android 无本次代码修改。
+只修改上述文件，保留工作区中 NAS/VMM/下载管理等既有未提交改动。
+
+正式回归新增共享导出 4 项、删除最小预检 1 项、本地错误映射 1 项、Mac 保存 2 项，并更新断点路径与
+定向清理断言；现有无覆盖/截断响应/Range 完整性断言保留。本机运行
+`swift test --package-path apple --filter 'DownloadedFileExporterTests|DsmFileRepositoryTests|SynologyPhotosRepositoryTests'`
+因 swift 不存在而未执行，不能标为编译/测试通过；Mac 模型回归及完整
+`swift test --package-path apple` 亦为 PENDING_USER_VALIDATION。
+
+PENDING_USER_VALIDATION：在 Mac 构建独立临时签名测试包，不覆盖旧包；确认单个文件、
+目录 ZIP、批量、非空/空文件、同名替换、新目标、断网后续传及外接卷。照片分别验证
+新位置保存、已确认覆盖、取消后旧文件保留；删除仅用用户另行选定的可丢弃个人空间
+照片，核对确认前无写、单次提交、最终原件不存在，失败只核查不重复删除。
+需回传版本、操作步骤、错误类型/脱敏提示；不要回传路径、账号、凭据、照片或原始
+DSM 响应。删除的实际失败原因仍待具体提示，不宣称当前改动已证明修复用户全部问题。
+
+同日独立复核补充：本地导出改为 async，并将系统复制/文件协调放入独立任务，避免
+大视频保存占用 MainActor；取消传播到该任务，在复制之前、复制之后和替换前核查。
+系统单次 copyItem 不能中途打断，但取消后不得进入最终替换；目标替换已经完成的
+情况不谎称可以回滚。新增已取消导出保持源和目标的回归，所有调用方同步 await，
+新辅助方法尚未发布，不改变既有 Repository 协议。
+
+Photos 删除 catch-all 原先连明确权限/会话拒绝也伪装成 pendingReview。本次仅对
+既有通用 DSM 错误 105/106/107/119 返回映射后的明确原因并清除该次待核查状态，
+同一 operationID 缓存拒绝且不重发；新的用户确认仍必须重新预检。117、网络、HTTP、
+畸形响应及取消继续保留未知，不扩大“明确未执行”的推断范围。新增一组回归覆盖
+四个拒绝码、重复请求与新确认的区分。没有新增真实删除或改变权限要求。
+
+上述两项正式回归同样未运行：Get-Command swift 确认当前主机无 Swift。本轮只能
+执行本地化、请求/响应 fixture、文档及差异静态门；不得据此宣布 Mac 编译或沙盒通过。
 
 ## 业务语义对齐账本
 
@@ -40,6 +102,12 @@ Apple 路径基准为 `apple/Packages/*/Sources/` 和 `apple/Apps/DsmMac/Sources
 Android 通过 `SynologyPhotosProvider` 委托接入既有 `DsmRepository`，避免继续扩大兼容门面；Windows 通过既有 `DsmApiClient` partial 及连接证书上下文接入，不新增第二套认证客户端。iPhone 与 iPad 不复制共享网络层或新建另一套照片协议。
 
 ## 性能与安全复核
+
+2026-09-16 Windows 用户反馈复核：照片初始时间范围补齐 macOS 的跨时区边界及非负下限，
+认证表单对齐现有 Apple 请求构造器，登录失效与空图库提示分离。真实 Repository 合成回归
+已复现并修复纪元日期导致的“月份成功、照片失败”；截图现场根因及真实 NAS 仍待验证。
+本次仅 Windows 实现变更，五端接口字段、安全门与持久化格式不变；跨模块检查、真实命令
+和环境限制见[Windows 请求一致性复核](WINDOWS_API_PARITY_AUDIT_ZH.md)。
 
 | 项目 | 约束与回归证据 |
 | --- | --- |

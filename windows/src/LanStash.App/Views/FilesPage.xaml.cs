@@ -41,6 +41,8 @@ public sealed partial class FilesPage : Page, IDisposable
     private bool _selectionNeedsScroll;
     private DragMoveUndo? _dragMoveUndo;
     private CancellationTokenSource? _dragMoveUndoCts;
+    private FileDragMoveSession? _dragMoveSession;
+    private bool _isResolvingDragMove;
     private readonly IFileSearchRepository? _searchRepository;
     private CancellationTokenSource? _searchCancellation;
     private bool? _locationsAreWide;
@@ -154,7 +156,7 @@ public sealed partial class FilesPage : Page, IDisposable
         _transfers.UploadFinished += Transfers_UploadFinished;
         _transfers.UploadBatchFinished += Transfers_UploadBatchFinished;
         _transfers.FolderUploadBatchFinished += Transfers_FolderUploadBatchFinished;
-        _transfers.DownloadBatchFinished += Transfers_DownloadBatchFinished;
+        _transfers.SelectionDownloadFinished += Transfers_SelectionDownloadFinished;
         DataContext = _viewModel;
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged += LocationsViewModel_PropertyChanged;
@@ -168,6 +170,7 @@ public sealed partial class FilesPage : Page, IDisposable
         LocationsPane.Attach(_locationsViewModel, OpenLocationAsync, RefreshLocationsAsync);
         LocationsPane.LocationOpened += LocationsPane_LocationOpened;
         Loaded += FilesPage_Loaded;
+        Unloaded += FilesPage_Unloaded;
         UpdateState();
     }
 
@@ -188,19 +191,39 @@ public sealed partial class FilesPage : Page, IDisposable
         await LocationsPane.LoadAsync();
     }
 
+    private void FilesPage_Unloaded(object sender, RoutedEventArgs e) { CancelFolderUploadPreparation(); CancelAsyncSearch(); ClearRemoteDragState(); CancelFavoriteOperation(); }
+
+    private bool _stateUpdateQueued;
+
+    private void QueueStateUpdate()
+    {
+        if (_disposed || _stateUpdateQueued) return;
+        _stateUpdateQueued = true;
+        if (!DispatcherQueue.TryEnqueue(() =>
+        {
+            _stateUpdateQueued = false;
+            if (!_disposed) UpdateState();
+        })) _stateUpdateQueued = false;
+    }
+
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (_viewModel.IsLoading || e.PropertyName == nameof(FileBrowserViewModel.CurrentPath))
+        {
+            _dragMoveSession?.Invalidate(); _dragMoveSession = null;
+            CancelFolderUploadPreparation();
+        }
         if (e.PropertyName == nameof(FileBrowserViewModel.SelectedItem))
         {
             _selectionNeedsScroll = true;
         }
-        DispatcherQueue.TryEnqueue(UpdateState);
+        QueueStateUpdate();
     }
 
     private void LocationsViewModel_PropertyChanged(
         object? sender,
         System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        QueueStateUpdate();
 
     private async void PathBreadcrumbs_ItemClicked(BreadcrumbBar sender, BreadcrumbBarItemClickedEventArgs args)
     {
@@ -214,11 +237,7 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             return;
         }
-        if (_locationsAreWide == true)
-        {
-            LocationsPane.FocusFirstLocation();
-            return;
-        }
+
         LocationsSplitView.IsPaneOpen = !LocationsSplitView.IsPaneOpen;
         if (LocationsSplitView.IsPaneOpen)
         {
@@ -258,6 +277,7 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             return false;
         }
+        CancelAsyncSearch();
         ExitDownloadSelectionMode();
         try
         {
@@ -335,6 +355,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
         else
         {
+            CancelAsyncSearch();
             _viewModel.SetFilter(sender.Text);
             UpdateState();
         }
@@ -344,6 +365,7 @@ public sealed partial class FilesPage : Page, IDisposable
     {
         if (!SearchSubfoldersToggle.IsOn)
         {
+            CancelAsyncSearch();
             _viewModel.SetFilter(FilterBox.Text);
             UpdateState();
             return;
@@ -356,10 +378,8 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private async Task PerformAsyncSearchAsync(string query)
     {
-        _searchCancellation?.Cancel();
-        _searchCancellation?.Dispose();
-        _searchCancellation = new CancellationTokenSource();
-        var token = _searchCancellation.Token;
+        if (_disposed) return;
+        CancelAsyncSearch();
 
         if (_searchRepository is null)
         {
@@ -373,16 +393,19 @@ public sealed partial class FilesPage : Page, IDisposable
             return;
         }
 
+        var cancellation = new CancellationTokenSource();
+        _searchCancellation = cancellation;
+        var token = cancellation.Token;
+        var currentPath = _viewModel.CurrentPath;
         _viewModel.BeginAsyncSearch();
         UpdateState();
 
         try
         {
-            var currentPath = _viewModel.CurrentPath ?? string.Empty;
-            var request = new FileSearchRequest(currentPath, query, Recursive: true);
+            var request = new FileSearchRequest(currentPath ?? string.Empty, query, Recursive: true);
             var result = await _searchRepository.SearchAsync(request, token);
 
-            if (token.IsCancellationRequested)
+            if (_disposed || token.IsCancellationRequested || _viewModel.CurrentPath != currentPath)
             {
                 return;
             }
@@ -394,15 +417,29 @@ public sealed partial class FilesPage : Page, IDisposable
         }
         catch (Exception)
         {
-            if (!token.IsCancellationRequested)
+            if (!_disposed && !token.IsCancellationRequested && _viewModel.CurrentPath == currentPath)
             {
                 _viewModel.SetAsyncSearchError();
             }
         }
         finally
         {
-            UpdateState();
+            if (ReferenceEquals(_searchCancellation, cancellation))
+            {
+                _searchCancellation = null;
+                cancellation.Dispose();
+            }
+            if (!_disposed && !token.IsCancellationRequested) UpdateState();
         }
+    }
+
+    private void CancelAsyncSearch()
+    {
+        var cancellation = _searchCancellation;
+        _searchCancellation = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
+        if (!_disposed && _viewModel.IsSearching) _viewModel.SetFilter(_viewModel.FilterText);
     }
 
     private async void SearchRetry_Click(object sender, RoutedEventArgs e)
@@ -661,7 +698,7 @@ public sealed partial class FilesPage : Page, IDisposable
     private async Task UploadToCurrentFolderAsync()
     {
         var folderPath = _viewModel.CurrentPath;
-        if (_isChoosingUpload || IsReadOnlyLocation() || string.IsNullOrWhiteSpace(folderPath))
+        if (_disposed || _viewModel.IsLoading || _isChoosingUpload || IsReadOnlyLocation() || string.IsNullOrWhiteSpace(folderPath))
         {
             return;
         }
@@ -671,10 +708,19 @@ public sealed partial class FilesPage : Page, IDisposable
         try
         {
             var overwrite = UploadOverwriteToggle.IsChecked == true;
+            bool TargetIsCurrent() => !_disposed && !_viewModel.IsLoading && !IsReadOnlyLocation() &&
+                _viewModel.CurrentPath == folderPath && (UploadOverwriteToggle.IsChecked == true) == overwrite;
             var start = await _transfers.PickAndStartUploadBatchAsync(
                 _profileId.ToString(),
                 folderPath,
-                overwrite);
+                overwrite,
+                TargetIsCurrent);
+            if (_disposed) return;
+            if (start.Status == FileUploadBatchValidationStatus.Empty && !TargetIsCurrent())
+            {
+                ShowFileUploadDropError("FileUploadTargetChangedMessage");
+                return;
+            }
             ShowFileUploadBatchStart(start.Status, start.SelectedCount);
         }
         catch (ObjectDisposedException)
@@ -682,6 +728,7 @@ public sealed partial class FilesPage : Page, IDisposable
         }
         catch
         {
+            if (_disposed) return;
             var localization = LocalizationService.Current;
             var dialog = new ContentDialog
             {
@@ -696,7 +743,7 @@ public sealed partial class FilesPage : Page, IDisposable
         finally
         {
             _isChoosingUpload = false;
-            UpdateState();
+            if (!_disposed) UpdateState();
         }
     }
 
@@ -1244,8 +1291,9 @@ public sealed partial class FilesPage : Page, IDisposable
         _ => "FileShareLinkFailureMessage",
     });
 
-    private static async Task RunAsync(Func<Task> action)
+    private async Task RunAsync(Func<Task> action)
     {
+        CancelAsyncSearch();
         try
         {
             await action();
@@ -1256,12 +1304,41 @@ public sealed partial class FilesPage : Page, IDisposable
         }
     }
 
+    internal FileBrowserViewModel BrowserModel => _viewModel;
+
+    private void Inspector_Click(object sender, RoutedEventArgs e) => UpdatePreviewLayout();
+
+    private void Sidebar_Click(object sender, RoutedEventArgs e)
+    {
+        for (DependencyObject? parent = this; parent is not null;
+             parent = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(parent))
+        {
+            if (parent is not ShellPage shell) continue;
+            shell.ToggleNavigationPane();
+            return;
+        }
+    }
+
+    private void UpdateInspector()
+    {
+        var item = _viewModel.SelectedItem;
+        InspectorEmpty.Visibility = item is null ? Visibility.Visible : Visibility.Collapsed;
+        InspectorDetails.Visibility = item is null ? Visibility.Collapsed : Visibility.Visible;
+        if (item is null) return;
+        InspectorIcon.IsDirectory = item.IsDirectory;
+        InspectorName.Text = item.Name;
+        InspectorKind.Text = item.KindText;
+        InspectorSize.Text = item.SizeText;
+        InspectorModified.Text = item.ModifiedText;
+    }
+
     private void UpdateState()
     {
         if (ContentState is null)
         {
             return;
         }
+        UpdateFavoriteAction();
 
         LoadingState.Visibility = _viewModel.ContentState == FileBrowserContentState.Loading
             ? Visibility.Visible
@@ -1270,16 +1347,8 @@ public sealed partial class FilesPage : Page, IDisposable
         FilteredEmptyState.Visibility = _viewModel.IsFilteredEmpty ? Visibility.Visible : Visibility.Collapsed;
         ErrorState.Visibility = _viewModel.HasError ? Visibility.Visible : Visibility.Collapsed;
         ContentState.Visibility = _viewModel.HasContent ? Visibility.Visible : Visibility.Collapsed;
-        StorageLoadingState.Visibility = _viewModel.IsLoadingStorageSpace
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        StorageAvailableState.Visibility = _viewModel.HasStorageSpace
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        StorageUnavailableState.Visibility = _viewModel.IsStorageSpaceUnavailable
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-
+        FileCountText.Text = LocalizationService.Current.Format("WorkspaceFileCount", _viewModel.Items.Count);
+        UpdateInspector();
         FileList.Visibility = _viewModel.HasContent && _viewModel.IsListLayout
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -1524,6 +1593,7 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void FilesPage_SizeChanged(object sender, SizeChangedEventArgs e)
     {
+        FilterBox.Width = Math.Clamp(ActualWidth - 610, 100, 290);
         UpdateLocationsLayout();
         UpdatePreviewLayout();
     }
@@ -1543,7 +1613,8 @@ public sealed partial class FilesPage : Page, IDisposable
         LocationsSplitView.DisplayMode = isWide
             ? SplitViewDisplayMode.Inline
             : SplitViewDisplayMode.Overlay;
-        LocationsSplitView.IsPaneOpen = isWide;
+        // 位置面板按需打开，首次显示为文件网格和详情栏。
+        LocationsSplitView.IsPaneOpen = false;
         if (!isWide)
         {
             LocationsPane.CancelOpening();
@@ -1557,7 +1628,10 @@ public sealed partial class FilesPage : Page, IDisposable
             return;
         }
         var isOpen = _previewViewModel.IsOpen;
-        var isWide = ActualWidth >= (_locationsAreWide == true ? 1280 : 1000);
+        var isWide = ActualWidth >= (LocationsSplitView.IsPaneOpen && _locationsAreWide == true ? 1280 : 1000);
+        var showInspector = InspectorButton.IsChecked == true && ActualWidth >= 720 && !isOpen;
+        InspectorSurface.Visibility = showInspector ? Visibility.Visible : Visibility.Collapsed;
+        InspectorColumn.Width = new GridLength(showInspector ? 210 : 0);
         PreviewPane.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         PreviewColumn.Width = isOpen
             ? isWide ? new GridLength(420) : new GridLength(1, GridUnitType.Star)
@@ -1578,7 +1652,11 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             return;
         }
+        CancelFolderUploadPreparation();
+        CancelAsyncSearch();
         DeactivateFileUploadDrop();
+        CancelFavoriteOperation();
+        ClearRemoteDragState();
         LocationsPane.CancelOpening();
         _locationsViewModel.Deactivate();
         CloseShareManagementDialog();
@@ -1606,6 +1684,10 @@ public sealed partial class FilesPage : Page, IDisposable
         }
 
         _disposed = true;
+        CancelFolderUploadPreparation();
+        CancelFavoriteOperation();
+        ClearRemoteDragState();
+        CancelAsyncSearch();
         CloseDirectorySizeDialog();
         DeactivateFileUploadDrop();
         CloseShareManagementDialog();
@@ -1618,10 +1700,11 @@ public sealed partial class FilesPage : Page, IDisposable
         CloseArchiveExtractionDialog();
         CloseRecycleDialog();
         Loaded -= FilesPage_Loaded;
+        Unloaded -= FilesPage_Unloaded;
         _transfers.UploadFinished -= Transfers_UploadFinished;
         _transfers.UploadBatchFinished -= Transfers_UploadBatchFinished;
         _transfers.FolderUploadBatchFinished -= Transfers_FolderUploadBatchFinished;
-        _transfers.DownloadBatchFinished -= Transfers_DownloadBatchFinished;
+        _transfers.SelectionDownloadFinished -= Transfers_SelectionDownloadFinished;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _locationsViewModel.PropertyChanged -= LocationsViewModel_PropertyChanged;
         _previewViewModel.PropertyChanged -= PreviewViewModel_PropertyChanged;
@@ -1663,91 +1746,88 @@ public sealed partial class FilesPage : Page, IDisposable
 
     private void FileList_DragItemsStarting(object sender, DragItemsStartingEventArgs args)
     {
-        if (IsReadOnlyLocation() || _copyMoveRepository is null)
+        var ticket = BeginRemoteMoveDrag(args.Items.OfType<FileBrowserEntry>().Select(entry => entry.Item).ToArray());
+        if (ticket is null)
         {
             args.Cancel = true;
             return;
         }
-        var entries = args.Items
-            .OfType<FileBrowserEntry>()
-            .Where(e => FileCopyMoveViewModel.IsDestination(e.Path))
-            .ToArray();
-        if (entries.Length == 0)
-        {
-            args.Cancel = true;
-            return;
-        }
-        var paths = string.Join("\n", entries.Select(e => e.Path));
-        args.Data.SetText(paths);
+        args.Data.SetData(FileDragMoveSession.DataFormat, ticket);
         args.Data.RequestedOperation = DataPackageOperation.Move;
     }
 
+    internal string? BeginRemoteMoveDrag(IReadOnlyList<FileItem> sources)
+    {
+        _dragMoveSession?.Invalidate();
+        _dragMoveSession = null;
+        if (!CanResolveRemoteDrag() || FileCopyMoveBatchViewModel.Validate(sources, FileCopyMoveOperation.Move,
+                _viewModel.CurrentPath, FileCopyMoveBatchSourceScope.CurrentFolder) != FileCopyMoveBatchValidationStatus.Valid ||
+            sources.Any(source => !_viewModel.Items.Any(item => item.Item == source))) return null;
+        _dragMoveSession = new(_profileId, _viewModel.CurrentPath, sources);
+        return _dragMoveSession.Ticket;
+    }
+
+    private bool CanResolveRemoteDrag() => !_disposed && !_isResolvingDragMove && !_viewModel.IsLoading && !IsReadOnlyLocation() &&
+        _batchCopyMoveDialog is null && !_isClosingBatchCopyMove && _copyMoveRepository?.ProfileId == _profileId &&
+        _copyMoveRepository.Availability.CanMove && _copyMoveFolderSource?.ProfileId == _profileId;
+
+    private void FileList_DragItemsCompleted(ListViewBase sender, DragItemsCompletedEventArgs args)
+    { _dragMoveSession?.Invalidate(); _dragMoveSession = null; }
+
     private void FileList_DragOver(object sender, DragEventArgs args)
     {
-        if (IsReadOnlyLocation() || _copyMoveRepository is null ||
-            !args.DataView.Contains(StandardDataFormats.Text))
-        {
-            args.AcceptedOperation = DataPackageOperation.None;
-            return;
-        }
+        if (!args.DataView.Contains(FileDragMoveSession.DataFormat)) return;
+        args.Handled = true;
         var target = FindDropTargetFolder(args);
-        args.AcceptedOperation = target is not null
+        args.AcceptedOperation = CanResolveRemoteDrag() && target is not null && _dragMoveSession?.CanDrop(
+            _profileId, _viewModel.CurrentPath, _viewModel.Items.Select(item => item.Item).ToArray(), target) == true
             ? DataPackageOperation.Move
             : DataPackageOperation.None;
     }
 
     private async void FileList_Drop(object sender, DragEventArgs args)
     {
-        if (IsReadOnlyLocation() || _copyMoveRepository is null) return;
-
+        if (!args.DataView.Contains(FileDragMoveSession.DataFormat)) return;
+        args.Handled = true;
         var target = FindDropTargetFolder(args);
         if (target is null) return;
-
-        var paths = await args.DataView.GetTextAsync();
-        if (string.IsNullOrWhiteSpace(paths)) return;
-
-        var sourcePaths = paths.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var sources = _viewModel.Items
-            .Where(e => sourcePaths.Contains(e.Path))
-            .Select(e => e.Item)
-            .Where(item => item.CanDelete && FileCopyMoveViewModel.IsDestination(item.Path))
-            .ToArray();
-        if (sources.Length == 0) return;
-
-        if (FileCopyMoveBatchViewModel.Validate(sources, FileCopyMoveOperation.Move) !=
-            FileCopyMoveBatchValidationStatus.Valid) return;
-
-        var sourceFolder = MutationParent(sources[0].Path);
-        if (string.Equals(sourceFolder, target, StringComparison.Ordinal)) return;
-
-        var batch = new FileCopyMoveBatchViewModel(
-            _copyMoveRepository,
-            _copyMoveFolderSource!,
-            _profileId,
-            sources,
-            FileCopyMoveOperation.Move,
-            _copyMoveReviewBlocker!);
-        await batch.LoadFoldersAsync(target, destinationCanWrite: true);
-        if (!batch.CanSubmit) return;
-
-        await batch.SubmitAsync();
-        if (batch.State != FileCopyMoveBatchState.Completed) return;
-        if (batch.Summary.ConfirmedCount <= 0) return;
-
-        await ClosePreviewAsync();
-        await RunAsync(_viewModel.RefreshAsync);
-        UpdateState();
-        ShowDragMoveUndo(sources, sourceFolder, target);
+        var deferral = args.GetDeferral();
+        IReadOnlyList<FileItem>? sources;
+        try { sources = await ResolveRemoteDropAsync(args.DataView, target); }
+        finally { deferral.Complete(); }
+        if (sources is not null) await ConfirmRemoteDropAsync(sources, target);
     }
 
-    private string? FindDropTargetFolder(DragEventArgs args)
+    internal async Task<IReadOnlyList<FileItem>?> ResolveRemoteDropAsync(DataPackageView data, FileItem target)
+    {
+        if (!CanResolveRemoteDrag() || _dragMoveSession is not { } session || !data.Contains(FileDragMoveSession.DataFormat)) return null;
+        _isResolvingDragMove = true;
+        try
+        {
+            var ticket = await data.GetDataAsync(FileDragMoveSession.DataFormat) as string;
+            if (_disposed || IsReadOnlyLocation() || _viewModel.IsLoading || ticket is null ||
+                !session.TryConsume(ticket, _profileId, _viewModel.CurrentPath, _viewModel.Items.Select(item => item.Item).ToArray(), target)) return null;
+            return session.Sources;
+        }
+        catch { return null; }
+        finally { session.Invalidate(); if (ReferenceEquals(_dragMoveSession, session)) _dragMoveSession = null; _isResolvingDragMove = false; }
+    }
+
+    internal async Task ConfirmRemoteDropAsync(IReadOnlyList<FileItem> sources, FileItem target)
+    {
+        if (!CanResolveRemoteDrag() || !_viewModel.Items.Any(item => item.Item == target) || !target.CanWrite) return;
+        await ClosePreviewAsync();
+        if (!CanResolveRemoteDrag() || !_viewModel.Items.Any(item => item.Item == target) ||
+            sources.Any(source => !_viewModel.Items.Any(item => item.Item == source))) return;
+        await ShowBatchCopyMoveDialogAsync(FileCopyMoveOperation.Move, sources, target.Path, offerUndo: true);
+    }
+
+    private FileItem? FindDropTargetFolder(DragEventArgs args)
     {
         var list = VisibleFilesControl();
         if (list is null) return null;
 
         var position = args.GetPosition(list);
-        var element = list.ContainerFromIndex(0) as UIElement;
-        var container = list.ContainerFromIndex(-1);
         // 从当前位置沿可视树向上查找容器元素。
         foreach (var item in _viewModel.Items)
         {
@@ -1762,7 +1842,7 @@ public sealed partial class FilesPage : Page, IDisposable
                     itemContainer.RenderSize.Height));
             if (bounds.Contains(position))
             {
-                return item.Path;
+                return item.Item;
             }
         }
         return null;
@@ -1813,31 +1893,32 @@ public sealed partial class FilesPage : Page, IDisposable
         {
             _dragMoveUndo = null;
             FileMoveUndoStatus.IsOpen = false;
+            FileMoveUndoStatus.ActionButton = null;
         }
     }
 
     private async Task UndoDragMoveAsync(DragMoveUndo undo)
     {
+        if (!ReferenceEquals(_dragMoveUndo, undo) || undo.ExpiresAt <= DateTime.UtcNow || !CanResolveRemoteDrag()) return;
         _dragMoveUndoCts?.Cancel();
         _dragMoveUndo = null;
         FileMoveUndoStatus.IsOpen = false;
+        FileMoveUndoStatus.ActionButton = null;
 
         if (_copyMoveRepository is null || _copyMoveFolderSource is null ||
             _copyMoveReviewBlocker is null || _disposed) return;
 
-        var batch = new FileCopyMoveBatchViewModel(
-            _copyMoveRepository,
-            _copyMoveFolderSource,
-            _profileId,
-            undo.Items.ToArray(),
-            FileCopyMoveOperation.Move,
-            _copyMoveReviewBlocker);
-        await batch.LoadFoldersAsync(undo.SourceFolder, destinationCanWrite: true);
-        if (!batch.CanSubmit) return;
+        await ShowBatchCopyMoveDialogAsync(FileCopyMoveOperation.Move, undo.Items, undo.SourceFolder, requireVisibleSources: false, allowConflictChoices: false);
+    }
 
-        await batch.SubmitAsync();
-        await RunAsync(_viewModel.RefreshAsync);
-        UpdateState();
+    private void ClearRemoteDragState()
+    {
+        _dragMoveSession?.Invalidate();
+        _dragMoveSession = null; _dragMoveUndo = null;
+        _dragMoveUndoCts?.Cancel(); _dragMoveUndoCts?.Dispose(); _dragMoveUndoCts = null;
+        FileMoveUndoStatus.IsOpen = false;
+        FileMoveUndoStatus.ActionButton = null;
+        FileMoveUndoStatus.Message = string.Empty;
     }
 
     private static string MutationParent(string path)

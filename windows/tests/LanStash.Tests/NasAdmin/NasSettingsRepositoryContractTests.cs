@@ -54,7 +54,7 @@ public sealed class NasSettingsRepositoryContractTests
     public async Task SaveTerminalSettingsStaysClosedEvenWhenCapabilityIsPresent()
     {
         var api = new FakeSettingsApi();
-        api.Responses["SYNO.Core.Terminal"] = Json("""{"enable_ssh":true,"ssh_port":22}""");
+        api.Responses["SYNO.Core.Terminal"] = Json("""{"enable_ssh":true,"enable_telnet":false,"ssh_port":22}""");
         var repository = Repository(api);
 
         var settings = await repository.LoadTerminalSettingsAsync();
@@ -69,6 +69,16 @@ public sealed class NasSettingsRepositoryContractTests
         Assert.Equal(MutationResultStatus.Unsupported, result.Status);
         Assert.False(result.Submitted);
         Assert.Equal("saveTerminal", result.Operation);
+    }
+
+    [Fact]
+    public async Task SecuritySaveNeverClaimsSuccessWhenProductionWritesAreClosed()
+    {
+        var api = new FakeSettingsApi();
+        var result = await Repository(api).SaveSecuritySettingsAsync(new NasSecuritySettings(true, 5, 10, 7, true, true, true));
+        Assert.Equal(MutationResultStatus.Unsupported, result.Status);
+        Assert.False(result.Submitted);
+        Assert.Equal(0, api.WriteCalls);
     }
 
     [Fact]
@@ -124,32 +134,32 @@ public sealed class NasSettingsRepositoryContractTests
         var repository = new DsmRepository(Profile, Session, new NoOpApi(),
             new Dictionary<string, ApiCapability>());
 
-        var providers = await repository.LoadDDNSProvidersAsync();
-        Assert.Empty(providers);
+        var providers = await Assert.ThrowsAsync<DsmException>(() => repository.LoadDDNSProvidersAsync());
+        Assert.Equal(102, providers.Code);
 
-        var records = await repository.LoadDDNSRecordsAsync();
-        Assert.Empty(records);
+        var records = await Assert.ThrowsAsync<DsmException>(() => repository.LoadDDNSRecordsAsync());
+        Assert.Equal(102, records.Code);
 
-        var fileSet = await repository.LoadFileServiceSettingsAsync();
-        Assert.False(fileSet.SmbEnabled);
+        var fileSet = await Assert.ThrowsAsync<DsmException>(() => repository.LoadFileServiceSettingsAsync());
+        Assert.Equal(102, fileSet.Code);
 
-        var terminal = await repository.LoadTerminalSettingsAsync();
-        Assert.False(terminal.SshEnabled);
+        var terminal = await Assert.ThrowsAsync<DsmException>(() => repository.LoadTerminalSettingsAsync());
+        Assert.Equal(102, terminal.Code);
 
-        var proxy = await repository.LoadProxySettingsAsync();
-        Assert.False(proxy.Enabled);
+        var proxy = await Assert.ThrowsAsync<DsmException>(() => repository.LoadProxySettingsAsync());
+        Assert.Equal(102, proxy.Code);
 
-        var networks = await repository.LoadEthernetInterfacesAsync();
-        Assert.Empty(networks);
+        var networks = await Assert.ThrowsAsync<DsmException>(() => repository.LoadEthernetInterfacesAsync());
+        Assert.Equal(102, networks.Code);
 
-        var region = await repository.LoadRegionSettingsAsync();
-        Assert.Null(region.Timezone);
+        var region = await Assert.ThrowsAsync<DsmException>(() => repository.LoadRegionSettingsAsync());
+        Assert.Equal(102, region.Code);
 
-        var security = await repository.LoadSecuritySettingsAsync();
-        Assert.Null(security.AutoBlockEnabled);
+        var security = await Assert.ThrowsAsync<DsmException>(() => repository.LoadSecuritySettingsAsync());
+        Assert.Equal(102, security.Code);
 
-        var hardware = await repository.LoadHardwareSettingsAsync();
-        Assert.Null(hardware.PowerFailRestart);
+        var hardware = await Assert.ThrowsAsync<DsmException>(() => repository.LoadHardwareSettingsAsync());
+        Assert.Equal(102, hardware.Code);
 
         var powerResult = await repository.ExecutePowerActionAsync(NasPowerAction.Reboot);
         Assert.Equal(MutationResultStatus.Unsupported, powerResult.Status);
@@ -326,7 +336,7 @@ public sealed class NasSettingsRepositoryContractTests
             int requiredVersion, string method,
             IReadOnlyDictionary<string, string>? parameters = null,
             CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CallAsync(profile, session, capability, method, parameters, cancellationToken);
 
         public Task<byte[]> ReadFileRangeAsync(
             NasProfile profile, DsmSession session, ApiCapability capability,

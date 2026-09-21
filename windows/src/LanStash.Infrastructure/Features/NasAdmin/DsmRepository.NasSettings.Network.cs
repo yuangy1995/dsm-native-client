@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
 
@@ -5,110 +6,86 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public async Task<IReadOnlyList<NasEthernetInterface>> LoadEthernetInterfacesAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<NasEthernetInterface>> LoadEthernetInterfacesAsync(CancellationToken cancellationToken = default)
     {
-        if (!Supports("SYNO.Core.Network.Ethernet"))
-        {
-            return [];
-        }
-
-        try
-        {
-            var data = await CallFirstAsync(
-                "SYNO.Core.Network.Ethernet",
-                ["list", "get"],
-                parameters: null,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            return data.Array("interfaces").OfType<JsonObject>()
-                .Select(item => new NasEthernetInterface(
-                    item.String("id") ?? item.String("name") ?? "unknown",
-                    item.String("name") ?? item.String("id") ?? "unknown",
-                    DhcpEnabled: item.Bool("dhcp") ?? item.Bool("is_dhcp") ?? true,
-                    IpAddress: item.String("ip") ?? item.String("ipv4"),
-                    SubnetMask: item.String("mask") ?? item.String("subnet") ?? item.String("netmask"),
-                    Gateway: item.String("gateway") ?? item.String("gw"),
-                    DnsServers: ParseDnsServers(item.String("dns") ?? item.String("dns_servers")),
-                    Mtu: item.Int("mtu"),
-                    VlanId: item.Int("vlan_id") ?? item.Int("vlan")))
-                .ToArray();
-        }
-        catch (DsmException)
-        {
-            return [];
-        }
+        var snapshot = await LoadEthernetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot.FailedInterfaces > 0) throw InvalidNasServiceSettings();
+        return snapshot.Interfaces;
     }
 
-    private static IReadOnlyList<string> ParseDnsServers(string? dnsList)
+    public async Task<NasEthernetSnapshot> LoadEthernetSnapshotAsync(CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(dnsList))
-        {
-            return [];
-        }
-
-        return dnsList.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(entry => entry.Trim())
-            .Where(entry => !string.IsNullOrWhiteSpace(entry))
-            .ToArray();
+        var recovery = await GetEthernetRecoveryAsync(cancellationToken).ConfigureAwait(false);
+        if (recovery?.RequiresSignIn == true)
+            throw new DsmException(UserText.Key("NasNetworkFreshSignIn"), UserText.Key("NasNetworkFreshSignIn"), authenticationFailure: true);
+        return await LoadEthernetSnapshotCoreAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<MutationResult> SaveEthernetInterfaceAsync(
-        string interfaceId,
-        bool dhcp,
-        string? ip,
-        string? subnet,
-        string? gateway,
-        IReadOnlyList<string>? dns,
-        int? mtu,
-        int? vlan,
-        CancellationToken cancellationToken = default)
+    private async Task<NasEthernetSnapshot> LoadEthernetSnapshotCoreAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(interfaceId))
+        const string name = "SYNO.Core.Network.Ethernet";
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_capabilities.TryGetValue(name, out var capability) || capability.Name != name ||
+            capability.MinVersion != 1 || capability.MaxVersion < 2 ||
+            !(capability.RequestFormat.Equals("FORM", StringComparison.OrdinalIgnoreCase) ||
+              capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)))
+            throw new DsmException(UserText.Key("NasSettingsLoadError"), UserText.Key("NasSettingsUnavailable"), 102);
+        var list = await _api.CallReadJsonObjectAsync(_profile, _session, capability, 2, "list",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (list["interfaces"] is not JsonArray rows) throw InvalidNasServiceSettings();
+        var targets = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        var failed = 0;
+        foreach (var node in rows)
         {
-            return Task.FromResult(ConfirmedFailureResult(
-                "saveNetwork", MutationErrorCategory.Validation, "network.save.validation"));
+            if (node is not JsonObject row) throw InvalidNasServiceSettings();
+            var id = row.String("ifname") ?? row.String("id");
+            if (id is null) { failed++; continue; }
+            if (!id.StartsWith("eth", StringComparison.Ordinal)) continue;
+            if (!NasEthernetSettingsRules.SafeId(id)) { failed++; continue; }
+            if (!targets.TryAdd(id, row)) throw InvalidNasServiceSettings();
         }
-
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        var result = new List<NasEthernetInterface>();
+        foreach (var (id, row) in targets)
         {
-            ["id"] = interfaceId,
-            ["dhcp"] = dhcp ? "true" : "false",
-        };
-
-        if (!dhcp && !string.IsNullOrWhiteSpace(ip))
-        {
-            parameters["ip"] = ip;
-            if (!string.IsNullOrWhiteSpace(subnet))
+            cancellationToken.ThrowIfCancellationRequested();
+            try
             {
-                parameters["mask"] = subnet;
+                var detail = await _api.CallReadJsonObjectAsync(_profile, _session, capability, 1, "get",
+                    new Dictionary<string, string> { ["ifname"] = capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)
+                        ? JsonSerializer.Serialize(id) : id }, cancellationToken).ConfigureAwait(false);
+                result.Add(ParseEthernetInterface(id, detail, row));
             }
-            if (!string.IsNullOrWhiteSpace(gateway))
-            {
-                parameters["gateway"] = gateway;
-            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (DsmException error) when (error.AuthenticationFailure) { throw; }
+            catch (Exception) { failed++; }
         }
-
-        if (dns is { Count: > 0 })
-        {
-            parameters["dns"] = string.Join(",", dns);
-        }
-
-        if (mtu is int mtuValue && mtuValue is >= 576 and <= 9000)
-        {
-            parameters["mtu"] = mtuValue.ToString(
-                System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        if (vlan is int vlanValue && vlanValue is >= 1 and <= 4094)
-        {
-            parameters["vlan"] = vlanValue.ToString(
-                System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        return SaveSettingsAsync(
-            "SYNO.Core.Network.Ethernet", "set", parameters, "saveNetwork",
-            ct => Task.CompletedTask,
-            cancellationToken);
+        return new(result.AsReadOnly(), failed);
     }
+
+    private static NasEthernetInterface ParseEthernetInterface(string id, JsonObject detail, JsonObject row)
+    {
+    var returnedId = detail.String("ifname") ?? detail.String("ethernet_ifname");
+    if (returnedId is not null && returnedId != id) throw InvalidNasServiceSettings();
+    JsonNode? Field(string key) => detail[key] ?? detail["ethernet_" + key] ?? row[key] ?? row["ethernet_" + key];
+    var fields = new JsonObject();
+    foreach (var key in new[] { "use_dhcp", "title", "display", "ip", "mask", "gateway", "dns", "mtu", "mtu_config", "enable_vlan", "vlan_id", "is_default_gateway", "status" })
+        fields[key] = Field(key)?.DeepClone();
+    if (fields.Bool("use_dhcp") is not bool dhcp) throw InvalidNasServiceSettings();
+    var mtu = fields.Int("mtu") ?? fields.Int("mtu_config");
+    var vlan = fields.Int("vlan_id");
+    var dns = fields.String("dns");
+    return new(id, fields.String("title") ?? fields.String("display") ?? id, dhcp,
+        fields.String("ip"), fields.String("mask"), fields.String("gateway"),
+        Array.AsReadOnly((dns ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)),
+        mtu is >= 576 and <= 9000 ? mtu : null, vlan is >= 1 and <= 4094 ? vlan : null)
+    {
+        IsDefaultGateway = fields.Bool("is_default_gateway"), VlanEnabled = fields.Bool("enable_vlan"),
+        Status = fields.String("status"), ReportedDns = dns,
+    };
+    }
+
+    public Task<MutationResult> SaveEthernetInterfaceAsync(string interfaceId, bool dhcp,
+        string? ip, string? subnet, string? gateway, IReadOnlyList<string>? dns, int? mtu, int? vlan,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(UnsupportedResult("saveNetwork")); // 旧签名不能构造完整的单网卡 configs 或恢复原值。
 }

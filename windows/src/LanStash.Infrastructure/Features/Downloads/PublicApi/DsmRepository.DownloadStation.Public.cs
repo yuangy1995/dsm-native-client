@@ -54,9 +54,9 @@ public sealed partial class DsmRepository
             {
                 features.Add(DownloadStationReadFeature.ActivitySummary);
             }
-            if (HasPublicDownloadVersion(PublicDownloadInfoApi))
+            if (HasPublicDownloadVersion(PublicDownloadInfoApi) || HasPublicDownloadVersion(PublicDownloadInfoApi, 2))
             {
-                features.Add(DownloadStationReadFeature.DefaultDestination);
+                if (HasPublicDownloadVersion(PublicDownloadInfoApi, 2)) features.Add(DownloadStationReadFeature.DefaultDestination);
                 features.Add(DownloadStationReadFeature.ServerSettings);
             }
             if (HasPublicDownloadVersion(PublicDownloadRssSiteApi) &&
@@ -68,7 +68,8 @@ public sealed partial class DsmRepository
             {
                 features.Add(DownloadStationReadFeature.BtSearch);
             }
-            return new(DownloadStationAvailabilityStatus.Available, features);
+            return new(DownloadStationAvailabilityStatus.Available, features)
+            { SupportsCreateDestination = HasPublicDownloadVersion(PublicDownloadTaskApi, 2) };
         }
     }
 
@@ -214,7 +215,8 @@ public sealed partial class DsmRepository
                 diagnosticTag: "download-station.create.invalid-input");
         }
 
-        if (!HasControllablePublicDownloadStationContract)
+        var createVersion = normalizedDestination is null ? 1 : 2;
+        if (!HasControllablePublicDownloadStationContract || !HasPublicDownloadVersion(PublicDownloadTaskApi, createVersion))
         {
             return DownloadCreateOutcome(
                 MutationResultStatus.Unsupported,
@@ -340,7 +342,7 @@ public sealed partial class DsmRepository
                     PublicDownloadTaskApi,
                     "create",
                     parameters,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken, createVersion).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -414,7 +416,7 @@ public sealed partial class DsmRepository
         }
 
         var taskId = request.Task.Id.Trim();
-        if (string.IsNullOrEmpty(taskId) || !string.Equals(taskId, request.Task.Id, StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(taskId) || taskId.Contains(',') || taskId.Any(char.IsControl) || !string.Equals(taskId, request.Task.Id, StringComparison.Ordinal))
         {
             return DownloadControlOutcome(
                 request.Action,
@@ -564,7 +566,7 @@ public sealed partial class DsmRepository
             var review = new DownloadTaskControlReview(reviewKey, taskId, request.Action);
             try
             {
-                _ = await CallPublicDownloadAsync(
+                var response = await CallPublicDownloadAsync(
                     PublicDownloadTaskApi,
                     DownloadControlMethod(request.Action),
                     new Dictionary<string, string>
@@ -572,6 +574,7 @@ public sealed partial class DsmRepository
                         ["id"] = taskId,
                     },
                     cancellationToken).ConfigureAwait(false);
+                VerifyDownloadActionResponse(response, taskId);
             }
             catch (OperationCanceledException)
             {
@@ -580,6 +583,16 @@ public sealed partial class DsmRepository
                     review,
                     submittedStatus: MutationResultStatus.CancellationRequestedAfterSubmission,
                     cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error))
+            {
+                return DownloadControlOutcome(request.Action, taskId, MutationResultStatus.ConfirmedFailure, true, false,
+                    null, DownloadControlErrorCategory(error), DownloadControlDiagnostic(request.Action, "rejected"));
+            }
+            catch (DownloadTaskActionRejectedException error)
+            {
+                return DownloadControlOutcome(request.Action, taskId, MutationResultStatus.ConfirmedFailure, true, false,
+                    null, error.Category, DownloadControlDiagnostic(request.Action, "task-rejected"));
             }
             catch (Exception)
             {
@@ -640,57 +653,14 @@ public sealed partial class DsmRepository
     private async Task<DownloadStationSettingsSection> LoadPublicDownloadSettingsAsync(
         CancellationToken cancellationToken)
     {
-        if (!HasPublicDownloadVersion(PublicDownloadInfoApi))
+        if (!HasPublicDownloadVersion(PublicDownloadInfoApi) && !HasPublicDownloadVersion(PublicDownloadInfoApi, 2))
         {
             return new(DownloadStationSectionStatus.Unavailable, null);
         }
         try
         {
-            var config = await CallPublicDownloadAsync(
-                PublicDownloadInfoApi,
-                "getconfig",
-                parameters: null,
-                cancellationToken).ConfigureAwait(false);
-            JsonObject? schedule = null;
-            if (HasPublicDownloadVersion(PublicDownloadScheduleApi))
-            {
-                try
-                {
-                    schedule = await CallPublicDownloadAsync(
-                        PublicDownloadScheduleApi,
-                        "getconfig",
-                        parameters: null,
-                        cancellationToken).ConfigureAwait(false);
-                }
-                catch (DsmException)
-                {
-                    schedule = null;
-                }
-                catch (JsonException)
-                {
-                    schedule = null;
-                }
-                catch (IOException)
-                {
-                    schedule = null;
-                }
-            }
-
-            return new(
-                DownloadStationSectionStatus.Available,
-                new DownloadStationSettingsSummary(
-                    OptionalStableDownloadText(config, "default_destination"),
-                    OptionalDownloadBool(config, "emule_enabled"),
-                    OptionalDownloadBool(config, "unzip_service_enabled"),
-                    OptionalNonNegativeInt(config, "bt_max_download"),
-                    OptionalNonNegativeInt(config, "bt_max_upload"),
-                    OptionalNonNegativeInt(config, "http_max_download"),
-                    OptionalNonNegativeInt(config, "ftp_max_download"),
-                    OptionalNonNegativeInt(config, "nzb_max_download"),
-                    OptionalNonNegativeInt(config, "emule_max_download"),
-                    OptionalNonNegativeInt(config, "emule_max_upload"),
-                    schedule is null ? null : OptionalDownloadBool(schedule, "enabled"),
-                    schedule is null ? null : OptionalDownloadBool(schedule, "emule_enabled")));
+            var snapshot = await ReadDownloadSettingsSnapshotAsync(cancellationToken, requireCompleteBasic: false).ConfigureAwait(false);
+            return new(DownloadStationSectionStatus.Available, snapshot.Value);
         }
         catch (DsmException)
         {
@@ -759,10 +729,9 @@ public sealed partial class DsmRepository
         }
     }
 
-    private bool HasPublicDownloadVersion(string apiName) =>
+    private bool HasPublicDownloadVersion(string apiName, int version = PublicDownloadApiVersion) =>
         _capabilities.TryGetValue(apiName, out var capability) &&
-        capability.MinVersion <= PublicDownloadApiVersion &&
-        capability.MaxVersion >= PublicDownloadApiVersion;
+        capability.MinVersion <= version && capability.MaxVersion >= version;
 
     private bool HasControllablePublicDownloadStationContract =>
         _capabilities.TryGetValue(PublicDownloadTaskApi, out var capability) &&
@@ -774,11 +743,11 @@ public sealed partial class DsmRepository
         string apiName,
         string method,
         IReadOnlyDictionary<string, string>? parameters,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int version = PublicDownloadApiVersion)
     {
         if (!_capabilities.TryGetValue(apiName, out var capability) ||
-            capability.MinVersion > PublicDownloadApiVersion ||
-            capability.MaxVersion < PublicDownloadApiVersion)
+            capability.MinVersion > version || capability.MaxVersion < version)
         {
             throw MissingPublicDownloadStationContract();
         }
@@ -787,8 +756,9 @@ public sealed partial class DsmRepository
             _session,
             capability with
             {
-                MinVersion = PublicDownloadApiVersion,
-                MaxVersion = PublicDownloadApiVersion,
+                Path = capability.Path == "webapi/entry.cgi" ? "/webapi/entry.cgi" : capability.Path,
+                MinVersion = version,
+                MaxVersion = version,
             },
             method,
             parameters,
@@ -853,9 +823,9 @@ public sealed partial class DsmRepository
             "downloading" => DownloadTaskState.Downloading,
             "paused" => DownloadTaskState.Paused,
             "finished" => DownloadTaskState.Finished,
-            "hash_checking" or "filehosting_waiting" or "extracting" =>
+            "checking" or "hash_checking" or "filehosting_waiting" or "extracting" =>
                 DownloadTaskState.Checking,
-            "seeding" => DownloadTaskState.Seeding,
+            "seeding" or "uploading" => DownloadTaskState.Seeding,
             "error" => DownloadTaskState.Error,
             _ => DownloadTaskState.Unknown,
         };
@@ -1099,6 +1069,7 @@ public sealed partial class DsmRepository
         DownloadTask baseline,
         DownloadTask current) =>
         string.Equals(baseline.Id, current.Id, StringComparison.Ordinal) &&
+        baseline.Title == current.Title && baseline.Size == current.Size && baseline.Destination == current.Destination &&
         baseline.State == current.State &&
         string.Equals(baseline.RawStatus, current.RawStatus, StringComparison.Ordinal);
 
@@ -1108,7 +1079,7 @@ public sealed partial class DsmRepository
         action switch
         {
             DownloadTaskControlAction.Pause => state is DownloadTaskState.Waiting or
-                DownloadTaskState.Downloading or DownloadTaskState.Checking,
+                DownloadTaskState.Downloading or DownloadTaskState.Checking or DownloadTaskState.Seeding,
             DownloadTaskControlAction.Resume => state == DownloadTaskState.Paused,
             _ => false,
         };

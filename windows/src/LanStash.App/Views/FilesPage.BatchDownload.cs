@@ -1,4 +1,6 @@
 using LanStash.App.Features.Files;
+using LanStash.App.Features.Files.Downloads;
+using LanStash.Domain;
 using LanStash.App.Features.Files.CopyMove;
 using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.Transfers;
@@ -67,7 +69,7 @@ public sealed partial class FilesPage
         FileGrid.SelectionMode = ListViewSelectionMode.Multiple;
         FileList.SelectedItems.Clear();
         FileGrid.SelectedItems.Clear();
-        if (selected is { IsDirectory: false })
+        if (selected is not null && FileDownloadSelection.IsValidItem(selected.Item))
         {
             _batchSelection.Add(selected.Path);
             ApplyDownloadSelection(VisibleFilesControl());
@@ -114,11 +116,10 @@ public sealed partial class FilesPage
             _batchSelection.Remove(removed.Path);
         }
         var rejected = false;
-        var rejectedForLimit = false;
         foreach (var added in args.AddedItems.OfType<FileBrowserEntry>())
         {
             var rejectsItem = _isSelectingDownloads
-                ? added.IsDirectory
+                ? !FileDownloadSelection.IsValidItem(added.Item)
                 : _isSelectingArchiveCompression
                     ? !CanSelectForArchiveCompression(added.Item)
                 : _isSelectingRecycle
@@ -128,11 +129,8 @@ public sealed partial class FilesPage
                     : !FileCopyMoveViewModel.IsDestination(added.Path) ||
                         (_batchSelectionOperation == FileBatchSelectionOperation.Move &&
                             !added.Item.CanDelete);
-            if (rejectsItem ||
-                (_batchSelection.Count == BoundedFileDownloadBatch.MaximumFileCount &&
-                    !_batchSelection.Contains(added.Path)))
+            if (rejectsItem)
             {
-                rejectedForLimit |= !rejectsItem;
                 _isSynchronizingDownloadSelection = true;
                 source.SelectedItems.Remove(added);
                 _isSynchronizingDownloadSelection = false;
@@ -145,22 +143,14 @@ public sealed partial class FilesPage
         {
             ShowBatchSelectionMessage(
                 _isSelectingDownloads
-                    ? "FileDownloadBatchSelectionLimitMessage"
+                    ? "FileSelectionDownloadInvalid"
                     : _isSelectingArchiveCompression
-                        ? rejectedForLimit
-                            ? "FileArchiveCompressionSelectionLimit"
-                            : "FileArchiveCompressionSelectionInvalid"
+                        ? "FileArchiveCompressionSelectionInvalid"
                     : _isSelectingRecycle
-                        ? rejectedForLimit
-                            ? _isSelectingRestore
-                                ? "FileRestoreBatchSelectionLimit"
-                                : "FileRecycleBatchSelectionLimit"
-                            : _isSelectingRestore
-                                ? "FileRestoreBatchSelectionInvalid"
-                                : "FileRecycleBatchSelectionInvalid"
-                        : rejectedForLimit
-                            ? "FileCopyMoveBatchSelectionLimit"
-                            : "FileCopyMoveBatchSelectionInvalid",
+                        ? _isSelectingRestore
+                            ? "FileRestoreBatchSelectionInvalid"
+                            : "FileRecycleBatchSelectionInvalid"
+                        : "FileCopyMoveBatchSelectionInvalid",
                 InfoBarSeverity.Warning);
         }
         else
@@ -172,48 +162,47 @@ public sealed partial class FilesPage
 
     private async Task StartSelectedDownloadsAsync()
     {
-        var items = _viewModel.Items
-            .Where(item => !item.IsDirectory && _batchSelection.Contains(item.Path))
-            .Select(item => new FileDownloadBatchItem(item.Path, item.Name, item.Item.Size))
-            .ToArray();
-        if (BoundedFileDownloadBatch.Validate(items) != FileDownloadBatchValidationStatus.Valid)
+        if (_disposed || !_isSelectingDownloads || _isChoosingDownloadTarget || _downloadBatchId is not null || _viewModel.IsLoading) return;
+        var items = _viewModel.Items.Where(item => _batchSelection.Contains(item.Path)).Select(item => item.Item).ToArray();
+        if (items.Length != _batchSelection.Count || !FileDownloadSelection.IsValid(items))
         {
-            ShowBatchDownloadMessage("FileDownloadBatchInvalidMessage", InfoBarSeverity.Error);
+            ShowBatchDownloadMessage("FileSelectionDownloadInvalid", InfoBarSeverity.Error);
             return;
         }
-
+        var sourcePath = _viewModel.CurrentPath;
+        bool SourceIsCurrent()
+        {
+            if (_disposed || !_isSelectingDownloads || _viewModel.IsLoading || _isSynchronizingDownloadSelection || _viewModel.CurrentPath != sourcePath) return false;
+            var visible = VisibleFilesControl().SelectedItems;
+            return visible.Count == items.Length &&
+                FileDownloadSelection.MatchesSnapshot(items, visible.OfType<FileBrowserEntry>().Select(item => item.Item).ToArray(), _batchSelection) &&
+                FileDownloadSelection.MatchesSnapshot(items, _viewModel.Items.Select(item => item.Item).ToArray(), _batchSelection);
+        }
         _isChoosingDownloadTarget = true;
         UpdateState();
         try
         {
-            var start = await _transfers.PickAndStartDownloadBatchAsync(
-                _profileId.ToString(),
-                items);
-            if (start.Status == FileDownloadBatchValidationStatus.Empty)
+            var activityId = await _transfers.PickAndStartSelectedDownloadAsync(_profileId.ToString(), items, SourceIsCurrent);
+            if (_disposed) return;
+            if (activityId is null)
             {
-                return;
-            }
-            if (start.Status != FileDownloadBatchValidationStatus.Valid || start.BatchId is null)
-            {
-                ShowBatchDownloadStartError(start.Status);
+                if (!SourceIsCurrent()) ShowBatchDownloadMessage("FileSelectionDownloadChanged", InfoBarSeverity.Warning);
                 return;
             }
             ExitDownloadSelectionMode();
-            _downloadBatchId = start.BatchId;
+            _downloadBatchId = activityId;
             ShowDownloadBatchStarted(items.Length);
             UpdateState();
         }
-        catch (ObjectDisposedException)
-        {
-        }
+        catch (ObjectDisposedException) { }
         catch
         {
-            ShowBatchDownloadMessage("FileDownloadBatchFolderErrorMessage", InfoBarSeverity.Error);
+            if (!_disposed) ShowBatchDownloadMessage("FileSelectionDownloadFailed", InfoBarSeverity.Error);
         }
         finally
         {
             _isChoosingDownloadTarget = false;
-            UpdateState();
+            if (!_disposed) UpdateState();
         }
     }
 
@@ -233,7 +222,7 @@ public sealed partial class FilesPage
                 return;
             }
             cancel.IsEnabled = false;
-            _transfers.CancelDownloadBatch(batchId);
+            _transfers.Cancel(_profileId.ToString(), batchId);
             ShowBatchDownloadMessage(
                 "FileDownloadBatchCancellingMessage",
                 InfoBarSeverity.Informational,
@@ -241,37 +230,26 @@ public sealed partial class FilesPage
         };
         FileDownloadBatchStatus.ActionButton = cancel;
         FileDownloadBatchStatus.Severity = InfoBarSeverity.Informational;
-        FileDownloadBatchStatus.Message = localization.Format("FileDownloadBatchStartedMessage", count);
+        FileDownloadBatchStatus.Message = localization.Format("FileSelectionDownloadStarted", count);
         FileDownloadBatchStatus.IsOpen = true;
     }
 
-    private void Transfers_DownloadBatchFinished(ForegroundDownloadBatchFinished finished)
+    private void Transfers_SelectionDownloadFinished(ForegroundSelectionDownloadFinished finished)
     {
-        if (!string.Equals(finished.ProfileId, _profileId.ToString(), StringComparison.Ordinal))
-        {
-            return;
-        }
+        if (!string.Equals(finished.ProfileId, _profileId.ToString(), StringComparison.Ordinal)) return;
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (_disposed || _downloadBatchId != finished.BatchId)
-            {
-                return;
-            }
+            if (_disposed || _downloadBatchId != finished.ActivityId) return;
             _downloadBatchId = null;
             FileDownloadBatchStatus.ActionButton = null;
-            var summary = finished.Summary;
-            FileDownloadBatchStatus.Severity =
-                summary.FailedCount > 0 || summary.CancelledCount > 0 ||
-                    summary.NotStartedCount > 0
-                    ? InfoBarSeverity.Warning
-                    : InfoBarSeverity.Success;
-            FileDownloadBatchStatus.Message = LocalizationService.Current.Format(
-                "FileDownloadBatchSummaryMessage",
-                summary.SelectedCount,
-                summary.CompletedCount,
-                summary.FailedCount,
-                summary.CancelledCount,
-                summary.NotStartedCount);
+            FileDownloadBatchStatus.Severity = finished.Status == FileDownloadBatchAttemptStatus.Completed
+                ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+            FileDownloadBatchStatus.Message = LocalizationService.Current.Format(finished.Status switch
+            {
+                FileDownloadBatchAttemptStatus.Completed => "FileSelectionDownloadCompleted",
+                FileDownloadBatchAttemptStatus.Cancelled => "FileSelectionDownloadCancelled",
+                _ => "FileSelectionDownloadFailed"
+            }, finished.SelectedCount);
             FileDownloadBatchStatus.IsOpen = true;
             UpdateState();
         });
@@ -284,27 +262,25 @@ public sealed partial class FilesPage
             : Visibility.Visible;
         DownloadMultipleButton.IsEnabled =
             !_viewModel.IsLoading && _downloadBatchId is null &&
-            _folderUploadBatchId is null && _viewModel.Items.Any(item => !item.IsDirectory);
+            _folderUploadBatchId is null && _viewModel.Items.Any(item => FileDownloadSelection.IsValidItem(item.Item));
         DownloadSelectedFilesButton.Visibility = _isSelectingDownloads
             ? Visibility.Visible
             : Visibility.Collapsed;
-        DownloadSelectedFilesButton.IsEnabled = _batchSelection.Count is > 0 and <= BoundedFileDownloadBatch.MaximumFileCount;
+        DownloadSelectedFilesButton.IsEnabled = _batchSelection.Count > 0;
         DownloadSelectedFilesButton.IsEnabled &= !_isChoosingDownloadTarget;
         MoveSelectedToRecycleButton.Visibility = _isSelectingRecycle
             && !_isSelectingRestore
             ? Visibility.Visible
             : Visibility.Collapsed;
-        MoveSelectedToRecycleButton.IsEnabled = _batchSelection.Count is > 0 and <=
-            FileRecycleBatchViewModel.MaximumItemCount;
+        MoveSelectedToRecycleButton.IsEnabled = _batchSelection.Count > 0;
         RestoreSelectedItemsButton.Visibility = _isSelectingRestore
             ? Visibility.Visible
             : Visibility.Collapsed;
-        RestoreSelectedItemsButton.IsEnabled = _batchSelection.Count is > 0 and <=
-            FileRecycleBatchViewModel.MaximumItemCount;
+        RestoreSelectedItemsButton.IsEnabled = _batchSelection.Count > 0;
         CreateArchiveSelectedButton.Visibility = _isSelectingArchiveCompression
             ? Visibility.Visible
             : Visibility.Collapsed;
-        CreateArchiveSelectedButton.IsEnabled = _batchSelection.Count is > 0 and <= 20;
+        CreateArchiveSelectedButton.IsEnabled = _batchSelection.Count > 0;
         CancelDownloadSelectionButton.Visibility = _isSelectingItems
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -355,7 +331,7 @@ public sealed partial class FilesPage
     private void AnnounceBatchSelection() =>
         ShowBatchSelectionMessage(
             _isSelectingDownloads
-                ? "FileDownloadBatchSelectionCountMessage"
+                ? "FileSelectionDownloadCount"
                 : _isSelectingArchiveCompression
                     ? "FileArchiveCompressionSelectionCount"
                 : _isSelectingRecycle
@@ -400,15 +376,6 @@ public sealed partial class FilesPage
         }
         ShowBatchDownloadMessage(resourceKey, severity, argument);
     }
-
-    private void ShowBatchDownloadStartError(FileDownloadBatchValidationStatus status) =>
-        ShowBatchDownloadMessage(status switch
-        {
-            FileDownloadBatchValidationStatus.TargetExists => "FileDownloadBatchTargetExistsMessage",
-            FileDownloadBatchValidationStatus.TargetBusy => "FileDownloadBatchBusyMessage",
-            FileDownloadBatchValidationStatus.TooMany => "FileDownloadBatchTooManyMessage",
-            _ => "FileDownloadBatchInvalidMessage",
-        }, InfoBarSeverity.Error);
 
     private void ShowBatchDownloadMessage(
         string resourceKey,

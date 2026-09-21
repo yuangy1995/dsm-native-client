@@ -13,6 +13,10 @@ public interface IFileLocationsRepository
     /// 由 <c>SYNO.FileStation.Favorite</c> 能力发现结果控制。
     /// </summary>
     bool CanWriteFavorites { get; }
+    Task<IReadOnlyList<FileFavoriteMutationRecovery>> GetFavoriteMutationRecoveriesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<FileFavoriteMutationRecovery>>([]);
+    Task<MutationResult?> ReviewFavoriteMutationAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult<MutationResult?>(null);
 
     Task<MutationResult> AddFavoriteAsync(
         string path,
@@ -28,6 +32,17 @@ public interface IFileLocationsRepository
     /// 由 <c>SYNO.FileStation.Mount</c> 能力发现结果控制。
     /// </summary>
     bool AllowsRemoteMountManagement { get; }
+    bool CanManageRemoteMountWorkflow => false;
+    Task<RemoteMountProgress> StartRemoteMountOperationAsync(RemoteMountMutationRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromException<RemoteMountProgress>(new NotSupportedException());
+    Task<RemoteMountProgress?> ReviewRemoteMountOperationAsync(Guid requestId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<RemoteMountProgress?>(null);
+    Task<RemoteMountProgress> ContinueRemoteMountOperationAsync(RemoteMountMutationRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromException<RemoteMountProgress>(new NotSupportedException());
+    Task<IReadOnlyList<RemoteMountProgress>> GetRemoteMountOperationsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<RemoteMountProgress>>([]);
+    Task<RemoteMountInventory> LoadRemoteMountInventoryAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<RemoteMountInventory>(new NotSupportedException());
 
     Task<MutationResult> CreateRemoteMountAsync(
         RemoteMountDraft draft,

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LanStash.App.Features.Transfers;
 
 namespace LanStash.Tests;
@@ -31,7 +32,7 @@ public sealed class BoundedFolderUploadPlanTests
     }
 
     [Fact]
-    public void AcceptsAllLimits()
+    public void PreservesSelectionsAtFormerLimits()
     {
         using var root = TempDirectory.Create("limits");
         for (var index = 0; index < 19; index++)
@@ -63,39 +64,155 @@ public sealed class BoundedFolderUploadPlanTests
     }
 
     [Fact]
-    public void RejectsTooManyFilesAndDirectories()
+    public void PlansEveryFileAndDirectoryBeyondFormerLimits()
     {
         using var files = TempDirectory.Create("files");
-        for (var index = 0; index < 21; index++) File.WriteAllText(Path.Combine(files.Path, $"f{index}.txt"), "x");
-        Assert.Equal(FolderUploadPlanStatus.TooManyFiles, BoundedFolderUploadPlan.Create(files.Path).Status);
+        for (var index = 0; index < 205; index++) File.WriteAllText(Path.Combine(files.Path, $"f{index:D3}.txt"), "x");
+        var fileResult = BoundedFolderUploadPlan.Create(files.Path);
+        Assert.Equal(FolderUploadPlanStatus.Valid, fileResult.Status);
+        Assert.Equal(Enumerable.Range(0, 205).Select(index => $"f{index:D3}.txt"), fileResult.Plan!.Files.Select(file => file.RelativePath));
 
         using var directories = TempDirectory.Create("directories");
-        for (var index = 0; index < 20; index++) Directory.CreateDirectory(Path.Combine(directories.Path, $"d{index}"));
-        Assert.Equal(FolderUploadPlanStatus.TooManyDirectories, BoundedFolderUploadPlan.Create(directories.Path).Status);
+        for (var index = 0; index < 35; index++) Directory.CreateDirectory(Path.Combine(directories.Path, $"d{index:D2}"));
+        var directoryResult = BoundedFolderUploadPlan.Create(directories.Path);
+        Assert.Equal(FolderUploadPlanStatus.Valid, directoryResult.Status);
+        Assert.Equal(new[] { "" }.Concat(Enumerable.Range(0, 35).Select(index => $"d{index:D2}")), directoryResult.Plan!.Directories.Select(directory => directory.RelativePath));
     }
 
     [Fact]
-    public void RejectsDepthBeyondEight()
+    public void PlansDeepTreesInParentFirstOrder()
     {
         using var root = TempDirectory.Create("depth");
         var current = root.Path;
-        for (var depth = 2; depth <= 9; depth++) current = Directory.CreateDirectory(Path.Combine(current, $"d{depth}")).FullName;
+        for (var depth = 2; depth <= 16; depth++) current = Directory.CreateDirectory(Path.Combine(current, $"d{depth}")).FullName;
+        File.WriteAllText(Path.Combine(current, "deep.txt"), "deep");
 
-        Assert.Equal(FolderUploadPlanStatus.TooDeep, BoundedFolderUploadPlan.Create(root.Path).Status);
+        var result = BoundedFolderUploadPlan.Create(root.Path);
+        Assert.Equal(FolderUploadPlanStatus.Valid, result.Status);
+        Assert.Equal(16, result.Plan!.Directories.Count);
+        Assert.Equal(Enumerable.Range(0, 16), result.Plan.Directories.Select(directory => directory.RelativePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Length));
+        Assert.Equal(current, Path.GetDirectoryName(Assert.Single(result.Plan.Files).SourcePath));
+        Assert.True(BoundedFolderUploadPlan.IsCurrent(result.Plan));
+    }
+
+    [Fact]
+    public void PlanningAndRecheckingPropagateCancellation()
+    {
+        using var root = TempDirectory.Create("cancel");
+        var plan = BoundedFolderUploadPlan.Create(root.Path).Plan!;
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        Assert.Throws<OperationCanceledException>(() => BoundedFolderUploadPlan.Create(root.Path, cancellation.Token));
+        Assert.Throws<OperationCanceledException>(() => BoundedFolderUploadPlan.IsCurrent(plan, cancellation.Token));
+    }
+
+    [Fact]
+    public void PlannedCollectionsCannotBeChangedAfterConfirmation()
+    {
+        using var root = TempDirectory.Create("snapshot");
+        File.WriteAllText(Path.Combine(root.Path, "item.txt"), "x");
+        var plan = BoundedFolderUploadPlan.Create(root.Path).Plan!;
+        Assert.Throws<NotSupportedException>(() => ((IList<FolderUploadDirectory>)plan.Directories).Clear());
+        Assert.Throws<NotSupportedException>(() => ((IList<FolderUploadFile>)plan.Files).Clear());
+        Assert.True(BoundedFolderUploadPlan.IsCurrent(plan));
+    }
+
+    [Fact]
+    public void RejectsParentReplacedByJunctionAfterPlanningEvenWithIdenticalFileMetadata()
+    {
+        using var root = TempDirectory.Create("replacement");
+        using var outside = TempDirectory.Create("outside");
+        var child = Directory.CreateDirectory(Path.Combine(root.Path, "child")).FullName;
+        var path = Path.Combine(child, "item.txt");
+        var outsidePath = Path.Combine(outside.Path, "item.txt");
+        File.WriteAllText(path, "inside!");
+        File.WriteAllText(outsidePath, "outside");
+        File.SetLastWriteTimeUtc(outsidePath, File.GetLastWriteTimeUtc(path));
+        var plan = BoundedFolderUploadPlan.Create(root.Path).Plan!;
+        var file = Assert.Single(plan.Files);
+        Assert.True(BoundedFolderUploadPlan.IsCurrent(file, plan.RootPath));
+        Directory.Move(child, Path.Combine(root.Path, "saved"));
+        using (CreateDirectoryJunction(child, outside.Path))
+        {
+            Assert.Equal(file.Length, new FileInfo(path).Length);
+            Assert.Equal(file.LastWriteTimeUtc, File.GetLastWriteTimeUtc(path));
+            Assert.False(BoundedFolderUploadPlan.IsCurrent(file, plan.RootPath));
+            Assert.False(BoundedFolderUploadPlan.IsCurrent(plan));
+        }
+        Assert.Equal("outside", File.ReadAllText(outsidePath));
+    }
+
+    [Fact]
+    public async Task BatchExecutesTheEntireLargePlanWithoutTruncation()
+    {
+        var directories = Enumerable.Range(0, 35).Select(index => new FolderUploadDirectory($"d{index}", $"d{index}")).ToArray();
+        var files = Enumerable.Range(0, 205).Select(index => PlannedFile($"d0/f{index}.txt")).ToArray();
+        var directoryCalls = new List<FolderUploadDirectory>();
+        var fileCalls = new List<FolderUploadFile>();
+        var summary = await BoundedFolderUploadBatch.RunAsync(Plan(directories, files),
+            (directory, _) => { directoryCalls.Add(directory); return Task.FromResult(Confirmed()); },
+            (file, _) => { Assert.Equal(35, directoryCalls.Count); fileCalls.Add(file); return Task.FromResult(Confirmed()); },
+            CancellationToken.None);
+        Assert.Equal(directories, directoryCalls);
+        Assert.Equal(files, fileCalls);
+        Assert.Equal(240, summary.ConfirmedCount);
+        Assert.Equal(0, summary.NotStartedCount);
     }
 
     [Fact]
     public void RejectsRootAndDescendantReparsePoints()
     {
         using var target = TempDirectory.Create("target");
-        using var rootLinkParent = TempDirectory.Create("root-link-parent");
-        var rootLink = Path.Combine(rootLinkParent.Path, "root-link");
-        Directory.CreateSymbolicLink(rootLink, target.Path);
-        Assert.Equal(FolderUploadPlanStatus.ReparsePoint, BoundedFolderUploadPlan.Create(rootLink).Status);
+        var targetFile = Path.Combine(target.Path, "outside.txt");
+        File.WriteAllText(targetFile, "outside upload root");
+        using (var rootLinkParent = TempDirectory.Create("root link parent"))
+        {
+            var rootLink = Path.Combine(rootLinkParent.Path, "root link");
+            using var junction = CreateDirectoryJunction(rootLink, target.Path);
+            var result = BoundedFolderUploadPlan.Create(rootLink);
+            Assert.Equal(FolderUploadPlanStatus.ReparsePoint, result.Status);
+            Assert.Null(result.Plan);
+        }
 
-        using var descendant = TempDirectory.Create("descendant");
-        Directory.CreateSymbolicLink(Path.Combine(descendant.Path, "link"), target.Path);
-        Assert.Equal(FolderUploadPlanStatus.ReparsePoint, BoundedFolderUploadPlan.Create(descendant.Path).Status);
+        using (var descendant = TempDirectory.Create("descendant"))
+        {
+            using var junction = CreateDirectoryJunction(Path.Combine(descendant.Path, "link"), target.Path);
+            var result = BoundedFolderUploadPlan.Create(descendant.Path);
+            Assert.Equal(FolderUploadPlanStatus.ReparsePoint, result.Status);
+            Assert.Null(result.Plan);
+        }
+
+        Assert.Equal("outside upload root", File.ReadAllText(targetFile));
+    }
+
+    private static IDisposable CreateDirectoryJunction(string linkPath, string targetPath)
+    {
+        // 生产代码拒绝所有重解析点。目录联接提供真实重解析点，不依赖符号链接特权或开发者模式。
+        // 路径通过环境变量传入，禁用自动运行与延迟展开，避免空格及命令字符改变命令含义。
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"),
+            Arguments = "/d /v:off /c mklink /J \"%LANSTASH_TEST_LINK%\" \"%LANSTASH_TEST_TARGET%\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        startInfo.Environment["LANSTASH_TEST_LINK"] = linkPath;
+        startInfo.Environment["LANSTASH_TEST_TARGET"] = targetPath;
+        using var process = Process.Start(startInfo)!;
+        Assert.True(process.WaitForExit(10_000), "创建测试目录联接超时。");
+        Assert.Equal(0, process.ExitCode);
+        var link = new DirectoryInfo(linkPath);
+        Assert.True(link.Attributes.HasFlag(FileAttributes.ReparsePoint));
+        Assert.Equal(Path.GetFullPath(targetPath), link.ResolveLinkTarget(returnFinalTarget: true)!.FullName);
+        return new DirectoryJunction(linkPath);
+    }
+
+    private sealed class DirectoryJunction(string path) : IDisposable
+    {
+        // 只移除联接本身，不递归处理联接目标，也不调用卷挂载点清理。
+        public void Dispose() => Directory.Delete(path, recursive: false);
     }
 
     [Theory]

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/LanStash.App/CloudDrive/CloudFilesInterop.cs" Link="CloudFilesInterop.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/CloudFilePlaceholderNative.cs" Link="CloudFilePlaceholderNative.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/CloudFileLocalRemovalGate.cs" Link="CloudFileLocalRemovalGate.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/DesktopCloudDriveSyncStore.cs" Link="DesktopCloudDriveSyncStore.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/DesktopCloudDriveSyncStore.Relocations.cs" Link="DesktopCloudDriveSyncStore.Relocations.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/DesktopCloudDriveSyncStore.Deletions.cs" Link="DesktopCloudDriveSyncStore.Deletions.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/CloudDriveDeletionOperation.cs" Link="CloudDriveDeletionOperation.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/CloudDriveWriteScope.cs" Link="CloudDriveWriteScope.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/CloudDriveRelocationOperation.cs" Link="CloudDriveRelocationOperation.cs" />
+    <Compile Include="../../src/LanStash.App/CloudDrive/CloudFileRenamePaths.cs" Link="CloudFileRenamePaths.cs" />
+    <ProjectReference Include="../../src/LanStash.Domain/LanStash.Domain.csproj" />
+  </ItemGroup>
+</Project>

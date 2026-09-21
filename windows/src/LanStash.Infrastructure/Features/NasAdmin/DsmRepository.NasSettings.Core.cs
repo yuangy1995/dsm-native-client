@@ -6,33 +6,42 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    // NAS 控制面写入仍未完成目标版本的行为验收，统一保持生产门关闭。
+    // 旧通用写入口没有确认请求边界，继续隔离；已实现操作使用专用安全流程。
     private const bool NasSettingsWritesEnabled = false;
     private readonly SemaphoreSlim _nasWriteGate = new(1, 1);
 
     NasSettingsWriteAvailability INasSettingsRepository.WriteAvailability => NasSettingsWriteAvailability;
 
     private NasSettingsWriteAvailability NasSettingsWriteAvailability => new(
-        CanSaveDDNS: false,
-        CanSaveFileService: false,
-        CanSaveTerminal: false,
-        CanSaveProxy: false,
-        CanSaveNetwork: false,
-        CanSaveRegion: false,
-        CanSaveSecurity: false,
-        CanSaveHardware: false,
+        CanSaveDDNS: _nasServiceSessionVerified && _nasServiceAdministrator && DdnsWriteCapability() is not null,
+        CanSaveFileService: _nasServiceSessionVerified && _nasServiceAdministrator &&
+            FileServiceReadGroups.Any(group => FileServiceCapability(group) is not null),
+        CanSaveTerminal: _nasServiceSessionVerified && _nasServiceAdministrator && NasServiceCapability(NasServiceSettingsKind.Terminal) is not null,
+        CanSaveProxy: _nasServiceSessionVerified && _nasServiceAdministrator && NasServiceCapability(NasServiceSettingsKind.Proxy) is not null,
+        CanSaveNetwork: _nasServiceSessionVerified && _nasServiceAdministrator && EthernetCapability() is not null,
+        CanSaveRegion: _nasServiceSessionVerified && _nasServiceAdministrator && RegionCapability() is not null,
+        CanSaveSecurity: _nasServiceSessionVerified && _nasServiceAdministrator &&
+            (SecurityCapability("SYNO.Core.Security.AutoBlock", 1) is not null || SecurityCapability("SYNO.Core.Security.DoS", 2) is not null ||
+                SecurityCapability("SYNO.Core.Security.Firewall.Conf", 1) is not null || SecurityCapability("SYNO.Core.Security.Firewall", 1) is not null),
+        CanSaveHardware: _nasServiceSessionVerified && _nasServiceAdministrator && HardwareReadGroups.Any(group => SecurityCapability(group.Api, 1) is not null),
         CanSaveFTP: false,
         CanSaveSFTP: false,
         CanSaveSSDP: false,
         CanSaveBonjour: false,
         CanSaveTimeMachine: false,
         CanSaveUPS: false,
-        CanPowerAction: false,
-        CanPackageControl: false,
-        CanAccountDelete: false,
-        CanGroupDelete: false,
-        CanConnectionDisconnect: false,
-        CanDiskTest: false);
+        CanPowerAction: _nasServiceSessionVerified && _nasServiceAdministrator && PowerCapability() is not null,
+        CanPackageControl: _nasServiceSessionVerified && _nasServiceAdministrator && SecurityCapability("SYNO.Core.Package", 2) is not null &&
+            (SecurityCapability("SYNO.Core.Package.Control", 1) is not null || SecurityCapability("SYNO.Core.Package.Uninstallation", 1) is not null),
+        CanAccountDelete: _nasServiceSessionVerified && _nasServiceAdministrator && DirectoryCapability(NasDirectoryKind.User) is not null,
+        CanGroupDelete: _nasServiceSessionVerified && _nasServiceAdministrator && DirectoryCapability(NasDirectoryKind.Group) is not null,
+        CanConnectionDisconnect: _nasServiceSessionVerified && _nasServiceAdministrator && ConnectionCapability() is not null,
+        CanDiskTest: _nasServiceSessionVerified && _nasServiceAdministrator &&
+            SecurityCapability("SYNO.Storage.CGI.Storage", 1) is not null && SecurityCapability("SYNO.Core.Storage.Disk", 1) is not null)
+    {
+        CanSaveRemoteAccess = _nasServiceSessionVerified && _nasServiceAdministrator &&
+            (RemoteAccessCapability(NasRemoteAccessParts.Relay) is not null || RemoteAccessCapability(NasRemoteAccessParts.Router) is not null),
+    };
 
     private async Task<MutationResult> SaveSettingsAsync(
         string apiName,

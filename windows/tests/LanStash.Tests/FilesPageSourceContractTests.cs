@@ -3,6 +3,43 @@ namespace LanStash.Tests;
 public sealed class FilesPageSourceContractTests
 {
     [Fact]
+    public void FavoriteActionsUseCurrentProfileRecoveryAndSharedContextMenuHandler()
+    {
+        var source = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.Favorites.cs");
+        var contextMenu = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.ContextMenu.cs");
+        var lifecycle = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
+        Assert.Contains("_locationsViewModel.ProfileId == _profileId", source);
+        Assert.Contains("ReviewFavoriteAsync(path, token)", source);
+        Assert.Contains("generation == _favoriteGeneration", source);
+        Assert.Contains("AddContextCommand(menu, ToggleFavoriteButton, ToggleFavorite_Click)", contextMenu);
+        Assert.Contains("CancelFavoriteOperation();", SliceMethod(lifecycle, "public async Task CloseAsync()", "public void Dispose()"));
+        Assert.Contains("CancelFavoriteOperation();", SliceMethod(lifecycle, "public void Dispose()", "private static IFileCopyMoveFolderSource?"));
+    }
+
+    [Fact]
+    public void RecursiveSearchIsCancelledOnNavigationUnloadCloseAndDisposal()
+    {
+        var source = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
+        Assert.Contains("Unloaded += FilesPage_Unloaded;", source);
+        Assert.Contains("Unloaded -= FilesPage_Unloaded;", source);
+        var unload = SliceMethod(source, "private void FilesPage_Unloaded", "private bool _stateUpdateQueued");
+        Assert.Contains("CancelAsyncSearch();", unload);
+        Assert.Contains("ClearRemoteDragState();", unload);
+        Assert.Contains("CancelFavoriteOperation();", unload);
+        Assert.Contains("CancelFolderUploadPreparation();", unload);
+        var navigate = SliceMethod(source, "private async Task RunAsync(", "internal FileBrowserViewModel BrowserModel");
+        Assert.Contains("CancelAsyncSearch();", navigate);
+        var close = SliceMethod(source, "public async Task CloseAsync()", "public void Dispose()");
+        Assert.Contains("CancelAsyncSearch();", close);
+        var dispose = SliceMethod(source, "public void Dispose()", "private static IFileCopyMoveFolderSource?");
+        Assert.Contains("CancelAsyncSearch();", dispose);
+        var search = SliceMethod(source, "private async Task PerformAsyncSearchAsync", "private async void SearchRetry_Click");
+        Assert.Contains("_disposed || token.IsCancellationRequested", search);
+        Assert.Contains("_viewModel.CurrentPath != currentPath", search);
+        Assert.Contains("ReferenceEquals(_searchCancellation, cancellation)", search);
+    }
+
+    [Fact]
     public void SingleDownloadCommandAcceptsFilesAndFoldersWhilePreviewRemainsFileOnly()
     {
         var source = ReadRepositoryFile(
@@ -62,7 +99,9 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("StandardDataFormats.StorageItems", drop);
         Assert.Contains("items[0] is StorageFolder folder", drop);
         Assert.Contains("UploadFolderFromPathAsync(targetPath, folderPath)", drop);
-        Assert.Contains("items.Count > BoundedFileUploadBatch.MaximumFileCount", drop);
+        Assert.DoesNotContain("BoundedFileUploadBatch.MaximumFileCount", drop);
+        Assert.Contains("items.Count == 0", drop);
+        Assert.Contains("BoundedFileUploadBatch.ValidatePaths(paths)", drop);
         Assert.Contains("item is not StorageFile", drop);
         Assert.Contains("string.IsNullOrWhiteSpace(file.Path)", drop);
         Assert.Contains("DataPackageOperation.Copy", drop);
@@ -91,7 +130,12 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("new ContentDialog", folderUpload);
         Assert.Contains("FolderUploadPartialNotice", folderUpload);
         Assert.Contains("dialog.ShowAsync()", folderUpload);
-        Assert.Contains("_transfers.StartFolderUpload(", folderUpload);
+        Assert.Contains("await _transfers.StartFolderUploadAsync(", folderUpload);
+        Assert.Contains("ContentDialogButton.Close", folderUpload);
+        Assert.Contains("targetIsCurrent: () => !_disposed", folderUpload);
+        Assert.Contains("_folderUploadPreparation?.Cancel()", folderUpload);
+        Assert.Contains("_folderUploadDialog?.Hide()", folderUpload);
+        Assert.Contains("token.ThrowIfCancellationRequested()", folderUpload);
         Assert.Contains("_transfers.CancelFolderUpload(batchId)", folderUpload);
         Assert.Contains("_folderUploadBatchId is null", folderUpload);
         Assert.Contains("if (_folderUploadBatchId is not null)", folderUpload);
@@ -105,7 +149,7 @@ public sealed class FilesPageSourceContractTests
     }
 
     [Fact]
-    public void MultipleDownloadModeUsesNativeBoundedSelectionAndDisablesSingleItemCommands()
+    public void MultipleDownloadModeUsesFullArchiveSelectionAndDisablesSingleItemCommands()
     {
         var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
         var batch = ReadRepositoryFile(
@@ -117,20 +161,22 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("x:Name=\"FileDownloadBatchStatus\"", xaml);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml);
         Assert.Contains("ListViewSelectionMode.Multiple", batch);
-        Assert.Contains("BoundedFileDownloadBatch.MaximumFileCount", batch);
-        Assert.Contains("added.IsDirectory", batch);
+        Assert.DoesNotContain("BoundedFileDownloadBatch.MaximumFileCount", batch);
+        Assert.Contains("FileDownloadSelection.IsValidItem(added.Item)", batch);
+        Assert.Contains("FileDownloadSelection.MatchesSnapshot", batch);
+        Assert.Contains("items.Length != _batchSelection.Count", batch);
         Assert.Contains("StringComparer.Ordinal", batch);
         Assert.Contains("ApplyDownloadSelection(VisibleFilesControl())", batch);
         Assert.Contains("ExitDownloadSelectionMode();", batch);
-        Assert.Contains("PickAndStartDownloadBatchAsync", batch);
-        Assert.Contains("CancelDownloadBatch(batchId)", batch);
+        Assert.Contains("PickAndStartSelectedDownloadAsync", batch);
+        Assert.Contains("_transfers.Cancel(_profileId.ToString(), batchId)", batch);
         Assert.Contains("AutomationProperties.SetName(cancel", batch);
         Assert.Contains("CreateFolderButton.IsEnabled = false", batch);
         Assert.Contains("MoveToRecycleButton.IsEnabled = false", batch);
         Assert.Contains("ShareLinkButton.IsEnabled = false", batch);
-        Assert.Contains("FileDownloadBatchSummaryMessage", batch);
+        Assert.Contains("FileSelectionDownloadCompleted", batch);
         Assert.Contains("FileDownloadBatchStatus.ActionButton", batch);
-        Assert.DoesNotContain("DownloadAsync(", batch);
+        Assert.DoesNotContain("StreamArchiveAsync(", batch);
     }
 
     [Fact]
@@ -169,8 +215,11 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("FilesPage : Page, IDisposable", codeBehind);
         Assert.Contains("public void Dispose()", codeBehind);
         Assert.Contains("_viewModel.Dispose();", codeBehind);
-        Assert.DoesNotContain("Unloaded +=", codeBehind);
-        Assert.DoesNotContain("FilesPage_Unloaded", codeBehind);
+        // 普通卸载只停止临时搜索，不释放被 Shell 缓存的页面或文件模型。
+        Assert.Contains("Unloaded += FilesPage_Unloaded;", codeBehind);
+        var unload = SliceMethod(codeBehind, "private void FilesPage_Unloaded", "private bool _stateUpdateQueued;");
+        Assert.Contains("CancelAsyncSearch();", unload);
+        Assert.DoesNotContain("Dispose", unload);
         Assert.Contains("_files ??= new FilesPage(", shell);
         var close = SliceMethod(
             shell,
@@ -270,8 +319,8 @@ public sealed class FilesPageSourceContractTests
     [Fact]
     public void StorageCapacityUsesNativeAccessibleResponsiveStates()
     {
-        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml");
-        var codeBehind = ReadRepositoryFile("windows/src/LanStash.App/Views/FilesPage.xaml.cs");
+        var xaml = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml");
+        var codeBehind = ReadRepositoryFile("windows/src/LanStash.App/Views/ShellPage.xaml.cs");
         var english = ReadRepositoryFile(
             "windows/src/LanStash.App/Strings/en-US/Resources.resw");
         var chinese = ReadRepositoryFile(
@@ -284,9 +333,9 @@ public sealed class FilesPageSourceContractTests
         Assert.Contains("TextWrapping=\"Wrap\"", xaml);
         Assert.Contains("ThemeResource TextFillColorSecondaryBrush", xaml);
         Assert.DoesNotContain("Foreground=\"#", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("_viewModel.IsLoadingStorageSpace", codeBehind);
-        Assert.Contains("_viewModel.HasStorageSpace", codeBehind);
-        Assert.Contains("_viewModel.IsStorageSpaceUnavailable", codeBehind);
+        Assert.Contains("model.IsLoadingStorageSpace", codeBehind);
+        Assert.Contains("model.HasStorageSpace", codeBehind);
+        Assert.Contains("model.IsStorageSpaceUnavailable", codeBehind);
 
         const string automationKey =
             "FileBrowserStorageProgress.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name";

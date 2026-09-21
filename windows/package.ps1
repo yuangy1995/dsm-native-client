@@ -15,7 +15,8 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot    = Resolve-Path "$ScriptDir\.."
 $ProductName = 'LanStash'
-$DistDir     = Join-Path $ScriptDir 'dist'
+$DistRoot    = [System.IO.Path]::GetFullPath((Join-Path $ScriptDir 'dist'))
+$DistDir     = Join-Path $DistRoot (Get-Date -Format 'yyyyMMdd-HHmmss')
 $Solution    = Join-Path $ScriptDir 'LanStash.slnx'
 $AppProject  = Join-Path $ScriptDir 'src\LanStash.App\LanStash.App.csproj'
 $TestProject = Join-Path $ScriptDir 'tests\LanStash.Tests\LanStash.Tests.csproj'
@@ -23,7 +24,7 @@ $TestProject = Join-Path $ScriptDir 'tests\LanStash.Tests\LanStash.Tests.csproj'
 $Configuration = 'Release'
 $TargetPlatform = 'x64'
 $RunTests = $true
-$SelfContained = $false
+$SelfContained = $true
 $LaunchAfter = $false
 
 function Write-Fail {
@@ -166,6 +167,15 @@ if ($env:LANSTASH_NON_INTERACTIVE) {
     Configure-Package
 }
 
+# 便携包包含既有版本的 .NET 与 Windows App Runtime，不安装或注册系统组件。
+if ($env:LANSTASH_SELF_CONTAINED) {
+    if ($env:LANSTASH_SELF_CONTAINED -notin @('0', '1')) {
+        Write-Fail 'LANSTASH_SELF_CONTAINED 只能是 0 或 1'
+    }
+    $SelfContained = $env:LANSTASH_SELF_CONTAINED -eq '1'
+}
+$standaloneValue = $SelfContained.ToString().ToLowerInvariant()
+
 # ── 前置检查 ──────────────────────────────────────────────
 if (-not (Test-Path $Solution)) {
     Write-Fail "找不到解决方案文件：$Solution"
@@ -234,16 +244,29 @@ foreach ($plat in $platforms) {
 
     Write-Host "==> 构建 ${ProductName}（${Configuration}，${plat}）"
 
-    if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
+    $resolvedOutput = [System.IO.Path]::GetFullPath($outDir)
+    if (-not $resolvedOutput.StartsWith($DistRoot + [System.IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Fail '输出路径必须位于 windows/dist 中。'
+    }
+    if (Test-Path -LiteralPath $resolvedOutput) { Write-Fail '输出目录已存在，请等待一秒后重新打包。' }
 
     & dotnet publish $AppProject `
         -c $Configuration `
         -r $runtime `
-        --self-contained false `
-        --no-restore `
+        -p:Platform=$plat `
+        -p:LanStashUiSmoke=false `
+        --self-contained $standaloneValue `
+        -p:LanStashStandalone=$standaloneValue `
         -o $outDir
 
     if ($LASTEXITCODE -ne 0) { Write-Fail "$Configuration ($plat) 构建失败。" }
+
+    # 资源缺失时不能交付“构建成功但无法启动”的包。
+    foreach ($required in @('LanStash.App.exe', 'resources.pri')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $outDir $required))) {
+            Write-Fail "发布产物缺少必需资源：$required"
+        }
+    }
 
     # 查找输出 exe
     $exe = Get-ChildItem -Path $outDir -Filter 'LanStash.App.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -252,15 +275,27 @@ foreach ($plat in $platforms) {
         Write-Host "==> 构建产物：$($exe.FullName)（$size）"
     }
 
+    @{
+        version = $Version
+        architecture = $plat
+        configuration = $Configuration
+        selfContained = $SelfContained
+        sourceCommit = $sourceCommit
+        sourceState = $sourceState
+        testsRun = $RunTests
+        createdUtc = [DateTime]::UtcNow.ToString('O')
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outDir 'build-info.json') -Encoding utf8
+
     # 打包为 zip
     $platLabel = if ($TargetPlatform -eq 'both') { $plat } else { $plat }
     $zipName = "$ProductName-$Version-$platLabel.zip"
     $zipPath = Join-Path $DistDir $zipName
 
     Write-Host "==> 生成压缩包：$zipName"
-    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    if (Test-Path -LiteralPath $zipPath) { Write-Fail '压缩包已存在，不覆盖既有测试包。' }
     Compress-Archive -Path "$outDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
 
+    (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ascii
     $zipSize = '{0:N1} MB' -f ((Get-Item $zipPath).Length / 1MB)
     Write-Host "==> 压缩包已生成：$zipPath（$zipSize）"
 
@@ -272,37 +307,7 @@ foreach ($plat in $platforms) {
     }
 }
 
-# ── 清理旧版本 ────────────────────────────────────────────
-$removed = 0
-if (Test-Path $DistDir) {
-    # 清理旧版本 zip 包（保留当前版本）
-    $oldZips = Get-ChildItem -Path $DistDir -Filter "$ProductName-*.zip" -ErrorAction SilentlyContinue
-    foreach ($zip in $oldZips) {
-        if ($zip.Name -like "*$Version-*") { continue }
-        Remove-Item $zip.FullName -Force
-        $removed++
-    }
-
-    # 清理旧构建输出目录（release-x64、debug-arm64 等）
-    $oldDirs = Get-ChildItem -Path $DistDir -Directory -ErrorAction SilentlyContinue
-    foreach ($dir in $oldDirs) {
-        # 当前构建的目录会被覆盖，只删除不属于本次构建的残留目录
-        $currentDirs = @()
-        foreach ($plat in $platforms) {
-            $currentDirs += "$($Configuration.ToLower())-$plat"
-        }
-        if ($currentDirs -contains $dir.Name) { continue }
-        # 只清理看起来是构建输出的目录（包含 exe 或 dll）
-        $hasExe = Get-ChildItem -Path $dir.FullName -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue
-        if ($hasExe) {
-            Remove-Item $dir.FullName -Recurse -Force
-            $removed++
-        }
-    }
-}
-if ($removed -gt 0) {
-    Write-Host "==> 已清理 $removed 个旧版本文件或目录"
-}
+# 每次使用独立时间目录，保留旧包以便比较和回退。
 
 # ── 启动应用 ──────────────────────────────────────────────
 if ($LaunchAfter -and $builtPackages.Count -gt 0) {

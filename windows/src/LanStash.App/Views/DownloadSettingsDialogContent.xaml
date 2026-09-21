@@ -1,0 +1,47 @@
+<UserControl x:Class="LanStash.App.Views.DownloadSettingsDialogContent" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:files="using:LanStash.App.Features.Files.CopyMove">
+  <UserControl.Resources><Style x:Key="DownloadSettingsActionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}"><Setter Property="MinHeight" Value="44"/></Style></UserControl.Resources>
+  <ScrollViewer MaxHeight="620" VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="12" MinWidth="280" MaxWidth="560">
+      <ProgressRing x:Name="LoadingRing" Width="32" Height="32"/>
+      <InfoBar x:Name="Feedback" IsClosable="False"/>
+      <TextBlock x:Name="BasicResult" TextWrapping="Wrap" Visibility="Collapsed"/>
+      <TextBlock x:Name="ScheduleResult" TextWrapping="Wrap" Visibility="Collapsed"/>
+      <StackPanel x:Name="ErrorPanel" Spacing="8" Visibility="Collapsed"><TextBlock x:Name="ErrorText" TextWrapping="Wrap"/></StackPanel>
+      <Button x:Name="RefreshButton" Click="Refresh_Click" MinHeight="44"/>
+      <StackPanel x:Name="Editor" Spacing="10">
+        <TextBox x:Name="DestinationBox" MinHeight="44" TextChanged="Text_Changed"/>
+        <Button x:Name="BrowseButton" Click="Browse_Click" MinHeight="44"/>
+        <StackPanel x:Name="FolderBrowser" Spacing="8" Visibility="Collapsed">
+          <TextBlock x:Name="FolderPathText" TextWrapping="Wrap"/>
+          <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="FolderUpButton" Click="FolderUp_Click" MinHeight="44"/><Button x:Name="FolderCloseButton" Click="FolderClose_Click" MinHeight="44"/></StackPanel>
+          <ProgressRing x:Name="FolderLoading" Width="24" Height="24"/>
+          <TextBlock x:Name="FolderError" TextWrapping="Wrap" Visibility="Collapsed"/>
+          <TextBlock x:Name="FolderEmpty" TextWrapping="Wrap" Visibility="Collapsed"/>
+          <ListView x:Name="FolderList" SelectionMode="Single" SelectionChanged="FolderSelection_Changed" MaxHeight="180">
+            <ListView.ItemTemplate><DataTemplate x:DataType="files:FileCopyMoveFolder"><TextBlock Text="{x:Bind Name}" Margin="4,12" TextTrimming="CharacterEllipsis"/></DataTemplate></ListView.ItemTemplate>
+          </ListView>
+          <StackPanel Orientation="Horizontal" Spacing="8"><Button x:Name="OpenFolderButton" Click="OpenFolder_Click" MinHeight="44"/><Button x:Name="ChooseFolderButton" Click="ChooseFolder_Click" MinHeight="44"/></StackPanel>
+        </StackPanel>
+        <TextBlock x:Name="DestinationUnavailable" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <ToggleSwitch x:Name="EmuleToggle" MinHeight="44" Toggled="Toggle_Changed"/>
+        <ToggleSwitch x:Name="ExtractToggle" MinHeight="44" Toggled="Toggle_Changed"/>
+        <TextBlock x:Name="SpeedHint" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <Grid ColumnSpacing="12" RowSpacing="10">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <NumberBox x:Name="BtDownload" Minimum="0" Maximum="1000000" SmallChange="1" MinHeight="44" ValueChanged="Number_Changed"/>
+          <NumberBox x:Name="BtUpload" Grid.Column="1" Minimum="0" Maximum="1000000" SmallChange="1" MinHeight="44" ValueChanged="Number_Changed"/>
+          <NumberBox x:Name="WebFtpDownload" Grid.Row="1" Minimum="0" Maximum="1000000" SmallChange="1" MinHeight="44" ValueChanged="Number_Changed"/>
+          <NumberBox x:Name="NzbDownload" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1000000" SmallChange="1" MinHeight="44" ValueChanged="Number_Changed"/>
+          <NumberBox x:Name="EmuleDownload" Grid.Row="2" Minimum="0" Maximum="1000000" SmallChange="1" MinHeight="44" ValueChanged="Number_Changed"/>
+          <NumberBox x:Name="EmuleUpload" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1000000" SmallChange="1" MinHeight="44" ValueChanged="Number_Changed"/>
+        </Grid>
+        <TextBlock x:Name="ScheduleHint" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <ToggleSwitch x:Name="ScheduleToggle" MinHeight="44" Toggled="Toggle_Changed"/>
+        <ToggleSwitch x:Name="EmuleScheduleToggle" MinHeight="44" Toggled="Toggle_Changed"/>
+      </StackPanel>
+      <TextBlock x:Name="ImpactText" TextWrapping="Wrap"/>
+      <CheckBox x:Name="Confirmation" MinHeight="44" Checked="Confirmation_Changed" Unchecked="Confirmation_Changed"/>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
 
@@ -11,7 +13,7 @@ namespace LanStash.Infrastructure;
 public sealed partial class DsmRepository
 {
     private const int InternalObservedContainerVersion = 1;
-    private const int ContainerSectionLimit = 200;
+    private const int ContainerLogPageSize = 1000;
     private const string InternalObservedContainerApi = "SYNO.Docker.Container";
     private const string InternalObservedImageApi = "SYNO.Docker.Image";
     private const string InternalObservedNetworkApi = "SYNO.Docker.Network";
@@ -62,7 +64,7 @@ public sealed partial class DsmRepository
             new Dictionary<string, string>
             {
                 ["offset"] = "0",
-                ["limit"] = ContainerSectionLimit.ToString(CultureInfo.InvariantCulture),
+                ["limit"] = "-1",
                 ["type"] = "all",
             },
             ParseInternalObservedContainers,
@@ -88,15 +90,7 @@ public sealed partial class DsmRepository
             ["id", "project_id", "name", "project_name"],
             ["name", "project_name", "id"],
             cancellationToken).ConfigureAwait(false);
-        var events = await LoadContainerSectionAsync(
-            InternalObservedEventApi,
-            new Dictionary<string, string>
-            {
-                ["offset"] = "0",
-                ["limit"] = ContainerSectionLimit.ToString(CultureInfo.InvariantCulture),
-            },
-            ParseContainerEvents,
-            cancellationToken).ConfigureAwait(false);
+        var events = await LoadContainerEventsAsync(cancellationToken).ConfigureAwait(false);
 
         return new(_profile.Id, containers, images, networks, projects, events);
     }
@@ -108,6 +102,52 @@ public sealed partial class DsmRepository
         ContainerManagerSection<ContainerResourceSummary>.Unavailable,
         ContainerManagerSection<ContainerResourceSummary>.Unavailable,
         ContainerManagerSection<ServiceEventSummary>.Unavailable);
+
+    // 官方日志按 total/offset 续页；仅累积脱敏摘要，不把前一页原始日志保留到下一页。
+    private async Task<ContainerManagerSection<ServiceEventSummary>> LoadContainerEventsAsync(CancellationToken cancellationToken)
+    {
+        if (!HasInternalObservedContainerVersion(InternalObservedEventApi))
+            return ContainerManagerSection<ServiceEventSummary>.Unavailable;
+        var events = new List<ServiceEventSummary>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var offset = events.Count;
+                var data = await CallInternalObservedContainerAsync(InternalObservedEventApi, "list",
+                    new Dictionary<string, string>
+                    {
+                        ["action"] = "load", ["offset"] = offset.ToString(CultureInfo.InvariantCulture),
+                        ["limit"] = ContainerLogPageSize.ToString(CultureInfo.InvariantCulture),
+                        ["sort_by"] = "time", ["sort_dir"] = "DESC", ["loglevel"] = "",
+                        ["filter_content"] = "", ["datefrom"] = "0", ["dateto"] = "0",
+                    }, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (ContainerPageNumber(data, "offset") is { } returnedOffset && returnedOffset != offset)
+                    throw InvalidContainerManagerResponse();
+                var total = ContainerPageNumber(data, "total");
+                var page = ParseContainerEvents(data, offset);
+                if (page.Count > ContainerLogPageSize || page.Any(item => !ids.Add(item.Id)))
+                    throw InvalidContainerManagerResponse();
+                events.AddRange(page);
+                if (total is null || events.Count == total) return ContainerManagerSection<ServiceEventSummary>.Available(events);
+                if (events.Count > total || page.Count == 0) throw InvalidContainerManagerResponse();
+            }
+        }
+        catch (DsmException error) when (!IsMutationAuthenticationFailure(error))
+        {
+            return ContainerManagerSection<ServiceEventSummary>.Failed;
+        }
+    }
+
+    private static int? ContainerPageNumber(JsonObject data, string key)
+    {
+        if (!data.ContainsKey(key)) return null;
+        if (data[key] is JsonValue value && value.TryGetValue<int>(out var number) && number >= 0) return number;
+        throw InvalidContainerManagerResponse();
+    }
 
     private async Task<ContainerManagerSection<ContainerResourceSummary>>
         LoadContainerResourceSectionAsync(
@@ -124,8 +164,15 @@ public sealed partial class DsmRepository
         }
         return await LoadContainerSectionAsync(
             apiName,
-            parameters: null,
-            data => ParseContainerResources(data, kind, roots, idKeys, nameKeys),
+            parameters: kind == ContainerResourceKind.Image ? new Dictionary<string, string>
+                { ["offset"] = "0", ["limit"] = "-1", ["show_dsm"] = "false" } : null,
+            data =>
+            {
+                if (kind == ContainerResourceKind.Image) return ParseContainerImages(data);
+                var items = kind == ContainerResourceKind.Project ? ParseContainerProjects(data, roots, idKeys, nameKeys) :
+                    ParseContainerResources(data, kind, roots, idKeys, nameKeys);
+                return items;
+            },
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -160,11 +207,18 @@ public sealed partial class DsmRepository
         IReadOnlyDictionary<string, string>? parameters,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var capability = _capabilities[apiName] with
         {
             MinVersion = InternalObservedContainerVersion,
             MaxVersion = InternalObservedContainerVersion,
         };
+        // 已记录的分页/日期字段为数字，show_dsm 为布尔；其余业务参数为字符串。
+        // FORM 原样发送；JSON 声明与 macOS 一样编码字符串，不改变数字类型。
+        if (capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase) && parameters is not null)
+            parameters = parameters.ToDictionary(pair => pair.Key,
+                pair => pair.Key is "offset" or "limit" or "page_size" or "datefrom" or "dateto" or "show_dsm"
+                    ? pair.Value : JsonSerializer.Serialize(pair.Value), StringComparer.Ordinal);
         return _api.CallAsync(
             _profile,
             _session,
@@ -176,8 +230,10 @@ public sealed partial class DsmRepository
 
     private bool HasInternalObservedContainerVersion(string apiName) =>
         _capabilities.TryGetValue(apiName, out var capability) &&
-        capability.MinVersion <= InternalObservedContainerVersion &&
-        capability.MaxVersion >= InternalObservedContainerVersion;
+        capability.Name == apiName && capability.MinVersion >= 1 && capability.MinVersion <= InternalObservedContainerVersion &&
+        capability.MaxVersion >= InternalObservedContainerVersion &&
+        (capability.RequestFormat.Equals("FORM", StringComparison.OrdinalIgnoreCase) ||
+         capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase));
 
     private void AddInternalContainerFeature(
         HashSet<ContainerManagerReadFeature> features,
@@ -202,11 +258,12 @@ public sealed partial class DsmRepository
     private static IReadOnlyList<ContainerSummary> ParseInternalObservedContainers(JsonObject data)
     {
         var source = RequiredContainerObjectArray(data, ["containers"]);
-        var containers = new List<ContainerSummary>(Math.Min(source.Count, ContainerSectionLimit));
+        var containers = new List<ContainerSummary>(source.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in source.Take(ContainerSectionLimit))
+        foreach (var item in source)
         {
             var id = RequiredContainerString(item, "id");
+            var status = RequiredContainerString(item, "status");
             if (!ids.Add(id))
             {
                 throw InvalidContainerManagerResponse();
@@ -214,10 +271,27 @@ public sealed partial class DsmRepository
             containers.Add(new(
                 id,
                 RequiredContainerString(item, "name"),
-                ParseContainerState(RequiredContainerString(item, "status")),
+                item["State"] is JsonObject runtime && runtime["Restarting"] is JsonValue marker && marker.TryGetValue<bool>(out var restarting) && restarting
+                    ? ContainerOperationalState.Restarting : ParseContainerState(status),
                 OptionalContainerString(item, "image")));
         }
         return containers;
+    }
+
+    // Project.list 的官方空响应是 {}；仅该分区接受以项目 ID 为键的对象。
+    private static IReadOnlyList<ContainerResourceSummary> ParseContainerProjects(
+        JsonObject data, string[] roots, string[] idKeys, string[] nameKeys)
+    {
+        if (roots.Concat(new[] { "result", "items" }).Any(data.ContainsKey))
+            return ParseContainerResources(data, ContainerResourceKind.Project, roots, idKeys, nameKeys);
+        return data.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair =>
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is not JsonObject item)
+                throw InvalidContainerManagerResponse();
+            return new ContainerResourceSummary(pair.Key,
+                FirstContainerString(item, nameKeys) ?? throw InvalidContainerManagerResponse(),
+                ContainerResourceKind.Project, ParseContainerState(FirstContainerString(item, "status", "state")));
+        }).ToArray();
     }
 
     private static IReadOnlyList<ContainerResourceSummary> ParseContainerResources(
@@ -228,9 +302,9 @@ public sealed partial class DsmRepository
         string[] nameKeys)
     {
         var source = RequiredContainerObjectArray(data, roots);
-        var resources = new List<ContainerResourceSummary>(Math.Min(source.Count, ContainerSectionLimit));
+        var resources = new List<ContainerResourceSummary>(source.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in source.Take(ContainerSectionLimit))
+        foreach (var item in source)
         {
             var id = FirstContainerString(item, idKeys) ?? throw InvalidContainerManagerResponse();
             var name = FirstContainerString(item, nameKeys) ?? throw InvalidContainerManagerResponse();
@@ -242,21 +316,72 @@ public sealed partial class DsmRepository
                 id,
                 name,
                 kind,
-                ParseContainerState(FirstContainerString(item, "status", "state"))));
+                ParseContainerState(FirstContainerString(item, "status", "state")))
+                { Network = kind == ContainerResourceKind.Network ? ParseContainerNetworkDetails(item) : null });
         }
         return resources;
     }
 
-    private static IReadOnlyList<ServiceEventSummary> ParseContainerEvents(JsonObject data)
+    private static ContainerNetworkDetails ParseContainerNetworkDetails(JsonObject item)
+    {
+        IReadOnlyList<string>? names = null; int count;
+        if (item.ContainsKey("containers"))
+        {
+            if (item["containers"] is not JsonArray array) throw InvalidContainerManagerResponse();
+            var parsed = new List<string>();
+            foreach (var node in array)
+            {
+                if (node is not JsonValue scalar || !scalar.TryGetValue<string>(out var name) ||
+                    string.IsNullOrWhiteSpace(name) || name.Length > 256 || name.Any(char.IsControl)) throw InvalidContainerManagerResponse();
+                parsed.Add(name);
+            }
+            names = parsed.AsReadOnly(); count = parsed.Count;
+        }
+        else
+        {
+            var values = new[] { "container_count", "containers_count", "using" }.Where(item.ContainsKey)
+                .Select(key => NetworkCount(item[key])).ToArray();
+            if (values.Length == 0 || values.Distinct().Count() != 1) throw InvalidContainerManagerResponse();
+            count = values[0];
+        }
+        var driver = NetworkText(item["driver"] ?? item["Driver"] ?? item["type"]);
+        if (driver?.Any(c => !(char.IsLetterOrDigit(c) || "_.-".Contains(c))) == true) driver = null;
+        bool? ipv6 = item["enable_ipv6"] is JsonValue boolean && boolean.TryGetValue<bool>(out var enabled) ? enabled : null;
+        return new(driver, count, names, NetworkAddress(item["subnet"], true), NetworkAddress(item["gateway"], false), NetworkAddress(item["iprange"], true), ipv6);
+    }
+    private static int NetworkCount(JsonNode? node)
+    {
+        if (node is JsonValue scalar)
+        {
+            if (scalar.TryGetValue<int>(out var number) && number >= 0) return number;
+            if (scalar.TryGetValue<decimal>(out var real) && real == decimal.Truncate(real) && real is >= 0 and <= int.MaxValue) return (int)real;
+            if (scalar.TryGetValue<string>(out var text) && int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)) return parsed;
+        }
+        throw InvalidContainerManagerResponse();
+    }
+    private static string? NetworkText(JsonNode? node) => node is JsonValue value && value.TryGetValue<string>(out var text) &&
+        !string.IsNullOrWhiteSpace(text) && text.Length <= 256 && !text.Any(char.IsControl) ? text.Trim() : null;
+    private static string? NetworkAddress(JsonNode? node, bool permitsPrefix)
+    {
+        var text = NetworkText(node); if (text is null) return null;
+        var parts = text.Split('/');
+        if (parts.Length > (permitsPrefix ? 2 : 1) || !IPAddress.TryParse(parts[0], out var address)) return null;
+        if (parts[0].Contains('%') || address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && parts[0].Split('.').Length != 4) return null;
+        if (parts.Length == 2 && (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var prefix) ||
+            prefix > (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128))) return null;
+        return text;
+    }
+
+    private static IReadOnlyList<ServiceEventSummary> ParseContainerEvents(JsonObject data, int offset)
     {
         var source = RequiredContainerObjectArray(data, ["logs", "events", "data", "list"]);
-        var events = new List<ServiceEventSummary>(Math.Min(source.Count, ContainerSectionLimit));
+        var events = new List<ServiceEventSummary>(source.Count);
         var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var entry in source.Take(ContainerSectionLimit).Select((item, index) => (item, index)))
+        foreach (var entry in source.Select((item, index) => (item, index)))
         {
             var occurredAt = FirstContainerDate(entry.item);
             var id = FirstContainerString(entry.item, "id", "log_id") ??
-                $"event-{occurredAt?.ToUnixTimeSeconds() ?? 0}-{entry.index}";
+                $"event-{occurredAt?.ToUnixTimeSeconds() ?? 0}-{checked(offset + entry.index)}";
             if (!ids.Add(id))
             {
                 throw InvalidContainerManagerResponse();
@@ -278,8 +403,8 @@ public sealed partial class DsmRepository
     {
         var array = roots.Select(root => data[root]).OfType<JsonArray>().FirstOrDefault()
             ?? throw InvalidContainerManagerResponse();
-        var result = new List<JsonObject>(Math.Min(array.Count, ContainerSectionLimit));
-        foreach (var node in array.Take(ContainerSectionLimit))
+        var result = new List<JsonObject>(array.Count);
+        foreach (var node in array)
         {
             if (node is not JsonObject item)
             {
@@ -331,6 +456,7 @@ public sealed partial class DsmRepository
         {
             "running" or "online" or "healthy" or "normal" => ContainerOperationalState.Running,
             "stopped" or "offline" => ContainerOperationalState.Stopped,
+            "restarting" => ContainerOperationalState.Restarting,
             "error" or "failed" or "warning" or "degraded" => ContainerOperationalState.Attention,
             _ => ContainerOperationalState.Unknown,
         };

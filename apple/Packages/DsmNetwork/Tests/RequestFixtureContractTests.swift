@@ -4,6 +4,76 @@ import XCTest
 @testable import DsmNetwork
 
 final class RequestFixtureContractTests: XCTestCase {
+    func test虚拟机三态和优先级保存与内部V1Fixture一致() async throws {
+        let fixture = try loadFixture("vmm/update-guest/synthetic-startup-priority/request.json")
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>","name":"Synthetic","status":"shutdown"}]}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>","cpu_weight":1024,"autorun":2}]}}"#),
+        ])
+        let repository = try makeServiceManagementRepository(apiNames: [DsmAPIName.virtualizationGuest], requestFormat: .json, transport: transport)
+        try await repository.updateVirtualMachine(id: "<synthetic-virtual-machine>", configuration: .init(cpuWeight: 1024, startupBehavior: .powerOn))
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "set" })
+        let encodedID = try XCTUnwrap(try decodeForm(request.httpBody)["synovmm_ui_id"])
+        let identifier = try JSONDecoder().decode(String.self, from: Data(encodedID.utf8))
+        XCTAssertNotNil(UUID(uuidString: identifier))
+        try assertFormRequest(request, matches: fixture, substitutions: ["<synthetic-ui-request>": identifier])
+    }
+
+    func test挂载身份清单与共享只读Fixture一致() async throws {
+        let fixture = try loadFixture("file-station/list-remote-mounts/synthetic-location/request.json")
+        let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"mountConfig":{"enable_remote_mount":true},"remoteList":[]}}"#)])
+        let repository = try makeRepository(capabilities: CapabilitySet([
+            DsmAPIName.fileStationMountList: capability(DsmAPIName.fileStationMountList, version: 1)
+        ]), transport: transport)
+        let inventory = try await repository.remoteMountInventory()
+        XCTAssertTrue(inventory.connections.isEmpty)
+        let requests = await transport.recordedRequests()
+        try assertFormRequest(try XCTUnwrap(requests.first), matches: fixture)
+    }
+
+    func test远程挂载创建和断开与共享Fixture一致() async throws {
+        for operation in ["mount-cifs", "mount-nfs", "unmount-remote"] {
+            let fixture = try loadFixture("file-station/\(operation)/synthetic-location/request.json")
+            let path = "/home/fixture-mount"
+            let inventoryRows: [[String: Any]] = operation == "unmount-remote" ? [] : [
+                ["mount_point": path, "source": operation == "mount-cifs" ? "//server.invalid/share/folder" : "server.invalid:/share/folder",
+                 "type": operation == "mount-cifs" ? "CIFS" : "NFS", "auto_mount": false]
+            ]
+            let inventory: [String: Any] = ["success": true, "data": ["mountConfig": ["enable_remote_mount": true], "remoteList": inventoryRows]]
+            let preflight: [DsmHTTPResponse] = operation == "unmount-remote" ? [
+                response("{\"success\":true,\"data\":{\"mountConfig\":{\"enable_remote_mount\":true},\"remoteList\":[{\"mount_point\":\"\(path)\",\"source\":\"//old.invalid/share\",\"type\":\"CIFS\",\"auto_mount\":false}]}}"),
+                response("{\"success\":true,\"data\":{\"files\":[{\"name\":\"fixture-mount\",\"path\":\"\(path)\",\"isdir\":true,\"additional\":{\"mount_point_type\":\"remote\"}}]}}")
+            ] : [
+                response(#"{"success":true,"data":{"mountConfig":{"enable_remote_mount":true},"remoteList":[]}}"#),
+                response("{\"success\":true,\"data\":{\"files\":[{\"name\":\"fixture-mount\",\"path\":\"\(path)\",\"isdir\":true,\"additional\":{\"mount_point_type\":\"normal\"}}]}}")
+            ]
+            let transport = MockHTTPTransport(responses: preflight + [
+                response(#"{"success":true}"#),
+                response("{\"success\":true,\"data\":{\"files\":[{\"name\":\"fixture-mount\",\"path\":\"\(path)\",\"isdir\":true,\"additional\":{\"mount_point_type\":\"\(operation == "unmount-remote" ? "normal" : "remote")\"}}]}}"),
+                DsmHTTPResponse(data: try JSONSerialization.data(withJSONObject: inventory), statusCode: 200)
+            ])
+            let repository = try makeRepository(capabilities: CapabilitySet([
+                DsmAPIName.fileStationMount: capability(DsmAPIName.fileStationMount, version: 1),
+                DsmAPIName.fileStationMountList: capability(DsmAPIName.fileStationMountList, version: 1),
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]), transport: transport)
+            if operation == "unmount-remote" {
+                try await repository.removeRemoteMount(expectedConnection: RemoteMountConnection(profileID: repository.profileID,
+                    mountPoint: path, source: "//old.invalid/share", protocolType: .smb, automaticMount: false))
+            } else {
+                try await repository.createRemoteMount(RemoteMountConfiguration(protocolType: operation == "mount-cifs" ? .smb : .nfs,
+                    server: "server.invalid", remotePath: "share/folder", mountPoint: path,
+                    username: operation == "mount-cifs" ? "fixture-user" : "", password: operation == "mount-cifs" ? "fixture-password" : ""))
+            }
+            let requests = await transport.recordedRequests()
+            let writes = try requests.filter { try decodeForm($0.httpBody)["method"] == fixture.api.method }
+            XCTAssertEqual(writes.count, 1)
+            try assertFormRequest(try XCTUnwrap(writes.first), matches: fixture, substitutions: ["<synthetic-mount-point>": path])
+        }
+    }
+
     func test收藏分页请求与共享Fixture一致() async throws {
         let fixture = try loadFixture(
             "file-station/list-favorites/synthetic-page/request.json"
@@ -470,6 +540,7 @@ final class RequestFixtureContractTests: XCTestCase {
             "container-manager/delete/synthetic-container/request.json"
         )
         let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"containers":[{"id":"synthetic-id","name":"<synthetic-container>","status":"stopped","is_package":false,"Labels":{},"State":{"Running":false,"Paused":false,"Restarting":false}}]}}"#),
             response(#"{"success":true}"#),
             response(#"{"success":true,"data":{"containers":[]}}"#),
         ])
@@ -478,11 +549,45 @@ final class RequestFixtureContractTests: XCTestCase {
             transport: transport
         )
 
-        try await repository.deleteContainers(ids: ["<synthetic-container>"])
+        try await repository.deleteContainers(ids: ["synthetic-id"])
 
         let requests = await transport.recordedRequests()
-        let request = try XCTUnwrap(requests.first)
+        let request = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "delete" })
         try assertFormRequest(request, matches: fixture)
+    }
+
+    func test镜像标签删除实际适配器请求与共享Fixture一致() async throws {
+        let fixture = try loadFixture("container-manager/delete-image-tags/synthetic-selection/request.json")
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"images":[{"id":"synthetic-id","repository":"synthetic/web","tags":["stable"]}]}}"#),
+            response(#"{"success":true,"data":{"containers":[]}}"#),
+            response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"images":[]}}"#)
+        ])
+        let repository = try makeServiceManagementRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerContainer], transport: transport)
+        let result = try await repository.deleteContainerImagesResult(ids: [ContainerImage.selectionID(imageID: "synthetic-id", repository: "synthetic/web", tag: "stable")])
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        let request = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "delete" })
+        try assertFormRequest(request, matches: fixture)
+    }
+
+    func test镜像拉取启动与状态通过同一任务绑定共享Fixture() async throws {
+        let startFixture = try loadFixture("container-manager/pull-start/synthetic-task/request.json")
+        let statusFixture = try loadFixture("container-manager/pull-status/synthetic-task/request.json")
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"tags":["stable"]}}"#),
+            response(#"{"success":true,"data":{"images":[]}}"#),
+            response(#"{"success":true,"data":{"task_id":"synthetic-task"}}"#),
+            response(#"{"success":true,"data":{"finished":false,"repository":"synthetic/web","tag":"stable","current":1,"total":4}}"#)
+        ])
+        let repository = try makeServiceManagementRepository(apiNames: [DsmAPIName.dockerImage, DsmAPIName.dockerRegistry], transport: transport)
+        let result = try await repository.startContainerImagePull(.init(repository: "synthetic/web", tag: "stable", isConfirmed: true))
+        XCTAssertEqual(result.stage, .downloading)
+        let requests = await transport.recordedRequests()
+        let start = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "pull_start" })
+        let status = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "pull_status" })
+        try assertFormRequest(start, matches: startFixture); try assertFormRequest(status, matches: statusFixture)
     }
 
     func test虚拟机删除请求与共享Fixture一致() async throws {
@@ -490,6 +595,7 @@ final class RequestFixtureContractTests: XCTestCase {
             "vmm/delete/synthetic-virtual-machine/request.json"
         )
         let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"guests":[{"guest_id":"<synthetic-virtual-machine>"}]}}"#),
             response(#"{"success":true}"#),
             response(#"{"success":true,"data":{"guests":[]}}"#),
         ])
@@ -503,7 +609,7 @@ final class RequestFixtureContractTests: XCTestCase {
         )
 
         let requests = await transport.recordedRequests()
-        let request = try XCTUnwrap(requests.first)
+        let request = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "delete" })
         try assertFormRequest(request, matches: fixture)
     }
 
@@ -526,7 +632,7 @@ final class RequestFixtureContractTests: XCTestCase {
             (
                 "container-manager/delete-image/synthetic-image/request.json",
                 .form,
-                ["id": .string("<synthetic-container-image>")]
+                ["images": .objectArray([["identity": .string("<synthetic-container-image>")]])]
             ),
             (
                 "container-manager/delete-network/synthetic-network/request.json",
@@ -1257,10 +1363,9 @@ final class RequestFixtureContractTests: XCTestCase {
         let fixture = try loadFixture(
             "storage/start-smart-test/synthetic-disk/request.json"
         )
+        let disk = response(#"{"success":true,"data":{"disks":[{"id":"synthetic-disk","device":"<synthetic-device>","longName":"Synthetic Disk","smart_status":"normal","smart_test_support":true}],"storagePools":[],"volumes":[]}}"#)
         let transport = MockHTTPTransport(responses: [
-            response(
-                #"{"success":true,"data":{"disks":[{"id":"synthetic-disk","device":"<synthetic-device>","longName":"Synthetic Disk","smart_status":"normal","smart_test_support":true}],"storagePools":[],"volumes":[]}}"#
-            ),
+            disk, disk, // 初始清单与写前重新核对的清单。
             response(
                 #"{"success":true,"data":{"testInfo":[{"device":"<synthetic-device>","testing":false,"ihm_testing":false,"perf_testing":false}]}}"#
             ),
@@ -1285,8 +1390,9 @@ final class RequestFixtureContractTests: XCTestCase {
 
         XCTAssertEqual(result.status, .confirmedSuccess)
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 4)
-        let request = requests[2]
+        XCTAssertEqual(try requests.map { try decodeForm($0.httpBody)["method"] },
+            ["load_info", "load_info", "get_smart_test_log", "do_smart_test", "get_smart_test_log"])
+        let request = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "do_smart_test" })
         try assertFormRequest(request, matches: fixture)
     }
 
@@ -1294,16 +1400,15 @@ final class RequestFixtureContractTests: XCTestCase {
         let fixture = try loadFixture(
             "storage/stop-smart-test/synthetic-disk/request.json"
         )
+        let disk = response(#"{"success":true,"data":{"disks":[{"id":"synthetic-disk","device":"<synthetic-device>","longName":"Synthetic Disk","smart_status":"normal","smart_test_support":true}],"storagePools":[],"volumes":[]}}"#)
         let transport = MockHTTPTransport(responses: [
-            response(
-                #"{"success":true,"data":{"disks":[{"id":"synthetic-disk","device":"<synthetic-device>","longName":"Synthetic Disk","smart_status":"normal","smart_test_support":true}],"storagePools":[],"volumes":[]}}"#
-            ),
+            disk, disk, // 初始清单与写前重新核对的清单。
             response(
                 #"{"success":true,"data":{"testInfo":[{"device":"<synthetic-device>","testing":true,"test_type":"quick"}]}}"#
             ),
             response(#"{"success":true}"#),
             response(
-                #"{"success":true,"data":{"testInfo":[{"device":"<synthetic-device>","testing":false}]}}"#
+                #"{"success":true,"data":{"testInfo":[{"device":"<synthetic-device>","testing":false,"ihm_testing":false,"perf_testing":false}]}}"#
             )
         ])
         let repository = try makeAdministrationRepository(
@@ -1321,8 +1426,10 @@ final class RequestFixtureContractTests: XCTestCase {
 
         XCTAssertEqual(result.status, .confirmedSuccess)
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.count, 4)
-        try assertFormRequest(requests[2], matches: fixture)
+        XCTAssertEqual(try requests.map { try decodeForm($0.httpBody)["method"] },
+            ["load_info", "load_info", "get_smart_test_log", "do_smart_test", "get_smart_test_log"])
+        let request = try XCTUnwrap(requests.first { (try? decodeForm($0.httpBody)["method"]) == "do_smart_test" })
+        try assertFormRequest(request, matches: fixture)
     }
 
     private var testCredential: DsmSessionCredential {
@@ -1334,7 +1441,8 @@ final class RequestFixtureContractTests: XCTestCase {
 
     private func assertFormRequest(
         _ request: URLRequest,
-        matches fixture: RequestFixture
+        matches fixture: RequestFixture,
+        substitutions: [String: String] = [:]
     ) throws {
         XCTAssertEqual(request.httpMethod, fixture.transport.httpMethod)
         XCTAssertEqual(request.url?.lastPathComponent, fixture.api.resolvedPath)
@@ -1351,10 +1459,11 @@ final class RequestFixtureContractTests: XCTestCase {
             Set(fixture.parameters.map(\.name))
         )
         for parameter in fixture.parameters {
-            guard let expected = parameter.encodedValue,
+            guard var expected = parameter.encodedValue,
                   let actual = actualParameters[parameter.name] else {
                 continue
             }
+            for (placeholder, value) in substitutions { expected = expected.replacingOccurrences(of: placeholder, with: value) }
             if ["object", "objectArray", "stringArray"].contains(parameter.valueType) {
                 XCTAssertTrue(
                     try jsonValuesAreEqual(actual, expected),
@@ -1689,6 +1798,7 @@ final class RequestFixtureContractTests: XCTestCase {
 
     private func makeServiceManagementRepository(
         apiNames: [String],
+        requestFormat: DsmRequestFormat = .form,
         transport: MockHTTPTransport
     ) throws -> DsmServiceManagementRepository {
         let profile = try NasProfile(
@@ -1701,7 +1811,7 @@ final class RequestFixtureContractTests: XCTestCase {
             capabilities: CapabilitySet(
                 Dictionary(
                     uniqueKeysWithValues: apiNames.map {
-                        ($0, capability($0, version: 1))
+                        ($0, capability($0, version: 1, requestFormat: requestFormat))
                     }
                 )
             ),
@@ -1715,13 +1825,13 @@ final class RequestFixtureContractTests: XCTestCase {
         )
     }
 
-    private func capability(_ name: String, version: Int) -> ApiCapability {
+    private func capability(_ name: String, version: Int, requestFormat: DsmRequestFormat = .form) -> ApiCapability {
         ApiCapability(
             name: name,
             path: "entry.cgi",
             minVersion: 1,
             maxVersion: version,
-            requestFormat: .form,
+            requestFormat: requestFormat,
             selectedVersion: version
         )
     }

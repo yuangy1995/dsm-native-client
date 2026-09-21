@@ -1,0 +1,48 @@
+<UserControl x:Class="LanStash.App.Views.NasNetworkSettingsDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:LanStash.App.Views">
+  <StackPanel MinWidth="300" MaxWidth="520" Spacing="12">
+    <ProgressRing x:Name="LoadingIndicator" IsActive="False" Width="32" Height="32" Visibility="Collapsed"/>
+    <InfoBar x:Name="StatusNotice" IsClosable="False" IsOpen="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+    <StackPanel x:Name="RecoveryPanel" Spacing="8" Visibility="Collapsed">
+      <CheckBox x:Name="SameNasConfirmation" x:Uid="NasNetworkSameNas"/>
+      <Button x:Uid="NasNetworkReview" Click="Review_Click"/>
+    </StackPanel>
+    <TextBlock x:Name="ReadOnlyNotice" x:Uid="NasServiceReadOnly" TextWrapping="Wrap" Visibility="Collapsed"/>
+    <TextBlock x:Name="EmptyNotice" x:Uid="NasNetworkEmpty" TextWrapping="Wrap" Visibility="Collapsed"/>
+    <ListView x:Name="Interfaces" SelectionMode="None" MaxHeight="260" SelectionChanged="Interface_Changed">
+      <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+      <ListView.ItemTemplate>
+        <DataTemplate x:DataType="local:NasNetworkSettingsRow">
+          <StackPanel Padding="4,10" Spacing="8">
+            <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+            <TextBlock Text="{x:Bind Mode}" TextWrapping="Wrap"/>
+            <TextBlock Text="{x:Bind StaticSettings}" TextWrapping="Wrap" Visibility="{x:Bind StaticVisibility}"/>
+            <TextBlock Text="{x:Bind Advanced}" TextWrapping="Wrap"/>
+          </StackPanel>
+        </DataTemplate>
+      </ListView.ItemTemplate>
+    </ListView>
+    <ScrollViewer x:Name="Editor" MaxHeight="330" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+      <StackPanel Spacing="10">
+        <ToggleSwitch x:Name="Dhcp" x:Uid="NasNetworkDhcp" Toggled="Fields_Changed"/>
+        <StackPanel x:Name="StaticFields" Spacing="8">
+          <TextBox x:Name="Address" x:Uid="NasNetworkAddress" TextChanged="Text_Changed"/>
+          <TextBox x:Name="Mask" x:Uid="NasNetworkMask" TextChanged="Text_Changed"/>
+          <TextBox x:Name="Gateway" x:Uid="NasNetworkGateway" TextChanged="Text_Changed"/>
+          <TextBox x:Name="Dns" x:Uid="NasNetworkDns" TextChanged="Text_Changed"/>
+        </StackPanel>
+        <CheckBox x:Name="DefaultGateway" x:Uid="NasNetworkDefaultGateway" Checked="Fields_Changed" Unchecked="Fields_Changed"/>
+        <TextBox x:Name="Mtu" x:Uid="NasNetworkMtu" InputScope="Number" MaxLength="4" TextChanged="Text_Changed"/>
+        <CheckBox x:Name="Vlan" x:Uid="NasNetworkVlan" Checked="Fields_Changed" Unchecked="Fields_Changed"/>
+        <TextBox x:Name="VlanId" x:Uid="NasNetworkVlanId" InputScope="Number" MaxLength="4" TextChanged="Text_Changed"/>
+        <TextBlock x:Name="ValidationNotice" x:Uid="NasNetworkInvalid" TextWrapping="Wrap" Visibility="Collapsed"/>
+        <TextBlock x:Uid="NasNetworkRisk" TextWrapping="Wrap"/>
+        <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasServiceRiskConfirmed" Checked="Acknowledgement_Changed" Unchecked="Acknowledgement_Changed">
+          <CheckBox.Content><TextBlock x:Uid="NasServiceRiskConfirmedText" TextWrapping="Wrap"/></CheckBox.Content>
+        </CheckBox>
+      </StackPanel>
+    </ScrollViewer>
+  </StackPanel>
+</UserControl>

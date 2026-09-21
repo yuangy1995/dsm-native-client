@@ -59,11 +59,11 @@ public sealed partial class DsmRepository
             {
                 features.Add(NasDetailsReadFeature.SystemActivity);
             }
-            if (Supports("SYNO.Core.Package"))
+            if (SecurityCapability("SYNO.Core.Package", 2) is not null)
             {
                 features.Add(NasDetailsReadFeature.Packages);
             }
-            if (Supports("SYNO.Core.TaskScheduler"))
+            if (SecurityCapability("SYNO.Core.TaskScheduler", 3) is not null)
             {
                 features.Add(NasDetailsReadFeature.ScheduledTasks);
             }
@@ -1490,48 +1490,14 @@ public sealed partial class DsmRepository
     private async Task<NasDetailsSection<NasPackageSummary>> LoadPackagesSectionAsync(
         CancellationToken cancellationToken)
     {
-        if (!Supports("SYNO.Core.Package"))
+        if (SecurityCapability("SYNO.Core.Package", 2) is null)
         {
             return Unavailable<NasPackageSummary>("nas-details.packages.unavailable");
         }
         try
         {
-            var data = await _api.CallReadJsonObjectAsync(
-                _profile,
-                _session,
-                Required("SYNO.Core.Package"),
-                2,
-                "list",
-                new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["additional"] = "[\"status\"]",
-                },
-                cancellationToken).ConfigureAwait(false);
-            var items = SectionArray(data, "packages", "items", "data")
-                .OfType<JsonObject>()
-                .Take(NasDetailsPageLimit + 1)
-                .Select((item, index) =>
-                {
-                    var id = RequiredDisplayString(item, "id")
-                        ?? RequiredDisplayString(item, "name")
-                        ?? $"package-{index}";
-                    var name = RequiredDisplayString(item, "name")
-                        ?? RequiredDisplayString(item, "title")
-                        ?? id;
-                    var status = RequiredDisplayString(item, "status")
-                        ?? RequiredDisplayString(item, "state")
-                        ?? "unknown";
-                    return new NasPackageSummary(
-                        id,
-                        name,
-                        RequiredDisplayString(item, "version")
-                            ?? RequiredDisplayString(item, "ver"),
-                        status,
-                        ParseState(status));
-                })
-                .DistinctBy(item => item.Id)
-                .ToArray();
-            return Available(items);
+            var items = await LoadPackagesAsync(cancellationToken).ConfigureAwait(false);
+            return Available(items.ToArray());
         }
         catch (OperationCanceledException)
         {
@@ -1543,55 +1509,17 @@ public sealed partial class DsmRepository
         }
     }
 
-    private async Task<NasDetailsSection<NasScheduledTaskSummary>> LoadScheduledTasksSectionAsync(
-        CancellationToken cancellationToken)
+    private async Task<NasDetailsSection<NasScheduledTaskSummary>> LoadScheduledTasksSectionAsync(CancellationToken cancellationToken)
     {
-        if (!Supports("SYNO.Core.TaskScheduler"))
-        {
-            return Unavailable<NasScheduledTaskSummary>("nas-details.tasks.unavailable");
-        }
+        if (SecurityCapability("SYNO.Core.TaskScheduler", 3) is null) return Unavailable<NasScheduledTaskSummary>("nas-details.tasks.unavailable");
         try
         {
-            var data = await _api.CallReadJsonObjectAsync(
-                _profile,
-                _session,
-                Required("SYNO.Core.TaskScheduler"),
-                3,
-                "list",
-                FirstPageParameters(),
-                cancellationToken).ConfigureAwait(false);
-            var items = SectionArray(data, "tasks", "task", "items", "data", "list")
-                .OfType<JsonObject>()
-                .Take(NasDetailsPageLimit + 1)
-                .Select((item, index) =>
-                {
-                    var id = RequiredDisplayString(item, "id")
-                        ?? RequiredDisplayString(item, "task_id")
-                        ?? RequiredDisplayString(item, "name")
-                        ?? $"task-{index}";
-                    var name = RequiredDisplayString(item, "name")
-                        ?? RequiredDisplayString(item, "task_name")
-                        ?? id;
-                    return new NasScheduledTaskSummary(
-                        id,
-                        name,
-                        item.Bool("enable") ?? item.Bool("enabled"),
-                        RequiredDisplayString(item, "next_trigger_time")
-                            ?? RequiredDisplayString(item, "next_run")
-                            ?? RequiredDisplayString(item, "schedule"));
-                })
-                .DistinctBy(item => item.Id)
-                .ToArray();
-            return Available(items);
+            var items = await LoadScheduledTasksAsync(cancellationToken).ConfigureAwait(false);
+            return Available(items.Select(item => new NasScheduledTaskSummary(ServiceHash(JsonSerializer.Serialize(new { item.Id, item.RealOwner })),
+                item.Name, item.IsEnabled, item.NextTrigger)).ToArray());
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception error) when (IsNasDetailsReadFailure(error))
-        {
-            return Failed<NasScheduledTaskSummary>("nas-details.tasks.failed");
-        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception error) when (IsNasDetailsReadFailure(error)) { return Failed<NasScheduledTaskSummary>("nas-details.tasks.failed"); }
     }
 
     private async Task<NasDetailsSection<NasLogSummary>> LoadLogsSectionAsync(
@@ -1649,53 +1577,19 @@ public sealed partial class DsmRepository
         }
     }
 
-    private async Task<NasDetailsSection<NasConnectionSummary>> LoadConnectionsSectionAsync(
-        CancellationToken cancellationToken)
+    private async Task<NasDetailsSection<NasConnectionSummary>> LoadConnectionsSectionAsync(CancellationToken cancellationToken)
     {
-        if (!Supports("SYNO.Core.CurrentConnection"))
-        {
-            return Unavailable<NasConnectionSummary>("nas-details.connections.unavailable");
-        }
+        if (ConnectionCapability() is null) return Unavailable<NasConnectionSummary>("nas-details.connections.unavailable");
         try
         {
-            var data = await _api.CallReadJsonObjectAsync(
-                _profile,
-                _session,
-                Required("SYNO.Core.CurrentConnection"),
-                1,
-                "list",
-                FirstPageParameters(),
-                cancellationToken).ConfigureAwait(false);
-            var items = SectionArray(data, "connections", "items", "data", "list")
-                .OfType<JsonObject>()
-                .Take(NasDetailsPageLimit + 1)
-                .Select((item, index) => new NasConnectionSummary(
-                    RequiredDisplayString(item, "id")
-                        ?? RequiredDisplayString(item, "conn_id")
-                        ?? $"connection-{index}",
-                    RequiredDisplayString(item, "protocol")
-                        ?? RequiredDisplayString(item, "service")
-                        ?? "unknown",
-                    RequiredDisplayString(item, "type")
-                        ?? RequiredDisplayString(item, "connection_type")
-                        ?? "active",
-                    item.Date("time")
-                        ?? item.Date("login_time")
-                        ?? item.Date("connected_at")
-                        ?? item.Date("start_time"),
-                    item.Bool("is_current") ?? item.Bool("current") ?? false))
-                .DistinctBy(item => item.Id)
-                .ToArray();
-            return Available(items);
+            var snapshot = await LoadConnectionSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            var items = snapshot.Items.Take(NasDetailsPageLimit).Select(item => new NasConnectionSummary(item.Id,
+                item.Protocol ?? item.Type ?? "", item.Type ?? "", null, item.IsCurrent == true)
+                { IsCurrentKnown = item.IsCurrent is not null, ReportedTime = item.ReportedTime }).ToArray();
+            return new(NasDetailsSectionStatus.Available, items, !snapshot.IsComplete || snapshot.Items.Count > NasDetailsPageLimit);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception error) when (IsNasDetailsReadFailure(error))
-        {
-            return Failed<NasConnectionSummary>("nas-details.connections.failed");
-        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception error) when (IsNasDetailsReadFailure(error)) { return Failed<NasConnectionSummary>("nas-details.connections.failed"); }
     }
 
     private static Dictionary<string, string> FirstPageParameters() =>

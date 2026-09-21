@@ -360,7 +360,7 @@ struct NasSettingsView: View {
                     loadResultOutput: { task, resultID in
                         try await model.loadTaskResultOutput(task: task, resultID: resultID)
                     },
-                    onSave: { draft in try await model.saveTask(draft) },
+                    onSave: { draft, baseline in try await model.saveTask(draft, baseline: baseline) },
                     onSetEnabled: { task, enabled in
                         try await model.setTaskEnabled(task, enabled: enabled)
                     },
@@ -5437,7 +5437,7 @@ private struct ScheduledTaskList: View {
         NasScheduledTask,
         String
     ) async throws -> NasScheduledTaskResultOutput
-    let onSave: (NasScheduledTaskDraft) async throws -> Void
+    let onSave: (NasScheduledTaskDraft, NasScheduledTaskDraft) async throws -> Void
     let onSetEnabled: (NasScheduledTask, Bool) async throws -> Void
     let onRun: (NasScheduledTask) async throws -> Void
     let onDelete: (NasScheduledTask) async throws -> Void
@@ -5490,7 +5490,7 @@ private struct ScheduledTaskList: View {
                     onCancel: { self.editorDraft = nil },
                     onSave: { draft in
                         do {
-                            try await onSave(draft)
+                            try await onSave(draft, editorDraft)
                             self.editorDraft = nil
                             return nil
                         } catch {
@@ -6042,6 +6042,7 @@ struct ScheduledTaskEditor: View {
                     Toggle(L10n.string("ui.f4f0ead1116b5b62"), isOn: $draft.isEnabled)
                         .toggleStyle(.switch)
                         .controlSize(.small)
+                        .disabled(isSaving)
                 }
             }
             .padding(.horizontal, 24)
@@ -6260,8 +6261,9 @@ struct ScheduledTaskEditor: View {
                 if !isReadOnly {
                     Button {
                         isSaving = true
+                        let requestedDraft = draft
                         Task {
-                            saveError = await onSave(draft)
+                            saveError = await onSave(requestedDraft)
                             isSaving = false
                         }
                     } label: {
@@ -6398,7 +6400,7 @@ private struct AccountDirectoryView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .disabled(busyAccountIDs.contains("new"))
+                    .disabled(busyAccountIDs.contains { $0.hasPrefix("user:") })
                 } else {
                     Button {
                         groupEditorDraft = NasGroupDraft()
@@ -6407,7 +6409,7 @@ private struct AccountDirectoryView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .disabled(busyAccountIDs.contains("new-group"))
+                    .disabled(busyAccountIDs.contains { $0.hasPrefix("group:") })
                 }
             }
             .padding()
@@ -6545,7 +6547,7 @@ private struct AccountDirectoryView: View {
                 if let id = account.numericID {
                     Text("#\(id)").font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
                 }
-                if busyAccountIDs.contains(account.id) {
+                if busyAccountIDs.contains(NasSettingsModel.accountOperationKey(kind: account.kind, name: account.name)) {
                     ProgressView().controlSize(.small)
                 } else if account.kind == .user, account.canEdit || account.canDelete {
                     Menu {
@@ -6614,7 +6616,7 @@ private struct AccountDirectoryView: View {
 
                         HStack {
                             Spacer()
-                            if busyAccountIDs.contains(account.id) {
+                            if busyAccountIDs.contains(NasSettingsModel.accountOperationKey(kind: account.kind, name: account.name)) {
                                 ProgressView().controlSize(.small)
                             } else if account.canEdit || account.canDelete {
                                 Menu {
@@ -7434,6 +7436,8 @@ struct ConnectionList: View {
         } message: {
             if pendingDisconnect?.isCurrentConnection == true {
                 Text(L10n.string("ui.bfbc568f4cd9c80d"))
+            } else if pendingDisconnect?.type?.uppercased() == "HTTP/HTTPS" {
+                Text(L10n.string("connection.disconnect.web-risk"))
             } else {
                 Text(L10n.string("ui.faf68aeb4c262b5c"))
             }

@@ -9,6 +9,8 @@ namespace LanStash.App.Views;
 public sealed partial class FilesPage
 {
     private Guid? _folderUploadBatchId;
+    private CancellationTokenSource? _folderUploadPreparation;
+    private ContentDialog? _folderUploadDialog;
 
     private async void UploadFolder_Click(object sender, RoutedEventArgs e) =>
         await UploadFolderToCurrentFolderAsync();
@@ -30,29 +32,52 @@ public sealed partial class FilesPage
             return;
         }
 
-        var targetPath = _viewModel.CurrentPath;
+        await PrepareFolderUploadAsync(_viewModel.CurrentPath, sourcePath: null);
+    }
+
+    private async Task PrepareFolderUploadAsync(string targetPath, string? sourcePath)
+    {
+        if (_disposed || _folderUploadPreparation is not null) return;
+        using var cancellation = new CancellationTokenSource();
+        _folderUploadPreparation = cancellation;
+        var token = cancellation.Token;
         _isChoosingUpload = true;
         UpdateState();
+        ShowFolderUploadPreparing(cancellation);
         try
         {
-            var result = await _transfers.PickFolderUploadPlanAsync();
+            var result = sourcePath is null
+                ? await _transfers.PickFolderUploadPlanAsync(token)
+                : await _transfers.PlanFolderUploadAsync(sourcePath, token);
+            token.ThrowIfCancellationRequested();
             if (result is null)
             {
+                ShowFolderUploadMessage("FolderUploadPreparationCancelledMessage", InfoBarSeverity.Informational);
                 return;
             }
-            await ConfirmAndStartFolderUploadAsync(targetPath, result);
+            await ConfirmAndStartFolderUploadAsync(targetPath, result, token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            if (!_disposed) ShowFolderUploadMessage("FolderUploadPreparationCancelledMessage", InfoBarSeverity.Informational);
         }
         catch (ObjectDisposedException)
         {
         }
         catch
         {
-            ShowFolderUploadMessage("FolderUploadSourceUnavailableMessage", InfoBarSeverity.Error);
+            if (!_disposed) ShowFolderUploadMessage("FolderUploadSourceUnavailableMessage", InfoBarSeverity.Error);
         }
         finally
         {
             _isChoosingUpload = false;
-            UpdateState();
+            _folderUploadPreparation = null;
+            _folderUploadDialog = null;
+            if (!_disposed)
+            {
+                if (_folderUploadBatchId is null) FileUploadDropStatus.ActionButton = null;
+                UpdateState();
+            }
         }
     }
 
@@ -63,14 +88,15 @@ public sealed partial class FilesPage
             ShowFolderUploadMessage("FolderUploadBusyMessage", InfoBarSeverity.Warning);
             return;
         }
-        var result = await _transfers.PlanFolderUploadAsync(sourcePath);
-        await ConfirmAndStartFolderUploadAsync(targetPath, result);
+        await PrepareFolderUploadAsync(targetPath, sourcePath);
     }
 
     private async Task ConfirmAndStartFolderUploadAsync(
         string targetPath,
-        FolderUploadPlanResult result)
+        FolderUploadPlanResult result,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (result.Status != FolderUploadPlanStatus.Valid || result.Plan is null)
         {
             ShowFolderUploadPlanError(result.Status);
@@ -87,10 +113,11 @@ public sealed partial class FilesPage
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = localization.Get("FolderUploadConfirmTitle"),
             PrimaryButtonText = localization.Get("FolderUploadConfirmAction"),
             CloseButtonText = localization.Get("ActionCancel"),
-            DefaultButton = ContentDialogButton.Primary,
+            DefaultButton = ContentDialogButton.Close,
             Content = new StackPanel
             {
                 Spacing = 10,
@@ -113,7 +140,12 @@ public sealed partial class FilesPage
                 },
             },
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        FileUploadDropStatus.IsOpen = false;
+        _folderUploadDialog = dialog;
+        var confirmation = await dialog.ShowAsync();
+        _folderUploadDialog = null;
+        cancellationToken.ThrowIfCancellationRequested();
+        if (confirmation != ContentDialogResult.Primary)
         {
             return;
         }
@@ -124,10 +156,15 @@ public sealed partial class FilesPage
             return;
         }
 
-        var start = _transfers.StartFolderUpload(
+        ShowFolderUploadPreparing(_folderUploadPreparation!);
+        var start = await _transfers.StartFolderUploadAsync(
             _profileId.ToString(),
             targetPath,
-            result.Plan);
+            result.Plan,
+            cancellationToken,
+            targetIsCurrent: () => !_disposed && !_viewModel.IsLoading && !IsReadOnlyLocation() &&
+                string.Equals(targetPath, _viewModel.CurrentPath, StringComparison.Ordinal));
+        if (_disposed) return;
         switch (start.Status)
         {
             case FolderUploadBatchStartStatus.Started:
@@ -148,6 +185,27 @@ public sealed partial class FilesPage
                 ShowFolderUploadMessage("FolderUploadSourceChangedMessage", InfoBarSeverity.Warning);
                 break;
         }
+    }
+
+    private void ShowFolderUploadPreparing(CancellationTokenSource cancellation)
+    {
+        var cancel = new Button { Content = LocalizationService.Current.Get("ActionCancel"), MinHeight = 44 };
+        AutomationProperties.SetName(cancel, LocalizationService.Current.Get("FolderUploadCancelAutomationName"));
+        cancel.Click += (_, _) =>
+        {
+            cancel.IsEnabled = false;
+            if (ReferenceEquals(_folderUploadPreparation, cancellation)) CancelFolderUploadPreparation();
+        };
+        FileUploadDropStatus.ActionButton = cancel;
+        FileUploadDropStatus.Severity = InfoBarSeverity.Informational;
+        FileUploadDropStatus.Message = LocalizationService.Current.Get("FolderUploadPreparingMessage");
+        FileUploadDropStatus.IsOpen = true;
+    }
+
+    private void CancelFolderUploadPreparation()
+    {
+        _folderUploadPreparation?.Cancel();
+        _folderUploadDialog?.Hide();
     }
 
     private void ShowFolderUploadStarted(FolderUploadPlan plan)
@@ -236,9 +294,6 @@ public sealed partial class FilesPage
     private void ShowFolderUploadPlanError(FolderUploadPlanStatus status) =>
         ShowFolderUploadMessage(status switch
         {
-            FolderUploadPlanStatus.TooManyFiles => "FolderUploadTooManyFilesMessage",
-            FolderUploadPlanStatus.TooManyDirectories => "FolderUploadTooManyDirectoriesMessage",
-            FolderUploadPlanStatus.TooDeep => "FolderUploadTooDeepMessage",
             FolderUploadPlanStatus.ReparsePoint => "FolderUploadReparsePointMessage",
             FolderUploadPlanStatus.InvalidName => "FolderUploadInvalidNameMessage",
             FolderUploadPlanStatus.DuplicateTarget => "FolderUploadDuplicateMessage",

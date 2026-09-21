@@ -88,7 +88,15 @@
 
 - Apple Adapter：`DsmNasAdministrationRepository`。
 - Android Adapter：`DsmRepository` 的 `testDdnsResult`、`saveDdnsResult(original, desired)`、`deleteDdnsResult(original)` 与 `refreshDdnsResult(expectedProviderIds)`；四类操作保持独立，固定使用 Provider/Record v1。Provider/Record 根、对象项、稳定身份与重复项均严格校验；Record 仅要求契约承诺的 `provider/hostname/username/enable/heartbeat`，可选网络字段若出现则严格检查。
-- Windows、iPhone 与 iPad：复用领域结果类型，DDNS 调用链尚未迁移。
+- Windows：Provider/Record v1 双能力门与严格记录读取已接，记录身份固定为 provider；
+  提供商协议重复项按已记录行为归并并保留友好显示名，记录重复则失败。可选网络字段
+  保留未知/空值，返回密码不进入模型；读取与写权限分离，原生只读入口已接线。
+  四种独立操作核心已迁移并接入共享 NAS 写协调器：确认快照/目录基线、固定请求 ID、
+  环境门、提交前双能力与目录校验、单次发送和回读。密码只传入当次调用，不进入共享
+  恢复状态或指纹；原生四类编辑/确认/反馈/只读恢复入口已接，生产门关闭。
+  确认绑定当前草稿/目标/目录和临时密码，改变输入即失效；操作期间阻止其他动作，
+  关闭/换 NAS 清除密码并隔离迟到结果，测试后的输入变化取消旧测试成功提示。
+- iPhone 与 iPad：DDNS 用户调用链尚未迁移。
 - 脱敏 Fixture：
   - `contracts/request-fixtures/ddns/test-provider/synthetic-record/request.json`
   - `contracts/request-fixtures/ddns/create-record/synthetic-record/request.json`
@@ -101,6 +109,12 @@
 ## 安全与副作用
 
 - 保存凭据可能改变 DSM 与外部 DDNS 服务商的认证状态；删除会停止对应记录更新。
+- 2026-09-17 Windows 合成复核及 Apple 源码修正：明确拒绝不得被恰好匹配的旧配置
+  或其他来源的删除覆盖为成功。仅换凭据且丢失接受响应时，列表不能证明新密码已保存，
+  必须报告未确认；不得自动重新测试或重放保存。Windows 此情形维持同会话协调器的
+  挂起状态，需通过官方界面人工核对；客户端不提供未经验证的强制解锁入口。
+- 测试或立即更新响应丢失时，Windows 缓存该请求的未知结果而不重发；这类瞬时动作
+  无法从列表恢复，不占用永久挂起锁。后续新动作必须是用户重新确认的新请求。
 - 用户名和密码只用于当前请求，不写入日志、Fixture 或客户端持久化。
 - 合成测试请求只使用 `.example.invalid` 域名与合成服务商；Fixture 仍将主机名和凭据
   标记为脱敏，不记录真实域名、公网地址、账号、NAS 地址、会话或完整 DSM 响应。
@@ -112,5 +126,9 @@
   尚未验证。
 - 服务商特定错误码、频率限制、双因素认证、IPv6 和外部地址探测差异尚未收集。
 - `update_ip_address` 被接受后的公网 DNS 传播时间与公共解析器收敛没有权威状态字段。
-- Android 调用链已迁移，但尚未做设备及真实 DSM/服务商写行为验收；Windows、iPhone
-  与 iPad 调用链尚未迁移。
+- Android 调用链已迁移，但尚未做设备及真实 DSM/服务商写行为验收；Windows 已有
+  读取、四操作核心及原生调用链合成证据；iPhone 与 iPad 用户调用链尚未迁移。
+- Apple 共享层新增明确拒绝与仅换密码超时回归，当前 Windows 环境无 Swift，测试未运行；
+  Mac 界面层也移除凭旧列表把拒绝/未知转为成功的覆盖，并补对应模型回归。
+  macOS/iPhone/iPad 构建和回归为 PENDING_USER_VALIDATION。Android 不修改源码，需后续
+  核查相同错误映射；本次没有改变请求字段或现有真实环境证据等级。

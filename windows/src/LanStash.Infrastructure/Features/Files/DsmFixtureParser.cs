@@ -21,7 +21,7 @@ internal static class DsmFixtureParser
         {
             var additional = item.Object("additional");
             var time = additional?.Object("time");
-            var permission = additional?.Object("perm");
+            var permission = FileStationPermissions.Parse(additional?["perm"]);
             return new FileItem(
                 item.String("path") ?? string.Empty,
                 item.String("name") ?? item.String("path")?.Split('/').Last() ?? UserText.Key("WinShared79f326be4409d51f"),
@@ -31,8 +31,8 @@ internal static class DsmFixtureParser
                     : item.Long("size") ?? additional?.Long("size") ?? -1,
                 time?.Date("mtime") ?? item.Date("mtime"),
                 additional?.Object("owner")?.String("user") ?? additional?.String("owner"),
-                permission?.Bool("write") ?? false,
-                permission?.Bool("delete") ?? false);
+                permission.Write ?? false,
+                permission.Delete ?? false);
         }).Where(item => !string.IsNullOrWhiteSpace(item.Path)).ToArray();
         return new FilePage(
             items,

@@ -7,6 +7,26 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmApiClient
 {
+    private const string HttpStatusFailureMarker = "dsm.transport.http-status";
+
+    // HTTP 失败可能出现在写入完成之后，不能与 success=false 的 DSM 明确拒绝混为一谈。
+    // 使用现有异常的内部元数据，不改变公开异常结构，也不附带请求或响应内容。
+    internal static bool IsExplicitApiRejection(DsmException error) =>
+        error.Code is not null && !error.Data.Contains(HttpStatusFailureMarker);
+
+    // 与 macOS DsmRequestBuilder 一致：POST 表单和 Header 均携带会话令牌，GET 不使用此入口。
+    private static FormUrlEncodedContent CreateSessionFormContent(
+        IReadOnlyDictionary<string, string> parameters, DsmSession? session)
+    {
+        var values = new Dictionary<string, string>(parameters, StringComparer.Ordinal);
+        if (session is not null)
+        {
+            values["_sid"] = session.Sid;
+            if (!string.IsNullOrWhiteSpace(session.SynoToken)) values["SynoToken"] = session.SynoToken;
+        }
+        return new FormUrlEncodedContent(values);
+    }
+
     private Task<JsonObject> PostAsync(
         NasProfile profile,
         string path,
@@ -38,7 +58,7 @@ public sealed partial class DsmApiClient
             HttpMethod.Post,
             new Uri(GetBaseUri(profile), path))
         {
-            Content = new FormUrlEncodedContent(values),
+            Content = CreateSessionFormContent(values, session),
         };
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.UserAgent.ParseAdd("LanStash-Windows/0.1");
@@ -79,11 +99,13 @@ public sealed partial class DsmApiClient
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw new DsmException(
+                var error = new DsmException(
                     UserText.Key("WinSharedf91eef8a1cf7b01c"),
                     UserText.Key("WinShared79c4d60046afa3ff"),
                     (int)response.StatusCode,
                     response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
+                error.Data[HttpStatusFailureMarker] = true;
+                throw error;
             }
             await using var stream = await response.Content
                 .ReadAsStreamAsync(cancellationToken)
@@ -94,7 +116,8 @@ public sealed partial class DsmApiClient
                 ?? throw new DsmException(
                     UserText.Key("WinShared9cb9ec075b03b6cb"),
                     UserText.Key("WinShared09f262a53ad074ca"));
-            if (envelope["success"]?.GetValue<bool>() == true)
+            if (!TryGetNativeBoolean(envelope, "success", out var success)) throw InvalidReadEnvelope();
+            if (success)
             {
                 return envelope["data"] switch
                 {
@@ -115,8 +138,9 @@ public sealed partial class DsmApiClient
     {
         102 => new(UserText.Key("WinShared11a208e43c34b77c"), UserText.Key("WinShared371d84f48836296f"), code),
         103 => new(UserText.Key("WinShared189ee06b7da78f3f"), UserText.Key("WinSharedb5641013fbf13d8b"), code),
-        104 => new(UserText.Key("WinSharedd727aa9e0a8cff65"), UserText.Key("WinSharedc144a2dc9ace5c1f"), code, true),
+        104 => new(UserText.Key("WinShared189ee06b7da78f3f"), UserText.Key("WinSharedb5641013fbf13d8b"), code),
         105 => new(UserText.Key("WinShared12188668a1d4cff1"), UserText.Key("WinShared4a1330714c58b25d"), code),
+        106 or 107 or 119 => new(UserText.Key("WinSharedd727aa9e0a8cff65"), UserText.Key("WinSharedc144a2dc9ace5c1f"), code, true),
         406 => new(UserText.Key("WinShared3cd43f3a371513e2"), UserText.Key("WinShared46e3e4901826eb40"), code, true),
         407 => new(UserText.Key("WinSharedef0eed96e1f28ed8"), UserText.Key("WinShared2ad42c7573d49cbc"), code, true),
         400 or 401 or 402 or 403 or 404 =>

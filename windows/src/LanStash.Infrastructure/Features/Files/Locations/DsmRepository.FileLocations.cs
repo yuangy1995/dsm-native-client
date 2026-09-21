@@ -26,7 +26,7 @@ public sealed partial class DsmRepository
         LoadFileLocationsSnapshotAsync(cancellationToken);
 
     private FileLocationsAvailability LocationAvailability => new(
-        HasFixedVersionCapability("SYNO.FileStation.Favorite"),
+        HasFavoriteCapability(),
         HasFixedVersionCapability("SYNO.FileStation.List"),
         HasFixedVersionCapability("SYNO.FileStation.Info") &&
             HasFixedVersionCapability("SYNO.FileStation.VirtualFolder"));
@@ -116,7 +116,7 @@ public sealed partial class DsmRepository
         IReadOnlyDictionary<string, string>? parameters,
         CancellationToken cancellationToken)
     {
-        if (!HasFixedVersionCapability(apiName) ||
+        if (!(apiName == "SYNO.FileStation.Favorite" ? HasFavoriteCapability() : HasFixedVersionCapability(apiName)) ||
             !_capabilities.TryGetValue(apiName, out var capability) ||
             !string.Equals(capability.Name, apiName, StringComparison.Ordinal))
         {
@@ -132,8 +132,11 @@ public sealed partial class DsmRepository
             cancellationToken);
     }
 
+    private Task<FileFavoriteSnapshot> LoadFavoriteLocationsAsync(CancellationToken cancellationToken) =>
+        LoadFavoriteLocationsAsync(cancellationToken, requireUnambiguousNames: false);
+
     private async Task<FileFavoriteSnapshot> LoadFavoriteLocationsAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool requireUnambiguousNames)
     {
         var rawOffset = 0;
         int? expectedTotal = null;
@@ -194,6 +197,8 @@ public sealed partial class DsmRepository
                 {
                     ordered.Add(new FileFavoriteLocation(ProfileId, name, path));
                 }
+                else if (requireUnambiguousNames && ordered.Single(item => item.Path == path).Name != name)
+                    throw InvalidLocationsResponse("favorite.ambiguous-name");
             }
 
             var nextOffset = checked(rawOffset + favorites.Count);

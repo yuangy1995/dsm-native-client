@@ -80,7 +80,18 @@ QuickConnect 登录、隧道建立或 `SYNO.API.Info` 探测证据也不外推�
 - Android Adapter：正式 Repository 固定 QuickConnect v3 与 Upnp v1，严格解析 Boolean；
   单项读取失败保留另一项并以 `null` 降级。只有完整匹配已记录 DSM build 与 Update 的
   环境开放写入口，保存仅提交实际变化字段并执行专项回读。
-- Windows Adapter：复用领域结果类型，调用链尚未迁移。
+- Windows Adapter：新增固定 v3/v1 独立读取，严格 Boolean，缺失能力与读取失败独立
+  标记；认证/取消不降级成成功。保存核心仅对已读可信字段形成变化子操作，整体
+  检查方法版本和基线，明确管理员与已登记环境后提交。沿用可信中继主机分类，
+  不能用草稿中的可关闭字段绕过当前中继保护。任何一项拒绝/模糊响应立即停止后续
+  提交，整体回读仅计算已提交项，未知在同一客户端跨 Repository 保留且不重放。
+  原生表单已接入独立字段状态、中继保护、变化确认、结果计数和未知恢复；未知时
+  明示显示最后读取值并锁定保存，确认/提交前同步控件值。生产行为门保持关闭，
+  Windows 核心和原生合成测试不提升真实证据。
+- Apple 同类修正：固定 Upnp v1、严格布尔并独立读取；已知认证、取消和证书错误
+  不吞掉。当前值未知的字段不提交猜测值。回读不会把明确拒绝或未提交的项计为
+  成功，缺失字段保留未知计数；Mac Model 不再用旧缓存覆盖未知/拒绝结果。新增
+  5 项共享/App 测试方法未在 Mac 运行，不能记作目标平台通过。
 - Schema：复用 `MutationResult` 与请求 Fixture Schema。
 - 脱敏 Fixture：
   - `contracts/request-fixtures/network/set-relay/synthetic-setting/request.json`
@@ -106,5 +117,6 @@ QuickConnect 登录、隧道建立或 `SYNO.API.Info` 探测证据也不外推�
 - 当前环境未在专用测试网络完成中继、路由器自动配置、权限不足、连接切换、中途断网
   和端口映射副作用验收。
 - `set_misc_config` 与 Upnp 字段在不同 DSM build、路由器和权限组合中的差异尚未验证。
-- Windows 以及 iPhone、iPad 调用链尚未迁移；Android 已完成合成契约与界面测试，
+- Windows 读取、保存核心及原生表单已迁移，真实验证待进行；iPhone、iPad 需回归共享
+  Apple 读取/计数修正；Android 本波未改源码，已完成合成契约与界面测试，
   但尚未在真实 NAS 和路由器上执行写操作。

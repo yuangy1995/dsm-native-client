@@ -1,4 +1,5 @@
 import Foundation
+import DsmCore
 import XCTest
 @testable import DsmMobile
 
@@ -48,6 +49,10 @@ final class MobileVirtualMachinePresentationTests: XCTestCase {
             "inventory.setFilter(.all)", ".filteredEmpty"
         ] { XCTAssertTrue(view.contains(expected), "缺少：\(expected)") }
         XCTAssertEqual(resourceKeys(in: view), Self.expectedResourceKeys)
+        XCTAssertTrue(view.contains("item.startupBehavior?.localizationKey"))
+        XCTAssertTrue(view.contains("\"virtual-machine.setting.unknown\""))
+        XCTAssertEqual(Set(VirtualMachineStartupBehavior.allCases.map(\.localizationKey)),
+            ["virtual-machine.startup.off", "virtual-machine.startup.restore", "virtual-machine.startup.on"])
     }
 
     private func source(_ path: String) throws -> String {
@@ -92,7 +97,6 @@ final class MobileVirtualMachinePresentationTests: XCTestCase {
         "mobile.virtual-machines.section.unavailable.title",
         "mobile.virtual-machines.status.attention", "mobile.virtual-machines.status.running",
         "mobile.virtual-machines.status.stopped", "mobile.virtual-machines.status.unknown",
-        "mobile.virtual-machines.value.disabled", "mobile.virtual-machines.value.enabled",
         "mobile.virtual-machines.value.time-unavailable"
     ]
 }

@@ -1,5 +1,6 @@
 import DsmCore
 import DsmLocalization
+import DsmNetwork
 import Foundation
 import Observation
 
@@ -586,11 +587,20 @@ final class SynologyPhotosModel {
         isSaving = true; saveProgress = nil; saveMessage = nil
         saveTask = Task { [weak self] in
             guard let self else { return }
-            defer { self.isSaving = false }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer {
+                if scoped { url.stopAccessingSecurityScopedResource() }
+                self.isSaving = false
+            }
             do {
-                try await self.service().downloadOriginal(photo, to: url) { [weak self] done, total in
+                let staging = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).photos-save")
+                defer { try? FileManager.default.removeItem(at: staging) }
+                try await self.service().downloadOriginal(photo, to: staging) { [weak self] done, total in
                     Task { @MainActor in self?.saveProgress = total.flatMap { $0 > 0 ? Double(done) / Double($0) : nil } }
                 }
+                try Task.checkCancellation()
+                // 此入口仅来自 NSSavePanel 的保存/替换确认；Repository 默认的无覆盖契约不变。
+                try await DownloadedFileExporter.export(from: staging, to: url, replaceExisting: true)
                 self.saveMessage = L10n.string("photos.media.saved")
             } catch is CancellationError { self.saveMessage = nil }
             catch { self.saveMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.media.saveFailed") }

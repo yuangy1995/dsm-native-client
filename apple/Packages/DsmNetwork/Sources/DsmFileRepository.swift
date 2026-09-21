@@ -969,6 +969,29 @@ private struct BinaryEnvelope: Decodable, Sendable {
     let error: ErrorPayload?
 }
 
+private struct RemoteMountInventoryPayload: Decodable, Sendable {
+    struct Configuration: Decodable, Sendable {
+        let enabled: Bool
+        private enum CodingKeys: String, CodingKey { case enabled = "enable_remote_mount" }
+    }
+    struct Connection: Decodable, Sendable {
+        let type: String
+        let source: String
+        let mountPoint: String
+        let automaticMount: Bool?
+        private enum CodingKeys: String, CodingKey { case type, source; case mountPoint = "mount_point", automaticMount = "auto_mount" }
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            type = try container.decode(String.self, forKey: .type)
+            source = try container.decode(String.self, forKey: .source)
+            mountPoint = try container.decode(String.self, forKey: .mountPoint)
+            automaticMount = container.contains(.automaticMount) ? try container.decode(Bool.self, forKey: .automaticMount) : nil
+        }
+    }
+    let mountConfig: Configuration
+    let remoteList: [Connection]
+}
+
 private struct StreamingUploadPlan: @unchecked Sendable {
     var request: URLRequest
     let prefix: Data
@@ -1021,6 +1044,8 @@ public actor DsmFileRepository: FileRepository {
     private var activeDeletionPaths: Set<String> = []
     private var activeDirectorySizePaths: Set<String> = []
     private var activeShareLinkPaths: Set<String> = []
+    private var activeRemoteMountPaths: Set<String> = []
+    private var remoteMountOperations: [UUID: RemoteMountOperation] = [:]
     private var activeFileItemMutationPaths: Set<String> = []
     /// 提交状态未知的目标只能回读复核，不能再次发送写请求。
     private var pendingFileItemMutationReviews: [String: PendingFileItemMutationReview] = [:]
@@ -1058,6 +1083,8 @@ public actor DsmFileRepository: FileRepository {
         profileID = profile.id
         allowsVerifiedRestore = capabilities[DsmAPIName.fileStationCopyMove]?.verified == true
         allowsRemoteMountManagement = capabilities[DsmAPIName.fileStationMount]?.selectedVersion == 1
+            && capabilities[DsmAPIName.fileStationMountList]?.selectedVersion == 1
+            && capabilities[DsmAPIName.fileStationList]?.selectedVersion == 2
         let sharingCapability = capabilities[DsmAPIName.fileStationSharing]
         let listCapability = capabilities[DsmAPIName.fileStationList]
         fileShareLinkAvailability = sharingCapability?.selectedVersion == 3 &&
@@ -1859,7 +1886,7 @@ public actor DsmFileRepository: FileRepository {
         
         do {
             try FileManager.default.createDirectory(
-                at: localURL.deletingLastPathComponent(),
+                at: partURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
         } catch {
@@ -1892,7 +1919,7 @@ public actor DsmFileRepository: FileRepository {
             do {
                 while completed < expectedSize {
                     try Task.checkCancellation()
-                    let segmentURL = localURL.deletingLastPathComponent()
+                    let segmentURL = partURL.deletingLastPathComponent()
                         .appendingPathComponent(
                             ".\(localURL.lastPathComponent).\(UUID().uuidString).lanstash.segment"
                         )
@@ -2006,7 +2033,7 @@ public actor DsmFileRepository: FileRepository {
                         safeUserMessage: L10n.string("shared.5e35450bf91845f5")
                     )
                 }
-                try Self.safeReplaceFile(from: partURL, to: localURL)
+                try await DownloadedFileExporter.export(from: partURL, to: localURL, replaceExisting: true)
                 try? FileManager.default.removeItem(at: partURL)
                 try? FileManager.default.removeItem(at: metadataURL)
             } catch {
@@ -2024,7 +2051,7 @@ public actor DsmFileRepository: FileRepository {
                     fileURL: partURL
                 )
                 try validateBinaryResponse(response, data: inspectionData)
-                try Self.safeReplaceFile(from: partURL, to: localURL)
+                try await DownloadedFileExporter.export(from: partURL, to: localURL, replaceExisting: true)
                 try? FileManager.default.removeItem(at: partURL)
                 try? FileManager.default.removeItem(at: metadataURL)
             } catch {
@@ -2041,14 +2068,15 @@ public actor DsmFileRepository: FileRepository {
         
         // 1. 清理临时目录下的分片（新逻辑）
         let tempDir = FileManager.default.temporaryDirectory
+        let temporaryPrefix = Self.partialDownloadDestinationPrefix(localURL: localURL)
         let tempUrls = (try? FileManager.default.contentsOfDirectory(
             at: tempDir,
             includingPropertiesForKeys: nil
         )) ?? []
-        for url in tempUrls where url.lastPathComponent.hasPrefix(prefix)
+        for url in tempUrls where url.lastPathComponent.hasPrefix(temporaryPrefix)
             && Self.isPartialDownloadArtifact(
                 url.lastPathComponent,
-                prefix: prefix
+                prefix: temporaryPrefix
             ) {
             try? FileManager.default.removeItem(at: url)
         }
@@ -2060,11 +2088,7 @@ public actor DsmFileRepository: FileRepository {
             includingPropertiesForKeys: nil
         )) ?? []
         for url in targetUrls where url.lastPathComponent == legacyName
-            || (url.lastPathComponent.hasPrefix(prefix)
-                && Self.isPartialDownloadArtifact(
-                    url.lastPathComponent,
-                    prefix: prefix
-                )) {
+            || Self.isLegacyPartialDownloadArtifact(url.lastPathComponent, prefix: prefix) {
             try? FileManager.default.removeItem(at: url)
         }
     }
@@ -2080,8 +2104,19 @@ public actor DsmFileRepository: FileRepository {
             expectedSize: expectedSize
         )
         let suffix = String(digest.prefix(16))
-        return localURL.deletingLastPathComponent()
-            .appendingPathComponent(".\(localURL.lastPathComponent).\(suffix).lanstash.part")
+        return Self.partialDownloadArtifactURL(localURL: localURL, identitySuffix: suffix)
+    }
+
+    static func partialDownloadArtifactURL(localURL: URL, identitySuffix: String) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(
+            "\(partialDownloadDestinationPrefix(localURL: localURL))\(identitySuffix).lanstash.part"
+        )
+    }
+
+    private static func partialDownloadDestinationPrefix(localURL: URL) -> String {
+        let destinationDigest = SHA256.hash(data: Data(localURL.standardizedFileURL.path.utf8))
+            .prefix(8).map { String(format: "%02x", $0) }.joined()
+        return ".\(localURL.lastPathComponent).\(destinationDigest)-"
     }
 
     private static func partialDownloadIdentityDigest(
@@ -2106,6 +2141,14 @@ public actor DsmFileRepository: FileRepository {
         fileName.hasPrefix(prefix)
             && (fileName.hasSuffix(".lanstash.part")
                 || fileName.hasSuffix(".lanstash.part.metadata"))
+    }
+
+    private static func isLegacyPartialDownloadArtifact(_ fileName: String, prefix: String) -> Bool {
+        guard fileName.hasPrefix(prefix) else { return false }
+        let suffix = fileName.hasSuffix(".metadata") ? ".lanstash.part.metadata" : ".lanstash.part"
+        guard fileName.hasSuffix(suffix) else { return false }
+        let identity = fileName.dropFirst(prefix.count).dropLast(suffix.count)
+        return identity.count == 16 && identity.allSatisfy { "0123456789abcdef".contains($0) }
     }
 
     private static func loadPartialDownloadState(
@@ -5109,53 +5152,196 @@ public actor DsmFileRepository: FileRepository {
     }
 
     public func createRemoteMount(_ configuration: RemoteMountConfiguration) async throws {
+        try requireRemoteMountManagement()
         let normalized = try Self.validateRemoteMount(configuration)
-        try await mountRemote(normalized)
-        try await verifyRemoteMount(at: normalized.mountPoint, shouldExist: true)
+        let paths: Set<String> = [normalized.mountPoint]
+        try reserveRemoteMountPaths(paths)
+        defer { activeRemoteMountPaths.subtract(paths) }
+        let inventory = try await remoteMountInventory()
+        try await requireRemoteMountDestination(normalized, inventory: inventory)
+        let operation = beginRemoteMountOperation(action: .create, baseline: nil, configuration: normalized, stage: .verifyingConnection)
+        try await submitRemoteMountOperationStep(operation.id, connect: true, configuration: normalized, rejectedStage: .failed)
+        try await verifyRemoteMount(at: normalized.mountPoint, shouldExist: true, expected: normalized)
+        advanceRemoteMountOperation(operation.id, to: .completed)
     }
 
-    public func updateRemoteMount(
-        existingMountPoint: String,
-        configuration: RemoteMountConfiguration
-    ) async throws {
-        let currentMountPoint = try Self.validateMountPoint(existingMountPoint)
+    public func updateRemoteMount(expectedConnection: RemoteMountConnection, configuration: RemoteMountConfiguration) async throws {
+        try requireRemoteMountManagement()
+        let currentMountPoint = try Self.validateMountPoint(expectedConnection.mountPoint)
         let normalized = try Self.validateRemoteMount(configuration)
-
-        if currentMountPoint != normalized.mountPoint {
-            try await mountRemote(normalized)
+        guard currentMountPoint == normalized.mountPoint ||
+                (!currentMountPoint.hasPrefix(normalized.mountPoint + "/") && !normalized.mountPoint.hasPrefix(currentMountPoint + "/")) else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.locations.overlap"))
+        }
+        let paths: Set<String> = [currentMountPoint, normalized.mountPoint]
+        try reserveRemoteMountPaths(paths)
+        defer { activeRemoteMountPaths.subtract(paths) }
+        try await requireRemoteMountIdentity(expectedConnection, destination: normalized)
+        let moving = currentMountPoint != normalized.mountPoint
+        let operation = beginRemoteMountOperation(action: .update, baseline: expectedConnection, configuration: normalized,
+            stage: moving ? .verifyingConnection : .verifyingDisconnection)
+        try await submitRemoteMountOperationStep(operation.id, connect: moving, configuration: normalized, rejectedStage: .failed)
+        if moving {
             do {
-                try await verifyRemoteMount(at: normalized.mountPoint, shouldExist: true)
-                try await unmountRemote(at: currentMountPoint)
-                try await verifyRemoteMount(at: currentMountPoint, shouldExist: false)
+                try await verifyRemoteMount(at: normalized.mountPoint, shouldExist: true, expected: normalized)
+                advanceRemoteMountOperation(operation.id, to: .readyToDisconnectPrevious)
+                try await continueRemoteMountCore(operation.id, password: "")
             } catch {
-                try? await unmountRemote(at: normalized.mountPoint)
-                throw error
+                if error is CancellationError || error is DsmCertificateTrustError { throw error }
+                if let appError = error as? AppError,
+                   [.authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged, .permissionDenied, .cancelled].contains(appError.category) { throw appError }
+                throw AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("remote-mount.update.unverified"))
             }
-            return
-        }
-
-        try await unmountRemote(at: currentMountPoint)
-        try await verifyRemoteMount(at: currentMountPoint, shouldExist: false)
-        do {
-            try await mountRemote(normalized)
-            try await verifyRemoteMount(at: normalized.mountPoint, shouldExist: true)
-        } catch {
-            throw AppError(
-                category: .unknown,
-                isRetryable: true,
-                safeUserMessage: L10n.string("shared.090ae84e6f05b2a9")
-            )
+        } else {
+            try await verifyRemoteMount(at: currentMountPoint, shouldExist: false)
+            advanceRemoteMountOperation(operation.id, to: .readyToConnect)
+            do {
+                try await continueRemoteMountCore(operation.id, password: normalized.password)
+            } catch {
+                if error is CancellationError || error is DsmCertificateTrustError { throw error }
+                if let appError = error as? AppError,
+                   [.authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged, .permissionDenied, .cancelled].contains(appError.category) { throw appError }
+                throw AppError(category: .unknown, isRetryable: false, safeUserMessage: L10n.string("shared.090ae84e6f05b2a9"))
+            }
         }
     }
 
-    public func removeRemoteMount(mountPoint: String) async throws {
-        let normalized = try Self.validateMountPoint(mountPoint)
-        try await unmountRemote(at: normalized)
+    public func removeRemoteMount(expectedConnection: RemoteMountConnection) async throws {
+        try requireRemoteMountManagement()
+        let normalized = try Self.validateMountPoint(expectedConnection.mountPoint)
+        let paths: Set<String> = [normalized]
+        try reserveRemoteMountPaths(paths)
+        defer { activeRemoteMountPaths.subtract(paths) }
+        try await requireRemoteMountIdentity(expectedConnection)
+        let operation = beginRemoteMountOperation(action: .disconnect, baseline: expectedConnection, configuration: nil, stage: .verifyingDisconnection)
+        try await submitRemoteMountOperationStep(operation.id, connect: false, configuration: nil, rejectedStage: .failed)
         try await verifyRemoteMount(at: normalized, shouldExist: false)
+        advanceRemoteMountOperation(operation.id, to: .completed)
+    }
+
+    public func pendingRemoteMountOperations() async -> [RemoteMountOperation] {
+        remoteMountOperations.values.filter { !$0.stage.isTerminal }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    public func reviewRemoteMountOperation(id: UUID) async throws -> RemoteMountOperation? {
+        try requireRemoteMountManagement()
+        guard let operation = remoteMountOperations[id] else { return nil }
+        if operation.stage.isTerminal { return operation }
+        try reserveRemoteMountPaths(operation.affectedPaths, excluding: id)
+        defer { activeRemoteMountPaths.subtract(operation.affectedPaths) }
+        return try await reviewRemoteMountCore(id)
+    }
+
+    public func continueRemoteMountOperation(id: UUID, password: String, confirmed: Bool) async throws -> RemoteMountOperation? {
+        try requireRemoteMountManagement()
+        guard confirmed else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.recovery.confirm-required"))
+        }
+        guard let operation = remoteMountOperations[id] else { return nil }
+        if operation.stage.isTerminal { return operation }
+        try reserveRemoteMountPaths(operation.affectedPaths, excluding: id)
+        defer { activeRemoteMountPaths.subtract(operation.affectedPaths) }
+        // 若另一调用已经提交而结果未知，只回查；即使回查得到待继续，也不顺带写下一步。
+        if operation.stage.requiresReview { return try await reviewRemoteMountCore(id) }
+        return try await continueRemoteMountCore(id, password: password)
+    }
+
+    public func abandonRemoteMountOperation(id: UUID, confirmed: Bool) async throws -> RemoteMountOperation? {
+        try requireRemoteMountManagement()
+        guard confirmed else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.recovery.confirm-required"))
+        }
+        guard let operation = remoteMountOperations[id] else { return nil }
+        if operation.stage.isTerminal { return operation }
+        guard operation.stage.canContinue else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.recovery.required"))
+        }
+        try reserveRemoteMountPaths(operation.affectedPaths, excluding: id)
+        defer { activeRemoteMountPaths.subtract(operation.affectedPaths) }
+        // 只放弃已知未开始的剩余步骤，既不回滚 NAS，也不丢弃提交结果未知的记录。
+        return advanceRemoteMountOperation(id, to: .cancelled)
+    }
+
+    private func beginRemoteMountOperation(action: RemoteMountOperationAction, baseline: RemoteMountConnection?,
+                                          configuration: RemoteMountConfiguration?, stage: RemoteMountOperationStage) -> RemoteMountOperation {
+        let operation = RemoteMountOperation(id: UUID(), profileID: profileID, action: action, baseline: baseline,
+            setup: configuration.map(RemoteMountSetup.init), stage: stage)
+        remoteMountOperations[operation.id] = operation
+        return operation
+    }
+
+    @discardableResult
+    private func advanceRemoteMountOperation(_ id: UUID, to stage: RemoteMountOperationStage) -> RemoteMountOperation {
+        let updated = remoteMountOperations[id]!.replacingStage(stage)
+        remoteMountOperations[id] = updated
+        return updated
+    }
+
+    private func submitRemoteMountOperationStep(_ id: UUID, connect: Bool, configuration: RemoteMountConfiguration?,
+                                               rejectedStage: RemoteMountOperationStage) async throws {
+        if Task.isCancelled {
+            advanceRemoteMountOperation(id, to: rejectedStage == .failed ? .cancelled : rejectedStage)
+            throw CancellationError()
+        }
+        advanceRemoteMountOperation(id, to: connect ? .verifyingConnection : .verifyingDisconnection)
+        do {
+            if connect { try await mountRemote(configuration!) }
+            else { try await unmountRemote(at: remoteMountOperations[id]!.baseline!.mountPoint) }
+        } catch {
+            // 仅提交本身的明确 DSM 错误才回到未执行状态；回查错误不能进入这条分支。
+            if let appError = error as? AppError, let code = appError.dsmCode, code > 0 {
+                advanceRemoteMountOperation(id, to: rejectedStage)
+            }
+            throw error
+        }
+    }
+
+    @discardableResult
+    private func continueRemoteMountCore(_ id: UUID, password: String) async throws -> RemoteMountOperation {
+        let operation = remoteMountOperations[id]!
+        guard operation.stage.canContinue, let setup = operation.setup, let baseline = operation.baseline else {
+            throw remoteMountIdentityConflict()
+        }
+        let configuration = setup.configuration(password: password)
+        if operation.stage == .readyToConnect {
+            let inventory = try await remoteMountInventory()
+            try await requireRemoteMountDestination(configuration, inventory: inventory)
+            try await submitRemoteMountOperationStep(id, connect: true, configuration: configuration, rejectedStage: .readyToConnect)
+            try await verifyRemoteMount(at: setup.mountPoint, shouldExist: true, expected: configuration)
+        } else {
+            let needsDisconnection = try await requireRemoteMountIdentity(baseline, destination: configuration, preservingNewConnection: true)
+            if needsDisconnection {
+                try await submitRemoteMountOperationStep(id, connect: false, configuration: nil, rejectedStage: .readyToDisconnectPrevious)
+                try await verifyRemoteMount(at: baseline.mountPoint, shouldExist: false)
+                try await verifyRemoteMount(at: setup.mountPoint, shouldExist: true, expected: configuration)
+            }
+        }
+        return advanceRemoteMountOperation(id, to: .completed)
+    }
+
+    private func reviewRemoteMountCore(_ id: UUID) async throws -> RemoteMountOperation {
+        let operation = remoteMountOperations[id]!
+        if !operation.stage.requiresReview { return operation }
+        if operation.stage == .verifyingConnection {
+            let configuration = operation.setup!.configuration()
+            try await verifyRemoteMount(at: configuration.mountPoint, shouldExist: true, expected: configuration)
+            return advanceRemoteMountOperation(id, to: operation.action == .update && operation.baseline!.mountPoint != configuration.mountPoint
+                ? .readyToDisconnectPrevious : .completed)
+        }
+        let baseline = operation.baseline!
+        try await verifyRemoteMount(at: baseline.mountPoint, shouldExist: false)
+        if operation.action == .update {
+            let configuration = operation.setup!.configuration()
+            if baseline.mountPoint == configuration.mountPoint {
+                return advanceRemoteMountOperation(id, to: .readyToConnect)
+            }
+            try await verifyRemoteMount(at: configuration.mountPoint, shouldExist: true, expected: configuration)
+        }
+        return advanceRemoteMountOperation(id, to: .completed)
     }
 
     private func mountRemote(_ configuration: RemoteMountConfiguration) async throws {
-        let capability = try requireCapability(DsmAPIName.fileStationMount)
+        let capability = try remoteMountCapability(DsmAPIName.fileStationMount)
         let remoteSource: String
         switch configuration.protocolType {
         case .smb:
@@ -5164,30 +5350,25 @@ public actor DsmFileRepository: FileRepository {
             remoteSource = "\(configuration.server):/\(configuration.remotePath)"
         }
         var parameters: [String: DsmParameterValue] = [
-            "mount_type": .string(configuration.protocolType.rawValue),
-            "connection_type": .string(configuration.protocolType.rawValue),
-            "remote_path": .string(remoteSource),
-            "src_folder": .string(remoteSource),
-            "server": .string(configuration.server),
-            "remote_folder": .string(configuration.remotePath),
+            "mount_type": .string(configuration.protocolType == .smb ? "CIFS" : "NFS"),
+            "server_ip": .string(remoteSource),
             "mount_point": .string(configuration.mountPoint),
-            "dst_folder": .string(configuration.mountPoint),
-            "read_only": .boolean(configuration.readOnly)
+            "user_set": .boolean(true),
+            "auto_mount": .boolean(false)
         ]
         if configuration.protocolType == .smb {
-            parameters["username"] = .string(configuration.username)
-            parameters["account"] = .string(configuration.username)
-            parameters["password"] = .string(configuration.password)
+            let account = configuration.domain.isEmpty ? configuration.username : "\(configuration.domain)\\\(configuration.username)"
+            parameters["account"] = .string(account)
             parameters["passwd"] = .string(configuration.password)
-            if !configuration.domain.isEmpty {
-                parameters["domain"] = .string(configuration.domain)
-            }
+        } else {
+            parameters["nfs_version"] = .string(configuration.nfsVersion.rawValue)
+            parameters["protocol"] = .string(configuration.nfsTransport.rawValue)
         }
         do {
             try await client.callVoid(
                 path: capability.path,
                 api: capability.name,
-                version: try selectedVersion(capability),
+                version: 1,
                 method: "mount_remote",
                 requestFormat: capability.requestFormat,
                 parameters: parameters,
@@ -5199,18 +5380,16 @@ public actor DsmFileRepository: FileRepository {
     }
 
     private func unmountRemote(at mountPoint: String) async throws {
-        let capability = try requireCapability(DsmAPIName.fileStationMount)
+        let capability = try remoteMountCapability(DsmAPIName.fileStationMountList)
         do {
             try await client.callVoid(
                 path: capability.path,
                 api: capability.name,
-                version: try selectedVersion(capability),
+                version: 1,
                 method: "unmount",
                 requestFormat: capability.requestFormat,
                 parameters: [
-                    "path": .string(mountPoint),
-                    "mount_point": .string(mountPoint),
-                    "folder_path": .string(mountPoint)
+                    "mount_point": .stringArray([mountPoint])
                 ],
                 credential: credential
             )
@@ -5219,22 +5398,189 @@ public actor DsmFileRepository: FileRepository {
         }
     }
 
-    private func verifyRemoteMount(at mountPoint: String, shouldExist: Bool) async throws {
+    private func remoteMountCapability(_ name: String) throws -> ApiCapability {
+        let capability = try requireCapability(name)
+        guard capability.selectedVersion == 1 else {
+            throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("shared.03e86493986f245a"))
+        }
+        return capability
+    }
+
+    private func requireRemoteMountManagement() throws {
+        guard allowsRemoteMountManagement else {
+            throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("shared.03e86493986f245a"))
+        }
+        try Task.checkCancellation()
+    }
+
+    private static func remoteMountPathsOverlap(_ first: String, _ second: String) -> Bool {
+        first == second || first.hasPrefix(second + "/") || second.hasPrefix(first + "/")
+    }
+
+    private func reserveRemoteMountPaths(_ paths: Set<String>, excluding operationID: UUID? = nil) throws {
+        guard !activeRemoteMountPaths.contains(where: { active in paths.contains { Self.remoteMountPathsOverlap(active, $0) } }) else {
+            throw AppError(category: .serverBusy, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+        }
+        guard !remoteMountOperations.values.contains(where: { operation in
+            operation.id != operationID && !operation.stage.isTerminal && operation.affectedPaths.contains { pending in
+                paths.contains { Self.remoteMountPathsOverlap(pending, $0) }
+            }
+        }) else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.recovery.required"))
+        }
+        activeRemoteMountPaths.formUnion(paths)
+    }
+
+    @discardableResult
+    private func requireRemoteMountIdentity(_ expected: RemoteMountConnection, destination: RemoteMountConfiguration? = nil,
+                                          preservingNewConnection: Bool = false) async throws -> Bool {
+        guard expected.profileID == profileID else { throw remoteMountIdentityConflict() }
+        let inventory = try await remoteMountInventory()
+        if preservingNewConnection, let destination,
+           !inventory.connections.contains(where: { $0.mountPoint == expected.mountPoint }) {
+            try await verifyRemoteMount(at: expected.mountPoint, shouldExist: false)
+            try await verifyRemoteMount(at: destination.mountPoint, shouldExist: true, expected: destination)
+            return false
+        }
+        guard inventory.connections.contains(expected),
+              !inventory.connections.contains(where: { $0.mountPoint != expected.mountPoint && Self.remoteMountPathsOverlap($0.mountPoint, expected.mountPoint) }),
+              try await readRemoteMountPresence(at: expected.mountPoint, expectedProtocol: expected.protocolType) else { throw remoteMountIdentityConflict() }
+        if let destination {
+            guard inventory.isRemoteMountingEnabled else {
+                throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+            }
+            if destination.mountPoint != expected.mountPoint {
+                if preservingNewConnection {
+                    let source = destination.protocolType == .smb ? "//\(destination.server)/\(destination.remotePath)" : "\(destination.server):/\(destination.remotePath)"
+                    let identity = RemoteMountConnection(profileID: profileID, mountPoint: destination.mountPoint,
+                        source: try normalizedRemoteMountSource(source, protocolType: destination.protocolType), protocolType: destination.protocolType, automaticMount: false)
+                    guard inventory.connections.contains(identity),
+                          try await readRemoteMountPresence(at: identity.mountPoint, expectedProtocol: identity.protocolType) else { throw remoteMountIdentityConflict() }
+                } else {
+                    try await requireRemoteMountDestination(destination, inventory: inventory)
+                }
+            }
+        }
+        try Task.checkCancellation()
+        return true
+    }
+
+    private func remoteMountIdentityConflict() -> AppError {
+        AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.identity.changed"))
+    }
+
+    private func requireRemoteMountDestination(_ destination: RemoteMountConfiguration, inventory: RemoteMountInventory) async throws {
+        guard inventory.isRemoteMountingEnabled else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
+        }
+        guard !inventory.connections.contains(where: { Self.remoteMountPathsOverlap($0.mountPoint, destination.mountPoint) }) else { throw remoteMountIdentityConflict() }
+        let isMounted = try await readRemoteMountPresence(at: destination.mountPoint, allowMissing: false)
+        guard !isMounted else { throw remoteMountIdentityConflict() }
+        try Task.checkCancellation()
+    }
+
+    public func remoteMountInventory() async throws -> RemoteMountInventory {
+        let capability = try remoteMountCapability(DsmAPIName.fileStationMountList)
+        do {
+            let payload = try await client.call(path: capability.path, api: capability.name, version: 1, method: "get",
+                requestFormat: capability.requestFormat, parameters: [:], credential: credential, as: RemoteMountInventoryPayload.self)
+            var seen: Set<String> = []
+            let connections = try payload.remoteList.map { row -> RemoteMountConnection in
+                let point: String
+                do { point = try Self.validateMountPoint(row.mountPoint) }
+                catch { throw remoteMountReadbackUnknown() }
+                guard point == row.mountPoint, seen.insert(point).inserted,
+                      let proto = RemoteMountProtocol(rawValue: row.type.lowercased()) else { throw remoteMountReadbackUnknown() }
+                let source = try normalizedRemoteMountSource(row.source, protocolType: proto)
+                return RemoteMountConnection(profileID: profileID, mountPoint: point, source: source, protocolType: proto, automaticMount: row.automaticMount)
+            }
+            return RemoteMountInventory(profileID: profileID, isRemoteMountingEnabled: payload.mountConfig.enabled, connections: connections)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error, context: .fileStation) }
+    }
+
+    private func normalizedRemoteMountSource(_ input: String, protocolType: RemoteMountProtocol) throws -> String {
+        let source = protocolType == .smb ? input.replacingOccurrences(of: "\\", with: "/") : input
+        guard source.utf8.count <= 4_352, !source.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            throw remoteMountReadbackUnknown()
+        }
+        let server: String
+        let path: String
+        if protocolType == .smb {
+            guard source.hasPrefix("//"), let slash = source.dropFirst(2).firstIndex(of: "/") else { throw remoteMountReadbackUnknown() }
+            server = String(source[source.index(source.startIndex, offsetBy: 2)..<slash])
+            path = String(source[source.index(after: slash)...])
+        } else {
+            guard let separator = source.range(of: ":/") else { throw remoteMountReadbackUnknown() }
+            server = String(source[..<separator.lowerBound]); path = String(source[separator.upperBound...])
+        }
+        let address = URLComponents(string: "https://\(server)")
+        guard !server.isEmpty, server.utf8.count <= 256, address?.host != nil, address?.port == nil,
+              !server.contains("@"), !server.contains("?"), !server.contains("#"), !server.contains("/"), !server.contains("\\"),
+              !server.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) }),
+              !path.isEmpty, path.utf8.count <= 4_096, !path.hasPrefix("/"), !path.contains("//"), !path.contains("\\"),
+              !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }) else { throw remoteMountReadbackUnknown() }
+        return protocolType == .smb ? "//\(server.lowercased())/\(path)" : "\(server.lowercased()):/\(path)"
+    }
+
+    private func verifyRemoteMount(at mountPoint: String, shouldExist: Bool, expected: RemoteMountConfiguration? = nil) async throws {
         for attempt in 0..<4 {
-            let items = try? await getInfo(paths: [mountPoint])
-            let isMounted = items?.contains(where: Self.isRemoteMount) == true
-            if isMounted == shouldExist { return }
+            let isMounted = try await readRemoteMountPresence(at: mountPoint, expectedProtocol: shouldExist ? expected?.protocolType : nil)
+            if isMounted == shouldExist {
+                let inventory = try await remoteMountInventory()
+                if shouldExist, let expected {
+                    let rawSource = expected.protocolType == .smb ? "//\(expected.server)/\(expected.remotePath)" : "\(expected.server):/\(expected.remotePath)"
+                    let identity = RemoteMountConnection(profileID: profileID, mountPoint: mountPoint,
+                        source: try normalizedRemoteMountSource(rawSource, protocolType: expected.protocolType),
+                        protocolType: expected.protocolType, automaticMount: false)
+                    if inventory.connections.contains(identity) { return }
+                } else if !shouldExist, !inventory.connections.contains(where: { $0.mountPoint == mountPoint }) { return }
+            }
             if attempt < 3 {
                 try await Task.sleep(for: .milliseconds(300))
             }
         }
         throw AppError(
             category: .invalidResponse,
-            isRetryable: true,
+            isRetryable: false,
             safeUserMessage: shouldExist
                 ? L10n.string("shared.698b9393500e69d3")
                 : L10n.string("shared.8d2b1428252accb0")
         )
+    }
+
+    private func readRemoteMountPresence(at mountPoint: String, expectedProtocol: RemoteMountProtocol? = nil, allowMissing: Bool = true) async throws -> Bool {
+        let capability = try requireCapability(DsmAPIName.fileStationList)
+        do {
+            let payload = try await client.call(path: capability.path, api: capability.name,
+                version: try selectedVersion(capability, minimum: 2), method: "getinfo", requestFormat: capability.requestFormat,
+                parameters: ["path": .stringArray([mountPoint]), "additional": .stringArray(["mount_point_type"])],
+                credential: credential, as: FileInfoPayload.self)
+            guard payload.files.count == 1, let entry = payload.files.first, entry.path == mountPoint else {
+                throw remoteMountReadbackUnknown()
+            }
+            if let code = entry.code, code != 0 {
+                if code == 408, allowMissing { return false }
+                throw DsmNetworkError.api(code: code, requestID: UUID())
+            }
+            guard let file = entry.file, file.isDirectory, let type = file.additional?.mountPointType?.lowercased() else {
+                throw remoteMountReadbackUnknown()
+            }
+            switch type {
+            case "remote": return true
+            case "cifs":
+                guard expectedProtocol == nil || expectedProtocol == .smb else { throw remoteMountReadbackUnknown() }
+                return true
+            case "nfs":
+                guard expectedProtocol == nil || expectedProtocol == .nfs else { throw remoteMountReadbackUnknown() }
+                return true
+            case "normal", "shared_folder": return false
+            default: throw remoteMountReadbackUnknown()
+            }
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error, context: .fileStation) }
+    }
+
+    private func remoteMountReadbackUnknown() -> AppError {
+        AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
     }
 
     private func makeShareLink(_ payload: ShareListItemPayload) -> FileShareLink {
@@ -5468,37 +5814,68 @@ public actor DsmFileRepository: FileRepository {
     private static func validateRemoteMount(
         _ configuration: RemoteMountConfiguration
     ) throws -> RemoteMountConfiguration {
-        let server = configuration.server.trimmingCharacters(in: .whitespacesAndNewlines)
-        let remotePath = configuration.remotePath
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/\\ ").union(.newlines))
+        let ordinarySpaces = CharacterSet(charactersIn: " ")
+        let server = configuration.server.trimmingCharacters(in: ordinarySpaces)
+        let remoteInput = configuration.remotePath.trimmingCharacters(in: ordinarySpaces)
+        let remotePath = (configuration.protocolType == .smb ? remoteInput.replacingOccurrences(of: "\\", with: "/") : remoteInput)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let username = configuration.username.trimmingCharacters(in: ordinarySpaces)
+        let domain = configuration.domain.trimmingCharacters(in: ordinarySpaces)
         let mountPoint = try validateMountPoint(configuration.mountPoint)
+        if configuration.readOnly {
+            throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("remote-mount.readonly.unsupported"))
+        }
+        let address = URLComponents(string: "https://\(server)")
         guard !server.isEmpty,
+              server.utf8.count <= 256,
+              address?.host != nil, address?.port == nil,
+              !server.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }),
               !remotePath.isEmpty,
+              remotePath.utf8.count <= 4_096,
+              !remoteInput.hasPrefix("//"), !remoteInput.hasPrefix("\\\\"),
+              !remotePath.contains("//"), !remotePath.contains("\\"),
+              !remotePath.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }),
+              !remoteInput.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
               !server.contains("/"),
               !server.contains("\\"),
-              !server.contains("@") else {
+              !server.contains("@"), !server.contains("?"), !server.contains("#"),
+              !["localhost", "127.0.0.1", "::1"].contains(server.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()) else {
             throw AppError(
                 category: .unknown,
                 isRetryable: false,
                 safeUserMessage: L10n.string("shared.7fdf000bc1c98dab")
             )
         }
+        guard !username.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+              !domain.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+              username.utf8.count <= 256, domain.utf8.count <= 128,
+              !domain.contains("\\"), !domain.contains("/"), !domain.contains("@"),
+              domain.isEmpty || (!username.isEmpty && !username.contains("\\") && !username.contains("@")),
+              configuration.protocolType == .smb || (username.isEmpty && domain.isEmpty && configuration.password.isEmpty),
+              configuration.protocolType != .nfs || configuration.nfsVersion != .v4 || configuration.nfsTransport == .tcp else {
+            throw AppError(category: .unknown, isRetryable: false, safeUserMessage: L10n.string("remote-mount.options.invalid"))
+        }
         return RemoteMountConfiguration(
             protocolType: configuration.protocolType,
             server: server,
             remotePath: remotePath,
             mountPoint: mountPoint,
-            username: configuration.username.trimmingCharacters(in: .whitespacesAndNewlines),
+            username: username,
             password: configuration.password,
-            domain: configuration.domain.trimmingCharacters(in: .whitespacesAndNewlines),
-            readOnly: configuration.readOnly
+            domain: domain,
+            readOnly: false,
+            nfsVersion: configuration.nfsVersion,
+            nfsTransport: configuration.nfsTransport
         )
     }
 
     private static func validateMountPoint(_ value: String) throws -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value.trimmingCharacters(in: CharacterSet(charactersIn: " "))
         let components = trimmed.split(separator: "/", omittingEmptySubsequences: true)
         guard trimmed.hasPrefix("/"),
+              trimmed.utf8.count <= 4_096,
+              !trimmed.hasSuffix("/"), !trimmed.contains("//"), !trimmed.contains("\\"),
+              !trimmed.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
               !components.isEmpty,
               components.allSatisfy({ $0 != "." && $0 != ".." }) else {
             throw AppError(
@@ -6248,6 +6625,16 @@ public actor DsmFileRepository: FileRepository {
             return DsmErrorMapper.map(
                 .transport(code: error.errorCode, requestID: UUID())
             )
+        }
+        if let error = error as? CocoaError {
+            switch error.code {
+            case .fileWriteNoPermission, .fileReadNoPermission:
+                return AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("download.local.permission"))
+            case .fileWriteOutOfSpace:
+                return AppError(category: .localStorageFull, isRetryable: false, safeUserMessage: L10n.string("download.local.space"))
+            default:
+                break
+            }
         }
         return AppError(
             category: .unknown,

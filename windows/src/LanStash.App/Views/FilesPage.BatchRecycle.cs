@@ -1,3 +1,4 @@
+using LanStash.App.Features.Files;
 using LanStash.App.Features.Files.Locations;
 using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Localization;
@@ -92,7 +93,7 @@ public sealed partial class FilesPage
 
     private async Task ShowBatchRecycleAsync(FileRecycleOperation operation)
     {
-        if (!_isSelectingRecycle ||
+        if (_fileOperationRecoveryDialog is not null || !_isSelectingRecycle ||
             _isSelectingRestore != (operation == FileRecycleOperation.Restore) ||
             _recycleRepository is not { } repository)
         {
@@ -107,7 +108,8 @@ public sealed partial class FilesPage
         var recycleLocations = operation == FileRecycleOperation.MoveToRecycle
             ? _locationsViewModel.Recycle.Items.ToArray()
             : [];
-        if (FileRecycleBatchViewModel.Validate(
+        if (!BatchRecycleSourceIsCurrent(repository, sourceParent, sources, recycleLocations, operation) ||
+            FileRecycleBatchViewModel.Validate(
                 _profileId,
                 sources,
                 sourceParent,
@@ -137,7 +139,8 @@ public sealed partial class FilesPage
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            DefaultButton = ContentDialogButton.Primary,
+            RequestedTheme = ActualTheme,
+            DefaultButton = ContentDialogButton.Close,
         };
         _batchRecycleModel = model;
         _batchRecycleDialog = dialog;
@@ -162,9 +165,7 @@ public sealed partial class FilesPage
                     : "FileRecycleBatchMoveAction", sources.Length)
                 : string.Empty;
             dialog.IsPrimaryButtonEnabled = model.CanSubmit;
-            dialog.DefaultButton = model.CanSubmit
-                ? ContentDialogButton.Primary
-                : ContentDialogButton.Close;
+            dialog.DefaultButton = ContentDialogButton.Close;
             dialog.Content = FileRecycleBatchDialogContent.Build(
                 model,
                 localization,
@@ -189,6 +190,13 @@ public sealed partial class FilesPage
                         ? "FileRestoreBatchSourceChanged"
                         : "FileRecycleBatchSourceChanged",
                     InfoBarSeverity.Error);
+                dialog.IsPrimaryButtonEnabled = false;
+                dialog.Content = new TextBlock
+                {
+                    Text = localization.Get(operation == FileRecycleOperation.Restore
+                        ? "FileRestoreBatchSourceChanged" : "FileRecycleBatchSourceChanged"),
+                    TextWrapping = TextWrapping.WrapWholeWords,
+                };
                 return;
             }
 
@@ -216,6 +224,20 @@ public sealed partial class FilesPage
             _ = RenderAsync();
         };
 
+        var progressQueued = false;
+        void ProgressChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName != nameof(FileRecycleBatchViewModel.ProcessedCount) || progressQueued) return;
+            progressQueued = true;
+            if (!DispatcherQueue.TryEnqueue(() =>
+            {
+                progressQueued = false;
+                if (_batchRecycleModel == model && model.State == FileRecycleBatchState.Submitting &&
+                    dialog.Content is StackPanel panel)
+                    FileRecycleBatchDialogContent.UpdateProgress(panel, model, localization);
+            })) progressQueued = false;
+        }
+        model.PropertyChanged += ProgressChanged;
         await RenderAsync();
         try
         {
@@ -223,6 +245,7 @@ public sealed partial class FilesPage
         }
         finally
         {
+            model.PropertyChanged -= ProgressChanged;
             model.Dispose();
             if (ReferenceEquals(_batchRecycleModel, model))
             {
@@ -259,7 +282,9 @@ public sealed partial class FilesPage
         IReadOnlyList<FileRecycleLocation> recycleLocations,
         FileRecycleOperation operation)
     {
-        if (_disposed || repository.ProfileId != _profileId ||
+        if (_disposed || _viewModel.IsLoading || repository.ProfileId != _profileId ||
+            !_isSelectingRecycle || _isSelectingRestore != (operation == FileRecycleOperation.Restore) ||
+            _isSynchronizingDownloadSelection || sources.Count == 0 ||
             !string.Equals(_viewModel.CurrentPath, sourceParent, StringComparison.Ordinal) ||
             operation == FileRecycleOperation.MoveToRecycle &&
                 _locationsViewModel.SelectedSource is
@@ -269,14 +294,20 @@ public sealed partial class FilesPage
         {
             return false;
         }
+        var visible = VisibleFilesControl().SelectedItems;
+        var selected = visible.OfType<FileBrowserEntry>().Select(item => item.Path).ToHashSet(StringComparer.Ordinal);
+        if (_batchSelection.Count != sources.Count || visible.Count != sources.Count || selected.Count != sources.Count ||
+            sources.Any(item => !_batchSelection.Contains(item.Path) || !selected.Contains(item.Path))) return false;
+        var currentItems = new Dictionary<string, FileItem>(StringComparer.Ordinal);
+        foreach (var item in _viewModel.Items)
+            if (!currentItems.TryAdd(item.Path, item.Item)) return false;
         foreach (var source in sources)
         {
-            var current = _viewModel.Items.FirstOrDefault(item =>
-                string.Equals(item.Path, source.Path, StringComparison.Ordinal));
-            if (current is null || !SameRecycleItem(source, current.Item) ||
+            if (!currentItems.TryGetValue(source.Path, out var current) ||
+                source.Name != current.Name || !SameRecycleItem(source, current) ||
                 !(operation == FileRecycleOperation.Restore
-                    ? CanSelectForBatchRestore(current.Item)
-                    : CanSelectForBatchRecycle(current.Item)))
+                    ? CanSelectForBatchRestore(current)
+                    : CanSelectForBatchRecycle(current)))
             {
                 return false;
             }
@@ -300,6 +331,13 @@ public sealed partial class FilesPage
         FileRecycleBatchSummary summary,
         FileRecycleOperation operation)
     {
+        FileRecycleBatchStatus.ActionButton = null;
+        if (summary.NeedsReviewCount > 0 && _recycleRepository?.SupportsRecycleReview == true)
+        {
+            var review = new Button { Content = LocalizationService.Current.Get("FileOperationReviewNow") };
+            review.Click += async (_, _) => await ShowFileOperationRecoveryAsync(recycle: true);
+            FileRecycleBatchStatus.ActionButton = review;
+        }
         FileRecycleBatchStatus.Severity = summary.NeedsReviewCount > 0 ||
             summary.FailedCount > 0 || summary.CancelledCount > 0 ||
             summary.NotStartedCount > 0
@@ -314,6 +352,8 @@ public sealed partial class FilesPage
 
     private void UpdateBatchRecycleControls()
     {
+        RecycleRecoveryButton.IsEnabled = !_disposed && _fileOperationRecoveryDialog is null && _batchRecycleDialog is null &&
+            _batchCopyMoveDialog is null && _recycleRepository is { SupportsRecycleReview: true } repository && repository.ProfileId == _profileId;
         MoveMultipleToRecycleButton.Visibility = _isSelectingItems
             ? Visibility.Collapsed
             : Visibility.Visible;

@@ -53,6 +53,11 @@
 
 ## 实现与验证
 
+- 2026-09-19 macOS 1.0.9 用户反馈修正：原件网络参数不变，中间文件改放应用临时区，
+  已校验内容通过系统替换目录/文件协调保存，不要求所选文件旁任意临时文件的权限。
+  Repository 无覆盖契约保留；Mac 保存面板确认替换后由界面层显式安全导出。
+  Swift/沙盒实际行为待 Mac 验证，不新增原件或删除接口的环境证据。
+
 - Apple 领域：`apple/Packages/DsmCore/Sources/SynologyPhotos.swift`。
 - Apple 只读适配：`apple/Packages/DsmNetwork/Sources/SynologyPhotosRepository.swift`。
 - 合成测试：`apple/Packages/DsmNetwork/Tests/SynologyPhotosRepositoryTests.swift`；测试样本完全合成，不来源于用户媒体。

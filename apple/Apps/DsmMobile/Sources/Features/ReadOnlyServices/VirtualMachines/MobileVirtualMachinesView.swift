@@ -363,9 +363,7 @@ private struct MobileVirtualMachineSectionView: View {
                     }
                     LabeledContent(
                         L10n.string("mobile.virtual-machines.field.auto-start"),
-                        value: item.autoStart
-                            ? L10n.string("mobile.virtual-machines.value.enabled")
-                            : L10n.string("mobile.virtual-machines.value.disabled")
+                        value: L10n.string(item.startupBehavior?.localizationKey ?? "virtual-machine.setting.unknown")
                     )
                 }
             }

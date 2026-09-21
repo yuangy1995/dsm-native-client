@@ -1,0 +1,61 @@
+<UserControl x:Class="LanStash.App.Views.ContainerRegistryDialogContent"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:containers="using:LanStash.App.Features.Containers">
+ <ScrollViewer x:Name="RegistryScroll" MaxHeight="550" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel MinWidth="340" MaxWidth="560" Spacing="12" Margin="0,0,10,0">
+   <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <TextBox x:Name="QueryInput" x:Uid="ContainerRegistryQuery" TextChanged="Query_Changed" KeyDown="Query_KeyDown"/>
+    <Button x:Name="SearchButton" x:Uid="ContainerRegistrySearch" Grid.Column="1" Click="Search_Click" MinHeight="40"/>
+   </Grid>
+   <TextBlock x:Name="QueryNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <TextBlock x:Name="UnavailableNotice" x:Uid="ContainerRegistryUnavailableNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <InfoBar x:Name="SearchErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
+   <ProgressRing x:Name="SearchProgress" Width="30" Height="30" Visibility="Collapsed"/>
+   <TextBlock x:Name="InitialNotice" x:Uid="ContainerRegistryInitial" TextWrapping="Wrap"/>
+   <TextBlock x:Name="EmptyNotice" x:Uid="ContainerRegistryEmpty" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <ListView x:Name="ResultsList" x:Uid="ContainerRegistryResults" MaxHeight="220" SelectionMode="Single" SelectionChanged="Results_Changed">
+    <ListView.ItemTemplate><DataTemplate x:DataType="containers:ContainerRegistryItem">
+     <StackPanel Spacing="3" Padding="4,6">
+      <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+      <TextBlock Text="{x:Bind Registry}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+      <TextBlock Text="{x:Bind Description}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"/>
+      <StackPanel Orientation="Horizontal" Spacing="12"><TextBlock Text="{x:Bind Badges}"/><TextBlock Text="{x:Bind StarsText}"/></StackPanel>
+     </StackPanel>
+    </DataTemplate></ListView.ItemTemplate>
+   </ListView>
+   <TextBlock x:Name="LimitNotice" x:Uid="ContainerRegistryLimit" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <StackPanel x:Name="TagsPanel" Spacing="8" Visibility="Collapsed">
+    <TextBlock x:Name="SelectedRepository" FontWeight="SemiBold" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+    <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBox x:Name="TagFilterInput" x:Uid="ContainerRegistryTagFilter" TextChanged="TagFilter_Changed"/>
+     <Button x:Name="ReloadTagsButton" x:Uid="ContainerRegistryReloadTags" Grid.Column="1" Click="ReloadTags_Click"/>
+    </Grid>
+    <ProgressRing x:Name="TagsProgress" Width="28" Height="28" Visibility="Collapsed"/>
+    <InfoBar x:Name="TagsErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
+    <TextBlock x:Name="TagsEmptyNotice" x:Uid="ContainerRegistryTagsEmpty" TextWrapping="Wrap" Visibility="Collapsed"/>
+    <TextBlock x:Name="TagsFilteredNotice" x:Uid="ContainerRegistryTagsFiltered" TextWrapping="Wrap" Visibility="Collapsed"/>
+    <ListView x:Name="TagsList" x:Uid="ContainerRegistryTags" MaxHeight="120" SelectionMode="Single" SelectionChanged="Tags_Changed"/>
+    <TextBlock x:Name="SelectedReference" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+    <TextBlock x:Uid="ContainerPullRisk" TextWrapping="Wrap"/>
+    <CheckBox x:Name="PullConfirmation" x:Uid="ContainerPullConfirm" Checked="PullConfirmation_Changed" Unchecked="PullConfirmation_Changed" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"/>
+    <Button x:Name="PullButton" x:Uid="ContainerPullStart" Click="Pull_Click"/>
+   </StackPanel>
+   <TextBlock x:Name="PullUnavailableNotice" x:Uid="ContainerPullUnavailableNotice" TextWrapping="Wrap"/>
+   <ProgressRing x:Name="PullProgress" Width="28" Height="28" Visibility="Collapsed"/>
+   <InfoBar x:Name="PullErrorNotice" IsOpen="False" IsClosable="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+   <StackPanel x:Name="PullTasksPanel" Spacing="8" Visibility="Collapsed">
+    <TextBlock x:Uid="ContainerPullTasks" FontWeight="SemiBold"/>
+    <ListView x:Name="PullTasksList" x:Uid="ContainerPullTaskList" SelectionMode="None" MaxHeight="220">
+     <ListView.ItemTemplate><DataTemplate x:DataType="containers:ContainerImagePullItem">
+      <StackPanel Spacing="6" Padding="4,6" AutomationProperties.LiveSetting="Polite">
+       <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+       <TextBlock Text="{x:Bind StatusText}" TextWrapping="Wrap"/>
+       <ProgressBar Value="{x:Bind Progress}" IsIndeterminate="{x:Bind IsIndeterminate}" Maximum="100"/>
+      </StackPanel>
+     </DataTemplate></ListView.ItemTemplate>
+    </ListView>
+   </StackPanel>
+   <Button x:Name="ReviewPullsButton" x:Uid="ContainerPullReview" Click="ReviewPulls_Click"/>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>

@@ -31,6 +31,17 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
     private FileBrowserViewModel? _suppressedBrowser;
     private string? _suppressedPath;
     private bool _disposed;
+    public bool CanWriteFavorites => _profileId is { } id && _repository is { } repository && repository.ProfileId == id && repository.CanWriteFavorites;
+    public IReadOnlyList<FileFavoriteMutationRecovery> FavoriteReviews => _profileId is { } id ? GetState(id).FavoriteReviews : [];
+
+    public async Task<MutationResult?> ReviewFavoriteAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed(); var (repository, profileId) = RequireActiveRepository();
+        var result = await repository.ReviewFavoriteMutationAsync(path, cancellationToken);
+        if (result is not null) await RefreshAfterMutationAsync(repository, profileId, result);
+        else if (IsCurrentProfile(profileId, repository)) await RefreshAsync(cancellationToken);
+        return result;
+    }
 
     // 只有当前活动 profile 的 repository 才能暴露远程挂载管理入口。
     public bool AllowsRemoteMountManagement =>
@@ -39,6 +50,9 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
         repository.ProfileId == profileId &&
         repository.AllowsRemoteMountManagement;
     public bool IsCreatingRemoteMount { get; private set; }
+    public bool CanManageRemoteMountWorkflow => _profileId is { } id && _repository is { } repository &&
+        repository.ProfileId == id && repository.CanManageRemoteMountWorkflow;
+    internal IFileLocationsRepository? RemoteMountRepository => CanManageRemoteMountWorkflow ? _repository : null;
     public bool IsEditingRemoteMount { get; private set; }
     public FileRemoteLocation? EditingRemoteLocation { get; private set; }
 
@@ -182,6 +196,7 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
         RaisePropertyChanged(nameof(Availability));
         RaisePropertyChanged(nameof(IsActive));
         RaisePropertyChanged(nameof(AllowsRemoteMountManagement));
+        RaisePropertyChanged(nameof(CanManageRemoteMountWorkflow));
     }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
@@ -202,7 +217,12 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
             requestToken.ThrowIfCancellationRequested();
             if (!IsCurrent(profileId, repository, generation)) return;
             ValidateSnapshotProfile(snapshot, profileId);
+            var pendingFavorites = await repository.GetFavoriteMutationRecoveriesAsync(requestToken);
+            requestToken.ThrowIfCancellationRequested();
+            if (!IsCurrent(profileId, repository, generation)) return;
+            if (pendingFavorites.Any(item => item.ProfileId != profileId)) throw new InvalidDataException("favorite.review.profile-mismatch");
             var state = GetState(profileId);
+            state.FavoriteReviews = pendingFavorites.ToArray();
             state.Favorites = Map(snapshot.Favorites.Items, snapshot.Favorites.Status, false, snapshot.Favorites.Completion, snapshot.Favorites.FailureDiagnosticTag, state.Favorites);
             state.Recycle = Map(snapshot.RecycleBins.Items, snapshot.RecycleBins.Status, snapshot.RecycleBins.IsPartial, snapshot.RecycleBins.Completion, snapshot.RecycleBins.FailureDiagnosticTag, state.Recycle);
             state.Remote = Map(snapshot.RemoteLocations.Items, snapshot.RemoteLocations.Status, snapshot.RemoteLocations.IsPartial, snapshot.RemoteLocations.Completion, snapshot.RemoteLocations.FailureDiagnosticTag, state.Remote);
@@ -305,10 +325,12 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
         _suppressedPath = null;
         if (_browser is not null) _browser.LocationCommitted -= BrowserLocationCommitted;
         _profileId = null; _repository = null; _browser = null;
+        RaisePropertyChanged(nameof(CanWriteFavorites)); RaisePropertyChanged(nameof(FavoriteReviews));
         RaisePropertyChanged(nameof(ProfileId));
         RaisePropertyChanged(nameof(Availability));
         RaisePropertyChanged(nameof(IsActive));
         RaisePropertyChanged(nameof(AllowsRemoteMountManagement));
+        RaisePropertyChanged(nameof(CanManageRemoteMountWorkflow));
     }
 
     public void PurgeProfile(Guid profileId)
@@ -501,6 +523,7 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
 
     private void RaiseSections()
     {
+        RaisePropertyChanged(nameof(CanWriteFavorites)); RaisePropertyChanged(nameof(FavoriteReviews));
         RaisePropertyChanged(nameof(Favorites)); RaisePropertyChanged(nameof(Recycle)); RaisePropertyChanged(nameof(Remote));
     }
 
@@ -530,6 +553,7 @@ public sealed class FileLocationsViewModel : ObservableObject, IDisposable
 
     private sealed class ProfileState
     {
+        public IReadOnlyList<FileFavoriteMutationRecovery> FavoriteReviews = [];
         public FileLocationSectionState<FileFavoriteLocation> Favorites = Idle<FileFavoriteLocation>();
         public FileLocationSectionState<FileRecycleLocation> Recycle = Idle<FileRecycleLocation>();
         public FileLocationSectionState<FileRemoteLocation> Remote = Idle<FileRemoteLocation>();

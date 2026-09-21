@@ -93,14 +93,21 @@ public sealed partial class DsmApiClient
                 response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
         }
 
-        var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+        return await ReadBoundedBinaryContentAsync(response.Content, acceptedMediaTypePrefix, maximumBytes, cancellationToken).ConfigureAwait(false);
+    }
+
+    // 二进制预览与控制台 HTML 复用同一有界读取，不缓存或记录响应正文。
+    private static async Task<DsmBinaryResponse> ReadBoundedBinaryContentAsync(HttpContent content, string acceptedMediaTypePrefix,
+        int maximumBytes, CancellationToken cancellationToken)
+    {
+        var mediaType = content.Headers.ContentType?.MediaType ?? string.Empty;
         if (!mediaType.StartsWith(acceptedMediaTypePrefix, StringComparison.OrdinalIgnoreCase))
         {
             throw new DsmBinaryResponseException(
                 DsmBinaryResponseFailure.UnexpectedMediaType,
                 "The binary response media type does not match the requested contract.");
         }
-        if (response.Content.Headers.ContentLength is { } contentLength &&
+        if (content.Headers.ContentLength is { } contentLength &&
             contentLength > maximumBytes)
         {
             throw new DsmBinaryResponseException(
@@ -108,7 +115,7 @@ public sealed partial class DsmApiClient
                 "The binary response exceeds the configured byte limit.");
         }
 
-        await using var source = await response.Content
+        await using var source = await content
             .ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
         using var destination = new MemoryStream(

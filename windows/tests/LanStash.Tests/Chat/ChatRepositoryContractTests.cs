@@ -21,7 +21,7 @@ public sealed class ChatRepositoryContractTests
         invalidWriteCapabilities["SYNO.Chat.Channel.Anonymous"] =
             new("SYNO.Chat.Channel.Anonymous", "entry.cgi", 1, 1, "FORM");
         invalidWriteCapabilities["SYNO.Chat.Channel.Named"] =
-            new("SYNO.Chat.Channel.Named", "entry.cgi", 1, 1, "JSON");
+            new("SYNO.Chat.Channel.Named", "entry.cgi", 1, 1, "MULTIPART");
         var invalidWrites = CreateRepository(
             new RecordingApiClient(_ => new()),
             invalidWriteCapabilities);
@@ -59,15 +59,19 @@ public sealed class ChatRepositoryContractTests
         var unsupportedCapabilities = Capabilities();
         unsupportedCapabilities["SYNO.Chat.Channel.Member"] =
             new("SYNO.Chat.Channel.Member", "entry.cgi", 2, 3, "FORM");
-        var nonFormCapabilities = Capabilities();
-        nonFormCapabilities["SYNO.Chat.Channel.Member"] =
+        var jsonCapabilities = Capabilities();
+        jsonCapabilities["SYNO.Chat.Channel.Member"] =
             new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 1, "JSON");
+        var unsupportedFormatCapabilities = Capabilities();
+        unsupportedFormatCapabilities["SYNO.Chat.Channel.Member"] =
+            new("SYNO.Chat.Channel.Member", "entry.cgi", 1, 1, "MULTIPART");
 
         var withoutMembers = CreateRepository(new RecordingApiClient(_ => new()));
         var exact = CreateRepository(new RecordingApiClient(_ => new()), exactCapabilities);
         var overlapping = CreateRepository(new RecordingApiClient(_ => new()), overlappingCapabilities);
         var unsupported = CreateRepository(new RecordingApiClient(_ => new()), unsupportedCapabilities);
-        var nonForm = CreateRepository(new RecordingApiClient(_ => new()), nonFormCapabilities);
+        var json = CreateRepository(new RecordingApiClient(_ => new()), jsonCapabilities);
+        var unsupportedFormat = CreateRepository(new RecordingApiClient(_ => new()), unsupportedFormatCapabilities);
 
         Assert.Equal(ChatAvailabilityStatus.Available, withoutMembers.Availability.Status);
         Assert.DoesNotContain(ChatReadFeature.Members, withoutMembers.Availability.SupportedFeatures);
@@ -77,7 +81,8 @@ public sealed class ChatRepositoryContractTests
         Assert.Contains(ChatReadFeature.Members, exact.Availability.SupportedFeatures);
         Assert.Contains(ChatReadFeature.Members, overlapping.Availability.SupportedFeatures);
         Assert.DoesNotContain(ChatReadFeature.Members, unsupported.Availability.SupportedFeatures);
-        Assert.DoesNotContain(ChatReadFeature.Members, nonForm.Availability.SupportedFeatures);
+        Assert.Contains(ChatReadFeature.Members, json.Availability.SupportedFeatures);
+        Assert.DoesNotContain(ChatReadFeature.Members, unsupportedFormat.Availability.SupportedFeatures);
     }
 
     [Fact]
@@ -160,7 +165,7 @@ public sealed class ChatRepositoryContractTests
     }
 
     [Fact]
-    public void PinnedMessagesCapabilityRequiresVersionFiveAndFormRequests()
+    public void PinnedMessagesCapabilityRequiresVersionFiveAndRecordedFormOrJsonRequests()
     {
         var unsupportedCapabilities = Capabilities();
         unsupportedCapabilities["SYNO.Chat.Post"] =
@@ -179,7 +184,10 @@ public sealed class ChatRepositoryContractTests
 
         Assert.Contains(ChatReadFeature.PinnedMessages, supported.Availability.SupportedFeatures);
         Assert.DoesNotContain(ChatReadFeature.PinnedMessages, unsupported.Availability.SupportedFeatures);
-        Assert.DoesNotContain(ChatReadFeature.PinnedMessages, nonForm.Availability.SupportedFeatures);
+        Assert.Contains(ChatReadFeature.PinnedMessages, nonForm.Availability.SupportedFeatures);
+        nonFormCapabilities["SYNO.Chat.Post"] = nonFormCapabilities["SYNO.Chat.Post"] with { RequestFormat = "MULTIPART" };
+        Assert.DoesNotContain(ChatReadFeature.PinnedMessages,
+            CreateRepository(new RecordingApiClient(_ => new()), nonFormCapabilities).Availability.SupportedFeatures);
     }
 
     [Fact]
@@ -1305,6 +1313,8 @@ public sealed class ChatRepositoryContractTests
         var postReads = 0;
         var api = new RecordingApiClient(request => request.ApiName switch
         {
+            "SYNO.Core.Desktop.Initdata" => JsonNode.Parse("{\"Session\":{\"productversion\":\"7.2.1\",\"version\":\"69057\",\"smallfixnumber\":\"12\"}}")!.AsObject(),
+            "SYNO.Core.Package" => JsonNode.Parse("{\"packages\":[{\"id\":\"Chat\",\"version\":\"2.4.1-22111\"}]}")!.AsObject(),
             "SYNO.Chat.User" => Users(),
             "SYNO.Chat.Channel" => Channels(),
             "SYNO.Chat.Post" when request.Method == "list" && ++postReads == 1 =>
@@ -1313,7 +1323,7 @@ public sealed class ChatRepositoryContractTests
             "SYNO.Chat.Post" => Posts(0, 0),
             _ => throw new InvalidOperationException(request.ApiName),
         });
-        var repository = (IChatRepository)CreateRepository(api);
+        var repository = (IChatRepository)CreateRepository(api, CapabilitiesWithAdvancedEnvironment());
 
         var result = await repository.DeleteOwnMessageAsync(
             new ChatDeleteMessageRequest("mine-1", "channel-1", Guid.NewGuid()));
@@ -1332,6 +1342,7 @@ public sealed class ChatRepositoryContractTests
                 Assert.Equal("mine-1", request.Parameters["post_id"]);
             },
             request => AssertWire(request, "SYNO.Chat.Post", "list", 8, 3));
+        Assert.DoesNotContain(api.Requests, request => request.ApiName.StartsWith("SYNO.Core.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1339,12 +1350,14 @@ public sealed class ChatRepositoryContractTests
     {
         var api = new RecordingApiClient(request => request.ApiName switch
         {
+            "SYNO.Core.Desktop.Initdata" => JsonNode.Parse("{\"Session\":{\"productversion\":\"7.2.1\",\"version\":\"69057\",\"smallfixnumber\":\"12\"}}")!.AsObject(),
+            "SYNO.Core.Package" => JsonNode.Parse("{\"packages\":[{\"id\":\"Chat\",\"version\":\"2.4.1-22111\"}]}")!.AsObject(),
             "SYNO.Chat.User" => Users(),
             "SYNO.Chat.Channel" => Channels(),
             "SYNO.Chat.Post" => Posts(0, 1, Message("other-1", "hello")),
             _ => throw new InvalidOperationException(request.ApiName),
         });
-        var repository = (IChatRepository)CreateRepository(api);
+        var repository = (IChatRepository)CreateRepository(api, CapabilitiesWithAdvancedEnvironment());
 
         var result = await repository.DeleteOwnMessageAsync(
             new ChatDeleteMessageRequest("other-1", "channel-1", Guid.NewGuid()));
@@ -1394,6 +1407,14 @@ public sealed class ChatRepositoryContractTests
         ["SYNO.Chat.Channel.Named"] =
             new("SYNO.Chat.Channel.Named", "entry.cgi", 1, 1, "FORM"),
     };
+
+    private static Dictionary<string, ApiCapability> CapabilitiesWithAdvancedEnvironment()
+    {
+        var capabilities = Capabilities();
+        capabilities["SYNO.Core.Desktop.Initdata"] = new("SYNO.Core.Desktop.Initdata", "entry.cgi", 1, 1, "FORM");
+        capabilities["SYNO.Core.Package"] = new("SYNO.Core.Package", "entry.cgi", 1, 2, "FORM");
+        return capabilities;
+    }
 
     private static Dictionary<string, ApiCapability> CapabilitiesWithMembers()
     {

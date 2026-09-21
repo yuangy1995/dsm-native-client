@@ -16,9 +16,9 @@
   },
   "parameters": [
     {
-      "name": "id",
-      "valueType": "string",
-      "encodedValue": "<synthetic-container-image>"
+      "name": "images",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"identity\":\"<synthetic-container-image>\"}]"
     }
   ],
   "authentication": {

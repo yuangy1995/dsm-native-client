@@ -59,6 +59,9 @@ public sealed record DownloadTaskItem(DownloadTask Task)
             progress.ToString("P0", CultureInfo.CurrentCulture))
         : LocalizationService.Current.Get("DownloadStationValueUnavailable");
     public string SizeText => FormatBytes(Task.Size);
+    public string TransferSizeText => LocalizationService.Current.Format("WorkspaceDownloadSize", DownloadedText, SizeText);
+    public Microsoft.UI.Xaml.Visibility ProgressVisibility => State == DownloadTaskState.Finished
+        ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
     public string DownloadedText => FormatBytes(Task.Downloaded);
     public string UploadedText => FormatBytes(Task.Uploaded);
     public string DownloadSpeedText => FormatSpeed(Task.DownloadSpeed);

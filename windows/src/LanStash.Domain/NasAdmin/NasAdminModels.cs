@@ -19,7 +19,14 @@ public sealed record NasSettingsSnapshot(
     IReadOnlyList<LogEntry> Logs,
     IReadOnlyList<ResourceItem> Connections,
     IReadOnlyList<ResourceItem> Networks,
-    IReadOnlyList<ResourceItem> Security);
+    IReadOnlyList<ResourceItem> Security)
+{
+    public NasDetailsSectionStatus PackageStatus { get; init; } = NasDetailsSectionStatus.Unavailable;
+    public NasDetailsSectionStatus AccountsStatus { get; init; } = NasDetailsSectionStatus.Unavailable;
+    public NasDetailsSectionStatus GroupsStatus { get; init; } = NasDetailsSectionStatus.Unavailable;
+    public NasDetailsSectionStatus ConnectionsStatus { get; init; } = NasDetailsSectionStatus.Unavailable;
+    public bool AreConnectionsTruncated { get; init; }
+}
 
 public enum NasDetailsReadFeature
 {
@@ -188,7 +195,22 @@ public sealed record NasPackageSummary(
     string Name,
     string? Version,
     string Status,
-    ResourceState State);
+    ResourceState State)
+{
+    public bool? Startable { get; init; }
+    public string? InstallType { get; init; }
+    public bool? UninstallAllowed { get; init; }
+    public IReadOnlyList<string>? AvailableOperations { get; init; }
+    public IReadOnlyList<string>? DesktopApps { get; init; }
+    public bool IsRunning => Status is "running" or "active";
+    public bool IsStopped => Status is "stopped" or "inactive";
+    public bool CanStart => Startable == true && IsStopped && DesktopApps is not null && AvailableOperations?.Contains("start") == true;
+    public bool CanStop => Startable == true && IsRunning && AvailableOperations?.Contains("stop") == true;
+    public bool CanUninstall => !string.IsNullOrWhiteSpace(InstallType) && InstallType != "system" && UninstallAllowed != false && DesktopApps is not null &&
+        (UninstallAllowed == true || AvailableOperations?.Contains("uninstall") == true);
+    public bool IsUpgradeAvailable => AvailableOperations?.Contains("upgrade") == true;
+    public bool CanUpgrade => false;
+}
 
 public sealed record NasScheduledTaskSummary(
     string Id,
@@ -207,7 +229,11 @@ public sealed record NasConnectionSummary(
     string Protocol,
     string Type,
     DateTimeOffset? ConnectedAt,
-    bool IsCurrent);
+    bool IsCurrent)
+{
+    public bool IsCurrentKnown { get; init; } = true;
+    public string? ReportedTime { get; init; }
+}
 
 public sealed record NasDetailsSnapshot(
     Guid ProfileId,

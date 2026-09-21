@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
 
@@ -5,95 +6,58 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public async Task<NasRegionSettings> LoadRegionSettingsAsync(
-        CancellationToken cancellationToken = default)
+    // DSM 内部区域/时间接口；读取不会触发 set 或 sync。
+    public async Task<NasRegionSettings> LoadRegionSettingsAsync(CancellationToken cancellationToken = default)
     {
-        if (!Supports("SYNO.Core.Region"))
+        const string name = "SYNO.Core.Region.NTP";
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_capabilities.TryGetValue(name, out var capability) || capability.Name != name ||
+            capability.MinVersion != 1 || capability.MaxVersion < 3 ||
+            !(capability.RequestFormat.Equals("FORM", StringComparison.OrdinalIgnoreCase) ||
+              capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)))
+            throw new DsmException(UserText.Key("NasSettingsLoadError"), UserText.Key("NasSettingsUnavailable"), 102);
+        var data = await _api.CallReadJsonObjectAsync(_profile, _session, capability, 3, "get",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var dateFormat = data.String("date_format");
+        var timeFormat = data.String("time_format");
+        var timezone = data.String("timezone");
+        var mode = data.String("enable_ntp")?.ToLowerInvariant() switch
         {
-            return new NasRegionSettings(null, null, null, [], null);
-        }
-
-        try
+            "ntp" or "true" or "yes" or "1" or "enabled" => NasRegionTimeMode.Network,
+            "manual" or "false" or "no" or "0" or "disabled" => NasRegionTimeMode.Manual,
+            _ => NasRegionTimeMode.Unknown,
+        };
+        if (string.IsNullOrWhiteSpace(dateFormat) || string.IsNullOrWhiteSpace(timeFormat) ||
+            string.IsNullOrWhiteSpace(timezone) || mode == NasRegionTimeMode.Unknown) throw InvalidNasServiceSettings();
+        var zoneData = await _api.CallReadJsonObjectAsync(_profile, _session, capability, 1, "listzone",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (zoneData["zonedata"] is not JsonArray entries) throw InvalidNasServiceSettings();
+        var zones = new List<NasTimeZoneOption>();
+        foreach (var entry in entries)
         {
-            var data = await CallFirstAsync(
-                "SYNO.Core.Region",
-                ["get", "load"],
-                parameters: null,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            var ntpServers = new List<string>();
-            var ntpData = await TryCallFirstAsync(
-                "SYNO.Core.NTP",
-                ["get", "list"],
-                cancellationToken).ConfigureAwait(false);
-            if (ntpData is not null)
-            {
-                foreach (var server in ntpData.Array("servers").OfType<JsonObject>())
-                {
-                    var host = server.String("host") ?? server.String("server");
-                    if (!string.IsNullOrWhiteSpace(host))
-                    {
-                        ntpServers.Add(host);
-                    }
-                }
-            }
-
-            return new NasRegionSettings(
-                DateFormat: data.String("date_format")
-                    ?? data.String("date_fmt")
-                    ?? data.String("dformat"),
-                TimeFormat: data.String("time_format")
-                    ?? data.String("time_fmt")
-                    ?? data.String("tformat"),
-                Timezone: data.String("timezone")
-                    ?? data.String("tz")
-                    ?? data.String("time_zone"),
-                NtpServers: ntpServers,
-                ManualDate: data.String("manual_date")
-                    ?? data.String("date"));
+            if (entry is not JsonObject zone || string.IsNullOrWhiteSpace(zone.String("value"))) throw InvalidNasServiceSettings();
+            var id = zone.String("value")!;
+            if (zones.Any(item => item.Id == id)) throw InvalidNasServiceSettings();
+            zones.Add(new(id, zone.String("display") ?? id));
         }
-        catch (DsmException)
+        if (!zones.Any(zone => zone.Id == timezone)) throw InvalidNasServiceSettings();
+        var servers = (data.String("server") ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        DateTime? clock = null;
+        var hour = data.Int("hour"); var minute = data.Int("minute"); var second = data.Int("second");
+        if (DateOnly.TryParseExact(data.String("date"), "yyyy/M/d", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var date) && hour is >= 0 and <= 23 &&
+            minute is >= 0 and <= 59 && second is >= 0 and <= 59)
+            clock = date.ToDateTime(new TimeOnly(hour.Value, minute.Value, second.Value), DateTimeKind.Unspecified);
+        return new(dateFormat, timeFormat, timezone, Array.AsReadOnly(servers), data.String("date"))
         {
-            return new NasRegionSettings(null, null, null, [], null);
-        }
+            Mode = mode, NasLocalTime = clock, TimeZones = zones.AsReadOnly(),
+        };
     }
 
-    public Task<MutationResult> SaveRegionSettingsAsync(
-        NasRegionSettings settings,
-        CancellationToken cancellationToken = default)
+    public Task<MutationResult> SaveRegionSettingsAsync(NasRegionSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        if (!string.IsNullOrWhiteSpace(settings.DateFormat))
-        {
-            parameters["date_format"] = settings.DateFormat;
-        }
-
-        if (!string.IsNullOrWhiteSpace(settings.TimeFormat))
-        {
-            parameters["time_format"] = settings.TimeFormat;
-        }
-
-        if (!string.IsNullOrWhiteSpace(settings.Timezone))
-        {
-            parameters["timezone"] = settings.Timezone;
-        }
-
-        if (settings.NtpServers is { Count: > 0 })
-        {
-            parameters["ntp_servers"] = string.Join(",", settings.NtpServers);
-        }
-
-        if (!string.IsNullOrWhiteSpace(settings.ManualDate))
-        {
-            parameters["manual_date"] = settings.ManualDate;
-        }
-
-        return SaveSettingsAsync(
-            "SYNO.Core.Region", "set", parameters, "saveRegion",
-            ct => Task.CompletedTask,
-            cancellationToken);
+        // 无基线/手动时间编辑意图的旧签名不得执行改时或校时。
+        return Task.FromResult(UnsupportedResult("saveRegion"));
     }
 }

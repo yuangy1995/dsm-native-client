@@ -9,6 +9,7 @@ using LanStash.App.Features.Files.Mutations;
 using LanStash.App.Features.Files.Recycle;
 using LanStash.App.Features.NasAdmin;
 using LanStash.App.Features.Transfers;
+using LanStash.App.Features.Photos.Synology;
 using LanStash.App.ViewModels;
 using LanStash.Domain;
 using LanStash.Infrastructure;
@@ -56,6 +57,8 @@ public sealed partial class ShellPage : Page
         IForegroundTransferNotificationService? transferNotifications)
     {
         InitializeComponent();
+        Navigation.RegisterPropertyChangedCallback(NavigationView.IsPaneOpenProperty,
+            (_, _) => UpdateNavigationLayout());
         _app = app;
         _workspace = new WorkspacePage(app);
         _transfers = new ForegroundTransferCoordinator(transferNotifications);
@@ -71,12 +74,15 @@ public sealed partial class ShellPage : Page
                 new WindowsTransferOpenPicker(
                     () => (Application.Current as App)?.MainWindow));
         }
-        ContentFrame.Content = _workspace;
+        Loaded += ShellPage_Loaded;
         Unloaded += ShellPage_Unloaded;
         var localization = LocalizationService.Current;
+        AutomationProperties.SetName(SignOutButton, localization.Get("ActionSignOut"));
+        SidebarStorageText.Text = localization.Get("UnknownValue");
         AppNameText.Text = localization.Get("AppName");
-        LogoutItem.Content = localization.Get("ActionSignOut");
-        if (Navigation.SettingsItem is NavigationViewItem settingsItem)
+        ActivityItem.Content = localization.ModuleTitle(AppModule.Transfers);
+        ActivityItem.Tag = AppModule.Transfers;
+        if (SettingsItem is NavigationViewItem settingsItem)
         {
             settingsItem.Content = localization.Get("ModuleSettings");
         }
@@ -87,6 +93,20 @@ public sealed partial class ShellPage : Page
 
         _settings.Changed += Settings_Changed;
         RebuildModuleNavigation(routeHiddenSelectionToSettings: false);
+        UpdateNavigationLayout();
+    }
+
+    private async void ShellPage_Loaded(object sender, RoutedEventArgs e)
+    {
+        UpdateNavigationLayout();
+        if (ContentFrame.Content is not null) return;
+        var first = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault();
+        if (first?.Tag is AppModule module)
+        {
+            Navigation.SelectedItem = first;
+            await OpenModuleAsync(module);
+            await UpdateActivePageVisibilityAsync();
+        }
     }
 
     private async void ShellPage_Unloaded(object sender, RoutedEventArgs e)
@@ -137,6 +157,65 @@ public sealed partial class ShellPage : Page
             _transfers.Dispose();
             _settings.Changed -= Settings_Changed;
         }
+    }
+
+    private async void SignOut_Click(object sender, RoutedEventArgs e)
+    {
+        if (!SignOutButton.IsEnabled) return;
+        SignOutButton.IsEnabled = false;
+        try
+        {
+            var localization = LocalizationService.Current;
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = localization.Get("DialogSignOutTitle"),
+                Content = localization.Get("DialogSignOutMessage"),
+                PrimaryButtonText = localization.Get("DialogSignOutAction"),
+                CloseButtonText = localization.Get("ActionCancel"),
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            await CloseFilesPageAsync();
+            CloseNasDetailsPage();
+            await _app.LogoutAsync();
+        }
+        finally
+        {
+            SignOutButton.IsEnabled = true;
+        }
+    }
+
+    internal void ToggleNavigationPane() => Navigation.IsPaneOpen = !Navigation.IsPaneOpen;
+
+    private void UpdateNavigationLayout()
+    {
+        // 紧凑栏只保留完整图标；设备、容量和连接详情随展开显示。
+        StorageFooterItem.Visibility = Navigation.IsPaneOpen ? Visibility.Visible : Visibility.Collapsed;
+        ExpandedPaneHeader.Visibility = StorageFooterItem.Visibility;
+        foreach (var item in Navigation.MenuItems.Concat(Navigation.FooterMenuItems).OfType<NavigationViewItem>())
+        {
+            item.Margin = Navigation.IsPaneOpen ? new Thickness(10, 1, 10, 1) : new Thickness(0, 1, 0, 1);
+        }
+    }
+
+    private void FileStorage_Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(FileBrowserViewModel.StorageSpace) or
+            nameof(FileBrowserViewModel.IsLoadingStorageSpace) or nameof(FileBrowserViewModel.IsStorageSpaceUnavailable))
+            DispatcherQueue.TryEnqueue(UpdateSidebarStorage);
+    }
+
+    private void UpdateSidebarStorage()
+    {
+        if (_files?.BrowserModel is not { } model) return;
+        StorageLoadingState.Visibility = model.IsLoadingStorageSpace ? Visibility.Visible : Visibility.Collapsed;
+        StorageAvailableState.Visibility = model.HasStorageSpace ? Visibility.Visible : Visibility.Collapsed;
+        StorageUnavailableState.Visibility = model.IsStorageSpaceUnavailable ? Visibility.Visible : Visibility.Collapsed;
+        if (model.StorageSpace is not { } storage) return;
+        SidebarStorageText.Text = LocalizationService.Current.Format("WorkspaceStorageRatio",
+            FileBrowserViewModel.FormatBytes(storage.UsedBytes), FileBrowserViewModel.FormatBytes(storage.TotalBytes));
+        SidebarStorageProgress.Value = storage.UsedFraction * 100;
     }
 
     private void ProfileMenu_Opening(object sender, object e)
@@ -249,35 +328,33 @@ public sealed partial class ShellPage : Page
         NavigationView sender,
         NavigationViewSelectionChangedEventArgs args)
     {
-        if (args.IsSettingsSelected)
+        foreach (var item in Navigation.MenuItems.OfType<NavigationViewItem>())
         {
-            ContentFrame.Content = new AppSettingsPage();
+            if (item.Icon is not { } icon) continue;
+            if (ReferenceEquals(item, args.SelectedItem))
+                icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["WorkspaceAccentBrush"];
+            else icon.ClearValue(IconElement.ForegroundProperty);
+        }
+        if (args.IsSettingsSelected || ReferenceEquals(args.SelectedItem, SettingsItem))
+        {
+            ContentFrame.Content = CreateSettingsPage();
+            await UpdateActivePageVisibilityAsync();
             return;
         }
-        if (args.SelectedItem is NavigationViewItem selectedItem
-            && ReferenceEquals(selectedItem, LogoutItem))
-        {
-            var localization = LocalizationService.Current;
-            var dialog = new ContentDialog
-            {
-                XamlRoot = XamlRoot,
-                Title = localization.Get("DialogSignOutTitle"),
-                Content = localization.Get("DialogSignOutMessage"),
-                PrimaryButtonText = localization.Get("DialogSignOutAction"),
-                CloseButtonText = localization.Get("ActionCancel"),
-                DefaultButton = ContentDialogButton.Close,
-            };
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            {
-                await CloseFilesPageAsync();
-                CloseNasDetailsPage();
-                await _app.LogoutAsync();
-            }
-            return;
-        }
-        if (args.SelectedItemContainer?.Tag is AppModule module)
+        var selectedTag = (args.SelectedItem as NavigationViewItem ?? args.SelectedItemContainer)?.Tag;
+        if (selectedTag is AppModule module)
         {
             await OpenModuleAsync(module);
+            await UpdateActivePageVisibilityAsync();
+        }
+        else if (selectedTag is SynologyPhotosSection section)
+        {
+            await OpenModuleAsync(AppModule.Photos);
+            if (_photos is not null)
+            {
+                await _photos.ShowSectionAsync(section);
+            }
+            await UpdateActivePageVisibilityAsync();
         }
     }
 
@@ -326,6 +403,10 @@ public sealed partial class ShellPage : Page
                 FileMutationReviewBlocker.Current,
                 recycleRepository: recycleRepository,
                 recycleReviewBlocker: FileRecycleReviewBlocker.Current);
+            _files.BrowserModel.PropertyChanged -= FileStorage_Changed;
+            _files.BrowserModel.PropertyChanged += FileStorage_Changed;
+            _files.BrowserModel.SetRootDisplayName(profile.DisplayName);
+            UpdateSidebarStorage();
             WireCrossNasDependencies(_files, profile.Id);
             _filesProfileId = profile.Id;
             ContentFrame.Content = _files;
@@ -522,6 +603,7 @@ public sealed partial class ShellPage : Page
         }
         try
         {
+            files.BrowserModel.PropertyChanged -= FileStorage_Changed;
             await files.CloseAsync();
         }
         finally
@@ -533,13 +615,21 @@ public sealed partial class ShellPage : Page
     internal async Task SetWindowVisibleAsync(bool isVisible)
     {
         _isWindowVisible = isVisible;
+        await UpdateActivePageVisibilityAsync();
+    }
+
+    private async Task UpdateActivePageVisibilityAsync()
+    {
+        var isVisible = _isWindowVisible && ReferenceEquals(ContentFrame.Content, _photos);
         _photos?.SetWindowVisible(isVisible);
         if (_chat is not null)
         {
+            isVisible = _isWindowVisible && ReferenceEquals(ContentFrame.Content, _chat);
             await _chat.SetWindowVisibleAsync(isVisible);
         }
         if (_activity is not null)
         {
+            isVisible = _isWindowVisible && ReferenceEquals(ContentFrame.Content, _activity);
             await _activity.SetWindowVisibleAsync(isVisible);
         }
     }
@@ -575,24 +665,54 @@ public sealed partial class ShellPage : Page
     {
         var wasSettingsSelected = ReferenceEquals(
             Navigation.SelectedItem,
-            Navigation.SettingsItem);
+            SettingsItem);
         var selectedModule = (Navigation.SelectedItem as NavigationViewItem)?.Tag is AppModule module
             ? module
             : (AppModule?)null;
         var visibleModules = _app.AvailableModules
             .Where(module => module != AppModule.Settings)
+            .Where(module => module != AppModule.Transfers)
             .Where(_settings.IsModuleVisible)
             .ToArray();
         Navigation.MenuItems.Clear();
         var localization = LocalizationService.Current;
         foreach (var visibleModule in visibleModules)
         {
-            Navigation.MenuItems.Add(new NavigationViewItem
+            var item = new NavigationViewItem
             {
-                Content = localization.ModuleTitle(visibleModule),
-                Icon = new FontIcon { Glyph = visibleModule.Glyph() },
+                Content = new TextBlock { Text = localization.ModuleTitle(visibleModule), FontSize = 16 },
+                Icon = WorkspaceIcons.ForModule(visibleModule),
                 Tag = visibleModule,
-            });
+                Style = (Style)Application.Current.Resources["WorkspaceNavigationItemStyle"],
+            };
+            AutomationProperties.SetName(item, localization.ModuleTitle(visibleModule));
+            ToolTipService.SetToolTip(item, localization.ModuleTitle(visibleModule));
+            if (visibleModule == AppModule.Photos)
+            {
+                foreach (var section in Enum.GetValues<SynologyPhotosSection>())
+                {
+                    item.MenuItems.Add(new NavigationViewItem
+                    {
+                        Content = localization.Get(section switch
+                        {
+                            SynologyPhotosSection.Folders => "PhotosLibraryFolders",
+                            SynologyPhotosSection.Albums => "PhotosLibraryAlbums",
+                            SynologyPhotosSection.Sharing => "PhotosLibrarySharing",
+                            _ => "PhotosLibraryTimeline",
+                        }),
+                        Tag = section,
+                        MinHeight = 40,
+                    });
+                }
+            }
+            Navigation.MenuItems.Add(item);
+        }
+        UpdateNavigationLayout();
+
+        if (selectedModule == AppModule.Transfers)
+        {
+            Navigation.SelectedItem = ActivityItem;
+            return;
         }
 
         var restored = selectedModule is { } selected
@@ -606,17 +726,33 @@ public sealed partial class ShellPage : Page
         }
         if (wasSettingsSelected)
         {
-            Navigation.SelectedItem = Navigation.SettingsItem;
+            Navigation.SelectedItem = SettingsItem;
             return;
         }
         if (routeHiddenSelectionToSettings && selectedModule is { } hidden)
         {
             DisposeHiddenModulePage(hidden);
-            Navigation.SelectedItem = Navigation.SettingsItem;
-            ContentFrame.Content = new AppSettingsPage();
+            Navigation.SelectedItem = SettingsItem;
+            ContentFrame.Content = CreateSettingsPage();
             return;
         }
         Navigation.SelectedItem = Navigation.MenuItems.FirstOrDefault();
+    }
+
+    private AppSettingsPage CreateSettingsPage()
+    {
+        var settings = new AppSettingsPage();
+        settings.CloudDriveRequested += (_, _) =>
+        {
+            if (!ReferenceEquals(ContentFrame.Content, settings)) return;
+            var cloud = new CloudDriveSettingsPage(_app);
+            cloud.BackRequested += (_, _) =>
+            {
+                if (ReferenceEquals(ContentFrame.Content, cloud)) ContentFrame.Content = CreateSettingsPage();
+            };
+            ContentFrame.Content = cloud;
+        };
+        return settings;
     }
 
     private void DisposeHiddenModulePage(AppModule module)
@@ -647,16 +783,15 @@ public sealed partial class ShellPage : Page
 
     internal async Task ShowTransfersAsync()
     {
-        var item = Navigation.MenuItems
-            .OfType<NavigationViewItem>()
-            .FirstOrDefault(value => value.Tag is AppModule.Transfers);
-        if (item is null)
+        if (ReferenceEquals(Navigation.SelectedItem, ActivityItem))
         {
-            return;
+            await OpenModuleAsync(AppModule.Transfers);
+            await UpdateActivePageVisibilityAsync();
         }
-
-        Navigation.SelectedItem = item;
-        await OpenModuleAsync(AppModule.Transfers);
+        else
+        {
+            Navigation.SelectedItem = ActivityItem;
+        }
     }
 
     private void WireCrossNasDependencies(FilesPage page, Guid currentProfileId)

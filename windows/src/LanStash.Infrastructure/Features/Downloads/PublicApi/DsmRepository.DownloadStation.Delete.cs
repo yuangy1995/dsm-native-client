@@ -39,6 +39,7 @@ public sealed partial class DsmRepository
 
         var taskId = request.Task.Id.Trim();
         if (string.IsNullOrEmpty(taskId) ||
+            taskId.Contains(',') || taskId.Any(char.IsControl) ||
             !string.Equals(taskId, request.Task.Id, StringComparison.Ordinal))
         {
             return DownloadDeleteOutcome(
@@ -79,6 +80,9 @@ public sealed partial class DsmRepository
         {
             if (state.TryGetReview(reviewKey, out var pendingReview))
             {
+                if (pendingReview.ForceComplete != request.ForceComplete)
+                    return DownloadDeleteOutcome(taskId, MutationResultStatus.ConfirmedFailure, false, false,
+                        MutationErrorCategory.Conflict, "download-station.delete.pending-mode-conflict");
                 return await FinishDownloadDeleteAsync(
                     pendingReview,
                     MutationResultStatus.SubmittedButUnverified,
@@ -156,18 +160,19 @@ public sealed partial class DsmRepository
                     diagnosticTag: "download-station.delete.cancelled-before-write");
             }
 
-            var review = new DownloadTaskDeleteReview(reviewKey, taskId);
+            var review = new DownloadTaskDeleteReview(reviewKey, taskId, request.ForceComplete);
             try
             {
-                _ = await CallPublicDownloadAsync(
+                var response = await CallPublicDownloadAsync(
                     PublicDownloadTaskApi,
                     "delete",
                     new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["id"] = taskId,
-                        ["force_complete"] = "false",
+                        ["force_complete"] = request.ForceComplete ? "true" : "false",
                     },
                     cancellationToken).ConfigureAwait(false);
+                VerifyDownloadActionResponse(response, taskId);
             }
             catch (OperationCanceledException)
             {
@@ -177,7 +182,7 @@ public sealed partial class DsmRepository
                     MutationResultStatus.CancellationRequestedAfterSubmission,
                     CancellationToken.None).ConfigureAwait(false);
             }
-            catch (DsmException error)
+            catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error))
             {
                 var category = DownloadControlErrorCategory(error);
                 if (category == MutationErrorCategory.Permission)
@@ -207,6 +212,11 @@ public sealed partial class DsmRepository
                     requiresRefresh: true,
                     errorCategory: category,
                     diagnosticTag: "download-station.delete.rejected");
+            }
+            catch (DownloadTaskActionRejectedException error)
+            {
+                return DownloadDeleteOutcome(taskId, MutationResultStatus.ConfirmedFailure, true, false,
+                    error.Category, "download-station.delete.task-rejected");
             }
             catch (Exception)
             {
@@ -275,6 +285,7 @@ public sealed partial class DsmRepository
         DownloadTask baseline,
         DownloadTask current) =>
         string.Equals(baseline.Id, current.Id, StringComparison.Ordinal) &&
+        baseline.Title == current.Title && baseline.Size == current.Size && baseline.Destination == current.Destination &&
         baseline.State == current.State &&
         string.Equals(baseline.RawStatus, current.RawStatus, StringComparison.Ordinal);
 
@@ -323,7 +334,8 @@ public sealed partial class DsmRepository
 
     private sealed record DownloadTaskDeleteReview(
         DownloadTaskDeleteReviewKey Key,
-        string TaskId);
+        string TaskId,
+        bool ForceComplete);
 
     private sealed class DownloadTaskDeleteApiState
     {

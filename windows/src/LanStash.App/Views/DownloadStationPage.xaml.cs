@@ -35,9 +35,9 @@ public sealed partial class DownloadStationPage : Page, IDisposable
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(viewModel);
-        InitializeComponent();
         _repository = repository;
         _viewModel = viewModel;
+        InitializeComponent();
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         Loaded += DownloadStationPage_Loaded;
@@ -89,7 +89,7 @@ public sealed partial class DownloadStationPage : Page, IDisposable
 
     private void FilterPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_updatingFilter || FilterPicker.SelectedItem is not ComboBoxItem { Tag: string tag } ||
+        if (_updatingFilter || sender is not Pivot { SelectedItem: PivotItem { Tag: string tag } } ||
             !Enum.TryParse<DownloadTaskFilter>(tag, out var filter))
         {
             return;
@@ -105,6 +105,12 @@ public sealed partial class DownloadStationPage : Page, IDisposable
             _viewModel.SelectTask(task);
             UpdateState();
         }
+    }
+
+    private void TaskStatus_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBlock { DataContext: DownloadTaskItem item } status && item.State == DownloadTaskState.Finished)
+            status.Style = (Style)Application.Current.Resources["WorkspaceSuccessTextStyle"];
     }
 
     private void Back_Click(object sender, RoutedEventArgs e) => ShowTaskList();
@@ -162,103 +168,53 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         await ShowCreateTaskDialogAsync();
     }
 
+    private ContentDialog? _linkCreateDialog;
     private async Task ShowCreateTaskDialogAsync()
     {
-        if (!_viewModel.CanCreateTask)
-        {
-            return;
-        }
-
+        if (_disposed || !_viewModel.CanCreateTask || _linkCreateDialog is not null || XamlRoot is null) return;
         var uriBox = new TextBox
         {
             Header = LocalizationService.Current.Get("DownloadStationCreateUriLabel"),
             PlaceholderText = LocalizationService.Current.Get("DownloadStationCreateUriPlaceholder"),
-            MinHeight = 44,
-            TextWrapping = TextWrapping.Wrap,
+            MinHeight = 44, TextWrapping = TextWrapping.Wrap,
         };
-        AutomationProperties.SetName(
-            uriBox,
-            LocalizationService.Current.Get("DownloadStationCreateUriAutomationName"));
-
-        var destinationText = new TextBlock
+        AutomationProperties.SetName(uriBox, LocalizationService.Current.Get("DownloadStationCreateUriAutomationName"));
+        LanStash.App.Features.Files.CopyMove.IFileCopyMoveFolderSource? folders =
+            _repository.Availability.SupportsCreateDestination && _repository is IDsmRepository files && _repository is IFileLocationsRepository locations
+                ? new LanStash.App.Features.Files.CopyMove.RepositoryFileCopyMoveFolderSource(_repository.ProfileId,
+                    new LanStash.App.Features.Files.RepositoryFileBrowserDataSource(files), locations) : null;
+        using var optionsModel = new DownloadCreateOptionsViewModel(folders);
+        using var options = new DownloadCreateOptionsDialogContent(optionsModel, "", taskFile: false);
+        var content = new StackPanel { Spacing = 12, MinWidth = 280, MaxWidth = 540 };
+        content.Children.Add(uriBox); content.Children.Add(options);
+        var dialog = _linkCreateDialog = new ContentDialog
         {
-            Text = LocalizationService.Current.Format(
-                "DownloadStationCreateDestinationText",
-                _viewModel.CreateDestinationText),
-            TextWrapping = TextWrapping.Wrap,
-        };
-
-        var progress = new ProgressRing
-        {
-            Width = 28,
-            Height = 28,
-            IsActive = false,
-            Visibility = Visibility.Collapsed,
-        };
-        AutomationProperties.SetName(
-            progress,
-            LocalizationService.Current.Get("DownloadStationCreateInProgressMessage"));
-
-        var progressMessage = new TextBlock
-        {
-            Text = LocalizationService.Current.Get("DownloadStationCreateInProgressMessage"),
-            TextWrapping = TextWrapping.Wrap,
-            Visibility = Visibility.Collapsed,
-        };
-        AutomationProperties.SetLiveSetting(progressMessage, AutomationLiveSetting.Polite);
-
-        var content = new StackPanel
-        {
-            Spacing = 12,
-            MinWidth = 360,
-            MaxWidth = 520,
-        };
-        content.Children.Add(uriBox);
-        content.Children.Add(destinationText);
-        content.Children.Add(progress);
-        content.Children.Add(progressMessage);
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = LocalizationService.Current.Get("DownloadStationCreateTitle"),
-            Content = content,
+            XamlRoot = XamlRoot, RequestedTheme = ActualTheme,
+            Title = LocalizationService.Current.Get("DownloadStationCreateTitle"), Content = content,
             PrimaryButtonText = LocalizationService.Current.Get("DownloadStationCreateSubmit"),
-            CloseButtonText = LocalizationService.Current.Get("ActionCancel"),
-            DefaultButton = ContentDialogButton.Primary,
+            CloseButtonText = LocalizationService.Current.Get("ActionCancel"), DefaultButton = ContentDialogButton.Close,
+            PrimaryButtonStyle = options.ActionButtonStyle, CloseButtonStyle = options.ActionButtonStyle,
             IsPrimaryButtonEnabled = false,
         };
-
-        uriBox.TextChanged += (_, _) =>
+        void Update() => dialog.IsPrimaryButtonEnabled = options.CanSubmit && !string.IsNullOrWhiteSpace(uriBox.Text) && !_viewModel.IsCreatingTask;
+        void TextChanged(object sender, TextChangedEventArgs args) => Update();
+        async void Submit(ContentDialog sender, ContentDialogButtonClickEventArgs args)
         {
-            dialog.IsPrimaryButtonEnabled =
-                !string.IsNullOrWhiteSpace(uriBox.Text) && !_viewModel.IsCreatingTask;
-        };
-        dialog.PrimaryButtonClick += async (_, args) =>
+            if (!options.CanSubmit || string.IsNullOrWhiteSpace(uriBox.Text)) { args.Cancel = true; return; }
+            var deferral = args.GetDeferral(); options.BeginSubmission(); uriBox.IsEnabled = false;
+            try { await _viewModel.CreateTaskAsync(uriBox.Text, optionsModel.Destination); }
+            finally { deferral.Complete(); }
+        }
+        void Closing(ContentDialog sender, ContentDialogClosingEventArgs args) { if (_viewModel.IsCreatingTask && !_disposed) args.Cancel = true; }
+        uriBox.TextChanged += TextChanged; options.StateChanged += Update;
+        dialog.PrimaryButtonClick += Submit; dialog.Closing += Closing;
+        try { await dialog.ShowAsync(); }
+        finally
         {
-            if (string.IsNullOrWhiteSpace(uriBox.Text))
-            {
-                args.Cancel = true;
-                return;
-            }
-            var deferral = args.GetDeferral();
-            try
-            {
-                dialog.IsPrimaryButtonEnabled = false;
-                dialog.IsEnabled = false;
-                progress.IsActive = true;
-                progress.Visibility = Visibility.Visible;
-                progressMessage.Visibility = Visibility.Visible;
-                await _viewModel.CreateTaskAsync(uriBox.Text);
-            }
-            finally
-            {
-                deferral.Complete();
-            }
-        };
-
-        await dialog.ShowAsync();
-        UpdateState();
+            uriBox.TextChanged -= TextChanged; options.StateChanged -= Update;
+            dialog.PrimaryButtonClick -= Submit; dialog.Closing -= Closing;
+            uriBox.Text = ""; _linkCreateDialog = null; if (!_disposed) UpdateState();
+        }
     }
 
     private async Task ShowDeleteTaskDialogAsync()
@@ -323,6 +279,9 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         ContentState.Visibility = Visible(_viewModel.HasContent);
 
         RefreshButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.IsUnavailable;
+        SettingsButton.Visibility = Visible(_repository.Availability.SupportedFeatures.Contains(DownloadStationReadFeature.ServerSettings));
+        SettingsButton.IsEnabled = !_viewModel.IsLoading;
+        BatchButton.IsEnabled = !_viewModel.IsUnavailable && !_viewModel.IsLoading && !_viewModel.IsControllingTask && !_viewModel.IsDeletingTask;
         CreateTaskButton.IsEnabled = _viewModel.CanCreateTask;
         CreateFileTaskButton.IsEnabled = _viewModel.CanCreateTask;
         DownloadCreateNotice.IsOpen = _viewModel.HasCreateNotice;
@@ -358,6 +317,8 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         ResumeButton.IsEnabled = _viewModel.CanResumeSelectedTask;
         DeleteButton.Visibility = Visible(_viewModel.CanDeleteSelectedTask);
         DeleteButton.IsEnabled = _viewModel.CanDeleteSelectedTask;
+        if (_taskBatch?.HasPending == true) { PauseButton.IsEnabled = false; ResumeButton.IsEnabled = false; DeleteButton.IsEnabled = false; }
+        BatchPendingNotice.IsOpen = _taskBatch?.HasPending == true;
         ControlProgress.IsActive = _viewModel.IsControllingTask || _viewModel.IsDeletingTask;
         ControlProgress.Visibility = Visible(_viewModel.IsControllingTask || _viewModel.IsDeletingTask);
         AutomationProperties.SetName(
@@ -394,6 +355,8 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         }
         SyncFilterPicker();
         UpdateBtSearchUi();
+        foreach (var notice in ((Grid)Content).Children.OfType<InfoBar>())
+            notice.Visibility = Visible(notice.IsOpen);
         UpdateAdaptiveLayout();
     }
 
@@ -413,19 +376,11 @@ public sealed partial class DownloadStationPage : Page, IDisposable
 
     private void UpdateAdaptiveLayout()
     {
-        if (ActualWidth >= CompactWidth)
-        {
-            TaskColumn.Width = new GridLength(360);
-            DetailColumn.Width = new GridLength(1, GridUnitType.Star);
-            TaskPane.Visibility = Visibility.Visible;
-            DetailPane.Visibility = Visibility.Visible;
-            BackButton.Visibility = Visibility.Collapsed;
-            return;
-        }
-
         TaskColumn.Width = new GridLength(1, GridUnitType.Star);
         DetailColumn.Width = new GridLength(1, GridUnitType.Star);
         var showDetail = _viewModel.HasSelection && !_compactShowsTaskList;
+        TaskColumn.Width = showDetail ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        DetailColumn.Width = showDetail ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
         TaskPane.Visibility = Visible(!showDetail);
         DetailPane.Visibility = Visible(showDetail);
         BackButton.Visibility = Visible(showDetail);
@@ -451,6 +406,10 @@ public sealed partial class DownloadStationPage : Page, IDisposable
         }
         CloseBtSearchDialog();
         _disposed = true;
+        DisposeSettingsDialog();
+        DisposeTaskBatch();
+        _fileCreateDialog?.Hide(); _fileCreateDialog = null;
+        _linkCreateDialog?.Hide(); _linkCreateDialog = null;
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
     }

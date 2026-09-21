@@ -83,7 +83,9 @@
 - Apple 领域：`NasPackage.isUpgradeAvailable` 与独立的 `canUpgrade`。
 - Apple Adapter：`DsmNasAdministrationRepository.loadPackages()`。
 - macOS：卡片和列表行显示非交互升级标签及 VoiceOver 提示。
-- Android：套件列表只在服务端明确返回 `upgrade` 时显示非交互提示；iPhone、iPad 与 Windows 尚未迁移。
+- Android：套件列表只在服务端明确返回 `upgrade` 时显示非交互提示；iPhone 与 iPad 尚未迁移。
+- Windows：严格套件读取保留明确 upgrade 标志，NAS 详情行使用双语非交互标签和
+  辅助功能说明提示前往 DSM 套件中心，canUpgrade 固定为 false；不发现或调用安装接口。
 - 自动化测试覆盖显式 `upgrade`、缺失标志、图标装配字段保留、模型拒绝升级和零写请求。
 
 ## 安全与隐私

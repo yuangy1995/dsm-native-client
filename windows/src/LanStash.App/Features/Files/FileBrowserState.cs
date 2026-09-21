@@ -39,6 +39,11 @@ public sealed record FileBrowserEntry(FileItem Item)
     public string Name => Item.Name;
     public bool IsDirectory => Item.IsDirectory;
     public string Glyph => Item.IsDirectory ? "\uE8B7" : "\uE8A5";
+    public string SizeText => Item.IsDirectory ? string.Empty : FileBrowserViewModel.FormatBytes(Item.Size);
+    public string ModifiedText => Item.ModifiedAt?.ToLocalTime().ToString("g") ??
+        LocalizationService.Current.Get("UnknownValue");
+    public string KindText => LocalizationService.Current.Get(Item.IsDirectory
+        ? "WorkspaceFileFolder" : "WorkspaceFileDocument");
 
     public string Detail => Item.IsDirectory
         ? Item.Path

@@ -21,6 +21,7 @@ public sealed class ContainerManagerViewModelTests
         Assert.Equal(ContainerManagerContentState.Unavailable, model.EventsState);
         Assert.False(model.CanRefresh);
         Assert.Empty(repository.Requests);
+        Assert.Null(model.TotalContainerCount);
     }
 
     [Fact]
@@ -37,6 +38,7 @@ public sealed class ContainerManagerViewModelTests
         await model.ActivateAsync(repository);
 
         model.SetFilter(ContainerManagerFilter.Running);
+        Assert.Equal(4, model.TotalContainerCount);
         Assert.Equal("running", Assert.Single(model.Containers).Id);
         model.SelectContainer(model.Containers.Single());
         Assert.Equal("running", model.SelectedContainer?.Id);

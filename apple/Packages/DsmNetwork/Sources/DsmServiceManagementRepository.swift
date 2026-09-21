@@ -199,8 +199,17 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private var pendingDownloadControlReviews: [DownloadTaskControlKey: DownloadTaskControlReview] = [:]
     private var activeDownloadCreateKeys: Set<DownloadTaskCreateKey> = []
     private var pendingDownloadCreateReviews: [DownloadTaskCreateKey: DownloadTaskCreateReview] = [:]
-    private var activeContainerDeletionIDs: Set<String> = []
+    private var activeContainerMutationIDs: Set<String> = []
+    private var pendingContainerDeletions: [String: String] = [:]
+    private var pendingContainerControls: [String: ContainerControlReview] = [:]
+    private var imageDeletionActive = false
+    private var pendingImageDeletions: [Set<String>: [ContainerImage]] = [:]
+    private var imagePullBusy = false
+    private var imagePullOperations: [UUID: ImagePullOperation] = [:]
     private var activeVirtualMachineDeletionIDs: Set<String> = []
+    private var unverifiedPublicVmmDeletions: [String: Set<String>] = [:]
+    private var activePublicVmmPowerIDs: Set<String> = []
+    private var unverifiedPublicVmmPower: [String: PublicVmmPowerTarget] = [:]
     private var activeDeletionIDsByOperation: [String: Set<String>] = [:]
     private let containerNetworkCreationEnabled: Bool
     private var activeNetworkCreationNames: Set<String> = []
@@ -374,7 +383,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         if let destination = Self.nonEmpty(destination) {
             parameters["destination"] = .string(destination)
         }
-        try await callVoid(api, method: "create", parameters: parameters)
+        if api == DsmAPIName.downloadStationTask {
+            _ = try await callOfficialDownloadTask(method: "create", parameters: parameters,
+                version: parameters["destination"] == nil ? 1 : 2)
+        } else {
+            try await callVoid(api, method: "create", parameters: parameters)
+        }
     }
 
     public func createDownloadTaskResult(
@@ -436,7 +450,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             throw validationError(L10n.string("shared.799f04c59bdac5e7"))
         }
 
-        _ = try await callOfficialDownloadTaskV1FileCreate(
+        _ = try await callOfficialDownloadTaskFileCreate(
             fileURL: normalizedURL,
             destination: destination,
             unzipPassword: unzipPassword
@@ -712,7 +726,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
-    /// 下载任务删除通过任务列表逐项确认；删除任务和数据使用同一结果语义。
+    /// 通过任务列表确认移除/结束任务。removeData 是兼容旧调用的历史参数名，实际映射
+    /// force_complete：true 将未完成文件移入目标目录，并非删除数据；列表消失不能证明文件移动完成。
     public func deleteDownloadTasksResult(
         ids: [String],
         removeData: Bool
@@ -742,16 +757,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     public func loadContainerManager() async throws -> ContainerManagerSnapshot {
-        async let containersValue = call(
-            DsmAPIName.dockerContainer,
-            method: "list",
-            parameters: [
-                "offset": .integer(0),
-                "limit": .integer(-1),
-                "type": .string("all")
-            ]
-        )
-        async let imagesValue = supplementaryCall(DsmAPIName.dockerImage, methods: ["list"])
+        async let containersValue = containerInventoryPayload()
+        async let imagesValue = containerImageListResult()
         async let networksValue = supplementaryCall(DsmAPIName.dockerNetwork, methods: ["list"])
         async let projectsValue = supplementaryCall(DsmAPIName.dockerProject, methods: ["list"])
         async let eventsValue = containerActivityLogs()
@@ -775,13 +782,17 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             keys: ["containers", "container"],
             parser: Self.container
         )
-        let images: [ContainerImage] = Self.strictSupplementaryItems(
-            imageResult,
-            keys: ["images", "image"],
-            parser: Self.image,
-            failedSection: .images,
-            failedSections: &failedSections
-        )
+        var images: [ContainerImage] = []
+        if case .available(let value) = imageResult {
+            do {
+                let parsed = try Self.containerImages(value)
+                let usedIDs = try Self.containerImageUsage(parsed, containers: containerJSON)
+                images = parsed.map { image in
+                    ContainerImage(id: image.id, repository: image.repository, tag: image.tag,
+                        sizeBytes: image.sizeBytes, createdAt: image.createdAt, isInUse: usedIDs.contains(image.id), sourceImageID: image.sourceImageID)
+                }
+            } catch { failedSections.insert(.images) }
+        }
         let networks: [ContainerNetwork] = Self.strictSupplementaryItems(
             networkResult,
             keys: ["networks", "network"],
@@ -841,8 +852,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     /// 移动端首个 Container Manager 闭环固定使用已记录的内部 Container.list v1。
     /// 只读取实例清单，不读取映像、网络、项目、事件、资源、进程或日志。
     public func loadContainerInventory() async throws -> ContainerInventorySnapshot {
+        let value = try await containerInventoryPayload()
+        return ContainerInventorySnapshot(
+            source: .internalAPI,
+            containers: try Self.internalContainerV1Inventory(from: value)
+        )
+    }
+
+    private func containerInventoryPayload() async throws -> ServiceJSON {
         guard let capability = capabilities[DsmAPIName.dockerContainer],
-              capability.minVersion <= 1,
+              capability.name == DsmAPIName.dockerContainer, capability.minVersion == 1,
               capability.maxVersion >= 1,
               capability.selectedVersion != nil else {
             throw unavailableError()
@@ -866,35 +885,57 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
         }
-        return ContainerInventorySnapshot(
-            source: .internalAPI,
-            containers: try Self.internalContainerV1Inventory(from: value)
-        )
+        return value
     }
 
     public func controlContainers(ids: [String], action: ContainerAction) async throws {
         let ids = try validatedIDs(ids)
+        let targets = Set(ids)
+        guard activeContainerMutationIDs.isDisjoint(with: targets), targets.isDisjoint(with: Set(pendingContainerDeletions.keys)) else {
+            throw containerMutationChangedError()
+        }
+        activeContainerMutationIDs.formUnion(targets)
+        defer { activeContainerMutationIDs.subtract(targets) }
         for id in ids {
-            try await callVoid(
-                DsmAPIName.dockerContainer,
-                method: action.rawValue,
-                parameters: ["id": .string(id)]
-            )
+            try Task.checkCancellation()
+            let current = try await containerControlTargets(requiredIDs: [id])
+            guard let target = current.first(where: { $0.item.id == id }),
+                  current.filter({ $0.item.name == target.item.name }).count == 1 else { throw containerMutationChangedError() }
+            guard !pendingContainerControls.contains(where: { $0.key != id && $0.value.name == target.item.name }),
+                  !pendingContainerDeletions.values.contains(target.item.name) else { throw containerMutationChangedError() }
+            if let pending = pendingContainerControls[id] {
+                guard pending.action == action else { throw containerMutationChangedError() }
+                guard Self.containerControlVerified(target, review: pending) else { throw containerControlUnverifiedError() }
+                pendingContainerControls[id] = nil
+                continue
+            }
+            if target.managedByPackage == true { throw containerManagedError() }
+            guard target.managedByPackage == false, target.paused == false, let restarting = target.restarting, let running = target.running else { throw containerMutationChangedError() }
+            if action == .start && restarting { throw containerMutationChangedError() }
+            if (action == .start && running) || (action == .stop && !running && !restarting) { continue }
+            if action == .restart && (!(running || restarting) || target.startedAt == nil) { throw containerMutationChangedError() }
+            let review = ContainerControlReview(action: action, name: target.item.name, startedAt: target.startedAt)
+            pendingContainerControls[id] = review
+            do {
+                try await callContainerMutation(method: action.rawValue, name: target.item.name)
+            } catch let error as AppError {
+                if error.dsmCode != nil { pendingContainerControls[id] = nil }
+                throw error
+            }
+            let refreshed = try await containerControlTargets(requiredIDs: [id])
+            guard let after = refreshed.first(where: { $0.item.id == id }), Self.containerControlVerified(after, review: review) else {
+                throw containerControlUnverifiedError()
+            }
+            pendingContainerControls[id] = nil
         }
     }
 
     public func deleteContainers(ids: [String]) async throws {
-        let ids = try validatedIDs(ids)
-        for id in ids {
-            try await callVoid(
-                DsmAPIName.dockerContainer,
-                method: "delete",
-                parameters: ["id": .string(id)]
-            )
-        }
-        let remaining = try await loadContainerManager().containers.map(\.id)
-        guard ids.allSatisfy({ !remaining.contains($0) }) else {
-            throw verificationError(L10n.string("shared.830e41a22a4f104d"))
+        let result = try await deleteContainersResult(ids: ids)
+        guard result.status == .confirmedSuccess else {
+            throw AppError(category: result.status == .permissionDenied ? .permissionDenied : .partialFailure,
+                isRetryable: false, safeUserMessage: result.localizationKey.map { L10n.string($0) }
+                    ?? L10n.string("shared.830e41a22a4f104d"))
         }
     }
 
@@ -931,23 +972,50 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
 
         let targetSet = Set(targets)
-        guard activeContainerDeletionIDs.isDisjoint(with: targetSet) else {
+        guard activeContainerMutationIDs.isDisjoint(with: targetSet), targetSet.isDisjoint(with: Set(pendingContainerControls.keys)) else {
             return try deletionDuplicateResult(
                 targetCount: targets.count,
                 context: context
             )
         }
-        activeContainerDeletionIDs.formUnion(targetSet)
-        defer { activeContainerDeletionIDs.subtract(targetSet) }
+        activeContainerMutationIDs.formUnion(targetSet)
+        defer { activeContainerMutationIDs.subtract(targetSet) }
 
+        let pendingIDs = Set(pendingContainerDeletions.keys)
+        if !pendingIDs.isDisjoint(with: targetSet) {
+            guard targetSet.isSubset(of: pendingIDs) else {
+                return try deletionDuplicateResult(targetCount: targets.count, context: context)
+            }
+            do {
+                let remaining = Set(try await loadContainerInventory().containers.map(\.id))
+                for id in targetSet.subtracting(remaining) { pendingContainerDeletions[id] = nil }
+                return try deletionReadbackResult(targets: targetSet, remaining: remaining, context: context)
+            } catch let error as AppError {
+                return try deletionReadbackFailureResult(error, targetCount: targets.count, context: context)
+            } catch {
+                return try deletionUnexpectedReadbackResult(targetCount: targets.count, context: context)
+            }
+        }
+
+        let names: [String: String]
         do {
-            let currentIDs = Set(try await loadContainerManager().containers.map(\.id))
+            let definitions = try await containerControlTargets(requiredIDs: targetSet)
+            let inventory = definitions.map(\.item)
+            let currentIDs = Set(inventory.map(\.id))
             guard targetSet.isSubset(of: currentIDs) else {
                 return try deletionMissingTargetResult(
                     targetCount: targets.count,
                     context: context
                 )
             }
+            guard Set(inventory.map(\.name)).count == inventory.count else { throw containerMutationChangedError() }
+            for target in definitions where targetSet.contains(target.item.id) {
+                if target.managedByPackage == true { throw containerManagedError() }
+                guard target.managedByPackage == false, target.running == false, target.restarting == false, target.paused == false else { throw containerMutationChangedError() }
+                guard !pendingContainerDeletions.values.contains(target.item.name),
+                      !pendingContainerControls.values.contains(where: { $0.name == target.item.name }) else { throw containerMutationChangedError() }
+            }
+            names = Dictionary(uniqueKeysWithValues: inventory.map { ($0.id, $0.name) })
         } catch let error as AppError {
             return try deletionPreflightResult(
                 error,
@@ -973,12 +1041,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 )
             }
             do {
-                try await callVoid(
-                    DsmAPIName.dockerContainer,
-                    method: "delete",
-                    parameters: ["id": .string(id)]
-                )
+                // 批量前项等待期间名称可能被复用；后续项必须重新确认同一 ID/名称与托管状态。
+                if id != targets.first {
+                    let refreshed = try await containerControlTargets(requiredIDs: [id])
+                    guard let current = refreshed.first(where: { $0.item.id == id }), current.item.name == names[id],
+                          current.managedByPackage == false, current.running == false, current.restarting == false, current.paused == false else { throw containerMutationChangedError() }
+                }
+                pendingContainerDeletions[id] = names[id]!
+                try await callContainerMutation(method: "delete", name: names[id]!)
             } catch let error as AppError {
+                if error.dsmCode != nil { pendingContainerDeletions[id] = nil }
                 return try deletionSubmissionResult(
                     error,
                     targetCount: targets.count,
@@ -999,7 +1071,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             )
         }
         do {
-            let remaining = Set(try await loadContainerManager().containers.map(\.id))
+            let remaining = Set(try await loadContainerInventory().containers.map(\.id))
+            for id in targetSet.subtracting(remaining) { pendingContainerDeletions[id] = nil }
             return try deletionReadbackResult(
                 targets: targetSet,
                 remaining: remaining,
@@ -1017,6 +1090,121 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 context: context
             )
         }
+    }
+
+    /// 官方内部 v1 使用名称寻址；名称只能来自当前 ID 对应的实例清单。
+    private func callContainerMutation(method: String, name: String) async throws {
+        guard let capability = capabilities[DsmAPIName.dockerContainer],
+              capability.name == DsmAPIName.dockerContainer, capability.minVersion == 1, capability.maxVersion >= 1,
+              capability.selectedVersion != nil else { throw unavailableError() }
+        var parameters: [String: DsmParameterValue] = ["name": .string(name)]
+        if method == "delete" {
+            parameters["force"] = .boolean(false)
+            parameters["preserve_profile"] = .boolean(false)
+        }
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: 1,
+                method: method, requestFormat: capability.requestFormat, parameters: parameters, credential: credential)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+    }
+
+    private struct ContainerControlTarget {
+        let item: ContainerInventoryItem
+        let running: Bool?
+        let paused: Bool?
+        let restarting: Bool?
+        let startedAt: Date?
+        var managedByPackage: Bool?
+        let projectName: String?
+    }
+
+    private struct ContainerControlReview {
+        let action: ContainerAction
+        let name: String
+        let startedAt: Date?
+    }
+
+    private func containerControlTargets(requiredIDs: Set<String>) async throws -> [ContainerControlTarget] {
+        let value = try await containerInventoryPayload()
+        let items = try Self.internalContainerV1Inventory(from: value)
+        let objects = try Self.strictRootObjects(value, keys: ["containers"])
+        guard Set(items.map(\.name)).count == items.count else { throw containerMutationChangedError() }
+        var targets = zip(items, objects).map { pair in
+            let (item, object) = pair
+            var runtime: [String: ServiceJSON] = [:]
+            if case .object(let fields)? = object["State"] { runtime = fields }
+            func flag(_ key: String) -> Bool? {
+                if case .boolean(let value)? = runtime[key] { return value }
+                return nil
+            }
+            var startedAt: Date?
+            if let text = Self.officialNonEmptyString(runtime["StartedAt"]), !text.hasPrefix("0001-") {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                startedAt = formatter.date(from: text)
+                if startedAt == nil { formatter.formatOptions = [.withInternetDateTime]; startedAt = formatter.date(from: text) }
+            }
+            var managed: Bool?
+            if case .boolean(let value)? = object["is_package"] { managed = value }
+            var projectName: String?
+            if case .object(let labels)? = object["Labels"] {
+                if let label = labels["com.docker.compose.project"] {
+                    projectName = Self.officialNonEmptyString(label)
+                    if projectName == nil, managed != true { managed = nil }
+                }
+            } else if let labels = object["Labels"] {
+                if case .null = labels { } else if managed != true { managed = nil }
+            }
+            return ContainerControlTarget(item: item, running: flag("Running"), paused: flag("Paused"),
+                restarting: flag("Restarting"), startedAt: startedAt, managedByPackage: managed, projectName: projectName)
+        }
+        if targets.contains(where: { requiredIDs.contains($0.item.id) && $0.managedByPackage == false && $0.projectName != nil }) {
+            guard let capability = capabilities[DsmAPIName.dockerProject], capability.name == DsmAPIName.dockerProject, capability.minVersion == 1,
+                  capability.maxVersion >= 1, capability.selectedVersion != nil else { throw unavailableError() }
+            let projects: ServiceJSON
+            do {
+                projects = try await client.call(path: capability.path, api: capability.name, version: 1, method: "list",
+                    requestFormat: capability.requestFormat, parameters: [:], credential: credential, as: ServiceJSON.self)
+            } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+            guard case .object(let entries) = projects else { throw containerMutationChangedError() }
+            var ownership: [String: Bool] = [:]
+            for entry in entries.values {
+                guard case .object(let value) = entry, let name = Self.officialNonEmptyString(value["name"]), ownership[name] == nil else { throw containerMutationChangedError() }
+                let managed: Bool
+                if let marker = value["is_package"] {
+                    guard case .boolean(let flag) = marker else { throw containerMutationChangedError() }
+                    managed = flag
+                } else { managed = false }
+                ownership[name] = managed
+            }
+            for index in targets.indices where requiredIDs.contains(targets[index].item.id) && targets[index].managedByPackage == false {
+                if let name = targets[index].projectName { targets[index].managedByPackage = ownership[name] ?? false }
+            }
+        }
+        return targets
+    }
+
+    private static func containerControlVerified(_ target: ContainerControlTarget, review: ContainerControlReview) -> Bool {
+        guard target.item.name == review.name, target.managedByPackage == false, target.paused == false, target.restarting == false else { return false }
+        switch review.action {
+        case .start: return target.running == true
+        case .stop: return target.running == false
+        case .restart:
+            guard target.running == true, let before = review.startedAt, let after = target.startedAt else { return false }
+            return after > before
+        }
+    }
+
+    private func containerMutationChangedError() -> AppError {
+        AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("container.control.changed"))
+    }
+
+    private func containerControlUnverifiedError() -> AppError {
+        AppError(category: .partialFailure, isRetryable: false, safeUserMessage: L10n.string("container.control.unverified"))
+    }
+
+    private func containerManagedError() -> AppError {
+        AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("container.control.managed"))
     }
 
     public func searchContainerImages(query: String) async throws -> [ContainerRegistryImage] {
@@ -1037,71 +1225,330 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     public func loadContainerImageTags(repository: String) async throws -> [String] {
         let repository = try validatedName(repository, message: L10n.string("shared.73537393048d9596"))
-        let value = try await call(
-            DsmAPIName.dockerRegistry,
-            method: "tags",
-            parameters: ["repo": .string(repository)]
-        )
-        return value.objects(for: ["data", "tags", "items"])
-            .compactMap { ServiceJSON.object($0).firstString(["tag", "name"]) }
-            .reduce(into: []) { result, tag in
-                if !result.contains(tag) {
-                    result.append(tag)
+        guard let capability = capabilities[DsmAPIName.dockerRegistry], capability.name == DsmAPIName.dockerRegistry,
+              capability.minVersion == 1, capability.maxVersion >= 1, capability.selectedVersion != nil else { throw unavailableError() }
+        let value: ServiceJSON
+        do {
+            value = try await client.call(path: capability.path, api: capability.name, version: 1, method: "tags",
+                requestFormat: capability.requestFormat, parameters: ["repo": .string(repository)], credential: credential, as: ServiceJSON.self)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        // 已记录的标签既可为字符串数组，也可为 tag/name 对象；畸形项不是空列表。
+        let containers: [ServiceJSON]
+        if case .array = value {
+            containers = [value]
+        } else if let root = value.object {
+            containers = ["data", "tags", "items"].compactMap { root[$0] }
+        } else {
+            throw Self.invalidServiceResponseStatic()
+        }
+        guard !containers.isEmpty else { throw Self.invalidServiceResponseStatic() }
+        var result: [String]?
+        for container in containers {
+            guard let nodes = container.array else { throw Self.invalidServiceResponseStatic() }
+            var tags: [String] = []
+            for node in nodes {
+                let raw: String
+                if case .string(let text) = node {
+                    raw = text
+                } else if let object = node.object {
+                    let fields = ["tag", "name"].compactMap { object[$0] }
+                    let strings = fields.compactMap { field -> String? in
+                        if case .string(let text) = field { return text }
+                        return nil
+                    }
+                    guard !strings.isEmpty, strings.count == fields.count, Set(strings).count == 1 else {
+                        throw Self.invalidServiceResponseStatic()
+                    }
+                    raw = strings[0]
+                } else {
+                    throw Self.invalidServiceResponseStatic()
                 }
+                let tag = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !tag.isEmpty, raw.rangeOfCharacter(from: .controlCharacters) == nil else {
+                    throw Self.invalidServiceResponseStatic()
+                }
+                if !tags.contains(tag) { tags.append(tag) }
             }
+            if let previous = result, previous != tags { throw Self.invalidServiceResponseStatic() }
+            result = tags
+        }
+        return result ?? []
     }
 
     public func pullContainerImage(repository: String, tag: String) async throws {
         let repository = try validatedName(repository, message: L10n.string("shared.0c6ce91d30f67594"))
         let tag = try validatedName(tag, message: L10n.string("shared.6a2c72fe709bf1e8"))
-        try await callVoid(
-            DsmAPIName.dockerImage,
-            method: "pull_start",
-            parameters: ["repository": .string(repository), "tag": .string(tag)]
-        )
+        let result = try await startContainerImagePull(.init(repository: repository, tag: tag, isConfirmed: true))
+        guard result.stage == .downloading || result.stage == .ready else {
+            throw AppError(category: result.outcome.errorCategory == .permission ? .permissionDenied : .partialFailure,
+                isRetryable: false, safeUserMessage: L10n.string("container-image.pull.review-needed"))
+        }
+    }
+
+    private struct ImagePullOperation: Sendable {
+        let request: ContainerImagePullRequest
+        let baselineIDs: Set<String>
+        var taskID: DsmParameterValue?
+        var progress: ContainerImagePullProgress
+    }
+
+    public func canStartContainerImagePull() async -> Bool {
+        [DsmAPIName.dockerImage, DsmAPIName.dockerRegistry].allSatisfy { name in
+            guard let capability = capabilities[name] else { return false }
+            return capability.name == name && capability.minVersion == 1 && capability.maxVersion >= 1 && capability.selectedVersion != nil
+        }
+    }
+
+    public func startContainerImagePull(_ request: ContainerImagePullRequest) async throws -> ContainerImagePullProgress {
+        if Task.isCancelled { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
+        guard request.isValid, request.isConfirmed else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .validation) }
+        guard !imagePullBusy, !imageDeletionActive else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict) }
+        imagePullBusy = true
+        defer { imagePullBusy = false }
+        if let previous = imagePullOperations[request.id] {
+            guard previous.request == request else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict) }
+            if previous.progress.stage.isTerminal { return previous.progress }
+            return try await reviewImagePullOperation(id: request.id)
+        }
+        guard await canStartContainerImagePull() else { return try imagePullProgress(request, stage: .rejected, status: .unsupported, submitted: false, error: .unsupported) }
+        guard !imagePullOperations.values.contains(where: { !$0.progress.stage.isTerminal && $0.request.referenceKey == request.referenceKey }) else {
+            return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict)
+        }
+        let baselineIDs: Set<String>
+        do {
+            let tags = try await loadContainerImageTags(repository: request.repository)
+            guard tags.contains(request.tag) else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict) }
+            let images = try await loadContainerImageDefinitions()
+            guard images.allSatisfy({ $0.sourceImageID != nil }) else { throw Self.invalidServiceResponseStatic() }
+            baselineIDs = Set(images.filter { Self.imageAddress($0) == request.referenceKey }.compactMap(\.sourceImageID))
+            guard !pendingImageDeletions.values.flatMap({ $0 }).contains(where: {
+                Self.imageAddress($0) == request.referenceKey || ($0.tag == "<none>" && $0.sourceImageID.map(baselineIDs.contains) == true)
+            }) else { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .conflict) }
+            try Task.checkCancellation()
+        } catch is CancellationError { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
+        catch let error as AppError {
+            if error.category == .cancelled || Task.isCancelled { return try imagePullProgress(request, stage: .rejected, status: .cancelledBeforeSubmission, submitted: false) }
+            return try imagePullProgress(request, stage: .rejected, submitted: false, error: serviceMutationErrorCategory(for: error.category))
+        }
+        catch { return try imagePullProgress(request, stage: .rejected, submitted: false, error: .network) }
+
+        let initial = try imagePullProgress(request, stage: .awaitingReceipt)
+        imagePullOperations[request.id] = ImagePullOperation(request: request, baselineIDs: baselineIDs, taskID: nil, progress: initial)
+        do {
+            let response = try await containerImageRequest(method: "pull_start", parameters: ["repository": .string(request.repository), "tag": .string(request.tag)])
+            imagePullOperations[request.id]?.taskID = Self.imagePullTaskID(response["task_id"])
+        } catch let error as AppError where error.dsmCode != nil {
+            let result = try imagePullProgress(request, stage: .rejected, status: error.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
+                error: serviceMutationErrorCategory(for: error.category))
+            imagePullOperations[request.id]?.progress = result
+            return result
+        } catch { /* 可能已经启动：保留原请求，无回执不得按名称重绑或重发。 */ }
+        return try await reviewImagePullOperation(id: request.id)
+    }
+
+    public func loadContainerImagePulls() async throws -> [ContainerImagePullProgress] {
+        imagePullOperations.values.map(\.progress).filter { !$0.stage.isTerminal }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    public func reviewContainerImagePull(id: UUID) async throws -> ContainerImagePullProgress? {
+        guard !imagePullBusy, let operation = imagePullOperations[id] else { return nil }
+        if operation.progress.stage.isTerminal { return operation.progress }
+        imagePullBusy = true
+        defer { imagePullBusy = false }
+        return try await reviewImagePullOperation(id: id)
+    }
+
+    private func reviewImagePullOperation(id: UUID) async throws -> ContainerImagePullProgress {
+        guard let operation = imagePullOperations[id] else { throw Self.invalidServiceResponseStatic() }
+        let request = operation.request
+        var result: ContainerImagePullProgress
+        if Task.isCancelled {
+            result = try imagePullProgress(request, stage: operation.taskID == nil ? .awaitingReceipt : .needsReview, status: .cancellationRequestedAfterSubmission)
+        } else if let taskID = operation.taskID {
+            do {
+                let value = try await containerImageRequest(method: "pull_status", parameters: ["task_id": taskID])
+                guard let row = value.object, let repository = try Self.imageString(row, "repository"), let tag = try Self.imageString(row, "tag"),
+                      Self.normalizedImageName("\(repository):\(tag)") == request.referenceKey,
+                      case .boolean(let finished) = row["finished"] else { throw Self.invalidServiceResponseStatic() }
+                var percentage: Double?
+                if case .number(let current) = row["current"], case .number(let total) = row["total"],
+                   current.isFinite, total.isFinite, total > 0, current >= 0, current <= total { percentage = current / total * 100 }
+                if finished {
+                    let images = try await loadContainerImageDefinitions()
+                    guard images.allSatisfy({ $0.sourceImageID != nil }), images.contains(where: { Self.imageAddress($0) == request.referenceKey }) else {
+                        throw Self.invalidServiceResponseStatic()
+                    }
+                    result = try imagePullProgress(request, stage: .ready, percentage: 100)
+                } else { result = try imagePullProgress(request, stage: .downloading, percentage: percentage) }
+            } catch {
+                result = try imagePullProgress(request, stage: .needsReview, status: Task.isCancelled ? .cancellationRequestedAfterSubmission : nil,
+                    error: (error as? AppError).map { serviceMutationErrorCategory(for: $0.category) } ?? .network)
+            }
+        } else { result = try imagePullProgress(request, stage: .awaitingReceipt) }
+        imagePullOperations[id]?.progress = result
+        return result
+    }
+
+    private static func imagePullTaskID(_ value: ServiceJSON?) -> DsmParameterValue? {
+        switch value {
+        case .string(let text) where stableImageText(text): return .string(text)
+        // ServiceJSON 的数字为 Double，超出安全整数范围的任务编号不能无损回传。
+        case .number(let number) where number.isFinite && number >= 0 && number.rounded() == number && number <= 9_007_199_254_740_991:
+            return .integer(Int(number))
+        default: return nil
+        }
+    }
+
+    private func imagePullProgress(_ request: ContainerImagePullRequest, stage: ContainerImagePullStage, percentage: Double? = nil,
+        status: MutationResultStatus? = nil, submitted: Bool = true, error: MutationErrorCategory? = nil) throws -> ContainerImagePullProgress {
+        let status = status ?? (stage == .ready ? .confirmedSuccess : stage == .rejected ? .confirmedFailure : .submittedButUnverified)
+        return try ContainerImagePullProgress(id: request.id, repository: request.repository, tag: request.tag, stage: stage, percentage: percentage,
+            outcome: MutationResult(status: status, operation: "containerImagePull", submitted: submitted, requiresRefresh: stage != .rejected,
+                counts: MutationResultCounts(succeeded: stage == .ready ? 1 : 0,
+                    failed: stage == .rejected && status != .cancelledBeforeSubmission ? 1 : 0,
+                    unknown: stage.isTerminal ? 0 : 1), errorCategory: error))
     }
 
     public func deleteContainerImages(ids: [String]) async throws {
-        let ids = try validatedIDs(ids)
-        let currentIDs = Set(try await loadContainerManager().images.map(\.id))
-        guard ids.allSatisfy(currentIDs.contains) else {
-            throw validationError(L10n.string("shared.892f2476d57b950b"))
-        }
-        for id in ids {
-            try await callVoid(
-                DsmAPIName.dockerImage,
-                method: "delete",
-                parameters: ["id": .string(id)]
-            )
-        }
-        let remaining = Set(try await loadContainerManager().images.map(\.id))
-        guard ids.allSatisfy({ !remaining.contains($0) }) else {
-            throw verificationError(L10n.string("shared.298bd4a069695e72"))
+        let result = try await deleteContainerImagesResult(ids: ids)
+        guard result.status == .confirmedSuccess else {
+            throw AppError(category: result.status == .permissionDenied ? .permissionDenied : .partialFailure,
+                isRetryable: false, safeUserMessage: L10n.string(result.localizationKey ?? "container-image.delete.unverified"))
         }
     }
 
-    /// 容器映像删除使用内部接口；提交后重新读取映像列表确认。
+    private var imageDeletionContext: ServiceDeletionContext {
+        ServiceDeletionContext(operation: "containerImageDelete", localizationPrefix: "container-image.delete")
+    }
+
+    /// 内部 v1 按仓库/标签或裸身份删除；未知批次只核查，不重放。
     public func deleteContainerImagesResult(ids: [String]) async throws -> MutationResult {
-        try await performServiceDeletion(
-            ids: ids,
-            context: ServiceDeletionContext(
-                operation: "containerImageDelete",
-                localizationPrefix: "container-image.delete"
-            ),
-            isSupported: capabilities[DsmAPIName.dockerImage]?.selectedVersion != nil,
-            loadCurrentIDs: {
-                Set(try await self.loadContainerManager().images.map(\.id))
-            },
-            submit: { targets in
-                for id in targets {
-                    try await self.callVoid(
-                        DsmAPIName.dockerImage,
-                        method: "delete",
-                        parameters: ["id": .string(id)]
-                    )
-                }
+        let context = imageDeletionContext
+        if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
+        let targetIDs: Set<String>
+        do { targetIDs = Set(try validatedIDs(ids)) }
+        catch { return try deletionUnexpectedPreflightResult(targetCount: max(ids.count, 1), context: context) }
+        guard !imageDeletionActive, !imagePullBusy else { return try deletionDuplicateResult(targetCount: targetIDs.count, context: context) }
+        imageDeletionActive = true
+        defer { imageDeletionActive = false }
+        if let pending = pendingImageDeletions[targetIDs] {
+            return try await reviewImageDeletionTargets(pending, ids: targetIDs)
+        }
+        guard let capability = capabilities[DsmAPIName.dockerImage], capability.name == DsmAPIName.dockerImage,
+              capability.minVersion == 1, capability.maxVersion >= 1, capability.selectedVersion != nil else {
+            return try deletionUnsupportedResult(targetCount: targetIDs.count, context: context)
+        }
+        let selected: [ContainerImage]
+        do {
+            let images = try await loadContainerImageDefinitions()
+            guard images.allSatisfy({ $0.sourceImageID != nil }) else { throw Self.invalidServiceResponseStatic() }
+            selected = images.filter { targetIDs.contains($0.id) }
+            guard selected.count == targetIDs.count else { return try deletionMissingTargetResult(targetCount: targetIDs.count, context: context) }
+            guard !imagePullOperations.values.contains(where: { pull in !pull.progress.stage.isTerminal && selected.contains(where: {
+                Self.imageAddress($0) == pull.request.referenceKey || ($0.tag == "<none>" && $0.sourceImageID.map(pull.baselineIDs.contains) == true)
+            }) }) else { return try deletionDuplicateResult(targetCount: targetIDs.count, context: context) }
+            let pendingTargets = pendingImageDeletions.values.flatMap { $0 }
+            guard !selected.contains(where: { target in pendingTargets.contains(where: { Self.imageTargetsOverlap(target, $0) }) }) else {
+                return try deletionDuplicateResult(targetCount: targetIDs.count, context: context)
             }
-        )
+            // 裸身份会删除整个 ID，不允许带走未确认的有效标签。
+            guard !selected.contains(where: { target in target.tag == "<none>" && images.contains(where: {
+                $0.sourceImageID == target.sourceImageID && $0.tag != "<none>"
+            }) }) else { throw containerMutationChangedError() }
+            let usedIDs = try Self.containerImageUsage(images, containers: try await containerInventoryPayload())
+            guard targetIDs.isDisjoint(with: usedIDs) else { throw validationError(L10n.string("container-image.delete.in-use")) }
+            try Task.checkCancellation()
+        } catch let error as AppError {
+            return try deletionPreflightResult(error, targetCount: targetIDs.count, context: context)
+        } catch is CancellationError { return try deletionCancellationBeforeSubmission(context: context) }
+        catch { return try deletionUnexpectedPreflightResult(targetCount: targetIDs.count, context: context) }
+
+        var objects: [[String: DsmJSONValue]] = []
+        let tagged = Dictionary(grouping: selected.filter { $0.tag != "<none>" }, by: \.repository)
+        for repository in tagged.keys.sorted() {
+            objects.append(["repository": .string(repository), "tags": .array(tagged[repository]!.map { .string($0.tag) })])
+        }
+        for identity in Set(selected.filter { $0.tag == "<none>" }.compactMap(\.sourceImageID)).sorted() {
+            objects.append(["identity": .string(identity)])
+        }
+        pendingImageDeletions[targetIDs] = selected
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: 1, method: "delete",
+                requestFormat: capability.requestFormat, parameters: ["images": .objectArray(objects)], credential: credential)
+        } catch let error as DsmNetworkError {
+            let mapped = DsmErrorMapper.map(error)
+            if mapped.dsmCode != nil {
+                // 明确拒绝不能因其他客户端删掉目标而改判成功，也不保留已拒绝写的未知锁。
+                pendingImageDeletions[targetIDs] = nil
+                return try serviceDeletionResult(status: mapped.category == .permissionDenied ? .permissionDenied : .confirmedFailure,
+                    context: context, submitted: true, requiresRefresh: false, succeeded: 0, failed: targetIDs.count, unknown: 0,
+                    errorCategory: serviceMutationErrorCategory(for: mapped.category),
+                    localizationSuffix: mapped.category == .permissionDenied ? "permission-denied" : "failed", diagnosticSuffix: "rejected")
+            }
+        } catch { /* 回执丢失或取消后只核查原标签，不重放。 */ }
+        return try await reviewImageDeletionTargets(selected, ids: targetIDs)
+    }
+
+    public func reviewContainerImageDeletion(ids: [String]) async throws -> MutationResult {
+        let context = imageDeletionContext
+        let targetIDs: Set<String>
+        do { targetIDs = Set(try validatedIDs(ids)) }
+        catch { return try deletionUnexpectedPreflightResult(targetCount: max(ids.count, 1), context: context) }
+        guard !imageDeletionActive else { return try deletionDuplicateResult(targetCount: targetIDs.count, context: context) }
+        guard let targets = pendingImageDeletions[targetIDs] else {
+            return try deletionMissingTargetResult(targetCount: targetIDs.count, context: context)
+        }
+        imageDeletionActive = true
+        defer { imageDeletionActive = false }
+        return try await reviewImageDeletionTargets(targets, ids: targetIDs)
+    }
+
+    private func reviewImageDeletionTargets(_ targets: [ContainerImage], ids: Set<String>) async throws -> MutationResult {
+        let context = imageDeletionContext
+        if Task.isCancelled { return try deletionCancellationAfterSubmission(targetCount: ids.count, context: context) }
+        do {
+            let current = try await loadContainerImageDefinitions()
+            guard current.allSatisfy({ $0.sourceImageID != nil }) else { throw Self.invalidServiceResponseStatic() }
+            let remaining = Set(targets.filter { target in current.contains(where: {
+                target.tag == "<none>" ? $0.sourceImageID == target.sourceImageID : Self.imageAddress($0) == Self.imageAddress(target)
+            }) }.map(\.id))
+            let result = try deletionReadbackResult(targets: ids, remaining: remaining, context: context)
+            if result.status == .confirmedSuccess { pendingImageDeletions[ids] = nil }
+            return result
+        } catch let error as AppError { return try deletionReadbackFailureResult(error, targetCount: ids.count, context: context) }
+        catch { return try deletionUnexpectedReadbackResult(targetCount: ids.count, context: context) }
+    }
+
+    private func loadContainerImageDefinitions() async throws -> [ContainerImage] {
+        let payload = try await containerImageListPayload()
+        return try Self.containerImages(payload)
+    }
+
+    private func containerImageListResult() async throws -> SupplementaryServiceResult {
+        guard let capability = capabilities[DsmAPIName.dockerImage], capability.name == DsmAPIName.dockerImage,
+              capability.minVersion == 1, capability.maxVersion >= 1, capability.selectedVersion != nil else { return .unavailable }
+        do { return .available(try await containerImageListPayload()) }
+        catch let error as AppError {
+            switch error.category {
+            case .authenticationRequired, .otpRequired, .tlsUntrusted, .tlsCertificateChanged, .cancelled: throw error
+            default: return .failed
+            }
+        }
+    }
+
+    private func containerImageListPayload() async throws -> ServiceJSON {
+        try await containerImageRequest(method: "list", parameters: ["offset": .integer(0), "limit": .integer(-1), "show_dsm": .boolean(false)])
+    }
+
+    private func containerImageRequest(method: String, parameters: [String: DsmParameterValue]) async throws -> ServiceJSON {
+        guard let capability = capabilities[DsmAPIName.dockerImage], capability.name == DsmAPIName.dockerImage,
+              capability.minVersion == 1, capability.maxVersion >= 1, capability.selectedVersion != nil else { throw unavailableError() }
+        do {
+            let value = try await client.call(path: capability.path, api: capability.name, version: 1, method: method,
+                requestFormat: capability.requestFormat, parameters: parameters,
+                credential: credential, as: ServiceJSON.self)
+            return value
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
     }
 
     public func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws {
@@ -1295,7 +1742,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         let machines = try Self.strictMappedItems(
             guestJSON,
             keys: ["guests", "guest", "vms"],
-            parser: Self.machine
+            parser: { Self.machine($0, internalMemoryKiB: !official) }
         )
         let hosts: [VirtualizationResource] = Self.strictSupplementaryResources(
             hostResult,
@@ -1398,7 +1845,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             configuration.networkID,
             message: L10n.string("shared.2b03964bdff5a681")
         )
-        guard capabilities[DsmAPIName.virtualizationGuest]?.selectedVersion != nil else {
+        guard supportsInternalVmmWrite(DsmAPIName.virtualizationGuest) else {
             throw unavailableError()
         }
         let snapshot = try await loadVirtualMachineManager()
@@ -1423,7 +1870,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
         let isWindows = configuration.operatingSystem == .windows
         let usesUEFI = configuration.firmware == .uefi
-        let bootImages = [configuration.bootImageID ?? "", ""]
+        let bootImages = [Self.nonEmpty(configuration.bootImageID) ?? "unmounted", "unmounted"]
         let disk: [String: DsmJSONValue] = [
             "type": .string("add"),
             "vdisk_mode": .integer(1),
@@ -1446,12 +1893,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         var parameters: [String: DsmParameterValue] = [
             "guest_privilege": .objectArray([]),
             "iso_images": .stringArray(bootImages),
-            "autorun": .integer(configuration.autoStart ? 1 : 0),
-            "boot_from": .string(configuration.bootImageID == nil ? "disk" : "iso"),
+            "autorun": .integer(configuration.startupBehavior.rawValue),
+            "boot_from": .string(Self.nonEmpty(configuration.bootImageID) == nil ? "disk" : "iso"),
             "bios": .string(usesUEFI ? "uefi" : "legacy"),
             "kb_layout": .string("Default"),
             "usb_version": .integer(0),
-            "usbs": .stringArray(["", "", "", ""]),
+            "usbs": .stringArray(["unmounted", "unmounted", "unmounted", "unmounted"]),
             "is_windows_vm": .boolean(isWindows),
             "use_ovmf": .boolean(usesUEFI),
             "vnics": .objectArray([network]),
@@ -1477,7 +1924,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             "synovmm_ui_id": .string(UUID().uuidString.lowercased())
         ]
         if let allocated = storage.allocatedBytes {
-            parameters["allocated_size"] = .string(String(allocated))
+            guard let exact = Int(exactly: allocated), exact >= 0 else { throw unavailableError() }
+            parameters["allocated_size"] = .integer(exact)
         }
         if let capacity = storage.capacityBytes {
             parameters["size"] = .string(String(capacity))
@@ -1486,7 +1934,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         try await callVoid(
             DsmAPIName.virtualizationGuest,
             method: "create",
-            parameters: parameters
+            parameters: parameters,
+            fixedVersion: 1
         )
         let updated = try await loadVirtualMachineManager()
         guard updated.machines.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
@@ -1500,7 +1949,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         configuration: VirtualMachineUpdate
     ) async throws {
         let id = try validatedIDs([id])[0]
-        guard capabilities[DsmAPIName.virtualizationGuest]?.selectedVersion != nil else {
+        guard !activePublicVmmPowerIDs.contains(id), unverifiedPublicVmmPower[id] == nil else {
+            throw validationError(L10n.string("virtual-machine.power.review-required"))
+        }
+        guard let capability = capabilities[DsmAPIName.virtualizationGuest],
+              capability.name == DsmAPIName.virtualizationGuest, capability.selectedVersion != nil,
+              capability.minVersion <= 1, capability.maxVersion >= 1 else {
             throw unavailableError()
         }
         let snapshot = try await loadVirtualMachineManager()
@@ -1527,13 +1981,13 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             parameters["desc"] = .string(description)
         }
         if let cpuWeight = configuration.cpuWeight {
-            guard (1...512).contains(cpuWeight) else {
+            guard [8, 64, 256, 512, 1024].contains(cpuWeight) else {
                 throw validationError(L10n.string("shared.4f060f32743040c5"))
             }
             parameters["cpu_weight"] = .integer(cpuWeight)
         }
-        if let autoStart = configuration.autoStart {
-            parameters["autorun"] = .integer(autoStart ? 1 : 0)
+        if let startupBehavior = configuration.startupBehavior {
+            parameters["autorun"] = .integer(startupBehavior.rawValue)
         }
 
         let isRunning = Self.isVirtualMachineRunning(current.status)
@@ -1558,20 +2012,44 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             throw validationError(L10n.string("shared.c01558c4918833c0"))
         }
 
-        try await callVoid(
-            DsmAPIName.virtualizationGuest,
-            method: "set",
-            parameters: parameters
-        )
-        let updated = try await loadVirtualMachineManager()
-        guard let verified = updated.machines.first(where: { $0.id == id }),
-              configuration.name.map({ verified.name == $0 }) ?? true,
-              configuration.cpuCount.map({ verified.cpuCount == $0 }) ?? true,
-              configuration.memoryMiB.map({
-                  verified.memoryBytes == Int64($0) * 1_024 * 1_024
-              }) ?? true else {
-            throw verificationError(L10n.string("shared.f7c1562e7a9e3cd8"))
+        // 当前官方编辑器固定 Guest.set v1；不能跟随只读 get/list 的 v2。
+        do {
+            try await client.callVoid(path: capability.path, api: DsmAPIName.virtualizationGuest, version: 1,
+                method: "set", requestFormat: capability.requestFormat, parameters: parameters, credential: credential)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        // 内部写只按同一内部清单的原始字段核查，不能用公开清单或展示默认值证明保存。
+        let updated = try await call(DsmAPIName.virtualizationGuest, method: "list")
+        guard try Self.virtualMachineUpdateMatches(updated, id: id, parameters: parameters) else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("shared.f7c1562e7a9e3cd8"))
         }
+    }
+
+    private static func virtualMachineUpdateMatches(
+        _ value: ServiceJSON,
+        id: String,
+        parameters: [String: DsmParameterValue]
+    ) throws -> Bool {
+        let machines = try strictRootObjects(value, keys: ["guests", "guest", "vms"])
+        let targets = machines.filter { machine in
+            if case .string(let actual)? = machine["guest_id"] { return actual == id }
+            return false
+        }
+        guard targets.count == 1, let target = targets.first else { return false }
+        // 保留空说明和精确数字；不将缺失、布尔、小数或展示层默认值转换为已保存。
+        for key in ["name", "desc", "vcpu_num", "vram_size", "cpu_weight", "autorun"] {
+            guard let expected = parameters[key] else { continue }
+            switch expected {
+            case .string(let text):
+                guard case .string(let actual)? = target[key], actual == text else { return false }
+            case .integer(let number):
+                // 内部清单读取 KiB，但 create/set 的内存参数为 MiB；不能直接比较原始数值。
+                let expectedRead = key == "vram_size" ? Double(number) * 1_024 : Double(number)
+                guard case .number(let actual)? = target[key], actual == expectedRead else { return false }
+            default:
+                return false
+            }
+        }
+        return true
     }
 
     public func openVirtualMachineConsole(id: String) async throws -> VirtualMachineConsoleSession {
@@ -1619,20 +2097,10 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         ids: [String],
         action: VirtualMachinePowerAction
     ) async throws {
-        let ids = try validatedIDs(ids)
         if capabilities[DsmAPIName.virtualizationAPIGuestAction]?.selectedVersion != nil {
-            let method: String = switch action {
-            case .powerOn: "poweron"
-            case .shutdown: "shutdown"
-            case .powerOff: "poweroff"
-            case .restart: "reboot"
-            }
-            try await callVoid(
-                DsmAPIName.virtualizationAPIGuestAction,
-                method: method,
-                parameters: ["guest_id": .string(ids.joined(separator: ","))]
-            )
+            try await controlPublicVirtualMachines(ids: ids, action: action)
         } else {
+            let ids = try validatedIDs(ids)
             let command: String = switch action {
             case .powerOn: "on"
             case .shutdown: "shutdown"
@@ -1650,23 +2118,21 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     }
 
     public func deleteVirtualMachines(ids: [String]) async throws {
-        let ids = try validatedIDs(ids)
-        let api = capabilities[DsmAPIName.virtualizationAPIGuest]?.selectedVersion != nil
-            ? DsmAPIName.virtualizationAPIGuest
-            : DsmAPIName.virtualizationGuest
-        try await callVoid(
-            api,
-            method: "delete",
-            parameters: ["guest_id": .string(ids.joined(separator: ","))]
-        )
-        let remaining = try await loadVirtualMachineManager().machines.map(\.id)
-        guard ids.allSatisfy({ !remaining.contains($0) }) else {
-            throw verificationError(L10n.string("shared.bf17ba5ccdef0c83"))
+        let result = try await deleteVirtualMachinesResult(ids: ids)
+        guard result.status == .confirmedSuccess else {
+            throw AppError(category: result.errorCategory == .authentication ? .authenticationRequired : result.status == .permissionDenied ? .permissionDenied : .partialFailure,
+                isRetryable: false, safeUserMessage: result.localizationKey.map { L10n.string($0) }
+                    ?? L10n.string("shared.bf17ba5ccdef0c83"))
         }
     }
 
     /// 虚拟机删除优先使用公开 API；提交后通过虚拟机列表逐项确认，未知结果不得自动重放。
     public func deleteVirtualMachinesResult(ids: [String]) async throws -> MutationResult {
+        if capabilities[DsmAPIName.virtualizationAPIGuest]?.selectedVersion != nil {
+            return try await deletePublicVmmResources(ids: ids, api: DsmAPIName.virtualizationAPIGuest,
+                arrayKey: "guests", idKey: "guest_id",
+                context: ServiceDeletionContext(operation: "virtualMachineDelete", localizationPrefix: "virtual-machine.delete"))
+        }
         let context = ServiceDeletionContext(
             operation: "virtualMachineDelete",
             localizationPrefix: "virtual-machine.delete"
@@ -1785,7 +2251,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         id: String,
         configuration: VirtualMachineNetworkUpdate
     ) async throws {
-        guard capabilities[DsmAPIName.virtualizationNetwork]?.selectedVersion != nil else {
+        guard supportsInternalVmmWrite(DsmAPIName.virtualizationNetwork) else {
             throw unavailableError()
         }
         let id = try validatedName(id, message: L10n.string("shared.ca7aaa6738684c9c"))
@@ -1806,7 +2272,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             parameters: [
                 "network_id": .string(id),
                 "name": .string(name)
-            ]
+            ],
+            fixedVersion: 1
         )
         let updated = try await loadVirtualMachineManager()
         guard updated.networks.contains(where: { $0.id == id && $0.name == name }) else {
@@ -1816,7 +2283,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
 
     /// VMM 网页端网络删除使用的内部接口；删除前由界面确认，提交后回读校验。
     public func deleteVirtualMachineNetworks(ids: [String]) async throws {
-        guard capabilities[DsmAPIName.virtualizationNetwork]?.selectedVersion != nil else {
+        guard supportsInternalVmmWrite(DsmAPIName.virtualizationNetwork) else {
             throw unavailableError()
         }
         let ids = try validatedIDs(ids)
@@ -1828,7 +2295,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             try await callVoid(
                 DsmAPIName.virtualizationNetwork,
                 method: "delete",
-                parameters: ["network_id": .string(id)]
+                parameters: ["network_id": .string(id)],
+                fixedVersion: 1
             )
         }
         let remaining = Set(try await loadVirtualMachineManager().networks.map(\.id))
@@ -1845,7 +2313,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 operation: "virtualMachineNetworkDelete",
                 localizationPrefix: "virtual-machine-network.delete"
             ),
-            isSupported: capabilities[DsmAPIName.virtualizationNetwork]?.selectedVersion != nil,
+            isSupported: supportsInternalVmmWrite(DsmAPIName.virtualizationNetwork),
             loadCurrentIDs: {
                 Set(try await self.loadVirtualMachineManager().networks.map(\.id))
             },
@@ -1854,86 +2322,298 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                     try await self.callVoid(
                         DsmAPIName.virtualizationNetwork,
                         method: "delete",
-                        parameters: ["network_id": .string(id)]
+                        parameters: ["network_id": .string(id)],
+                        fixedVersion: 1
                     )
                 }
             }
         )
     }
 
-    /// 映像删除优先使用公开 VMM API；内部分支只在公开能力缺失时启用。
+    /// 映像删除使用同步空响应；公开接口固定 v1，不根据无关字段猜测异步任务。
     public func deleteVirtualMachineImages(ids: [String]) async throws {
-        let ids = try validatedIDs(ids)
-        let api = capabilities[DsmAPIName.virtualizationAPIGuestImage]?.selectedVersion != nil
-            ? DsmAPIName.virtualizationAPIGuestImage
-            : DsmAPIName.virtualizationGuestImage
-        guard capabilities[api]?.selectedVersion != nil else {
-            throw unavailableError()
-        }
-        let currentIDs = Set(try await loadVirtualMachineManager().images.map(\.id))
-        guard ids.allSatisfy(currentIDs.contains) else {
-            throw validationError(L10n.string("shared.892f2476d57b950b"))
-        }
-        for id in ids {
-            if api == DsmAPIName.virtualizationAPIGuestImage {
-                let result = try await call(
-                    api,
-                    method: "delete",
-                    parameters: ["image_id": .string(id)]
-                )
-                if let taskID = result.firstString(["task_id", "task", "id"]) {
-                    try await waitForVirtualizationTask(id: taskID)
-                }
-            } else {
-                try await callVoid(
-                    api,
-                    method: "delete",
-                    parameters: ["image_id": .string(id)]
-                )
-            }
-        }
-        let remaining = Set(try await loadVirtualMachineManager().images.map(\.id))
-        guard ids.allSatisfy({ !remaining.contains($0) }) else {
-            throw verificationError(L10n.string("shared.298bd4a069695e72"))
+        let result = try await deleteVirtualMachineImagesResult(ids: ids)
+        guard result.status == .confirmedSuccess else {
+            throw AppError(category: result.errorCategory == .authentication ? .authenticationRequired : result.status == .permissionDenied ? .permissionDenied : .partialFailure,
+                isRetryable: false, safeUserMessage: result.localizationKey.map { L10n.string($0) }
+                    ?? L10n.string("shared.298bd4a069695e72"))
         }
     }
 
-    /// VMM 映像删除优先使用公开 API；任务提交后仍以映像列表为最终依据。
+    private struct PublicVmmPowerTarget {
+        let name: String
+        let action: VirtualMachinePowerAction
+    }
+
+    /// 公开电源 v1 只接受单台身份。未确认结果留在本次仓库实例内，再次调用只核对。
+    private func controlPublicVirtualMachines(ids: [String], action: VirtualMachinePowerAction) async throws {
+        try Task.checkCancellation()
+        guard !ids.isEmpty, ids.allSatisfy(Self.isPublicVmmDeletionID) else {
+            throw validationError(L10n.string("shared.e594e487c681e714"))
+        }
+        guard action != .restart else {
+            throw AppError(category: .apiUnavailable, isRetryable: false,
+                safeUserMessage: L10n.string("virtual-machine.power.restart-unavailable"))
+        }
+        let actionAPI = DsmAPIName.virtualizationAPIGuestAction
+        let guestAPI = DsmAPIName.virtualizationAPIGuest
+        guard let capability = capabilities[actionAPI], capability.name == actionAPI,
+              capability.minVersion <= 1, capability.maxVersion >= 1,
+              let guest = capabilities[guestAPI], guest.name == guestAPI,
+              guest.selectedVersion != nil, guest.minVersion <= 1, guest.maxVersion >= 1 else {
+            throw unavailableError()
+        }
+        let targets = Array(Set(ids)).sorted()
+        let targetSet = Set(targets)
+        guard activePublicVmmPowerIDs.isDisjoint(with: targetSet),
+              (activeDeletionIDsByOperation["virtualMachineDelete"] ?? []).isDisjoint(with: targetSet),
+              activeVirtualMachineDeletionIDs.isDisjoint(with: targetSet),
+              (unverifiedPublicVmmDeletions[guestAPI] ?? []).isDisjoint(with: targetSet) else {
+            throw validationError(L10n.string("virtual-machine.power.review-required"))
+        }
+        activePublicVmmPowerIDs.formUnion(targetSet)
+        defer { activePublicVmmPowerIDs.subtract(targetSet) }
+
+        let prior = targets.filter { unverifiedPublicVmmPower[$0] != nil }
+        if !prior.isEmpty {
+            // 混合选择中即使旧结果已确认，也不借核对启动尚未执行的其他目标。
+            for id in prior {
+                guard let pending = unverifiedPublicVmmPower[id], pending.action == action else {
+                    throw validationError(L10n.string("virtual-machine.power.review-required"))
+                }
+            }
+            for id in prior {
+                let pending = unverifiedPublicVmmPower[id]!
+                let current = try await readPublicVmmPowerTarget(id: id, capability: guest)
+                guard current.name == pending.name, current.status == publicVmmDesiredState(pending.action) else {
+                    throw verificationError(L10n.string("virtual-machine.power.unverified"))
+                }
+                unverifiedPublicVmmPower.removeValue(forKey: id)
+            }
+            guard prior.count == targets.count else {
+                throw verificationError(L10n.string("virtual-machine.power.review-only"))
+            }
+            return
+        }
+
+        let initialState = action == .powerOn ? "shutdown" : "running"
+        var baselines: [String: String] = [:]
+        for id in targets {
+            let current = try await readPublicVmmPowerTarget(id: id, capability: guest)
+            guard current.status == initialState else {
+                throw validationError(L10n.string("virtual-machine.power.target-changed"))
+            }
+            baselines[id] = current.name
+        }
+        for id in targets {
+            // 首次写入前已核对全部目标；每项提交前再检查其身份与允许状态。
+            let current = try await readPublicVmmPowerTarget(id: id, capability: guest)
+            guard current.name == baselines[id], current.status == initialState else {
+                throw validationError(L10n.string("virtual-machine.power.target-changed"))
+            }
+            try Task.checkCancellation()
+            unverifiedPublicVmmPower[id] = PublicVmmPowerTarget(name: current.name, action: action)
+            let method = action == .powerOn ? "poweron" : action == .shutdown ? "shutdown" : "poweroff"
+            do {
+                try await client.callVoid(path: capability.path, api: actionAPI, version: 1, method: method,
+                    requestFormat: capability.requestFormat, parameters: ["guest_id": .string(id)], credential: credential)
+            } catch let error as DsmNetworkError {
+                if case .api(let code, _) = error, code > 0 {
+                    unverifiedPublicVmmPower.removeValue(forKey: id)
+                    throw DsmErrorMapper.map(error)
+                }
+                if case .invalidRequest = error {
+                    unverifiedPublicVmmPower.removeValue(forKey: id)
+                    throw DsmErrorMapper.map(error)
+                }
+                if case .cancelled = error { throw CancellationError() }
+                throw verificationError(L10n.string("virtual-machine.power.unverified"))
+            } catch let error as DsmCertificateTrustError {
+                // 保留证书安全反馈，不重试，也不将其降为普通网络提示。
+                throw error
+            } catch {
+                throw verificationError(L10n.string("virtual-machine.power.unverified"))
+            }
+            try Task.checkCancellation()
+            let updated = try await readPublicVmmPowerTarget(id: id, capability: guest)
+            guard updated.name == current.name, updated.status == publicVmmDesiredState(action) else {
+                throw verificationError(L10n.string("virtual-machine.power.unverified"))
+            }
+            unverifiedPublicVmmPower.removeValue(forKey: id)
+        }
+    }
+
+    private func publicVmmDesiredState(_ action: VirtualMachinePowerAction) -> String {
+        action == .powerOn ? "running" : "shutdown"
+    }
+
+    private func readPublicVmmPowerTarget(id: String, capability: ApiCapability) async throws -> (name: String, status: String) {
+        let value: ServiceJSON
+        do {
+            value = try await client.call(path: capability.path, api: capability.name, version: 1, method: "get",
+                requestFormat: capability.requestFormat, parameters: ["guest_id": .string(id)], credential: credential, as: ServiceJSON.self)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        try Task.checkCancellation()
+        guard case .string(let identity)? = value["guest_id"], identity == id,
+              case .string(let name)? = value["guest_name"], !name.isEmpty,
+              !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+              case .string(let status)? = value["status"], !status.isEmpty else { throw invalidServiceResponse() }
+        return (name, status)
+    }
+
     public func deleteVirtualMachineImagesResult(ids: [String]) async throws -> MutationResult {
-        let api = capabilities[DsmAPIName.virtualizationAPIGuestImage]?.selectedVersion != nil
-            ? DsmAPIName.virtualizationAPIGuestImage
-            : DsmAPIName.virtualizationGuestImage
+        let context = ServiceDeletionContext(operation: "virtualMachineImageDelete", localizationPrefix: "virtual-machine-image.delete")
+        if capabilities[DsmAPIName.virtualizationAPIGuestImage]?.selectedVersion != nil {
+            return try await deletePublicVmmResources(ids: ids, api: DsmAPIName.virtualizationAPIGuestImage,
+                arrayKey: "images", idKey: "image_id", context: context)
+        }
+        // 内部兼容分支沿用已记录契约；读取失败不能当作映像已消失。
         return try await performServiceDeletion(
-            ids: ids,
-            context: ServiceDeletionContext(
-                operation: "virtualMachineImageDelete",
-                localizationPrefix: "virtual-machine-image.delete"
-            ),
-            isSupported: capabilities[api]?.selectedVersion != nil,
+            ids: ids, context: context,
+            isSupported: capabilities[DsmAPIName.virtualizationGuestImage]?.selectedVersion != nil,
             loadCurrentIDs: {
-                Set(try await self.loadVirtualMachineManager().images.map(\.id))
+                let snapshot = try await self.loadVirtualMachineManager()
+                guard !snapshot.failedSections.contains(.images), !snapshot.unavailableSections.contains(.images) else {
+                    throw self.unavailableError()
+                }
+                return Set(snapshot.images.map(\.id))
             },
             submit: { targets in
                 for id in targets {
-                    if api == DsmAPIName.virtualizationAPIGuestImage {
-                        let result = try await self.call(
-                            api,
-                            method: "delete",
-                            parameters: ["image_id": .string(id)]
-                        )
-                        if let taskID = result.firstString(["task_id", "task", "id"]) {
-                            try await self.waitForVirtualizationTask(id: taskID)
-                        }
-                    } else {
-                        try await self.callVoid(
-                            api,
-                            method: "delete",
-                            parameters: ["image_id": .string(id)]
-                        )
-                    }
+                    try Task.checkCancellation()
+                    try await self.callVoid(DsmAPIName.virtualizationGuestImage, method: "delete",
+                        parameters: ["image_id": .string(id)])
                 }
             }
         )
+    }
+
+    /// 公开 VMM 删除逐项闭环；未执行项计入未完成，未知项单独保留，不自动重发。
+    private func deletePublicVmmResources(
+        ids: [String], api: String, arrayKey: String, idKey: String, context: ServiceDeletionContext
+    ) async throws -> MutationResult {
+        if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
+        guard !ids.isEmpty, ids.allSatisfy(Self.isPublicVmmDeletionID) else {
+            return try deletionUnexpectedPreflightResult(targetCount: max(1, ids.count), context: context)
+        }
+        let targets = Array(Set(ids)).sorted()
+        guard let capability = capabilities[api], capability.name == api, capability.selectedVersion != nil,
+              capability.minVersion <= 1, capability.maxVersion >= 1 else {
+            return try deletionUnsupportedResult(targetCount: targets.count, context: context)
+        }
+        let targetSet = Set(targets)
+        let active = activeDeletionIDsByOperation[context.operation] ?? []
+        if api == DsmAPIName.virtualizationAPIGuest,
+           (!activePublicVmmPowerIDs.isDisjoint(with: targetSet) || targets.contains(where: { unverifiedPublicVmmPower[$0] != nil })) {
+            return try deletionDuplicateResult(targetCount: targets.count, context: context)
+        }
+        guard active.isDisjoint(with: targetSet) else {
+            return try deletionDuplicateResult(targetCount: targets.count, context: context)
+        }
+        activeDeletionIDsByOperation[context.operation] = active.union(targetSet)
+        defer {
+            activeDeletionIDsByOperation[context.operation]?.subtract(targetSet)
+        }
+        var succeeded = 0
+        var submitted = false
+        func summary(unknown: Int, category: MutationErrorCategory? = nil) throws -> MutationResult {
+            let failed = targets.count - succeeded - unknown
+            let status: MutationResultStatus = Task.isCancelled && submitted ? .cancellationRequestedAfterSubmission
+                : succeeded == targets.count ? .confirmedSuccess
+                : succeeded > 0 ? .partialSuccess
+                : unknown > 0 ? .submittedButUnverified
+                : category == .permission ? .permissionDenied : category == .unsupported ? .unsupported : .confirmedFailure
+            return try serviceDeletionResult(status: status, context: context, submitted: submitted,
+                requiresRefresh: submitted && status != .confirmedSuccess,
+                succeeded: succeeded, failed: failed, unknown: unknown, errorCategory: category,
+                localizationSuffix: category == .authentication ? "authentication" : status == .confirmedSuccess ? "completed" : succeeded > 0 ? "partial" : unknown > 0 ? "unverified" : status == .permissionDenied ? "permission-denied" : status == .unsupported ? "unsupported" : "failed",
+                diagnosticSuffix: "public-v1-batch")
+        }
+        let current: Set<String>
+        do {
+            current = try await publicVmmDeletionIDs(capability: capability, arrayKey: arrayKey, idKey: idKey)
+        } catch let error as AppError {
+            return try deletionPreflightResult(error, targetCount: targets.count, context: context)
+        } catch {
+            if Task.isCancelled { return try deletionCancellationBeforeSubmission(context: context) }
+            return try deletionUnexpectedPreflightResult(targetCount: targets.count, context: context)
+        }
+        let prior = (unverifiedPublicVmmDeletions[api] ?? []).intersection(targetSet)
+        if !prior.isEmpty {
+            // 对先前未知的同一目标只核对，不借这次调用启动任何新删除。
+            let resolved = prior.subtracting(current)
+            unverifiedPublicVmmDeletions[api]?.subtract(resolved)
+            succeeded = resolved.count
+            submitted = true
+            return try summary(unknown: prior.intersection(current).count)
+        }
+        guard targetSet.isSubset(of: current) else {
+            return try deletionMissingTargetResult(targetCount: targets.count, context: context)
+        }
+        var observedIDs = current
+        for id in targets {
+            if Task.isCancelled {
+                if submitted { return try summary(unknown: 0) }
+                return try deletionCancellationBeforeSubmission(context: context)
+            }
+            guard observedIDs.contains(id) else { return try summary(unknown: 0, category: .conflict) }
+            unverifiedPublicVmmDeletions[api, default: []].insert(id)
+            submitted = true
+            var submissionError: AppError?
+            var explicitlyRejected = false
+            do {
+                try await client.callVoid(path: capability.path, api: api, version: 1, method: "delete",
+                    requestFormat: capability.requestFormat, parameters: [idKey: .string(id)], credential: credential)
+            } catch let error as DsmNetworkError {
+                submissionError = DsmErrorMapper.map(error)
+                if case .api(let code, _) = error, code > 0 { explicitlyRejected = true }
+            } catch let error as AppError {
+                submissionError = error
+            } catch {
+                return try summary(unknown: 1, category: Task.isCancelled ? nil : .unknown)
+            }
+            if let error = submissionError, explicitlyRejected {
+                unverifiedPublicVmmDeletions[api]?.remove(id)
+                return try summary(unknown: 0, category: serviceMutationErrorCategory(for: error.category))
+            }
+            if Task.isCancelled { return try summary(unknown: 1) }
+            do {
+                let remaining = try await publicVmmDeletionIDs(capability: capability, arrayKey: arrayKey, idKey: idKey)
+                guard !remaining.contains(id) else {
+                    return try summary(unknown: 1, category: submissionError.map { serviceMutationErrorCategory(for: $0.category) })
+                }
+                unverifiedPublicVmmDeletions[api]?.remove(id)
+                observedIDs = remaining
+                succeeded += 1
+            } catch let error as AppError {
+                return try summary(unknown: 1, category: serviceMutationErrorCategory(for: submissionError?.category ?? error.category))
+            } catch {
+                return try summary(unknown: 1, category: Task.isCancelled ? nil : .unknown)
+            }
+        }
+        return try summary(unknown: 0)
+    }
+
+    private static func isPublicVmmDeletionID(_ id: String) -> Bool {
+        !id.isEmpty && id == id.trimmingCharacters(in: .whitespacesAndNewlines) && !id.contains(",") && !id.contains("\\") &&
+            !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+    }
+
+    private func publicVmmDeletionIDs(capability: ApiCapability, arrayKey: String, idKey: String) async throws -> Set<String> {
+        let value: ServiceJSON
+        do {
+            value = try await client.call(path: capability.path, api: capability.name, version: 1, method: "list",
+                requestFormat: capability.requestFormat, parameters: [:], credential: credential, as: ServiceJSON.self)
+        } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error) }
+        try Task.checkCancellation()
+        guard case .array(let items)? = value[arrayKey] else { throw invalidServiceResponse() }
+        var ids = Set<String>()
+        for item in items {
+            guard case .string(let id)? = item[idKey], Self.isPublicVmmDeletionID(id), ids.insert(id).inserted else {
+                throw invalidServiceResponse()
+            }
+        }
+        return ids
     }
 
     private struct ServiceDeletionContext {
@@ -2462,28 +3142,6 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
-    private func waitForVirtualizationTask(id: String) async throws {
-        guard capabilities[DsmAPIName.virtualizationAPITaskInfo]?.selectedVersion != nil else {
-            return
-        }
-        for _ in 0..<60 {
-            let value = try await call(
-                DsmAPIName.virtualizationAPITaskInfo,
-                method: "get",
-                parameters: ["task_id": .string(id)]
-            )
-            let status = value.firstString(["status", "state", "task_status"])?
-                .lowercased() ?? ""
-            if ["finished", "completed", "success", "succeeded", "done"].contains(status) {
-                return
-            }
-            if ["failed", "error", "cancelled", "canceled"].contains(status) {
-                throw verificationError(L10n.string("shared.71f5972b6a39b58a"))
-            }
-            try await Task.sleep(for: .seconds(1))
-        }
-        throw verificationError(L10n.string("shared.fad38b1708c3a0f5"))
-    }
 
     private func preferredDownloadTaskAPI() -> String {
         capabilities[DsmAPIName.downloadStationTask]?.selectedVersion != nil
@@ -2502,18 +3160,21 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return capability
     }
 
-    private func callOfficialDownloadTaskV1(
+    private func callOfficialDownloadTask(
         method: String,
-        parameters: [String: DsmParameterValue]
+        parameters: [String: DsmParameterValue],
+        version: Int = 1
     ) async throws -> ServiceJSON {
-        guard let capability = officialDownloadTaskV1Capability() else {
+        guard let capability = capabilities[DsmAPIName.downloadStationTask],
+              capability.selectedVersion != nil, capability.minVersion <= version,
+              capability.maxVersion >= version, capability.requestFormat == .form else {
             throw unavailableError()
         }
         do {
             return try await client.call(
                 path: capability.path,
                 api: capability.name,
-                version: 1,
+                version: version,
                 method: method,
                 requestFormat: capability.requestFormat,
                 parameters: parameters,
@@ -2525,12 +3186,16 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
-    private func callOfficialDownloadTaskV1FileCreate(
+    private func callOfficialDownloadTaskFileCreate(
         fileURL: URL,
         destination: String?,
         unzipPassword: String?
     ) async throws -> ServiceJSON {
-        guard let capability = officialDownloadTaskV1Capability(),
+        let requiredVersion = Self.nonEmpty(destination) == nil ? 1 : 2
+        guard let capability = capabilities[DsmAPIName.downloadStationTask],
+              capability.selectedVersion != nil,
+              capability.minVersion <= requiredVersion, capability.maxVersion >= requiredVersion,
+              capability.requestFormat == .form,
               let binaryTransport = transport as? any DsmBinaryHTTPTransport else {
             throw unavailableError()
         }
@@ -2547,7 +3212,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         if let destination = Self.nonEmpty(destination) {
             multipartFields["destination"] = destination
         }
-        if let unzipPassword = Self.nonEmpty(unzipPassword) {
+        if let unzipPassword, !unzipPassword.isEmpty {
             multipartFields["unzip_password"] = unzipPassword
         }
         let bodyURL = try createDownloadMultipartBody(
@@ -2563,7 +3228,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
         components.queryItems = [
             URLQueryItem(name: "api", value: capability.name),
-            URLQueryItem(name: "version", value: "1"),
+            URLQueryItem(name: "version", value: String(requiredVersion)),
             URLQueryItem(name: "method", value: "create")
         ]
         guard let resolvedEndpoint = components.url else {
@@ -2911,12 +3576,13 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             if let destination = request.destination {
                 parameters["destination"] = .string(destination)
             }
-            return try await callOfficialDownloadTaskV1(
+            return try await callOfficialDownloadTask(
                 method: "create",
-                parameters: parameters
+                parameters: parameters,
+                version: request.destination == nil ? 1 : 2
             )
         case .file(let fileURL, let unzipPassword):
-            return try await callOfficialDownloadTaskV1FileCreate(
+            return try await callOfficialDownloadTaskFileCreate(
                 fileURL: fileURL,
                 destination: request.destination,
                 unzipPassword: unzipPassword
@@ -2986,7 +3652,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 Self.downloadControlPageSize,
                 Self.downloadControlReadbackLimit - offset
             )
-            let value = try await callOfficialDownloadTaskV1(
+            let value = try await callOfficialDownloadTask(
                 method: "list",
                 parameters: [
                     "offset": .integer(offset),
@@ -3153,7 +3819,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 Self.downloadControlPageSize,
                 Self.downloadControlReadbackLimit - offset
             )
-            let value = try await callOfficialDownloadTaskV1(
+            let value = try await callOfficialDownloadTask(
                 method: "list",
                 parameters: [
                     "offset": .integer(offset),
@@ -3436,18 +4102,15 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     ) throws -> URL {
         let bodyURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("LanStashDownload-\(UUID().uuidString).multipart")
-        guard FileManager.default.createFile(atPath: bodyURL.path, contents: nil) else {
+        guard FileManager.default.createFile(
+            atPath: bodyURL.path, contents: nil, attributes: [.posixPermissions: 0o600]
+        ) else {
             throw AppError(
                 category: .localStorageFull,
                 isRetryable: false,
                 safeUserMessage: L10n.string("shared.25e1b230ae17e73b")
             )
         }
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: bodyURL.path
-        )
-
         do {
             let output = try FileHandle(forWritingTo: bodyURL)
             defer { try? output.close() }
@@ -3603,20 +4266,31 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         }
     }
 
+    private func supportsInternalVmmWrite(_ name: String) -> Bool {
+        guard let capability = capabilities[name] else { return false }
+        return capability.name == name && capability.selectedVersion != nil &&
+            capability.minVersion <= 1 && capability.maxVersion >= 1
+    }
+
     private func callVoid(
         _ name: String,
         method: String,
-        parameters: [String: DsmParameterValue]
+        parameters: [String: DsmParameterValue],
+        fixedVersion: Int? = nil
     ) async throws {
         guard let capability = capabilities[name],
               let version = capability.selectedVersion else {
             throw unavailableError()
         }
+        if let fixedVersion {
+            guard capability.name == name, capability.minVersion <= fixedVersion,
+                  capability.maxVersion >= fixedVersion else { throw unavailableError() }
+        }
         do {
             try await client.callVoid(
                 path: capability.path,
                 api: capability.name,
-                version: version,
+                version: fixedVersion ?? version,
                 method: method,
                 requestFormat: capability.requestFormat,
                 parameters: parameters,
@@ -3922,12 +4596,14 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
     private static func container(_ object: [String: ServiceJSON]) -> ContainerInstance? {
         let value = ServiceJSON.object(object)
         guard let id = value.firstString(["id", "container_id", "Id"]) else { return nil }
+        var status = value.firstString(["status", "state", "State"]) ?? "unknown"
+        if case .object(let runtime)? = object["State"], case .boolean(true)? = runtime["Restarting"] { status = "restarting" }
         return ContainerInstance(
             id: id,
             name: value.firstString(["name", "Names"]) ?? String(id.prefix(12)),
             image: value.firstString(["image", "image_name", "Image"]) ?? "—",
             project: value.firstString(["project", "project_name"]),
-            status: value.firstString(["status", "state", "State"]) ?? "unknown",
+            status: status,
             cpuUsage: value.firstDouble(["cpu", "cpu_usage", "cpu_percent"]),
             memoryBytes: value.firstInteger(["memory", "memory_usage", "memory_bytes"]),
             createdAt: date(value, keys: ["created", "created_at", "CreateTime"])
@@ -3968,7 +4644,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         AppError(
             category: .invalidResponse,
             isRetryable: true,
-            safeUserMessage: L10n.string("shared.847fe982ab6f5ef7")
+            safeUserMessage: L10n.string("container.inventory.invalid")
         )
     }
 
@@ -3979,11 +4655,97 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return ContainerImage(
             id: id,
             repository: repository,
-            tag: value.firstString(["tag"]) ?? "latest",
+            tag: value.firstString(["tag"]) ?? "—",
             sizeBytes: value.firstInteger(["size", "virtual_size", "Size"]),
             createdAt: date(value, keys: ["created", "created_at", "Created"]),
             isInUse: value.firstBoolean(["in_use", "is_used", "using"]) ?? false
         )
+    }
+
+    private static func containerImages(_ value: ServiceJSON) throws -> [ContainerImage] {
+        let rows = try strictRootObjects(value, keys: ["images", "image"])
+        try requireCompleteImageList(value, count: rows.count)
+        var result: [ContainerImage] = []
+        for row in rows {
+            guard let summary = image(row) else { throw invalidServiceResponseStatic() }
+            guard let rawTags = row["tags"] else {
+                result.append(summary)
+                continue
+            }
+            guard case .array(let tags) = rawTags,
+                  let sourceID = try imageString(row, "id"), let repository = try imageString(row, "repository") else {
+                throw invalidServiceResponseStatic()
+            }
+            if tags.isEmpty { result.append(summary) }
+            for rawTag in tags {
+                guard case .string(let tag) = rawTag, stableImageText(tag) else { throw invalidServiceResponseStatic() }
+                result.append(ContainerImage(id: ContainerImage.selectionID(imageID: sourceID, repository: repository, tag: tag),
+                    repository: repository, tag: tag, sizeBytes: summary.sizeBytes, createdAt: summary.createdAt, sourceImageID: sourceID))
+            }
+        }
+        let addresses = result.filter { $0.sourceImageID != nil && $0.tag != "<none>" }.map(imageAddress)
+        guard Set(result.map(\.id)).count == result.count, Set(addresses).count == addresses.count else { throw invalidServiceResponseStatic() }
+        return result
+    }
+
+    private static func requireCompleteImageList(_ value: ServiceJSON, count: Int) throws {
+        if let total = value["total"] {
+            guard case .number(let number) = total, number == Double(count) else { throw invalidServiceResponseStatic() }
+        }
+        if let offset = value["offset"] {
+            guard case .number(let number) = offset, number == 0 else { throw invalidServiceResponseStatic() }
+        }
+    }
+
+    private static func containerImageUsage(_ images: [ContainerImage], containers: ServiceJSON) throws -> Set<String> {
+        let rows = try strictRootObjects(containers, keys: ["containers", "container"])
+        try requireCompleteImageList(containers, count: rows.count)
+        var used: Set<String> = []
+        for row in rows {
+            let rawImage = try imageString(row, "Image") ?? ""
+            let match: ContainerImage?
+            if rawImage.hasPrefix("sha256:") || rawImage.contains("@sha256:") {
+                guard let sourceID = try imageString(row, "ImageID") else { throw invalidServiceResponseStatic() }
+                let candidates = images.filter { $0.sourceImageID == sourceID }
+                guard !candidates.isEmpty else { throw invalidServiceResponseStatic() }
+                let marker = rawImage.hasPrefix("sha256:") ? rawImage : ":" + imageTag(String(rawImage.split(separator: "@")[0]))
+                match = candidates.first { "\($0.repository):\($0.tag)".contains(marker) ||
+                    $0.tag == "<none>" && ($0.sourceImageID?.contains(marker) ?? false) } ?? candidates.first
+            } else {
+                guard let name = try imageString(row, "image") else { throw invalidServiceResponseStatic() }
+                match = images.first { $0.sourceImageID != nil && imageAddress($0) == normalizedImageName(name) }
+            }
+            if let match {
+                used.insert(match.id)
+                for bare in images where bare.tag == "<none>" && bare.sourceImageID == match.sourceImageID { used.insert(bare.id) }
+            }
+        }
+        return used
+    }
+
+    private static func stableImageText(_ text: String) -> Bool {
+        !text.isEmpty && text == text.trimmingCharacters(in: .whitespacesAndNewlines) && text.rangeOfCharacter(from: .controlCharacters) == nil
+    }
+    private static func imageString(_ row: [String: ServiceJSON], _ key: String) throws -> String? {
+        guard let value = row[key] else { return nil }
+        guard case .string(let text) = value, stableImageText(text) else { throw invalidServiceResponseStatic() }
+        return text
+    }
+    private static func imageTag(_ name: String) -> String {
+        let lastComponent = name.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? name
+        return lastComponent.lastIndex(of: ":").map { String(lastComponent[lastComponent.index(after: $0)...]) } ?? "latest"
+    }
+    private static func normalizedImageName(_ raw: String) -> String {
+        var name = raw
+        for prefix in ["docker.io/", "index.docker.io/"] where name.hasPrefix(prefix) {
+            name = String(name.dropFirst(prefix.count)); break
+        }
+        let lastComponent = name.split(separator: "/", omittingEmptySubsequences: false).last ?? ""
+        return lastComponent.contains(":") ? name : name + ":latest"
+    }
+    private static func imageAddress(_ image: ContainerImage) -> String { normalizedImageName("\(image.repository):\(image.tag)") }
+    private static func imageTargetsOverlap(_ left: ContainerImage, _ right: ContainerImage) -> Bool {
+        ((left.tag == "<none>" || right.tag == "<none>") && left.sourceImageID == right.sourceImageID) || imageAddress(left) == imageAddress(right)
     }
 
     private static func registryImage(
@@ -4011,11 +4773,12 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         if let connections = value["containers"] {
             guard let names = connections.array, names.allSatisfy({ if case .string = $0 { return true }; return false }) else { return nil }
             count = names.count
-        } else if let reported = value.firstInteger(["container_count", "containers_count", "using"]), reported >= 0 {
-            count = Int(reported)
         } else {
-            // 缺少关联数据不等于没有容器；交由分区失败状态提示刷新。
-            return nil
+            let rawCounts = ["container_count", "containers_count", "using"].compactMap { value[$0] }
+            let counts = rawCounts.compactMap(containerNetworkCount)
+            // 缺少、布尔、小数或互相冲突的计数不等于没有容器。
+            guard !rawCounts.isEmpty, counts.count == rawCounts.count, Set(counts).count == 1 else { return nil }
+            count = counts[0]
         }
         let ipv6: Bool?
         if case .boolean(let enabled)? = value["enable_ipv6"] { ipv6 = enabled }
@@ -4030,6 +4793,17 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             isIPv6Enabled: ipv6,
             connectedContainerNames: value["containers"]?.array?.compactMap(\.stringValue)
         )
+    }
+
+    private static func containerNetworkCount(_ value: ServiceJSON) -> Int? {
+        let parsed: Int?
+        switch value {
+        case .number(let number): parsed = Int(exactly: number)
+        case .string(let text): parsed = Int(text)
+        default: parsed = nil
+        }
+        guard let parsed, parsed >= 0 else { return nil }
+        return parsed
     }
 
     /// 官方项目列表是以项目 ID 为键的对象，空对象表示没有项目；不影响其他分区的严格解析。
@@ -4074,11 +4848,15 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         )
     }
 
-    private static func machine(_ object: [String: ServiceJSON]) -> VirtualMachine? {
+    private static func machine(_ object: [String: ServiceJSON], internalMemoryKiB: Bool) -> VirtualMachine? {
         let value = ServiceJSON.object(object)
         guard let id = value.firstString(["guest_id", "id", "vm_id"]) else { return nil }
+        let memoryScale: Int64 = internalMemoryKiB ? 1_024 : 1_024 * 1_024
         let memoryBytes = value.firstInteger(["memory", "memory_size", "ram"])
-            ?? value.firstInteger(["vram_size"]).map { $0 * 1_024 * 1_024 }
+            ?? value.firstInteger(["vram_size"]).flatMap { raw -> Int64? in
+                guard raw >= 0, raw <= Int64.max / memoryScale else { return nil }
+                return raw * memoryScale
+            }
         let reportedStorageBytes = value.firstInteger([
             "storage", "disk_size", "virtual_disk_size"
         ])
@@ -4102,8 +4880,8 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
             storageBytes: storageBytes,
             ipAddress: value.firstString(["ip", "ip_address", "guest_ip"]),
             keyboardLayout: value.firstString(["kb_layout", "keyboard_layout"]),
-            autoStart: value.firstBoolean(["autorun", "auto_start"]) ?? false,
-            cpuWeight: value.firstInteger(["cpu_weight"]).map(Int.init)
+            cpuWeight: parseVirtualMachineCpuWeight(value["cpu_weight"]),
+            startupBehavior: parseVirtualMachineStartupBehavior(value["autorun"])
         )
     }
 
@@ -4121,7 +4899,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                   let id = officialIdentifier(object["guest_id"]),
                   let name = officialNonEmptyString(object["guest_name"]),
                   let status = officialNonEmptyString(object["status"]),
-                  let autoStart = officialBoolean(object["autorun"]),
+                  let startupBehavior = parseVirtualMachineStartupBehavior(object["autorun"]),
                   identifiers.insert(id).inserted else {
                 throw invalidVirtualMachineInventoryError()
             }
@@ -4144,7 +4922,7 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
                 cpuCount: cpuCount,
                 memoryBytes: memoryBytes,
                 storageBytes: storageBytes,
-                autoStart: autoStart
+                startupBehavior: startupBehavior
             )
         }
     }
@@ -4181,13 +4959,14 @@ public actor DsmServiceManagementRepository: ServiceManagementRepository,
         return nonEmpty(value)
     }
 
-    private static func officialBoolean(_ node: ServiceJSON?) -> Bool? {
-        switch node {
-        case .boolean(let value): return value
-        case .number(0): return false
-        case .number(1): return true
-        default: return nil
-        }
+    private static func parseVirtualMachineStartupBehavior(_ node: ServiceJSON?) -> VirtualMachineStartupBehavior? {
+        guard case .number(let raw)? = node, raw.isFinite, raw.rounded() == raw, (0...2).contains(raw) else { return nil }
+        return VirtualMachineStartupBehavior(rawValue: Int(raw))
+    }
+
+    private static func parseVirtualMachineCpuWeight(_ node: ServiceJSON?) -> Int? {
+        guard case .number(let raw)? = node, let value = Int(exactly: raw), value > 0 else { return nil }
+        return value
     }
 
     private static func officialOptionalNonNegativeInteger(

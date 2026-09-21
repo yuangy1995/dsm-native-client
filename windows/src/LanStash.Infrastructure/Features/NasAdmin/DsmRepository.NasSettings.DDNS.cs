@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using LanStash.Domain;
 
@@ -6,252 +5,83 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public async Task<IReadOnlyList<NasDDNSProvider>> LoadDDNSProvidersAsync(
-        CancellationToken cancellationToken = default)
+    private ApiCapability RequireDdnsRead(string name)
     {
-        if (!Supports("SYNO.Core.DDNS.Provider"))
-        {
-            return [];
-        }
-
-        try
-        {
-            var data = await CallFirstAsync(
-                "SYNO.Core.DDNS.Provider",
-                ["list"],
-                parameters: null,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            return data.Array("providers").OfType<JsonObject>()
-                .Select(item => new NasDDNSProvider(
-                    item.String("id") ?? item.String("name") ?? "unknown",
-                    item.String("name") ?? item.String("id") ?? "unknown",
-                    item.String("service_url") ?? item.String("url")))
-                .ToArray();
-        }
-        catch (DsmException)
-        {
-            return [];
-        }
+        foreach (var required in new[] { "SYNO.Core.DDNS.Provider", "SYNO.Core.DDNS.Record" })
+            if (!_capabilities.TryGetValue(required, out var item) || item.Name != required ||
+                item.MinVersion != 1 || item.MaxVersion < 1 ||
+                !(item.RequestFormat.Equals("FORM", StringComparison.OrdinalIgnoreCase) || item.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)))
+                throw new DsmException(UserText.Key("NasSettingsLoadError"), UserText.Key("NasSettingsUnavailable"), 102);
+        return _capabilities[name];
     }
 
-    public async Task<IReadOnlyList<NasDDNSRecord>> LoadDDNSRecordsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<NasDDNSProvider>> LoadDDNSProvidersAsync(CancellationToken cancellationToken = default)
     {
-        if (!Supports("SYNO.Core.DDNS.Record"))
+        cancellationToken.ThrowIfCancellationRequested();
+        var data = await _api.CallReadJsonObjectAsync(_profile, _session, RequireDdnsRead("SYNO.Core.DDNS.Provider"),
+            1, "list", cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (data["providers"] is not JsonArray rows) throw InvalidNasServiceSettings();
+        var providers = new Dictionary<string, NasDDNSProvider>(StringComparer.Ordinal);
+        foreach (var node in rows)
         {
-            return [];
+            if (node is not JsonObject row) throw InvalidNasServiceSettings();
+            var id = OptionalDdnsText(row, "id") ?? OptionalDdnsText(row, "provider");
+            if (!StableDdnsIdentity(id)) throw InvalidNasServiceSettings();
+            var display = OptionalDdnsText(row, "display") ?? OptionalDdnsText(row, "name");
+            if (string.IsNullOrWhiteSpace(display)) display = id;
+            var provider = new NasDDNSProvider(id!, display!, null);
+            // 同服务商可能按协议重复，身份不变；只在旧显示名等于身份时采用更友好名称。
+            if (!providers.TryGetValue(id!, out var previous) || previous.Name == previous.Id && provider.Name != provider.Id)
+                providers[id!] = provider;
         }
-
-        try
-        {
-            var data = await CallFirstAsync(
-                "SYNO.Core.DDNS.Record",
-                ["list"],
-                parameters: null,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            return data.Array("records").OfType<JsonObject>()
-                .Select(item => new NasDDNSRecord(
-                    item.String("id") ?? string.Empty,
-                    item.String("provider") ?? string.Empty,
-                    item.String("hostname") ?? string.Empty,
-                    item.String("username") ?? string.Empty,
-                    item.String("ip"),
-                    item.String("status"),
-                    item.Bool("enable") ?? false,
-                    item.Bool("heartbeat") ?? false))
-                .ToArray();
-        }
-        catch (DsmException)
-        {
-            return [];
-        }
+        return Array.AsReadOnly(providers.Values.ToArray());
     }
 
-    public Task<MutationResult> SaveDDNSRecordAsync(
-        NasDDNSDraft draft,
-        string? existingRecordId = null,
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<NasDDNSRecord>> LoadDDNSRecordsAsync(CancellationToken cancellationToken = default)
     {
-        if (!draft.IsValidForSubmission)
+        cancellationToken.ThrowIfCancellationRequested();
+        var data = await _api.CallReadJsonObjectAsync(_profile, _session, RequireDdnsRead("SYNO.Core.DDNS.Record"),
+            1, "list", cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (data["records"] is not JsonArray rows) throw InvalidNasServiceSettings();
+        var result = new List<NasDDNSRecord>(); var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in rows)
         {
-            return Task.FromResult(ConfirmedFailureResult(
-                "saveDDNS", MutationErrorCategory.Validation, "ddns.save.validation"));
-        }
-
-        if (!WriteAvailabilityForDDNS())
-        {
-            return Task.FromResult(UnsupportedResult("saveDDNS"));
-        }
-
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["provider"] = draft.ProviderId!,
-            ["hostname"] = draft.Hostname!,
-            ["username"] = draft.Username!,
-            ["passwd"] = draft.Password!,
-            ["enable"] = draft.IsEnabled ? "true" : "false",
-            ["heartbeat"] = draft.Heartbeat ? "true" : "false",
-        };
-
-        if (!string.IsNullOrWhiteSpace(draft.ExternalIp))
-        {
-            parameters["ip"] = draft.ExternalIp;
-        }
-
-        var method = existingRecordId is not null ? "set" : "create";
-        if (existingRecordId is not null)
-        {
-            parameters["id"] = existingRecordId;
-        }
-
-        return SaveDdnsAsync(method, parameters, existingRecordId, draft, cancellationToken);
-    }
-
-    public Task<MutationResult> DeleteDDNSRecordAsync(
-        string recordId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(recordId))
-        {
-            return Task.FromResult(ConfirmedFailureResult(
-                "deleteDDNS", MutationErrorCategory.Validation, "ddns.delete.validation"));
-        }
-
-        if (!WriteAvailabilityForDDNS())
-        {
-            return Task.FromResult(UnsupportedResult("deleteDDNS"));
-        }
-
-        return DeleteDdnsAsync(recordId, cancellationToken);
-    }
-
-    public Task<MutationResult> TestDDNSRecordAsync(
-        string recordId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(recordId))
-        {
-            return Task.FromResult(ConfirmedFailureResult(
-                "testDDNS", MutationErrorCategory.Validation, "ddns.test.validation"));
-        }
-
-        if (!WriteAvailabilityForDDNS())
-        {
-            return Task.FromResult(UnsupportedResult("testDDNS"));
-        }
-
-        return TestDdnsAsync(recordId, cancellationToken);
-    }
-
-    public Task<MutationResult> UpdateDDNSAddressAsync(
-        string recordId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(recordId))
-        {
-            return Task.FromResult(ConfirmedFailureResult(
-                "updateDDNSAddress", MutationErrorCategory.Validation,
-                "ddns.update-address.validation"));
-        }
-        if (!WriteAvailabilityForDDNS())
-        {
-            return Task.FromResult(UnsupportedResult("updateDDNSAddress"));
-        }
-
-        return UpdateDdnsAsync(recordId, cancellationToken);
-    }
-
-    private bool WriteAvailabilityForDDNS() =>
-        NasSettingsWritesEnabled &&
-        ((INasSettingsRepository)this).WriteAvailability.CanSaveDDNS;
-
-    private async Task<MutationResult> SaveDdnsAsync(
-        string method,
-        IReadOnlyDictionary<string, string> parameters,
-        string? existingRecordId,
-        NasDDNSDraft draft,
-        CancellationToken cancellationToken)
-    {
-        var result = await SaveSettingsAsync(
-            "SYNO.Core.DDNS.Record", method, parameters, "saveDDNS",
-            async ct =>
+            if (node is not JsonObject row) throw InvalidNasServiceSettings();
+            var provider = OptionalDdnsText(row, "provider"); var hostname = OptionalDdnsText(row, "hostname");
+            var username = OptionalDdnsText(row, "username");
+            if (!StableDdnsIdentity(provider) || !StableDdnsIdentity(hostname) || username is null ||
+                row.Bool("enable") is not bool enabled || row.Bool("heartbeat") is not bool heartbeat || !seen.Add(provider!))
+                throw InvalidNasServiceSettings();
+            result.Add(new(provider!, provider!, hostname!, username, OptionalDdnsText(row, "ip"),
+                OptionalDdnsMetadata(row, "status"), enabled, heartbeat)
             {
-                var records = await LoadDDNSRecordsAsync(ct).ConfigureAwait(false);
-                var match = records.Where(record =>
-                        (existingRecordId is null || record.Id == existingRecordId) &&
-                        string.Equals(record.ProviderId, draft.ProviderId, StringComparison.Ordinal) &&
-                        string.Equals(record.Hostname, draft.Hostname, StringComparison.Ordinal) &&
-                        string.Equals(record.Username, draft.Username, StringComparison.Ordinal) &&
-                        record.IsEnabled == draft.IsEnabled &&
-                        record.Heartbeat == draft.Heartbeat)
-                    .ToArray();
-                if (match.Length != 1)
-                {
-                    throw new InvalidDataException("ddns.save.readback-mismatch");
-                }
-            }, cancellationToken).ConfigureAwait(false);
-        return result;
-    }
-
-    private async Task<MutationResult> DeleteDdnsAsync(
-        string recordId,
-        CancellationToken cancellationToken)
-    {
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["id"] = JsonSerializer.Serialize(new[] { recordId }),
-        };
-        return await SaveSettingsAsync(
-            "SYNO.Core.DDNS.Record", "delete", parameters, "deleteDDNS",
-            async ct =>
-            {
-                if ((await LoadDDNSRecordsAsync(ct).ConfigureAwait(false)).Any(r => r.Id == recordId))
-                {
-                    throw new InvalidDataException("ddns.delete.readback-mismatch");
-                }
-            }, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<MutationResult> TestDdnsAsync(
-        string recordId,
-        CancellationToken cancellationToken)
-    {
-        var record = (await LoadDDNSRecordsAsync(cancellationToken).ConfigureAwait(false))
-            .SingleOrDefault(item => item.Id == recordId);
-        if (record is null)
-        {
-            return ConfirmedFailureResult("testDDNS", MutationErrorCategory.Validation,
-                "ddns.test.record-not-found");
+                NetworkType = OptionalDdnsText(row, "net"), Ipv6 = OptionalDdnsText(row, "ipv6"),
+                InterfaceV4 = OptionalDdnsText(row, "interface_v4"), InterfaceV6 = OptionalDdnsText(row, "interface_v6"),
+                LastUpdated = OptionalDdnsMetadata(row, "lastupdated"),
+            });
         }
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["provider"] = record.ProviderId,
-            ["hostname"] = record.Hostname,
-            ["username"] = record.Username,
-            ["enable"] = record.IsEnabled ? "true" : "false",
-            ["heartbeat"] = record.Heartbeat ? "true" : "false",
-        };
-        return await SaveSettingsAsync(
-            "SYNO.Core.DDNS.Record", "test", parameters, "testDDNS",
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.AsReadOnly();
     }
 
-    private async Task<MutationResult> UpdateDdnsAsync(
-        string recordId,
-        CancellationToken cancellationToken)
+    private static bool StableDdnsIdentity(string? value) => !string.IsNullOrWhiteSpace(value) && !value.Any(char.IsControl);
+    private static string? OptionalDdnsMetadata(JsonObject data, string key) => data[key] is JsonValue value
+        ? value.TryGetValue<string>(out var text) ? text : value.ToJsonString() : null;
+    private static string? OptionalDdnsText(JsonObject data, string key)
     {
-        var before = await LoadDDNSRecordsAsync(cancellationToken).ConfigureAwait(false);
-        if (before.All(item => item.Id != recordId))
-        {
-            return ConfirmedFailureResult("updateDDNSAddress", MutationErrorCategory.Validation,
-                "ddns.update-address.record-not-found");
-        }
-        return await SaveSettingsAsync(
-            "SYNO.Core.DDNS.Record", "update_ip_address",
-            new Dictionary<string, string>(StringComparer.Ordinal), "updateDDNSAddress",
-            async ct => _ = await LoadDDNSRecordsAsync(ct).ConfigureAwait(false),
-            cancellationToken).ConfigureAwait(false);
+        if (!data.TryGetPropertyValue(key, out var value) || value is null) return null;
+        return value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : throw InvalidNasServiceSettings();
     }
+
+    public Task<MutationResult> SaveDDNSRecordAsync(NasDDNSDraft draft, string? existingRecordId = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        return Task.FromResult(draft.IsValidForSubmission ? UnsupportedResult("saveDDNS") :
+            ServicePreflightFailure("saveDDNS", MutationErrorCategory.Validation));
+    }
+    public Task<MutationResult> DeleteDDNSRecordAsync(string recordId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(StableDdnsIdentity(recordId) ? UnsupportedResult("deleteDDNS") : ServicePreflightFailure("deleteDDNS", MutationErrorCategory.Validation));
+    public Task<MutationResult> TestDDNSRecordAsync(string recordId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(StableDdnsIdentity(recordId) ? UnsupportedResult("testDDNS") : ServicePreflightFailure("testDDNS", MutationErrorCategory.Validation));
+    public Task<MutationResult> UpdateDDNSAddressAsync(string recordId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(StableDdnsIdentity(recordId) ? UnsupportedResult("updateDDNSAddress") : ServicePreflightFailure("updateDDNSAddress", MutationErrorCategory.Validation));
 }

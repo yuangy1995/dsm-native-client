@@ -10,9 +10,6 @@ namespace LanStash.App.Views;
 
 public sealed partial class FilesPage
 {
-    private static readonly HashSet<string> SupportedArchiveExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".zip", ".7z" };
-
     private ContentDialog? _archiveExtractionDialog;
     private CancellationTokenSource? _archiveExtractionCancellation;
     private bool _isArchiveExtractionSubmitting;
@@ -52,6 +49,16 @@ public sealed partial class FilesPage
 
         var localization = LocalizationService.Current;
         var panel = new StackPanel { Spacing = 12, MaxWidth = 460 };
+        var notice = new InfoBar { IsOpen = false, IsClosable = false, Severity = InfoBarSeverity.Error };
+        var passwordBox = new PasswordBox { Header = localization.Get("ArchivePasswordLabel") };
+        var encodingBox = new ComboBox { Header = localization.Get("ArchiveEncodingLabel"), HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var (codepage, key) in new[] { ("", "ArchiveEncodingAuto"), ("chs", "ArchiveEncodingChs"),
+            ("cht", "ArchiveEncodingCht"), ("enu", "ArchiveEncodingEnu"), ("jpn", "ArchiveEncodingJpn"), ("krn", "ArchiveEncodingKrn") })
+            encodingBox.Items.Add(new ComboBoxItem { Content = localization.Get(key), Tag = codepage });
+        encodingBox.SelectedIndex = 0;
+        AutomationProperties.SetName(passwordBox, localization.Get("ArchivePasswordLabel"));
+        AutomationProperties.SetName(encodingBox, localization.Get("ArchiveEncodingLabel"));
+        panel.Children.Add(notice);
         panel.Children.Add(new TextBlock
         {
             Text = localization.Format("FileArchiveExtractionConfirmMessage", source.Name),
@@ -61,21 +68,44 @@ public sealed partial class FilesPage
         {
             Text = localization.Get("FileArchiveExtractionNoOverwriteNote"),
             TextWrapping = TextWrapping.WrapWholeWords,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources[
-                "TextFillColorSecondaryBrush"],
+            Opacity = 0.8,
         });
+        panel.Children.Add(passwordBox);
+        panel.Children.Add(encodingBox);
+        var keepFolders = new CheckBox { Name = "KeepArchiveFolders", Content = localization.Get("ArchiveKeepFolders"), IsChecked = true };
+        var createFolder = new CheckBox { Name = "CreateArchiveFolder", Content = localization.Get("ArchiveCreateFolder"), IsChecked = true };
+        var overwrite = new CheckBox { Name = "OverwriteArchiveFiles", Content = localization.Get("ArchiveOverwriteFiles") };
+        var overwriteConfirmation = new CheckBox { Name = "ConfirmArchiveOverwrite",
+            Content = new TextBlock { Text = localization.Get("ArchiveOverwriteConfirm"), TextWrapping = TextWrapping.WrapWholeWords },
+            Visibility = Visibility.Collapsed };
+        panel.Children.Add(keepFolders); panel.Children.Add(createFolder); panel.Children.Add(overwrite); panel.Children.Add(overwriteConfirmation);
 
+        var form = new ScrollViewer { Content = panel, MaxHeight = 480 };
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = localization.Get("FileArchiveExtractionTitle"),
             PrimaryButtonText = localization.Get("FileArchiveExtractionAction"),
             CloseButtonText = localization.Get("ActionCancel"),
             DefaultButton = ContentDialogButton.Primary,
-            Content = panel,
+            Content = form,
         };
         var generation = ++_archiveExtractionGeneration;
         _archiveExtractionDialog = dialog;
+        void UpdateConfirmation()
+        {
+            overwriteConfirmation.Visibility = overwrite.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            dialog.DefaultButton = overwrite.IsChecked == true ? ContentDialogButton.Close : ContentDialogButton.Primary;
+            if (!_isArchiveExtractionSubmitting && ReferenceEquals(dialog.Content, form))
+                dialog.IsPrimaryButtonEnabled = overwrite.IsChecked != true || overwriteConfirmation.IsChecked == true;
+        }
+        void ResetConfirmation() { overwriteConfirmation.IsChecked = false; UpdateConfirmation(); }
+        keepFolders.Checked += (_, _) => ResetConfirmation(); keepFolders.Unchecked += (_, _) => ResetConfirmation();
+        createFolder.Checked += (_, _) => ResetConfirmation(); createFolder.Unchecked += (_, _) => ResetConfirmation();
+        overwrite.Checked += (_, _) => ResetConfirmation(); overwrite.Unchecked += (_, _) => ResetConfirmation();
+        overwriteConfirmation.Checked += (_, _) => UpdateConfirmation(); overwriteConfirmation.Unchecked += (_, _) => UpdateConfirmation();
+        passwordBox.PasswordChanged += (_, _) => ResetConfirmation(); encodingBox.SelectionChanged += (_, _) => ResetConfirmation();
         FileArchiveExtractionOutcome? outcome = null;
         CancellationTokenSource? operationCancellation = null;
 
@@ -86,6 +116,8 @@ public sealed partial class FilesPage
             {
                 return;
             }
+            if (overwrite.IsChecked == true && overwriteConfirmation.IsChecked != true)
+            { notice.Message = localization.Get("ArchiveOverwriteConfirm"); notice.IsOpen = true; return; }
             if (!ArchiveExtractionSourceIsCurrent(repository, destinationFolder, source))
             {
                 dialog.Content = BuildArchiveExtractionMessage(
@@ -97,6 +129,13 @@ public sealed partial class FilesPage
             }
 
             var deferral = args.GetDeferral();
+            notice.IsOpen = false;
+            var codepage = (string)((ComboBoxItem)encodingBox.SelectedItem).Tag;
+            var options = new FileArchiveExtractionOptions(string.IsNullOrEmpty(passwordBox.Password) ? null : passwordBox.Password,
+                codepage.Length == 0 ? null : codepage)
+            { KeepDirectoryStructure = keepFolders.IsChecked == true, CreateSubfolder = createFolder.IsChecked == true, Overwrite = overwrite.IsChecked == true };
+            var confirmedOverwrite = overwriteConfirmation.IsChecked == true;
+            passwordBox.Password = string.Empty;
             _isArchiveExtractionSubmitting = true;
             operationCancellation = new CancellationTokenSource();
             _archiveExtractionCancellation = operationCancellation;
@@ -124,12 +163,22 @@ public sealed partial class FilesPage
                     new FileArchiveExtractionRequest(
                         _profileId,
                         new FileArchiveExtractionSource(source),
-                        destinationFolder),
+                        destinationFolder) { Options = options, OverwriteConfirmed = confirmedOverwrite },
                     operationCancellation.Token);
                 if (CanPresentArchiveExtraction(dialog, generation))
                 {
-                    dialog.Content = BuildArchiveExtractionResult(outcome.Result, localization);
-                    dialog.CloseButtonText = localization.Get("FileRecycleCloseAction");
+                    if (!outcome.Result.Submitted && outcome.Result.DiagnosticTag == "file.archive-extraction.password-required")
+                    {
+                        notice.Message = localization.Get("ArchivePasswordIncorrect"); notice.IsOpen = true;
+                        dialog.Content = form;
+                        dialog.PrimaryButtonText = localization.Get("FileArchiveExtractionAction");
+                        passwordBox.Focus(FocusState.Programmatic);
+                    }
+                    else
+                    {
+                        dialog.Content = BuildArchiveExtractionResult(outcome.Result, localization);
+                        dialog.CloseButtonText = localization.Get("FileRecycleCloseAction");
+                    }
                 }
             }
             catch (DsmException)
@@ -162,6 +211,7 @@ public sealed partial class FilesPage
                 {
                     _archiveExtractionCancellation = null;
                     _isArchiveExtractionSubmitting = false;
+                    UpdateConfirmation();
                 }
                 deferral.Complete();
             }
@@ -182,6 +232,7 @@ public sealed partial class FilesPage
         }
         finally
         {
+            passwordBox.Password = string.Empty;
             operationCancellation?.Cancel();
             if (_archiveExtractionGeneration == generation &&
                 ReferenceEquals(_archiveExtractionDialog, dialog))
@@ -226,7 +277,7 @@ public sealed partial class FilesPage
         !item.Path[(parent.Length + 1)..].Contains('/') &&
         !item.Path.Split('/').Any(segment =>
             segment.Equals("#recycle", StringComparison.OrdinalIgnoreCase)) &&
-        SupportedArchiveExtensions.Contains(Path.GetExtension(item.Name));
+        FileArchiveExtractionOptions.IsSupportedArchive(item.Name);
 
     private static FrameworkElement BuildArchiveExtractionResult(
         MutationResult result,

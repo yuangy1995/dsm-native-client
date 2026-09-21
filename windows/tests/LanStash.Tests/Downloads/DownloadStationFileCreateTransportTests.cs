@@ -25,8 +25,10 @@ public sealed class DownloadStationFileCreateTransportTests
         1,
         "FORM");
 
-    [Fact]
-    public async Task FileCreateUsesOfficialV1MultipartAndPublishesNasTrustContext()
+    [Theory]
+    [InlineData(null, 1)]
+    [InlineData("/downloads", 2)]
+    public async Task FileCreateChoosesVersionByDestinationAndKeepsPasswordOnlyInMultipart(string? target, int expectedVersion)
     {
         byte[]? body = null;
         long? declaredLength = null;
@@ -56,12 +58,13 @@ public sealed class DownloadStationFileCreateTransportTests
             source,
             4,
             "sample.torrent",
-            "/downloads");
+            target,
+            "  synthetic & 密码  ");
 
         var result = await client.CreateDownloadTaskFromFileAsync(
             Profile,
             Session,
-            Capability,
+            Capability with { MaxVersion = 9, Path = "webapi/entry.cgi" },
             upload);
 
         Assert.Equal(DownloadTaskFileCreateTransportStatus.Accepted, result.Status);
@@ -69,12 +72,15 @@ public sealed class DownloadStationFileCreateTransportTests
         Assert.NotNull(body);
         Assert.Equal(body!.LongLength, declaredLength);
         Assert.NotNull(requestUri);
+        Assert.Equal("/webapi/entry.cgi", requestUri!.AbsolutePath);
         Assert.DoesNotContain("synthetic-sid", requestUri!.OriginalString);
         Assert.DoesNotContain("/downloads", requestUri.OriginalString);
         Assert.Equal(Profile.Id, contextProfile);
         Assert.Equal(DsmConnectionSource.DirectAddress, contextSource);
 
         var text = Encoding.UTF8.GetString(body);
+        Assert.Contains("name=\"SynoToken\"\r\n\r\nsynthetic-token\r\n", text);
+        Assert.DoesNotContain("synthetic-token", requestUri.OriginalString);
         var api = text.IndexOf("name=\"api\"", StringComparison.Ordinal);
         var version = text.IndexOf("name=\"version\"", StringComparison.Ordinal);
         var method = text.IndexOf("name=\"method\"", StringComparison.Ordinal);
@@ -86,18 +92,34 @@ public sealed class DownloadStationFileCreateTransportTests
             StringComparison.Ordinal);
         Assert.True(api >= 0 && api < version);
         Assert.True(version < method && method < sid);
-        Assert.True(sid < destination && destination < file);
+        if (target is not null) Assert.True(sid < destination && destination < file);
+        else Assert.Equal(-1, destination);
+        var password = text.IndexOf("name=\"unzip_password\"", StringComparison.Ordinal);
+        Assert.True(password > sid && password < file);
+        Assert.Contains("name=\"unzip_password\"\r\n\r\n  synthetic & 密码  \r\n", text);
+        Assert.DoesNotContain("synthetic &", requestUri.OriginalString);
         Assert.True(fileDisposition >= 0);
         Assert.Equal(
             fileDisposition,
             text.LastIndexOf("Content-Disposition: form-data", StringComparison.Ordinal));
         Assert.Contains("name=\"api\"\r\n\r\nSYNO.DownloadStation.Task\r\n", text);
-        Assert.Contains("name=\"version\"\r\n\r\n1\r\n", text);
+        Assert.Contains($"name=\"version\"\r\n\r\n{expectedVersion}\r\n", text);
         Assert.Contains("name=\"method\"\r\n\r\ncreate\r\n", text);
-        Assert.Contains("name=\"destination\"\r\n\r\n/downloads\r\n", text);
+        if (target is not null) Assert.Contains("name=\"destination\"\r\n\r\n/downloads\r\n", text);
         Assert.Contains("filename=\"sample.torrent\"", text);
         Assert.True(body.AsSpan().IndexOf(new byte[] { 0x64, 0x38, 0x3A, 0x61 }) > 0);
         Assert.Equal(nameof(DownloadTaskFileCreateRequest), upload.ToString());
+    }
+
+    [Fact]
+    public async Task DestinationWithOnlyV1CapabilityIsRejectedBeforeTransport()
+    {
+        var calls = 0;
+        using var http = new HttpClient(new CaptureHandler((_, _) => { calls++; return Task.FromResult(JsonResponse("{}")); }));
+        using var stream = new MemoryStream([1]);
+        var result = await new DsmApiClient(http).CreateDownloadTaskFromFileAsync(Profile, Session, Capability,
+            new(Profile.Id, stream, 1, "synthetic.torrent", "downloads"));
+        Assert.Equal(DownloadTaskFileCreateTransportStatus.Unsupported, result.Status); Assert.Equal(0, calls);
     }
 
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)

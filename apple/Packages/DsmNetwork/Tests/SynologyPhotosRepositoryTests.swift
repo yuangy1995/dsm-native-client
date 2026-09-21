@@ -75,6 +75,47 @@ final class SynologyPhotosRepositoryTests: XCTestCase {
         let deletes = try requests.filter { $0.httpMethod == "POST" }.map(decode).filter { $0["method"] == "delete" }
         XCTAssertEqual(deletes.count, 1)
     }
+    func test删除明确权限或会话拒绝显示原因且原操作不重发() async throws {
+        for code in [105, 106, 107, 119] {
+            let preflight = [response(itemPage), response(#"{"success":true,"data":{"folder":{"id":9,"name":"/Sample","parent":1,"additional":{"access_permission":{"view":true,"manage":true}}}}}"#)]
+            let transport = MockHTTPTransport(responses: accessResponses() + [response(itemPage)] + preflight + [
+                response("{\"success\":false,\"error\":{\"code\":\(code)}}")
+            ] + preflight + [response(#"{"success":true,"data":{"task_info":{"id":1}}}"#), response(#"{"success":true,"data":{"list":[]}}"#)])
+            let repository = try makeRepository(transport, deletionEnabled: true)
+            _ = try await repository.access()
+            let page = try await repository.photos(in: .personal, query: .recentlyAdded, offset: 0, limit: 20)
+            let photo = try XCTUnwrap(page.items.first), operationID = UUID()
+            for _ in 0..<2 {
+                do { _ = try await repository.deletePhoto(photo, operationID: operationID); XCTFail("明确拒绝不能报告待核查或成功") }
+                catch let error as AppError { XCTAssertEqual(error.category, code == 105 ? .permissionDenied : .authenticationRequired) }
+            }
+            let rejectedRequests = await transport.recordedRequests()
+            XCTAssertEqual(try rejectedRequests.map(decode).filter { $0["method"] == "delete" }.count, 1)
+            // 新的明确用户确认重新预检；不是自动重放之前失败的操作。
+            let next = try await repository.deletePhoto(photo, operationID: UUID())
+            XCTAssertEqual(next, .confirmed)
+            let allRequests = await transport.recordedRequests()
+            XCTAssertEqual(try allRequests.map(decode).filter { $0["method"] == "delete" }.count, 2)
+        }
+    }
+
+    func test删除预检不依赖无关详情且不请求附加媒体字段() async throws {
+        let minimal = #"{"success":true,"data":{"list":[{"id":7,"filename":"sample.jpg","filesize":128,"time":50,"indexed_time":60,"folder_id":9,"type":"photo","additional":{"exif":{"iso":800},"address":{"unexpected":{}},"video_convert":false}}]}}"#
+        let transport = MockHTTPTransport(responses: accessResponses() + [response(itemPage), response(minimal),
+            response(#"{"success":true,"data":{"folder":{"id":9,"name":"/Sample","parent":1,"additional":{"access_permission":{"view":true,"manage":true}}}}}"#)
+        ])
+        let repository = try makeRepository(transport, deletionEnabled: true)
+        _ = try await repository.access()
+        let page = try await repository.photos(in: .personal, query: .recentlyAdded, offset: 0, limit: 20)
+        try await repository.prepareDeletion(XCTUnwrap(page.items.first))
+        let requests = await transport.recordedRequests()
+        let identity = try decode(requests[5])
+        XCTAssertEqual(identity["method"], "get")
+        XCTAssertEqual(identity["id"], "[7]")
+        XCTAssertNil(identity["additional"])
+        XCTAssertFalse(try requests.map(decode).contains { $0["method"] == "delete" })
+    }
+
     func test与他人共享必须发送共享修改时间排序且不混用权限字段() async throws {
         let transport = MockHTTPTransport(responses: accessResponses() + [response(#"{"success":true,"data":{"list":[]}}"#)])
         let repository = try makeRepository(transport)

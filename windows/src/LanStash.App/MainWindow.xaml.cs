@@ -5,6 +5,7 @@ using LanStash.App.Views;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using System.IO;
 using WinRT.Interop;
 
@@ -16,6 +17,8 @@ public sealed partial class MainWindow : Window
     private readonly AppWindow _appWindow;
     private readonly TrayIcon _trayIcon;
     private WindowsTransferNotificationService? _transferNotifications;
+    private readonly WindowsTransferNotificationService.WindowsNotificationBackend _notificationBackend = new();
+    private int _notificationGeneration;
     private bool _isExplicitExit;
     private bool _photoViewerOwnsFullScreen;
     private bool _restorePhotoViewerMaximized;
@@ -24,9 +27,15 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = LocalizationService.Current.Get("AppName");
+        WindowTitle.Text = Title;
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(WindowTitleBar);
         var windowHandle = WindowNative.GetWindowHandle(this);
         var windowId = Win32Interop.GetWindowIdFromWindow(windowHandle);
         _appWindow = AppWindow.GetFromWindowId(windowId);
+        WindowRoot.ActualThemeChanged += (_, _) => DispatcherQueue.TryEnqueue(UpdateCaptionColors);
+        WindowRoot.Loaded += (_, _) => UpdateCaptionColors();
+        UpdateCaptionColors();
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
         _appWindow.SetIcon(iconPath);
         _appWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
@@ -47,12 +56,41 @@ public sealed partial class MainWindow : Window
             ToggleCloudDrives,
             ShowCloudDriveIssues,
             RequestExit);
-        _appWindow.Destroying += (_, _) => _trayIcon.Dispose();
+        _appWindow.Destroying += (_, _) => { _isExplicitExit = true; _transferNotifications?.Dispose(); _notificationBackend.Dispose(); _trayIcon.Dispose(); };
 
         _viewModel.ConnectionChanged += OnConnectionChanged;
         LocalizationService.Current.LanguageChanged += OnLanguageChanged;
+#if LANSTASH_UI_SMOKE
+        if (int.TryParse(Environment.GetEnvironmentVariable("LANSTASH_SMOKE_WIDTH"), out var smokeWidth))
+            _appWindow.Resize(new Windows.Graphics.SizeInt32(smokeWidth,
+                int.TryParse(Environment.GetEnvironmentVariable("LANSTASH_SMOKE_HEIGHT"), out var smokeHeight) ? smokeHeight : 820));
+        // 合成 UI 宿主不加载本机配置、凭据或任何远程数据。
+        _viewModel.InitializeSmokeWorkspace();
+        if (Environment.GetEnvironmentVariable("LANSTASH_SMOKE_SCENARIO") == "login") _viewModel.InitializeSmokeLogin();
+        RootFrame.Content = Environment.GetEnvironmentVariable("LANSTASH_SMOKE_SCENARIO") == "login"
+            ? new LoginPage(_viewModel) : new ShellPage(_viewModel);
+        RootFrame.Loaded += async (_, _) => await SmokeSnapshot.SaveAsync(RootFrame);
+#else
+        _notificationBackend.StartListening();
         RootFrame.Content = new LoginPage(_viewModel);
         _ = _viewModel.InitializeAsync();
+#endif
+    }
+
+    private void UpdateCaptionColors()
+    {
+        // 系统标题栏按钮也跟随当前窗口主题，保留原生窗口操作和命中区域。
+        var caption = _appWindow.TitleBar;
+        caption.ButtonBackgroundColor = Colors.Transparent;
+        caption.ButtonInactiveBackgroundColor = Colors.Transparent;
+        var foreground = ((SolidColorBrush)WindowTitle.Foreground).Color;
+        caption.ButtonForegroundColor = foreground;
+        caption.ButtonInactiveForegroundColor = foreground;
+        caption.ButtonHoverForegroundColor = foreground;
+        caption.ButtonPressedForegroundColor = foreground;
+        caption.ButtonHoverBackgroundColor = WindowRoot.ActualTheme == ElementTheme.Dark
+            ? ColorHelper.FromArgb(255, 89, 94, 96) : ColorHelper.FromArgb(255, 211, 215, 221);
+        caption.ButtonPressedBackgroundColor = ((SolidColorBrush)WindowRoot.Background).Color;
     }
 
     private void OnLanguageChanged(object? sender, EventArgs e)
@@ -61,6 +99,7 @@ public sealed partial class MainWindow : Window
         {
             ExitPhotoViewerFullScreen();
             Title = LocalizationService.Current.Get("AppName");
+            WindowTitle.Text = Title;
             _trayIcon.UpdateText(
                 LocalizationService.Current.Get("TrayTooltip"),
                 LocalizationService.Current.Get("TrayOpenApp"),
@@ -70,8 +109,7 @@ public sealed partial class MainWindow : Window
                 LocalizationService.Current.Get("TrayExitApp"));
             if (_viewModel.Repository is not null)
             {
-                _transferNotifications ??= new WindowsTransferNotificationService(
-                    () => ShowTransfersFromNotification());
+                _transferNotifications ??= CreateTransferNotifications();
             }
             RootFrame.Content = _viewModel.Repository is null
                 ? new LoginPage(_viewModel)
@@ -81,13 +119,13 @@ public sealed partial class MainWindow : Window
 
     private void OnConnectionChanged(object? sender, bool connected)
     {
+        Interlocked.Increment(ref _notificationGeneration);
         DispatcherQueue.TryEnqueue(() =>
         {
             ExitPhotoViewerFullScreen();
             _transferNotifications?.Dispose();
             _transferNotifications = connected
-                ? new WindowsTransferNotificationService(
-                    () => ShowTransfersFromNotification())
+                ? CreateTransferNotifications()
                 : null;
             RootFrame.Content = connected
                 ? new ShellPage(_viewModel, _transferNotifications)
@@ -95,15 +133,33 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private void ShowTransfersFromNotification()
+    private WindowsTransferNotificationService CreateTransferNotifications()
+    {
+        WindowsTransferNotificationService? service = null;
+        var generation = Volatile.Read(ref _notificationGeneration);
+        service = new WindowsTransferNotificationService(() => ShowTransfersFromNotification(service!, generation), DispatchNotification, _notificationBackend);
+        return service;
+    }
+
+    private bool DispatchNotification(Action action)
+    {
+        if (DispatcherQueue.HasThreadAccess) { action(); return true; }
+        return DispatcherQueue.TryEnqueue(() => action());
+    }
+
+    private void ShowTransfersFromNotification(WindowsTransferNotificationService source, int generation)
     {
         DispatcherQueue.TryEnqueue(async () =>
         {
+            if (_isExplicitExit || !source.IsEnabled || generation != Volatile.Read(ref _notificationGeneration) || !ReferenceEquals(source, _transferNotifications) ||
+                _viewModel.Repository is null || RootFrame.Content is not ShellPage) return;
             _appWindow.Show();
             Activate();
             if (RootFrame.Content is ShellPage shell)
             {
                 await shell.SetWindowVisibleAsync(true);
+                if (_isExplicitExit || !source.IsEnabled || generation != Volatile.Read(ref _notificationGeneration) ||
+                    !ReferenceEquals(source, _transferNotifications) || !ReferenceEquals(RootFrame.Content, shell)) return;
                 await shell.ShowTransfersAsync();
             }
         });
@@ -118,7 +174,8 @@ public sealed partial class MainWindow : Window
             return;
         }
         args.Cancel = true;
-        sender.Hide();
+        if (_trayIcon.EnsureRegistered()) sender.Hide();
+        else if (sender.Presenter is OverlappedPresenter presenter) presenter.Minimize();
         if (RootFrame.Content is ShellPage shell)
         {
             await shell.SetWindowVisibleAsync(false);
@@ -147,6 +204,7 @@ public sealed partial class MainWindow : Window
             _viewModel.Shutdown();
             _transferNotifications?.Dispose();
             _transferNotifications = null;
+            _notificationBackend.Dispose();
             _trayIcon.Dispose();
             Close();
         });

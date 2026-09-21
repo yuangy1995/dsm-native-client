@@ -1,7 +1,7 @@
 import Foundation
 
 /// NAS 管理响应的内部宽容解码器；不承载网络调用或写操作状态。
-enum DsmDynamicJSON: Decodable, Sendable {
+enum DsmDynamicJSON: Decodable, Sendable, Equatable {
     case object([String: DsmDynamicJSON])
     case array([DsmDynamicJSON])
     case string(String)

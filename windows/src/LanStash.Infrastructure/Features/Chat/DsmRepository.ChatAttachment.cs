@@ -317,6 +317,7 @@ public sealed partial class DsmRepository
     private IReadOnlySet<ChatWriteFeature> SupportedChatWriteFeatures()
     {
         var features = new HashSet<ChatWriteFeature>();
+        if (!HasBoundChatSession) return features;
         if (HasTextMessageSendContract)
         {
             features.Add(ChatWriteFeature.TextMessage);
@@ -337,6 +338,14 @@ public sealed partial class DsmRepository
         {
             features.Add(ChatWriteFeature.DeleteOwnMessage);
         }
+        if (HasBoundChatSession)
+        {
+            if (HasAdvancedApi("SYNO.Chat.Post.Reminder")) features.Add(ChatWriteFeature.Reminders);
+            if (HasAdvancedApi("SYNO.Chat.Post.Schedule")) features.Add(ChatWriteFeature.ScheduledMessages);
+            if (HasAdvancedApi("SYNO.Chat.Post.Vote")) features.Add(ChatWriteFeature.Polls);
+            if (HasAdvancedApi("SYNO.Chat.Channel", 5)) features.Add(ChatWriteFeature.CloseConversation);
+            if (HasAdvancedApi("SYNO.Chat.Post", 5)) { features.Add(ChatWriteFeature.ForwardMessage); features.Add(ChatWriteFeature.PinnedMessages); }
+        }
         return features;
     }
 
@@ -356,6 +365,9 @@ public sealed partial class DsmRepository
             features.Add(ChatReadFeature.AttachmentThumbnail);
             features.Add(ChatReadFeature.AttachmentContent);
         }
+        if (HasAdvancedApi("SYNO.Chat.Post.Reminder")) features.Add(ChatReadFeature.Reminders);
+        if (HasAdvancedApi("SYNO.Chat.Post.Schedule")) features.Add(ChatReadFeature.ScheduledMessages);
+        if (HasAdvancedApi("SYNO.Chat.Post.Vote")) features.Add(ChatReadFeature.Polls);
         return features;
     }
 

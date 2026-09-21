@@ -2,6 +2,8 @@ using LanStash.Domain;
 
 namespace LanStash.App.Features.Transfers;
 
+internal sealed record ForegroundSelectionDownloadFinished(string ProfileId, Guid ActivityId, int SelectedCount, FileDownloadBatchAttemptStatus Status);
+
 internal enum ForegroundTransferDirection
 {
     Download,

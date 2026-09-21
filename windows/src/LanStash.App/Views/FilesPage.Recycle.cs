@@ -47,6 +47,7 @@ public sealed partial class FilesPage
 
     private async Task ShowRecycleAsync(FileRecycleOperation operation)
     {
+        if (_fileOperationRecoveryDialog is not null) return;
         if (operation == FileRecycleOperation.MoveToRecycle && !CanMoveToRecycle() ||
             operation == FileRecycleOperation.Restore && !CanRestoreFromRecycle())
         {

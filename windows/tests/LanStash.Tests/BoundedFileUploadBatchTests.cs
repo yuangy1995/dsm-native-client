@@ -5,12 +5,9 @@ namespace LanStash.Tests;
 public sealed class BoundedFileUploadBatchTests
 {
     [Fact]
-    public void ValidatePathsRejectsEmptyTooManyInvalidAndDuplicateTargets()
+    public void ValidatePathsRejectsEmptyInvalidAndDuplicateTargets()
     {
         Assert.Equal(FileUploadBatchValidationStatus.Empty, BoundedFileUploadBatch.ValidatePaths([]));
-        Assert.Equal(
-            FileUploadBatchValidationStatus.TooMany,
-            BoundedFileUploadBatch.ValidatePaths(Paths(BoundedFileUploadBatch.MaximumFileCount + 1)));
         Assert.Equal(
             FileUploadBatchValidationStatus.InvalidPath,
             BoundedFileUploadBatch.ValidatePaths(["/source/one.txt", " "]));
@@ -22,10 +19,13 @@ public sealed class BoundedFileUploadBatchTests
             BoundedFileUploadBatch.ValidatePaths(["/first/Case.txt", "/second/case.txt"]));
     }
 
-    [Fact]
-    public void ValidatePathsAcceptsLimitAndNeverProducesTargetBusy()
+    [Theory]
+    [InlineData(21)]
+    [InlineData(205)]
+    [InlineData(1001)]
+    public void ValidatePathsAcceptsLargeSelectionsAndNeverProducesTargetBusy(int count)
     {
-        var status = BoundedFileUploadBatch.ValidatePaths(Paths(BoundedFileUploadBatch.MaximumFileCount));
+        var status = BoundedFileUploadBatch.ValidatePaths(Paths(count));
 
         Assert.Equal(FileUploadBatchValidationStatus.Valid, status);
         Assert.NotEqual(FileUploadBatchValidationStatus.TargetBusy, status);
@@ -49,26 +49,29 @@ public sealed class BoundedFileUploadBatchTests
         Assert.Equal(0, executions);
     }
 
-    [Fact]
-    public async Task RunsAtMostOneAttemptAtATimeAtTwentyFileLimit()
+    [Theory]
+    [InlineData(21)]
+    [InlineData(205)]
+    [InlineData(1001)]
+    public async Task RunsAllSelectedFilesStrictlyOneAtATime(int count)
     {
         var active = 0;
         var maximumActive = 0;
 
         var summary = await BoundedFileUploadBatch.RunAsync(
-            Paths(BoundedFileUploadBatch.MaximumFileCount),
+            Paths(count),
             async (_, _) =>
             {
                 var current = Interlocked.Increment(ref active);
                 UpdateMaximum(ref maximumActive, current);
-                await Task.Delay(2);
+                await Task.Yield();
                 Interlocked.Decrement(ref active);
                 return Confirmed();
             },
             CancellationToken.None);
 
         Assert.Equal(1, maximumActive);
-        Assert.Equal(20, summary.ConfirmedCount);
+        Assert.Equal(count, summary.ConfirmedCount);
         AssertConserved(summary);
     }
 
@@ -204,10 +207,33 @@ public sealed class BoundedFileUploadBatchTests
         AssertConserved(summary);
     }
 
+    [Fact]
+    public async Task CallerChangesCannotReplaceOrDropQueuedPaths()
+    {
+        var paths = Paths(205).ToList(); var original = paths.ToArray(); var executed = new List<string>();
+        var result = await BoundedFileUploadBatch.RunAsync(paths, (path, _) =>
+        {
+            executed.Add(path);
+            if (executed.Count == 1) { paths.Clear(); paths.Add("/source/replacement.txt"); }
+            return Task.FromResult(Confirmed());
+        }, CancellationToken.None);
+        Assert.Equal(original, executed); Assert.Equal(205, result.SelectedCount); Assert.Equal(205, result.ConfirmedCount); AssertConserved(result);
+    }
+
+    [Fact]
+    public async Task LargeBatchCancellationAfterTwentyItemsStillAccountsForEveryItem()
+    {
+        var calls = 0;
+        var result = await BoundedFileUploadBatch.RunAsync(Paths(1001), (_, _) => Task.FromResult(++calls == 23
+            ? new FileUploadBatchAttempt(FileUploadBatchAttemptStatus.NeedsReview, StopBatch: true) : Confirmed()), CancellationToken.None);
+        Assert.Equal(23, calls); Assert.Equal(22, result.ConfirmedCount); Assert.Equal(1, result.NeedsReviewCount);
+        Assert.Equal(978, result.NotStartedCount); AssertConserved(result);
+    }
+
     public static TheoryData<IReadOnlyList<string>> InvalidBatches => new()
     {
         Array.Empty<string>(),
-        Paths(BoundedFileUploadBatch.MaximumFileCount + 1),
+        new[] { "C:\\source\\" },
         new[] { "/source/one.txt", string.Empty },
         new[] { "/first/same.txt", "/second/same.txt" },
     };

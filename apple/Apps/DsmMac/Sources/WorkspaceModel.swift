@@ -411,6 +411,8 @@ final class WorkspaceModel {
     var storageSpaceSummary: StorageSpaceSummary?
     var isLoadingStorageSpace = false
     var isManagingRemoteMount = false
+    private(set) var remoteMountOperations: [RemoteMountOperation] = []
+    @ObservationIgnored private var remoteMountRecoveryGeneration = 0
     var isLoading = false
     var isRefreshing = false
     var isLoadingMore = false
@@ -1217,6 +1219,8 @@ final class WorkspaceModel {
                 isLoadingRemoteLocations = false
             }
         }
+        await refreshRemoteMountOperations()
+        guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
         do {
             let page = try await repository.listVirtualFolders(offset: 0, limit: 5_000)
             guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
@@ -1254,52 +1258,132 @@ final class WorkspaceModel {
         defer { isManagingRemoteMount = false }
         do {
             try await repository.createRemoteMount(configuration)
-            try await reloadShares()
+            await refreshAfterRemoteMountCompletion()
             statusIsError = false
             statusMessage = L10n.string("ui.14d477b19fa31764")
             return true
         } catch {
+            await refreshRemoteMountOperations()
             show(error)
             return false
         }
     }
 
+    func prepareRemoteMountConnection(_ item: FileItem) async -> RemoteMountConnection? {
+        guard isFileModuleEnabled, allowsRemoteMountManagement, !isManagingRemoteMount, item.profileID == profile.id else { return nil }
+        isManagingRemoteMount = true
+        defer { isManagingRemoteMount = false }
+        do {
+            let inventory = try await repository.remoteMountInventory()
+            guard isFileModuleEnabled, inventory.profileID == profile.id,
+                  let connection = inventory.connections.first(where: { $0.mountPoint == item.path && $0.profileID == profile.id }) else {
+                throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.identity.changed"))
+            }
+            return connection
+        } catch { await refreshRemoteMountOperations(); show(error); return nil }
+    }
+
     func updateRemoteMount(
-        _ item: FileItem,
+        _ connection: RemoteMountConnection,
         configuration: RemoteMountConfiguration
     ) async -> Bool {
-        guard !isManagingRemoteMount else { return false }
+        guard isFileModuleEnabled, connection.profileID == profile.id, !isManagingRemoteMount else { return false }
         isManagingRemoteMount = true
         defer { isManagingRemoteMount = false }
         do {
             try await repository.updateRemoteMount(
-                existingMountPoint: item.path,
+                expectedConnection: connection,
                 configuration: configuration
             )
-            try await reloadShares()
+            await refreshAfterRemoteMountCompletion()
             statusIsError = false
             statusMessage = L10n.string("ui.109f075ff40700df")
             return true
         } catch {
+            await refreshRemoteMountOperations()
             show(error)
             return false
         }
     }
 
-    func removeRemoteMount(_ item: FileItem) async -> Bool {
-        guard !isManagingRemoteMount else { return false }
+    func removeRemoteMount(_ connection: RemoteMountConnection) async -> Bool {
+        guard isFileModuleEnabled, connection.profileID == profile.id, !isManagingRemoteMount else { return false }
         isManagingRemoteMount = true
         defer { isManagingRemoteMount = false }
         do {
-            try await repository.removeRemoteMount(mountPoint: item.path)
-            try await reloadShares()
+            try await repository.removeRemoteMount(expectedConnection: connection)
+            await refreshAfterRemoteMountCompletion()
             statusIsError = false
             statusMessage = L10n.string("ui.0e675b381ad62cd9")
             return true
         } catch {
+            await refreshRemoteMountOperations()
             show(error)
             return false
         }
+    }
+
+    func refreshRemoteMountOperations() async {
+        remoteMountRecoveryGeneration += 1
+        let generation = remoteMountRecoveryGeneration
+        let operations = await repository.pendingRemoteMountOperations()
+        guard generation == remoteMountRecoveryGeneration, operations.allSatisfy({ $0.profileID == profile.id }) else { return }
+        remoteMountOperations = operations
+    }
+
+    func reviewRemoteMountOperation(_ operation: RemoteMountOperation) async {
+        await runRemoteMountRecovery(operation, action: .review, password: "", confirmed: false)
+    }
+
+    func continueRemoteMountOperation(_ operation: RemoteMountOperation, password: String, confirmed: Bool) async {
+        await runRemoteMountRecovery(operation, action: .resume, password: password, confirmed: confirmed)
+    }
+
+    func abandonRemoteMountOperation(_ operation: RemoteMountOperation, confirmed: Bool) async {
+        await runRemoteMountRecovery(operation, action: .abandon, password: "", confirmed: confirmed)
+    }
+
+    private enum RemoteMountRecoveryAction: Equatable { case review, resume, abandon }
+    private func runRemoteMountRecovery(_ operation: RemoteMountOperation, action: RemoteMountRecoveryAction, password: String, confirmed: Bool) async {
+        guard isFileModuleEnabled, allowsRemoteMountManagement, !isManagingRemoteMount,
+              operation.profileID == profile.id, remoteMountOperations.contains(operation), action == .review || confirmed else { return }
+        isManagingRemoteMount = true
+        defer { isManagingRemoteMount = false }
+        do {
+            let result: RemoteMountOperation?
+            switch action {
+            case .review: result = try await repository.reviewRemoteMountOperation(id: operation.id)
+            case .resume: result = try await repository.continueRemoteMountOperation(id: operation.id, password: password, confirmed: confirmed)
+            case .abandon: result = try await repository.abandonRemoteMountOperation(id: operation.id, confirmed: confirmed)
+            }
+            await refreshRemoteMountOperations()
+            guard let result else {
+                throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("remote-mount.recovery.unavailable"))
+            }
+            if result.stage == .completed { await refreshAfterRemoteMountCompletion() }
+            statusIsError = result.stage == .failed
+            statusMessage = L10n.string(Self.remoteMountStageResourceKey(result.stage))
+        } catch {
+            await refreshRemoteMountOperations()
+            show(error)
+        }
+    }
+
+    static func remoteMountStageResourceKey(_ stage: RemoteMountOperationStage) -> String {
+        switch stage {
+        case .verifyingConnection, .verifyingDisconnection: "remote-mount.recovery.unknown"
+        case .readyToConnect: "remote-mount.recovery.ready-connect"
+        case .readyToDisconnectPrevious: "remote-mount.recovery.ready-disconnect"
+        case .completed: "remote-mount.recovery.completed"
+        case .failed: "remote-mount.recovery.failed"
+        case .cancelled: "remote-mount.recovery.stopped"
+        }
+    }
+
+    private func refreshAfterRemoteMountCompletion() async {
+        await refreshRemoteMountOperations()
+        do { try await reloadShares() }
+        catch { remoteLocationsError = Self.userMessage(for: error) }
     }
 
     private func reloadShares() async throws {

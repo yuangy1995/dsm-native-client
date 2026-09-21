@@ -1,0 +1,36 @@
+<UserControl
+    x:Class="LanStash.App.Views.NasFileServiceSettingsDialogContent"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="540">
+    <StackPanel MinWidth="280" MaxWidth="480" Spacing="16">
+      <ProgressRing x:Name="LoadingIndicator" Width="32" Height="32" IsActive="False" Visibility="Collapsed"/>
+      <InfoBar x:Name="StatusNotice" IsClosable="False" IsOpen="False" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="ReadOnlyNotice" x:Uid="NasServiceReadOnly" TextWrapping="Wrap" Visibility="Collapsed"/>
+      <Grid x:Name="Fields" ColumnSpacing="24" RowSpacing="14" Visibility="Collapsed">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <ToggleSwitch x:Name="Smb" x:Uid="NasFileSmb" IsEnabled="False" Toggled="Fields_Changed"/>
+        <ToggleSwitch x:Name="Nfs" x:Uid="NasFileNfs" Grid.Column="1" IsEnabled="False" Toggled="Fields_Changed"/>
+        <ToggleSwitch x:Name="Ftp" x:Uid="NasFileFtp" Grid.Row="1" IsEnabled="False" Toggled="Fields_Changed"/>
+        <ToggleSwitch x:Name="Ftps" x:Uid="NasFileFtps" Grid.Row="1" Grid.Column="1" IsEnabled="False" Toggled="Fields_Changed"/>
+        <TextBox x:Name="FtpPort" x:Uid="NasFileFtpPort" Grid.Row="2" IsReadOnly="True" InputScope="Number" MaxLength="6" TextChanged="Port_Changed" VerticalAlignment="Top"/>
+        <StackPanel Grid.Row="2" Grid.Column="1" Spacing="8">
+          <ToggleSwitch x:Name="Sftp" x:Uid="NasFileSftp" IsEnabled="False" Toggled="Fields_Changed"/>
+          <TextBox x:Name="SftpPort" x:Uid="NasFileSftpPort" IsReadOnly="True" InputScope="Number" MaxLength="6" TextChanged="Port_Changed"/>
+        </StackPanel>
+        <ToggleSwitch x:Name="Ssdp" x:Uid="NasFileSsdp" Grid.Row="3" IsEnabled="False" Toggled="Fields_Changed"/>
+        <ToggleSwitch x:Name="Bonjour" x:Uid="NasFileBonjour" Grid.Row="3" Grid.Column="1" IsEnabled="False" Toggled="Fields_Changed"/>
+        <ToggleSwitch x:Name="TimeMachine" x:Uid="NasFileTimeMachine" Grid.Row="4" Grid.ColumnSpan="2" IsEnabled="False" Toggled="Fields_Changed"/>
+      </Grid>
+      <TextBlock x:Name="ValidationNotice" x:Uid="NasFileServiceValidation" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="RiskNotice" x:Uid="NasFileServiceRisk" TextWrapping="Wrap" Visibility="Collapsed"/>
+      <CheckBox x:Name="RiskAcknowledgement" x:Uid="NasServiceRiskConfirmed" Checked="Acknowledgement_Changed" Unchecked="Acknowledgement_Changed" Visibility="Collapsed">
+        <CheckBox.Content><TextBlock x:Uid="NasServiceRiskConfirmedText" TextWrapping="Wrap"/></CheckBox.Content>
+      </CheckBox>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

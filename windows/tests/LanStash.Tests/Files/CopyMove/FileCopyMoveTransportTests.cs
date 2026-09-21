@@ -31,6 +31,21 @@ public sealed class FileCopyMoveTransportTests
         Assert.Equal(1, handler.Count);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitOverwriteUsesSameV3TransportOnce(bool removeSource)
+    {
+        var handler = new CaptureHandler();
+        var client = new DsmApiClient(new HttpClient(handler));
+        await client.StartFileCopyMoveAsync(Profile, Session, Capability, "/share/source/item.txt", "/share/destination", removeSource, true);
+        var form = Decode(Assert.Single(handler.Bodies));
+        Assert.Equal("true", form["overwrite"]);
+        Assert.Equal(removeSource ? "true" : "false", form["remove_src"]);
+        Assert.Equal("3", form["version"]);
+        Assert.Equal(1, handler.Count);
+    }
+
     [Fact]
     public async Task StatusUsesFixedV3AndRequiresNativeFinishedAndNativeCounters()
     {
@@ -57,6 +72,19 @@ public sealed class FileCopyMoveTransportTests
         Assert.Equal("status", form["method"]);
         Assert.Equal("3", form["version"]);
         Assert.Equal("synthetic-task", form["taskid"]);
+    }
+
+    [Theory]
+    [InlineData("-1", true)]
+    [InlineData("-2", false)]
+    [InlineData("\"-1\"", false)]
+    public async Task StatusAcceptsOnlyDocumentedCalculatingTotal(string total, bool valid)
+    {
+        var handler = new CaptureHandler { Responses = new Queue<string>([$"{{\"success\":true,\"data\":{{\"finished\":false,\"total\":{total}}}}}"]) };
+        var client = new DsmApiClient(new HttpClient(handler));
+        if (valid) Assert.Equal(FileCopyMoveTaskTransportStatus.Running,
+            (await client.ReadFileCopyMoveStatusAsync(Profile, Session, Capability, "task-1")).Status);
+        else await Assert.ThrowsAsync<DsmException>(() => client.ReadFileCopyMoveStatusAsync(Profile, Session, Capability, "task-1"));
     }
 
     [Fact]

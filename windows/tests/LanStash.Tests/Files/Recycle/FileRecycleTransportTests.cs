@@ -34,7 +34,7 @@ public sealed class FileRecycleTransportTests
         {
             Responses = new Queue<string>(new[]
             {
-                """{"success":true,"data":{"finished":true,"progress":0.5,"total":2,"processed_size":1}}""",
+                """{"success":true,"data":{"finished":true,"progress":0.5,"total":2,"processed_num":1}}""",
                 """{"success":true,"data":{"finished":"true"}}""",
             }),
         };
@@ -50,6 +50,21 @@ public sealed class FileRecycleTransportTests
         Assert.Equal("status", form["method"]);
         Assert.Equal("2", form["version"]);
         Assert.Equal("synthetic-task", form["taskid"]);
+    }
+
+    [Theory]
+    [InlineData("-1", "0", true)]
+    [InlineData("-2", "0", false)]
+    [InlineData("\"-1\"", "0", false)]
+    [InlineData("1", "\"1\"", false)]
+    [InlineData("1", "-1", false)]
+    public async Task StatusRespectsDocumentedCalculatingTotalAndProcessedCount(string total, string processed, bool valid)
+    {
+        var handler = new CaptureHandler { Responses = new Queue<string>([$"{{\"success\":true,\"data\":{{\"finished\":false,\"total\":{total},\"processed_num\":{processed}}}}}"]) };
+        var client = new DsmApiClient(new HttpClient(handler));
+        if (valid) Assert.Equal(FileRecycleTaskTransportStatus.Running,
+            (await client.ReadFileRecycleStatusAsync(Profile, Session, DeleteCapability, "synthetic-task")).Status);
+        else await Assert.ThrowsAsync<DsmException>(() => client.ReadFileRecycleStatusAsync(Profile, Session, DeleteCapability, "synthetic-task"));
     }
 
     [Fact]

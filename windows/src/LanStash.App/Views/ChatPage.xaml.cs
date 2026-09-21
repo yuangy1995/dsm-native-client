@@ -24,6 +24,8 @@ public sealed partial class ChatPage : Page, IDisposable
     private bool _isWindowVisible = true;
     private bool _compactShowsConversationList;
     private bool _disposed;
+    private bool _isConfiguringComposer;
+    private bool _stateUpdateQueued;
 
     internal ChatPage(IChatRepository repository)
         : this(repository, new ChatBrowserViewModel())
@@ -44,9 +46,11 @@ public sealed partial class ChatPage : Page, IDisposable
         ConfigureEmojiAction();
         _foregroundRefresher = new(
             viewModel.RefreshConversationsAsync,
-            () => viewModel.SelectedConversation is { IsEncrypted: false },
+            () => _isLoaded && _isWindowVisible && MessagePane.Visibility == Visibility.Visible &&
+                viewModel.SelectedConversation is { IsEncrypted: false },
             viewModel.RefreshMessagesAsync,
-            viewModel.CancelForegroundRefreshes);
+            viewModel.CancelForegroundRefreshes,
+            observeRealtime: repository.ObserveRealtimeAsync);
         DataContext = viewModel;
         viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _composer.PropertyChanged += ViewModel_PropertyChanged;
@@ -59,6 +63,7 @@ public sealed partial class ChatPage : Page, IDisposable
     private async void ChatPage_Loaded(object sender, RoutedEventArgs e)
     {
         _isLoaded = true;
+        UpdateMessageReadVisibility();
         if (!_initialized)
         {
             _initialized = true;
@@ -74,12 +79,14 @@ public sealed partial class ChatPage : Page, IDisposable
     private async void ChatPage_Unloaded(object sender, RoutedEventArgs e)
     {
         _isLoaded = false;
+        UpdateMessageReadVisibility();
         await UpdateForegroundRefreshLifecycleAsync();
     }
 
     internal async Task SetWindowVisibleAsync(bool isVisible)
     {
         _isWindowVisible = isVisible;
+        UpdateMessageReadVisibility();
         await UpdateForegroundRefreshLifecycleAsync();
     }
 
@@ -107,14 +114,26 @@ public sealed partial class ChatPage : Page, IDisposable
 
     private void ViewModel_PropertyChanged(
         object? sender,
-        System.ComponentModel.PropertyChangedEventArgs e) =>
-        DispatcherQueue.TryEnqueue(UpdateState);
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!_disposed && e.PropertyName == nameof(ChatBrowserViewModel.SelectedConversation)) FollowLatestMessages();
+        // 配置编辑器时的同步通知已由当前刷新处理，不能再次形成刷新循环。
+        if (_disposed || _isConfiguringComposer || _stateUpdateQueued) return;
+        _stateUpdateQueued = true;
+        if (!DispatcherQueue.TryEnqueue(() =>
+        {
+            _stateUpdateQueued = false;
+            UpdateState();
+        })) _stateUpdateQueued = false;
+    }
 
     private async void ConversationList_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is ChatConversationItem conversation)
         {
             _compactShowsConversationList = false;
+            // 先切换选中项，再由实际布局确认可见性，不能把旧会话误标为已读。
+            _viewModel.SetMessagePaneVisible(false);
             await RunAsync(() => _viewModel.SelectConversationAsync(conversation));
         }
     }
@@ -133,8 +152,11 @@ public sealed partial class ChatPage : Page, IDisposable
     private async void RefreshMessages_Click(object sender, RoutedEventArgs e) =>
         await RunAsync(_viewModel.RefreshMessagesAsync);
 
-    private async void LoadEarlier_Click(object sender, RoutedEventArgs e) =>
+    private async void LoadEarlier_Click(object sender, RoutedEventArgs e)
+    {
+        if (MessageList.ItemsPanelRoot is ItemsStackPanel panel) panel.ItemsUpdatingScrollMode = ItemsUpdatingScrollMode.KeepItemsInView;
         await RunAsync(_viewModel.LoadEarlierAsync);
+    }
 
     private async void ConversationPin_Click(object sender, RoutedEventArgs e)
     {
@@ -160,6 +182,7 @@ public sealed partial class ChatPage : Page, IDisposable
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = localization.Get("ChatMessageDeleteConfirmTitle"),
             Content = localization.Format(
                 "ChatMessageDeleteConfirmMessage",
@@ -194,6 +217,13 @@ public sealed partial class ChatPage : Page, IDisposable
     }
 
     private void Page_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateAdaptiveLayout();
+
+    private void MessageBubble_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContentControl { DataContext: ChatMessageItem message } bubble)
+            bubble.Style = (Style)Application.Current.Resources[message.IsFromCurrentUser
+                ? "WorkspaceOutgoingBubble" : "WorkspaceIncomingBubble"];
+    }
 
     private void BackAccelerator_Invoked(
         KeyboardAccelerator sender,
@@ -276,6 +306,7 @@ public sealed partial class ChatPage : Page, IDisposable
 
         RefreshButton.IsEnabled = !_viewModel.IsLoadingConversations &&
             !_viewModel.IsUnavailable && !_viewModel.RequiresValidation;
+        AdvancedToolsButton.Visibility = Visible(HasAdvancedTools && _viewModel.SelectedConversation is not null);
         var canCreateConversation =
             _conversationCreator.CanCreateDirect || _conversationCreator.CanCreatePrivateGroup;
         CreateConversationButton.Visibility = Visible(canCreateConversation);
@@ -322,11 +353,12 @@ public sealed partial class ChatPage : Page, IDisposable
         if (ActualWidth >= CompactWidth)
         {
             _compactShowsConversationList = false;
-            ConversationColumn.Width = new GridLength(340);
+            ConversationColumn.Width = new GridLength(Math.Clamp(ActualWidth / 3, 280, 360));
             MessageColumn.Width = new GridLength(1, GridUnitType.Star);
             ConversationPane.Visibility = Visibility.Visible;
             MessagePane.Visibility = Visibility.Visible;
             BackButton.Visibility = Visibility.Collapsed;
+            UpdateMessageReadVisibility();
             return;
         }
 
@@ -336,7 +368,11 @@ public sealed partial class ChatPage : Page, IDisposable
         ConversationPane.Visibility = Visible(!showMessage);
         MessagePane.Visibility = Visible(showMessage);
         BackButton.Visibility = Visible(showMessage);
+        UpdateMessageReadVisibility();
     }
+
+    private void UpdateMessageReadVisibility() => _viewModel.SetMessagePaneVisible(
+        _isLoaded && _isWindowVisible && MessagePane.Visibility == Visibility.Visible);
 
     private void ShowConversationList()
     {
@@ -344,6 +380,7 @@ public sealed partial class ChatPage : Page, IDisposable
         ConversationPane.Visibility = Visibility.Visible;
         MessagePane.Visibility = Visibility.Collapsed;
         BackButton.Visibility = Visibility.Collapsed;
+        UpdateMessageReadVisibility();
         ConversationList.Focus(FocusState.Keyboard);
     }
 
@@ -377,6 +414,7 @@ public sealed partial class ChatPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        DetachMessageScrolling();
         Loaded -= ChatPage_Loaded;
         Unloaded -= ChatPage_Unloaded;
         _foregroundRefresher.Dispose();
@@ -386,6 +424,7 @@ public sealed partial class ChatPage : Page, IDisposable
         DisposeMembersDialog();
         DisposeAnnouncementsDialog();
         DisposeCreateConversationDialog();
+        DisposeAdvancedTools();
         DisposeEmojiFlyout();
         CancelAttachmentRead();
         _attachmentComposer.Dispose();

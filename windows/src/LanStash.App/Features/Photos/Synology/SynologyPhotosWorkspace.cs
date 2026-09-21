@@ -160,8 +160,10 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
                     .Distinct().OrderByDescending(month => month.Id).ToArray();
                 var dates = days.Where(day => day.Count > 0).Select(day => day.Date).ToArray();
                 if (dates.Length == 0) { HasLoaded = true; return; }
-                var start = StartOfDay(dates.Min());
-                var end = StartOfDay(dates.Max().AddDays(1)) - 1;
+                // 与 macOS timeRange 一致：套件日历日期不等于本机时区；初始范围覆盖时区边界。
+                // 纪元附近的照片不能产生负数参数，否则月份成功后整个照片列表会被本地拒绝。
+                var start = Math.Max(0, UtcStartOfDay(dates.Min()) - 86400);
+                var end = UtcStartOfDay(dates.Max()) + 172800;
                 _query = Constrain(timelineQuery ?? new SynologyPhotoQuery.Timeline(start, end), start, end);
                 _timelineBase = _query;
             }
@@ -283,6 +285,9 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
     private void Changed(bool content = false) { RaisePropertyChanged(string.Empty); if (content) ContentChanged?.Invoke(); }
     internal static string FailureKey(Exception error) => error switch
     {
+        DsmException { AuthenticationFailure: true } => "PhotosSessionExpired",
+        DsmException { Code: 105 } => "PhotosServicePermission",
+        DsmException { Code: 102 or 103 or 104 } => "PhotosServiceUnavailable",
         SynologyPhotoException { Failure: SynologyPhotoFailure.Unavailable } => "PhotosServiceUnavailable",
         SynologyPhotoException { Failure: SynologyPhotoFailure.Permission } => "PhotosServicePermission",
         _ => "PhotosServiceInvalidResponse",
@@ -292,6 +297,8 @@ public sealed partial class SynologyPhotosWorkspace : ObservableObject, IDisposa
         var local = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
         return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local)).ToUnixTimeSeconds();
     }
+    private static long UtcStartOfDay(DateOnly date) =>
+        new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).ToUnixTimeSeconds();
     public void Dispose()
     {
         if (_disposed) return;

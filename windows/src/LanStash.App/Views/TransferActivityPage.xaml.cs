@@ -1,6 +1,7 @@
 using LanStash.App.Features.Transfers;
 using LanStash.App.Localization;
 using LanStash.Domain;
+using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -17,6 +18,7 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
     private readonly bool _canRefreshDownloadTasks;
     private readonly bool _canRefreshFileTasks;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+    private readonly ObservableCollection<ActivityPresentation> _presentations = [];
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private bool _isLoaded;
     private bool _isWindowVisible = true;
@@ -30,6 +32,7 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
         IFileBackgroundTaskRepository fileBackgroundTaskRepository)
     {
         InitializeComponent();
+        ActivityList.ItemsSource = _presentations;
         _coordinator = coordinator;
         _transfers = transfers;
         _profileId = profileId;
@@ -79,6 +82,7 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
 
     private async Task UpdateNasRefreshLifecycleAsync()
     {
+        Task transition;
         await _lifecycleGate.WaitAsync();
         try
         {
@@ -88,22 +92,24 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
             }
             if (_isLoaded && _isWindowVisible)
             {
-                await Task.WhenAll(
+                transition = Task.WhenAll(
                     _downloadRefresher.StartAsync(),
                     _fileRefresher.StartAsync());
             }
             else
             {
-                await Task.WhenAll(
+                transition = Task.WhenAll(
                     _downloadRefresher.StopAsync(),
                     _fileRefresher.StopAsync());
             }
-            RenderActivities();
         }
         finally
         {
             _lifecycleGate.Release();
         }
+        // 只串行化状态切换，不持锁等待 NAS；隐藏/关闭才能立即撤销正在等待的读取。
+        await transition;
+        RenderActivities();
     }
 
     private void Timer_Tick(object? sender, object e) => RenderActivities();
@@ -123,9 +129,20 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
         RenderActivities();
     }
 
-    private Task RefreshNasTasksAsync() => Task.WhenAll(
+    private Task RefreshNasTasksAsync() => _disposed ? Task.CompletedTask : Task.WhenAll(
         _downloadRefresher.RefreshAsync(),
         _fileRefresher.RefreshAsync());
+
+    private async void DownloadLoadMore_Click(object sender, RoutedEventArgs e) => await LoadMoreNasTasksAsync(downloads: true);
+    private async void FileLoadMore_Click(object sender, RoutedEventArgs e) => await LoadMoreNasTasksAsync(downloads: false);
+    internal async Task LoadMoreNasTasksAsync(bool downloads)
+    {
+        if (_disposed || !_isLoaded || !_isWindowVisible) return;
+        var reading = downloads ? _downloadRefresher.LoadMoreAsync() : _fileRefresher.LoadMoreAsync();
+        RenderActivities();
+        await reading;
+        RenderActivities();
+    }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
@@ -149,9 +166,21 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
         }
 
         var items = _coordinator.GetActivities(_profileId)
-            .Select(ActivityPresentation.Create)
             .ToArray();
-        ActivityList.ItemsSource = items;
+        var ids = items.Select(item => item.Id).ToHashSet();
+        for (var index = _presentations.Count - 1; index >= 0; index--)
+            if (!ids.Contains(_presentations[index].Activity.Id)) _presentations.RemoveAt(index);
+        for (var index = 0; index < items.Length; index++)
+        {
+            var item = items[index];
+            if (index >= _presentations.Count || _presentations[index].Activity.Id != item.Id)
+            {
+                var existing = _presentations.FirstOrDefault(row => row.Activity.Id == item.Id);
+                if (existing is null) _presentations.Insert(index, ActivityPresentation.Create(item));
+                else _presentations.Move(_presentations.IndexOf(existing), index);
+            }
+            if (_presentations[index].Activity != item) _presentations[index] = ActivityPresentation.Create(item);
+        }
         ActivityList.Visibility = items.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         EmptyState.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         var downloadState = _downloadRefresher.State;
@@ -175,6 +204,10 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
                 : "TransferActivityFileRefreshErrorInitial");
         DownloadTruncatedNotice.IsOpen = downloadState.IsTruncated;
         FileTruncatedNotice.IsOpen = fileState.IsTruncated;
+        DownloadTruncatedNotice.Message = LocalizationService.Current.Format("TransferActivityDownloadPageSummary", downloadState.DisplayedTaskCount, downloadState.SourceTotal);
+        FileTruncatedNotice.Message = LocalizationService.Current.Format("TransferActivityFilePageSummary", fileState.DisplayedTaskCount, fileState.SourceTotal);
+        DownloadLoadMoreButton.IsEnabled = _downloadRefresher.CanLoadMore;
+        FileLoadMoreButton.IsEnabled = _fileRefresher.CanLoadMore;
         DownloadUnavailableNotice.IsOpen = !_canRefreshDownloadTasks && _canRefreshFileTasks;
         FileUnavailableNotice.IsOpen = _canRefreshDownloadTasks && !_canRefreshFileTasks;
         NasUnavailableNotice.IsOpen = !_canRefreshDownloadTasks && !_canRefreshFileTasks;
@@ -195,8 +228,8 @@ public sealed partial class TransferActivityPage : Page, IAsyncDisposable
             _timer.Tick -= Timer_Tick;
             Loaded -= TransferActivityPage_Loaded;
             Unloaded -= TransferActivityPage_Unloaded;
-            await _downloadRefresher.DisposeAsync();
-            await _fileRefresher.DisposeAsync();
+            await Task.WhenAll(_downloadRefresher.DisposeAsync().AsTask(), _fileRefresher.DisposeAsync().AsTask());
+            _presentations.Clear();
         }
         finally
         {

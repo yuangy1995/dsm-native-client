@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "container-manager.pull-start.synthetic-task",
+  "module": "container-manager",
+  "operation": "pullImage",
+  "api": {
+    "name": "SYNO.Docker.Image",
+    "method": "pull_start",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "repository",
+      "valueType": "string",
+      "encodedValue": "synthetic/web"
+    },
+    {
+      "name": "tag",
+      "valueType": "string",
+      "encodedValue": "stable"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "risk": "standardWrite",
+    "retryPolicy": "queryStateBeforeDecision",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

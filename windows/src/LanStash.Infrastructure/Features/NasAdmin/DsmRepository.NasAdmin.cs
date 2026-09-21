@@ -14,20 +14,40 @@ public sealed partial class DsmRepository
             "SYNO.Storage.CGI.Storage",
             ["load_info", "get"],
             cancellationToken).ConfigureAwait(false);
-        var packages = await TryLoadResourcesAsync("SYNO.Core.Package", "packages", cancellationToken)
-            .ConfigureAwait(false);
-        var users = await TryLoadResourcesAsync("SYNO.Core.User", "users", cancellationToken)
-            .ConfigureAwait(false);
-        var groups = await TryLoadResourcesAsync("SYNO.Core.Group", "groups", cancellationToken)
-            .ConfigureAwait(false);
+        IReadOnlyList<ResourceItem> packages = [];
+        var packageStatus = NasDetailsSectionStatus.Unavailable;
+        if (SecurityCapability("SYNO.Core.Package", 2) is not null)
+        {
+            try
+            {
+                var directory = await LoadPackagesAsync(cancellationToken).ConfigureAwait(false);
+                packages = directory.Select(item => new ResourceItem(item.Id, item.Name, item.Version ?? "", item.State)).ToArray();
+                packageStatus = NasDetailsSectionStatus.Available;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error) when (IsNasDetailsReadFailure(error)) { packageStatus = NasDetailsSectionStatus.Failed; }
+        }
+        var users = await LoadLegacyDirectoryAsync(NasDirectoryKind.User, cancellationToken).ConfigureAwait(false);
+        var groups = await LoadLegacyDirectoryAsync(NasDirectoryKind.Group, cancellationToken).ConfigureAwait(false);
         var logData = await TryCallFirstAsync(
             PreferredOptional("SYNO.LogCenter.History", "SYNO.Core.SyslogClient.Log"),
             ["list", "get"],
             cancellationToken).ConfigureAwait(false);
-        var connections = await TryLoadResourcesAsync(
-            "SYNO.Core.CurrentConnection",
-            "connections",
-            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ResourceItem> connections = [];
+        var connectionsStatus = NasDetailsSectionStatus.Unavailable;
+        var connectionsTruncated = false;
+        if (ConnectionCapability() is not null)
+        {
+            try
+            {
+                var snapshot = await LoadConnectionSnapshotAsync(cancellationToken).ConfigureAwait(false);
+                connectionsTruncated = !snapshot.IsComplete;
+                connections = snapshot.Items.Select(item => new ResourceItem(item.Id, item.Protocol ?? item.Type ?? "", item.ReportedTime ?? "", ResourceState.Unknown)).ToArray();
+                connectionsStatus = NasDetailsSectionStatus.Available;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error) when (IsNasDetailsReadFailure(error)) { connectionsStatus = NasDetailsSectionStatus.Failed; }
+        }
         var networks = await TryLoadResourcesAsync(
             "SYNO.Core.Network.Ethernet",
             "interfaces",
@@ -44,12 +64,26 @@ public sealed partial class DsmRepository
             storage is null ? [] : ParseResources(storage, "storagePools", "pools"),
             storage is null ? [] : ParseResources(storage, "disks"),
             packages,
-            users,
-            groups,
+            users.Items,
+            groups.Items,
             logData is null ? [] : ParseLogs(logData),
             connections,
             networks,
-            await LoadSecurityAsync(cancellationToken).ConfigureAwait(false));
+            await LoadSecurityAsync(cancellationToken).ConfigureAwait(false))
+            { PackageStatus = packageStatus, AccountsStatus = users.Status, GroupsStatus = groups.Status, ConnectionsStatus = connectionsStatus, AreConnectionsTruncated = connectionsTruncated };
+    }
+
+    private async Task<(IReadOnlyList<ResourceItem> Items, NasDetailsSectionStatus Status)> LoadLegacyDirectoryAsync(NasDirectoryKind kind, CancellationToken token)
+    {
+        if (DirectoryCapability(kind) is null) return ([], NasDetailsSectionStatus.Unavailable);
+        try
+        {
+            var entries = await LoadDirectoryAsync(kind, token).ConfigureAwait(false);
+            return (entries.Select(item => new ResourceItem($"{kind}:{item.Name}", item.Name, "",
+                item.IsExpired is true ? ResourceState.Stopped : item.IsExpired is false ? ResourceState.Healthy : ResourceState.Unknown)).ToArray(), NasDetailsSectionStatus.Available);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception error) when (IsNasDetailsReadFailure(error)) { return ([], NasDetailsSectionStatus.Failed); }
     }
 
     private async Task<IReadOnlyList<ResourceItem>> LoadSecurityAsync(

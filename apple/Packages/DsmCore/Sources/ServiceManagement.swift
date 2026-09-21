@@ -344,6 +344,12 @@ public struct ContainerImage: Identifiable, Equatable, Sendable {
     public let sizeBytes: Int64?
     public let createdAt: Date?
     public let isInUse: Bool
+    // 只有官方 tags 清单建立的标签行才具备可写原始身份；旧摘要仍可只读展示。
+    public let sourceImageID: String?
+
+    public static func selectionID(imageID: String, repository: String, tag: String) -> String {
+        [imageID, repository, tag].map { "\($0.utf8.count):\($0)" }.joined()
+    }
 
     public init(
         id: String,
@@ -351,7 +357,8 @@ public struct ContainerImage: Identifiable, Equatable, Sendable {
         tag: String,
         sizeBytes: Int64? = nil,
         createdAt: Date? = nil,
-        isInUse: Bool = false
+        isInUse: Bool = false,
+        sourceImageID: String? = nil
     ) {
         self.id = id
         self.repository = repository
@@ -359,6 +366,7 @@ public struct ContainerImage: Identifiable, Equatable, Sendable {
         self.sizeBytes = sizeBytes
         self.createdAt = createdAt
         self.isInUse = isInUse
+        self.sourceImageID = sourceImageID
     }
 }
 
@@ -491,6 +499,21 @@ public enum ContainerAction: String, Sendable {
     case restart
 }
 
+/// 公开与已记录内部 VMM 的启动策略；开启与恢复原状态不能合并为布尔值。
+public enum VirtualMachineStartupBehavior: Int, CaseIterable, Sendable {
+    case off = 0
+    case restorePreviousState = 1
+    case powerOn = 2
+
+    public var localizationKey: String {
+        switch self {
+        case .off: "virtual-machine.startup.off"
+        case .restorePreviousState: "virtual-machine.startup.restore"
+        case .powerOn: "virtual-machine.startup.on"
+        }
+    }
+}
+
 public struct VirtualMachine: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
@@ -506,6 +529,7 @@ public struct VirtualMachine: Identifiable, Equatable, Sendable {
     public let keyboardLayout: String?
     public let autoStart: Bool
     public let cpuWeight: Int?
+    public let startupBehavior: VirtualMachineStartupBehavior?
 
     public init(
         id: String,
@@ -521,7 +545,8 @@ public struct VirtualMachine: Identifiable, Equatable, Sendable {
         ipAddress: String? = nil,
         keyboardLayout: String? = nil,
         autoStart: Bool = false,
-        cpuWeight: Int? = nil
+        cpuWeight: Int? = nil,
+        startupBehavior: VirtualMachineStartupBehavior? = nil
     ) {
         self.id = id
         self.name = name
@@ -535,8 +560,9 @@ public struct VirtualMachine: Identifiable, Equatable, Sendable {
         self.storageBytes = storageBytes
         self.ipAddress = ipAddress
         self.keyboardLayout = keyboardLayout
-        self.autoStart = autoStart
+        self.autoStart = startupBehavior.map { $0 != .off } ?? autoStart
         self.cpuWeight = cpuWeight
+        self.startupBehavior = startupBehavior
     }
 }
 
@@ -616,6 +642,7 @@ public struct VirtualMachineCreation: Equatable, Sendable {
     public let firmware: VirtualMachineFirmware
     public let autoStart: Bool
     public let powerOnAfterCreation: Bool
+    public let startupBehavior: VirtualMachineStartupBehavior
 
     public init(
         name: String,
@@ -629,7 +656,8 @@ public struct VirtualMachineCreation: Equatable, Sendable {
         description: String? = nil,
         firmware: VirtualMachineFirmware = .legacy,
         autoStart: Bool = false,
-        powerOnAfterCreation: Bool = false
+        powerOnAfterCreation: Bool = false,
+        startupBehavior: VirtualMachineStartupBehavior? = nil
     ) {
         self.name = name
         self.operatingSystem = operatingSystem
@@ -641,8 +669,9 @@ public struct VirtualMachineCreation: Equatable, Sendable {
         self.diskGiB = diskGiB
         self.description = description
         self.firmware = firmware
-        self.autoStart = autoStart
+        self.autoStart = (startupBehavior ?? (autoStart ? .powerOn : .off)) != .off
         self.powerOnAfterCreation = powerOnAfterCreation
+        self.startupBehavior = startupBehavior ?? (autoStart ? .powerOn : .off)
     }
 }
 
@@ -653,6 +682,7 @@ public struct VirtualMachineUpdate: Equatable, Sendable {
     public let memoryMiB: Int?
     public let cpuWeight: Int?
     public let autoStart: Bool?
+    public let startupBehavior: VirtualMachineStartupBehavior?
 
     public init(
         name: String? = nil,
@@ -660,7 +690,8 @@ public struct VirtualMachineUpdate: Equatable, Sendable {
         cpuCount: Int? = nil,
         memoryMiB: Int? = nil,
         cpuWeight: Int? = nil,
-        autoStart: Bool? = nil
+        autoStart: Bool? = nil,
+        startupBehavior: VirtualMachineStartupBehavior? = nil
     ) {
         self.name = name
         self.description = description
@@ -668,6 +699,7 @@ public struct VirtualMachineUpdate: Equatable, Sendable {
         self.memoryMiB = memoryMiB
         self.cpuWeight = cpuWeight
         self.autoStart = autoStart
+        self.startupBehavior = startupBehavior ?? autoStart.map { $0 ? .powerOn : .off }
     }
 }
 
@@ -757,6 +789,7 @@ public protocol ServiceManagementRepository: Sendable {
     func controlDownloadTaskResult(
         _ request: DownloadTaskControlRequest
     ) async throws -> DownloadTaskControlOutcome
+    // removeData 为历史兼容参数名；实际映射 force_complete，true 表示结束并移出未完成文件，不是删除数据。
     func deleteDownloadTasks(ids: [String], removeData: Bool) async throws
     func deleteDownloadTasksResult(ids: [String], removeData: Bool) async throws -> MutationResult
 
@@ -767,8 +800,13 @@ public protocol ServiceManagementRepository: Sendable {
     func searchContainerImages(query: String) async throws -> [ContainerRegistryImage]
     func loadContainerImageTags(repository: String) async throws -> [String]
     func pullContainerImage(repository: String, tag: String) async throws
+    func canStartContainerImagePull() async -> Bool
+    func startContainerImagePull(_ request: ContainerImagePullRequest) async throws -> ContainerImagePullProgress
+    func loadContainerImagePulls() async throws -> [ContainerImagePullProgress]
+    func reviewContainerImagePull(id: UUID) async throws -> ContainerImagePullProgress?
     func deleteContainerImages(ids: [String]) async throws
     func deleteContainerImagesResult(ids: [String]) async throws -> MutationResult
+    func reviewContainerImageDeletion(ids: [String]) async throws -> MutationResult
     func createContainerNetwork(_ configuration: ContainerNetworkCreation) async throws
     func deleteContainerNetworks(ids: [String]) async throws
     func deleteContainerNetworksResult(ids: [String]) async throws -> MutationResult
@@ -900,6 +938,20 @@ public extension ServiceManagementRepository {
             localizationPrefix: "container-image.delete",
             count: ids.count
         )
+    }
+
+    func canStartContainerImagePull() async -> Bool { false }
+    func startContainerImagePull(_ request: ContainerImagePullRequest) async throws -> ContainerImagePullProgress {
+        try ContainerImagePullProgress(id: request.id, repository: request.repository, tag: request.tag, stage: .rejected,
+            outcome: unsupportedDeletionResult(operation: "containerImagePull", localizationPrefix: "container-image.pull", count: 1))
+    }
+    func loadContainerImagePulls() async throws -> [ContainerImagePullProgress] { [] }
+    // 默认核查绝不回退到启动请求，旧适配器没有任务记录时返回未知。
+    func reviewContainerImagePull(id: UUID) async throws -> ContainerImagePullProgress? { nil }
+
+    // 只读核查不能默认转调删除，旧适配器不实现时明确返回不支持。
+    func reviewContainerImageDeletion(ids: [String]) async throws -> MutationResult {
+        try unsupportedDeletionResult(operation: "containerImageDelete", localizationPrefix: "container-image.delete", count: ids.count)
     }
 
     func deleteContainerNetworksResult(ids: [String]) async throws -> MutationResult {

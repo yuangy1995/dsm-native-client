@@ -7,6 +7,28 @@ namespace LanStash.Tests.Authentication;
 public sealed class CertificateConnectionContextTests
 {
     [Fact]
+    public async Task ConsoleDocumentUsesExistingProfileCertificateContext()
+    {
+        var handler = new ContextCapturingHandler(); using var http = new HttpClient(handler); var client = new DsmApiClient(http);
+        var profile = new NasProfile(Guid.NewGuid(), "Synthetic", "nas.example.invalid", 5001, "synthetic");
+        var policy = VirtualMachineConsolePolicy.Create(client.GetBaseUri(profile), "guest-a", "Demo", "en-us", Guid.NewGuid());
+        using var document = await client.ReadConsoleDocumentAsync(profile, new(profile.Id, "synthetic-session", null, null), policy);
+        Assert.Equal(profile.Id, handler.ProfileId); Assert.Equal(DsmConnectionSource.DirectAddress, handler.Source);
+        Assert.NotEmpty(document.Content);
+    }
+
+    [Fact]
+    public async Task FavoriteWritePublishesProfileAndSourceThroughMutationHeaders()
+    {
+        var handler = new ContextCapturingHandler(); var client = new DsmApiClient(new HttpClient(handler));
+        var profile = new NasProfile(Guid.NewGuid(), "Synthetic", "nas.example.invalid", null, "synthetic-user");
+        await client.SendFileLocationMutationAsync(profile, new(profile.Id, "synthetic-session", null, null),
+            new("SYNO.FileStation.Favorite", "entry.cgi", 2, 2, "FORM"),
+            new(FileLocationMutationKind.AddFavorite, "add", new Dictionary<string, string> { ["path"] = "/synthetic", ["name"] = "Synthetic" }));
+        Assert.Equal(profile.Id, handler.ProfileId); Assert.Equal(DsmConnectionSource.DirectAddress, handler.Source);
+    }
+
+    [Fact]
     public async Task FixedReadPublishesProfileAndDirectSourceToTrustHandler()
     {
         var handler = new ContextCapturingHandler();
@@ -38,8 +60,11 @@ public sealed class CertificateConnectionContextTests
             "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentContent.cs",
             "windows/src/LanStash.Infrastructure/Features/Chat/DsmApiClient.ChatAttachmentUpload.cs",
             "windows/src/LanStash.Infrastructure/Features/Files/DsmApiClient.FileArchive.cs",
+            "windows/src/LanStash.Infrastructure/Features/Files/Locations/DsmApiClient.FileLocationMutations.cs",
             "windows/src/LanStash.Infrastructure/Features/Photos/Synology/DsmApiClient.PhotoMedia.cs",
             "windows/src/LanStash.Infrastructure/Features/Photos/Synology/DsmApiClient.Photos.cs",
+            "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.ConsoleAssets.cs",
+            "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.ConsoleDocument.cs",
             "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.DownloadStream.cs",
             "windows/src/LanStash.Infrastructure/Transport/DsmApiClient.Transport.cs",
         };
@@ -49,8 +74,8 @@ public sealed class CertificateConnectionContextTests
         var apiSources = actualApiSourcePaths.Select(Read).ToArray();
         var quickConnect = Read("windows/src/LanStash.Infrastructure/DsmQuickConnectResolver.cs");
 
-        Assert.Equal(28, apiSources.Sum(source => Count(source, "_http.SendAsync(")));
-        Assert.Equal(17, apiSources.Sum(source =>
+        Assert.Equal(31, apiSources.Sum(source => Count(source, "_http.SendAsync(")));
+        Assert.Equal(19, apiSources.Sum(source =>
             Count(source, "SetNasConnectionContext(request, profile);")));
         Assert.Equal(2, apiSources.Sum(source =>
             Count(source, "WindowsCertificateTrustHandler.SetConnectionContext(")));
@@ -58,7 +83,10 @@ public sealed class CertificateConnectionContextTests
             apiSources.Where(source => Count(source, "_http.SendAsync(") > 0),
             source => Assert.True(
                 source.Contains("SetNasConnectionContext", StringComparison.Ordinal) ||
-                source.Contains("WindowsCertificateTrustHandler.SetConnectionContext", StringComparison.Ordinal),
+                source.Contains("WindowsCertificateTrustHandler.SetConnectionContext", StringComparison.Ordinal) ||
+                source == Read("windows/src/LanStash.Infrastructure/Features/Files/Locations/DsmApiClient.FileLocationMutations.cs") &&
+                source.Contains("AddMutationRequestHeaders(message, profile, session);", StringComparison.Ordinal) &&
+                source.IndexOf("AddMutationRequestHeaders(message, profile, session);", StringComparison.Ordinal) < source.IndexOf("_http.SendAsync(", StringComparison.Ordinal),
                 "每个包含裸 NAS SendAsync 的 partial 源文件都必须显式设置证书连接上下文。"));
         Assert.DoesNotContain("SetConnectionContext", quickConnect, StringComparison.Ordinal);
         foreach (var credential in new[] { "_sid", "SynoToken", "Cookie", "passwd" })
@@ -111,7 +139,10 @@ public sealed class CertificateConnectionContextTests
             }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""{"success":true,"data":{}}"""),
+                RequestMessage = request,
+                Content = request.Headers.Accept.Any(type => type.MediaType == "text/html")
+                    ? new StringContent("<html>synthetic</html>", System.Text.Encoding.UTF8, "text/html")
+                    : new StringContent("""{"success":true,"data":{}}"""),
             });
         }
     }

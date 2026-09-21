@@ -91,7 +91,11 @@
 
 - Apple Adapter：`DsmNasAdministrationRepository`。
 - Android Adapter：`DsmRepository.saveEthernetInterfaceResult`；列表 v2 与详情/设置 v1 均按发现范围严格校验，版本不足时关闭写入口。
-- Windows Adapter：尚未迁移。
+- Windows Adapter：已接 list v2 与按安全 ifname 的 get v1，兼容对象/直接数组列表；
+  保留缺失默认网关、VLAN、MTU、DNS 为未知，按快照报告部分读取失败。原生只读
+  入口及单网卡 configs 保存核心已接线；完整基线、输入校验、单请求/回读与地址变化
+  恢复有合成证据。新地址拒绝旧 SID，重新登录后还需确认同一 NAS；不自动探测新地址
+  或重发设置。网络生产行为门独立关闭，未做真实网络变更。
 - Schema：复用 `MutationResult` 与请求 Fixture Schema。
 - 脱敏 fixture：`contracts/request-fixtures/network/set-ethernet/synthetic-interface/request.json`。
 - 自动化测试：Android `EthernetMutationResultTest` 的 10 项合成测试覆盖共享 Fixture、DHCP/静态 IPv4/VLAN、直接数组列表、版本不足零请求、输入拒绝、无变化、权限拒绝、提交响应丢失、回读断线和同网卡重复提交；Apple 既有测试覆盖确认成功、提交断网、回读超时、重复提交和提交后取消。
@@ -111,4 +115,5 @@
 - 当前环境未在专用测试网络完成 DHCP/静态地址、默认网关、MTU、VLAN、权限不足、
   连接中断和回滚行为验收。
 - 不同 DSM build 的地址生效时序、旧地址保留时间和错误码差异尚未验证。
-- Android 调用链已迁移但尚未做设备及真实 DSM 写操作验收；Windows 以及 iPhone、iPad 调用链尚未迁移。
+- Android 调用链已迁移但尚未做设备及真实 DSM 写操作验收；Windows 读取/只读界面
+  与单目标保存/重连恢复有合成证据，生产行为门关闭；iPhone、iPad 用户调用链尚未迁移。

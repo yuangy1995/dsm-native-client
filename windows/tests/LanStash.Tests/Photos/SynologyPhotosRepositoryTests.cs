@@ -23,6 +23,7 @@ public sealed class SynologyPhotosRepositoryTests
         Assert.Equal(System.Text.Json.JsonValueKind.String, keyword.RootElement.ValueKind);
         Assert.Equal("a & b", keyword.RootElement.GetString());
         Assert.Equal("synthetic-sid", call.Values["_sid"]); Assert.Equal("synthetic-token", call.Token);
+        Assert.Equal("synthetic-token", call.Values.GetValueOrDefault("SynoToken"));
         Assert.DoesNotContain("synthetic-sid", call.Uri.ToString()); Assert.DoesNotContain("synthetic-token", call.Uri.ToString());
         Assert.Single(page.Items); Assert.Equal(1, page.NextOffset); Assert.False(page.HasMore);
         Assert.All(fixture.Requests, request => Assert.DoesNotContain("FileStation", request.Api));

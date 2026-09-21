@@ -1,5 +1,8 @@
 namespace LanStash.Domain;
 
+public sealed record FileRecyclePendingReview(Guid Id, Guid ProfileId, bool IsRestore,
+    string SourcePath, string DestinationPath, string Name, bool IsDirectory, long Size, DateTimeOffset? ModifiedAt);
+
 public sealed record FileRecycleAvailability(
     bool CanMoveToRecycle,
     bool CanRestore,

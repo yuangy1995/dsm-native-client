@@ -95,12 +95,21 @@ final class ServiceManagementModel {
     var downloadSelection: Set<String> = []
     var containerSelection: Set<String> = []
     var imageSelection: Set<String> = []
+    private var imageDeletionReviewIDs: Set<String> = []
+    var canReviewImageDeletion: Bool { !imageDeletionReviewIDs.isEmpty && !isPerformingAction }
+    var canDeleteImages: Bool {
+        guard !isPerformingAction, imageDeletionReviewIDs.isEmpty, !imageSelection.isEmpty,
+              let images = containers?.images else { return false }
+        let selected = images.filter { imageSelection.contains($0.id) }
+        return selected.count == imageSelection.count && selected.allSatisfy { $0.sourceImageID != nil && !$0.isInUse }
+    }
     var networkSelection: Set<String> = []
     var virtualMachineSelection: Set<String> = []
     var virtualMachineNetworkSelection: Set<String> = []
     var virtualMachineImageSelection: Set<String> = []
 
     @ObservationIgnored private let repository: any ServiceManagementRepository
+    @ObservationIgnored let imagePulls: ContainerImagePullModel
     @ObservationIgnored private let fileRepository: (any FileRepository)?
     @ObservationIgnored private var loadedModules: Set<Module> = []
 
@@ -110,6 +119,7 @@ final class ServiceManagementModel {
     ) {
         self.repository = repository
         self.fileRepository = fileRepository
+        self.imagePulls = ContainerImagePullModel(repository: repository)
     }
 
     func setEnabledModules(_ modules: Set<Module>) {
@@ -117,6 +127,7 @@ final class ServiceManagementModel {
         loadedModules.formIntersection(modules)
         if !modules.contains(.downloads) { downloads = nil; downloadSelection = [] }
         if !modules.contains(.containers) {
+            imagePulls.deactivate()
             containers = nil
             containerSelection = []; imageSelection = []; networkSelection = []
         }
@@ -242,16 +253,18 @@ final class ServiceManagementModel {
         }
     }
 
-    func deleteDownloads(removeData: Bool) async -> Bool {
+    func deleteDownloads(forceComplete: Bool) async -> Bool {
         let ids = Array(downloadSelection)
+        let statusPrefix = forceComplete ? "download-task.finish-incomplete" : "download-task.delete"
         let succeeded = await performDeletion(
             module: .downloads,
-            successKey: "download-task.delete.completed",
-            statusKeyPrefix: "download-task.delete",
+            successKey: "\(statusPrefix).completed",
+            statusKeyPrefix: statusPrefix,
             operation: {
                 try await self.repository.deleteDownloadTasksResult(
                     ids: ids,
-                    removeData: removeData
+                    // 共享协议保留旧参数名以兼容已有调用；实际语义是 force_complete，不是删除数据。
+                    removeData: forceComplete
                 )
             },
             isVerified: {
@@ -268,7 +281,12 @@ final class ServiceManagementModel {
         return succeeded
     }
 
-    func controlContainers(_ action: ContainerAction) async -> Bool {
+    func controlContainers(_ action: ContainerAction, confirmedIDs: Set<String>? = nil) async -> Bool {
+        if let confirmedIDs, confirmedIDs != containerSelection || confirmedIDs.isEmpty {
+            message = L10n.string("container.control.changed")
+            messageIsError = true
+            return false
+        }
         let ids = Array(containerSelection)
         return await perform(module: .containers, success: containerActionMessage(action)) {
             try await self.repository.controlContainers(ids: ids, action: action)
@@ -317,20 +335,38 @@ final class ServiceManagementModel {
         messageIsError = false
     }
 
-    func deleteImages() async -> Bool {
-        let ids = Array(imageSelection)
+    func deleteImages(confirmedIDs: Set<String>? = nil) async -> Bool {
+        guard canDeleteImages, confirmedIDs == nil || confirmedIDs == imageSelection else {
+            message = L10n.string("container-image.delete.selection-changed"); messageIsError = true
+            return false
+        }
+        return await performImageDeletion(ids: imageSelection, reviewOnly: false)
+    }
+
+    func reviewImageDeletion() async -> Bool {
+        guard canReviewImageDeletion else { return false }
+        return await performImageDeletion(ids: imageDeletionReviewIDs, reviewOnly: true)
+    }
+
+    private func performImageDeletion(ids: Set<String>, reviewOnly: Bool) async -> Bool {
+        guard enabledModules.contains(.containers), !isPerformingAction else { return false }
+        // 异常退出也不让未知写入变成可再次提交；独立核查方法从不调用删除。
+        imageDeletionReviewIDs = ids
         let succeeded = await performDeletion(
             module: .containers,
             successKey: "container-image.delete.completed",
             statusKeyPrefix: "container-image.delete",
             operation: {
-                try await self.repository.deleteContainerImagesResult(ids: ids)
+                let result: MutationResult
+                if reviewOnly { result = try await self.repository.reviewContainerImageDeletion(ids: ids.sorted()) }
+                else { result = try await self.repository.deleteContainerImagesResult(ids: ids.sorted()) }
+                if result.status == .confirmedSuccess || (!reviewOnly && (!result.submitted || result.counts.unknown == 0)) {
+                    self.imageDeletionReviewIDs.removeAll()
+                }
+                return result
             },
-            isVerified: {
-                guard let images = self.containers?.images else { return false }
-                let remaining = Set(images.map(\.id))
-                return ids.allSatisfy { !remaining.contains($0) }
-            }
+            // 仅采用仓库的标签级回查；旧选择 ID 消失可能只是标签指向了另一个镜像。
+            isVerified: { false }
         )
         if succeeded {
             imageSelection.removeAll()
@@ -382,8 +418,13 @@ final class ServiceManagementModel {
         return succeeded
     }
 
-    func controlVirtualMachines(_ action: VirtualMachinePowerAction) async -> Bool {
-        let ids = Array(virtualMachineSelection)
+    func controlVirtualMachines(_ action: VirtualMachinePowerAction, confirmedIDs: [String]? = nil) async -> Bool {
+        if let confirmedIDs, Set(confirmedIDs) != virtualMachineSelection {
+            message = L10n.string("virtual-machine.power.target-changed")
+            messageIsError = true
+            return false
+        }
+        let ids = confirmedIDs ?? Array(virtualMachineSelection)
         return await perform(module: .virtualMachines, success: virtualMachineActionMessage(action)) {
             try await self.repository.controlVirtualMachines(ids: ids, action: action)
         }

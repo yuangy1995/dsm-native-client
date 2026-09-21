@@ -59,6 +59,11 @@ v1 是保守候选范围，不代表已在当前 DSM build 上验证。`save` �
 - 空列表只在请求成功后显示为空，不把错误解释为没有计划；
 - 手动刷新期间按钮禁用并显示进度，避免重复请求。
 
+2026-09-17 严格读取修正：缺失、畸形或相互冲突的 schedules/items 根不能当作空列表；
+小数时间不截成整数，非布尔启用状态保持未知。Windows 单独报告不可显示条目数量，
+Mac 将不完整列表标记为需在 DSM 核查，全无可显示项或空列表却报告非零总数时失败，
+避免现有空页面误报没有计划。中英文不完整提示不再一律声称已显示前 128 条。
+
 ## 客户端与界面
 
 - Apple 领域：`NasPowerScheduleSnapshot`、`NasPowerScheduleEntry`、
@@ -66,7 +71,9 @@ v1 是保守候选范围，不代表已在当前 DSM build 上验证。`save` �
 - Apple Adapter：`DsmNasAdministrationRepository.loadPowerSchedule()`。
 - macOS：NAS 设置中的“电源计划”页，提供全部/已启用/已停用筛选、手动刷新、时区与
   截断说明，以及加载、空内容、筛选空、错误和正常五种状态。
-- iPhone、iPad、Android 与 Windows：尚未迁移该页面。
+- Windows：固定 v1 读取、128 条边界、字段白名单及原生三态筛选/五态页面已接入，
+  只有源码与合成测试证据，没有 save 入口。
+- iPhone、iPad、Android：本波不迁移页面，Apple 移动端需回归共享解析修正。
 - 状态同时使用图标和文字，不依赖颜色；原生控件保留键盘与 VoiceOver 语义。
 
 ## 版本验证

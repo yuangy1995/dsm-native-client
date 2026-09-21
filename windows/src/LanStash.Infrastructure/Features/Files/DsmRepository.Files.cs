@@ -144,53 +144,20 @@ public sealed partial class DsmRepository
             writeChunkAsync,
             cancellationToken);
 
+    public Task StreamArchiveAsync(IReadOnlyList<string> remotePaths,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> writeChunkAsync,
+        CancellationToken cancellationToken = default) =>
+        _api.StreamArchiveAsync(_profile, _session, Required("SYNO.FileStation.Download"), remotePaths, writeChunkAsync, cancellationToken);
+
     public async Task<IReadOnlyList<FileItem>> SearchFilesAsync(
         string path,
         string query,
         CancellationToken cancellationToken = default)
     {
-        var start = await CallAsync(
-            "SYNO.FileStation.Search",
-            "start",
-            new Dictionary<string, string>
-            {
-                ["folder_path"] = string.IsNullOrWhiteSpace(path) ? "/" : path,
-                ["pattern"] = query,
-                ["recursive"] = "true",
-            },
-            cancellationToken).ConfigureAwait(false);
-        var taskId = start.String("taskid")
-            ?? throw new DsmException(UserText.Key("WinShared17bab1054ab28010"), UserText.Key("WinSharedefc81ced18eb3bb0"));
-        try
-        {
-            var result = await CallAsync(
-                "SYNO.FileStation.Search",
-                "list",
-                new Dictionary<string, string>
-                {
-                    ["taskid"] = taskId,
-                    ["offset"] = "0",
-                    ["limit"] = "1000",
-                    ["additional"] = "[\"size\",\"owner\",\"time\",\"perm\"]",
-                },
-                cancellationToken).ConfigureAwait(false);
-            return ParseFilePage(result, "files").Items;
-        }
-        finally
-        {
-            try
-            {
-                await CallAsync(
-                    "SYNO.FileStation.Search",
-                    "stop",
-                    new Dictionary<string, string> { ["taskid"] = taskId },
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (DsmException)
-            {
-                // 停止失败不覆盖已取得的搜索结果。
-            }
-        }
+        // 旧调用方与页面搜索使用同一生命周期，避免首批截断和取消后遗漏清理。
+        var result = await ((IFileSearchRepository)this).SearchAsync(
+            new FileSearchRequest(path, query, Recursive: true), cancellationToken).ConfigureAwait(false);
+        return result.Items;
     }
 
     public async Task CreateFolderAsync(

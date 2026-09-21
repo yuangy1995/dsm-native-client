@@ -78,7 +78,14 @@
 - Apple Adapter：`DsmNasAdministrationRepository`。
 - macOS：性能概览页保留原生破坏性确认，提交期间显示进度并禁用重复操作。
 - Android：`DsmRepository`、`AppViewModel` 与 `NasHardwareSettingsScreen` 已接入预检、全局互斥、不可回读结果、独立二次确认和未知结果不重放；模糊提交以持久核对卡保留，界面与 ViewModel 均拒绝直接清除，必须重新连接并检查 NAS 后才能再次操作。
-- Windows、iPhone 与 iPad：复用领域结果类型，电源动作调用链尚未迁移。
+- Windows：固定 v3 的 info 预检和空参数 shutdown/reboot 已接入原生双重确认；另以
+  已记录的 get_user_service 检查版本与明确管理员身份。旧无确认签名保持 Unsupported。
+  同客户端按账号/NAS 保存接受或未知结果，不在命令后读取或轮询设备最终状态。
+  请求 ID 重复不重放，关机与重启共享挂起门；仅使用不可逆会话摘要辨别新登录，
+  不保存 SID。新会话加用户明确检查设备后，才用 info 验证连接并解除本地阻止，
+  不把 info 可读当成关机/重启完成。原生入口、迟到响应隔离和关闭取消已有合成证据。
+  生产电源行为门独立关闭，原私有未接线嵌套弹窗已移除。
+- iPhone 与 iPad：复用领域结果类型，电源动作调用链尚未迁移。
 - 合成 Fixture（`readbackPolicy=unavailable`、`retryPolicy=never`）：
   - `contracts/request-fixtures/system-power/shutdown/synthetic-nas/request.json`
   - `contracts/request-fixtures/system-power/reboot/synthetic-nas/request.json`
@@ -100,4 +107,6 @@
   关机与重启行为尚未验证。
 - 请求被接受到连接中断、完全关机、重新上线和服务恢复的时间没有权威状态字段。
 - 断电恢复、UPS、安全模式和虚拟机运行状态对电源动作的影响尚未实机验收。
-- Windows、iPhone 与 iPad 调用链尚未迁移；Android 仍待设备与专用 NAS 验收。
+- Windows 调用链只有合成证据；iPhone 与 iPad 尚未迁移，Android 仍待设备与专用 NAS 验收。
+- Windows 当前保守使用已记录 v3，不推断较低版本可写。新会话检查、用户设备核对、
+  实际断线和再次允许操作仍需专用 NAS 验证；未持久化跨进程电源恢复记录。

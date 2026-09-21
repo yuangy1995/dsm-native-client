@@ -13,6 +13,7 @@ public enum NasSettingsEditState
     Saved,
     Failed,
     Unsupported,
+    NeedsReview,
 }
 
 public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
@@ -29,7 +30,7 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
     private MutationResult? _lastResult;
     private string? _errorMessage;
     private string _editTitle = string.Empty;
-    private bool _canSave;
+    private bool _requiresReview;
 
     public NasSettingsEditState State
     {
@@ -44,6 +45,7 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
                 RaisePropertyChanged(nameof(HasError));
                 RaisePropertyChanged(nameof(IsUnsupported));
                 RaisePropertyChanged(nameof(CanEdit));
+                RaisePropertyChanged(nameof(CanSave));
             }
         }
     }
@@ -53,9 +55,10 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
         get => _draft;
         set
         {
+            if (IsSaving || _requiresReview) return;
             if (SetProperty(ref _draft, value))
             {
-                CanSave = value is not null;
+                RaisePropertyChanged(nameof(CanSave));
             }
         }
     }
@@ -72,11 +75,8 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
         set => SetProperty(ref _editTitle, value);
     }
 
-    public bool CanSave
-    {
-        get => _canSave;
-        private set => SetProperty(ref _canSave, value);
-    }
+    public bool CanSave => Draft is not null && !_requiresReview &&
+        State == NasSettingsEditState.Editing && CanSaveFeature();
 
     public MutationResult? LastResult
     {
@@ -94,43 +94,61 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
     public bool IsLoading => State == NasSettingsEditState.Loading;
     public bool IsEditing => State == NasSettingsEditState.Editing;
     public bool IsSaving => State == NasSettingsEditState.Saving;
-    public bool HasError => State == NasSettingsEditState.Failed;
+    public bool HasError => State is NasSettingsEditState.Failed or NasSettingsEditState.NeedsReview;
     public bool IsUnsupported => State == NasSettingsEditState.Unsupported;
-    public bool CanEdit => State == NasSettingsEditState.Idle || State == NasSettingsEditState.Saved;
+    public bool CanEdit => !_requiresReview &&
+        State is NasSettingsEditState.Idle or NasSettingsEditState.Saved or NasSettingsEditState.Failed;
     public bool WasSuccessful => LastResult?.Status == MutationResultStatus.ConfirmedSuccess;
     public bool WasFailure => LastResult?.Status == MutationResultStatus.ConfirmedFailure;
 
     private Func<CancellationToken, Task<T>>? _loader;
     private Func<T, CancellationToken, Task<MutationResult>>? _saver;
+    private Func<T, T, Guid, CancellationToken, Task<MutationResult>>? _snapshotSaver;
+
+    public Task ActivateAsync(INasSettingsRepository repository, string editTitle, Func<CancellationToken, Task<T>> loader,
+        Func<T, T, Guid, CancellationToken, Task<MutationResult>> snapshotSaver) =>
+        ActivateAsync(repository, editTitle, loader, null, snapshotSaver);
 
     public async Task ActivateAsync(
         INasSettingsRepository repository,
         string editTitle,
         Func<CancellationToken, Task<T>> loader,
-        Func<T, CancellationToken, Task<MutationResult>> saver)
+        Func<T, CancellationToken, Task<MutationResult>>? saver,
+        Func<T, T, Guid, CancellationToken, Task<MutationResult>>? snapshotSaver = null)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(loader);
-        ArgumentNullException.ThrowIfNull(saver);
+        if (saver is null && snapshotSaver is null) throw new ArgumentNullException(nameof(saver));
 
         CancelRequest();
+        _requiresReview = false;
+        _loaded = null;
+        _draft = null;
+        LastResult = null;
         _repository = repository;
         _loader = loader;
         _saver = saver;
+        _snapshotSaver = snapshotSaver;
         EditTitle = editTitle;
 
+        State = NasSettingsEditState.Idle;
         await LoadAsync();
     }
 
     public async Task LoadAsync()
     {
         ThrowIfDisposed();
+        if (IsSaving) return;
         var repository = RequireRepository();
         var loader = RequireLoader();
         var request = BeginRequest();
         State = NasSettingsEditState.Loading;
         ErrorMessage = null;
+        _loaded = null;
+        _draft = null;
+        RaisePropertyChanged(nameof(Draft));
+        RaisePropertyChanged(nameof(CanSave));
 
         try
         {
@@ -141,11 +159,21 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
             }
 
             _loaded = data;
+            _requiresReview = false;
+            LastResult = null;
             Draft = Clone(data);
             State = NasSettingsEditState.Editing;
         }
         catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
         {
+        }
+        catch (DsmException error) when (error.Code == 102)
+        {
+            if (IsCurrent(request.Generation, repository))
+            {
+                ErrorMessage = L.Get("NasSettingsUnavailable");
+                State = NasSettingsEditState.Unsupported;
+            }
         }
         catch
         {
@@ -161,56 +189,80 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
     {
         ThrowIfDisposed();
         var repository = RequireRepository();
-        var saver = RequireSaver();
         var draft = Draft;
 
-        if (draft is null || !repository.WriteAvailability.CanSaveFileService)
+        if (draft is null || !CanSave)
         {
             return;
         }
 
         var request = BeginRequest();
         State = NasSettingsEditState.Saving;
+        _requiresReview = true;
         ErrorMessage = null;
         LastResult = null;
 
         try
         {
-            var result = await saver(draft, request.Cancellation.Token);
+            // 保存期间禁止重新读取和编辑；这一份原值/目标值及请求 ID 在整个提交内固定。
+            var result = _snapshotSaver is { } snapshotSaver && _loaded is { } baseline
+                ? await snapshotSaver(baseline, draft, Guid.NewGuid(), request.Cancellation.Token)
+                : await RequireSaver()(draft, request.Cancellation.Token);
             if (!IsCurrent(request.Generation, repository))
             {
                 return;
             }
 
             LastResult = result;
+            _requiresReview = result.Status != MutationResultStatus.ConfirmedSuccess &&
+                (result.RequiresRefresh || result.Status is MutationResultStatus.SubmittedButUnverified or
+                    MutationResultStatus.CancellationRequestedAfterSubmission or MutationResultStatus.PartialSuccess);
             State = result.Status switch
             {
                 MutationResultStatus.ConfirmedSuccess => NasSettingsEditState.Saved,
+                _ when _requiresReview => NasSettingsEditState.NeedsReview,
+                MutationResultStatus.Unsupported => NasSettingsEditState.Unsupported,
+                MutationResultStatus.CancelledBeforeSubmission => NasSettingsEditState.Editing,
                 MutationResultStatus.ConfirmedFailure => NasSettingsEditState.Failed,
-                MutationResultStatus.SubmittedButUnverified => NasSettingsEditState.Saved,
                 _ => NasSettingsEditState.Failed,
             };
 
-            if (State == NasSettingsEditState.Failed)
+            if (State == NasSettingsEditState.Saved) _loaded = Clone(draft);
+            if (State == NasSettingsEditState.Unsupported)
             {
-                ErrorMessage = L.Get("NasSettingsSaveError");
+                ErrorMessage = L.Get("NasSettingsUnavailable");
+            }
+            else if (State == NasSettingsEditState.NeedsReview)
+            {
+                ErrorMessage = L.Get(result.Submitted ? "NasSettingsSaveNeedsReview" : "NasSettingsNotSavedNeedsReload");
+            }
+            else if (State == NasSettingsEditState.Failed)
+            {
+                ErrorMessage = L.Get(result.ErrorCategory switch
+                {
+                    MutationErrorCategory.Permission => "NasSettingsSavePermissionDenied",
+                    MutationErrorCategory.Authentication => "NasSettingsSaveSignInRequired",
+                    _ => "NasSettingsSaveError",
+                });
             }
         }
         catch (OperationCanceledException) when (request.Cancellation.IsCancellationRequested)
         {
+            if (IsCurrent(request.Generation, repository)) MarkNeedsReview();
         }
         catch
         {
             if (IsCurrent(request.Generation, repository))
             {
-                ErrorMessage = L.Get("NasSettingsSaveError");
-                State = NasSettingsEditState.Failed;
+                MarkNeedsReview();
             }
         }
     }
 
     public void BeginEdit()
     {
+        ThrowIfDisposed();
+        if (!CanEdit) return;
         if (_loaded is not null)
         {
             Draft = Clone(_loaded);
@@ -221,6 +273,9 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
 
     public void CancelEdit()
     {
+        ThrowIfDisposed();
+        if (IsSaving || _requiresReview) return;
+        CancelRequest();
         Draft = _loaded is not null ? Clone(_loaded) : null;
         State = NasSettingsEditState.Idle;
         LastResult = null;
@@ -228,6 +283,7 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
 
     public void SetUnsupported()
     {
+        if (IsSaving || _requiresReview) return;
         State = NasSettingsEditState.Unsupported;
     }
 
@@ -237,7 +293,10 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
         _repository = null;
         _loader = null;
         _saver = null;
+        _snapshotSaver = null;
         _loaded = default;
+        _requiresReview = false;
+        State = NasSettingsEditState.Idle;
         Draft = default;
         LastResult = null;
         State = NasSettingsEditState.Idle;
@@ -280,7 +339,11 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
         {
             return (T)(object)new NasHardwareSettings(
                 hs.PowerFailRestart, hs.LedBrightness, hs.FanMode, hs.BeepControl,
-                hs.HddSleepMinutes, hs.UpsEnabled, hs.UpsMode, hs.UpsShutdownTime);
+                hs.HddSleepMinutes, hs.UpsEnabled, hs.UpsMode, hs.UpsShutdownTime)
+            {
+                LedMinimum = hs.LedMinimum, LedMaximum = hs.LedMaximum, Beep = hs.Beep, Hibernation = hs.Hibernation,
+                Ups = hs.Ups, AvailableSections = hs.AvailableSections, FailedSections = hs.FailedSections,
+            };
         }
 
         if (source is NasSecuritySettings ss)
@@ -288,17 +351,51 @@ public sealed class NasSettingsEditViewModel<T> : ObservableObject, IDisposable
             return (T)(object)new NasSecuritySettings(
                 ss.AutoBlockEnabled, ss.AutoBlockFailedAttempts,
                 ss.AutoBlockWithinMinutes, ss.AutoBlockExpiryDays,
-                ss.DosProtectionEnabled, ss.FirewallEnabled, ss.PortScanEnabled);
+                ss.DosProtectionEnabled, ss.FirewallEnabled, ss.PortScanEnabled)
+            {
+                DosProtection = Array.AsReadOnly(ss.DosProtection.ToArray()), FirewallProfileName = ss.FirewallProfileName,
+                AvailableSections = ss.AvailableSections, FailedSections = ss.FailedSections,
+            };
         }
 
         if (source is NasRegionSettings rs)
         {
             return (T)(object)new NasRegionSettings(
                 rs.DateFormat, rs.TimeFormat, rs.Timezone,
-                rs.NtpServers.ToList(), rs.ManualDate);
+                Array.AsReadOnly(rs.NtpServers.ToArray()), rs.ManualDate)
+            {
+                Mode = rs.Mode, NasLocalTime = rs.NasLocalTime,
+                TimeZones = Array.AsReadOnly(rs.TimeZones.ToArray()),
+            };
         }
 
         return source;
+    }
+
+    private bool CanSaveFeature()
+    {
+        if (_repository is null) return false;
+        var available = _repository.WriteAvailability;
+        return Draft switch
+        {
+            NasFileServiceSettings => available.CanSaveFileService,
+            NasTerminalSettings => available.CanSaveTerminal,
+            NasProxySettings => available.CanSaveProxy,
+            NasHardwareSettings => available.CanSaveHardware,
+            NasSecuritySettings => available.CanSaveSecurity,
+            NasRegionSettings => available.CanSaveRegion,
+            NasEthernetInterface => available.CanSaveNetwork,
+            NasRemoteAccessSettings => available.CanSaveRemoteAccess,
+            _ => false,
+        };
+    }
+
+    private void MarkNeedsReview()
+    {
+        // 提交开始后的异常无法证明未生效，只允许先重新读取，不能再次保存旧草稿。
+        _requiresReview = true;
+        ErrorMessage = L.Get("NasSettingsSaveNeedsReview");
+        State = NasSettingsEditState.NeedsReview;
     }
 
     private RequestState BeginRequest()

@@ -377,11 +377,9 @@ public sealed partial class DsmRepository
                 var canDelete = false;
                 if (additional?["perm"] is not null)
                 {
-                    if (additional["perm"] is not JsonObject permission ||
-                        !NativeBool(permission, "write", out canWrite) ||
-                        permission["delete"] is not null &&
-                        !NativeBool(permission, "delete", out canDelete))
-                        throw new InvalidDataException("file.mutation.invalid-permission");
+                    var permission = FileStationPermissions.Parse(additional["perm"]);
+                    canWrite = permission.Write ?? false;
+                    canDelete = permission.Delete ?? false;
                 }
                 items.Add(new FileItem(itemPath, name, isDir, size, modified, null, canWrite, canDelete));
             }

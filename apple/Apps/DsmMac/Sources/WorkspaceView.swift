@@ -1361,8 +1361,9 @@ struct RemoteLocationsView: View {
     @Bindable var model: WorkspaceModel
     let onOpen: (FileItem) -> Void
     @State private var showsCreate = false
-    @State private var editingItem: FileItem?
-    @State private var removingItem: FileItem?
+    @State private var showsRemoteMountRecovery = false
+    @State private var editingItem: RemoteMountConnection?
+    @State private var removingItem: RemoteMountConnection?
     @State private var filter: RemoteLocationFilter = .all
 
     private enum RemoteLocationFilter: String, CaseIterable, Identifiable {
@@ -1503,8 +1504,12 @@ struct RemoteLocationsView: View {
                             Button(L10n.string("ui.c771248e511fbf93")) { onOpen(location) }
                             if model.allowsRemoteMountManagement && folder.protocolType.supportsManagement {
                                 Divider()
-                                Button(L10n.string("ui.27765faa9412fc59")) { editingItem = location }
-                                Button(L10n.string("ui.94a750d92afbec3e"), role: .destructive) { removingItem = location }
+                                Button(L10n.string("ui.27765faa9412fc59")) {
+                                    Task { editingItem = await model.prepareRemoteMountConnection(location) }
+                                }.disabled(model.isManagingRemoteMount)
+                                Button(L10n.string("ui.94a750d92afbec3e"), role: .destructive) {
+                                    Task { removingItem = await model.prepareRemoteMountConnection(location) }
+                                }.disabled(model.isManagingRemoteMount)
                             }
                         }
                     }
@@ -1514,6 +1519,10 @@ struct RemoteLocationsView: View {
         .fillsAvailableContentArea(alignment: .topLeading)
         .navigationTitle(L10n.string("ui.6727073e65194528"))
         .macPageActions(title: L10n.string("ui.6727073e65194528")) {
+            if !model.remoteMountOperations.isEmpty {
+                Button(L10n.string("remote-mount.recovery.title")) { showsRemoteMountRecovery = true }
+                    .disabled(model.isManagingRemoteMount || showsCreate || editingItem != nil || removingItem != nil)
+            }
             Button {
                 Task { await model.refreshRemoteLocations() }
             } label: {
@@ -1539,18 +1548,25 @@ struct RemoteLocationsView: View {
                 initialMountPoint: defaultMountPoint
             ) { configuration in
                 let succeeded = await model.createRemoteMount(configuration)
-                return succeeded ? nil : (model.statusMessage ?? L10n.string("ui.b6a766fd18efca46"))
+                let failure = model.statusMessage ?? L10n.string("ui.b6a766fd18efca46")
+                let point = configuration.mountPoint.trimmingCharacters(in: CharacterSet(charactersIn: " "))
+                let hasPending = model.remoteMountOperations.contains { $0.affectedPaths.contains(point) }
+                return succeeded ? nil : hasPending ? L10n.string("remote-mount.recovery.editor-error", failure) : failure
             }
         }
         .macSheet(item: $editingItem) { item in
             RemoteMountEditorView(
                 existingItem: item,
-                initialMountPoint: item.path
+                initialMountPoint: item.mountPoint
             ) { configuration in
                 let succeeded = await model.updateRemoteMount(item, configuration: configuration)
-                return succeeded ? nil : (model.statusMessage ?? L10n.string("ui.7d859f1cdcf0302b"))
+                let failure = model.statusMessage ?? L10n.string("ui.7d859f1cdcf0302b")
+                let point = configuration.mountPoint.trimmingCharacters(in: CharacterSet(charactersIn: " "))
+                let hasPending = model.remoteMountOperations.contains { $0.affectedPaths.contains(point) || $0.affectedPaths.contains(item.mountPoint) }
+                return succeeded ? nil : hasPending ? L10n.string("remote-mount.recovery.editor-error", failure) : failure
             }
         }
+        .macSheet(isPresented: $showsRemoteMountRecovery) { RemoteMountRecoveryView(model: model) }
         .alert(L10n.string("ui.d1df2211a0b4fb89"), isPresented: Binding(
             get: { removingItem != nil },
             set: { if !$0 { removingItem = nil } }
@@ -1562,7 +1578,9 @@ struct RemoteLocationsView: View {
                 Task { _ = await model.removeRemoteMount(item) }
             }
         } message: {
-            Text(L10n.string("ui.9400b6a479badb98"))
+            if let connection = removingItem {
+                Text(L10n.string("remote-mount.disconnect.identity", connection.mountPoint, connection.source))
+            }
         }
     }
 
@@ -1601,7 +1619,7 @@ struct RemoteLocationsView: View {
 }
 
 struct RemoteMountEditorView: View {
-    let existingItem: FileItem?
+    let existingItem: RemoteMountConnection?
     let onSave: (RemoteMountConfiguration) async -> String?
 
     @Environment(\.dismiss) private var dismiss
@@ -1612,20 +1630,32 @@ struct RemoteMountEditorView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var domain = ""
-    @State private var readOnly = false
+    @State private var nfsVersion: RemoteMountNFSVersion = .v3
+    @State private var nfsTransport: RemoteMountNFSTransport = .tcp
+    @State private var confirmedConfiguration: RemoteMountConfiguration?
+    @State private var confirmedConnection: RemoteMountConnection?
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
     init(
-        existingItem: FileItem?,
+        existingItem: RemoteMountConnection?,
         initialMountPoint: String,
         onSave: @escaping (RemoteMountConfiguration) async -> String?
     ) {
         self.existingItem = existingItem
         self.onSave = onSave
-        let rawType = existingItem?.mountPointType?.lowercased() ?? ""
-        _protocolType = State(initialValue: rawType.contains("nfs") ? .nfs : .smb)
+        _protocolType = State(initialValue: existingItem?.protocolType ?? .smb)
         _mountPoint = State(initialValue: initialMountPoint)
+        if let existingItem {
+            let source = existingItem.source
+            if existingItem.protocolType == .smb, source.hasPrefix("//"), let slash = source.dropFirst(2).firstIndex(of: "/") {
+                _server = State(initialValue: String(source[source.index(source.startIndex, offsetBy: 2)..<slash]))
+                _remotePath = State(initialValue: String(source[source.index(after: slash)...]))
+            } else if existingItem.protocolType == .nfs, let separator = source.range(of: ":/") {
+                _server = State(initialValue: String(source[..<separator.lowerBound]))
+                _remotePath = State(initialValue: String(source[separator.upperBound...]))
+            }
+        }
     }
 
     var body: some View {
@@ -1636,8 +1666,8 @@ struct RemoteMountEditorView: View {
             )
             .font(.title2.weight(.semibold))
 
-            if existingItem != nil {
-                Text(L10n.string("ui.2752260d080806b1"))
+            if let existingItem {
+                Text(L10n.string("remote-mount.previous.identity", existingItem.mountPoint, existingItem.source))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
@@ -1656,10 +1686,34 @@ struct RemoteMountEditorView: View {
                     TextField(L10n.string("ui.1a3f0617d6de8e52"), text: $username)
                     SecureField(L10n.string("ui.a621ab606db2a11f"), text: $password)
                     TextField(L10n.string("ui.99ac911a386914a8"), text: $domain)
+                    if existingItem != nil {
+                        Text(L10n.string("remote-mount.credentials-again")).font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Picker(L10n.string("remote-mount.nfs-version"), selection: $nfsVersion) {
+                        Text(L10n.string("remote-mount.nfs3")).tag(RemoteMountNFSVersion.v3)
+                        Text(L10n.string("remote-mount.nfs4")).tag(RemoteMountNFSVersion.v4)
+                    }
+                    Picker(L10n.string("remote-mount.nfs-transport"), selection: $nfsTransport) {
+                        Text(L10n.string("remote-mount.tcp")).tag(RemoteMountNFSTransport.tcp)
+                        Text(L10n.string("remote-mount.udp")).tag(RemoteMountNFSTransport.udp)
+                    }
+                    .disabled(nfsVersion == .v4)
                 }
-                Toggle(L10n.string("ui.ac9d2114005fe37f"), isOn: $readOnly)
             }
             .formStyle(.grouped)
+            .disabled(isSubmitting)
+
+            Text(L10n.string(existingItem == nil ? "remote-mount.create-impact" : "remote-mount.edit-impact"))
+                .font(.callout)
+            Toggle(L10n.string("remote-mount.confirm"), isOn: Binding(
+                get: { confirmedConfiguration == currentConfiguration && confirmedConnection == existingItem },
+                set: {
+                    confirmedConfiguration = $0 ? currentConfiguration : nil
+                    confirmedConnection = $0 ? existingItem : nil
+                }
+            ))
+                .disabled(isSubmitting)
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -1689,28 +1743,54 @@ struct RemoteMountEditorView: View {
         .padding(24)
         .frame(width: 520)
         .interactiveDismissDisabled(isSubmitting)
+        .onChange(of: server) { _, _ in confirmedConfiguration = nil }
+        .onChange(of: remotePath) { _, _ in confirmedConfiguration = nil }
+        .onChange(of: mountPoint) { _, _ in confirmedConfiguration = nil }
+        .onChange(of: username) { _, _ in confirmedConfiguration = nil }
+        .onChange(of: password) { _, _ in confirmedConfiguration = nil }
+        .onChange(of: domain) { _, _ in confirmedConfiguration = nil }
+        .onChange(of: protocolType) { _, newValue in
+            confirmedConfiguration = nil
+            if newValue == .nfs { username = ""; password = ""; domain = "" }
+        }
+        .onChange(of: nfsVersion) { _, newValue in
+            confirmedConfiguration = nil
+            if newValue == .v4 { nfsTransport = .tcp }
+        }
+        .onChange(of: nfsTransport) { _, _ in confirmedConfiguration = nil }
+        .onChange(of: existingItem) { _, _ in confirmedConfiguration = nil; confirmedConnection = nil }
+        .onDisappear { password = ""; confirmedConfiguration = nil; confirmedConnection = nil }
     }
 
     private var canSubmit: Bool {
-        !server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        confirmedConfiguration == currentConfiguration && confirmedConnection == existingItem && !server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !remotePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && mountPoint.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/")
+    }
+
+    private var currentConfiguration: RemoteMountConfiguration {
+        RemoteMountConfiguration(
+            protocolType: protocolType,
+            server: server,
+            remotePath: remotePath,
+            mountPoint: mountPoint,
+            username: protocolType == .smb ? username : "",
+            password: protocolType == .smb ? password : "",
+            domain: protocolType == .smb ? domain : "",
+            readOnly: false,
+            nfsVersion: nfsVersion,
+            nfsTransport: nfsTransport
+        )
     }
 
     private func submit() {
         guard canSubmit, !isSubmitting else { return }
         isSubmitting = true
         errorMessage = nil
-        let configuration = RemoteMountConfiguration(
-            protocolType: protocolType,
-            server: server,
-            remotePath: remotePath,
-            mountPoint: mountPoint,
-            username: username,
-            password: password,
-            domain: domain,
-            readOnly: readOnly
-        )
+        let configuration = currentConfiguration
+        password = ""
+        confirmedConfiguration = nil
+        confirmedConnection = nil
         Task {
             let failure = await onSave(configuration)
             isSubmitting = false

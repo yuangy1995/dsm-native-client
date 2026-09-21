@@ -411,6 +411,13 @@ macOS 客户端使用公开的 `list_share` 响应中 `additional.volume_status`
 408 表示该项不存在，其他错误不得静默当作不存在。目录权限实测使用
 `additional.perm.is_acl_mode=true` 与 `acl.read/write/del`，而不提供 `adv_right`。
 Apple Adapter 在 ACL 模式优先使用这些显式权限，未提供时保留既有字段解析。
+2026-09-21 Windows 同类修复：固定版本读取入口补齐仅 List v2/getinfo 的精确契约，
+FORM/JSON 的 path/additional 保持 JSON 数组；目录存在性仅凭匹配路径的单项 408
+判定缺失。文件浏览及操作预检统一 ACL/adv_right 权限优先级，不再仅依赖直接的
+write/delete 字段；无相应写权限仍不得提交。其他四端 API 和数据结构不变。
+Windows 写回预检同时通过该公开读取获得 type、mount_point_type、time 和权限；
+只读结果新增包装不改变 NAS 协议。缺失的目标与空文件区分，特殊/不完整路径元数据
+不能授权后台写回；其他四端没有接口迁移。
 407（不允许操作）与 411（只读文件系统）的含义来自
 [Synology 官方 File Station API 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)，
 只在 File Station 上下文映射，不能套用到登录或其他套件。
@@ -446,6 +453,11 @@ Windows/Android 的同类字段处理仅列为复核项，本轮不修改它们�
 
 ### 5.5 收藏、缩略图和校验
 
+2026-09-16 Windows 已同步上节搜索的既有 v2 契约：目录数组、FORM/JSON 编码、等待
+`finished=true`、完整结果分页，成功 `clean`、失败/取消 `stop`；旧搜索入口委托同一流程。
+仅修正实现，不新增公开字段或方法，不改 Apple/Android。合成请求与真实 NAS 验证分别记录于
+[Windows 账本](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。
+
 | API | 调用要点 |
 | --- | --- |
 | `Favorite.list` | 支持分页和 `additional` |
@@ -459,6 +471,12 @@ Windows/Android 的同类字段处理仅列为复核项，本轮不修改它们�
 | `MD5.start` | `file_path`，返回 `taskid` |
 | `MD5.status` | 返回 `finished` 和 `md5` |
 | `CheckPermission.write` | `path`、`filename`，公开契约用于检查目录中新建项目的写入权限；`create_only` 默认为 `true` |
+
+2026-09-20 Windows Favorite v2 已接专用提交边界、FORM/JSON 编码与文件页收藏入口。
+添加传 path/name，移除传 path；只改收藏引用，不删除文件。读前/读后使用完整列表，
+添加验证路径与名称、移除确认路径消失；截断/歧义列表不提供完成证据。未知操作在
+当前客户端按 profile/账号/地址/路径保留，只核查不重放；服务器明确拒绝不因其他
+客户端操作改判成功。实际 NAS 验证仍待用户执行，不把合成请求当行为验证。
 
 `SYNO.FileStation.DirSize` 是 File Station 官方 v2 非阻塞任务。官方 `stop` 参数表疑似把
 `taskid` 误写成 `tasked`，但同章节的 `start` / `status` 契约和 `stop` 请求示例均使用
@@ -540,6 +558,56 @@ _sid=<SID>
 | 解压 | `file_path`、`dest_folder_path`、`overwrite`、`keep_dir`、`create_subfolder`、`password` | `Extract.status(taskid)` |
 | 压缩 | `path=[...]`、`dest_file_path`、`level`、`mode`、`format`、`password` | `Compress.status(taskid)` |
 
+2026-09-20 CopyMove v3 同名策略按[官方 File Station API 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/FileStation/All/enu/Synology_File_Station_API_Guide.pdf)
+第 87–89 页复核：overwrite=false 跳过同名，true 覆盖，省略时同名报 1003；文件与
+同名目录不能互相覆盖（1004）。Windows 文件页单项/多项默认 Skip，主动 Overwrite
+必须显式确认；旧领域调用保留 Fail，旧 start 重载固定 false。跳过结果带独立标记，
+不冒充写入成功或撤销目标。新增 copy/move synthetic-overwrite 两个 highRisk fixture。
+覆盖前已有目标须同类型且可写，新建权限用一次性名称只读探测，避免用已存在名称
+做 create_only=true 检查导致误拒；实际覆盖权限仍由正式请求及回读核查决定。
+
+覆盖结果必须有本次 taskid 的完成证据及源/目标回读；同大小旧文件不能单独证明
+成功，任务失败/丢失保持未确认，不重发。等待正常任务不再固定 8 次；取消停止等待
+并保留未知，恢复共用此轮询。指南规定统计期间 total=-1，解析接受 -1 或非负原生
+整数，字符串及更小负数仍拒绝。五端评估：Windows 实施；Mac 已有跳过/覆盖基线，
+iPhone/iPad 与 Android 不改源码，后续采用同语义需各自确认/权限及真实设备验证。
+本条为公开文档与合成证据，未增加真实 NAS 覆盖/目录合并的行为验证等级。
+
+2026-09-20 回收/恢复增加当前连接内的只读核对与成功回执，仍使用原任务/文件读取，
+回执不发 NAS 请求。回收核查要求源路径确实消失，来源内容变化不能当作移走。
+同指南第 92 页明确 Delete.status 的 total 在统计期间为 -1，数量字段为
+processed_num；Windows 已修正对应严格类型校验，保留 finished 原生布尔。
+回收等待不再固定 8 次，取消只停止等待并核查结果，不自动重复提交或恢复。
+五端评估：Windows 修复及合成测试；Mac/iPhone/iPad/Android 无本波代码变更，真实
+回收/恢复与其他平台验证等级不变。
+
+2026-09-19 Windows 高级压缩对齐公开 Compress v3 与 macOS：`format=zip/7z`，
+`level=moderate/store/fastest/best`，`mode=add`，非空密码按原文放入请求正文，
+不放 URL、日志或恢复对象。沿用公开文档及现有 `file-station/compress/synthetic-selection`
+脱敏 fixture，无新增内部接口。现有默认调用仍为 zip/moderate/无密码；Windows
+领域选项和传输重载向后兼容，macOS/iPhone/iPad/Android 的模型、调用和存储不改。
+目录权限、已存在目标拒绝及任务 status/stop 保持；成功须任务 finished 加最终条目
+核查，任务未知/失败或启动回执丢失不以文件存在冒充成功。只说明源码与
+合成回归，不代表真实加密包已经验证。
+
+Windows Extract v2 后续接入 list/start 共用 password/codepage 的兼容选项；默认编码
+先按 NAS 设置读取，仅遇乱码线索再比较 chs，与 macOS `preferredArchiveCodepage`
+保持一致，手选编码不被自动改写。密码保留原始空白，仅进入请求正文；错误 1403
+在提交前提示重新输入，不将密码错误伪装为任务已提交。结果须绑定 start 返回的
+taskid，status 确认 finished 后再核对输出类型；回执丢失/任务失败不凭文件存在报成功。
+其他四端既有调用与存储不变，不升级真实 NAS 证据。完整归档目录、覆盖和目录选项
+仍待下一切片；当前根目录读取限制不代表完整高级解压已经对齐。
+
+后续同日 Windows 已读取完整归档树：list 按 offset/limit 翻页，目录条目的 itemid
+或官方示例 item_id 用于后续子目录查询；重名相对路径、重复目录标识、越界路径和
+无进展页报失败。解压保留目录/展开文件、同名子文件夹与覆盖三选项已接，覆盖要求
+独立确认及现有目标权限，不得替换源归档或造成文件/目录类型冲突；展开后同名文件
+冲突在写前拒绝。任务 finished 后逐父目录核对完整预期输出，已知大小须精确匹配。
+新增 highRisk 脱敏 fixture `file-station/extract/synthetic-overwrite`，仍为公开文档与
+合成证据，不提升真实行为等级。macOS/iPhone/iPad/Android 的现有请求与存储不变。
+macOS `WorkspaceModel.prepareExtraction` 实际固定 currentPath，Windows 保持同义，
+此前将“另选目标目录”列为 macOS 对齐缺口不准确；不据此新增未承诺的平行入口。
+
 异步任务通用原则：
 
 - `start` 成功后保存 `taskid`。
@@ -571,7 +639,7 @@ DSM / File Station 只读响应上验收。
 
 | API | version | methods | 用途 |
 | --- | ---: | --- | --- |
-| `SYNO.DownloadStation.Info` | 1 | `getinfo`, `getconfig`, `setserverconfig` | 套件信息与基础设置 |
+| `SYNO.DownloadStation.Info` | 1 / 2 | `getinfo`, `getconfig`, `setserverconfig` | 基础设置 v1+；默认保存位置字段要求 v2+ |
 | `SYNO.DownloadStation.Schedule` | 1 | `getconfig`, `setconfig` | 下载计划 |
 | `SYNO.DownloadStation.Task` | 1 | `list`, `getinfo`, `create`, `delete`, `pause`, `resume`, `edit` | 下载任务生命周期 |
 | `SYNO.DownloadStation.Statistic` | 1 | `getinfo` | 当前下载/上传速度 |
@@ -629,7 +697,7 @@ SavedState、偏好、磁盘或日志；界面须说明搜索词会发送到 NAS
 
 ```text
 api=SYNO.DownloadStation.Task
-version=1
+version=2
 method=create
 uri=<HTTP_URL_OR_MAGNET>
 destination=<OPTIONAL_SHARED_FOLDER>
@@ -638,6 +706,16 @@ destination=<OPTIONAL_SHARED_FOLDER>
 上传 `.torrent` 或 `.nzb` 时应按官方文档使用 multipart 请求。磁力链接、下载 URL、文件名和 tracker 地址都可能包含隐私，不得写入分析日志。
 
 macOS 客户端同时接受 `.txt` 网址清单并作为官方 `file` 字段上传。`destination` 与 `unzip_password` 放在 multipart 正文中，任务文件保持为最后一个正文部分；解压密码不得进入请求地址或日志。
+
+Windows 已补齐任务文件的目录选择与解压密码。文件创建无 destination 时固定 v1，携带
+destination 时要求并固定 v2，能力不满足不能降级忽略目录。Apple 同类 helper 也按用户
+授权修正；解压密码保留原始空白，创建回读不等于解压验证。新实现仅有源码/合成证据。
+
+普通链接创建同样按 destination 选择 v1/v2；共有 synthetic-link fixture 已纠正为 v2。
+不指定目录表示使用 NAS 当前默认位置，不能把旧缓存默认路径当作用户明确选择。
+2026-09-21 用户授权补齐 Android 相同规则：链接和任务文件创建固定选择 v1/v2，所需
+版本不在服务能力范围时在读取目录、打开文件和提交前返回不支持；不改内部备用 API。
+五端公开契约不变，Android 仅追平既有 Apple/Windows 契约；真实 NAS 创建仍待用户验证。
 
 #### 基础设置
 
@@ -648,6 +726,11 @@ method=getconfig|setserverconfig
 ```
 
 当前共享契约覆盖默认保存位置、eMule、自动解压，以及 BT、HTTP/FTP、NZB 和 eMule 的速度限制。下载计划通过 `SYNO.DownloadStation.Schedule.getconfig/setconfig` 独立读取和保存。HTTP 与 FTP 在官方接口中共用实际限速配置，客户端以一个“网页与 FTP 下载”字段呈现；所有保存操作完成后必须重新读取并核对结果。
+
+官方指南明确 `default_destination` 自 Info v2 提供，不能将 Info v1 的缺失字段当成空目录。
+Windows 读取/保存优先固定 v2，仅 v1 时保留其他基础设置而关闭默认位置编辑；Schedule
+仍固定 v1。两组件先核对确认时基线，网络结果不明只回读；基础设置已保存而计划尚未开始
+时，必须再次确认继续。HTTP/FTP 限速仅影响新建或恢复的相关任务，不追溯改变已在下载的任务。
 
 #### 控制任务
 
@@ -663,6 +746,11 @@ force_complete=false
 `true` 定义为结束任务，并把未完成的下载文件移动到目标目录；它**不是**“删除已下载
 数据”的参数。该动作不可恢复为继续下载，必须由用户明确触发，并在提交未知时只回读、
 不得自动重放。客户端不得仅根据旧实现中的 `removeData` 命名把它展示为文件删除。
+
+2026-09-16 macOS 已按用户授权修正菜单、确认和结果文案；Windows 通过可选
+`ForceComplete` 标记区分任务移除与明确结束动作，并提供逐项批量编排。数据中的逐任务
+`error` 与外层 `success` 分开判断；任务列表回读只能确认任务状态/消失，不能证明文件
+移动或文件删除。新增自动化不提升真实 NAS 证据等级，见 Windows 持续实施账本。
 
 官方指南中的 `Task.edit` 只公开 `id` 与 `destination`，用于修改任务目标目录；
 `Task_File.priority` 虽然可在列表和详情中读取，但官方写方法没有文件 ID 或优先级参数。
@@ -701,6 +789,22 @@ Android 正式入口固定使用 v1，并在写前分别复核用户所见任务
 
 官方 VMM 指南使用 `SYNO.Virtualization.API.*` 命名空间，文档主版本为 1：
 
+2026-09-17 Windows 电源切片复核官方指南第 24–26 页：poweron/shutdown/poweroff v1
+按单 guest_id 提交，没有返回任务 ID；poweroff 为强制断电，与正常 shutdown 分开确认。
+客户端追加 Guest.get 状态核对，过渡或无法读取时保持未确认，不因空成功回执而伪报完成；
+未知仅回读，不重发。该增量只有合成验证，生产高危入口仍关闭，真实行为须专用目标验收。
+公开指南没有在此处列出 reboot，本切片不以名称猜测新增请求；多机批量由后续独立流程
+逐项处理，不把单值 guest_id 自行拼成逗号列表。
+
+2026-09-17 Windows 基础编辑固定使用公开 Guest.get/set v1：以单 guest_id 定位，改名
+字段为 new_guest_name，其他字段为 description、vcpu_num、vram_size、autorun。
+autorun 的公开值为 0（关闭）、1（恢复原状态）、2（开启）；get 返回 guest_name 和
+description，不读取内部 name/desc。set 返回空成功而非任务 ID，客户端按修改字段
+逐项回读；未知不重发。CPU/内存的停机要求与客户端范围沿用 macOS 安全行为，
+不宣称这些客户端范围等于所有服务器的资源上限。macOS 当前更新走内部接口，其参数
+不能直接复制成公开请求。此波 Windows 增量不修改 Apple/Android，实现与合成证据
+不等于真实配置副作用验证，生产保存保持关闭。
+
 | API | methods | 用途 |
 | --- | --- | --- |
 | `SYNO.Virtualization.API.Task.Info` | `list`, `get`, `clear` | 异步任务 |
@@ -713,7 +817,42 @@ Android 正式入口固定使用 v1，并在写前分别复核用户所见任务
 
 创建、镜像导入等明确标记为非阻塞的操作返回任务 ID，应通过 `Task.Info.get` 轮询；公开 `Guest.delete` 与 `Guest.Image.delete` v1 返回空成功响应，不得虚构任务轮询。两类删除都必须通过对应资源列表回读，`Guest.Image.delete` 请求 Fixture 的 `readbackPolicy` 固定为 `required`，不能标成 `taskPoll`。公开 `Guest.set` v1 支持按虚拟机 ID 或名称修改名称、描述、vCPU、内存和自动启动；创建接口的未连接网卡按官方指南使用空 `network_id` 表示。`poweroff` 相当于强制断电，必须与正常 `shutdown` 在 UI 中清楚区分。
 
+2026-09-20 Apple 共享删除源码按[官方 VMM 指南](https://global.download.synology.com/download/Document/Software/DeveloperGuide/Package/Virtualization/All/enu/Synology_Virtual_Machine_Manager_API_Guide.pdf)
+第 22、27 页纠正：Guest.delete 的 guest_id 和 Guest.Image.delete 的 image_id 均为
+单个身份，公开批量调用逐项执行，不传逗号复合 ID。两者固定 v1、接受无 data 的
+空成功；映像删除不再猜 task ID 或调用 Task.Info。回读只用相同公开 API 的严格
+原生字符串 ID 数组，不能用内部降级或失败分区的空列表确认删除。未知 ID 保存在
+当前 Repository 实例中，重复请求只核对，不重发；未执行项计入现有 failed/未完成
+计数，未知项单列，不改共享 MutationResult Schema。11 项 Swift 回归源码已新增，
+当前环境缺少 Swift，未运行/未生成 Mac 包；Windows 与 Android 代码未改，Apple
+移动端仅共享编译影响、不开放删除 UI。此为公开契约修正，不提高真实 NAS 验证等级。
+
+2026-09-20 Windows 删除闭环沿用同一 Guest.delete v1 fixture：单 guest_id、同步
+空响应、无 Task.Info 调用。客户端要求已关机，先 get 验证 ID/名称/状态，再一次
+delete；随后以严格公共 list 核对 ID 消失，缺失/数字/重复 ID 或读取错误保持未知。
+同请求不重发，未知删除与电源/设置/创建互锁，同名创建也等待结果确认。Windows
+接口增量不改 DSM 请求 Schema；Mac 保留上述修正但仍未编译，iPhone/iPad 范围仍
+只读，Android 未改。Windows 多选只在 UI/状态层逐项组织，不发送逗号复合 ID。
+
 Android `Guest.create` 支持总计最多 8 块磁盘，可混合空白盘和既有映像盘，并支持多网卡及空 `network_id` 的未连接网卡。空白盘回读可核对数量和容量；`Guest.get` 的公开返回不包含创建时使用的源映像 ID，因此含映像盘时不得仅凭磁盘数量或容量宣称创建已确认成功，应返回需要刷新核对的结果。
+
+2026-09-21 Windows 公开克隆创建修正：官方契约以 create_type=1/image_id 的同次
+create 回 task_id，再经 Task.Info.get 获取结果，而不是在 Guest.get 回显源 ID。
+冻结并预检所选源 ID/名称/type=disk，严格要求绑定任务 finish=true、status=create、
+progress=100 和创建前不存在的 guest_id，随后验证新 VM 资源/配置。这是依赖官方
+API 克隆语义的结果确认，不是只凭容量认领，也不宣称独立内容哈希验证。首次可信
+目标读取的磁盘/网卡身份、容量、MAC 等快照在后续配置前后必须不变；任务记录
+过期后仍核查该可信目标，不回退名称匹配或重复创建。旧无限 VerifyImageSource
+停驻不再由 Windows 新流程产生；未知/失败/漂移仍不得开机。Android 既有保守
+处理未在此 Windows 波次修改，其他端不得据此标为已同步。
+
+2026-09-19 Windows 创建核心固定公开 create v1 和 auto_clean_task=false；绑定本次
+task_id，Task.Info.get v1 结束后取得创建前清单之外的新 guest_id。Guest.get 核对
+名称、存储、磁盘/网卡标识唯一性、数量、空白盘容量及连接；基础设置再用 Guest.set
+v1，并在同一回读快照核对设置和资源。Review 只读，Continue 需确认，create/set
+各自不重放，缺回执不按同名 VM 认领。克隆来源仍未确认，不自动开机/回滚删除/清理
+任务；原生向导未接，生产门关闭。Windows 公共 Storage.list 摘要同时将 size/used
+从 MiB 转为字节，不再把内部 allocated_size 当成公开已用字段；其他资源单位不改。
 
 从 NAS 已有文件创建映像使用官方 `SYNO.Virtualization.API.Guest.Image.create` v1，表单参数固定为
 `auto_clean_task=false`、JSON 字符串数组 `storage_ids`、官方类型值 `type`（`disk`、`vdsm` 或
@@ -729,10 +868,30 @@ Android 任务中心固定先调用 Task.Info v1 `list`，最多接受 100 个�
 单向摘要得到；真实任务标识只在当前 Workspace 内存和请求边界内使用，不展示、
 记录或持久化，内部状态、消息和日志正文也不进入领域或界面。
 
+2026-09-19 Windows 任务页采用同一官方 Task.Info v1 list/get，但处理完整返回的 ID
+清单，不沿用 Android 首批 100 项限制。task_ids 必须为不重复字符串，get 的 finish
+必须为布尔、task_info 必须为对象，存在的 progress 必须为 0–100 整数。单项错误
+显示状态读取失败，会话失效中止分区；未知原始状态、消息和资源 ID 不进入任务摘要。
+finish=true 只说明任务结束，不定义成功；后续创建/导入须另以对应资源读取证明结果。
+本次只有合成证据，没有 clear、create、取消任务或内部回退调用。
+
 只有当列表中存在已结束任务时才显示清理入口。用户确认数量后，Android 重新执行
 `list` 和逐项 `get`；只对用户确认基线中身份仍一致且仍为已结束的目标调用
 `Task.Info.clear` v1。无关任务新增或进度变化不会扩大清理范围；目标变为进行中时零写。
 任务页可见、VMM 能力可用且存在未结束任务时，Android 每 2 秒仅刷新该 Task.Info 分区；离页、任务全部结束、Repository/NAS 或观察代次变化立即停止。增量读取失败保留上次成功摘要，不把局部故障升级成整个 VMM 页面错误。
+
+2026-09-20 Windows 已补 Task.Info.clear v1：单 task_id、空成功响应、严格 list/get
+预检和 list 回读。只清理已确认摘要集合中的已结束任务，仍被创建结果核查引用的
+TaskId 保留；未知清理只读恢复且不重发。原任务 ID 留在内部，领域只用单向摘要和
+请求身份。清理不是任务取消，不调用 Guest/Guest.Action，也不依赖任务代表业务
+成功；finish 只表示结束。Windows 增量复用现有清理 fixture，其他四端代码未改，
+不提高真实 NAS 行为等级。镜像导入后续实现必须纳入同一证据保护再允许清理。
+
+2026-09-20 Windows Guest.Image.delete v1 已接单 image_id 空响应删除及同源严格
+列表回读；不依赖 Guest/Guest.Action，不调用 Task.Info。名称/类型变化阻止提交，
+未知与正在引用该映像的创建流程互锁。映像和 VM 使用不同资源范围，重用相同请求
+身份不能跨资源执行。沿用现有 delete-image fixture，未改变公共请求 Schema；
+Mac 前波源码尚待目标验证，其他三端无本波代码变化，真实占用与删除仍未验证。
 
 Android 本机映像导入先通过 File Station 将系统选择文件无覆盖上传到用户选定暂存目录，再调用公开 `Guest.Image.create`，随后只读跟踪 `Task.Info`、按稳定映像 ID/名称/类型回读、清理任务，最终按上传前后保存的完整文件基线删除临时文件。跨进程恢复记录保存在加密传输存储中；`UPLOAD_SUBMITTING`、缺少 task ID 的 `CREATE_SUBMITTING` 和已提交但未确认的任务清理均不得重放写请求。同资料同映像名的首次记录必须原子判重、插入并领取。
 每个 `clear` 只提交一次；提交异常或取消后只严格回读一次、不重放，任务从列表
@@ -742,6 +901,21 @@ Android 本机映像导入先通过 File Station 将系统选择文件无覆盖�
 终态严格核对后调用 `clear`。Guest v1 `list(additional=true)` 的 `vdisks`/`vnics` 只映射
 公开的磁盘容量、控制器、空间回收以及网络名称和型号；MAC 与资源 ID 不进入界面。
 
+2026-09-20 Apple 共享公开电源按官方 Guest.Action v1 单目标契约修正，不再发送逗号
+guest_id 或未记录的 reboot。固定公开 Guest.get v1 完整预检与最终状态核查，空
+回执不是最终状态证明；未确认时停止尾项，同仓库实例再次调用仅核对，不重放。
+公开重启提供系统内重启替代提示，不改成断电/开机组合。Mac 确认绑定当时选择，
+现有内部电源分支不改。新增 11 个共享与 2 个 Mac 测试方法，当前无 Swift，均未运行；
+Windows 已有公开单目标实现无需改，iPhone/iPad 只承受共享编译影响不新增电源 UI，
+Android 无变化。无新公开 Schema/依赖/存储迁移，也无真实 VM 行为证据。
+
+2026-09-20 Windows 创建向导增加可选创建后开机，默认关闭。它是客户端在创建资源
+及配置完整核对后调用现有 Guest.Action.poweron v1，不新增或猜测 create 参数。
+初次确认包含该选项；若创建或设置尚待核对，后续只读 Review 不会开始开机，须用户
+明确 Continue。开机未知只回读，不重发，任务清理仍保护整个未完成创建流程；明确
+开机拒绝保留已创建 VM，不删除回滚。来源未核查的映像盘不自动开机。只有 Windows
+请求模型新增默认 false 选项、阶段枚举末尾追加值，其他四端与服务端 Schema 不变。
+
 ### 7.2 项目使用的 VMM 内部接口
 
 项目调用的是另一套不带 `.API` 的命名空间：
@@ -750,15 +924,39 @@ Android 本机映像导入先通过 File Station 将系统选择文件无覆盖�
 | --- | --- | --- |
 | `SYNO.Virtualization.Cluster` | `get` v2 | 集群摘要 |
 | `SYNO.Virtualization.Host` | `list`, `get` v2 | 主机列表与详情 |
-| `SYNO.Virtualization.Guest` | `list`, `get`, `get_basic`, `set`, `delete` v2 | 虚拟机列表、详情与配置 |
+| `SYNO.Virtualization.Guest` | `list`, `get`, `get_basic` v2；`get_setting` v1；`set` v1 静态；`delete` 待验收 | 虚拟机列表、详情与配置；不得从读取版本推断写版本 |
 | `SYNO.Virtualization.Guest.Action` | `pwr_ctl`, `reset`, `clone`, `move`, `export`, `check_poweron` v1 | 电源和生命周期动作 |
 | `SYNO.Virtualization.Guest.Image` | `list`, `create`, `delete`, `edit` v2 | 镜像管理 |
 | `SYNO.Virtualization.Network` | `list`, `get` v2；`set`, `delete` 待专用目标验收 | 虚拟网络读取、修改与删除 |
 | `SYNO.Virtualization.Repo` | `list`, `get` v2 | 存储库 |
+| `SYNO.Virtualization.Setting.General` | `get` v1 | 控制台默认键盘布局读取；字段缺失不猜 en-us |
 | `SYNO.Virtualization.GuestProtect.Plan` | `list` / `get` 兼容读取 | 保护计划、计划策略与保留策略 |
 | `SYNO.Virtualization.Log` | `list` v1；分页外必须提交 `loglevel`、`filter_content`、`datefrom`、`dateto`、`sort_by=time`、`sort_dir=DESC` | VMM 日志 |
 
 上述读取方法由当前 VMM 官方网页前端静态代码和 `SYNO.API.Info` 交叉确认，但没有执行写操作。网络 `set/delete` 已按网页端具备对应能力接入隔离适配器，具体方法与参数仍必须在专用测试目标拦截核对后才能进入发布兼容范围。它们均应标记为内部接口，不能用官方 `SYNO.Virtualization.API.*` 文档来推断参数，也不能把“方法存在”写成“写操作已通过”。
+
+2026-09-20 当前官方 VMM 2.6.5-12202 的静态编辑器明确 autorun 0/1/2 分别是
+不启动、恢复原状态、启动，cpu_weight 五档为 8/64/256/512/1024，Guest.set 为 v1。
+Guest.get v2 和 get_setting v1 的相关字段已只读确认是原生数字；未保存任何配置。
+Apple 已新增兼容启动策略枚举：旧写构造 true 映射 2，Mac 创建/编辑改用三态及
+五档 CPU 优先级，未知值不补关闭/默认优先级；同源回读仍核对全部写字段。iPhone/
+iPad 只读显示保留三态与未知，不增加管理入口。Windows 公开三态已正确，内部
+优先级编辑仍待补；Android 仅评估未修改。新增 Swift 回归未执行，不提升写验证。
+详见[本次发现记录](discovery/environments/2026-09-20-vmm-parity-read-observation.md)。
+
+同日 Windows 已将 CPU 优先级接入既有设置窗口：优先级未改仍用公开 Guest.set v1；
+明确改变优先级时，使用上述内部 Guest.set v1 一次保存当前所有改动（name/desc 与
+公开参数区分），内部 Guest.get v2 同源核查。公开/内部读取身份及基础字段不一致
+或权重畸形时，该字段不可编辑，基础设置仍可用；认证/证书异常不降级。未知只核对、
+不重发，共用 VMM 写操作协调器；创建模型拒绝此编辑专用字段，避免污染公开创建。
+其他四端本次无新代码变化；沿用既有授权的兼容模型/接口扩展，不提升真实写证据。
+
+Windows 控制台已接独立窗口、全屏与每窗口 InPrivate profile，实际浏览组件验证
+后才注入一次性 Secure/HttpOnly/Session/Strict Cookie。既有 HTTP 证书上下文
+读取 HTML，保留服务器 CSP、追加同源限制，拒绝重定向/错误类型/跨来源；浏览器
+不接收外部弹窗/下载/权限，关闭取消读取、关闭组件、清除内存并在进程退出后清理
+本窗口目录。组合根仅允许系统信任连接，不将固定指纹降为默认信任。真实组件的
+双语合成隔离回归通过，但没有真实 VNC 会话验收；其他四端本波不扩展范围。
 
 ## 8. 项目源码中的内部与混合接口目录
 
@@ -793,6 +991,9 @@ Station 指南中没有稳定契约，版本、参数、响应、权限和副作
 #### `SYNO.FileStation.Mount` 使用边界
 
 > **内部、实验性契约：** 当前审阅的群晖公开 File Station PDF 未提供 `SYNO.FileStation.Mount` 的稳定参数说明。客户端只在能力发现明确返回 v1 时显示创建、修改和删除远程位置入口，并且仍需在目标 DSM build 上实机验证。
+
+Windows 当前仍关闭远程位置写入：现有 create/update/delete 及其参数与下述契约不
+一致，必须独立修复。收藏的专用提交接口已接通，但不代表挂载适配器也已实现。
 
 - 创建使用 `mount_remote`，支持 SMB/CIFS 与 NFS；远程地址、目标目录和只读选项随请求提交。
 - 修改不是假定存在稳定的 `edit` 方法：目标目录变化时先连接并确认新位置，再断开并确认旧位置；目标不变时明确提示会短暂断开后重连。
@@ -1033,7 +1234,8 @@ macOS 模型两层防重复；界面提交前说明影响并确认，执行中�
 | `SYNO.Chat.Post.Reminder` | v1 `set`, `list`, `delete`, `get` | `set(post_id,remind_at)`；`list(channel_id)`；`delete(post_id)` |
 | `SYNO.Chat.Post.Schedule` | v1 `create`, `set`, `list`, `delete` | `list(channel_id)`；创建使用 `channel_id`, `message`, `send_at`；修改/删除使用 `cronjob_id` |
 | `SYNO.Chat.Channel.Member` | v1 `get` | `channel_id`；返回 `user_ids` 与 `broken_user_ids` |
-| `SYNO.Chat.Post` 消息转发 | v5 `forward` | `post_id`, `channel_ids`；由 NAS 直接转发原消息及附件 |
+| `SYNO.Chat.Channel` 关闭会话 | Windows 固定 v5 `close` | `channel_id` 字符串；macOS 源码/已记录版本范围证据，Windows 写行为待验证 |
+| `SYNO.Chat.Post` 消息转发 | v5 `forward` | `post_id` 字符串、`channel_ids` 数字数组；由 NAS 直接转发原消息及附件 |
 | `SYNO.Chat.Post` 群公告 | v5 `pin`, `unpin`, `search` | 写入使用 `post_id`；公告列表使用 `channel_id`, `has=["pin"]`, `sort_by=last_pin_at` |
 | `SYNO.Chat.Post.Vote` | v1 `create`, `close`, `delete`, `set`, `get_choices`, `vote`, `create_option` | 创建时使用 `channel_id`, `message`, `choices`, `options`；`options` 含 `multiple`, `anonymous`, `add_option` 和可选 `expire_at` |
 

@@ -1,35 +1,28 @@
-using System.Text.Json.Nodes;
 using LanStash.Domain;
 
 namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
+    // DSM 内部接口，仅采用已记录的读取契约，不将失败转换为关闭状态。
     public async Task<NasProxySettings> LoadProxySettingsAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!Supports("SYNO.Core.Network.Proxy"))
+        var data = await ReadNasServiceSettingsAsync("SYNO.Core.Network.Proxy", 1, cancellationToken)
+            .ConfigureAwait(false);
+        return ParseNasProxySettings(data);
+    }
+
+    private static NasProxySettings ParseNasProxySettings(System.Text.Json.Nodes.JsonObject data)
+    {
+        if (data.Bool("enable") is not bool enabled)
         {
-            return new NasProxySettings(false, null, null);
+            throw InvalidNasServiceSettings();
         }
 
-        try
-        {
-            var data = await CallFirstAsync(
-                "SYNO.Core.Network.Proxy",
-                ["get", "load"],
-                parameters: null,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            return new NasProxySettings(
-                Enabled: data.Bool("enable") ?? data.Bool("enabled") ?? false,
-                Host: data.String("server") ?? data.String("host") ?? data.String("proxy_server"),
-                Port: data.Int("port") ?? data.Int("proxy_port"));
-        }
-        catch (DsmException)
-        {
-            return new NasProxySettings(false, null, null);
-        }
+        var port = data.Int("http_port");
+        return new NasProxySettings(enabled, data.String("http_host"),
+            port is > 0 and <= 65535 ? port : null);
     }
 
     public Task<MutationResult> SaveProxySettingsAsync(
@@ -37,25 +30,7 @@ public sealed partial class DsmRepository
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-
-        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["enable"] = settings.Enabled ? "true" : "false",
-        };
-
-        if (!string.IsNullOrWhiteSpace(settings.Host))
-        {
-            parameters["server"] = settings.Host;
-        }
-
-        if (settings.Port is int port && port is > 0 and <= 65535)
-        {
-            parameters["port"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        return SaveSettingsAsync(
-            "SYNO.Core.Network.Proxy", "set", parameters, "saveProxy",
-            ct => Task.CompletedTask,
-            cancellationToken);
+        // 完成基线绑定、确认和逐字段回读前不保留可被总开关意外启用的猜测写请求。
+        return Task.FromResult(UnsupportedResult("saveProxy"));
     }
 }

@@ -31,7 +31,15 @@ public sealed class WindowsUploadPickerSourceContractTests
             source,
             "public async Task<FolderUploadPlanResult?> PickFolderUploadPlanAsync",
             "public Task<FolderUploadPlanResult> PlanFolderUploadAsync");
-        Assert.Contains("BoundedFolderUploadPlan.Create(sourcePath)", pick);
+        Assert.Contains("PlanFolderUploadAsync(sourcePath, cancellationToken)", pick);
+        var prepare = SliceMethod(source, "public Task<FolderUploadPlanResult> PlanFolderUploadAsync", "public async Task<bool> StartUploadAsync");
+        Assert.Contains("Task.Run(() => BoundedFolderUploadPlan.Create(sourcePath, cancellationToken), cancellationToken)", prepare);
+        Assert.Contains("Task.Run(() => BoundedFolderUploadPlan.IsCurrent(plan, cancellationToken), cancellationToken)", prepare);
+        Assert.Contains("Directories = plan.Directories.ToArray(), Files = plan.Files.ToArray()", prepare);
+        Assert.True(prepare.IndexOf("targetIsCurrent?.Invoke()", StringComparison.Ordinal) < prepare.IndexOf("_folderBatchTargets.Add", StringComparison.Ordinal));
+        Assert.Contains("cancellationToken.ThrowIfCancellationRequested()", prepare);
+        Assert.DoesNotContain("CreateFolderAsync", prepare);
+        Assert.DoesNotContain("UploadFileAsync", prepare);
         Assert.DoesNotContain("CreateFolderAsync", pick);
         Assert.DoesNotContain("UploadFileAsync", pick);
     }
@@ -159,7 +167,10 @@ public sealed class WindowsUploadPickerSourceContractTests
         var source = ReadRepositoryFile(
             "windows/src/LanStash.App/Features/Transfers/WindowsTransferPickerService.cs");
 
-        Assert.Contains("BoundedFileUploadBatch.ValidatePaths(sourcePaths)", source);
+        Assert.Contains("BoundedFileUploadBatch.ValidatePaths(paths)", source);
+        var start = SliceMethod(source, "public FileUploadBatchValidationStatus StartUploadBatch", "public async Task<FolderUploadPlanResult?> PickFolderUploadPlanAsync");
+        Assert.True(start.IndexOf("sourcePaths.ToArray()", StringComparison.Ordinal) < start.IndexOf("BoundedFileUploadBatch.ValidatePaths(paths)", StringComparison.Ordinal));
+        Assert.Contains("targetIsCurrent?.Invoke() == false", source);
         Assert.Contains("_batchReservations.Add(target, batchId)", source);
         Assert.Contains("_batchCancellations.Add(batchId, batchCancellation)", source);
         Assert.Contains("CancellationRequestedAfterSubmission", source);
@@ -185,7 +196,7 @@ public sealed class WindowsUploadPickerSourceContractTests
         var upload = execute.IndexOf("await RunUploadAsync(prepared.Running, prepared.Request)", StringComparison.Ordinal);
         Assert.True(create >= 0 && upload > create);
         Assert.Contains("BoundedFolderUploadBatch.RunAsync(", execute);
-        Assert.Contains("BoundedFolderUploadPlan.IsCurrent(file)", execute);
+        Assert.Contains("BoundedFolderUploadPlan.IsCurrent(file, plan.RootPath)", execute);
         Assert.Contains("RemoteFolderForFile(folderPath, plan.RootName, file.RelativePath)", execute);
         Assert.Contains("FileMutationReviewBlocker.Current.Block", execute);
         Assert.Contains("FolderUploadBatchFinished?.Invoke", execute);
@@ -197,7 +208,7 @@ public sealed class WindowsUploadPickerSourceContractTests
 
         var start = SliceMethod(
             source,
-            "public FolderUploadBatchStart StartFolderUpload",
+            "public async Task<FolderUploadBatchStart> StartFolderUploadAsync",
             "public async Task<bool> StartUploadAsync");
         Assert.Contains("var directoryTargets = plan.Directories", start);
         Assert.Contains("directoryTargets.Any(target =>", start);

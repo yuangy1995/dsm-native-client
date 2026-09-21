@@ -328,7 +328,11 @@ final class ChatWorkspaceModelTests: XCTestCase {
         await repository.replaceConversations([updated])
         await repository.emitRealtime(.connected)
         await repository.emitRealtime(.contentChanged)
-        try await Task.sleep(for: .milliseconds(350))
+        // 等待可观察结果而不是假定忙碌 Runner 在固定 350 ms 内完成防抖和调度。
+        let deadline = Date().addingTimeInterval(2)
+        while (!model.isRealtimeConnected || model.totalUnreadCount != 3) && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
 
         XCTAssertTrue(model.isRealtimeConnected)
         XCTAssertEqual(model.workspaceSyncIntervalSeconds, 30)

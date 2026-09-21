@@ -54,6 +54,8 @@ public sealed class FileUploadContractTests
         Assert.True(source.CanRead);
 
         var text = Encoding.UTF8.GetString(body);
+        Assert.Contains("name=\"SynoToken\"\r\n\r\nsynthetic-token\r\n", text);
+        Assert.DoesNotContain("synthetic-token", requestUri.OriginalString);
         var api = text.IndexOf("name=\"api\"", StringComparison.Ordinal);
         var version = text.IndexOf("name=\"version\"", StringComparison.Ordinal);
         var method = text.IndexOf("name=\"method\"", StringComparison.Ordinal);

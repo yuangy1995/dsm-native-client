@@ -71,7 +71,12 @@
 
 - Apple Adapter：`DsmNasAdministrationRepository`。
 - Android Adapter：`DsmRepository.proxySettings` 与 `saveProxySettingsResult`；固定 v1，启用时提交地址/端口，停用时只提交开关，提交后按实际变化字段回读。
-- Windows、iPhone 与 iPad：复用领域结果类型，设置调用链尚未迁移。
+- Windows：已按本契约固定读取版本、get 方法及字段；缺少必需开关、能力或读取失败时
+  明确失败，不返回虚假的关闭状态。无业务参数的 get 支持 FORM/JSON 能力声明，仍使用
+  相同表单封装，不扩展带参数或写方法。已有原生查看/编辑表单、校验及风险确认；
+  基线绑定的提交/逐字段回读核心已实现并有合成 HTTP 回归，生产行为验收门仍关闭；
+  无基线的旧保存签名仍不支持，不会因旧 NAS 全局开关误发请求。
+- iPhone 与 iPad：设置调用链尚未迁移。
 - 脱敏 Fixture：
   `contracts/request-fixtures/network/set-proxy/synthetic-settings/request.json`。
 - 自动化测试覆盖确认成功、超时后部分字段生效、断网且回读失败、无效输入、能力缺失、
@@ -90,5 +95,9 @@
 
 - 不同 DSM build、权限、认证代理和直连/QuickConnect 组合下的真实写入副作用尚未验证。
 - DSM 对无效域名、IPv6、认证代理和不可达代理的具体错误码尚未收集。
-- Android 调用链已迁移但尚未做设备及真实 DSM 写行为验收；Windows、iPhone 与 iPad
-  调用链尚未迁移。
+- Android 调用链已迁移但尚未做设备及真实 DSM 写行为验收；Windows 只读适配已增加
+  HTTP 合成测试及原生表单回归，安全提交核心已有源码/合成证据，但生产行为验收门
+  仍关闭；iPhone 与 iPad 设置调用链尚未迁移。
+- Windows 实机读取为 `PENDING_USER_VALIDATION`：在已记录版本、具备对应读取权限的
+  测试环境核对开关和可用端口；读取失败应提示恢复，不应变为关闭。仅回传版本类别、
+  操作和脱敏错误分类，不回传地址、账号或原始响应。写入口继续关闭，不做真实写探测。

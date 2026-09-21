@@ -72,7 +72,13 @@
 
 - Apple Adapter：`DsmNasAdministrationRepository`。
 - Android Adapter：`DsmRepository.fileServiceSettings` 与 `saveFileServiceSettingsResult`；六组能力在首个写请求前一次性预检，只提交实际变化组，提交开始后整体回读并按组统计确认、部分成功或未知结果。
-- Windows、iPhone 与 iPad：复用领域结果类型，设置调用链尚未迁移。
+- Windows：六组固定版本 get 已迁移，新增字段可用/失败位图及独立 FTPS 开关；单组
+  失败不伪造关闭，认证失败与取消传播，无任一 API 时不可用。原生只读文件服务表单
+  已接入服务设置菜单及基线绑定的六组保存核心：先完整预检、仅提交变化组，中途异常
+  停止后续组并整体回读，同请求只核对、不重发。已有合成 HTTP 与表单校验/确认回归；
+  生产行为门独立关闭，未执行真实写。FORM/JSON 的布尔/整数业务参数按 fixture 编码，
+  不提交未知字段、代理字段或旧猜测聚合请求。
+- iPhone 与 iPad：设置调用链尚未迁移。
 - 脱敏 Fixture：
   - `contracts/request-fixtures/file-services/set-smb/synthetic-settings/request.json`
   - `contracts/request-fixtures/file-services/set-nfs/synthetic-settings/request.json`
@@ -98,5 +104,7 @@
 - 六类写操作在目标 DSM build、不同权限和活跃客户端连接下的真实副作用尚未验证。
 - SMB 与 Time Machine、FTP/FTPS 与 SFTP 端口约束在不同 DSM build 上的服务端错误
   细节尚未收集。
-- Android 调用链已迁移但尚未做设备及真实 DSM 写行为验收；Windows、iPhone 与 iPad
-  调用链尚未迁移。
+- Android 调用链已迁移但尚未做设备及真实 DSM 写行为验收；Windows 已有读取/原生
+  表单及六组安全写核心的源码与合成回归，生产行为门仍关闭；iPhone 与 iPad 设置调用链未迁移。
+- Windows 实机读取为 `PENDING_USER_VALIDATION`：核对可用协议开关、端口、缺失能力
+  与权限失败，不能将静态/合成通过提升为行为验证；不启停真实服务，不回传原始响应。

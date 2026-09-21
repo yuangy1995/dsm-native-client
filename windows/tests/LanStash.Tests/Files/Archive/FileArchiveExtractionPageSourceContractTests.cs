@@ -19,12 +19,11 @@ public sealed class FileArchiveExtractionPageSourceContractTests
         Assert.Contains("new ContentDialog", page);
         Assert.Contains("new ProgressRing", page);
         Assert.Contains("AutomationProperties.SetName", page);
-        Assert.Contains("SupportedArchiveExtensions", page);
-        Assert.Contains("\".zip\", \".7z\"", page);
+        Assert.Contains("FileArchiveExtractionOptions.IsSupportedArchive", page);
     }
 
     [Fact]
-    public void PageFreezesSourceAndRejectsLateResultsWithoutAdvancedSettings()
+    public void PageFreezesSourceAndRejectsLateResultsWithPasswordAndEncoding()
     {
         var page = Read(
             "windows/src/LanStash.App/Views/FilesPage.ArchiveExtraction.cs");
@@ -39,8 +38,13 @@ public sealed class FileArchiveExtractionPageSourceContractTests
             page);
         Assert.Contains("FileArchiveExtractionPartialNeedsReview", page);
         Assert.Contains("FileArchiveExtractionPartialFailed", page);
-        Assert.DoesNotContain("PasswordBox", page);
-        Assert.DoesNotContain("codepage", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PasswordBox", page);
+        Assert.Contains("Options = options", page);
+        Assert.Contains("passwordBox.Password = string.Empty", page);
+        Assert.Contains("ArchivePasswordIncorrect", page);
+        Assert.Contains("OverwriteConfirmed = confirmedOverwrite", page);
+        Assert.Contains("ResetConfirmation", page);
+        Assert.Contains("ArchiveOverwriteConfirm", page);
         Assert.DoesNotContain("overwrite: true", page, StringComparison.OrdinalIgnoreCase);
     }
 

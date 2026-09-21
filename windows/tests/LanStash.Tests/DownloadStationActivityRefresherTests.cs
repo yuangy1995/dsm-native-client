@@ -5,6 +5,77 @@ namespace LanStash.Tests;
 
 public sealed class DownloadStationActivityRefresherTests
 {
+    [Fact]
+    public async Task DisposalImmediatelyPreventsRestartWhileReadDrains()
+    {
+        var repository = AvailableRepository();
+        var delayed = new TaskCompletionSource<DownloadTaskPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.Handler = (_, _, _) => delayed.Task;
+        var callbackCount = 0;
+        var refresher = new DownloadStationActivityRefresher(repository, _ => callbackCount++, TimeSpan.FromMinutes(1));
+        var reading = refresher.StartAsync(); await repository.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var disposing = refresher.DisposeAsync().AsTask();
+        try
+        {
+            Assert.Throws<ObjectDisposedException>(() => { _ = refresher.StartAsync(); });
+            Assert.Throws<ObjectDisposedException>(() => { _ = refresher.RefreshAsync(); });
+            Assert.False(disposing.IsCompleted);
+        }
+        finally
+        {
+            delayed.TrySetResult(Page([TaskItem(1)], 1, false));
+            await Task.WhenAll(reading, disposing).WaitAsync(TimeSpan.FromSeconds(2));
+            await refresher.StopAsync();
+        }
+        Assert.Equal(1, repository.CallCount); Assert.Equal(0, callbackCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentDisposeWaitsForEarlierStopAndDoesNotAcceptLateData()
+    {
+        var repository = AvailableRepository();
+        var delayed = new TaskCompletionSource<DownloadTaskPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.Handler = (_, _, _) => delayed.Task;
+        var callbackCount = 0;
+        var refresher = new DownloadStationActivityRefresher(repository, _ => callbackCount++, TimeSpan.FromMinutes(1));
+        var reading = refresher.StartAsync(); await repository.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var stopping = refresher.StopAsync();
+        var firstDispose = refresher.DisposeAsync().AsTask(); var secondDispose = refresher.DisposeAsync().AsTask();
+        try { Assert.False(firstDispose.IsCompleted); Assert.False(secondDispose.IsCompleted); }
+        finally
+        {
+            delayed.TrySetResult(Page([TaskItem(1)], 1, false));
+            await Task.WhenAll(reading, stopping, firstDispose, secondDispose).WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        Assert.Equal(0, callbackCount); Assert.False(refresher.State.IsRunning);
+    }
+
+    [Fact]
+    public async Task DisposalDrainsBothGenerationsWhenRestartOverlapsAnEarlierStop()
+    {
+        var repository = AvailableRepository();
+        var first = new TaskCompletionSource<DownloadTaskPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = new TaskCompletionSource<DownloadTaskPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.Handler = (_, _, _) => { if (repository.CallCount == 1) return first.Task; secondStarted.TrySetResult(); return second.Task; };
+        var callbackCount = 0;
+        var refresher = new DownloadStationActivityRefresher(repository, _ => callbackCount++, TimeSpan.FromMinutes(1));
+        var firstRead = refresher.StartAsync(); await repository.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var stopping = refresher.StopAsync(); var secondRead = refresher.StartAsync(); await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var disposing = refresher.DisposeAsync().AsTask();
+        try
+        {
+            second.TrySetResult(Page([TaskItem(2)], 1, false)); await secondRead;
+            Assert.False(disposing.IsCompleted); Assert.Equal(0, callbackCount);
+        }
+        finally
+        {
+            first.TrySetResult(Page([TaskItem(1)], 1, false)); second.TrySetResult(Page([TaskItem(2)], 1, false));
+            await Task.WhenAll(firstRead, secondRead, stopping, disposing).WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        Assert.False(refresher.State.IsRunning); Assert.Equal(0, callbackCount);
+    }
+
     [Theory]
     [InlineData(DownloadStationAvailabilityStatus.Unavailable, true)]
     [InlineData(DownloadStationAvailabilityStatus.Available, false)]
@@ -27,7 +98,7 @@ public sealed class DownloadStationActivityRefresherTests
     public async Task StartImmediatelyLoadsFirstHundredTasksAndReportsTruncation()
     {
         var repository = AvailableRepository();
-        repository.Result = Page(Enumerable.Range(1, 105).Select(TaskItem).ToArray(), 105, true);
+        repository.Result = Page(Enumerable.Range(1, 100).Select(TaskItem).ToArray(), 105, true);
         IReadOnlyList<DownloadTask>? applied = null;
         await using var refresher = new DownloadStationActivityRefresher(
             repository,
@@ -222,6 +293,97 @@ public sealed class DownloadStationActivityRefresherTests
             includesTasks
                 ? new HashSet<DownloadStationReadFeature> { DownloadStationReadFeature.Tasks }
                 : new HashSet<DownloadStationReadFeature>());
+
+    [Fact]
+    public async Task LoadMoreUsesCursorAndRefreshKeepsExpandedRange()
+    {
+        var repository = AvailableRepository();
+        repository.Handler = (offset, limit, _) => Task.FromResult(PageAt(Enumerable.Range(offset + 1, Math.Min(limit, 250 - offset)).Select(TaskItem).ToArray(), offset, 250));
+        IReadOnlyList<DownloadTask> shown = [];
+        await using var refresher = new DownloadStationActivityRefresher(repository, tasks => shown = tasks, TimeSpan.FromMinutes(1));
+        await refresher.LoadMoreAsync(); Assert.Equal(0, repository.CallCount);
+        await refresher.StartAsync(); Assert.True(refresher.CanLoadMore); Assert.Equal(100, shown.Count);
+        await refresher.LoadMoreAsync(); Assert.Equal(200, shown.Count); Assert.True(refresher.CanLoadMore);
+        await refresher.LoadMoreAsync(); Assert.Equal(250, shown.Count); Assert.False(refresher.CanLoadMore);
+        await refresher.LoadMoreAsync(); Assert.Equal(3, repository.CallCount);
+        await refresher.RefreshAsync();
+        Assert.Equal(250, shown.Count); Assert.Equal("task-250", shown[^1].Id);
+        Assert.Equal(new[] { (0, 100), (100, 100), (200, 100), (0, 100), (100, 100), (200, 100) }, repository.Arguments);
+    }
+
+    [Fact]
+    public async Task FailedMoreKeepsSnapshotAndRetriesSameCursor()
+    {
+        var repository = AvailableRepository(); var fail = true;
+        repository.Handler = (offset, _, _) => offset == 100 && fail ? Task.FromException<DownloadTaskPage>(new IOException("synthetic")) :
+            Task.FromResult(PageAt(Enumerable.Range(offset + 1, offset == 0 ? 100 : 50).Select(TaskItem).ToArray(), offset, 150));
+        IReadOnlyList<DownloadTask> shown = [];
+        await using var refresher = new DownloadStationActivityRefresher(repository, tasks => shown = tasks, TimeSpan.FromMinutes(1));
+        await refresher.StartAsync(); await refresher.LoadMoreAsync();
+        Assert.Equal(100, shown.Count); Assert.True(refresher.State.HasFailed); Assert.True(refresher.CanLoadMore);
+        fail = false; await refresher.LoadMoreAsync();
+        Assert.Equal(150, shown.Count); Assert.False(refresher.State.HasFailed); Assert.False(refresher.CanLoadMore);
+        Assert.Equal(new[] { (0, 100), (100, 100), (100, 100) }, repository.Arguments);
+    }
+
+    [Fact]
+    public async Task FailedExpandedRefreshDoesNotCommitOnlyItsFirstPage()
+    {
+        var repository = AvailableRepository(); var total = 200; var fail = false;
+        repository.Handler = (offset, limit, _) => offset > 0 && fail ? Task.FromException<DownloadTaskPage>(new IOException("synthetic")) :
+            Task.FromResult(PageAt(Enumerable.Range(offset + 1, Math.Min(limit, total - offset)).Select(TaskItem).ToArray(), offset, total));
+        var applied = new List<IReadOnlyList<DownloadTask>>();
+        await using var refresher = new DownloadStationActivityRefresher(repository, applied.Add, TimeSpan.FromMinutes(1));
+        await refresher.StartAsync(); await refresher.LoadMoreAsync(); fail = true;
+        await refresher.RefreshAsync(); Assert.Equal(2, applied.Count); Assert.Equal(200, applied[^1].Count); Assert.True(refresher.State.HasFailed);
+        fail = false; total = 50; await refresher.RefreshAsync();
+        Assert.Equal(50, applied[^1].Count); Assert.False(refresher.State.IsTruncated); Assert.False(refresher.CanLoadMore);
+    }
+
+    [Fact]
+    public async Task MoreAndRefreshShareSingleFlightAndStoppedMoreCannotCommit()
+    {
+        var repository = AvailableRepository();
+        var delayed = new TaskCompletionSource<DownloadTaskPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.Handler = (offset, _, _) => { if (offset == 0) return Task.FromResult(PageAt(Enumerable.Range(1, 100).Select(TaskItem).ToArray(), 0, 150)); started.TrySetResult(); return delayed.Task; };
+        IReadOnlyList<DownloadTask> shown = [];
+        await using var refresher = new DownloadStationActivityRefresher(repository, tasks => shown = tasks, TimeSpan.FromMinutes(1));
+        await refresher.StartAsync(); var more = refresher.LoadMoreAsync(); await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Same(more, refresher.LoadMoreAsync()); Assert.Same(more, refresher.RefreshAsync()); Assert.False(refresher.CanLoadMore);
+        var stopping = refresher.StopAsync(); delayed.TrySetResult(PageAt(Enumerable.Range(101, 50).Select(TaskItem).ToArray(), 100, 150));
+        await Task.WhenAll(more, stopping); Assert.Equal(100, shown.Count); Assert.False(refresher.CanLoadMore); Assert.Equal(2, repository.CallCount);
+    }
+
+    [Theory]
+    [InlineData("offset")] [InlineData("oversized")] [InlineData("duplicate")]
+    public async Task MalformedContinuationDoesNotReplacePreviouslyLoadedTasks(string failure)
+    {
+        var repository = AvailableRepository();
+        repository.Handler = (offset, _, _) =>
+        {
+            var tasks = Enumerable.Range(offset + 1, failure == "oversized" && offset > 0 ? 101 : 100).Select(TaskItem).ToArray();
+            if (offset > 0 && failure == "duplicate") tasks[1] = tasks[0];
+            var page = PageAt(tasks, offset, 300);
+            return Task.FromResult(offset > 0 && failure == "offset" ? page with { SourceOffset = 0 } : page);
+        };
+        IReadOnlyList<DownloadTask> shown = [];
+        await using var refresher = new DownloadStationActivityRefresher(repository, tasks => shown = tasks, TimeSpan.FromMinutes(1));
+        await refresher.StartAsync(); await refresher.LoadMoreAsync();
+        Assert.Equal(100, shown.Count); Assert.True(refresher.State.HasFailed); Assert.True(refresher.CanLoadMore);
+    }
+
+    [Fact]
+    public async Task OverlappingPageIdentityIsNotShownTwice()
+    {
+        var repository = AvailableRepository();
+        repository.Handler = (offset, _, _) => Task.FromResult(PageAt(offset == 0 ? Enumerable.Range(1, 100).Select(TaskItem).ToArray() : [TaskItem(100), TaskItem(101)], offset, 102));
+        IReadOnlyList<DownloadTask> shown = [];
+        await using var refresher = new DownloadStationActivityRefresher(repository, tasks => shown = tasks, TimeSpan.FromMinutes(1));
+        await refresher.StartAsync(); await refresher.LoadMoreAsync(); Assert.Equal(101, shown.Count); Assert.Single(shown, item => item.Id == "task-100");
+    }
+
+    private static DownloadTaskPage PageAt(IReadOnlyList<DownloadTask> tasks, int offset, int total) => new(tasks, offset, tasks.Count, total, offset + tasks.Count < total ? offset + tasks.Count : null, offset + tasks.Count < total);
 
     private static DownloadTaskPage Page(
         IReadOnlyList<DownloadTask> tasks,

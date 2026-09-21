@@ -11,6 +11,8 @@ public sealed partial class DsmRepository
     private readonly Dictionary<Guid, PendingChatConversationCreateReview>
         _pendingChatConversationCreates = [];
     private readonly SemaphoreSlim _chatConversationCreateGate = new(1, 1);
+    // 终态仍绑定原始请求；会话后来消失或权限变化不能使同一请求重新写入。
+    private readonly Dictionary<Guid, (string Draft, ChatConversationCreateOutcome Outcome)> _completedChatConversationCreates = [];
 
     private bool HasDirectConversationCreateContract =>
         HasChatWriteCapability("SYNO.Chat.Channel.Anonymous", ChatDirectConversationCreateVersion);
@@ -37,7 +39,11 @@ public sealed partial class DsmRepository
         }
         try
         {
-            return await OpenDirectConversationCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            var draft = JsonSerializer.Serialize(new[] { "direct", request.UserId.Trim() });
+            if (CompletedConversationCreate(request.ClientRequestId, draft, "chatDirectConversation") is { } completed) return completed;
+            var outcome = await OpenDirectConversationCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            RememberConversationCreate(draft, outcome);
+            return outcome;
         }
         finally
         {
@@ -165,7 +171,7 @@ public sealed partial class DsmRepository
             _pendingChatConversationCreates[request.ClientRequestId] = review;
             return ConversationCreateUnknown(review, cancelledAfterSubmission: true);
         }
-        catch (DsmException error)
+        catch (DsmException error) when (DsmApiClient.IsExplicitApiRejection(error))
         {
             return ConversationCreateFailure(
                 request.ClientRequestId,
@@ -186,6 +192,7 @@ public sealed partial class DsmRepository
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = request with { MemberIds = request.MemberIds.ToArray() };
         try
         {
             await _chatConversationCreateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -199,7 +206,16 @@ public sealed partial class DsmRepository
         }
         try
         {
-            return await CreatePrivateGroupCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            var draft = JsonSerializer.Serialize(new
+            {
+                kind = "group", title = request.Title.Trim(),
+                members = request.MemberIds.Select(value => value.Trim()).Where(value => value.Length > 0)
+                    .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
+            });
+            if (CompletedConversationCreate(request.ClientRequestId, draft, "chatPrivateGroupCreate") is { } completed) return completed;
+            var outcome = await CreatePrivateGroupCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            RememberConversationCreate(draft, outcome);
+            return outcome;
         }
         finally
         {
@@ -271,14 +287,13 @@ public sealed partial class DsmRepository
                     MutationErrorCategory.Validation,
                     "chat.group-create.member-unavailable");
             }
-            var existing = (await ListConversationsAsync(cancellationToken).ConfigureAwait(false))
-                .FirstOrDefault(conversation => GroupConversationMatches(
-                    conversation,
-                    title,
-                    memberIds,
-                    candidateConversationId: null));
-            if (existing is not null)
+            var conversations = await ListConversationsAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var existing in conversations.Where(conversation =>
+                GroupConversationCandidateMatches(conversation, title, candidateConversationId: null)))
             {
+                // 与 macOS matchingGroup 一致：摘要成员可能缺失或过期，复用前独立核对。
+                var members = await ListConversationMembersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+                if (!memberIds.All(id => members.Any(member => member.Id == id))) continue;
                 return ConversationCreateSuccess(
                     request.ClientRequestId,
                     "chatPrivateGroupCreate",
@@ -361,7 +376,7 @@ public sealed partial class DsmRepository
             _pendingChatConversationCreates[request.ClientRequestId] = review;
             return ConversationCreateUnknown(review, cancelledAfterSubmission: true);
         }
-        catch (DsmException error) when (review.CandidateConversationId is null)
+        catch (DsmException error) when (review.CandidateConversationId is null && DsmApiClient.IsExplicitApiRejection(error))
         {
             return ConversationCreateFailure(
                 request.ClientRequestId,
@@ -428,8 +443,31 @@ public sealed partial class DsmRepository
     private bool HasChatWriteCapability(string apiName, int version) =>
         HasReadableChatContract &&
         _capabilities.TryGetValue(apiName, out var capability) &&
+        capability.Name == apiName &&
         capability.MinVersion <= version && capability.MaxVersion >= version &&
-        string.Equals(capability.RequestFormat, "FORM", StringComparison.OrdinalIgnoreCase);
+        HasChatConversationFormat(capability);
+
+    private static bool HasChatConversationFormat(ApiCapability capability) =>
+        capability.RequestFormat.Equals("FORM", StringComparison.OrdinalIgnoreCase) ||
+        capability.RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase);
+
+    // 数组和布尔值已有正确 JSON 值；只为记录为字符串的字段按各端点声明编码。
+    private string ChatConversationString(string apiName, string value) =>
+        _capabilities[apiName].RequestFormat.Equals("JSON", StringComparison.OrdinalIgnoreCase)
+            ? JsonSerializer.Serialize(value) : value;
+
+    private ChatConversationCreateOutcome? CompletedConversationCreate(Guid requestId, string draft, string operation)
+    {
+        if (!_completedChatConversationCreates.TryGetValue(requestId, out var completed)) return null;
+        return completed.Draft == draft ? completed.Outcome : ConversationCreateFailure(requestId, operation,
+            MutationErrorCategory.Validation, "chat.conversation-create.completed-mismatch");
+    }
+
+    private void RememberConversationCreate(string draft, ChatConversationCreateOutcome outcome)
+    {
+        if (outcome.Result.Submitted && !outcome.Result.RequiresRefresh)
+            _completedChatConversationCreates[outcome.ClientRequestId] = (draft, outcome);
+    }
 
     private static bool ValidConversationCreateInput(Guid requestId, string value) =>
         requestId != Guid.Empty && value.Length > 0 && value == value.Trim() &&
@@ -438,17 +476,6 @@ public sealed partial class DsmRepository
     private static bool DirectConversationMatches(ChatConversation conversation, string userId) =>
         conversation.Kind == ChatConversationKind.Direct && !conversation.IsEncrypted &&
         conversation.MemberIds.Contains(userId, StringComparer.Ordinal);
-
-    private static bool GroupConversationMatches(
-        ChatConversation conversation,
-        string title,
-        IReadOnlyList<string> memberIds,
-        string? candidateConversationId) =>
-        conversation.Kind == ChatConversationKind.Group && !conversation.IsEncrypted &&
-        (candidateConversationId is null
-            ? string.Equals(conversation.Title, title, StringComparison.Ordinal)
-            : string.Equals(conversation.Id, candidateConversationId, StringComparison.Ordinal)) &&
-        memberIds.All(id => conversation.MemberIds.Contains(id, StringComparer.Ordinal));
 
     private static bool GroupConversationCandidateMatches(
         ChatConversation conversation,

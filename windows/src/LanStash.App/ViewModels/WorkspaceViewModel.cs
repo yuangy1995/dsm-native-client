@@ -351,10 +351,14 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
         SelectedCategory switch
         {
             WorkspaceCategory.Storage => snapshot.Volumes.Concat(snapshot.Pools).Concat(snapshot.Disks).Select(ResourceRow),
+            WorkspaceCategory.Packages when snapshot.PackageStatus != NasDetailsSectionStatus.Available =>
+                throw new InvalidOperationException(LocalizationService.Current.Get("NasSettingsLoadError")),
             WorkspaceCategory.Packages => snapshot.Packages.Select(ResourceRow),
-            WorkspaceCategory.Accounts => snapshot.Accounts.Concat(snapshot.Groups).Select(ResourceRow),
+            WorkspaceCategory.Accounts => DirectoryRows(snapshot),
             WorkspaceCategory.Logs => snapshot.Logs.Select(LogRow),
-            WorkspaceCategory.Connections => snapshot.Connections.Select(ResourceRow),
+            WorkspaceCategory.Connections when snapshot.ConnectionsStatus != NasDetailsSectionStatus.Available =>
+                throw new InvalidOperationException(LocalizationService.Current.Get("NasSettingsLoadError")),
+            WorkspaceCategory.Connections => ConnectionRows(snapshot),
             WorkspaceCategory.Networks => snapshot.Networks.Select(ResourceRow),
             WorkspaceCategory.Security => snapshot.Security.Select(ResourceRow),
             _ => snapshot.System is null
@@ -380,6 +384,28 @@ public sealed class WorkspaceViewModel(AppViewModel app) : ObservableObject
             item.ModifiedAt?.ToLocalTime().ToString("g") ?? string.Empty,
             item.IsDirectory ? "\uE8B7" : "\uE8A5",
             item);
+
+    private static IEnumerable<WorkspaceRow> ConnectionRows(NasSettingsSnapshot snapshot)
+    {
+        foreach (var item in snapshot.Connections) yield return ResourceRow(item);
+        if (snapshot.AreConnectionsTruncated) yield return new("connections-partial", LocalizationService.Current.Get("NasConnectionsPartial"),
+            LocalizationService.Current.Get("NasConnectionsCheckDsm"), LocalizationService.Current.Get("StatusWarning"), "\uE783", NasDetailsSectionStatus.Unavailable);
+    }
+
+    private static IEnumerable<WorkspaceRow> DirectoryRows(NasSettingsSnapshot snapshot)
+    {
+        var localizer = LocalizationService.Current;
+        foreach (var (items, status, key) in new[]
+        {
+            (snapshot.Accounts, snapshot.AccountsStatus, "NasDirectoryUsersUnavailable"),
+            (snapshot.Groups, snapshot.GroupsStatus, "NasDirectoryGroupsUnavailable"),
+        })
+        {
+            if (status == NasDetailsSectionStatus.Available)
+                foreach (var item in items) yield return ResourceRow(item);
+            else yield return new WorkspaceRow(key, localizer.Get(key), localizer.Get("NasDirectoryRetry"), localizer.Get("StatusError"), "\uE783", status);
+        }
+    }
 
     private static WorkspaceRow ResourceRow(ResourceItem item) =>
         new(

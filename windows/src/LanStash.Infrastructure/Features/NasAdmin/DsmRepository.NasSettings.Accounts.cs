@@ -4,60 +4,16 @@ namespace LanStash.Infrastructure;
 
 public sealed partial class DsmRepository
 {
-    public Task<MutationResult> DeleteAccountAsync(
-        string accountName,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(accountName))
-        {
-            return Task.FromResult(ConfirmedFailureResult(
-                "deleteAccount", MutationErrorCategory.Validation, "account.delete.validation"));
-        }
+    // 旧签名没有完整确认基线，不能用于实际删除。
+    public Task<MutationResult> DeleteAccountAsync(string accountName, CancellationToken cancellationToken = default) =>
+        Task.FromResult(StableDirectoryName(accountName) ? UnsupportedResult("deleteAccount") : ServicePreflightFailure("deleteAccount", MutationErrorCategory.Validation));
 
-        return SaveSettingsAsync(
-            "SYNO.Core.User", "delete",
-            new Dictionary<string, string>(StringComparer.Ordinal) { ["name"] = accountName },
-            "deleteAccount",
-            ct => Task.CompletedTask,
-            cancellationToken);
-    }
+    public Task<MutationResult> DeleteGroupAsync(string groupName, CancellationToken cancellationToken = default) =>
+        Task.FromResult(StableDirectoryName(groupName) ? UnsupportedResult("deleteGroup") : ServicePreflightFailure("deleteGroup", MutationErrorCategory.Validation));
 
-    public Task<MutationResult> DeleteGroupAsync(
-        string groupName,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(groupName))
-        {
-            return Task.FromResult(ConfirmedFailureResult(
-                "deleteGroup", MutationErrorCategory.Validation, "group.delete.validation"));
-        }
-
-        return SaveSettingsAsync(
-            "SYNO.Core.Group", "delete",
-            new Dictionary<string, string>(StringComparer.Ordinal) { ["name"] = groupName },
-            "deleteGroup",
-            ct => Task.CompletedTask,
-            cancellationToken);
-    }
-
-    public Task<MutationResult> DisconnectConnectionAsync(
-        string connectionId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(connectionId))
-        {
-            return Task.FromResult(ConfirmedFailureResult(
-                "disconnectConnection", MutationErrorCategory.Validation,
-                "connection.disconnect.validation"));
-        }
-
-        return SaveSettingsAsync(
-            "SYNO.Core.CurrentConnection", "delete",
-            new Dictionary<string, string>(StringComparer.Ordinal) { ["id"] = connectionId },
-            "disconnectConnection",
-            ct => Task.CompletedTask,
-            cancellationToken);
-    }
+    // 旧 ID 签名缺少刚读取的完整连接目标，不能用于实际断开。
+    public Task<MutationResult> DisconnectConnectionAsync(string connectionId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(string.IsNullOrWhiteSpace(connectionId) ? ServicePreflightFailure("disconnectConnection", MutationErrorCategory.Validation) : UnsupportedResult("disconnectConnection"));
 
     public Task<MutationResult> StartDiskTestAsync(
         string diskId,
@@ -70,22 +26,8 @@ public sealed partial class DsmRepository
                 "startDiskTest", MutationErrorCategory.Validation, "disk.test.validation"));
         }
 
-        var type = testType switch
-        {
-            NasDiskTestType.Quick => "quick",
-            NasDiskTestType.Extended => "extended",
-            _ => throw new ArgumentOutOfRangeException(nameof(testType)),
-        };
-
-        return SaveSettingsAsync(
-            "SYNO.Storage.CGI.Storage", "disk_test",
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["disk_id"] = diskId,
-                ["type"] = type,
-            },
-            "startDiskTest",
-            ct => Task.CompletedTask,
-            cancellationToken);
+        // 旧签名缺少稳定设备和确认状态，禁止发送历史猜测请求。
+        return Task.FromResult(cancellationToken.IsCancellationRequested ? CancelledBeforeSubmissionResult("startDiskTest") :
+            Enum.IsDefined(testType) ? UnsupportedResult("startDiskTest") : ServicePreflightFailure("startDiskTest", MutationErrorCategory.Validation));
     }
 }

@@ -85,9 +85,15 @@
 
 ## 客户端与测试
 
-- Apple Adapter：`DsmNasAdministrationRepository`。
+- Apple Adapter：`DsmNasAdministrationRepository`。2026-09-16 读取修复拒绝未知模式与
+  当前时区不在列表的响应；保留既有 ntp/manual 及明确布尔文本别名，不再把其他值当成
+  manual。缺失、非整数、越界或无效日期不补午夜，新增读/未编辑手动时间零写回归。
+  当前 Windows 环境未执行 Swift/macOS 测试，保持待验收。
 - Android Adapter：`DsmRepository` 与 `NasRegionSettingsScreen`；具备固定版本、输入/时区预检、全局防重复、配置回读、条件校时、部分成功与未知结果不重放。
-- Windows、iPhone 与 iPad：复用领域结果类型，设置调用链尚未迁移。
+- Windows：已接 get v3 / listzone v1、明确模式/时区验证及 NAS 墙上时间；新增基线/
+  风险/手动编辑意图的请求、配置保存/回读/条件 sync/复查核心及原生表单。只读恢复不
+  重放 set/sync，校时接受不等于精度验证；区域生产行为门独立关闭，未进行真实改时。
+- iPhone 与 iPad：共享 Apple 读取修复，但区域设置用户调用链尚未迁移。
 - 脱敏 Fixture：
   - `contracts/request-fixtures/region/set-settings/synthetic-settings/request.json`
   - `contracts/request-fixtures/region/synchronize-time/synthetic-servers/request.json`
@@ -106,4 +112,5 @@
 - 不同 DSM build、权限、直连与 QuickConnect 下的真实写入、会话续期和证书行为未验证。
 - 不可达服务器、多个服务器、IPv6 字面值和 DSM 特定错误码尚未收集。
 - `sync` 接受后实际时钟收敛时间与偏差没有权威字段，仍需专用测试环境独立测量。
-- Windows、iPhone 与 iPad 调用链尚未迁移；Android 仍待设备、真实 DSM 和权限矩阵验收。
+- Windows 读取、set/sync 核心及原生表单有合成证据，生产行为门仍关闭；iPhone 与 iPad 用户调用链未
+  迁移。Apple 新解码边界需在 Mac 跑共享回归；Android 未改且仍待设备、真实 DSM 和权限矩阵验收。

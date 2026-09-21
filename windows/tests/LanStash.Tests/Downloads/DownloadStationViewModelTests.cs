@@ -23,6 +23,21 @@ public sealed class DownloadStationViewModelTests
     }
 
     [Fact]
+    public async Task ConfirmedBatchResultCannotBeOverwrittenByAnOlderRead()
+    {
+        var profile = Guid.NewGuid(); var repository = Available(profile);
+        var snapshot = Snapshot(profile, Page(0, 2, 2, null, Task("active", DownloadTaskState.Downloading), Task("remove", DownloadTaskState.Paused)));
+        repository.SnapshotResults.Enqueue(snapshot);
+        using var model = new DownloadStationViewModel(); await model.ActivateAsync(repository);
+        var delayed = new TaskCompletionSource<DownloadStationSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        repository.SnapshotResults.Enqueue(delayed.Task); var refresh = model.RefreshAsync();
+        model.ApplyConfirmedBatchResults(profile, [Task("active", DownloadTaskState.Paused)], new HashSet<string> { "remove" });
+        delayed.SetResult(snapshot); await refresh;
+        Assert.Equal("active", Assert.Single(model.Tasks).Id);
+        Assert.Equal(DownloadTaskState.Paused, model.Tasks[0].State);
+    }
+
+    [Fact]
     public async Task RealOffsetsLoadMoreAndAllFiltersStayLocal()
     {
         var profile = Guid.NewGuid();
@@ -430,8 +445,10 @@ public sealed class DownloadStationViewModelTests
         Assert.Single(repository.SnapshotRequests);
     }
 
-    [Fact]
-    public async Task CreateLinkUsesDefaultDestinationAddsConfirmedTaskAndRefreshes()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateLinkUsesExplicitChoiceOrNasDefaultAndRefreshes(bool explicitChoice)
     {
         var profile = Guid.NewGuid();
         var repository = Available(profile);
@@ -450,19 +467,22 @@ public sealed class DownloadStationViewModelTests
         using var model = new DownloadStationViewModel();
 
         await model.ActivateAsync(repository);
-        await model.CreateTaskAsync(" magnet:?xt=urn:btih:test ");
+        if (explicitChoice) await model.CreateTaskAsync(" magnet:?xt=urn:btih:test ", "chosen");
+        else await model.CreateTaskAsync(" magnet:?xt=urn:btih:test ");
 
         var request = Assert.Single(repository.CreateRequests);
         Assert.Equal(profile, request.ProfileId);
         Assert.Equal("magnet:?xt=urn:btih:test", request.Uri);
-        Assert.Equal("/downloads", request.Destination);
+        Assert.Equal(explicitChoice ? "chosen" : null, request.Destination);
         Assert.Equal(DownloadTaskCreateNoticeKind.Success, model.CreateNoticeKind);
         Assert.Equal("created-1", Assert.Single(model.Tasks).Id);
         Assert.Equal(2, repository.SnapshotRequests.Count);
     }
 
-    [Fact]
-    public async Task CreateFileUsesDefaultDestinationAddsConfirmedTaskAndDoesNotExposeLocalPath()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateFileUsesExplicitOptionsOrNasDefaultWithoutExposingLocalPath(bool explicitOptions)
     {
         var profile = Guid.NewGuid();
         var repository = Available(profile);
@@ -486,13 +506,15 @@ public sealed class DownloadStationViewModelTests
         try
         {
             await model.ActivateAsync(repository);
-            await model.CreateTaskFromFileAsync(filePath);
+            if (explicitOptions) await model.CreateTaskFromFileAsync(filePath, "/chosen", "  synthetic  ");
+            else await model.CreateTaskFromFileAsync(filePath);
 
             var request = Assert.Single(repository.FileCreateRequests);
             Assert.Equal(profile, request.ProfileId);
             Assert.Equal("lanstash-", request.FileName[..9]);
             Assert.EndsWith(".torrent", request.FileName, StringComparison.Ordinal);
-            Assert.Equal("/downloads", request.Destination);
+            Assert.Equal(explicitOptions ? "/chosen" : null, request.Destination);
+            Assert.Equal(explicitOptions ? "  synthetic  " : null, request.UnzipPassword);
             Assert.Equal(4, request.Length);
             Assert.Equal(DownloadTaskCreateNoticeKind.Success, model.CreateNoticeKind);
             Assert.Equal("created-file", Assert.Single(model.Tasks).Id);

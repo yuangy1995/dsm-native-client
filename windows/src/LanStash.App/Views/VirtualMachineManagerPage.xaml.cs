@@ -39,10 +39,12 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
     {
         if (_initialized)
         {
+            await UpdateTaskVisibilityAsync();
             return;
         }
         _initialized = true;
         await RunAsync(() => _viewModel.ActivateAsync(_repository));
+        await UpdateTaskVisibilityAsync();
     }
 
     private void ViewModel_PropertyChanged(
@@ -51,7 +53,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         DispatcherQueue.TryEnqueue(UpdateState);
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) =>
-        await RunAsync(_viewModel.RefreshAsync);
+        await RefreshCurrentSectionAsync();
 
     private void MachineList_ItemClick(object sender, ItemClickEventArgs e)
     {
@@ -65,7 +67,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
 
     private void Resources_Click(object sender, RoutedEventArgs e)
     {
-        _compactShowsDetail = true;
+        ResourcePivot.SelectedIndex = 1;
         UpdateAdaptiveLayout();
         ResourcePivot.Focus(FocusState.Keyboard);
     }
@@ -76,7 +78,7 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
-        if (ActualWidth >= CompactWidth || !_compactShowsDetail)
+        if (!_compactShowsDetail)
         {
             return;
         }
@@ -88,6 +90,12 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
         KeyboardAccelerator sender,
         KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (ReferenceEquals(ResourcePivot.SelectedItem, TasksTab))
+        {
+            args.Handled = true;
+            await TasksPane.RefreshAsync();
+            return;
+        }
         if (!_viewModel.CanRefresh)
         {
             return;
@@ -117,9 +125,21 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
             return;
         }
         RefreshButton.IsEnabled = _viewModel.CanRefresh;
+        BatchPowerButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect && _repository.ProfileId == _viewModel.ActiveProfileId;
+        DeleteMachinesButton.IsEnabled = BatchPowerButton.IsEnabled;
+        DeleteImagesButton.IsEnabled = BatchPowerButton.IsEnabled;
+        ImportImageButton.IsEnabled = BatchPowerButton.IsEnabled;
+        ManageNetworksButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect && _repository.CanReadNetworkManagement;
+        CreateMachineButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect && _repository.ProfileId == _viewModel.ActiveProfileId;
         RefreshErrorNotice.IsOpen = _viewModel.HasRefreshError && !_viewModel.RequiresReconnect;
         SessionExpiredNotice.IsOpen = _viewModel.RequiresReconnect;
         MachineList.SelectedItem = _viewModel.SelectedMachine;
+        UpdatePowerControls();
+        EditSettingsButton.IsEnabled = !_viewModel.IsLoading && !_viewModel.RequiresReconnect && _repository.ProfileId == _viewModel.ActiveProfileId && _viewModel.HasSelection;
+        ConsoleButton.IsEnabled = EditSettingsButton.IsEnabled && _repository.CanOpenConsole && _viewModel.SelectedMachine?.Machine.State == VirtualMachineOperationalState.Running;
+        ConsoleAvailabilityNotice.Visibility = Visible(EditSettingsButton.IsEnabled && !ConsoleButton.IsEnabled);
+        ConsoleAvailabilityNotice.Text = Localization.LocalizationService.Current.Get(_repository.CanOpenConsole ? "VmConsoleNeedsRunning" : "VmConsoleUnavailable");
+        if (_viewModel.RequiresReconnect || _repository.ProfileId != _viewModel.ActiveProfileId) CloseConsoleWindow();
         MachineDetailState.Visibility = Visible(_viewModel.HasSelection);
         NoSelectionState.Visibility = Visible(!_viewModel.HasSelection);
         ApplySectionState(
@@ -155,18 +175,8 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
 
     private void UpdateAdaptiveLayout()
     {
-        if (ActualWidth >= CompactWidth)
-        {
-            MachineColumn.Width = new GridLength(360);
-            DetailColumn.Width = new GridLength(1, GridUnitType.Star);
-            MachinePane.Visibility = Visibility.Visible;
-            DetailPane.Visibility = Visibility.Visible;
-            BackButton.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        MachineColumn.Width = new GridLength(1, GridUnitType.Star);
-        DetailColumn.Width = new GridLength(1, GridUnitType.Star);
+        MachineColumn.Width = _compactShowsDetail ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        DetailColumn.Width = _compactShowsDetail ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
         MachinePane.Visibility = Visible(!_compactShowsDetail);
         DetailPane.Visibility = Visible(_compactShowsDetail);
         BackButton.Visibility = Visible(_compactShowsDetail);
@@ -189,6 +199,14 @@ public sealed partial class VirtualMachineManagerPage : Page, IDisposable
             return;
         }
         _disposed = true;
+        ClosePowerDialog();
+        CloseMachineBatchDialog();
+        CloseSettingsDialog();
+        CloseNetworksDialog();
+        CloseCreationDialog();
+        CloseImageImportDialog();
+        CloseConsoleWindow();
+        TasksPane.Dispose();
         _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         _viewModel.Dispose();
     }

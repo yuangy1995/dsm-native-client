@@ -2,7 +2,11 @@ namespace LanStash.Domain;
 
 public sealed record FileArchiveExtractionListedItem(
     string Name,
-    bool IsDirectory);
+    bool IsDirectory)
+{
+    public string RelativePath { get; init; } = Name;
+    public long? Size { get; init; }
+}
 
 public sealed record FileArchiveExtractionStartTransportResult(
     FileMutationTransportStatus Status,

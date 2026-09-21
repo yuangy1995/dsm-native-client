@@ -151,7 +151,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         }
     }
     public bool CanPauseSelectedTask => SelectedTask is { State: DownloadTaskState.Waiting or
-        DownloadTaskState.Downloading or DownloadTaskState.Checking } &&
+        DownloadTaskState.Downloading or DownloadTaskState.Checking or DownloadTaskState.Seeding } &&
         !IsControllingTask &&
         !IsDeletingTask &&
         _repository is { Availability.Status: DownloadStationAvailabilityStatus.Available };
@@ -691,7 +691,7 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         action switch
         {
             DownloadTaskControlAction.Pause => state is DownloadTaskState.Waiting or
-                DownloadTaskState.Downloading or DownloadTaskState.Checking,
+                DownloadTaskState.Downloading or DownloadTaskState.Checking or DownloadTaskState.Seeding,
             DownloadTaskControlAction.Resume => state == DownloadTaskState.Paused,
             _ => false,
         };
@@ -707,6 +707,15 @@ public sealed partial class DownloadStationViewModel : ObservableObject, IDispos
         }
         var (kind, titleKey, messageKey) = ControlNoticeFor(action, outcome.Result);
         SetControlNotice(kind, titleKey, messageKey);
+    }
+
+    internal void ApplyConfirmedBatchResults(Guid profileId, IReadOnlyList<DownloadTask> tasks, IReadOnlySet<string> removedIds)
+    {
+        if (_disposed || ActiveProfileId != profileId || CurrentProfile is not { } profile) return;
+        if (tasks.Count == 0 && removedIds.Count == 0) return;
+        CancelRequest();
+        foreach (var task in tasks) ReplaceTask(profile, task);
+        foreach (var id in removedIds) RemoveDeletedTask(profile, id);
     }
 
     private void ReplaceTask(ProfileState profile, DownloadTask task)

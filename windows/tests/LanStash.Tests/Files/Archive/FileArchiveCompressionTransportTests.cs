@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using LanStash.Domain;
 using LanStash.Infrastructure;
 
@@ -6,6 +7,67 @@ namespace LanStash.Tests.Files.Archive;
 
 public sealed class FileArchiveCompressionTransportTests
 {
+    [Theory]
+    [InlineData(FileArchiveFormat.Zip, FileArchiveCompressionLevel.Moderate, "zip", "moderate")]
+    [InlineData(FileArchiveFormat.Zip, FileArchiveCompressionLevel.Store, "zip", "store")]
+    [InlineData(FileArchiveFormat.Zip, FileArchiveCompressionLevel.Fastest, "zip", "fastest")]
+    [InlineData(FileArchiveFormat.Zip, FileArchiveCompressionLevel.Best, "zip", "best")]
+    [InlineData(FileArchiveFormat.SevenZip, FileArchiveCompressionLevel.Moderate, "7z", "moderate")]
+    [InlineData(FileArchiveFormat.SevenZip, FileArchiveCompressionLevel.Store, "7z", "store")]
+    [InlineData(FileArchiveFormat.SevenZip, FileArchiveCompressionLevel.Fastest, "7z", "fastest")]
+    [InlineData(FileArchiveFormat.SevenZip, FileArchiveCompressionLevel.Best, "7z", "best")]
+    public async Task AdvancedOptionsUseOfficialValuesAndPreservePassword(FileArchiveFormat format,
+        FileArchiveCompressionLevel level, string wireFormat, string wireLevel)
+    {
+        var handler = new CaptureHandler();
+        var client = new DsmApiClient(new HttpClient(handler));
+        const string password = " synthetic +&密码 \" ";
+        var options = new FileArchiveCompressionOptions(format, level, password);
+        var result = await client.StartFileArchiveCompressionAsync(Profile, Session, Capability,
+            ["/share/docs/a.txt"], "/share/docs/archive." + wireFormat, options);
+        Assert.Equal(FileMutationTransportStatus.ResponseReceived, result.Status);
+        var form = Decode(Assert.Single(handler.Bodies));
+        Assert.Equal(wireFormat, form["format"]);
+        Assert.Equal(wireLevel, form["level"]);
+        Assert.Equal(password, form["password"]);
+        Assert.Equal("add", form["mode"]);
+        Assert.DoesNotContain(password, options.ToString());
+    }
+
+    [Theory]
+    [InlineData((FileArchiveFormat)99, FileArchiveCompressionLevel.Moderate)]
+    [InlineData(FileArchiveFormat.Zip, (FileArchiveCompressionLevel)99)]
+    public async Task InvalidOptionsSendNothing(FileArchiveFormat format, FileArchiveCompressionLevel level)
+    {
+        var handler = new CaptureHandler();
+        var client = new DsmApiClient(new HttpClient(handler));
+        var result = await client.StartFileArchiveCompressionAsync(Profile, Session, Capability,
+            ["/share/docs/a.txt"], "/share/docs/archive.zip", new FileArchiveCompressionOptions(format, level));
+        Assert.Equal(FileMutationTransportStatus.Unsupported, result.Status);
+        Assert.Empty(handler.Bodies);
+    }
+
+    [Theory]
+    [InlineData("archive.zip", FileArchiveFormat.SevenZip, "archive.7z")]
+    [InlineData("archive.7z", FileArchiveFormat.Zip, "archive.zip")]
+    [InlineData("archive.ZIP.zip", FileArchiveFormat.Zip, "archive.zip")]
+    [InlineData("压缩包", FileArchiveFormat.SevenZip, "压缩包.7z")]
+    public void NameUsesSelectedFormat(string input, FileArchiveFormat format, string expected)
+    {
+        Assert.True(new FileArchiveCompressionOptions(format).TryNormalizeName(input, out var name));
+        Assert.Equal(expected, name);
+    }
+
+    [Theory]
+    [InlineData("/archive")]
+    [InlineData("../archive")]
+    [InlineData(" ")]
+    [InlineData(".7z")]
+    [InlineData("archive\n")]
+    [InlineData("archive ")]
+    public void InvalidNamesAreRejected(string input) =>
+        Assert.False(new FileArchiveCompressionOptions().TryNormalizeName(input, out _));
+
     [Fact]
     public async Task StartUsesFixedZipContractWithoutPasswordOrOverwrite()
     {
@@ -45,18 +107,45 @@ public sealed class FileArchiveCompressionTransportTests
         var wrongCapability = await client.StartFileArchiveCompressionAsync(
             Profile, Session, Capability with { Name = "Wrong.Name" },
             ["/share/docs/a.txt"], "/share/docs/archive.zip");
-        var tooMany = await client.StartFileArchiveCompressionAsync(
+        var empty = await client.StartFileArchiveCompressionAsync(
             Profile, Session, Capability,
-            Enumerable.Range(0, 21).Select(index => $"/share/docs/{index}.txt").ToArray(),
+            Array.Empty<string>(),
             "/share/docs/archive.zip");
         var cancelled = await client.StartFileArchiveCompressionAsync(
             Profile, Session, Capability,
             ["/share/docs/a.txt"], "/share/docs/archive.zip", cancellation.Token);
 
         Assert.Equal(FileMutationTransportStatus.Unsupported, wrongCapability.Status);
-        Assert.Equal(FileMutationTransportStatus.Unsupported, tooMany.Status);
+        Assert.Equal(FileMutationTransportStatus.Unsupported, empty.Status);
         Assert.Equal(FileMutationTransportStatus.CancelledBeforeSubmission, cancelled.Status);
         Assert.Equal(0, handler.Count);
+    }
+
+    [Theory]
+    [InlineData(21)]
+    [InlineData(200)]
+    [InlineData(1001)]
+    public async Task LargeSelectionUsesOneRequestWithEverySource(int count)
+    {
+        var handler = new CaptureHandler();
+        var client = new DsmApiClient(new HttpClient(handler));
+        var paths = Enumerable.Range(0, count).Select(index => $"/share/docs/文件-{index:D4}.txt").ToArray();
+        var result = await client.StartFileArchiveCompressionAsync(Profile, Session, Capability, paths, "/share/docs/archive.zip");
+        Assert.Equal(FileMutationTransportStatus.ResponseReceived, result.Status);
+        var form = Decode(Assert.Single(handler.Bodies));
+        Assert.Equal(paths, JsonSerializer.Deserialize<string[]>(form["path"]));
+        Assert.Equal("/share/docs/archive.zip", form["dest_file_path"]);
+        Assert.Equal("add", form["mode"]);
+        Assert.Equal(1, handler.Count);
+    }
+
+    [Fact]
+    public async Task InvalidSourceBeyondFormerLimitRejectsEntireRequest()
+    {
+        var handler = new CaptureHandler(); var client = new DsmApiClient(new HttpClient(handler));
+        var paths = Enumerable.Range(0, 21).Select(index => $"/share/docs/{index}.txt").Append("/share/docs/../outside").ToArray();
+        var result = await client.StartFileArchiveCompressionAsync(Profile, Session, Capability, paths, "/share/docs/archive.zip");
+        Assert.Equal(FileMutationTransportStatus.Unsupported, result.Status); Assert.Empty(handler.Bodies);
     }
 
     [Fact]
@@ -111,6 +200,8 @@ public sealed class FileArchiveCompressionTransportTests
             CancellationToken cancellationToken)
         {
             Count++;
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Empty(request.RequestUri!.Query);
             Bodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
             return new HttpResponseMessage(HttpStatusCode.OK)
             {

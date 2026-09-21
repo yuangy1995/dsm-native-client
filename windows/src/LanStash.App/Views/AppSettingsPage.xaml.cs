@@ -12,6 +12,10 @@ public sealed partial class AppSettingsPage : Page
     private readonly AppSettingsService _settings = AppSettingsService.Current;
     private bool _isLoading;
     private bool _isClearing;
+    public event EventHandler? CloudDriveRequested;
+
+    private void CloudDriveButton_Click(object sender, RoutedEventArgs e) =>
+        CloudDriveRequested?.Invoke(this, EventArgs.Empty);
 
     public AppSettingsPage()
     {

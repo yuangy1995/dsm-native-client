@@ -48,6 +48,7 @@ public sealed partial class ChatPage
         var dialog = _createConversationDialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
+            RequestedTheme = ActualTheme,
             Title = localization.Get("ChatCreateDialogTitle"),
             PrimaryButtonText = localization.Get("ChatCreatePrimaryAction"),
             CloseButtonText = localization.Get("ChatCreateCloseAction"),

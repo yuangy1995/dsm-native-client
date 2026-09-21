@@ -6,6 +6,22 @@ import XCTest
 @testable import DsmNetwork
 
 final class DsmFileRepositoryTests: XCTestCase {
+    func test下载本地权限与空间错误给出可恢复提示() async throws {
+        for (code, category) in [
+            (CocoaError.Code.fileWriteNoPermission.rawValue, AppErrorCategory.permissionDenied),
+            (CocoaError.Code.fileWriteOutOfSpace.rawValue, AppErrorCategory.localStorageFull)
+        ] {
+            let transport = MockHTTPTransport(steps: [.cocoaError(code)])
+            let repository = try makeRepository(capabilities: CapabilitySet([
+                DsmAPIName.fileStationDownload: capability(DsmAPIName.fileStationDownload, version: 2)
+            ]), transport: transport)
+            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).bin")
+            do { try await repository.download(remotePath: "/synthetic/file.bin", to: destination, expectedSize: nil, progress: { _, _ in }); XCTFail("本地写失败不能报下载成功") }
+            catch let error as AppError { XCTAssertEqual(error.category, category) }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        }
+    }
+
     func test目录大小使用官方V2任务且只保留安全汇总字段() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"taskid":"dirsize-task"}}"#),
@@ -1218,8 +1234,7 @@ final class DsmFileRepositoryTests: XCTestCase {
         let identity = "\(repository.profileID.uuidString)|/projects/a.txt|5"
         let digest = SHA256.hash(data: Data(identity.utf8))
         let suffix = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-        let partURL = destination.deletingLastPathComponent()
-            .appendingPathComponent(".\(destination.lastPathComponent).\(suffix).lanstash.part")
+        let partURL = DsmFileRepository.partialDownloadArtifactURL(localURL: destination, identitySuffix: suffix)
         try Data("he".utf8).write(to: partURL)
         try writeResumeMetadata(
             partURL: partURL,
@@ -1840,10 +1855,7 @@ final class DsmFileRepositoryTests: XCTestCase {
         let suffix = digest.prefix(8).map {
             String(format: "%02x", $0)
         }.joined()
-        let partURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                ".\(destination.lastPathComponent).\(suffix).lanstash.part"
-            )
+        let partURL = DsmFileRepository.partialDownloadArtifactURL(localURL: destination, identitySuffix: suffix)
         defer {
             try? FileManager.default.removeItem(at: destination)
             try? FileManager.default.removeItem(at: partURL)
@@ -1900,6 +1912,14 @@ final class DsmFileRepositoryTests: XCTestCase {
         let isolatedPart = directory.appendingPathComponent(".archive.zip.0123456789abcdef.lanstash.part")
         let isolatedMetadata = isolatedPart.appendingPathExtension("metadata")
         let unrelatedPart = directory.appendingPathComponent(".other.zip.0123456789abcdef.lanstash.part")
+        let temporaryPart = DsmFileRepository.partialDownloadArtifactURL(localURL: destination, identitySuffix: "0123456789abcdef")
+        let otherDestinationPart = DsmFileRepository.partialDownloadArtifactURL(localURL: directory.appendingPathComponent("other/archive.zip"), identitySuffix: "0123456789abcdef")
+        defer {
+            try? FileManager.default.removeItem(at: temporaryPart)
+            try? FileManager.default.removeItem(at: otherDestinationPart)
+        }
+        try Data("current".utf8).write(to: temporaryPart)
+        try Data("other destination".utf8).write(to: otherDestinationPart)
         try Data("legacy".utf8).write(to: legacyPart)
         try Data("isolated".utf8).write(to: isolatedPart)
         try Data("metadata".utf8).write(to: isolatedMetadata)
@@ -1911,6 +1931,8 @@ final class DsmFileRepositoryTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: isolatedPart.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: isolatedMetadata.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: unrelatedPart.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: temporaryPart.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: otherDestinationPart.path))
     }
 
     func test媒体流使用认证请求头且会话不进入URL() async throws {
@@ -4274,9 +4296,10 @@ final class DsmFileRepositoryTests: XCTestCase {
     }
 
     func test远程挂载创建后复查结果且密码不进入URL() async throws {
-        let transport = MockHTTPTransport(responses: [
+        let transport = MockHTTPTransport(responses: mountCreatePreflight("/home/远程资料") + [
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
-            mountedInfo(path: "/home/远程资料", type: "cifs")
+            mountedInfo(path: "/home/远程资料", type: "cifs"),
+            mountInventory([("/home/远程资料", "//192.0.2.20/资料", "CIFS", false)])
         ])
         let repository = try makeRemoteMountRepository(transport: transport)
 
@@ -4289,30 +4312,45 @@ final class DsmFileRepositoryTests: XCTestCase {
                 username: "tester",
                 password: "REDACTED_PASSWORD",
                 domain: "WORKGROUP",
-                readOnly: true
+                readOnly: false
             )
         )
 
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["mount_remote", "getinfo"])
-        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["get", "getinfo", "mount_remote", "getinfo", "get"])
+        let request = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "mount_remote" })
         XCTAssertEqual(requestParameter("mount_point", in: request), "/home/远程资料")
-        XCTAssertEqual(requestParameter("read_only", in: request), "true")
-        XCTAssertEqual(requestParameter("password", in: request), "REDACTED_PASSWORD")
+        XCTAssertEqual(requestParameter("mount_type", in: request), "CIFS")
+        XCTAssertEqual(requestParameter("server_ip", in: request), "//192.0.2.20/资料")
+        XCTAssertEqual(requestParameter("account", in: request), "WORKGROUP\\tester")
+        XCTAssertEqual(requestParameter("passwd", in: request), "REDACTED_PASSWORD")
+        XCTAssertEqual(requestParameter("user_set", in: request), "true")
+        XCTAssertEqual(requestParameter("auto_mount", in: request), "false")
+        for alias in ["read_only", "password", "username", "domain", "connection_type", "remote_path", "src_folder", "server", "remote_folder", "dst_folder"] {
+            XCTAssertNil(requestParameter(alias, in: request))
+        }
+        XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertFalse(request.url?.absoluteString.contains("REDACTED_PASSWORD") == true)
     }
 
     func test远程挂载修改会先确认新位置再断开旧位置() async throws {
-        let transport = MockHTTPTransport(responses: [
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/旧远程资料", destination: "/home/新远程资料") + [
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
             mountedInfo(path: "/home/新远程资料", type: "nfs"),
+            mountInventory([("/home/新远程资料", "192.0.2.30:/exports/media", "NFS", false)]),
+            mountInventory([("/home/旧远程资料", "//old.invalid/share", "CIFS", false), ("/home/新远程资料", "192.0.2.30:/exports/media", "NFS", false)]),
+            mountedInfo(path: "/home/旧远程资料", type: "remote"),
+            mountedInfo(path: "/home/新远程资料", type: "remote"),
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
-            mountedInfo(path: "/home/旧远程资料", type: "normal")
+            mountedInfo(path: "/home/旧远程资料", type: "normal"),
+            mountInventory([("/home/新远程资料", "192.0.2.30:/exports/media", "NFS", false)]),
+            mountedInfo(path: "/home/新远程资料", type: "remote"),
+            mountInventory([("/home/新远程资料", "192.0.2.30:/exports/media", "NFS", false)])
         ])
         let repository = try makeRemoteMountRepository(transport: transport)
 
         try await repository.updateRemoteMount(
-            existingMountPoint: "/home/旧远程资料",
+            expectedConnection: expectedMount("/home/旧远程资料", repository: repository),
             configuration: RemoteMountConfiguration(
                 protocolType: .nfs,
                 server: "192.0.2.30",
@@ -4324,22 +4362,482 @@ final class DsmFileRepositoryTests: XCTestCase {
         let requests = await transport.recordedRequests()
         XCTAssertEqual(
             requests.map { requestParameter("method", in: $0) },
-            ["mount_remote", "getinfo", "unmount", "getinfo"]
+            ["get", "getinfo", "getinfo", "mount_remote", "getinfo", "get", "get", "getinfo", "getinfo", "unmount", "getinfo", "get", "getinfo", "get"]
         )
+        let create = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "mount_remote" })
+        XCTAssertEqual(requestParameter("mount_type", in: create), "NFS")
+        XCTAssertEqual(requestParameter("server_ip", in: create), "192.0.2.30:/exports/media")
+        XCTAssertEqual(requestParameter("nfs_version", in: create), "3")
+        XCTAssertEqual(requestParameter("protocol", in: create), "tcp")
+        XCTAssertNil(requestParameter("account", in: create)); XCTAssertNil(requestParameter("passwd", in: create))
     }
 
     func test删除远程挂载只断开并复查结果() async throws {
-        let transport = MockHTTPTransport(responses: [
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/远程资料") + [
             DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
-            mountedInfo(path: "/home/远程资料", type: "normal")
+            mountedInfo(path: "/home/远程资料", type: "normal"),
+            mountInventory()
         ])
         let repository = try makeRemoteMountRepository(transport: transport)
 
-        try await repository.removeRemoteMount(mountPoint: "/home/远程资料")
+        try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/远程资料", repository: repository))
 
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["unmount", "getinfo"])
-        XCTAssertEqual(requestParameter("mount_point", in: try XCTUnwrap(requests.first)), "/home/远程资料")
+        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["get", "getinfo", "unmount", "getinfo", "get"])
+        let request = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "unmount" })
+        XCTAssertEqual(requestParameter("api", in: request), DsmAPIName.fileStationMountList)
+        XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(try XCTUnwrap(requestParameter("mount_point", in: request)).utf8)), ["/home/远程资料"])
+        XCTAssertNil(requestParameter("path", in: request)); XCTAssertNil(requestParameter("folder_path", in: request))
+    }
+
+    func test断开后的读取失败不能冒充已断开() async throws {
+        let transport = MockHTTPTransport(steps: mountPreflight("/home/test-mount").map { MockHTTPTransport.Step.response($0) } + [
+            .response(DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200)),
+            .urlError(.timedOut)
+        ])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do { try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/test-mount", repository: repository)); XCTFail("读取失败不能当作已断开") }
+        catch let error as AppError { XCTAssertEqual(error.category, .timeout) }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["get", "getinfo", "unmount", "getinfo"])
+    }
+
+    func test断开回查遗漏目标或挂载类型不明不得成功() async throws {
+        let responses = [
+            #"{"success":true,"data":{"files":[]}}"#,
+            #"{"success":true,"data":{"files":[{"path":"/home/other","name":"other","isdir":true,"additional":{"mount_point_type":"normal"}}]}}"#,
+            #"{"success":true,"data":{"files":[{"path":"/home/test-mount","name":"test-mount","isdir":true}]}}"#,
+            #"{"success":true,"data":{"files":[{"path":"/home/test-mount","name":"test-mount","isdir":true,"additional":{"mount_point_type":"remotefail"}}]}}"#,
+            #"{"success":true,"data":{"files":[{"path":"/home/test-mount","name":"test-mount","isdir":true,"additional":{"mount_point_type":"iso"}}]}}"#,
+            #"{"success":true,"data":{"files":[{"path":"/home/test-mount","name":"test-mount","isdir":true,"additional":{"mount_point_type":123}}]}}"#
+        ]
+        for body in responses {
+            let transport = MockHTTPTransport(responses: mountPreflight("/home/test-mount") + [
+                DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
+                DsmHTTPResponse(data: Data(body.utf8), statusCode: 200)
+            ])
+            let repository = try makeRemoteMountRepository(transport: transport)
+            do { try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/test-mount", repository: repository)); XCTFail("状态不明不能确认断开") }
+            catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 4)
+        }
+    }
+
+    func test明确单项目标不存在码可以确认断开() async throws {
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/test-mount") + [
+            DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
+            DsmHTTPResponse(data: Data(#"{"success":true,"data":{"files":[{"path":"/home/test-mount","code":408}]}}"#.utf8), statusCode: 200),
+            mountInventory()
+        ])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/test-mount", repository: repository))
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 5)
+    }
+
+    func test修改后旧位置状态未知不得盲目卸载新位置() async throws {
+        let transport = MockHTTPTransport(steps: mountPreflight("/home/old-mount", destination: "/home/new-mount").map { MockHTTPTransport.Step.response($0) } + [
+            .response(DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200)),
+            .response(mountedInfo(path: "/home/new-mount", type: "remote")),
+            .response(mountInventory([("/home/new-mount", "192.0.2.30:/exports/media", "NFS", false)])),
+            .response(mountInventory([("/home/old-mount", "//old.invalid/share", "CIFS", false), ("/home/new-mount", "192.0.2.30:/exports/media", "NFS", false)])),
+            .response(mountedInfo(path: "/home/old-mount", type: "remote")),
+            .response(mountedInfo(path: "/home/new-mount", type: "remote")),
+            .response(DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200)),
+            .urlError(.networkConnectionLost)
+        ])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do {
+            try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/old-mount", repository: repository),
+                configuration: RemoteMountConfiguration(protocolType: .nfs, server: "192.0.2.30", remotePath: "exports/media", mountPoint: "/home/new-mount"))
+            XCTFail("旧位置状态未知不能报告成功")
+        } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure); XCTAssertFalse(error.isRetryable) }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["get", "getinfo", "getinfo", "mount_remote", "getinfo", "get", "get", "getinfo", "getinfo", "unmount", "getinfo"])
+        let unmount = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "unmount" })
+        XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(try XCTUnwrap(requestParameter("mount_point", in: unmount)).utf8)), ["/home/old-mount"])
+    }
+
+    func test新位置无法确认时既不卸载旧位置也不猜测回滚() async throws {
+        let transport = MockHTTPTransport(steps: mountPreflight("/home/old-mount", destination: "/home/new-mount").map { MockHTTPTransport.Step.response($0) } + [
+            .response(DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200)), .urlError(.timedOut)
+        ])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do {
+            try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/old-mount", repository: repository),
+                configuration: RemoteMountConfiguration(protocolType: .nfs, server: "192.0.2.30", remotePath: "exports/media", mountPoint: "/home/new-mount"))
+            XCTFail("无法确认新位置不能继续写")
+        } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["get", "getinfo", "getinfo", "mount_remote", "getinfo"])
+    }
+
+    func test挂载JSON格式保留布尔类型和字符串选项() async throws {
+        for proto in [RemoteMountProtocol.smb, .nfs] {
+            let transport = MockHTTPTransport(responses: mountCreatePreflight("/home/test-mount") + [
+                DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
+                mountedInfo(path: "/home/test-mount", type: "remote"),
+                mountInventory([("/home/test-mount", proto == .smb ? "//server.invalid/share" : "server.invalid:/share", proto.rawValue, false)])
+            ])
+            let repository = try makeRemoteMountRepository(transport: transport, format: .json)
+            try await repository.createRemoteMount(RemoteMountConfiguration(protocolType: proto, server: "server.invalid",
+                remotePath: "share", mountPoint: "/home/test-mount", username: proto == .smb ? "tester" : "",
+                password: proto == .smb ? " synthetic secret " : "", domain: proto == .smb ? "DOMAIN" : "",
+                nfsVersion: .v4, nfsTransport: .tcp))
+            let requests = await transport.recordedRequests(); let request = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "mount_remote" })
+            func string(_ key: String) throws -> String {
+                try JSONDecoder().decode(String.self, from: Data(try XCTUnwrap(requestParameter(key, in: request)).utf8))
+            }
+            XCTAssertEqual(try string("mount_type"), proto == .smb ? "CIFS" : "NFS")
+            XCTAssertEqual(try string("server_ip"), proto == .smb ? "//server.invalid/share" : "server.invalid:/share")
+            XCTAssertEqual(requestParameter("user_set", in: request), "true")
+            XCTAssertEqual(requestParameter("auto_mount", in: request), "false")
+            if proto == .smb {
+                XCTAssertEqual(try string("account"), "DOMAIN\\tester")
+                XCTAssertEqual(try string("passwd"), " synthetic secret ")
+                XCTAssertNil(requestParameter("nfs_version", in: request))
+            } else {
+                XCTAssertEqual(try string("nfs_version"), "4"); XCTAssertEqual(try string("protocol"), "tcp")
+                XCTAssertNil(requestParameter("account", in: request)); XCTAssertNil(requestParameter("passwd", in: request))
+            }
+            XCTAssertFalse(request.url?.absoluteString.contains("synthetic") == true)
+        }
+    }
+
+    func testJSON断开使用MountList路径数组且不删除目录() async throws {
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/test-mount") + [
+            DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
+            mountedInfo(path: "/home/test-mount", type: "normal"),
+            mountInventory()
+        ])
+        let repository = try makeRemoteMountRepository(transport: transport, format: .json)
+        try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/test-mount", repository: repository))
+        let requests = await transport.recordedRequests(); let request = try XCTUnwrap(requests.first { requestParameter("method", in: $0) == "unmount" })
+        XCTAssertEqual(requestParameter("api", in: request), DsmAPIName.fileStationMountList)
+        XCTAssertEqual(requestParameter("version", in: request), "1")
+        XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(try XCTUnwrap(requestParameter("mount_point", in: request)).utf8)), ["/home/test-mount"])
+        XCTAssertFalse(requests.contains { requestParameter("api", in: $0) == DsmAPIName.fileStationDelete })
+    }
+
+    func test不支持的挂载选项在修改旧连接前拒绝() async throws {
+        let configurations = [
+            RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/test-mount", readOnly: true),
+            RemoteMountConfiguration(protocolType: .nfs, server: "server.invalid", remotePath: "share", mountPoint: "/home/test-mount", nfsVersion: .v4, nfsTransport: .udp),
+            RemoteMountConfiguration(protocolType: .nfs, server: "server.invalid", remotePath: "share", mountPoint: "/home/test-mount", password: "unexpected"),
+            RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/test-mount", username: "DOMAIN\\user", domain: "OTHER")
+        ]
+        for configuration in configurations {
+            let transport = MockHTTPTransport(responses: []); let repository = try makeRemoteMountRepository(transport: transport)
+            do { try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/test-mount", repository: repository), configuration: configuration); XCTFail("非法配置不能先断开旧连接") }
+            catch let error as AppError { XCTAssertFalse(error.isRetryable) }
+            let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test挂载路径控制字符与别名不得静默修复() async throws {
+        for path in ["/home/test\n", "/home/../test", "/home//test", "/home/test\\child", "/home/test/"] {
+            let transport = MockHTTPTransport(responses: []); let repository = try makeRemoteMountRepository(transport: transport)
+            do { try await repository.removeRemoteMount(expectedConnection: expectedMount(path, repository: repository)); XCTFail("非法目标不能发送") }
+            catch let error as AppError { XCTAssertFalse(error.isRetryable) }
+            let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+        for source in ["share\n", "share/../other", "//different.invalid/share", "share//child"] {
+            let transport = MockHTTPTransport(responses: []); let repository = try makeRemoteMountRepository(transport: transport)
+            do {
+                try await repository.createRemoteMount(RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: source, mountPoint: "/home/test"))
+                XCTFail("非法共享来源不能发送")
+            } catch let error as AppError { XCTAssertFalse(error.isRetryable) }
+            let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test缺少断开或回查能力时不开始修改() async throws {
+        for missing in [DsmAPIName.fileStationMountList, DsmAPIName.fileStationList] {
+            let transport = MockHTTPTransport(responses: [])
+            var capabilities = [
+                DsmAPIName.fileStationMount: capability(DsmAPIName.fileStationMount, version: 1),
+                DsmAPIName.fileStationMountList: capability(DsmAPIName.fileStationMountList, version: 1),
+                DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2)
+            ]
+            capabilities.removeValue(forKey: missing)
+            let repository = try makeRepository(capabilities: CapabilitySet(capabilities), transport: transport)
+            XCTAssertFalse(repository.allowsRemoteMountManagement)
+            do {
+                try await repository.createRemoteMount(RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/test"))
+                XCTFail("能力缺失不能开始危险写")
+            } catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+            let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test挂载默认NFS选项兼容且调试描述不泄露凭据() {
+        let configuration = RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/test",
+            username: "private-user", password: "synthetic-secret")
+        XCTAssertEqual(configuration.nfsVersion, .v3); XCTAssertEqual(configuration.nfsTransport, .tcp)
+        XCTAssertEqual(String(describing: configuration), "RemoteMountConfiguration")
+        XCTAssertEqual(String(reflecting: configuration), "RemoteMountConfiguration")
+    }
+
+    func test修改挂载不能把新旧位置设为父子目录() async throws {
+        for destination in ["/home/test/child", "/home"] {
+            let transport = MockHTTPTransport(responses: []); let repository = try makeRemoteMountRepository(transport: transport)
+            do {
+                try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/test", repository: repository), configuration:
+                    RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: destination))
+                XCTFail("父子挂载不能执行修改")
+            } catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+            let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+        }
+    }
+
+    func test挂载清单绑定设备并规范来源且保留未知自动挂载() async throws {
+        let transport = MockHTTPTransport(responses: [mountInventory([
+            ("/home/one", "\\\\SERVER.invalid\\share\\Case", "CIFS", nil),
+            ("/home/two", "SERVER.invalid:/export/Case", "NFS", false)
+        ])])
+        let repository = try makeRemoteMountRepository(transport: transport, format: .json)
+        let result = try await repository.remoteMountInventory()
+        XCTAssertEqual(result.profileID, repository.profileID); XCTAssertTrue(result.isRemoteMountingEnabled)
+        XCTAssertEqual(result.connections.map(\.source), ["//server.invalid/share/Case", "server.invalid:/export/Case"])
+        XCTAssertNil(result.connections[0].automaticMount); XCTAssertEqual(result.connections[1].automaticMount, false)
+        XCTAssertTrue(result.connections.allSatisfy { $0.profileID == repository.profileID })
+        XCTAssertEqual(String(reflecting: result), "RemoteMountInventory")
+        XCTAssertEqual(String(reflecting: result.connections[0]), "RemoteMountConnection")
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requestParameter("api", in: requests[0]), DsmAPIName.fileStationMountList)
+        XCTAssertEqual(requestParameter("method", in: requests[0]), "get")
+        XCTAssertNil(requestParameter("offset", in: requests[0])); XCTAssertNil(requestParameter("limit", in: requests[0]))
+    }
+
+    func test挂载清单缺字段和类型错误不冒充空清单() async throws {
+        let invalid = [
+            #"{}"#,
+            #"{"mountConfig":{"enable_remote_mount":"true"},"remoteList":[]}"#,
+            #"{"mountConfig":{"enable_remote_mount":true},"remoteList":[{}]}"#,
+            #"{"mountConfig":{"enable_remote_mount":true},"remoteList":[{"type":"CIFS","source":"//server.invalid/share","mount_point":"/home/test","auto_mount":null}]}"#,
+            #"{"mountConfig":{"enable_remote_mount":true},"remoteList":[{"type":"CIFS","source":"//server.invalid/share","mount_point":"/home/test","auto_mount":"false"}]}"#,
+            #"{"mountConfig":{"enable_remote_mount":true},"remoteList":[{"type":"ISO","source":"/share/disc.iso","mount_point":"/home/test"}]}"#
+        ]
+        for data in invalid {
+            let transport = MockHTTPTransport(responses: [DsmHTTPResponse(data: Data("{\"success\":true,\"data\":\(data)}".utf8), statusCode: 200)])
+            let repository = try makeRemoteMountRepository(transport: transport)
+            do { _ = try await repository.remoteMountInventory(); XCTFail("不完整身份清单不能成功") } catch {}
+            let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 1)
+        }
+    }
+
+    func test重复路径或不规范来源不能形成确认身份() async throws {
+        let responses = [
+            mountInventory([("/home/test", "//server.invalid/share", "CIFS", false), ("/home/test", "//other.invalid/share", "CIFS", false)]),
+            mountInventory([("/home/test/", "//server.invalid/share", "CIFS", false)]),
+            mountInventory([("/home/test", "//server.invalid/share/../other", "CIFS", false)]),
+            mountInventory([("/home/test", "server.invalid:/export\n", "NFS", false)])
+        ]
+        for response in responses {
+            let transport = MockHTTPTransport(responses: [response]); let repository = try makeRemoteMountRepository(transport: transport)
+            do { _ = try await repository.remoteMountInventory(); XCTFail("歧义身份不能成功") } catch {}
+        }
+    }
+
+    func test新挂载身份或自动挂载标志不符时不卸载旧位置() async throws {
+        let variants: [(String, Bool?)] = [("//other.invalid/share", false), ("//server.invalid/share", true), ("//server.invalid/share", nil)]
+        for (source, automatic) in variants {
+            let pair = [mountedInfo(path: "/home/new", type: "remote"), mountInventory([("/home/new", source, "CIFS", automatic)])]
+            let transport = MockHTTPTransport(responses: mountPreflight("/home/old", destination: "/home/new") + [DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200)] + Array(repeating: pair, count: 4).flatMap { $0 })
+            let repository = try makeRemoteMountRepository(transport: transport)
+            do {
+                try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/old", repository: repository), configuration:
+                    RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/new"))
+                XCTFail("来源不符不能继续断开旧连接")
+            } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure); XCTAssertFalse(error.isRetryable) }
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "mount_remote" }.count, 1)
+            XCTAssertFalse(requests.contains { requestParameter("method", in: $0) == "unmount" })
+            XCTAssertEqual(requests.count, 12)
+        }
+    }
+
+    func test断开后的目录正常但挂载清单仍含目标不能成功() async throws {
+        let pair = [mountedInfo(path: "/home/test", type: "normal"), mountInventory([("/home/test", "//server.invalid/share", "CIFS", false)])]
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/test") + [DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200)] + Array(repeating: pair, count: 4).flatMap { $0 })
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do { try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/test", repository: repository)); XCTFail("证据不一致不能确认断开") }
+        catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "unmount" }.count, 1)
+        XCTAssertEqual(requests.count, 11)
+    }
+
+    func test目录协议与确认协议不同不能报告连接成功() async throws {
+        let transport = MockHTTPTransport(responses: mountCreatePreflight("/home/test") + [DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200), mountedInfo(path: "/home/test", type: "nfs")])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do {
+            try await repository.createRemoteMount(RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/test"))
+            XCTFail("目录协议不一致不能成功")
+        } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 4)
+    }
+
+    func test无身份旧挂载签名不能绕过前置核查() async throws {
+        let transport = MockHTTPTransport(responses: []); let repository = try makeRemoteMountRepository(transport: transport)
+        do {
+            try await repository.updateRemoteMount(existingMountPoint: "/home/old", configuration:
+                RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/new"))
+            XCTFail("旧签名不应提交")
+        } catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+        do { try await repository.removeRemoteMount(mountPoint: "/home/old"); XCTFail("旧签名不应提交") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+        let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test确认后的旧挂载来源变化不发送卸载() async throws {
+        let transport = MockHTTPTransport(responses: [mountInventory([("/home/old", "//replacement.invalid/share", "CIFS", false)])])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do { try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/old", repository: repository)); XCTFail("不可卸载已替换的连接") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["get"])
+    }
+
+    func test其他设备确认身份不能发送任何请求() async throws {
+        let transport = MockHTTPTransport(responses: []); let repository = try makeRemoteMountRepository(transport: transport)
+        let foreign = RemoteMountConnection(profileID: UUID(), mountPoint: "/home/old", source: "//old.invalid/share", protocolType: .smb, automaticMount: false)
+        do { try await repository.removeRemoteMount(expectedConnection: foreign); XCTFail("不能跨设备使用确认") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test旧连接包含其他挂载时不隐式卸载子连接() async throws {
+        let transport = MockHTTPTransport(responses: [mountInventory([
+            ("/home/old", "//old.invalid/share", "CIFS", false), ("/home/old/child", "//other.invalid/share", "CIFS", false)
+        ])])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do { try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/old", repository: repository)); XCTFail("不应连带断开嵌套挂载") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 1)
+    }
+
+    func test新目标已占用或不存在时不开始换位置修改() async throws {
+        let occupied = [mountInventory([("/home/old", "//old.invalid/share", "CIFS", false), ("/home/new", "//other.invalid/share", "CIFS", false)]), mountedInfo(path: "/home/old", type: "remote")]
+        let missing = mountPreflight("/home/old") + [DsmHTTPResponse(data: Data(#"{"success":true,"data":{"files":[{"path":"/home/new","code":408}]}}"#.utf8), statusCode: 200)]
+        for responses in [occupied, missing] {
+            let transport = MockHTTPTransport(responses: responses); let repository = try makeRemoteMountRepository(transport: transport)
+            do {
+                try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/old", repository: repository), configuration:
+                    RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/new"))
+                XCTFail("目标不可用不能开始连接")
+            } catch {}
+            let requests = await transport.recordedRequests()
+            XCTAssertFalse(requests.contains { ["mount_remote", "unmount"].contains(requestParameter("method", in: $0) ?? "") })
+        }
+    }
+
+    func test新位置连接后旧来源漂移不能执行第二个写步骤() async throws {
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/old", destination: "/home/new") + [
+            DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200),
+            mountedInfo(path: "/home/new", type: "remote"),
+            mountInventory([("/home/new", "//server.invalid/share", "CIFS", false)]),
+            mountInventory([("/home/old", "//replacement.invalid/share", "CIFS", false), ("/home/new", "//server.invalid/share", "CIFS", false)])
+        ])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do {
+            try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/old", repository: repository), configuration:
+                RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/new"))
+            XCTFail("不得断开被替换的旧连接")
+        } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "mount_remote" }.count, 1)
+        XCTAssertFalse(requests.contains { requestParameter("method", in: $0) == "unmount" }); XCTAssertEqual(requests.count, 7)
+    }
+
+    func test同位置修改在确认身份和断开证明后连接新配置() async throws {
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/old") + [
+            DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200), mountedInfo(path: "/home/old", type: "normal"), mountInventory(),
+            mountInventory(), mountedInfo(path: "/home/old", type: "normal"),
+            DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200), mountedInfo(path: "/home/old", type: "remote"),
+            mountInventory([("/home/old", "//server.invalid/share", "CIFS", false)])
+        ])
+        let repository = try makeRemoteMountRepository(transport: transport)
+        try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/old", repository: repository), configuration:
+            RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/old"))
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestParameter("method", in: $0) }, ["get", "getinfo", "unmount", "getinfo", "get", "get", "getinfo", "mount_remote", "getinfo", "get"])
+    }
+
+    func test挂载前置核查等待期间保护父子路径且取消后释放() async throws {
+        let responses = mountPreflight("/home/old") + [DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200), mountedInfo(path: "/home/old", type: "normal"), mountInventory()]
+        let transport = MockHTTPTransport(steps: [.waitUntilCancelled] + responses.map { .response($0) })
+        let repository = try makeRemoteMountRepository(transport: transport)
+        let expected = expectedMount("/home/old", repository: repository)
+        let first = Task { try await repository.removeRemoteMount(expectedConnection: expected) }
+        defer { first.cancel() }
+        for _ in 0..<100 {
+            if !(await transport.recordedRequests()).isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let initialRequests = await transport.recordedRequests(); _ = try XCTUnwrap(initialRequests.first); XCTAssertEqual(initialRequests.count, 1)
+        do { try await repository.removeRemoteMount(expectedConnection: expectedMount("/home/old/child", repository: repository)); XCTFail("并发目标必须互斥") }
+        catch let error as AppError { XCTAssertEqual(error.category, .serverBusy) }
+        first.cancel()
+        do { try await first.value; XCTFail("已取消的前置核查不应成功") } catch {}
+        try await repository.removeRemoteMount(expectedConnection: expected)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "unmount" }.count, 1)
+    }
+
+    func test新建连接不能覆盖已占用位置或使用不存在目录() async throws {
+        let occupied = [mountInventory([("/home/new", "//other.invalid/share", "CIFS", false)])]
+        let missing = [mountInventory(), DsmHTTPResponse(data: Data(#"{"success":true,"data":{"files":[{"path":"/home/new","code":408}]}}"#.utf8), statusCode: 200)]
+        for responses in [occupied, missing] {
+            let transport = MockHTTPTransport(responses: responses); let repository = try makeRemoteMountRepository(transport: transport)
+            do {
+                try await repository.createRemoteMount(RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/new"))
+                XCTFail("不可用目标不应连接")
+            } catch {}
+            let requests = await transport.recordedRequests()
+            XCTAssertFalse(requests.contains { requestParameter("method", in: $0) == "mount_remote" })
+        }
+    }
+
+    func test断开旧连接后仍须确认新连接存在() async throws {
+        let transport = MockHTTPTransport(responses: mountPreflight("/home/old", destination: "/home/new") + [
+            DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200), mountedInfo(path: "/home/new", type: "remote"),
+            mountInventory([("/home/new", "//server.invalid/share", "CIFS", false)]),
+            mountInventory([("/home/old", "//old.invalid/share", "CIFS", false), ("/home/new", "//server.invalid/share", "CIFS", false)]),
+            mountedInfo(path: "/home/old", type: "remote"), mountedInfo(path: "/home/new", type: "remote"),
+            DsmHTTPResponse(data: Data(#"{"success":true}"#.utf8), statusCode: 200), mountedInfo(path: "/home/old", type: "normal"), mountInventory()
+        ] + Array(repeating: mountedInfo(path: "/home/new", type: "normal"), count: 4))
+        let repository = try makeRemoteMountRepository(transport: transport)
+        do {
+            try await repository.updateRemoteMount(expectedConnection: expectedMount("/home/old", repository: repository), configuration:
+                RemoteMountConfiguration(protocolType: .smb, server: "server.invalid", remotePath: "share", mountPoint: "/home/new"))
+            XCTFail("新连接已消失不能报告修改完成")
+        } catch let error as AppError { XCTAssertEqual(error.category, .partialFailure) }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "mount_remote" }.count, 1)
+        XCTAssertEqual(requests.filter { requestParameter("method", in: $0) == "unmount" }.count, 1)
+    }
+
+    private func expectedMount(_ path: String, repository: DsmFileRepository) -> RemoteMountConnection {
+        RemoteMountConnection(profileID: repository.profileID, mountPoint: path, source: "//old.invalid/share", protocolType: .smb, automaticMount: false)
+    }
+
+    private func mountPreflight(_ path: String, destination: String? = nil) -> [DsmHTTPResponse] {
+        var result = [mountInventory([(path, "//old.invalid/share", "CIFS", false)]), mountedInfo(path: path, type: "remote")]
+        if let destination, destination != path { result.append(mountedInfo(path: destination, type: "normal")) }
+        return result
+    }
+
+    private func mountCreatePreflight(_ path: String) -> [DsmHTTPResponse] {
+        [mountInventory(), mountedInfo(path: path, type: "normal")]
+    }
+
+    private func mountInventory(_ items: [(String, String, String, Bool?)] = []) -> DsmHTTPResponse {
+        let rows: [[String: Any]] = items.map { point, source, type, automatic in
+            var row: [String: Any] = ["mount_point": point, "source": source, "type": type]
+            if let automatic { row["auto_mount"] = automatic }
+            return row
+        }
+        let body: [String: Any] = ["success": true, "data": ["mountConfig": ["enable_remote_mount": true], "remoteList": rows]]
+        return DsmHTTPResponse(data: try! JSONSerialization.data(withJSONObject: body), statusCode: 200)
     }
 
     private func mountedInfo(path: String, type: String) -> DsmHTTPResponse {
@@ -4362,11 +4860,12 @@ final class DsmFileRepositoryTests: XCTestCase {
             .queryItems?.first(where: { $0.name == name })?.value
     }
 
-    private func makeRemoteMountRepository(transport: MockHTTPTransport) throws -> DsmFileRepository {
+    private func makeRemoteMountRepository(transport: MockHTTPTransport, format: DsmRequestFormat = .form) throws -> DsmFileRepository {
         try makeRepository(
             capabilities: CapabilitySet([
                 DsmAPIName.fileStationList: capability(DsmAPIName.fileStationList, version: 2),
-                DsmAPIName.fileStationMount: capability(DsmAPIName.fileStationMount, version: 1)
+                DsmAPIName.fileStationMount: ApiCapability(name: DsmAPIName.fileStationMount, path: "entry.cgi", minVersion: 1, maxVersion: 1, requestFormat: format, selectedVersion: 1),
+                DsmAPIName.fileStationMountList: ApiCapability(name: DsmAPIName.fileStationMountList, path: "entry.cgi", minVersion: 1, maxVersion: 1, requestFormat: format, selectedVersion: 1)
             ]),
             transport: transport
         )
@@ -4736,10 +5235,7 @@ final class DsmFileRepositoryTests: XCTestCase {
         let identityDigest = SHA256.hash(data: Data(identity.utf8)).map {
             String(format: "%02x", $0)
         }.joined()
-        let partURL = destination.deletingLastPathComponent()
-            .appendingPathComponent(
-                ".\(destination.lastPathComponent).\(identityDigest.prefix(16)).lanstash.part"
-            )
+        let partURL = DsmFileRepository.partialDownloadArtifactURL(localURL: destination, identitySuffix: String(identityDigest.prefix(16)))
         return (
             partURL,
             partURL.appendingPathExtension("metadata"),

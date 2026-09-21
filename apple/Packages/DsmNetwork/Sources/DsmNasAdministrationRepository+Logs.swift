@@ -1,6 +1,7 @@
 import DsmCore
 import DsmLocalization
 import Foundation
+import CryptoKit
 
 extension DsmNasAdministrationRepository {
     public func loadLogs(offset: Int, limit: Int) async throws -> NasLogPage {
@@ -47,31 +48,58 @@ extension DsmNasAdministrationRepository {
                 "sort_direction": .string("DESC")
             ]
         )
-        let connections = value.objects("items").enumerated().compactMap {
-            index, raw -> NasConnection? in
+        guard let rows = value["items"]?.array, rows.count <= min(500, max(1, limit)) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        let total: Int
+        if let raw = value["total"] {
+            guard case .number(let number) = raw, let count = Int(exactly: number), count >= rows.count else {
+                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            }
+            total = count
+        } else { total = rows.count }
+        var seen: Set<String> = []
+        let connections = try rows.enumerated().map { index, entry -> NasConnection in
+            guard let raw = entry.object else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
             let item = DsmDynamicJSON.object(raw)
-            guard let account = item.string(["who"]) else { return nil }
-            let pid = item.string(["pid"]) ?? "\(index)"
-            let time = item.string(["time"])
+            func text(_ key: String) throws -> String? {
+                guard let value = item[key], value != .null else { return nil }
+                guard case .string(let text) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                return text
+            }
+            func flag(_ key: String) throws -> Bool? {
+                guard let value = item[key], value != .null else { return nil }
+                guard case .boolean(let flag) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                return flag
+            }
+            guard let account = try text("who") else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+            let pid = try text("pid"), did = try text("did"), type = try text("type"), source = try text("from"), description = try text("descr")
+            let time = try text("time")
+            let web = type?.uppercased() == "HTTP/HTTPS"
+            let identity = web ? did : pid
+            let identityKnown = identity?.isEmpty == false && type?.isEmpty == false
+            let key = identityKnown ? (web ? "web:" : "service:") + identity! : "readonly:\(offset + index)"
+            let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+            guard seen.insert(digest).inserted || !identityKnown else {
+                // 同一原始目标出现多次时，不能猜测应该断开哪一项。
+                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            }
             return NasConnection(
-                id: "connection:\(pid):\(account):\(time ?? "")",
-                processID: item.string(["pid"]),
-                deviceID: item.string(["did"]),
+                id: "connection:\(digest)",
+                processID: pid,
+                deviceID: did,
                 account: account,
-                source: item.string(["from"]),
-                location: item.string(["location"]),
-                protocolName: item.string(["protocol"]),
-                type: item.string(["type"]),
+                source: source,
+                location: try text("location"),
+                protocolName: try text("protocol"),
+                type: type,
                 connectedAt: Self.date(from: time),
-                description: item.string(["descr"]),
-                isCurrentConnection: item.boolean(["is_current_connected"])
-                    ?? (item.string(["who"]) == currentUsername),
-                canDisconnect: item.boolean(["can_be_kicked"]) ?? false
+                description: description,
+                isCurrentConnection: try flag("is_current_connected") ?? false,
+                canDisconnect: try flag("can_be_kicked") == true && identityKnown && source != nil && (!web || description != nil)
             )
         }
         return NasConnectionPage(
             connections: connections,
-            total: Int(value.number(["total"]) ?? Double(connections.count))
+            total: total
         )
     }
 
@@ -84,9 +112,23 @@ extension DsmNasAdministrationRepository {
             )
         }
 
+        let directory = try await loadConnections(offset: 0, limit: 500)
+        let matches = directory.connections.filter { current in
+            connection.type?.uppercased() == "HTTP/HTTPS" ? current.deviceID == connection.deviceID : current.processID == connection.processID
+        }
+        guard directory.connections.count < 500, directory.total <= directory.connections.count, matches.count == 1,
+              let current = matches.first, current.canDisconnect,
+              current.processID == connection.processID, current.deviceID == connection.deviceID,
+              current.account == connection.account, current.source == connection.source, current.type == connection.type,
+              current.description == connection.description, current.connectedAt == connection.connectedAt,
+              current.protocolName == connection.protocolName, current.location == connection.location,
+              current.isCurrentConnection == connection.isCurrentConnection else {
+            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        }
+
         let common: [String: DsmJSONValue] = [
             "who": .string(connection.account),
-            "from": .string(connection.source ?? "")
+            "from": .string(connection.source!)
         ]
         let serviceConnections: [[String: DsmJSONValue]]
         let httpConnections: [[String: DsmJSONValue]]
@@ -98,7 +140,7 @@ extension DsmNasAdministrationRepository {
             httpConnections = [
                 common.merging([
                     "did": .string(deviceID),
-                    "descr": .string(connection.description ?? "")
+                    "descr": .string(connection.description!)
                 ]) { _, new in new }
             ]
         } else {
@@ -108,7 +150,7 @@ extension DsmNasAdministrationRepository {
             serviceConnections = [
                 common.merging([
                     "pid": .string(processID),
-                    "type": .string(connection.type ?? "")
+                    "type": .string(connection.type!)
                 ]) { _, new in new }
             ]
             httpConnections = []

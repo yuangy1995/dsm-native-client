@@ -1,0 +1,36 @@
+<UserControl x:Class="LanStash.App.Views.VirtualMachineTasksControl" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:LanStash.App.Features.VirtualMachines">
+ <Grid RowSpacing="12" Padding="4,12">
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+  <Grid ColumnSpacing="12">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <TextBlock x:Uid="VmTasksHint" TextWrapping="Wrap" VerticalAlignment="Center"/>
+   <Button x:Name="RefreshButton" x:Uid="VmTasksRefresh" Grid.Column="1" MinHeight="44" Click="Refresh_Click"/>
+   <Button x:Name="ClearButton" x:Uid="VmTasksClearOpen" Grid.Column="2" MinHeight="44" Click="Clear_Click"/>
+   <Button x:Name="ReviewClearButton" x:Uid="VmTasksClearReview" Grid.Column="3" MinHeight="44" Click="ReviewClear_Click"/>
+  </Grid>
+  <StackPanel Grid.Row="1" Spacing="8">
+   <InfoBar x:Name="RefreshError" IsOpen="False" IsClosable="False" Severity="Warning" AutomationProperties.LiveSetting="Polite"/>
+   <InfoBar x:Name="CleanupStatus" IsOpen="False" IsClosable="True" Severity="Informational" AutomationProperties.LiveSetting="Polite"/>
+  </StackPanel>
+  <Grid Grid.Row="2">
+   <ListView x:Name="TaskList" SelectionMode="None" x:Uid="VmTasksList">
+    <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/></Style></ListView.ItemContainerStyle>
+    <ListView.ItemTemplate>
+     <DataTemplate x:DataType="vm:VirtualMachineTaskItem">
+      <Grid Padding="8,12" ColumnSpacing="20" RowSpacing="8">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+       <StackPanel Spacing="4"><TextBlock Text="{x:Bind Title}" FontWeight="SemiBold"/><TextBlock Text="{x:Bind StatusText}" TextWrapping="Wrap"/></StackPanel>
+       <TextBlock Grid.Column="1" Text="{x:Bind ProgressText}" VerticalAlignment="Center"/>
+       <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Minimum="0" Maximum="100" Value="{x:Bind Progress}" IsIndeterminate="{x:Bind IsIndeterminate}"/>
+      </Grid>
+     </DataTemplate>
+    </ListView.ItemTemplate>
+   </ListView>
+   <ProgressRing x:Name="LoadingState" Width="36" Height="36" Visibility="Collapsed"/>
+   <TextBlock x:Name="EmptyState" x:Uid="VmTasksEmpty" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" Visibility="Collapsed"/>
+   <TextBlock x:Name="ErrorState" x:Uid="VmTasksError" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" Visibility="Collapsed"/>
+   <TextBlock x:Name="UnavailableState" x:Uid="VmTasksUnavailable" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" Visibility="Collapsed"/>
+  </Grid>
+ </Grid>
+</UserControl>

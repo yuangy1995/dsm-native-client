@@ -7,6 +7,17 @@ namespace LanStash.Tests.Files;
 
 public sealed class FileRemoteMountContractTests
 {
+    [Fact]
+    public void RemoteCredentialsArePreservedButNotPrintedByRecords()
+    {
+        const string password = " synthetic secret ";
+        var draft = new RemoteMountDraft("server.invalid", "share", "/home/mount", "user", password, "domain", false, FileRemoteProtocol.Cifs);
+        var configuration = new RemoteMountConfiguration("server.invalid", "share", "/home/mount", "user", password, "domain", false, FileRemoteProtocol.Cifs);
+        Assert.Equal(password, draft.Password); Assert.Equal(password, configuration.Password);
+        Assert.DoesNotContain("synthetic secret", draft.ToString()); Assert.DoesNotContain("synthetic secret", configuration.ToString());
+        Assert.DoesNotContain("server.invalid", draft.ToString()); Assert.DoesNotContain("server.invalid", configuration.ToString());
+    }
+
     private static readonly NasProfile Profile = new(
         Guid.Parse("22222222-2222-2222-2222-222222222222"),
         "MountTest",
@@ -266,7 +277,8 @@ public sealed class FileRemoteMountContractTests
             if (File.Exists(candidate))
             {
                 var source = File.ReadAllText(candidate);
-                Assert.Equal(2, source.Split("DataContext.AllowsRemoteMountManagement").Length - 1);
+                Assert.Equal(2, source.Split("DataContext.CanManageRemoteMountWorkflow").Length - 1);
+                Assert.DoesNotContain("DataContext.AllowsRemoteMountManagement", source);
                 return;
             }
             directory = directory.Parent;

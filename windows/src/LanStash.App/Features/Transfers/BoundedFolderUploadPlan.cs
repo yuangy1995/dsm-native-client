@@ -4,9 +4,6 @@ internal enum FolderUploadPlanStatus
 {
     Valid,
     SourceUnavailable,
-    TooManyFiles,
-    TooManyDirectories,
-    TooDeep,
     ReparsePoint,
     InvalidName,
     DuplicateTarget,
@@ -33,12 +30,9 @@ internal sealed record FolderUploadPlanResult(
 
 internal static class BoundedFolderUploadPlan
 {
-    internal const int MaximumFileCount = 20;
-    internal const int MaximumDirectoryCount = 20;
-    internal const int MaximumDepth = 8;
-
-    internal static FolderUploadPlanResult Create(string rootPath)
+    internal static FolderUploadPlanResult Create(string rootPath, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(rootPath))
         {
             return Failed(FolderUploadPlanStatus.SourceUnavailable);
@@ -65,17 +59,22 @@ internal static class BoundedFolderUploadPlan
             var directories = new List<FolderUploadDirectory> { new(string.Empty, root.Name) };
             var files = new List<FolderUploadFile>();
             var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { string.Empty };
-            var pending = new Stack<(DirectoryInfo Directory, string RelativePath, int Depth)>();
-            pending.Push((root, string.Empty, 1));
-            var directoryCount = 1;
+            var pending = new Stack<(DirectoryInfo Directory, string RelativePath)>();
+            pending.Push((root, string.Empty));
 
             while (pending.Count > 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var current = pending.Pop();
-                var entries = current.Directory.EnumerateFileSystemInfos().ToArray();
+                if (!HasUnlinkedParents(current.Directory, root.FullName))
+                {
+                    return Failed(FolderUploadPlanStatus.ReparsePoint);
+                }
+                var entries = current.Directory.EnumerateFileSystemInfos();
 
                 foreach (var entry in entries)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (IsReparsePoint(entry))
                     {
                         return Failed(FolderUploadPlanStatus.ReparsePoint);
@@ -96,28 +95,11 @@ internal static class BoundedFolderUploadPlan
 
                     if (entry is DirectoryInfo directory)
                     {
-                        var depth = current.Depth + 1;
-                        if (depth > MaximumDepth)
-                        {
-                            return Failed(FolderUploadPlanStatus.TooDeep);
-                        }
-
-                        directoryCount++;
-                        if (directoryCount > MaximumDirectoryCount)
-                        {
-                            return Failed(FolderUploadPlanStatus.TooManyDirectories);
-                        }
-
                         directories.Add(new FolderUploadDirectory(relativePath, entry.Name));
-                        pending.Push((directory, relativePath, depth));
+                        pending.Push((directory, relativePath));
                     }
                     else if (entry is FileInfo file)
                     {
-                        if (files.Count == MaximumFileCount)
-                        {
-                            return Failed(FolderUploadPlanStatus.TooManyFiles);
-                        }
-
                         files.Add(new FolderUploadFile(
                             file.FullName,
                             relativePath,
@@ -134,9 +116,10 @@ internal static class BoundedFolderUploadPlan
 
             directories.Sort(static (left, right) => CompareRelativePaths(left.RelativePath, right.RelativePath));
             files.Sort(static (left, right) => CompareRelativePaths(left.RelativePath, right.RelativePath));
+            cancellationToken.ThrowIfCancellationRequested();
             return new FolderUploadPlanResult(
                 FolderUploadPlanStatus.Valid,
-                new FolderUploadPlan(root.FullName, root.Name, directories, files));
+                new FolderUploadPlan(root.FullName, root.Name, directories.AsReadOnly(), files.AsReadOnly()));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException or NotSupportedException)
         {
@@ -144,11 +127,11 @@ internal static class BoundedFolderUploadPlan
         }
     }
 
-    internal static bool IsCurrent(FolderUploadPlan plan)
+    internal static bool IsCurrent(FolderUploadPlan plan, CancellationToken cancellationToken = default)
     {
         try
         {
-            var current = Create(plan.RootPath);
+            var current = Create(plan.RootPath, cancellationToken);
             return current.Status == FolderUploadPlanStatus.Valid &&
                 current.Plan is not null &&
                 StringComparer.Ordinal.Equals(plan.RootPath, current.Plan.RootPath) &&
@@ -156,18 +139,20 @@ internal static class BoundedFolderUploadPlan
                 plan.Directories.SequenceEqual(current.Plan.Directories) &&
                 plan.Files.SequenceEqual(current.Plan.Files);
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception)
         {
             return false;
         }
     }
 
-    internal static bool IsCurrent(FolderUploadFile file)
+    internal static bool IsCurrent(FolderUploadFile file, string rootPath)
     {
         try
         {
             var current = new FileInfo(file.SourcePath);
             return current.Exists && !IsReparsePoint(current) &&
+                HasUnlinkedParents(current.Directory, rootPath) &&
                 StringComparer.Ordinal.Equals(current.Name, file.Name) &&
                 current.Length == file.Length &&
                 current.LastWriteTimeUtc == file.LastWriteTimeUtc;
@@ -182,6 +167,19 @@ internal static class BoundedFolderUploadPlan
     {
         var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         return relativePaths.Any(path => !targets.Add(path));
+    }
+
+    private static bool HasUnlinkedParents(DirectoryInfo? directory, string rootPath)
+    {
+        // 逐项上传前也检查已规划的父目录，避免准备后被替换成联接而读取树外文件。
+        while (directory is not null)
+        {
+            directory.Refresh();
+            if (!directory.Exists || IsReparsePoint(directory)) return false;
+            if (StringComparer.OrdinalIgnoreCase.Equals(directory.FullName, rootPath)) return true;
+            directory = directory.Parent;
+        }
+        return false;
     }
 
     private static bool IsReparsePoint(FileSystemInfo entry) =>

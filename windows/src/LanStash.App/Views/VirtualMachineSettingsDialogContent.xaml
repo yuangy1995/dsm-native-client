@@ -1,0 +1,23 @@
+<UserControl x:Class="LanStash.App.Views.VirtualMachineSettingsDialogContent" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <ScrollViewer MaxHeight="550" HorizontalScrollBarVisibility="Disabled">
+  <StackPanel MinWidth="340" MaxWidth="520" Spacing="12" Margin="0,0,8,0">
+   <ProgressRing x:Name="BusyIndicator" Width="30" Height="30" Visibility="Collapsed"/>
+   <InfoBar x:Name="ErrorNotice" IsOpen="False" IsClosable="False" Severity="Error" AutomationProperties.LiveSetting="Polite"/>
+   <InfoBar x:Name="FeedbackNotice" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite"/>
+   <TextBlock x:Name="ReadOnlyNotice" x:Uid="VmSettingsReadOnly" TextWrapping="Wrap"/>
+   <TextBox x:Name="NameInput" x:Uid="VmSettingsName" TextChanged="Fields_Changed"/>
+   <TextBox x:Name="DescriptionInput" x:Uid="VmSettingsDescription" TextChanged="Fields_Changed" AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="110"/>
+   <TextBlock x:Name="HardwareNotice" x:Uid="VmSettingsHardwareNote" TextWrapping="Wrap"/>
+   <TextBox x:Name="CpuInput" x:Uid="VmSettingsCpu" TextChanged="Fields_Changed"/>
+   <TextBox x:Name="MemoryInput" x:Uid="VmSettingsMemory" TextChanged="Fields_Changed"/>
+   <ComboBox x:Name="StartupInput" x:Uid="VmSettingsStartup" SelectionChanged="Startup_Changed" HorizontalAlignment="Stretch">
+    <ComboBoxItem x:Uid="VmSettingsStartupOff"/><ComboBoxItem x:Uid="VmSettingsStartupPrevious"/><ComboBoxItem x:Uid="VmSettingsStartupOn"/>
+   </ComboBox>
+   <ComboBox x:Name="PriorityInput" x:Uid="VmPriorityField" DisplayMemberPath="Name" SelectionChanged="Startup_Changed" HorizontalAlignment="Stretch"/>
+   <TextBlock x:Name="PriorityUnavailableNotice" x:Uid="VmPriorityUnavailable" TextWrapping="Wrap"/>
+   <TextBlock x:Name="ValidationNotice" TextWrapping="Wrap" Visibility="Collapsed"/>
+   <TextBlock x:Uid="VmSettingsRisk" TextWrapping="Wrap"/>
+   <CheckBox x:Name="RiskAcknowledgement" x:Uid="VmSettingsAcknowledgement" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Checked="Confirm_Changed" Unchecked="Confirm_Changed"/>
+  </StackPanel>
+ </ScrollViewer>
+</UserControl>
