@@ -3,7 +3,7 @@
 
 # 当前开发进度
 
-本页只维护当前实现、验证缺口与下一步。2026-09-21 本次 Windows 对齐及 Mac 修复的开发/自动化范围已完成，见[最终范围核对](../development/WINDOWS_PARITY_FINAL_REVIEW_ZH.md)：Windows Build 的 3929 项测试、x64/ARM64 构建均通过，仓库/文档门禁通过；本地隔离 Shell 检查和中英各 47 个云盘场景通过。最新包 windows/dist/20260921-190403 已核查，未安装/启动。Mac Apple Build 成功，52 个 Apple 文件与验证提交一致。本次 Windows/Mac 测试分支和工作树已清理，源码保留本地 main，未提交/推送 main。真实 NAS/设备验证后置；Android 已知目标目录创建版本不一致属范围外问题，不宣称五端全部通过。
+本页只维护当前实现、验证缺口与下一步。2026-09-21 Windows 对齐及 Mac 修复的开发/自动化范围已完成，见[最终范围核对](../development/WINDOWS_PARITY_FINAL_REVIEW_ZH.md)。用户随后授权正式提交，并修复 Android 下载创建版本不一致：1424 项 JVM 测试、完整构建/R8/lint 通过；Windows 3929 项测试、x64/ARM64 构建通过。正式提交及完整云端门禁见[提交验收记录](../development/PARITY_SUBMISSION_VALIDATION_ZH.md)。最新 Windows 包 windows/dist/20260921-190403 已核查，未安装/启动；Mac 临时签名测试包不含挂载扩展。真实 NAS/设备验证与正式发布后置，不把自动化通过等同于实机验收。
 本轮将 Android、iPhone、iPad、Windows 正式 Photos 入口对齐 macOS，并整理照片文档；目标平台自动化与真实设备验收分别记录。
 详细范围见[平台矩阵](PLATFORM_MATRIX.md)，优先级见[路线图](ROADMAP.md)，证据等级见[验证规则](../quality/VERIFICATION_LEVELS_ZH.md)。
 

@@ -33,7 +33,28 @@ API 修复，共享契约/五端影响文档，以及本轮 Android 下载创建
 
 ## 验证与交付状态
 
-本轮在专用 codex/ 分支运行完整云端门禁，当前等待结果；未提前推送 main。
-Android 使用既有 Android Build：JVM、Debug/Release/R8、androidTest APK 构建、lint；
+功能提交：`a5f3935a945b357c8aef1e063da4e6611cd3ccf3`，标题为
+`feat: 完成 Windows 功能对齐并修复跨端 NAS 操作契约`。临时结构门禁修正已整理进
+同一功能提交；验收记录单独作为文档提交，不保留 retry/fix CI 中间提交。
+
+| 门禁 | 运行 | 结果 |
+| --- | --- | --- |
+| Windows Build | [35605280483](https://github.com/yuangy1995/dsm-native-client/actions/runs/35605280483) | 3929 项全部通过；WinUI x64/ARM64 均 0 警告、0 错误。 |
+| Android Build | [35605280419](https://github.com/yuangy1995/dsm-native-client/actions/runs/35605280419) | HTML 报告确认 1424 项、0 失败、0 跳过；Debug、Release、R8、androidTest APK、lint 均通过。 |
+| Apple Build | [35605280383](https://github.com/yuangy1995/dsm-native-client/actions/runs/35605280383) | XCTest 1281 项中 1224 通过、57 项既有条件跳过、0 失败；Swift Testing 12 项通过；iPhone/iPad 各 498 项通过；工程一致性、Mac 打包及临时签名产物检查通过。 |
+| Repository Check | [35605280398](https://github.com/yuangy1995/dsm-native-client/actions/runs/35605280398) | 通过。 |
+| Documentation & Quality Preflight | [35605280323](https://github.com/yuangy1995/dsm-native-client/actions/runs/35605280323) | 通过。 |
+
+Android 实际命令：`./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+:app:minifyReleaseWithR8 :app:assembleDebugAndroidTest :app:lintDebug --no-parallel --stacktrace`。
+Windows 实际命令沿用仓库 Windows Build：Release xUnit 与 win-x64/win-arm64 构建。
+本地额外执行质量工具 105 项、脱敏工具 3 项、响应契约 13 项、请求契约 13 项测试，均通过；
+111 请求 fixture、3 响应组、22 私有引用、本地化、结构与严格文档检查均通过。
+
 仪器 APK 构建不代表真机仪器测试已执行。合并前核查远端 main 无新提交、所有相关
-云端门禁通过，并确认最终提交内容与已验证源码一致。
+云端门禁通过，并确认最终源码与已验证功能提交一致；只快进推送，不强推 main。
+推送完成后按授权删除本次专用分支和隔离工作树；真实设备与正式发布仍独立验收。
+
+完整功能提交的五组云端门禁均已通过。后续验收记录提交仅修改本报告、前一阶段总结
+与进度/矩阵，不修改源码、契约、工作流或测试；再运行仓库和文档门禁，保留上述准确
+提交级证据。Apple 临时签名包不含本地挂载扩展，57 项条件跳过不记为通过。
