@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-09-20",
+  "updatedAt": "2026-09-27",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -102,7 +102,7 @@
       "apiNames": ["SYNO.Core.Desktop.Initdata"],
       "paths": ["/webapi/entry.cgi"],
       "methods": ["GET"],
-      "fallback": "摘要失败只保留文件只读会话确认，其他模块保持关闭；有效空表不额外试探。用户确认 NAS 设置与容器要求管理员，独立应用要求明确授权，false 不被管理员覆盖；不加载组件业务数据判断权限。App 会话待验证，设备匿名归属待确认，verifications 不冒用旧基线。",
+      "fallback": "摘要失败只保留文件只读会话确认，其他模块保持关闭；有效空表不额外试探。用户确认 NAS 设置与容器要求管理员，独立应用要求明确授权，false 不被管理员覆盖；不加载组件业务数据判断权限。设备匿名归属待确认，verifications 不冒用旧基线。 2026-09-27 当前 App 保存会话的 GET/POST 摘要均明确 isLogined=false；Apple 拒绝未登录空摘要，回到原文件会话核实，不放开权限；修复包已恢复文件和管理菜单，用户确认退出后重新连接正常。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
       "documentRef": "docs/api/discovery/endpoints/dsm-desktop-app-privileges.md",
       "verifications": []
     },
@@ -202,7 +202,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "各只读页面独立降级；连接断开不可用时不影响连接列表。",
+      "fallback": "各只读页面独立降级；连接断开不可用时不影响连接列表。 2026-09-26 Apple 连接列表兼容整数 PID，拒绝小数，断开保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 当前连接单项 PID 的数字类型已由当前浏览器成功响应核对。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {
@@ -246,7 +246,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "进程能力缺失时页面独立不可用；服务组缺失或失败时保留进程列表。命令、路径、账号和网络地址不进入模型。",
+      "fallback": "进程能力缺失时页面独立不可用；服务组缺失或失败时保留进程列表。命令、路径、账号和网络地址不进入模型。 2026-09-26 Apple 新增 process/command 与 slices/unit_name 静态兼容候选，缺失容器报错；当前 NAS 读取待用户验证。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 当前 DSM 7.2.1-69057 Update 12 官方页面成功返回 process/command 与 slices/unit_name，候选结构已得到只读响应支持。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
       "documentRef": "docs/api/discovery/endpoints/dsm-system-processes.md",
       "verifications": [
         {
@@ -283,7 +283,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或 v1 不在发现范围时页面独立不可用且零请求；save 始终保持关闭。",
+      "fallback": "能力缺失或 v1 不在发现范围时页面独立不可用且零请求；save 始终保持关闭。 2026-09-26 Apple 只读兼容 poweron_tasks/poweroff_tasks 与 min，save 无实现不开放。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 已核对数字星期字符串每天及周六，Apple 仅在独立开关机容器中解析；旧数字数组保持未知。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
       "documentRef": "docs/api/discovery/endpoints/dsm-power-schedule.md",
       "verifications": [
         {
@@ -483,7 +483,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或权限不足时关闭账号管理；写请求结果无法回读时提示核对，不自动重放。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。",
+      "fallback": "能力缺失或权限不足时关闭账号管理；写请求结果无法回读时提示核对，不自动重放。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 读取兼容 expired normal/now；缺少 can_edit 且资料完整时可打开编辑，显式拒绝和删除许可仍生效。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。",
       "documentRef": "docs/api/discovery/endpoints/dsm-account-directory.md",
       "verifications": [
         {
@@ -655,7 +655,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按能力逐项隐藏或只读降级；不得自动尝试管理员权限或批量回写完整配置。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。",
+      "fallback": "按能力逐项隐藏或只读降级；不得自动尝试管理员权限或批量回写完整配置。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 新建脚本任务使用本地空白草稿，仍检查 v4 能力，已有任务严格读取及保存保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 官方已有脚本任务 get v4 字段与当前严格解析匹配，未保存或执行。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {

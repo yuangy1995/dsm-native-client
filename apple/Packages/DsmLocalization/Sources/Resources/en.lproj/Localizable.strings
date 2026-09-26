@@ -4124,3 +4124,9 @@
 "virtual-machine.priority.below-normal" = "Below normal";
 "virtual-machine.priority.above-normal" = "Above normal";
 "virtual-machine.priority.high" = "High";
+
+"nas.accounts.response-incomplete" = "The NAS returned incomplete account information. Reload the page and try again.";
+"nas.connections.response-incomplete" = "The NAS returned incomplete connection information. Reload the page and try again.";
+"nas.power-schedule.response-incomplete" = "The NAS returned incomplete power schedule information. Reload the page and try again.";
+"nas.tasks.response-incomplete" = "The NAS returned incomplete task information. Reload the page and try again.";
+"nas.processes.response-incomplete" = "The NAS returned incomplete system activity information. Reload the page and try again.";

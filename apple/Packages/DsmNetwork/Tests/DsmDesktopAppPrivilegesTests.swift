@@ -60,6 +60,25 @@ final class DsmDesktopAppPrivilegesTests: XCTestCase {
         XCTAssertTrue(requests.isEmpty)
     }
 
+    func test未登录的成功包络不能成为有效空权限表() async throws {
+        let transport = MockHTTPTransport(responses: [response(#"{"AppPrivilege":{},"Session":{"is_admin":false,"isLogined":false}}"#)])
+        do {
+            _ = try await service(transport).read(capabilities: capabilities, session: session)
+            XCTFail("未登录摘要必须触发原有会话核实，不能隐藏全部菜单并伪装已连接")
+        } catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+        }
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+    }
+
+    func test已登录的空权限表仍是有效拒绝且不提升管理员() throws {
+        let value = try JSONDecoder().decode(DsmDesktopAppPrivileges.self,
+            from: Data(#"{"AppPrivilege":{},"Session":{"is_admin":false,"isLogined":true}}"#.utf8))
+        XCTAssertTrue(value.applications.isEmpty)
+        XCTAssertFalse(value.isAdministrator)
+    }
+
     func test119保留原值不重试不改写权限() async throws {
         let transport = MockHTTPTransport(responses: [DsmHTTPResponse(data: Data(#"{"success":false,"error":{"code":119}}"#.utf8), statusCode: 200)])
         do {

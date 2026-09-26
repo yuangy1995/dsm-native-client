@@ -2338,8 +2338,44 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             version: 1
         )
         let maximumEntries = 128
-        guard case .array(let rawRows) = try taskCoalescedRead(value["schedules"], value["items"]) else {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+        let rawRows: [DsmDynamicJSON]
+        if value["poweron_tasks"] != nil || value["poweroff_tasks"] != nil {
+            // DSM 7 将开机和关机计划分开返回，操作类型由容器决定。
+            guard let startup = value["poweron_tasks"]?.array,
+                  let shutdown = value["poweroff_tasks"]?.array,
+                  (startup + shutdown).allSatisfy({ $0.object != nil }) else {
+                throw verificationError(L10n.string("nas.power-schedule.response-incomplete"))
+            }
+            rawRows = [("startup", startup), ("shutdown", shutdown)].flatMap { action, rows in
+                rows.enumerated().map { index, row in
+                    var fields = row.object ?? [:]
+                    fields["action"] = .string(action)
+                    fields["id"] = .string("\(action)-\(index)")
+                    fields["minute"] = fields["min"]
+                    // 此容器使用周日为 0 的逗号分隔编码；旧 days 数字数组仍不猜测含义。
+                    if case .string(let encoded)? = fields["weekdays"] {
+                        let names = ["0": "sun", "1": "mon", "2": "tue", "3": "wed",
+                                     "4": "thu", "5": "fri", "6": "sat"]
+                        let tokens = encoded.split(separator: ",", omittingEmptySubsequences: false)
+                            .map { $0.trimmingCharacters(in: .whitespaces) }
+                        let weekdays = tokens.compactMap { names[$0] }
+                        if !weekdays.isEmpty, weekdays.count == tokens.count {
+                            fields["weekdays"] = .array(weekdays.map(DsmDynamicJSON.string))
+                        }
+                    }
+                    return .object(fields)
+                }
+            }
+        } else {
+            let schedules = value["schedules"] == .null ? nil : value["schedules"]
+            let items = value["items"] == .null ? nil : value["items"]
+            if let schedules, let items, schedules != items {
+                throw verificationError(L10n.string("nas.power-schedule.response-incomplete"))
+            }
+            guard case .array(let rows) = schedules ?? items else {
+                throw verificationError(L10n.string("nas.power-schedule.response-incomplete"))
+            }
+            rawRows = rows
         }
         let rows = rawRows.prefix(maximumEntries).compactMap(\.object)
         var seenIDs = Set<String>()
@@ -2369,7 +2405,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         let reportedTotal = value.integer(["total", "total_count"]).flatMap {
             $0 >= 0 && $0 <= 1_000_000 ? Int($0) : nil
         }
-        guard !entries.isEmpty || (rawRows.isEmpty && (reportedTotal ?? 0) == 0) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard !entries.isEmpty || (rawRows.isEmpty && (reportedTotal ?? 0) == 0) else { throw verificationError(L10n.string("nas.power-schedule.response-incomplete")) }
         let total = max(rawRows.count, reportedTotal ?? rawRows.count)
         return NasPowerScheduleSnapshot(
             entries: entries,
@@ -6726,18 +6762,19 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 "limit": .integer(safeLimit)
             ]
         )
-        let primaryProcessRows = processValue.objects("processes")
-        let processRows = primaryProcessRows.isEmpty
-            ? processValue.objects("items")
-            : primaryProcessRows
+        // DSM 的实际只读响应使用 process，保留既有适配的两个容器。
+        guard let processRows = (processValue["process"] ?? processValue["processes"] ?? processValue["items"])?.array,
+              processRows.allSatisfy({ $0.object != nil }) else {
+            throw verificationError(L10n.string("nas.processes.response-incomplete"))
+        }
         var seenProcessIDs = Set<String>()
-        let processes = processRows.compactMap { raw -> NasSystemProcess? in
-            let item = DsmDynamicJSON.object(raw)
+        let processes = processRows.prefix(safeLimit).compactMap { item -> NasSystemProcess? in
             guard let processID = Self.safeProcessID(
                 item.string(["pid", "process_id"])
             ),
             let name = Self.safeProcessDisplayName(
                 item.string(["name", "process_name"])
+                    ?? item.string(["command"])?.split(whereSeparator: \.isWhitespace).first.map(String.init)
             ) else {
                 return nil
             }
@@ -6776,15 +6813,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                         "limit": .integer(safeLimit)
                     ]
                 )
-                let primaryGroupRows = groupValue.objects("groups")
-                let groupRows = primaryGroupRows.isEmpty
-                    ? groupValue.objects("items")
-                    : primaryGroupRows
+                guard let groupRows = (groupValue["slices"] ?? groupValue["groups"] ?? groupValue["items"])?.array,
+                      groupRows.allSatisfy({ $0.object != nil }) else {
+                    throw verificationError(L10n.string("nas.processes.response-incomplete"))
+                }
                 var seenGroupIDs = Set<String>()
-                groups = groupRows.compactMap { raw -> NasProcessGroup? in
-                    let item = DsmDynamicJSON.object(raw)
+                groups = groupRows.prefix(safeLimit).compactMap { item -> NasProcessGroup? in
                     guard let id = Self.safeProcessGroupIdentifier(
-                        item.string(["id", "group_id", "service"])
+                        item.string(["unit_name", "id", "group_id", "service"])
                     ),
                     seenGroupIDs.insert(id).inserted,
                     let name = Self.safeProcessDisplayName(
@@ -6794,7 +6830,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     }
                     let count = item.integer(["process_count", "count"]).flatMap {
                         $0 >= 0 && $0 <= 1_000_000 ? Int($0) : nil
-                    }
+                    } ?? item["process"]?.array?.count
                     return NasProcessGroup(
                         id: id,
                         name: name,
@@ -6821,7 +6857,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         let reportedTotal = processValue.integer(["total", "total_count"]).flatMap {
             $0 >= 0 && $0 <= 1_000_000 ? Int($0) : nil
         }
-        let total = max(processes.count, reportedTotal ?? processes.count)
+        let total = max(processRows.count, reportedTotal ?? processRows.count)
         return NasProcessDirectory(
             processes: processes,
             groups: groups,
@@ -7975,14 +8011,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 "limit": .integer(1_000)
             ]
         )
-        guard let rows = value["tasks"]?.array, rows.count < 1_000 else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard let rows = value["tasks"]?.array, rows.count < 1_000 else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         var seen: Set<Int> = []
         return try rows.map { item in
             guard item.object != nil, let identifier = try taskReadInteger(item["id"]), identifier >= 0,
                   seen.insert(identifier).inserted, let name = try taskReadText(item["name"]),
                   !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
-                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                throw verificationError(L10n.string("nas.tasks.response-incomplete"))
             }
             let enabled = try taskReadBoolean(item["enable"])
             let type = try taskReadText(item["type"])
@@ -8005,14 +8041,19 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         id: Int?,
         realOwner: String?
     ) async throws -> NasScheduledTaskDraft {
+        // 新建任务是本地待填写草稿，不把 NAS 的不完整模板当作已有任务解析。
+        // 保留接口能力检查；执行账号由当前登录账号预填，用户在确认保存前可以修改。
+        guard let id else {
+            guard capabilitySupports(DsmAPIName.coreTaskScheduler, version: 4) else {
+                throw unavailableError()
+            }
+            return NasScheduledTaskDraft(owner: currentUsername ?? "")
+        }
         var parameters: [String: DsmParameterValue] = [
-            "id": .integer(id ?? -1)
+            "id": .integer(id)
         ]
         if let realOwner, !realOwner.isEmpty {
             parameters["real_owner"] = .string(realOwner)
-        }
-        if id == nil {
-            parameters["type"] = .string("script")
         }
         let value = try await call(
             DsmAPIName.coreTaskScheduler,
@@ -8029,11 +8070,11 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
               let notify = try taskReadBoolean(extra["notify_if_error"]),
               let emails = try taskReadText(extra["notify_mail"]),
               let weekDays = try taskReadText(schedule["week_day"]) else {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.tasks.response-incomplete"))
         }
-        if let actualID = try taskReadInteger(value["id"]), actualID != (id ?? -1) { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        if let actualID = try taskReadInteger(value["id"]), actualID != id { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         if let requested = realOwner, let reported = try taskReadText(value["real_owner"]), requested != reported {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.tasks.response-incomplete"))
         }
         return NasScheduledTaskDraft(
             id: id,
@@ -8077,17 +8118,17 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             version: 1,
             parameters: ["task_name": .string(name)]
         )
-        guard let rows = value.array ?? value["results"]?.array else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard let rows = value.array ?? value["results"]?.array else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         var seen: Set<String> = []
         return try Array(rows.map { raw -> NasScheduledTaskResult in
             guard raw.object != nil, let resultID = try taskReadText(taskCoalescedRead(raw["result_id"], raw["id"])), !resultID.isEmpty,
                   !resultID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !resultID.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
-                  seen.insert(resultID).inserted else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                  seen.insert(resultID).inserted else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
             let reportedName = try taskReadText(raw["task_name"])
-            if let reportedName, reportedName != name { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+            if let reportedName, reportedName != name { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
             let exitInfo = raw["exit_info"] ?? .object([:])
-            guard exitInfo.object != nil else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+            guard exitInfo.object != nil else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
             return NasScheduledTaskResult(
                 id: resultID,
                 taskName: reportedName ?? name,
@@ -8131,31 +8172,31 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     }
 
     private func taskCoalescedRead(_ first: DsmDynamicJSON?, _ second: DsmDynamicJSON?) throws -> DsmDynamicJSON? {
-        if let first, let second, first != .null, second != .null, first != second { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        if let first, let second, first != .null, second != .null, first != second { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         return first == .null ? second : first ?? second
     }
     private func taskReadText(_ value: DsmDynamicJSON?) throws -> String? {
         guard let value, value != .null else { return nil }
-        guard case .string(let text) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard case .string(let text) = value else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         return text
     }
     private func taskReadInteger(_ value: DsmDynamicJSON?) throws -> Int? {
         guard let value, value != .null else { return nil }
-        guard case .number(let number) = value, let integer = Int(exactly: number) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard case .number(let number) = value, let integer = Int(exactly: number) else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         return integer
     }
     private func taskRequiredInteger(_ value: DsmDynamicJSON?) throws -> Int {
-        guard let value = try taskReadInteger(value) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard let value = try taskReadInteger(value) else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         return value
     }
     private func taskReadBoolean(_ value: DsmDynamicJSON?) throws -> Bool? {
         guard let value, value != .null else { return nil }
-        guard case .boolean(let flag) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard case .boolean(let flag) = value else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         return flag
     }
     private func taskMonthlyWeeks(_ value: DsmDynamicJSON?) throws -> [Int] {
         guard let value, value != .null else { return [] }
-        guard let values = value.array else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard let values = value.array else { throw verificationError(L10n.string("nas.tasks.response-incomplete")) }
         return try values.map { try taskRequiredInteger($0) }
     }
 

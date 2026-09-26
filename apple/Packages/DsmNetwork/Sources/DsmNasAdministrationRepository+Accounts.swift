@@ -47,7 +47,7 @@ extension DsmNasAdministrationRepository {
     // 删除回读也走同一解析器，畸形/截断/重复身份不能被当作目标已消失。
     private func decodeDirectoryRows(_ payload: DsmDynamicJSON, key: String, kind: NasAccount.Kind) throws -> [NasAccount] {
         guard let rows = payload[key]?.array, rows.count < 1_000 else {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.accounts.response-incomplete"))
         }
         var seen: Set<String> = []
         return try rows.map { item in
@@ -55,50 +55,57 @@ extension DsmNasAdministrationRepository {
                   !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
                   seen.insert(name.lowercased()).inserted else {
-                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                throw verificationError(L10n.string("nas.accounts.response-incomplete"))
             }
             let extra: [String: DsmDynamicJSON]
             if let value = row["additional"], value != .null {
-                guard let object = value.object else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                guard let object = value.object else { throw verificationError(L10n.string("nas.accounts.response-incomplete")) }
                 extra = object
             } else { extra = [:] }
             func field(_ name: String) throws -> DsmDynamicJSON? {
                 let direct = row[name] == .null ? nil : row[name]
                 let nested = extra[name] == .null ? nil : extra[name]
-                if let direct, let nested, direct != nested { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                if let direct, let nested, direct != nested { throw verificationError(L10n.string("nas.accounts.response-incomplete")) }
                 return nested ?? direct
             }
             func text(_ name: String) throws -> String? {
                 guard let value = try field(name) else { return nil }
-                guard case .string(let result) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                guard case .string(let result) = value else { throw verificationError(L10n.string("nas.accounts.response-incomplete")) }
                 return result
             }
             func flag(_ name: String) throws -> Bool? {
                 guard let value = try field(name) else { return nil }
-                guard case .boolean(let result) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                guard case .boolean(let result) = value else { throw verificationError(L10n.string("nas.accounts.response-incomplete")) }
                 return result
             }
             let numericID: Int64?
             if let value = try field(kind == .user ? "uid" : "gid") {
                 guard case .number(let number) = value, let identifier = Int64(exactly: number), identifier >= 0 else {
-                    throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                    throw verificationError(L10n.string("nas.accounts.response-incomplete"))
                 }
                 numericID = identifier
             } else { numericID = nil }
             let description = try text("description")
             let email: String?
             let expired: Bool?
-            if kind == .user { email = try text("email"); expired = try flag("expired") }
-            else { email = nil; expired = nil }
+            if kind == .user {
+                email = try text("email")
+                // 官方用户列表使用 normal / now 表示启用 / 停用；旧布尔响应仍兼容。
+                switch try field("expired") {
+                case .string("normal"): expired = false
+                case .string("now"): expired = true
+                default: expired = try flag("expired")
+                }
+            } else { email = nil; expired = nil }
             var groups: [String]?
             if kind == .user, let value = try field("groups") {
-                guard let array = value.array else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                guard let array = value.array else { throw verificationError(L10n.string("nas.accounts.response-incomplete")) }
                 var identities: Set<String> = []
                 groups = try array.map { value in
                     guard case .string(let name) = value, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                           !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
                           identities.insert(name.lowercased()).inserted else {
-                        throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                        throw verificationError(L10n.string("nas.accounts.response-incomplete"))
                     }
                     return name
                 }
@@ -110,7 +117,8 @@ extension DsmNasAdministrationRepository {
             let editableFieldsKnown = description != nil && (kind == .group || (email != nil && expired != nil))
             return NasAccount(id: "\(kind == .user ? "user" : "group"):\(name)", name: name, kind: kind,
                 numericID: numericID, description: description, email: email, groups: groups, isExpired: expired ?? false,
-                canEdit: try flag("can_edit") == true && editableFieldsKnown,
+                // 官方列表可不返回 can_edit；字段完整即可打开编辑，明确拒绝仍生效。
+                canEdit: try flag("can_edit") != false && editableFieldsKnown,
                 canDelete: try flag("can_delete") == true && !reserved.contains(normalizedName) && !isCurrent)
         }
     }

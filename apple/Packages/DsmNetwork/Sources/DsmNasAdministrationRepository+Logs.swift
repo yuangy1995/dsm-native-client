@@ -48,30 +48,40 @@ extension DsmNasAdministrationRepository {
                 "sort_direction": .string("DESC")
             ]
         )
-        guard let rows = value["items"]?.array, rows.count <= min(500, max(1, limit)) else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard let rows = value["items"]?.array, rows.count <= min(500, max(1, limit)) else { throw verificationError(L10n.string("nas.connections.response-incomplete")) }
         let total: Int
         if let raw = value["total"] {
             guard case .number(let number) = raw, let count = Int(exactly: number), count >= rows.count else {
-                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                throw verificationError(L10n.string("nas.connections.response-incomplete"))
             }
             total = count
         } else { total = rows.count }
         var seen: Set<String> = []
         let connections = try rows.enumerated().map { index, entry -> NasConnection in
-            guard let raw = entry.object else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+            guard let raw = entry.object else { throw verificationError(L10n.string("nas.connections.response-incomplete")) }
             let item = DsmDynamicJSON.object(raw)
             func text(_ key: String) throws -> String? {
                 guard let value = item[key], value != .null else { return nil }
-                guard case .string(let text) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                guard case .string(let text) = value else { throw verificationError(L10n.string("nas.connections.response-incomplete")) }
                 return text
             }
             func flag(_ key: String) throws -> Bool? {
                 guard let value = item[key], value != .null else { return nil }
-                guard case .boolean(let flag) = value else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                guard case .boolean(let flag) = value else { throw verificationError(L10n.string("nas.connections.response-incomplete")) }
                 return flag
             }
-            guard let account = try text("who") else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
-            let pid = try text("pid"), did = try text("did"), type = try text("type"), source = try text("from"), description = try text("descr")
+            guard let account = try text("who") else { throw verificationError(L10n.string("nas.connections.response-incomplete")) }
+            // DSM 的进程编号可为 JSON 整数；只对编号兼容两种表示，不放宽其他文本字段。
+            let pid: String?
+            if case .number(let number)? = item["pid"] {
+                guard let identifier = Int64(exactly: number), identifier >= 0 else {
+                    throw verificationError(L10n.string("nas.connections.response-incomplete"))
+                }
+                pid = String(identifier)
+            } else {
+                pid = try text("pid")
+            }
+            let did = try text("did"), type = try text("type"), source = try text("from"), description = try text("descr")
             let time = try text("time")
             let web = type?.uppercased() == "HTTP/HTTPS"
             let identity = web ? did : pid
@@ -80,7 +90,7 @@ extension DsmNasAdministrationRepository {
             let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
             guard seen.insert(digest).inserted || !identityKnown else {
                 // 同一原始目标出现多次时，不能猜测应该断开哪一项。
-                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                throw verificationError(L10n.string("nas.connections.response-incomplete"))
             }
             return NasConnection(
                 id: "connection:\(digest)",
@@ -123,7 +133,7 @@ extension DsmNasAdministrationRepository {
               current.description == connection.description, current.connectedAt == connection.connectedAt,
               current.protocolName == connection.protocolName, current.location == connection.location,
               current.isCurrentConnection == connection.isCurrentConnection else {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.connections.response-incomplete"))
         }
 
         let common: [String: DsmJSONValue] = [

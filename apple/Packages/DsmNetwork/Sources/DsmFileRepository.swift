@@ -1081,7 +1081,12 @@ public actor DsmFileRepository: FileRepository {
         )
         let baseURL = try DsmEndpoint.baseURL(for: profile)
         profileID = profile.id
-        allowsVerifiedRestore = capabilities[DsmAPIName.fileStationCopyMove]?.verified == true
+        // 用户可按实际接口能力测试恢复；证据等级不作为功能开关。
+        let restoreCapability = capabilities[DsmAPIName.fileStationCopyMove]
+        allowsVerifiedRestore = restoreCapability?.selectedVersion == 3
+            && restoreCapability?.requestFormat == .form
+            && (capabilities[DsmAPIName.fileStationList]?.selectedVersion ?? 0) >= 2
+            && capabilities[DsmAPIName.fileStationCheckPermission]?.selectedVersion != nil
         allowsRemoteMountManagement = capabilities[DsmAPIName.fileStationMount]?.selectedVersion == 1
             && capabilities[DsmAPIName.fileStationMountList]?.selectedVersion == 1
             && capabilities[DsmAPIName.fileStationList]?.selectedVersion == 2

@@ -4124,3 +4124,9 @@
 "virtual-machine.priority.below-normal" = "低于标准";
 "virtual-machine.priority.above-normal" = "高于标准";
 "virtual-machine.priority.high" = "高";
+
+"nas.accounts.response-incomplete" = "NAS 返回的账号信息不完整。请重新加载页面后再试。";
+"nas.connections.response-incomplete" = "NAS 返回的连接信息不完整。请重新加载页面后再试。";
+"nas.power-schedule.response-incomplete" = "NAS 返回的电源计划信息不完整。请重新加载页面后再试。";
+"nas.tasks.response-incomplete" = "NAS 返回的任务信息不完整。请重新加载页面后再试。";
+"nas.processes.response-incomplete" = "NAS 返回的系统活动信息不完整。请重新加载页面后再试。";

@@ -28,17 +28,24 @@ public struct DsmDesktopAppPrivileges: Decodable, Sendable {
     }
     private struct SessionRole: Decodable {
         let is_admin: Bool?
+        let isLogined: Bool?
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let role = try container.decodeIfPresent(SessionRole.self, forKey: .session)
+        // 此接口可成功返回未登录的空摘要，不能将其视作当前账号的有效授权。
+        if role?.isLogined == false {
+            throw DecodingError.dataCorruptedError(forKey: .session, in: container,
+                debugDescription: "Privilege summary does not confirm an authenticated session")
+        }
         let values = try container.nestedContainer(keyedBy: DsmDesktopApplication.self, forKey: .applications)
         var applications: [DsmDesktopApplication: Bool] = [:]
         for application in DsmDesktopApplication.allCases where values.contains(application) {
             applications[application] = try values.decode(Bool.self, forKey: application)
         }
         self.applications = applications
-        isAdministrator = try container.decodeIfPresent(SessionRole.self, forKey: .session)?.is_admin == true
+        isAdministrator = role?.is_admin == true
     }
 }
 

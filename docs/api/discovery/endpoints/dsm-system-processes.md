@@ -104,3 +104,19 @@ macOS 当前从 `start=0` 读取单个最多 500 项的快照，不持续轮询�
 - 进程与服务组名称、状态枚举、重启瞬间的重复编号和排序稳定性尚未实机验证。
 - `service_info` 的必需参数、返回字段、权限与隐私影响未知，保持关闭。
 - 当前页面是单次快照，不宣称实时监控；也不展示尚无单位证据的 CPU 与内存数值。
+
+## 2026-09-26 macOS 兼容候选修复
+
+根据原始开源 Schema 补充 `process[]` 与 `slices[]` 容器；进程的 `command` 仅提取
+首个空白前片段的末级名称，参数和目录不进入模型；服务组使用 `unit_name` 标识，
+数量可从嵌套 `process[]` 计算。既有 `processes/items` 与 `groups/items` 继续兼容。
+读取结果在客户端仍限制最多 500 项，缺失容器报错，服务组异常不阻断进程列表。
+来源及当前环境限制见 [本次观察](../environments/2026-09-26-nas-settings-read-observation.md)；
+仅有静态结构线索与合成验证，当前 NAS 读取仍为 `PENDING_USER_VALIDATION`。
+
+## 2026-09-27 当前响应核对
+
+在 DSM 7.2.1-69057 Update 12 官方资源监控中，Process.list v1 成功返回
+`process[]` 与 `command/pid/status`，ProcessGroup.list v1 成功返回
+`slices[]` 与 `unit_name/name/process[]`。上轮兼容候选已得到当前只读响应支持，
+未执行进程控制。见 [实测记录](../environments/2026-09-27-nas-settings-live-validation.md)。

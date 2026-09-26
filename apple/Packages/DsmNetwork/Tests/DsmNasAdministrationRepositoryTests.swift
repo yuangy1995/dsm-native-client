@@ -1327,6 +1327,96 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
         XCTAssertEqual(requests.count, 2)
     }
 
+    func test新建计划任务打开本地空草稿而不依赖服务端模板() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreTaskScheduler], transport: transport, currentUsername: "synthetic-owner")
+        let draft = try await repository.loadScheduledTaskDraft(id: nil, realOwner: nil)
+        XCTAssertNil(draft.id)
+        XCTAssertEqual(draft.owner, "synthetic-owner")
+        XCTAssertTrue(draft.name.isEmpty)
+        XCTAssertTrue(draft.script.isEmpty)
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+        let unavailable = try makeRepository(apiNames: [], transport: transport)
+        do { _ = try await unavailable.loadScheduledTaskDraft(id: nil, realOwner: nil); XCTFail("缺少能力不能打开可提交草稿") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+    }
+
+    func test账号列表兼容官方启停枚举并可打开完整资料的编辑器() async throws {
+        let data = #"{"success":true,"data":{"users":[{"name":"synthetic-enabled","description":"","email":"","expired":"normal"},{"name":"synthetic-disabled","description":"","email":"","expired":"now","can_edit":false}],"groups":[]}}"#
+        let transport = MockHTTPTransport(responses: [response(data), response(data)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreUser, DsmAPIName.coreGroup], transport: transport)
+        let directory = try await repository.loadAccountsAndGroups()
+        XCTAssertFalse(directory.users[0].isExpired)
+        XCTAssertTrue(directory.users[0].canEdit)
+        XCTAssertTrue(directory.users[1].isExpired)
+        XCTAssertFalse(directory.users[1].canEdit)
+        XCTAssertFalse(directory.users[0].canDelete)
+    }
+
+    func test电源计划读取分开的开关机数组和分钟字段() async throws {
+        let body = #"{"success":true,"data":{"poweron_tasks":[{"enabled":true,"hour":8,"min":30,"weekdays":"mon"}],"poweroff_tasks":[{"enabled":false,"hour":23,"min":15,"weekdays":"fri"}]}}"#
+        let transport = MockHTTPTransport(responses: [response(body), response(#"{"success":true,"data":{"poweron_tasks":[],"poweroff_tasks":[]}}"#)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerSchedule], transport: transport)
+        let snapshot = try await repository.loadPowerSchedule()
+        XCTAssertEqual(snapshot.entries.map(\.action), [.startup, .shutdown])
+        XCTAssertEqual(snapshot.entries.map(\.minute), [30, 15])
+        XCTAssertEqual(snapshot.entries.map(\.isEnabled), [true, false])
+        XCTAssertEqual(Set(snapshot.entries.map(\.id)).count, 2)
+        XCTAssertEqual(snapshot.total, 2)
+        let empty = try await repository.loadPowerSchedule()
+        XCTAssertTrue(empty.entries.isEmpty)
+    }
+
+    func test系统活动读取官方容器并丢弃命令参数和路径() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"process":[{"pid":42,"command":"/private/synthetic/bin/worker --secret synthetic-secret","status":"running"}]}}"#),
+            response(#"{"success":true,"data":{"slices":[{"unit_name":"synthetic.service","name":"Synthetic service","process":[{"pid":42,"name":"worker"}]}]}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreSystemProcess, DsmAPIName.coreSystemProcessGroup], transport: transport)
+        let directory = try await repository.loadSystemProcesses(start: 0, limit: 500)
+        XCTAssertEqual(directory.processes.first?.name, "worker")
+        XCTAssertEqual(directory.processes.first?.processID, "42")
+        XCTAssertEqual(directory.groups.first?.id, "synthetic.service")
+        XCTAssertEqual(directory.groups.first?.processCount, 1)
+        XCTAssertFalse(String(describing: directory).contains("synthetic-secret"))
+        XCTAssertFalse(String(describing: directory).contains("/private"))
+    }
+
+    func test电源计划数字星期按独立开关机容器解析() async throws {
+        let rules = ["0,1,2,3,4,5,6", "6", "0", "1,2,3,4,5", "7", "0,0", "0,"]
+        let rows = rules.map { #"{"enabled":true,"hour":8,"min":30,"weekdays":"\#($0)"}"# }.joined(separator: ",")
+        let transport = MockHTTPTransport(responses: [response("{\"success\":true,\"data\":{\"poweron_tasks\":[\(rows)],\"poweroff_tasks\":[]}}")])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerSchedule], transport: transport)
+        let snapshot = try await repository.loadPowerSchedule()
+        XCTAssertEqual(snapshot.entries.map(\.recurrence), [
+            .daily, .weekly([.saturday]), .weekly([.sunday]),
+            .weekly([.monday, .tuesday, .wednesday, .thursday, .friday]),
+            .unknown, .unknown, .unknown
+        ])
+    }
+
+    func test系统活动缺失容器不伪装成空列表() async throws {
+        let transport = MockHTTPTransport(responses: [response(#"{"success":true,"data":{}}"#)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreSystemProcess], transport: transport)
+        do { _ = try await repository.loadSystemProcesses(start: 0, limit: 500); XCTFail("缺失列表应报错") }
+        catch let error as AppError { XCTAssertEqual(error.safeUserMessage, L10n.string("nas.processes.response-incomplete")) }
+    }
+
+    func test当前连接兼容整数进程编号且拒绝小数编号() async throws {
+        let body = #"{"success":true,"data":{"items":[{"pid":88,"who":"synthetic","from":"synthetic-source","type":"SMB","can_be_kicked":true}],"total":1}}"#
+        let transport = MockHTTPTransport(responses: [response(body), response(body.replacingOccurrences(of: "88", with: "88.5"))])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreCurrentConnection], transport: transport)
+        let page = try await repository.loadConnections(offset: 0, limit: 500)
+        XCTAssertEqual(page.connections.first?.processID, "88")
+        XCTAssertTrue(page.connections.first?.canDisconnect == true)
+        do { _ = try await repository.loadConnections(offset: 0, limit: 500); XCTFail("不能截断进程编号") }
+        catch let error as AppError {
+            XCTAssertEqual(error.category, .invalidResponse)
+            XCTAssertEqual(error.safeUserMessage, L10n.string("nas.connections.response-incomplete"))
+        }
+    }
+
     func test连接派生标识不随时间改变且不包含原始设备标识() async throws {
         let before = #"{"success":true,"data":{"items":[{"pid":"88","did":"synthetic-device","who":"synthetic","from":"synthetic-source","type":"HTTP/HTTPS","descr":"DSM","time":"2026-09-17 10:00:00","can_be_kicked":true}],"total":1}}"#
         let after = before.replacingOccurrences(of: "10:00:00", with: "11:00:00")

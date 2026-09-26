@@ -617,12 +617,17 @@ final class AppModel {
         let profile = selectedProfile
         let writebackLeases: [DesktopDriveWritebackLease]
         do {
-            if let profile {
+            // 独立测试包没有挂载扩展，不应访问扩展共享目录（系统可能仍返回不可访问的路径）。
+            // 正式版及包含扩展的环境仍执行完整写回检查。
+            if let profile, !(AppStorageNamespace.isLocalTest && !DesktopCloudDriveAvailability.isAvailable) {
                 writebackLeases = try await desktopDriveStore.protectWritebackForSessionRemoval(profileID: profile.id)
             } else { writebackLeases = [] }
         } catch {
             statusIsError = true
             statusMessage = L10n.string("desktopDrive.writeback.pending")
+            workspace?.statusIsError = true
+            workspace?.statusMessage = statusMessage
+            workspace?.showToast(L10n.string("desktopDrive.writeback.pending"), icon: "exclamationmark.triangle", style: .error)
             return
         }
         defer { withExtendedLifetime(writebackLeases) {} }

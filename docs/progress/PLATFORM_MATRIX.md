@@ -501,3 +501,21 @@ Container/VMM 和 NAS 专用操作范围以对应账本为准；云盘源码缺�
 - [DSM 兼容矩阵](../compatibility/DSM_COMPATIBILITY_MATRIX.md)
 - [发布与手工验收历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)
 - [macOS 首个 Beta 就绪报告](../quality/MACOS_BETA_READINESS_ZH.md)
+
+## 2026-09-26 NAS 设置读取回归与测试入口
+
+| 平台 | 本次影响 | 验证边界 |
+| --- | --- | --- |
+| macOS | 修复电源计划/账号/连接读取；系统活动兼容；新建任务本地草稿；恢复入口按能力开放 | Swift 聚焦测试与本地构建，五个页面已实机读取，真实写入待用户测试 |
+| iPhone | 共享 Apple 网络适配会继承向后兼容解析修复，不新增页面或移动能力 | 未执行 iOS 构建和真机验收 |
+| iPad | 同 iPhone；不引入桌面电源计划保存/进程控制 | 未执行 iPad 构建和真机验收 |
+| Android | 不修改源码；需在后续独立切片核对同类响应枚举与容器 | 未运行本次 Android 门禁 |
+| Windows | 不修改源码；需在后续独立切片核对同类响应枚举与容器 | 未运行本次 Windows 门禁 |
+
+没有修改公开方法签名或请求字段、持久化格式、正式签名权限和最低系统版本。
+用户授权开放因未实测而关闭的已有功能；不把未实现能力伪装成可以提交的按钮，
+不绕过明确的服务端权限拒绝。发现记录见
+[只读观察及限制](../api/discovery/environments/2026-09-26-nas-settings-read-observation.md)。
+
+2026-09-27 续验修复未登录空权限摘要误判及独立测试包退出被共享容器检查阻断；正式版待上传保护保留；最终包退出后重新连接已由用户确认菜单正常。
+当前真实页面与登录回归范围见 [实测记录](../api/discovery/environments/2026-09-27-nas-settings-live-validation.md)。

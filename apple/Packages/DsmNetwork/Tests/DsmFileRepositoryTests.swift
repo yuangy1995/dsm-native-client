@@ -6,6 +6,20 @@ import XCTest
 @testable import DsmNetwork
 
 final class DsmFileRepositoryTests: XCTestCase {
+    func test回收站恢复按接口能力开放而不要求实测标记() throws {
+        let supported = copyMoveCapabilities()
+        let repository = try makeRepository(capabilities: supported, transport: MockHTTPTransport(responses: []))
+        XCTAssertTrue(repository.allowsVerifiedRestore)
+        for missing in [DsmAPIName.fileStationCopyMove, DsmAPIName.fileStationList, DsmAPIName.fileStationCheckPermission] {
+            let names = [DsmAPIName.fileStationCopyMove, DsmAPIName.fileStationList, DsmAPIName.fileStationCheckPermission]
+            let entries = Dictionary(uniqueKeysWithValues: names.filter { $0 != missing }.compactMap { name in
+                supported[name].map { (name, $0) }
+            })
+            let unavailable = try makeRepository(capabilities: CapabilitySet(entries), transport: MockHTTPTransport(responses: []))
+            XCTAssertFalse(unavailable.allowsVerifiedRestore)
+        }
+    }
+
     func test下载本地权限与空间错误给出可恢复提示() async throws {
         for (code, category) in [
             (CocoaError.Code.fileWriteNoPermission.rawValue, AppErrorCategory.permissionDenied),
