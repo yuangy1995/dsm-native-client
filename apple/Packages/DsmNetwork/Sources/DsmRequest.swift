@@ -62,6 +62,8 @@ public enum DsmParameterValue: Equatable, Sendable {
 public indirect enum DsmJSONValue: Equatable, Sendable, Encodable {
     case string(String)
     case integer(Int)
+    case decimal(Double)
+    case null
     case boolean(Bool)
     case array([DsmJSONValue])
     case object([String: DsmJSONValue])
@@ -73,6 +75,9 @@ public indirect enum DsmJSONValue: Equatable, Sendable, Encodable {
             try container.encode(value)
         case .integer(let value):
             try container.encode(value)
+        case .decimal(let value):
+            try container.encode(value)
+        case .null: try container.encodeNil()
         case .boolean(let value):
             try container.encode(value)
         case .array(let value):

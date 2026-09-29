@@ -17,6 +17,192 @@ final class WorkspacePresentationTests: XCTestCase {
     private var artifacts: URL!
     private static var preparedApplication = false
 
+    func test人物命名合并空列表和错误浅深色布局() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for mode in ["rename", "merge", "empty", "error"] {
+                let repository = DatePhotoServiceStub()
+                await repository.enableManagement()
+                await repository.configurePeople(empty: mode == "empty", fails: mode == "error")
+                let model = SynologyPhotosModel(repository: repository)
+                await model.refresh()
+                let sheet = PhotoManagementSheet(kind: mode == "rename" ? .renamePerson : .mergePeople, photos: [], person: .init(id: 31, name: "Fixture person", itemCount: 2))
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                let size = mode == "rename" ? NSSize(width: 560, height: 470) : NSSize(width: 680, height: 660)
+                let window = attach(host, size: size)
+                try await settle(host)
+                try snapshot(host, name: "photos-people-\(mode)-\(scheme)")
+                let writes = await repository.managementWriteCount
+                XCTAssertEqual(writes, 0)
+                XCTAssertEqual(host.bounds.size, size)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test条件相册表单创建编辑错误浅深色布局() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for mode in ["create", "edit", "error"] {
+                let repository = PhotoUploadServiceStub()
+                if mode == "error" { await repository.failConditionRead() }
+                let model = SynologyPhotosModel(repository: repository)
+                await model.refresh()
+                let sheet = PhotoManagementSheet(kind: mode == "create" ? .createConditionAlbum : .editConditionAlbum, photos: [],
+                    album: mode == "create" ? nil : .init(id: 21, name: "Fixture rule album", isConditional: true))
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 680, height: 660))
+                try await settle(host)
+                try snapshot(host, name: "photos-condition-\(mode)-\(scheme)")
+                XCTAssertEqual(host.bounds.size.width, 680, accuracy: 1)
+                XCTAssertEqual(host.bounds.size.height, 660, accuracy: 1)
+                let writes = await repository.commands
+                XCTAssertTrue(writes.isEmpty, "打开和读取条件不能修改相册")
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test目录上传确认浅深色布局() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let nested = directory.appendingPathComponent("Fixture folder")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for name in ["Fixture-photo.png", "Fixture-video.mov", "Fixture-notes.txt"] {
+            try Data(repeating: 0, count: 128).write(to: nested.appendingPathComponent(name))
+        }
+        let prepared = try PhotoUploadPreparation.prepare([directory])
+        XCTAssertEqual(prepared.files.count, 2)
+        XCTAssertEqual(prepared.skippedCount, 1)
+        for scheme in [ColorScheme.light, .dark] {
+            let repository = PhotoUploadServiceStub()
+            let model = SynologyPhotosModel(repository: repository, deletionReviewDelay: { _ in })
+            await model.refresh()
+            let sheet = PhotoManagementSheet(kind: .upload, photos: [], files: [directory])
+            let form = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+            let window = attach(form, size: NSSize(width: 560, height: 470))
+            try await settle(form)
+            try snapshot(form, name: "photos-directory-upload-\(scheme)")
+            let writes = await repository.commands.count
+            XCTAssertEqual(writes, 0)
+            window.contentView = nil; window.close()
+        }
+    }
+
+    func test多文件上传确认与队列浅深色布局() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = ["Fixture-blue.png", "Fixture-red.png"].map { directory.appendingPathComponent($0) }
+        for file in files { try Data(repeating: 0, count: 128).write(to: file) }
+        for scheme in [ColorScheme.light, .dark] {
+            let repository = PhotoUploadServiceStub()
+            let model = SynologyPhotosModel(repository: repository, deletionReviewDelay: { _ in })
+            await model.refresh()
+            let album = SynologyPhotoCollection(id: 30, name: "Fixture album")
+            let sheet = PhotoManagementSheet(kind: .upload, photos: [], album: album, files: files)
+            let form = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+            let formWindow = attach(form, size: NSSize(width: 560, height: 470))
+            try await settle(form)
+            try snapshot(form, name: "photos-upload-confirm-\(scheme)")
+            let writes = await repository.commands.count
+            XCTAssertEqual(writes, 0, "打开多选上传确认不能提前上传")
+            formWindow.contentView = nil; formWindow.close()
+            await repository.makeFirstUploadPending()
+            let snapshots = try files.map { file in
+                PhotoUploadFile(url: file, size: 128, modifiedAt: try XCTUnwrap(file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate))
+            }
+            model.enqueueUploads(snapshots, album: album, folder: nil)
+            for _ in 0..<2000 where model.isManaging { await Task.yield() }
+            XCTAssertEqual(model.uploadQueue.map(\.state), [.pendingReview, .queued])
+            let queue = NSHostingView(rootView: PhotoUploadQueuePanel(model: model).preferredColorScheme(scheme))
+            let queueWindow = attach(queue, size: NSSize(width: 620, height: 480))
+            try await settle(queue)
+            try snapshot(queue, name: "photos-upload-queue-\(scheme)")
+            XCTAssertEqual(queue.bounds.width, 620, accuracy: 1)
+            XCTAssertEqual(queue.bounds.height, 480, accuracy: 1)
+            queueWindow.contentView = nil; queueWindow.close()
+        }
+    }
+
+    func test分享窗口读取现状与错误浅深色布局且不写入() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for mode in ["disabled", "invited", "download", "error", "membersError", "empty", "uploadRole"] {
+                let repository = DatePhotoServiceStub()
+                await repository.enableManagement()
+                await repository.configureSharing(mode == "invited" ? .invited : mode == "disabled" ? .disabled : .download, fails: mode == "error", role: mode == "uploadRole" ? "upload" : "view", recipientsFail: mode == "membersError", empty: mode == "empty")
+                let model = SynologyPhotosModel(repository: repository)
+                await model.refresh()
+                let sheet = PhotoManagementSheet(kind: .sharing, photos: [], album: .init(id: 3, name: "Fixture album"))
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                let size = sheet.kind == .sharing ? NSSize(width: 680, height: 660) : NSSize(width: 560, height: 470)
+                let window = attach(host, size: size)
+                try await settle(host)
+                try snapshot(host, name: "photos-sharing-\(mode)-\(scheme)")
+                let writes = await repository.managementWriteCount
+                XCTAssertEqual(writes, 0)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test照片管理表单标题内容与操作区对齐() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let repository = DatePhotoServiceStub()
+            await repository.enableManagement()
+            let model = SynologyPhotosModel(repository: repository)
+            await model.refresh()
+            for kind in [PhotoManagementKind.rating, .createAlbum, .date, .shiftDates, .tagsCreate, .sharing, .cover] {
+                let sheet = PhotoManagementSheet(kind: kind, photos: kind == .cover ? Array(model.items.prefix(1)) : model.items, album: .init(id: 3, name: "Fixture album"))
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                let size = sheet.kind == .sharing ? NSSize(width: 680, height: 660) : NSSize(width: 560, height: 470)
+                let window = attach(host, size: size)
+                try await settle(host)
+                try snapshot(host, name: "photos-management-\(kind.rawValue)-\(scheme)")
+                XCTAssertEqual(host.bounds.size.width, size.width, accuracy: 1)
+                XCTAssertEqual(host.bounds.size.height, size.height, accuracy: 1)
+                window.contentView = nil; window.close()
+            }
+            let writes = await repository.managementWriteCount
+            XCTAssertEqual(writes, 0, "仅打开表单不能发出修改或创建分享链接")
+        }
+    }
+
+    func test照片月份跳转静置不触发向前加载且删除不回到最新月份() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let repository = DatePhotoServiceStub()
+            let model = SynologyPhotosModel(repository: repository, pageSize: 6, deletionReviewDelay: { _ in })
+            await model.refresh()
+            await model.jumpToMonth(.init(year: 2014, month: 8))
+            let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 1100, height: 720))
+            defer { window.contentView = nil; window.close() }
+            try await settle(host)
+            try await Task.sleep(for: .milliseconds(300))
+            try await settle(host)
+            XCTAssertEqual(model.previousMonthID, 201408, "没有主动向上滚动不能预加载较新月份")
+            XCTAssertEqual(model.items.map(\.id.unitID), [4, 5, 6])
+            let requests = await repository.requests
+            XCTAssertEqual(requests.count, 2)
+            model.selectGroup(Array(model.items.prefix(2)))
+            try await settle(host)
+            try snapshot(host, name: "photos-batch-selection-\(scheme)")
+            model.requestDeletion(model.selectedPhotos)
+            for _ in 0..<100 where model.isCheckingDeletion { try await Task.sleep(for: .milliseconds(5)) }
+            let targets = model.deletionCandidates
+            XCTAssertEqual(targets.count, 2)
+            model.confirmDeletion(targets)
+            for _ in 0..<100 where model.isDeleting { try await Task.sleep(for: .milliseconds(5)) }
+            try await settle(host)
+            XCTAssertFalse(model.isDeleting)
+            XCTAssertEqual(model.items.map(\.id.unitID), [6])
+            XCTAssertEqual(model.selectedTimelineMonthID, 201408)
+            XCTAssertEqual(model.previousMonthID, 201408)
+            let after = await repository.requests
+            XCTAssertEqual(after.count, 2, "自动删除核对不能重建图库或向上加载")
+            try snapshot(host, name: "photos-delete-preserved-month-\(scheme)")
+        }
+    }
+
     func test照片时间轴获得焦点不显示整框且保留方向键() async throws {
         let months = (2012...2026).reversed().flatMap { year in
             (1...12).reversed().map { SynologyPhotoMonth(year: year, month: $0) }
@@ -432,7 +618,11 @@ final class WorkspacePresentationTests: XCTestCase {
                 if module == .downloads { model.downloadSelection = [try XCTUnwrap(model.downloads?.tasks.first?.id)] }
                 else { model.virtualMachineSelection = [try XCTUnwrap(model.virtualMachines?.machines.first?.id)] }
                 try await settle(host)
-                let table = try XCTUnwrap(nativeViews(host, of: NSTableView.self).first)
+                // 下载页现有分类侧栏与任务表格；只核对任务表，不把分类选择误当任务选择。
+                func currentTaskTable() throws -> NSTableView {
+                    try XCTUnwrap(nativeViews(host, of: NSTableView.self).first { module != .downloads || $0.numberOfColumns > 1 })
+                }
+                let table = try currentTaskTable()
                 window.makeFirstResponder(table)
                 try await settle(host)
                 XCTAssertEqual(table.selectionHighlightStyle, .none)
@@ -446,8 +636,11 @@ final class WorkspacePresentationTests: XCTestCase {
                 if module == .downloads { model.downloadSelection.removeAll() }
                 else { model.virtualMachineSelection.removeAll() }
                 try await settle(host)
-                XCTAssertTrue(table.selectedRowIndexes.isEmpty)
-                XCTAssertEqual(row.backgroundColor, .clear)
+                // 清空任务选择会收起详情并重建表格，核对当前可见实例。
+                let clearedTable = try currentTaskTable()
+                XCTAssertTrue(clearedTable.selectedRowIndexes.isEmpty)
+                let clearedRow = try XCTUnwrap(clearedTable.rowView(atRow: index, makeIfNecessary: false))
+                XCTAssertEqual(clearedRow.backgroundColor, .clear)
             }
         }
     }

@@ -75,6 +75,30 @@ Photos 删除 catch-all 原先连明确权限/会话拒绝也伪装成 pendingRe
 上述两项正式回归同样未运行：Get-Command swift 确认当前主机无 Swift。本轮只能
 执行本地化、请求/响应 fixture、文档及差异静态门；不得据此宣布 Mac 编译或沙盒通过。
 
+## 2026-09-28 macOS 照片交互修复与网页对照（进行中）
+
+本轮仅修改 macOS 照片视图、现有照片模型、相关测试及 Apple 双语资源；保留下载管理未提交改动。该模型也被 iPhone/iPad 引用，保留单项删除调用方式，评估共享行为回归；不修改其他端源码或公开契约。
+
+| 用户目标 | 当前源码证据／网页观察 | 本轮处理 | 验证 |
+| --- | --- | --- | --- |
+| 批量选取和删除 | macOS 只有单张右键/预览删除；官方网页按日期组选择并显示选中数量和批量操作 | 增加勾选、范围选择、日期组选取及固定确认快照；逐项复用已有删除预检、提交、防重复与回读 | 待聚焦自动化 |
+| 月份定位稳定 | 顶部分页占位 `.task` 自行触发，补入后强制滚动 | 只在用户向顶部滚动或明确点击时加载较新照片；保持已有可见照片锚点 | 待合成验证和实际滚动 |
+| 删除后留在当前月份 | `applyDeletionResult` 成功后调用 `refresh()`，重置月份和整个列表 | 自动只读核对，原地移除确认删除项，修正后续分页偏移，保留月份和筛选 | 待聚焦自动化 |
+| 网页完整功能对照 | 2026-09-28 已登录 Chrome 官方 Photos UI 只读观察：日期组选取、选中数量、共享链接、加入相册、下载、标签、评级、日期、生成预览、移动/复制、删除 | 先完成已有契约内闭环；尚无契约的写功能逐项记录，不能用界面入口冒充实现 | UI 观察，无真实写入 |
+
+浏览器扩展连接不可用，使用 Chrome 原生无障碍控件查看。2026-09-28 用户明确允许扩展上传、相册、分享、元数据、移动和复制接口，并要求继续完整对齐；不再等待接口扩展授权。授权不包含在现有真实照片上试写。按原方案，尚未验证的新写入口保持关闭；先完成源码、合成验证和可用包，真实环境另列验收。
+
+前三项修复已完成：勾选、Shift 范围、按日组选取、已加载项全选和批量确认；原地移除确认删除项，保留月份、查询和分页；桌面删除自动进行最多六轮只读核对（等待 0.5/1/2/3/5/8 秒），持续未知保留重试检查而不重放写请求。移动端保留单项调用及原核对时机，未开放移动批量入口。关闭模块取消后续批量提交与核对，保留已提交未知目标。
+
+验证命令与结果：
+- `swift test --package-path apple --skip-update --filter 'SynologyPhotosModelTests|SynologyPhotosRepositoryTests|DsmLocalizationTests'`：62 项 XCTest（25 项模型、37 项 Repository）与 6 项本地化测试通过。本轮新增 8 项模型回归。
+- `LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/test照片月份跳转静置不触发向前加载且删除不回到最新月份' bash tools/codex/run_macos_ui_checks.sh /tmp/dsm-photos-ui-checks`：1 项正式合成 UI 回归通过，覆盖浅色/深色静置、批量选择、删除后月份与请求数量；没有连接 NAS，未声称真实滚轮手势或 VoiceOver 通过。
+- `python3 tools/localization/check_localization.py`：Apple 4193 个资源通过；`git diff --check` 通过。
+- Release 打包：`LANSTASH_NON_INTERACTIVE=1 LANSTASH_RUN_AFTER_PACKAGE=0 LANSTASH_BUILD_TYPE=Release LANSTASH_DIST_DIR="$PWD/apple/Apps/DsmMac/dist/photos-selection-timeline-20260928" bash apple/Apps/DsmMac/package.sh`；临时包装仅为系统 xcodebuild 增加 `-clonedSourcePackagesDirPath "$PWD/apple/.build" -skipPackageUpdates`，复用与锁定版本一致的 Sparkle 2.9.6 缓存，未改脚本或依赖。退出码 0，签名、权限、实际加载、arm64 和 DMG 校验均通过。
+- 产物 `apple/Apps/DsmMac/dist/photos-selection-timeline-20260928/LanStash-1.0.10-arm64.dmg` 已在对话交付，旧包保留，不自动安装/启动，不含本地磁盘挂载扩展。
+
+独立集成复核：变更后重新核查确认快照、单次提交、权限预检、分页失效、向上补入与向下 offset 区分、取消和部分失败；现有 Repository 删除权限门禁不变，无真实写入验证。`PENDING_USER_VALIDATION`：用户选定可丢弃个人空间照片，检查确认取消/多选删除、2020.03 静置不漂移、真实向上滚动、删除后位置、断网恢复与键盘/VoiceOver；仅回传脱敏步骤和错误。新管理能力另见本轮静态发现记录。
+
 ## 业务语义对齐账本
 
 | 用户目标 | macOS 证据 | Android、iPhone／iPad、Windows 等价实现与边界 |
@@ -165,3 +189,51 @@ git diff --check
 | 大图库与合成大图／长视频 | 连续滚动、反复打开预览和切换会话，记录资源趋势 | 缓存可回收、无持续增长或卡顿；只记录实测，不预设帧率或峰值结论。 |
 
 仅回传平台／App／DSM／Photos 版本、权限类别、操作步骤、时间点和脱敏错误；不附凭据、主机、账号、真实照片、路径或原始响应。需要新增写能力时另行确认范围与契约，不借本轮设备反馈扩大授权。
+
+## 2026-09-29 Photos macOS 增量对齐影响
+
+用户已授权增量扩展上传、相册/分享管理、标签/评级/日期、移动/复制共享契约。完整账本见 `docs/development/MACOS_PHOTOS_PARITY_20260929_ZH.md`，接口证据见 `docs/api/discovery/endpoints/photos-management.md`。新增写方法默认关闭，仅有官方静态结构和合成测试，不升级为真实 NAS 兼容结论。macOS 批量删除、月份稳定与自动核对沿用既有删除门禁；新增批量保存使用原有只读接口。iPhone/iPad 共用 Apple 协议的默认不支持实现，保持既有单项删除界面；Android/Windows 仅记录影响，未改代码或开放新入口。未完成的网页能力与验证条件在账本明确列出，不计作完整对齐。
+
+2026-09-29 后续明确授权：用户要求取消新增照片功能的默认禁用。Apple 实际 Photos Repository 已移除人工能力白名单，macOS 按真实接口支持开放上述功能；保留权限、确认与结果校验。其他端 UI/存储仍未修改；接口开放不能表述为跨版本验证通过。专用合成图片/相册的网页验证与最新包记录见 `docs/development/MACOS_PHOTOS_PARITY_20260929_ZH.md` 末尾。
+
+
+### 2026-09-29 Photos 后续波次
+
+macOS 继续对齐：多文件上传队列、当前相册/文件夹上传、封面设置与缩略图展示已接入；测试和最终打包证据见 MACOS_PHOTOS_PARITY_20260929_ZH.md。相册缩略图是共享领域/服务的向后兼容增量；未扩展其他端界面、持久化或权限。
+
+
+### 2026-09-29 Photos 标签与日期增量
+
+macOS 新建标签与相对时间调整已接入；新增部分失败只继续剩余目标的操作。完整测试、实机限制和交付包见 MACOS_PHOTOS_PARITY_20260929_ZH.md；条件相册、分享高级管理、照片请求、人物整理等总目标继续保持。
+
+
+### 2026-09-29 Photos 导入与并行浏览
+
+macOS 已增加拖放、本地目录媒体批量导入与上传期间继续浏览；目录内容汇总到当前目标，不保留层级。共享 Model 将图库读请求与上传队列分开管理，无新 NAS 契约或持久化。101 项 XCTest、6 项本地化测试及 3 项合成 UI 测试通过，真实拖放/沙盒权限/NAS 待验。详见 MACOS_PHOTOS_PARITY_20260929_ZH.md；其余平台 UI 未变，未运行 iOS 构建。
+
+
+### 2026-09-29 Photos 目录层级上传
+
+macOS 确认页默认保留目录层级，可选择原汇总方式；同名目录复用，缺少的目录逐级创建并回读，再上传/加入相册。共享契约新增 folders/createFolder 与可选结果 folder，其他端 UI/存储不变；真实 NAS 验收待完成。109 项 XCTest、6 项本地化测试和 3 项合成 UI 测试通过。静态发现还补齐条件相册、高级分享、人物、照片请求与预览重建的线索，不计为实现。完整记录见 MACOS_PHOTOS_PARITY_20260929_ZH.md。
+
+
+### 2026-09-29 条件相册增量
+
+macOS 已接入个人条件相册创建/编辑、规则建议与匹配数量预览；支持类型/日期/文件夹/评级、关键词、人物/主题/标签匹配及相机等规则。保留已有未知字段，冲突不覆盖，未知创建不重放。共享空间来源仍在共享空间切片；高级分享等剩余目标保持。
+
+回滚可移除条件相册入口、命令和新增默认字段/方法，既有普通相册、时间轴和上传流程保留；不迁移已有持久化。完整证据见 MACOS_PHOTOS_PARITY_20260929_ZH.md 与 photos-advanced-management.md。
+
+
+### 2026-09-29 分享现状与访问方式增量
+
+macOS 接入只读分享快照、当前设置初始化、仅受邀者模式、已有保护标记与复制链接；不修改时不提交，保存校验原快照并保留密码/有效期。公开访问只有查看/下载，upload 是具名成员角色。新增领域 albumSharing 与 shareAlbum 可选快照，旧调用默认兼容；不改持久化、权限或工具链。iOS/iPadOS 共享领域受影响但无新 UI、未运行移动构建；Android/Windows 本轮只同步契约影响，不改实现。密码/有效期编辑与成员增删改仍未完成，NAS 写入为 PENDING_USER_VALIDATION，无人工验证白名单。回滚移除新方法/快照/入口即可，无数据迁移。详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md 和 photos-management.md。
+
+
+### 2026-09-29 Photos 分享成员增量
+
+macOS 已接入用户/群组候选、成员添加/移除与角色调整；type+id 识别身份，按原快照计算差量，保存后核对完整角色名单。普通相册成员可上传，条件相册不提供上传角色。未知列表不当空名单，原未知角色不静默降级，原密码/有效期保留，关闭状态不意外启用。新增共享领域成员类型、sharingRecipients 默认方法和 shareAlbum.members 可选参数；无存储/权限/工具链变更。iOS/iPadOS 共享领域增量但无新 UI、未运行移动构建；Android/Windows 仅同步影响。真实权限写入 PENDING_USER_VALIDATION，不设验证白名单。回滚移除成员增量，不影响基本分享。高级分享剩余密码与有效期编辑，详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md。
+
+
+### 2026-09-29 Photos 人物命名与合并增量
+
+macOS 人物卡片接入命名/清空名称和合并，表单显示人物封面、名称与照片数量；独立按真实能力开放。新增共享领域 peopleNames/peopleMerge、renamePerson/mergePeople、managementPeople、结果 person/removedPersonIDs 和分类缩略图默认方法，无存储格式变更。合并前后核对照片集合、目录权限和目标快照，结果自动确认，同操作不重发；更新当前列表而不跳到最新照片。分类封面使用当前分类列表的授权缩略图，避免把人物编号用于相册查询。iOS/iPadOS 共享领域受影响但无新增 UI、未运行移动构建；Android/Windows 仅更新影响计划。真实 NAS 人物写入 PENDING_USER_VALIDATION，无人工禁用/验证白名单；人脸分离、封面和识别纠正仍未完成。回滚移除人物入口/命令/结果增量，既有照片流程保留；无依赖、权限或持久化迁移。详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md 与 photos-advanced-management.md。

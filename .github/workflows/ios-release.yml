@@ -18,15 +18,16 @@ permissions:
   contents: read
 
 env:
-  XCODE_VERSION: "16.4"
-  XCODE_DEVELOPER_DIR: "/Applications/Xcode_16.4.app/Contents/Developer"
+  XCODE_VERSION: "26.6"
+  XCODE_BUILD_VERSION: "17F113"
+  XCODE_DEVELOPER_DIR: "/Applications/Xcode_26.6.app/Contents/Developer"
   XCODEGEN_VERSION: "2.46.0"
   XCODEGEN_SHA256: "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806"
 
 jobs:
   archive-export-and-optionally-upload:
     environment: ios-release
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: 检出仓库
         # v7.0.0
@@ -40,6 +41,8 @@ jobs:
           export DEVELOPER_DIR="$XCODE_DEVELOPER_DIR"
           installed_version="$(xcodebuild -version | awk 'NR == 1 { print $2}')"
           test "$installed_version" = "$XCODE_VERSION"
+          installed_build="$(xcodebuild -version | awk 'NR == 2 { print $3 }')"
+          test "$installed_build" = "$XCODE_BUILD_VERSION"
           xcodebuild -version
 
       - name: 安装并校验锁定的 XcodeGen

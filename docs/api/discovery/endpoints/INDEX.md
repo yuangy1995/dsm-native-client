@@ -263,3 +263,22 @@
 
 - `storage-analyzer`：当前安装版本 `2.1.0-0620`，但历史报告内部 API 尚未固化，不登记猜测的 API 名称。
 - 只有源码候选名称、没有当前环境证据的接口，不得自动提升到本索引的“当前确认”。
+
+
+### 2026-09-29 Photos 管理增量
+
+- `photos-file-management`：个人空间 Folder.create v1(target_id,name) 与 Folder.get v2 回读已接入目录层级上传；稳定记录见 [照片管理](photos-management.md)。按真实能力和权限开放，静态证据与合成测试不代表 NAS 行为验收。
+- `photos-condition-albums`、`photos-people-management`、`photos-request-management`、`photos-preview-regeneration`：稳定候选记录见 [高级照片管理静态发现](photos-advanced-management.md)。兼容登记仅 static，尚未接入原生写流程。该记录亦补充已有分享组的成员/密码/有效期静态证据。
+- 上述增量沿用用户明确授权取消人工禁用；不改变其他历史端点的验证等级，也不以本地构建替代真实环境核验。
+
+
+条件相册增量状态：photos-condition-albums 已接入 macOS 个人空间创建/编辑/建议/数量预览；稳定记录仍见 photos-advanced-management.md，实机等级未提升。其余三组高级候选仍未实现写流程。
+
+
+### 2026-09-29 Photos 分享现状增量
+
+- `photos-sharing-management`：新增 Album.get v4 只读分享快照、原快照冲突检测、仅受邀者模式和保护元数据回读；公开权限不包含上传，具名成员/密码/有效期编辑仍待接入。状态见 [照片管理](photos-management.md)，加密与日期静态线索见 [高级管理](photos-advanced-management.md)。未做真实分享写验证，无人工验证白名单。
+
+- 2026-09-29 后续：`photos-sharing-management` 接入具名成员候选、添加/移除/角色差量和最终回读；static + 合成验证，真实成员目录和权限写入待验。密码、有效期编辑仍未接入。
+
+- 2026-09-29 后续：`photos-people-management` 已接入个人空间命名/清空名称与合并及照片集合核对；人脸纠正、分离、封面未实现。仍为 static + 合成验证，未执行真实 NAS 写入。分类封面改用分类列表缩略图，不按人物编号查询相册。

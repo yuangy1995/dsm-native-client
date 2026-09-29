@@ -128,3 +128,28 @@ Apple 发布身份配置保持不变。用户授权后，已为本项目生成�
 - [0.2.7 签名验收运行](https://github.com/yuangy1995/dsm-native-client/actions/runs/34092398095) 完整成功：构建、正式签名、公证装订、架构/权限门禁、更新包与更新源签名、GitHub 上传回读校验及预发布创建均通过。[验收安装包](https://github.com/yuangy1995/dsm-native-client/releases/tag/macos-validation/v0.2.7) 已可下载；这不是实际应用替换与 NAS/Finder 验收结果。
 - [0.2.8 升级目标运行](https://github.com/yuangy1995/dsm-native-client/actions/runs/34092508014) 完整成功，正式签名、公证、更新签名、发布回读校验和测试更新源切换均已通过。同一验收标签的 Apple、Android、Windows、仓库、文档与社区兼容性 CI 均成功。
 - 用户已确认在线升级和挂载正常，并要求主分支只保留单一功能提交，不携带中间修复记录。合并前核对主分支无未整合变化，正式发布成功后删除本任务验收分支/标签/发布附件；正式版本及正式更新源必须保留。
+
+
+## 2026-09-29 macOS 1.0.11 发布基线
+
+用户明确要求“截止到当前，先帮我发布一个新版本，再继续”。发布截至人物命名/合并波次已经实现的下载与个人照片管理，版本1.0.11、构建号21，两个目标同步。未完成的分享有效期仅有只读证据，无功能代码，不纳入本次功能声明；剩余完整网页复刻发布后继续。发布授权涵盖对应功能提交、专用发布分支、验证后整合与正式标签/版本，不修改签名身份、权限、更新密钥或存储格式。
+
+开始时 main@9c30efeab8fb 与 origin/main 一致，已有未提交改动均为本会话下载/照片范围；先切至 codex/macos-1.0.11-release 保留所有内容。暂未发布；实际云端结果后续追加。本轮此前本地照片测试146项、6项本地化、2项界面回归与临时签名构建通过；这些不代替正式签名、公证和完整云端门禁。
+
+### 1.0.11 发布前本地验证
+
+- `swift test --package-path apple --skip-update --jobs 4`：1401项 XCTest、64项既有条件跳过、0失败，另12项 Swift Testing通过。62项界面测试需显式启用，另2项为既有环境/性能条件；未降低断言。
+- `python3 -m unittest discover -s tools/release -p 'test_*.py'`：30项通过。
+- `python3 tools/localization/check_localization.py`：Apple4342、Android2188、Windows3402，双语/参数/引用/硬编码通过；`python3 tools/contract-validation/validate_fixtures.py`：3组、31项引用通过；`python3 tools/codex/check_documentation.py --strict-release`、`git diff --check`通过。
+- 按官方归档及既定SHA256校验下载XcodeGen2.46.0，执行 `xcodegen generate --spec apple/Apps/DsmMac/project.yml` 更新工程；工具临时目录自动删除。主App/扩展均1.0.11 (21)。待发布文件隐私模式检查未命中凭据/私网地址。未自动安装或启动，不进行NAS写入。
+
+- 显式界面回归：`LANSTASH_UI_TEST_FILTER='WorkspacePresentationTests/test照片|WorkspacePresentationTests/test分享窗口|WorkspacePresentationTests/test条件相册|WorkspacePresentationTests/test人物' bash tools/codex/run_macos_ui_checks.sh /tmp/dsm-release-1011-ui`：10项通过。上传/下载补充4项中3项通过，旧选择测试4个断言失败；定位为新增分类List导致取到首个侧栏表格、关闭详情重建任务表后仍检查旧实例。改为识别多列任务表并在清空后重新取得当前实例，保留选中/失焦/清空的全部断言。`WorkspacePresentationTests/test下载与虚拟机选中行使用低饱和主题色并保留原生选择`复测1项通过；应用代码未因此改变。
+- 发布分支只保留单一功能提交，测试定位修正合入同一提交；重新验证最终提交，不用旧SHA的状态替代。
+
+- Windows附加回归首次3929项中3928通过、1项失败：跨端源码契约测试仍匹配macOS旧单参数删除签名，而本轮已增加确认时任务集合。同步该测试到新签名，并新增确认对象捕获、当前选择/列表一致性断言；不改Windows产品代码，不撤销macOS确认快照保护。修正后以最终发布分支重新执行云端门禁。
+
+- 云端锁定Xcode16.4发现两处新上传测试使用`weak let`，本机较新编译器接受但云端拒绝。改为兼容的`weak var`，仍核对同一授权对象的保留与释放，不改应用行为或升级工具链。
+
+### 1.0.11 工具链升级授权
+
+用户在发布期间明确要求升级云端较旧Xcode。已核对本机为Xcode26.6 (17F113)，GitHub官方macos-26镜像提供相同版本，macos-15最多26.3。Apple Build、macOS Release与iOS Release统一迁移macos-26并锁定26.6/17F113，保留XcodeGen2.46.0、macOS14最低要求、现有签名/权限/更新密钥；移动模拟器沿用动态选择。工具链变更需最终提交重新跑云端验证，不沿用旧工具链结果声称新工具链通过。本轮不发布iOS。必要时回滚三个工作流到macos-15/Xcode16.4 (16F6)并重新验证；无用户数据迁移。

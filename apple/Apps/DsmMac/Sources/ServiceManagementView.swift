@@ -213,29 +213,117 @@ private struct EmptyServiceState: View {
     }
 }
 
-private struct DownloadStationView: View {
-    enum Filter: String, CaseIterable, Identifiable {
-        case all
-        case active
-        case finished
-        case paused
-
-        var id: Self { self }
-        var title: String {
-            switch self {
-            case .all: L10n.string("ui.5c55a67935af8f45")
-            case .active: L10n.string("ui.dc9591e56d502b43")
-            case .finished: L10n.string("ui.f28461bb49c85647")
-            case .paused: L10n.string("ui.eb0c326b60ae897a")
-            }
+enum MacDownloadFilter: String, CaseIterable, Identifiable {
+    case all, active, downloading, seeding, finished, paused, waiting, error
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .all: L10n.string("download.workspace.filter.all")
+        case .active: L10n.string("download.workspace.filter.active")
+        case .downloading: L10n.string("download.workspace.filter.downloading")
+        case .seeding: L10n.string("download.workspace.filter.seeding")
+        case .finished: L10n.string("download.workspace.filter.finished")
+        case .paused: L10n.string("download.workspace.filter.paused")
+        case .waiting: L10n.string("download.workspace.filter.waiting")
+        case .error: L10n.string("download.workspace.filter.error")
         }
     }
+    var icon: String {
+        switch self {
+        case .all: "tray.full"
+        case .active: "arrow.triangle.2.circlepath"
+        case .downloading: "arrow.down.circle"
+        case .seeding: "arrow.up.circle"
+        case .finished: "checkmark.circle"
+        case .paused: "pause.circle"
+        case .waiting: "clock"
+        case .error: "exclamationmark.triangle"
+        }
+    }
+    func contains(_ task: DownloadStationTask) -> Bool {
+        let status = task.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch self {
+        case .all: return true
+        case .active: return ["downloading", "uploading", "seeding", "waiting", "checking", "hash_checking", "filehosting_waiting", "extracting"].contains(status)
+        case .downloading: return status == "downloading"
+        case .seeding: return ["seeding", "uploading"].contains(status)
+        case .finished: return ["finished", "completed"].contains(status)
+        case .paused: return ["paused", "stopped"].contains(status)
+        case .waiting: return ["waiting", "filehosting_waiting"].contains(status)
+        case .error: return ["error", "failed"].contains(status)
+        }
+    }
+}
 
+struct MacDownloadRow: Identifiable {
+    let task: DownloadStationTask
+    var id: String { task.id }
+    var title: String { task.title }
+    var status: String {
+        switch task.status.lowercased() {
+        case "checking", "hash_checking": L10n.string("download.workspace.checking")
+        case "extracting": L10n.string("download.workspace.extracting")
+        case "filehosting_waiting": L10n.string("download.workspace.filter.waiting")
+        case "waiting": MacDownloadFilter.waiting.title
+        case "downloading": MacDownloadFilter.downloading.title
+        case "uploading", "seeding": MacDownloadFilter.seeding.title
+        case "finished", "completed": MacDownloadFilter.finished.title
+        case "paused", "stopped": MacDownloadFilter.paused.title
+        case "error", "failed": MacDownloadFilter.error.title
+        default: L10n.string("ui.ec0d9bdb00a4a8f6")
+        }
+    }
+    var progress: Double? {
+        if MacDownloadFilter.finished.contains(task) { return 1 }
+        return task.progress
+    }
+    var progressSort: Double { progress ?? -1 }
+    var sizeSort: Int64 { task.sizeBytes ?? -1 }
+    var downloadSort: Int64 { task.downloadBytesPerSecond ?? -1 }
+    var uploadSort: Int64 { task.uploadBytesPerSecond ?? -1 }
+    var remainingSeconds: Double? {
+        guard task.status.lowercased() == "downloading", let size = task.sizeBytes,
+              let done = task.downloadedBytes, let speed = task.downloadBytesPerSecond,
+              size > done, done >= 0, speed > 0 else { return nil }
+        return Double(size - done) / Double(speed)
+    }
+    var remainingSort: Double { remainingSeconds ?? .greatestFiniteMagnitude }
+    var ratio: Double? {
+        guard let uploaded = task.uploadedBytes, let downloaded = task.downloadedBytes,
+              downloaded > 0, uploaded >= 0 else { return nil }
+        return Double(uploaded) / Double(downloaded)
+    }
+    var color: Color {
+        if MacDownloadFilter.finished.contains(task) { return .green }
+        if MacDownloadFilter.error.contains(task) { return .red }
+        if MacDownloadFilter.paused.contains(task) { return .orange }
+        return .accentColor
+    }
+    var icon: String {
+        if MacDownloadFilter.finished.contains(task) { return "checkmark.circle.fill" }
+        if MacDownloadFilter.error.contains(task) { return "exclamationmark.triangle.fill" }
+        if MacDownloadFilter.paused.contains(task) { return "pause.circle.fill" }
+        if MacDownloadFilter.seeding.contains(task) { return "arrow.up.circle.fill" }
+        return "arrow.down.circle.fill"
+    }
+    static func visibleTasks(_ tasks: [DownloadStationTask], filter: MacDownloadFilter, query: String) -> [DownloadStationTask] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return tasks.filter { filter.contains($0) && (query.isEmpty || $0.title.localizedStandardContains(query)) }
+    }
+}
+
+private struct DownloadStationView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable var model: ServiceManagementModel
-    @State private var filter: Filter = .all
+    @State private var filter: MacDownloadFilter = .all
+    @State private var query = ""
+    @State private var sortOrder = [KeyPathComparator(\MacDownloadRow.title)]
     @State private var showsCreate = false
     @State private var showsSettings = false
+    @State private var showsSearch = false
+    @State private var showsDetails = false
     @State private var deleteChoice: DeleteChoice?
+    @State private var confirmedDeleteIDs: Set<String> = []
 
     private enum DeleteChoice {
         case taskOnly
@@ -243,22 +331,17 @@ private struct DownloadStationView: View {
     }
 
     private var tasks: [DownloadStationTask] {
-        let source = model.downloads?.tasks ?? []
-        return source.filter { task in
-            let status = task.status.lowercased()
-            switch filter {
-            case .all:
-                return true
-            case .active:
-                return ["downloading", "uploading", "seeding", "waiting", "hash_checking"]
-                    .contains(status)
-            case .finished:
-                return ["finished", "completed"].contains(status)
-            case .paused:
-                return ["paused", "stopped"].contains(status)
-            }
-        }
+        MacDownloadRow.visibleTasks(model.downloads?.tasks ?? [], filter: filter, query: query)
     }
+    private var rows: [MacDownloadRow] { tasks.map { MacDownloadRow(task: $0) }.sorted(using: sortOrder) }
+    private var selectedTask: DownloadStationTask? {
+        guard model.downloadSelection.count == 1 else { return nil }
+        return tasks.first { model.downloadSelection.contains($0.id) }
+    }
+    private var hasSelectedTasks: Bool {
+        tasks.contains { model.downloadSelection.contains($0.id) }
+    }
+    private var isShowingDetails: Bool { showsDetails && hasSelectedTasks }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -269,9 +352,6 @@ private struct DownloadStationView: View {
             ) { Task { await model.activate(.downloads, force: true) } }
 
             HStack(spacing: 12) {
-                MacPageTabs(options: Filter.allCases, selection: $filter, title: { $0.title })
-                    .frame(maxWidth: 360)
-                Spacer(minLength: 0)
                 HStack {
                     Button {
                         Task { await model.controlDownloads(.resume) }
@@ -291,10 +371,10 @@ private struct DownloadStationView: View {
                     .help(L10n.string("ui.8d12fc0d4eb26021"))
                     Menu {
                         Button(L10n.string("ui.3a72267129185266"), role: .destructive) {
-                            deleteChoice = .taskOnly
+                            prepareDeletion(.taskOnly)
                         }
                         Button(L10n.string("ui.810ad53a1c16de5d"), role: .destructive) {
-                            deleteChoice = .finishIncomplete
+                            prepareDeletion(.finishIncomplete)
                         }
                     } label: {
                         Label(L10n.string("ui.6135d4159e892541"), systemImage: "trash")
@@ -318,43 +398,90 @@ private struct DownloadStationView: View {
                     .disabled(model.isPerformingAction)
                 }
                 .buttonStyle(MacToolbarButtonStyle())
+                Spacer(minLength: 8)
+                if model.downloads?.hasBTSearch == true {
+                    Button { showsSearch = true } label: {
+                        Label(L10n.string("download.workspace.bt-search"), systemImage: "globe")
+                    }
+                    .help(L10n.string("download.workspace.bt-search"))
+                    .disabled(model.isPerformingAction)
+                }
+                TextField(L10n.string("download.workspace.search"), text: $query)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 100, idealWidth: 170, maxWidth: 220)
+                Toggle(isOn: Binding(get: { isShowingDetails }, set: { showsDetails = $0 })) {
+                    Label(L10n.string("download.workspace.details"), systemImage: "rectangle.bottomthird.inset.filled")
+                }
+                .toggleStyle(.button)
+                .labelStyle(.iconOnly)
+                .help(L10n.string("download.workspace.details"))
+                .disabled(!hasSelectedTasks)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
             .background(MacGlassSurface(role: .toolbar))
             Divider()
 
-            if tasks.isEmpty, !model.isLoading {
-                EmptyServiceState(
-                    title: filter == .all ? L10n.string("ui.1640d50f8dbf6fa3") : L10n.string("ui.1c125edbf975b9ba"),
-                    message: L10n.string("ui.dbf81937e698b1dc"),
-                    icon: "arrow.down.doc"
-                )
-            } else {
-                List(tasks, selection: $model.downloadSelection) { task in
-                    DownloadTaskRow(task: task)
-                        .tag(task.id)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        .contextMenu {
-                            if ServiceManagementModel.supportsDownloadAction(.resume, task: task) {
-                                Button(L10n.string("ui.7c9691192f1b7340")) {
-                                    model.downloadSelection = [task.id]
-                                    Task { await model.controlDownloads(.resume) }
-                                }
-                                .disabled(model.isPerformingAction)
-                            }
-                            if ServiceManagementModel.supportsDownloadAction(.pause, task: task) {
-                                Button(L10n.string("ui.8d12fc0d4eb26021")) {
-                                    model.downloadSelection = [task.id]
-                                    Task { await model.controlDownloads(.pause) }
-                                }
-                                .disabled(model.isPerformingAction)
-                            }
-                        }
+            if model.downloadsLoadFailed {
+                HStack {
+                    Label(L10n.string("download.workspace.refresh-failed"), systemImage: "exclamationmark.triangle")
+                    Spacer()
+                    Button(L10n.string("ui.aee88743413144a2")) {
+                        Task { await model.activate(.downloads, force: true) }
+                    }.disabled(model.isLoading)
                 }
-                .listStyle(.inset)
+                .font(.callout)
+                .padding(12)
+                Divider()
             }
+            HSplitView {
+                categorySidebar
+                    .frame(minWidth: 135, idealWidth: 155, maxWidth: 200)
+                Group {
+                    if isShowingDetails {
+                        VSplitView {
+                            taskContent.frame(minHeight: 150)
+                            taskDetails.frame(minHeight: 140, idealHeight: 195, maxHeight: 320)
+                        }
+                    } else {
+                        taskContent
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            Divider()
+            HStack {
+                Text(L10n.string("download.workspace.count", tasks.count, model.downloadSelection.count))
+                Spacer()
+                Text(speedSummary)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .fillsAvailableContentArea(alignment: .topLeading)
+        .onChange(of: tasks.map(\.id)) { _, ids in
+            model.downloadSelection.formIntersection(Set(ids))
+        }
+        .onChange(of: model.downloadSelection) { previous, current in
+            if current.isEmpty {
+                showsDetails = false
+            } else if !current.isSubset(of: previous) {
+                // 只在选入任务时展开；刷新移除失效选择不会重新打开已关闭的详情。
+                showsDetails = true
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                if scenePhase == .active, deleteChoice == nil, !showsSettings, !showsCreate, !showsSearch {
+                    await model.refreshDownloads()
+                }
+            }
+        }
+        .macSheet(isPresented: $showsSearch) {
+            MacDownloadSearchSheet(model: model)
         }
         .macSheet(isPresented: $showsCreate) {
             CreateDownloadSheet(
@@ -408,7 +535,8 @@ private struct DownloadStationView: View {
             ) {
                 let forceComplete = deleteChoice == .finishIncomplete
                 deleteChoice = nil
-                Task { await model.deleteDownloads(forceComplete: forceComplete) }
+                let ids = confirmedDeleteIDs
+                Task { await model.deleteDownloads(forceComplete: forceComplete, confirmedIDs: ids) }
             }
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { deleteChoice = nil }
         } message: {
@@ -420,74 +548,502 @@ private struct DownloadStationView: View {
         }
     }
 
+    private func prepareDeletion(_ choice: DeleteChoice) {
+        confirmedDeleteIDs = model.downloadSelection
+        deleteChoice = choice
+    }
+
+    private var categorySidebar: some View {
+        List(selection: $filter) {
+            ForEach(MacDownloadFilter.allCases) { category in
+                HStack {
+                    Label(category.title, systemImage: category.icon)
+                    Spacer(minLength: 2)
+                    Text((model.downloads?.tasks.filter { category.contains($0) }.count ?? 0)
+                        .formatted(.number.locale(AppLanguageStore.shared.locale)))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                .tag(category)
+            }
+        }
+        .listStyle(.sidebar)
+        .accessibilityLabel(L10n.string("download.workspace.categories"))
+    }
+
+    @ViewBuilder private var taskContent: some View {
+        if model.downloads == nil, model.isLoading {
+            ProgressView(L10n.string("download.workspace.loading"))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if model.downloads == nil, model.downloadsLoadFailed {
+            ContentUnavailableView(L10n.string("download.workspace.load-failed"), systemImage: "wifi.exclamationmark",
+                description: Text(L10n.string("download.workspace.retry-hint")))
+        } else if tasks.isEmpty {
+            ContentUnavailableView {
+                Label(L10n.string("download.workspace.empty"), systemImage: "tray")
+            } description: {
+                Text(L10n.string(filter == .all && query.isEmpty ? "download.workspace.empty-hint" : "download.workspace.filtered-hint"))
+            } actions: {
+                if filter == .all && query.isEmpty {
+                    Button(L10n.string("ui.52b312406b04b9a7")) { showsCreate = true }
+                } else {
+                    Button(L10n.string("download.workspace.show-all")) { filter = .all; query = "" }
+                }
+            }
+        } else {
+            taskTable
+        }
+    }
+
+    private var taskTable: some View {
+        Table(rows, selection: $model.downloadSelection, sortOrder: $sortOrder) {
+            TableColumn(L10n.string("download.workspace.name"), value: \.title) { row in
+                Label { Text(row.title).lineLimit(1).help(row.title) } icon: {
+                    Image(systemName: row.icon).foregroundStyle(row.color)
+                }
+            }.width(min: 180, ideal: 270)
+            TableColumn(L10n.string("download.workspace.size"), value: \.sizeSort) { row in
+                Text(MacDownloadFormat.bytes(row.task.sizeBytes)).monospacedDigit()
+            }.width(min: 70, ideal: 85)
+            TableColumn(L10n.string("download.workspace.progress"), value: \.progressSort) { row in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.status).font(.caption).foregroundStyle(row.color)
+                    if let progress = row.progress {
+                        HStack(spacing: 6) {
+                            ProgressView(value: progress).tint(row.color)
+                            Text(MacDownloadFormat.percent(progress)).font(.caption2).monospacedDigit()
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(L10n.string("download.workspace.progress"))
+                        .accessibilityValue(MacDownloadFormat.percent(progress))
+                    }
+                }.padding(.vertical, 3)
+            }.width(min: 120, ideal: 155)
+            TableColumn(L10n.string("download.workspace.download-speed"), value: \.downloadSort) { row in
+                Text(MacDownloadFormat.speed(row.task.downloadBytesPerSecond)).monospacedDigit()
+            }.width(min: 85, ideal: 100)
+            TableColumn(L10n.string("download.workspace.upload-speed"), value: \.uploadSort) { row in
+                Text(MacDownloadFormat.speed(row.task.uploadBytesPerSecond)).monospacedDigit()
+            }.width(min: 85, ideal: 100)
+            TableColumn(L10n.string("download.workspace.remaining"), value: \.remainingSort) { row in
+                Text(MacDownloadFormat.remaining(row.remainingSeconds)).monospacedDigit()
+            }.width(min: 75, ideal: 95)
+        }
+        .contextMenu(forSelectionType: String.self) { ids in
+            if !ids.isEmpty {
+                Button(L10n.string("ui.7c9691192f1b7340")) {
+                    model.downloadSelection = ids
+                    Task { await model.controlDownloads(.resume) }
+                }
+                .disabled(model.isPerformingAction || !tasks.contains { ids.contains($0.id) && ServiceManagementModel.supportsDownloadAction(.resume, task: $0) })
+                Button(L10n.string("ui.8d12fc0d4eb26021")) {
+                    model.downloadSelection = ids
+                    Task { await model.controlDownloads(.pause) }
+                }
+                .disabled(model.isPerformingAction || !tasks.contains { ids.contains($0.id) && ServiceManagementModel.supportsDownloadAction(.pause, task: $0) })
+                Divider()
+                Button(L10n.string("ui.3a72267129185266"), role: .destructive) {
+                    model.downloadSelection = ids
+                    prepareDeletion(.taskOnly)
+                }.disabled(model.isPerformingAction)
+            }
+        } primaryAction: { ids in
+            model.downloadSelection = ids
+            showsDetails = true
+        }
+    }
+
+    private var taskDetails: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(L10n.string("download.workspace.details")).font(.headline)
+                Spacer()
+                Button {
+                    showsDetails = false
+                } label: {
+                    Label(L10n.string("download.workspace.close-details"), systemImage: "xmark")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help(L10n.string("download.workspace.close-details"))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            Divider()
+            ScrollView {
+                if let task = selectedTask {
+                    let row = MacDownloadRow(task: task)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label(task.title, systemImage: row.icon).font(.headline).textSelection(.enabled)
+                        Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 8) {
+                            GridRow {
+                                detail(L10n.string("download.workspace.status"), row.status)
+                                detail(L10n.string("download.workspace.size"), MacDownloadFormat.bytes(task.sizeBytes))
+                                detail(L10n.string("download.workspace.progress"), row.progress.map(MacDownloadFormat.percent) ?? MacDownloadFormat.unknown)
+                            }
+                            GridRow {
+                                detail(L10n.string("download.workspace.downloaded"), MacDownloadFormat.bytes(task.downloadedBytes))
+                                detail(L10n.string("download.workspace.uploaded"), MacDownloadFormat.bytes(task.uploadedBytes))
+                                detail(L10n.string("download.workspace.ratio"), row.ratio.map { $0.formatted(.number.precision(.fractionLength(2)).locale(AppLanguageStore.shared.locale)) } ?? MacDownloadFormat.unknown)
+                            }
+                        }
+                        detail(L10n.string("ui.0b7e2876922e4662"), task.destination ?? MacDownloadFormat.unknown)
+                        if MacDownloadFilter.error.contains(task) {
+                            Label(L10n.string("download.workspace.task-error"), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                } else {
+                    Text(L10n.string(model.downloadSelection.isEmpty ? "download.workspace.select-task" : "download.workspace.multiple-tasks"))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 120)
+                }
+            }
+        }
+    }
+
+    private func detail(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).textSelection(.enabled)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var speedSummary: String {
-        let down = ServiceFormat.speed(model.downloads?.downloadBytesPerSecond ?? 0)
-        let up = ServiceFormat.speed(model.downloads?.uploadBytesPerSecond ?? 0)
-        return L10n.string("ui.22779f62aa21a7ad", String(describing: down), String(describing: up))
+        guard let snapshot = model.downloads, snapshot.hasActivitySummary else {
+            return L10n.string("download.workspace.speed-unavailable")
+        }
+        return L10n.string("ui.22779f62aa21a7ad", MacDownloadFormat.speed(snapshot.downloadBytesPerSecond), MacDownloadFormat.speed(snapshot.uploadBytesPerSecond))
     }
 }
 
-private struct DownloadTaskRow: View {
-    let task: DownloadStationTask
+@MainActor
+private enum MacDownloadFormat {
+    static var unknown: String { L10n.string("download.workspace.unknown") }
+    static func bytes(_ value: Int64?) -> String {
+        guard let value, value >= 0 else { return unknown }
+        return value.formatted(.byteCount(style: .file, spellsOutZero: false).locale(AppLanguageStore.shared.locale))
+    }
+    static func speed(_ value: Int64?) -> String {
+        guard let value, value >= 0 else { return unknown }
+        return L10n.string("ui.3b14d1af77ab3e3e", bytes(value))
+    }
+    static func percent(_ value: Double) -> String {
+        value.formatted(.percent.precision(.fractionLength(0)).locale(AppLanguageStore.shared.locale))
+    }
+    static func remaining(_ value: Double?) -> String {
+        guard let value else { return unknown }
+        let formatter = DateComponentsFormatter()
+        var calendar = Calendar.current
+        calendar.locale = AppLanguageStore.shared.locale
+        formatter.calendar = calendar
+        formatter.allowedUnits = [.day, .hour, .minute, .second]
+        formatter.maximumUnitCount = 2
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: value) ?? unknown
+    }
+}
+
+private struct MacDownloadSearchSheet: View {
+    let model: ServiceManagementModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var keyword = ""
+    @State private var catalog: DownloadBTSearchCatalog?
+    @State private var results: [DownloadBTSearchResult] = []
+    @State private var selectedIDs: Set<String> = []
+    @State private var requestID = 0
+    @State private var submittedRequest: DownloadBTSearchRequest?
+    @State private var providerMode = "enabled"
+    @State private var providerIDs: Set<String> = []
+    @State private var categoryID: String?
+    @State private var resultSort: DownloadBTSearchSort = .seeds
+    @State private var direction: DownloadBTSearchDirection = .descending
+    @State private var titleFilter = ""
+    @State private var isLoadingCatalog = true
+    @State private var isSearching = false
+    @State private var hasSearched = false
+    @State private var errorMessage: String?
+    @State private var selectedResult: DownloadBTSearchResult?
+
+    private var hasInvalidInput: Bool {
+        [keyword, titleFilter].contains { value in
+            value.trimmingCharacters(in: .whitespacesAndNewlines).count > 200 ||
+                value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+        }
+    }
+    private var canSearch: Bool {
+        let value = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !value.isEmpty && !hasInvalidInput &&
+            !selectedProviders.isEmpty && !isSearching
+    }
+    private var selectedProviders: [DownloadBTSearchModule] {
+        (catalog?.modules ?? []).filter { provider in
+            switch providerMode {
+            case "all": true
+            case "selected": providerIDs.contains(provider.id)
+            default: provider.isEnabled
+            }
+        }
+    }
+    private var searchRequest: DownloadBTSearchRequest {
+        let scope: DownloadBTSearchModuleScope = switch providerMode {
+        case "all": .all
+        case "selected": .selected(providerIDs.sorted())
+        default: .enabled
+        }
+        return DownloadBTSearchRequest(keyword: keyword, moduleScope: scope, categoryID: categoryID,
+            sort: resultSort, direction: direction, titleFilter: titleFilter)
+    }
+    private var searchOptions: some View {
+        DisclosureGroup(L10n.string("mobile.downloads.bt-search.filters.title")) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Picker(L10n.string("mobile.downloads.bt-search.provider.label"), selection: $providerMode) {
+                        Text(L10n.string("mobile.downloads.bt-search.provider.enabled")).tag("enabled")
+                        Text(L10n.string("mobile.downloads.bt-search.provider.all")).tag("all")
+                        Text(L10n.string("mobile.downloads.bt-search.provider.selected")).tag("selected")
+                    }
+                    Picker(L10n.string("mobile.downloads.bt-search.category.label"), selection: $categoryID) {
+                        Text(L10n.string("mobile.downloads.bt-search.category.all")).tag(String?.none)
+                        ForEach(catalog?.categories ?? []) { category in
+                            Text(category.title).tag(Optional(category.id))
+                        }
+                    }
+                }
+                if providerMode == "selected" {
+                    Menu(L10n.string("mobile.downloads.bt-search.provider.selected")) {
+                        ForEach(catalog?.modules ?? []) { provider in
+                            Toggle(provider.title, isOn: Binding(
+                                get: { providerIDs.contains(provider.id) },
+                                set: { if $0 { providerIDs.insert(provider.id) } else { providerIDs.remove(provider.id) } }
+                            ))
+                        }
+                    }
+                    if providerIDs.isEmpty {
+                        Text(L10n.string("mobile.downloads.bt-search.provider.empty-selection"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                HStack {
+                    Picker(L10n.string("mobile.downloads.bt-search.sort.label"), selection: $resultSort) {
+                        ForEach(DownloadBTSearchSort.allCases, id: \.self) { sort in
+                            Text(sortTitle(sort)).tag(sort)
+                        }
+                    }
+                    Picker(L10n.string("mobile.downloads.bt-search.direction.label"), selection: $direction) {
+                        Text(L10n.string("mobile.downloads.bt-search.direction.desc")).tag(DownloadBTSearchDirection.descending)
+                        Text(L10n.string("mobile.downloads.bt-search.direction.asc")).tag(DownloadBTSearchDirection.ascending)
+                    }
+                }
+                TextField(L10n.string("mobile.downloads.bt-search.title-filter.label"), text: $titleFilter)
+                    .textFieldStyle(.roundedBorder)
+            }.padding(.top, 8)
+        }
+    }
+    private func sortTitle(_ sort: DownloadBTSearchSort) -> String {
+        switch sort {
+        case .title: L10n.string("mobile.downloads.bt-search.sort.title")
+        case .size: L10n.string("mobile.downloads.bt-search.sort.size")
+        case .date: L10n.string("mobile.downloads.bt-search.sort.date")
+        case .peers: L10n.string("mobile.downloads.bt-search.sort.peers")
+        case .provider: L10n.string("mobile.downloads.bt-search.sort.provider")
+        case .seeds: L10n.string("mobile.downloads.bt-search.sort.seeds")
+        case .leeches: L10n.string("mobile.downloads.bt-search.sort.leeches")
+        }
+    }
+    private var searchHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L10n.string("download.workspace.bt-search"))
+                .font(.title2.weight(.semibold))
+            HStack(spacing: 8) {
+                TextField(L10n.string("download.workspace.keywords"), text: $keyword)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { if canSearch { beginSearch() } }
+                Button(action: beginSearch) {
+                    Label(L10n.string("mobile.downloads.bt-search.search"), systemImage: "magnifyingglass")
+                }
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                .disabled(!canSearch)
+            }
+            if hasInvalidInput {
+                Text(L10n.string("mobile.downloads.bt-search.input.invalid"))
+                    .font(.caption).foregroundStyle(.red)
+            }
+            if catalog != nil {
+                searchOptions
+                if !selectedProviders.isEmpty {
+                    let providers = selectedProviders.map(\.title).joined(separator: ", ")
+                    Text(L10n.string("download.workspace.providers", providers))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(providers)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(MacGlassSurface(role: .toolbar))
+    }
+
+    @ViewBuilder private var searchContent: some View {
+        if isLoadingCatalog || isSearching {
+            VStack(spacing: 12) {
+                ProgressView()
+                Text(L10n.string(isLoadingCatalog
+                    ? "mobile.downloads.bt-search.catalog.loading"
+                    : "mobile.downloads.bt-search.searching"))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        } else if let errorMessage {
+            ContentUnavailableView {
+                Label(L10n.string("download.workspace.search-unavailable"), systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(errorMessage)
+            } actions: {
+                Button(L10n.string("mobile.downloads.bt-search.retry")) {
+                    if catalog == nil { reloadSearchOptions() } else { beginSearch() }
+                }
+                .buttonStyle(MacToolbarButtonStyle())
+                .disabled(catalog != nil && !canSearch)
+            }
+        } else if selectedProviders.isEmpty {
+            ContentUnavailableView {
+                Label(L10n.string("mobile.downloads.bt-search.catalog.empty.title"), systemImage: "globe")
+            } description: {
+                Text(L10n.string(providerMode == "selected"
+                    ? "mobile.downloads.bt-search.provider.empty-selection"
+                    : "mobile.downloads.bt-search.catalog.empty.message"))
+            } actions: {
+                Button(L10n.string("ui.aee88743413144a2"), action: reloadSearchOptions)
+                    .buttonStyle(MacToolbarButtonStyle())
+            }
+        } else if results.isEmpty {
+            ContentUnavailableView(
+                L10n.string(hasSearched ? "mobile.downloads.bt-search.empty.title" : "download.workspace.search-ready"),
+                systemImage: "magnifyingglass",
+                description: hasSearched ? Text(L10n.string("mobile.downloads.bt-search.empty.message")) : nil
+            )
+        } else {
+            Table(results, selection: $selectedIDs) {
+                TableColumn(L10n.string("download.workspace.name")) { result in Text(result.title).help(result.title) }
+                    .width(min: 220, ideal: 350)
+                TableColumn(L10n.string("download.workspace.size")) { result in Text(MacDownloadFormat.bytes(result.sizeBytes)) }
+                    .width(90)
+                TableColumn(L10n.string("download.workspace.seeds")) { result in
+                    Text(result.seeds.map { $0.formatted(.number.locale(AppLanguageStore.shared.locale)) } ?? MacDownloadFormat.unknown)
+                }.width(70)
+                TableColumn(L10n.string("download.workspace.provider")) { result in Text(result.provider ?? MacDownloadFormat.unknown) }
+                    .width(110)
+            }
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Image(systemName: statusIcon)
-                    .foregroundStyle(statusColor)
-                    .accessibilityHidden(true)
-                Text(task.title).font(.body.weight(.medium)).lineLimit(1)
-                Spacer()
-                Text(ServiceFormat.status(task.status))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(statusColor)
+        VStack(alignment: .leading, spacing: 0) {
+            searchHeader
+            Divider()
+            searchContent.fillsAvailableContentArea()
+            Divider()
+            HStack(spacing: 12) {
+                Text(L10n.string("download.workspace.search-privacy"))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(L10n.string("download.workspace.close")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.string("ui.52b312406b04b9a7")) {
+                    selectedResult = results.first { selectedIDs.contains($0.id) }
+                }
+                .buttonStyle(MacToolbarButtonStyle(prominent: true))
+                .disabled(selectedIDs.count != 1 || isSearching || isLoadingCatalog || model.isPerformingAction)
             }
-            if let progress = task.progress {
-                ProgressView(value: progress)
-                    .accessibilityLabel(task.title)
-                    .accessibilityValue("\(Int(progress * 100))%")
+            .buttonStyle(MacToolbarButtonStyle())
+            .padding(16)
+            .background(MacGlassSurface(role: .toolbar))
+        }
+        .frame(width: 760, height: 620, alignment: .topLeading)
+        .fillsAvailableContentArea(alignment: .topLeading)
+        .onChange(of: searchRequest) { _, _ in
+            guard catalog != nil else { return }
+            errorMessage = nil
+            submittedRequest = nil
+            requestID += 1
+            results = []
+            selectedIDs = []
+            hasSearched = false
+            isSearching = false
+        }
+        .task(id: requestID) {
+            do {
+                if catalog == nil {
+                    isLoadingCatalog = true
+                    errorMessage = nil
+                    let loaded = try await model.loadDownloadSearchCatalog()
+                    try Task.checkCancellation()
+                    catalog = loaded
+                    isLoadingCatalog = false
+                    providerIDs.formIntersection(Set(loaded.modules.map(\.id)))
+                    if let categoryID, !loaded.categories.contains(where: { $0.id == categoryID }) {
+                        self.categoryID = nil
+                    }
+                    errorMessage = nil
+                }
+                guard let submittedRequest else { return }
+                let found = try await model.searchDownloads(submittedRequest, catalog: catalog)
+                try Task.checkCancellation()
+                results = found
+                hasSearched = true
+                isSearching = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                errorMessage = L10n.string(catalog == nil
+                    ? "mobile.downloads.bt-search.catalog.error"
+                    : "mobile.downloads.bt-search.search.error")
+                isLoadingCatalog = false
+                isSearching = false
             }
-            HStack {
-                Text(sizeSummary)
-                Spacer()
-                Label(
-                    ServiceFormat.speed(task.downloadBytesPerSecond ?? 0),
-                    systemImage: "arrow.down"
+        }
+        .macSheet(isPresented: Binding(get: { selectedResult != nil }, set: { if !$0 { selectedResult = nil } })) {
+            if let selectedResult {
+                CreateDownloadSheet(
+                    defaultDestination: model.downloads?.defaultDestination,
+                    loadFolders: { try await model.loadDownloadDestinationFolders(in: $0) },
+                    submitURL: { uri, destination in
+                        let success = await model.createDownload(uri: uri, destination: destination)
+                        if success { self.selectedResult = nil }
+                        return success
+                    },
+                    submitFile: { url, destination, password in
+                        let success = await model.createDownload(fileURL: url, destination: destination, unzipPassword: password)
+                        if success { self.selectedResult = nil }
+                        return success
+                    },
+                    initialURI: selectedResult.downloadURI
                 )
-                Label(
-                    ServiceFormat.speed(task.uploadBytesPerSecond ?? 0),
-                    systemImage: "arrow.up"
-                )
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .macDataRowSurface()
-        .accessibilityElement(children: .combine)
-    }
-
-    private var sizeSummary: String {
-        guard let total = task.sizeBytes else { return L10n.string("ui.f8f5f153c20d00b9") }
-        let completed = ServiceFormat.bytes(task.downloadedBytes ?? 0)
-        return "\(completed) / \(ServiceFormat.bytes(total))"
-    }
-
-    private var statusIcon: String {
-        switch task.status.lowercased() {
-        case "finished", "completed": "checkmark.circle.fill"
-        case "paused", "stopped": "pause.circle.fill"
-        case "error": "exclamationmark.triangle.fill"
-        default: "arrow.down.circle.fill"
         }
     }
-
-    private var statusColor: Color {
-        switch task.status.lowercased() {
-        case "finished", "completed": .green
-        case "paused", "stopped": .orange
-        case "error": .red
-        default: .blue
-        }
+    private func reloadSearchOptions() {
+        catalog = nil
+        submittedRequest = nil
+        results = []
+        selectedIDs = []
+        hasSearched = false
+        isSearching = false
+        errorMessage = nil
+        isLoadingCatalog = true
+        requestID += 1
+    }
+    private func beginSearch() {
+        guard canSearch else { return }
+        submittedRequest = searchRequest
+        results = []
+        selectedIDs = []
+        errorMessage = nil
+        isSearching = true
+        requestID += 1
     }
 }
 
@@ -509,6 +1065,7 @@ struct CreateDownloadSheet: View {
     let loadFolders: (String?) async throws -> [FileItem]
     let submitURL: (String, String?) async -> Bool
     let submitFile: (URL, String?, String?) async -> Bool
+    var initialURI: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var source: Source = .file
     @State private var uri = ""
@@ -600,7 +1157,10 @@ struct CreateDownloadSheet: View {
         .frame(width: 620)
         .fillsAvailableContentArea(alignment: .topLeading)
         .background(MacGlassSurface(role: .sidebar))
-        .onAppear { destination = normalizedDefaultDestination }
+        .onAppear {
+            destination = normalizedDefaultDestination
+            if let initialURI { source = .url; uri = initialURI }
+        }
         .macSheet(isPresented: $showsDestinationPicker) {
             DownloadDestinationPicker(
                 selectedDestination: destination,
@@ -2687,6 +3247,9 @@ struct PullImageSheet: View {
                     Text(L10n.string("container-image.pull.tasks")).tag(true)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if tracking.isBusy { ProgressView().controlSize(.small) }
                 else if !tracking.isAvailable { Text(L10n.string("container-image.pull.unavailable")).font(.caption).foregroundStyle(.secondary) }
 

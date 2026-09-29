@@ -85,6 +85,9 @@ final class ServiceManagementModel {
     }
 
     private(set) var downloads: DownloadStationSnapshot?
+    private(set) var downloadsLoadFailed = false
+    private var isRefreshingDownloads = false
+    private var downloadsRevision = 0
     private(set) var containers: ContainerManagerSnapshot?
     private(set) var virtualMachines: VirtualMachineManagerSnapshot?
     private(set) var isLoading = false
@@ -125,7 +128,12 @@ final class ServiceManagementModel {
     func setEnabledModules(_ modules: Set<Module>) {
         enabledModules = modules
         loadedModules.formIntersection(modules)
-        if !modules.contains(.downloads) { downloads = nil; downloadSelection = [] }
+        if !modules.contains(.downloads) {
+            downloadsRevision += 1
+            downloads = nil
+            downloadsLoadFailed = false
+            downloadSelection = []
+        }
         if !modules.contains(.containers) {
             imagePulls.deactivate()
             containers = nil
@@ -141,12 +149,18 @@ final class ServiceManagementModel {
         guard enabledModules.contains(module) else { return }
         message = nil
         guard force || !loadedModules.contains(module) else { return }
+        if module == .downloads { downloadsRevision += 1 }
+        let downloadRevision = downloadsRevision
         isLoading = true
         do {
             switch module {
             case .downloads:
                 let value = try await repository.loadDownloadStation()
-                if enabledModules.contains(module), !Task.isCancelled { downloads = value }
+                if enabledModules.contains(module), !Task.isCancelled, downloadsRevision == downloadRevision {
+                    downloads = value
+                    downloadsLoadFailed = false
+                    downloadSelection.formIntersection(Set(value.tasks.map(\.id)))
+                }
             case .containers:
                 let value = try await repository.loadContainerManager()
                 if enabledModules.contains(module), !Task.isCancelled { containers = value }
@@ -158,8 +172,51 @@ final class ServiceManagementModel {
             isLoading = false
         } catch {
             isLoading = false
+            if module == .downloads, !(error is CancellationError) { downloadsLoadFailed = true }
             show(error)
         }
+    }
+
+    /// 页面在前台时更新，只读取任务；失败时保留最后一次结果与操作反馈。
+    func refreshDownloads() async {
+        guard enabledModules.contains(.downloads), !isLoading, !isPerformingAction,
+              !isRefreshingDownloads else { return }
+        isRefreshingDownloads = true
+        let revision = downloadsRevision
+        defer { isRefreshingDownloads = false }
+        do {
+            let snapshot = try await repository.loadDownloadStation()
+            guard enabledModules.contains(.downloads), !Task.isCancelled, !isPerformingAction,
+                  !isLoading, downloadsRevision == revision else { return }
+            downloads = snapshot
+            downloadsLoadFailed = false
+            downloadSelection.formIntersection(Set(snapshot.tasks.map(\.id)))
+        } catch {
+            if enabledModules.contains(.downloads), !Task.isCancelled, downloadsRevision == revision {
+                downloadsLoadFailed = true
+            }
+        }
+    }
+
+    func loadDownloadSearchCatalog() async throws -> DownloadBTSearchCatalog {
+        guard enabledModules.contains(.downloads), downloads?.hasBTSearch == true else { throw CancellationError() }
+        return try await repository.loadDownloadBTSearchCatalog()
+    }
+
+    func searchDownloads(_ request: DownloadBTSearchRequest, catalog: DownloadBTSearchCatalog?) async throws -> [DownloadBTSearchResult] {
+        guard enabledModules.contains(.downloads), downloads?.hasBTSearch == true else { throw CancellationError() }
+        guard let catalog,
+              request.categoryID == nil || catalog.categories.contains(where: { $0.id == request.categoryID }) else {
+            throw AppError(category: .conflict, isRetryable: false,
+                safeUserMessage: L10n.string("mobile.downloads.bt-search.catalog.error"))
+        }
+        if case let .selected(ids) = request.moduleScope {
+            guard !ids.isEmpty, Set(ids).isSubset(of: Set(catalog.modules.map(\.id))) else {
+                throw AppError(category: .conflict, isRetryable: false,
+                    safeUserMessage: L10n.string("mobile.downloads.bt-search.provider.empty-selection"))
+            }
+        }
+        return try await repository.searchDownloadBT(request)
     }
 
     func createDownload(uri: String, destination: String?) async -> Bool {
@@ -253,7 +310,16 @@ final class ServiceManagementModel {
         }
     }
 
-    func deleteDownloads(forceComplete: Bool) async -> Bool {
+    func deleteDownloads(forceComplete: Bool, confirmedIDs: Set<String>? = nil) async -> Bool {
+        if let confirmedIDs {
+            let currentIDs = Set(downloads?.tasks.map(\.id) ?? [])
+            guard !confirmedIDs.isEmpty, confirmedIDs == downloadSelection,
+                  confirmedIDs.isSubset(of: currentIDs) else {
+                message = L10n.string("download.workspace.selection-changed")
+                messageIsError = true
+                return false
+            }
+        }
         let ids = Array(downloadSelection)
         let statusPrefix = forceComplete ? "download-task.finish-incomplete" : "download-task.delete"
         let succeeded = await performDeletion(
@@ -547,6 +613,7 @@ final class ServiceManagementModel {
         operation: () async throws -> Void
     ) async -> Bool {
         guard enabledModules.contains(module), !isPerformingAction else { return false }
+        if module == .downloads { downloadsRevision += 1 }
         isPerformingAction = true
         message = nil
         do {
@@ -571,6 +638,7 @@ final class ServiceManagementModel {
         isVerified: () -> Bool
     ) async -> Bool {
         guard enabledModules.contains(module), !isPerformingAction else { return false }
+        if module == .downloads { downloadsRevision += 1 }
         isPerformingAction = true
         message = nil
         do {

@@ -6,6 +6,145 @@ import XCTest
 
 @MainActor
 final class ServiceManagementModelTests: XCTestCase {
+    func test下载完成进度不依赖缺失传输字节() {
+        let complete = MacDownloadRow(task: .init(id: "done", title: "Synthetic", status: "finished", sizeBytes: 1024))
+        XCTAssertEqual(complete.progress, 1)
+        XCTAssertNil(complete.task.downloadedBytes)
+        XCTAssertNil(complete.ratio)
+        let unknown = MacDownloadRow(task: .init(id: "waiting", title: "Synthetic", status: "waiting", sizeBytes: 1024))
+        XCTAssertNil(unknown.progress)
+        XCTAssertNil(unknown.remainingSeconds)
+    }
+
+    func test下载分类搜索覆盖校验解压错误和未知状态() {
+        let statuses = ["waiting", "downloading", "hash_checking", "checking", "extracting", "filehosting_waiting", "seeding", "paused", "failed", "finished", "future_status"]
+        let tasks = statuses.map { DownloadStationTask(id: $0, title: "Synthetic-\($0)", status: $0) }
+        XCTAssertEqual(MacDownloadRow.visibleTasks(tasks, filter: .active, query: "").count, 7)
+        XCTAssertEqual(MacDownloadRow.visibleTasks(tasks, filter: .all, query: "SYNTHETIC-HASH").map(\.id), ["hash_checking"])
+        XCTAssertEqual(MacDownloadRow.visibleTasks(tasks, filter: .error, query: "").map(\.id), ["failed"])
+        XCTAssertEqual(MacDownloadRow.visibleTasks(tasks, filter: .all, query: "").count, statuses.count)
+        XCTAssertTrue(MacDownloadRow.visibleTasks(tasks, filter: .paused, query: "no-match").isEmpty)
+    }
+
+    func test剩余时间只从正在下载的有效计数估算() {
+        let active = MacDownloadRow(task: .init(id: "a", title: "Synthetic", status: "downloading", sizeBytes: 1000, downloadedBytes: 250, uploadedBytes: 500, downloadBytesPerSecond: 50))
+        XCTAssertEqual(active.remainingSeconds, 15)
+        XCTAssertEqual(active.ratio, 2)
+        let paused = MacDownloadRow(task: .init(id: "p", title: "Synthetic", status: "paused", sizeBytes: 1000, downloadedBytes: 250, downloadBytesPerSecond: 50))
+        XCTAssertNil(paused.remainingSeconds)
+        let zeroSpeed = MacDownloadRow(task: .init(id: "z", title: "Synthetic", status: "downloading", sizeBytes: 1000, downloadedBytes: 250, downloadBytesPerSecond: 0))
+        XCTAssertNil(zeroSpeed.remainingSeconds)
+    }
+
+    func test下载删除确认后选择变化不会提交() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        model.downloadSelection = ["task-1"]
+        let result = await model.deleteDownloads(forceComplete: false, confirmedIDs: ["previous-task"])
+        XCTAssertFalse(result)
+        let calls = await repository.downloadRemovalCalls
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertTrue(model.messageIsError)
+    }
+
+    func test下载定时刷新失败保留旧列表和操作消息且能恢复() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        model.message = "Synthetic feedback"
+        model.downloadSelection = ["task-1", "missing"]
+        await repository.configureDownloadLoadFailure(true)
+        await model.refreshDownloads()
+        XCTAssertTrue(model.downloadsLoadFailed)
+        XCTAssertEqual(model.downloads?.tasks.map(\.id), ["task-1"])
+        XCTAssertEqual(model.message, "Synthetic feedback")
+        await repository.configureDownloadLoadFailure(false)
+        await model.refreshDownloads()
+        XCTAssertFalse(model.downloadsLoadFailed)
+        XCTAssertEqual(model.downloadSelection, ["task-1"])
+        XCTAssertEqual(model.message, "Synthetic feedback")
+    }
+
+    func test下载模块关闭后刷新不再读取() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        model.setEnabledModules([])
+        await model.refreshDownloads()
+        let calls = await repository.downloadLoadCalls
+        XCTAssertEqual(calls, 0)
+        XCTAssertNil(model.downloads)
+    }
+
+    func test较早的自动刷新不能覆盖删除后的新列表() async {
+        let repository = ServiceManagementRepositoryStub(removeSecondaryOnDelete: true)
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        await repository.holdNextDownloadLoad()
+        let refresh = Task { await model.refreshDownloads() }
+        await repository.waitForHeldDownloadLoad()
+        model.downloadSelection = ["task-1"]
+        let removed = await model.deleteDownloads(forceComplete: false, confirmedIDs: ["task-1"])
+        XCTAssertTrue(removed)
+        XCTAssertEqual(model.downloads?.tasks.count, 0)
+        await repository.releaseDownloadLoad()
+        await refresh.value
+        XCTAssertEqual(model.downloads?.tasks.count, 0)
+    }
+
+    func test下载删除已确认对象消失不会提交() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        model.downloadSelection = ["missing"]
+        let result = await model.deleteDownloads(forceComplete: true, confirmedIDs: ["missing"])
+        XCTAssertFalse(result)
+        let calls = await repository.downloadRemovalCalls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func test下载搜索转发来源分类排序与标题筛选() async throws {
+        let repository = ServiceManagementRepositoryStub(hasBTSearch: true)
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        let catalog = try await model.loadDownloadSearchCatalog()
+        let request = DownloadBTSearchRequest(keyword: "synthetic", moduleScope: .selected(["provider"]), categoryID: "category", sort: .size, direction: .ascending, titleFilter: "archive")
+        _ = try await model.searchDownloads(request, catalog: catalog)
+        let calls = await repository.downloadSearchCalls
+        XCTAssertEqual(calls, [request])
+    }
+
+    func test下载搜索拒绝目录以外的来源和类别() async throws {
+        let repository = ServiceManagementRepositoryStub(hasBTSearch: true)
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        let catalog = try await model.loadDownloadSearchCatalog()
+        for request in [
+            DownloadBTSearchRequest(keyword: "synthetic", moduleScope: .selected(["missing"])),
+            DownloadBTSearchRequest(keyword: "synthetic", categoryID: "missing"),
+            DownloadBTSearchRequest(keyword: "synthetic", moduleScope: .selected([]))
+        ] {
+            do {
+                _ = try await model.searchDownloads(request, catalog: catalog)
+                XCTFail("陈旧来源或类别不应提交搜索")
+            } catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        }
+        let calls = await repository.downloadSearchCalls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func test下载搜索能力关闭时不提交() async {
+        let repository = ServiceManagementRepositoryStub()
+        let model = ServiceManagementModel(repository: repository)
+        await model.activate(.downloads)
+        do {
+            _ = try await model.searchDownloads(.init(keyword: "synthetic"), catalog: nil)
+            XCTFail("能力关闭时不应提交搜索")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        let calls = await repository.downloadSearchCalls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
     func test虚拟机电源确认后选择改变不提交() async {
         let repository = ServiceManagementRepositoryStub()
         let model = ServiceManagementModel(repository: repository)
@@ -446,6 +585,7 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
             name: "示例网络"
         )
     ]
+    private let hasBTSearch: Bool
     private let containerStatus: MutationResultStatus
     private let virtualMachineStatus: MutationResultStatus
     private let removeVirtualMachineOnDelete: Bool
@@ -460,8 +600,10 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         removeSecondaryOnDelete: Bool = false,
         virtualMachineStorages: [VirtualizationResource] = [],
         downloadTasks: [DownloadStationTask]? = nil,
+        hasBTSearch: Bool = false,
         containerSnapshot: ContainerManagerSnapshot? = nil
     ) {
+        self.hasBTSearch = hasBTSearch
         self.containerStatus = containerStatus
         self.virtualMachineStatus = virtualMachineStatus
         self.removeVirtualMachineOnDelete = removeVirtualMachineOnDelete
@@ -577,8 +719,43 @@ actor ServiceManagementRepositoryStub: ServiceManagementRepository {
         )
     }
 
+    private(set) var downloadSearchCalls: [DownloadBTSearchRequest] = []
+    func loadDownloadBTSearchCatalog() async throws -> DownloadBTSearchCatalog {
+        .init(modules: [.init(id: "provider", title: "Synthetic provider", isEnabled: true)],
+              categories: [.init(id: "category", title: "Synthetic category")])
+    }
+    func searchDownloadBT(_ request: DownloadBTSearchRequest) async throws -> [DownloadBTSearchResult] {
+        downloadSearchCalls.append(request)
+        return []
+    }
+    private var holdDownloadLoad = false
+    private var heldDownloadLoad: CheckedContinuation<Void, Never>?
+    private var downloadLoadObserver: CheckedContinuation<Void, Never>?
+    func holdNextDownloadLoad() { holdDownloadLoad = true }
+    func waitForHeldDownloadLoad() async {
+        if heldDownloadLoad != nil { return }
+        await withCheckedContinuation { downloadLoadObserver = $0 }
+    }
+    func releaseDownloadLoad() {
+        heldDownloadLoad?.resume()
+        heldDownloadLoad = nil
+    }
+    private var downloadLoadFails = false
+    private(set) var downloadLoadCalls = 0
+    func configureDownloadLoadFailure(_ value: Bool) { downloadLoadFails = value }
     func loadDownloadStation() async throws -> DownloadStationSnapshot {
-        DownloadStationSnapshot(source: .official, tasks: downloadTasks)
+        downloadLoadCalls += 1
+        if downloadLoadFails { throw unavailable() }
+        let snapshot = DownloadStationSnapshot(source: .official, tasks: downloadTasks, hasBTSearch: hasBTSearch)
+        if holdDownloadLoad {
+            holdDownloadLoad = false
+            await withCheckedContinuation { continuation in
+                heldDownloadLoad = continuation
+                downloadLoadObserver?.resume()
+                downloadLoadObserver = nil
+            }
+        }
+        return snapshot
     }
     func createDownloadTask(uri: String, destination: String?) async throws { throw unavailable() }
     func createDownloadTask(

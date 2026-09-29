@@ -3,9 +3,12 @@ import AVKit
 import DsmCore
 import DsmLocalization
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SynologyPhotosView: View {
     @Bindable var model: SynologyPhotosModel
+    @State private var managementSheet: PhotoManagementSheet?
+    @State private var showsUploadQueue = false
     var onSectionChange: ((SynologyPhotosSection) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -27,6 +30,27 @@ struct SynologyPhotosView: View {
                     }.buttonStyle(MacToolbarButtonStyle(selected: model.section == section))
                 }
                 Spacer(minLength: 12)
+                Button { chooseUpload() } label: { Image(systemName: "square.and.arrow.up") }
+                    .help(L10n.string("photos.manage.upload"))
+                    .accessibilityLabel(L10n.string("photos.manage.upload"))
+                    .disabled(!model.managementFeatures.contains(.upload) || model.selectedAlbum?.isConditional == true || model.isManaging || model.isLoading || model.pendingMutationID != nil)
+                if model.selectedCategory == .tags && model.selectedCategoryItem == nil {
+                    Button { managementSheet = PhotoManagementSheet(kind: .tagsCreate, photos: []) } label: { Image(systemName: "tag.badge.plus") }
+                        .help(L10n.string("photos.manage.tagsCreate"))
+                        .accessibilityLabel(L10n.string("photos.manage.tagsCreate"))
+                        .disabled(!model.managementFeatures.contains(.tagCreation) || model.pendingMutationID != nil)
+                }
+                if model.section == .albums && model.selectedAlbum == nil && model.selectedCategory == nil {
+                    Menu {
+                        Button(PhotoManagementKind.createAlbum.title) { managementSheet = PhotoManagementSheet(kind: .createAlbum, photos: []) }
+                            .disabled(!model.managementFeatures.contains(.albums))
+                        Button(PhotoManagementKind.createConditionAlbum.title) { managementSheet = PhotoManagementSheet(kind: .createConditionAlbum, photos: []) }
+                            .disabled(!model.managementFeatures.contains(.conditionAlbums))
+                    } label: { Image(systemName: "plus") }
+                        .help(L10n.string("photos.manage.createAlbum"))
+                        .accessibilityLabel(L10n.string("photos.manage.createAlbum"))
+                        .disabled(model.managementFeatures.isDisjoint(with: [.albums, .conditionAlbums]) || model.pendingMutationID != nil)
+                }
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField(L10n.string("photos.library.search"), text: $model.searchText)
@@ -53,6 +77,7 @@ struct SynologyPhotosView: View {
             .buttonStyle(MacToolbarButtonStyle())
             .padding(16)
             .background(MacGlassSurface(role: .toolbar))
+            .disabled(model.isDeleting || model.isCheckingDeletion || model.isBrowsingBlocked)
             if let title = model.selectedCategoryItem?.name ?? model.selectedCategory?.title ?? model.selectedAlbum?.name ?? (model.folderHistory.count > 1 ? model.folderHistory.last?.name : nil) {
                 Text(title).font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 8)
             }
@@ -66,6 +91,36 @@ struct SynologyPhotosView: View {
                 }.padding(.horizontal, 16).padding(.bottom, 8)
             }
 
+            if !model.items.isEmpty {
+                HStack(spacing: 12) {
+                    Button {
+                        if model.isSelecting { model.clearSelection() } else { model.isSelecting = true }
+                    } label: {
+                        Label(L10n.string(model.isSelecting ? "photos.selection.cancel" : "photos.selection.start"), systemImage: "checkmark.circle")
+                    }
+                    if model.isSelecting {
+                        Text(L10n.string("photos.selection.count", model.selectedPhotoIDs.count)).foregroundStyle(.secondary)
+                        Button(L10n.string("photos.selection.loaded")) { model.selectGroup(model.items) }
+                            .keyboardShortcut("a", modifiers: .command)
+                        Spacer()
+                        Button { chooseSaveFolder() } label: { Label(L10n.string("photos.manage.download"), systemImage: "square.and.arrow.down") }
+                            .disabled(model.selectedPhotoIDs.isEmpty || model.isSaving)
+                        Menu {
+                            ForEach(PhotoManagementKind.selectionCases, id: \.self) { kind in
+                                Button(kind.title) { managementSheet = PhotoManagementSheet(kind: kind, photos: model.selectedPhotos, album: model.selectedAlbum) }
+                                    .disabled(!model.canManageSelection || !model.managementFeatures.contains(kind.feature) || ([.removeAlbum, .cover].contains(kind) && model.selectedAlbum == nil) || (kind == .cover && model.selectedPhotos.count != 1) || (kind == .removeAlbum && model.selectedAlbum?.isConditional == true))
+                            }
+                        } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis.circle") }
+                        Button(role: .destructive) { model.requestDeletion(model.selectedPhotos) } label: {
+                            Label(L10n.string("photos.delete.action"), systemImage: "trash")
+                        }.disabled(!model.canDeleteSelection)
+                    } else { Spacer() }
+                }
+                .buttonStyle(MacToolbarButtonStyle())
+                .padding(.horizontal, 16).padding(.bottom, 10)
+                .disabled(model.isDeleting || model.isCheckingDeletion || model.isManaging)
+            }
+
             HStack(spacing: 0) {
                 galleryContent.fillsAvailableContentArea(alignment: .topLeading)
                 if model.showsTimeline, !model.timelineMonths.isEmpty {
@@ -73,7 +128,39 @@ struct SynologyPhotosView: View {
                     PhotoTimelineRail(months: model.timelineMonths, selectedID: model.selectedTimelineMonthID) { month in
                         Task { await model.jumpToMonth(month) }
                     }.frame(width: 92).padding(.vertical, 12)
+                        .disabled(model.isDeleting || model.isCheckingDeletion || model.isBrowsingBlocked)
                 }
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                guard !urls.isEmpty, urls.allSatisfy(\.isFileURL), managementSheet == nil,
+                      !model.isManaging, !model.isLoading, !model.isDeleting, !model.isCheckingDeletion,
+                      model.pendingMutationID == nil, model.managementFeatures.contains(.upload) else { return false }
+                presentUpload(urls)
+                return true
+            }
+            if !model.uploadQueue.isEmpty {
+                HStack {
+                    Text(L10n.string("photos.upload.summary", model.uploadQueue.filter { $0.state == .completed }.count, model.uploadQueue.count))
+                        .font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L10n.string("photos.upload.queue")) { showsUploadQueue = true }
+                }.padding(.horizontal, 16).padding(.vertical, 8)
+            }
+            if model.isManaging { ProgressView().controlSize(.small).padding(8) }
+            if let message = model.managementMessage {
+                HStack {
+                    Text(message).font(.callout)
+                    if model.pendingMutationID != nil && !model.isManaging {
+                        Button(L10n.string("photos.selection.retryReview")) { model.reviewPendingMutation() }
+                    }
+                    if model.retryableManagementMutation != nil {
+                        Button(L10n.string("photos.manage.continueRemaining")) { model.continuePartialManagement() }
+                            .disabled(model.isManaging || model.pendingMutationID != nil)
+                    }
+                    if let url = model.managementLink {
+                        Button(L10n.string("photos.copyLink")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string) }
+                    }
+                }.padding(8)
             }
             if model.isSaving { ProgressView(value: model.saveProgress).padding(.horizontal) }
             if let message = model.saveMessage { Text(message).font(.callout).foregroundStyle(.secondary).padding(8) }
@@ -81,8 +168,8 @@ struct SynologyPhotosView: View {
             if let message = model.deletionMessage {
                 HStack {
                     Text(message).font(.callout)
-                    if model.pendingDeletionPhoto != nil {
-                        Button(L10n.string("photos.delete.review")) { Task { await model.reviewPendingDeletion() } }.disabled(model.isDeleting)
+                    if model.pendingDeletionPhoto != nil && !model.isDeleting {
+                        Button(L10n.string("photos.selection.retryReview")) { Task { await model.reviewPendingDeletion() } }.disabled(model.isDeleting || model.isManaging)
                     }
                 }.padding(8)
             }
@@ -90,26 +177,60 @@ struct SynologyPhotosView: View {
         .fillsAvailableContentArea(alignment: .topLeading)
         .background(MacGlassSurface(role: .content))
         .task { await model.loadIfNeeded() }
-        .onDisappear { model.cancel() }
-        .alert(L10n.string("photos.delete.title"), isPresented: Binding(get: { model.deletionCandidate != nil }, set: { if !$0 { model.deletionCandidate = nil } })) {
-            Button(L10n.string("photos.delete.cancel"), role: .cancel) { model.deletionCandidate = nil }
-            if let photo = model.deletionCandidate {
-                Button(L10n.string("photos.delete.action"), role: .destructive) { model.confirmDeletion(photo) }
-            }
-        } message: {
-            Text(L10n.string("photos.delete.confirm", model.deletionCandidate?.filename ?? ""))
+        .onDisappear { model.leaveGallery() }
+        .alert(L10n.string("photos.delete.title"), isPresented: Binding(
+            get: { !model.deletionCandidates.isEmpty },
+            set: { if !$0 { model.deletionCandidates = [] } }
+        ), presenting: model.deletionCandidates) { targets in
+            Button(L10n.string("photos.delete.cancel"), role: .cancel) { model.deletionCandidates = [] }
+            Button(L10n.string("photos.delete.action"), role: .destructive) { model.confirmDeletion(targets) }
+        } message: { targets in
+            Text(targets.count == 1
+                ? L10n.string("photos.delete.confirm", targets.first?.filename ?? "")
+                : L10n.string("photos.selection.confirm", targets.count))
         }
         .alert(L10n.string("photos.delete.title"), isPresented: Binding(get: { model.deletionError != nil }, set: { if !$0 { model.deletionError = nil } })) {
             Button(L10n.string("photos.media.close"), role: .cancel) { model.deletionError = nil }
         } message: { Text(model.deletionError ?? "") }
+        .sheet(isPresented: $showsUploadQueue) { PhotoUploadQueuePanel(model: model) }
+        .sheet(item: $managementSheet) { sheet in
+            PhotoManagementPanel(model: model, sheet: sheet)
+        }
         .sheet(isPresented: Binding(get: { model.previewPhoto != nil }, set: { if !$0 { model.closePreview() } })) {
             SynologyPhotoPreview(model: model)
         }
     }
+    private func chooseSaveFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
+        panel.prompt = L10n.string("photos.manage.download")
+        panel.begin { result in
+            if result == .OK, let url = panel.url { model.saveSelection(to: url) }
+        }
+    }
+
+    private func chooseUpload() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image, .movie]
+        panel.prompt = L10n.string("photos.manage.upload")
+        let album = model.selectedAlbum
+        let folder = model.section == .folders ? model.folderHistory.last : nil
+        panel.begin { result in
+            guard result == .OK, !panel.urls.isEmpty else { return }
+            managementSheet = PhotoManagementSheet(kind: .upload, photos: [], album: album, files: panel.urls, folder: folder)
+        }
+    }
+
+    private func presentUpload(_ urls: [URL]) {
+        managementSheet = PhotoManagementSheet(kind: .upload, photos: [], album: model.selectedAlbum,
+            files: urls, folder: model.section == .folders ? model.folderHistory.last : nil)
+    }
+
     @ViewBuilder private var galleryContent: some View {
             if model.isLoading {
                 ProgressView().fillsAvailableContentArea()
-            } else if model.items.isEmpty && model.collections.isEmpty && !model.showsCategories && model.sharedEntries.isEmpty && !model.hasPrevious {
+            } else if model.items.isEmpty && model.collections.isEmpty && !model.showsCategories && model.sharedEntries.isEmpty && !model.hasPrevious && !model.hasMore {
                 ContentUnavailableView {
                     Label(L10n.string(model.errorMessage == nil ? "photos.empty.title" : "photos.error.title"), systemImage: "photo.on.rectangle")
                 } description: {
@@ -129,11 +250,19 @@ struct SynologyPhotosView: View {
                                     Task { await loadPreviousPage(using: proxy) }
                                 }.buttonStyle(MacToolbarButtonStyle())
                             } else {
-                                ProgressView().frame(maxWidth: .infinity).padding()
-                                    .id(model.previousPaginationIdentity)
-                                    .task { await loadPreviousPage(using: proxy) }
+                                HStack {
+                                    Spacer()
+                                    if model.isLoadingPrevious { ProgressView().controlSize(.small) }
+                                    else {
+                                        Button(L10n.string("photos.timeline.newer")) {
+                                            Task { await loadPreviousPage(using: proxy) }
+                                        }.buttonStyle(MacToolbarButtonStyle())
+                                    }
+                                    Spacer()
+                                }
                             }
                         }
+
                         if model.showsCategories {
                             LazyVGrid(columns: columns, spacing: 8) {
                                 ForEach(SynologyPhotoCategory.allCases.filter { model.availableCategories.contains($0) }, id: \.self) { category in
@@ -145,6 +274,7 @@ struct SynologyPhotosView: View {
                                         .frame(maxWidth: .infinity).frame(height: 145)
                                         .background(palette.card, in: RoundedRectangle(cornerRadius: 10))
                                     }.buttonStyle(.plain)
+
                                 }
                             }
                         }
@@ -165,19 +295,48 @@ struct SynologyPhotosView: View {
                                 ForEach(model.collections) { collection in
                                     Button { Task { await model.open(collection) } } label: {
                                         VStack(spacing: 10) {
-                                            Image(systemName: model.section == .folders ? "folder.fill" : "rectangle.stack.fill").font(.system(size: 36)).foregroundStyle(.tint)
-                                            Text(collection.name).lineLimit(2)
+                                            if model.section == .albums, collection.thumbnail != nil {
+                                                PhotoAlbumCover(model: model, album: collection, category: model.selectedCategory)
+                                                    .frame(height: 105).clipped()
+                                            } else {
+                                                Image(systemName: model.section == .folders ? "folder.fill" : "rectangle.stack.fill").font(.system(size: 36)).foregroundStyle(.tint)
+                                            }
+                                            Text(collection.name.isEmpty && model.selectedCategory == .person ? L10n.string("photos.people.unnamed") : collection.name).lineLimit(2)
                                         }
                                         .frame(maxWidth: .infinity).frame(height: 150)
                                         .background(palette.card, in: RoundedRectangle(cornerRadius: 10))
                                     }.buttonStyle(.plain)
+                                    .contextMenu {
+                                        if model.selectedCategory == .person {
+                                            ForEach([PhotoManagementKind.renamePerson, .mergePeople], id: \.self) { kind in
+                                                Button(kind.title) { managementSheet = PhotoManagementSheet(kind: kind, photos: [], person: collection) }
+                                                    .disabled(!model.managementFeatures.contains(kind.feature) || model.isManaging || model.pendingMutationID != nil)
+                                            }
+                                        }
+                                        if model.section == .albums && model.selectedCategory == nil {
+                                            ForEach(PhotoManagementKind.albumCases + (collection.isConditional ? [.editConditionAlbum] : []), id: \.self) { kind in
+                                                Button(kind.title) { managementSheet = PhotoManagementSheet(kind: kind, photos: [], album: collection) }
+                                                    .disabled(!model.managementFeatures.contains(kind.feature) || model.isManaging || model.pendingMutationID != nil)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                         if model.showsTimeline {
                             ForEach(model.datedGroups, id: \.date) { group in
-                                Text(group.date.formatted(.dateTime.year().month().day().locale(L10n.locale)))
-                                    .font(.headline).accessibilityAddTraits(.isHeader)
+                                HStack {
+                                    Text(group.date.formatted(.dateTime.year().month().day().locale(L10n.locale)))
+                                        .font(.headline).accessibilityAddTraits(.isHeader)
+                                    Button { model.selectGroup(group.photos) } label: {
+                                        Image(systemName: Set(group.photos.map(\.id)).isSubset(of: model.selectedPhotoIDs)
+                                            ? "checkmark.circle.fill" : "circle")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(L10n.string("photos.selection.day"))
+                                    .disabled(model.isDeleting || model.isManaging)
+                                    Spacer()
+                                }
                                 photoGrid(group.photos)
                             }
                         } else { photoGrid(model.items) }
@@ -191,12 +350,16 @@ struct SynologyPhotosView: View {
                             }.buttonStyle(MacToolbarButtonStyle())
                         } else if model.hasMore || model.hasMoreCollections {
                             ProgressView().frame(maxWidth: .infinity).padding()
-                                .id(model.paginationIdentity)
+                                .id("\(model.paginationIdentity):\(model.isDeleting):\(model.isManaging)")
                                 .task { await model.loadNextPageAutomatically() }
                         }
                     }.padding(16)
                 }
                 .macThemedScrollContent()
+                .background(PhotoTimelineScrollIntent {
+                    guard model.hasPrevious, !model.isLoadingPrevious, model.previousPageErrorMessage == nil else { return }
+                    Task { await loadPreviousPage(using: proxy) }
+                })
                 }
             }
 
@@ -210,6 +373,8 @@ struct SynologyPhotosView: View {
         let previousMonth = model.previousMonthID
         await model.loadPreviousPage()
         if month == model.selectedTimelineMonthID, model.previousMonthID != previousMonth, let anchor {
+            // 等待补入内容进入布局，再回到原来第一张照片，避免整月内容推走视口。
+            await Task.yield()
             proxy.scrollTo(anchor, anchor: .top)
         }
     }
@@ -217,19 +382,78 @@ struct SynologyPhotosView: View {
     private func photoGrid(_ photos: [SynologyPhoto]) -> some View {
         LazyVGrid(columns: columns, spacing: 8) {
             ForEach(photos) { photo in
-                Button { model.showPreview(photo) } label: { SynologyPhotoCell(photo: photo, model: model) }
-                    .id(photo.id)
+                ZStack(alignment: .topLeading) {
+                    Button {
+                        let modifiers = NSEvent.modifierFlags
+                        if model.isSelecting || modifiers.contains(.command) || modifiers.contains(.shift) {
+                            model.toggleSelection(photo, extending: modifiers.contains(.shift))
+                        } else { model.showPreview(photo) }
+                    } label: { SynologyPhotoCell(photo: photo, model: model) }
                     .buttonStyle(.plain)
-                    .contextMenu {
-                        Button(L10n.string("photos.media.open")) { model.showPreview(photo) }
-                        Button(L10n.string("photos.media.save")) { savePhoto(photo, model: model) }.disabled(model.isSaving)
-                        Button(L10n.string("photos.delete.action"), role: .destructive) { model.requestDeletion(photo) }
-                            .disabled(model.isDeleting || model.isCheckingDeletion || model.pendingDeletionPhoto != nil)
+                    .overlay(RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(model.selectedPhotoIDs.contains(photo.id) ? Color.accentColor : .clear, lineWidth: 3))
+                    Button { model.toggleSelection(photo, extending: NSEvent.modifierFlags.contains(.shift)) } label: {
+                        Image(systemName: model.selectedPhotoIDs.contains(photo.id) ? "checkmark.circle.fill" : "circle")
+                            .font(.title3).symbolRenderingMode(.palette)
+                            .foregroundStyle(model.selectedPhotoIDs.contains(photo.id) ? Color.accentColor : .white, .white)
+                            .padding(5).background(.black.opacity(0.35), in: Circle())
                     }
+                    .buttonStyle(.plain).padding(6)
+                    .accessibilityLabel(L10n.string("photos.selection.toggle", photo.filename))
+                    .accessibilityValue(L10n.string(model.selectedPhotoIDs.contains(photo.id)
+                        ? "photos.selection.selected" : "photos.selection.unselected"))
+                    .disabled(model.isDeleting || model.isManaging)
+                }
+                .id(photo.id)
+                .contextMenu {
+                    Button(L10n.string("photos.media.open")) { model.showPreview(photo) }
+                    Button(L10n.string("photos.media.save")) { savePhoto(photo, model: model) }.disabled(model.isSaving)
+                    Button(L10n.string("photos.delete.action"), role: .destructive) {
+                        model.requestDeletion(model.selectedPhotoIDs.contains(photo.id) ? model.selectedPhotos : [photo])
+                    }.disabled(model.isDeleting || model.isCheckingDeletion || model.pendingDeletionPhoto != nil)
+                }
             }
         }
     }
 
+}
+
+/// 普通布局、缩略图加载和程序滚动不触发向前分页。
+private struct PhotoTimelineScrollIntent: NSViewRepresentable {
+    let onReachTop: () -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(onReachTop) }
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.attach(view)
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) { context.coordinator.onReachTop = onReachTop }
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.detach() }
+
+    @MainActor final class Coordinator {
+        var onReachTop: () -> Void
+        private weak var view: NSView?
+        private var monitor: Any?
+        init(_ action: @escaping () -> Void) { onReachTop = action }
+        func attach(_ view: NSView) {
+            self.view = view
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { @MainActor [weak self] event in
+                guard let self, let view = self.view, let window = view.window,
+                      event.window === window, event.scrollingDeltaY > 0, event.momentumPhase.isEmpty,
+                      view.bounds.contains(view.convert(event.locationInWindow, from: nil)),
+                      let content = window.contentView,
+                      let hit = content.hitTest(content.convert(event.locationInWindow, from: nil)),
+                      let scroll = hit.enclosingScrollView,
+                      scroll.documentVisibleRect.minY <= 1 else { return event }
+                DispatchQueue.main.async { [weak self] in self?.onReachTop() }
+                return event
+            }
+        }
+        func detach() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+    }
 }
 
 @MainActor
@@ -775,5 +999,36 @@ struct PhotoTimelineRail: View {
     private func select(offset: Int) {
         guard !months.isEmpty else { return }
         onSelect(months[min(max(0, selectedIndex + offset), months.count - 1)])
+    }
+}
+
+struct PhotoAlbumCover: View {
+    let model: SynologyPhotosModel
+    let album: SynologyPhotoCollection
+    var category: SynologyPhotoCategory? = nil
+    @State private var image: NSImage?
+    var body: some View {
+        GeometryReader { proxy in
+            Group {
+                if let image {
+                    Image(nsImage: image).resizable().scaledToFill()
+                } else {
+                    Image(systemName: category == .person ? "person.crop.square" : "rectangle.stack.fill").font(.system(size: 36)).foregroundStyle(.tint)
+                }
+            }.frame(width: proxy.size.width, height: proxy.size.height).clipped()
+        }
+        .accessibilityHidden(true)
+        .task(id: album) {
+            image = nil
+            do {
+                let data: Data
+                if let category { data = try await model.categoryThumbnail(for: album, category: category) }
+                else { data = try await model.thumbnail(for: album) }
+                guard !Task.isCancelled else { return }
+                image = NSImage(data: data)
+            } catch {
+                // 单张封面加载失败保留占位，不影响打开相册。
+            }
+        }
     }
 }

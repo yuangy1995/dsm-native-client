@@ -8,6 +8,14 @@ Apple 正式发布使用两个受保护的 GitHub Environment：`macos-release` 
 单行 Base64，再保存为 GitHub Environment Secret。Key ID、Issuer ID、Team ID 也按
 Secret 管理，避免将维护者账号元数据写入 workflow 或日志。
 
+## 当前构建工具链（2026-09-29）
+
+用户已授权升级云端 Xcode。Apple Build、macOS Release、iOS Release 统一使用 GitHub `macos-26`，显式选择 `/Applications/Xcode_26.6.app/Contents/Developer`，校验 Xcode 26.6 与 build 17F113；与本机开发版本一致，不使用漂移的 Xcode 默认路径。
+
+依据：[GitHub 官方 macOS 26 环境清单](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-Readme.md)。旧 macos-15 环境未提供26.6，因此同步升级Runner标签；该变更不提高App部署下限，不改变应用标识、权限、签名身份、更新密钥或XcodeGen2.46.0。移动端继续动态选择可用iPhone/iPad模拟器，不依赖旧系统设备名。
+
+迁移以完整Apple共享测试、iPhone/iPad模拟器和macOS双架构构建为门禁；正式发布另做签名、公证和更新源校验。iOS发布工作流同步配置，本轮不发布iOS。若新工具链验证失败，先修复具体兼容问题；确需回滚时将三个工作流恢复macos-15/Xcode16.4及16F6并重新验证，不改既有已公开安装包或数据格式。
+
 ## 共享 App Store Connect API Secrets
 
 macOS 公证和可选的 iOS 上传共用以下 Secrets：

@@ -418,3 +418,46 @@ tags 字符串数组，Windows/macOS 已有读取同步补参并拒绝不完整�
 追踪已补源码但未执行 Swift/App 构建回归，恢复限当前连接内存；移动平台不开放。
 
 本表只确认当前记录的发现范围。合并后的 NAS 设置已形成当前 DSM build 的既有读取结构兼容结论；新增系统活动、电源计划、外接存储与内存压缩适配仍只有静态目录、页面观察或合成测试，不继承其他系统接口的 `read-verified`；打印机 Bonjour 共享仅完成静态登记，客户端整体关闭。当前账号共享访问只使用公开 File Station 契约，内部管理员权限矩阵保持关闭。文件服务、远程终端、代理、物理网卡、DDNS、区域时间、远程访问、防火墙基础控制、UPS 和套件启停已按当前 DSM 前端契约接入客户端保护与写后回读，但尚未在专用测试设备上形成真实写操作兼容结论。Android 第 55 批远程访问合成测试不改变机器可读记录的 `observed / degraded`，也不把登录或 QuickConnect 连接证据外推为设置写行为证据。Android 第 56 批 Download Station 合成测试同样不升级套件兼容证据，不把任务消失外推为文件删除副作用已确认；真实暂停、继续与两类删除仍待专用目标验收。Android 第 67 批文本保存、压缩和解压只增加客户端基线、路径锁、结果保存及合成回读证据，不升级 File Station 兼容等级；顶层解压路径与类型核对不代表递归内容或校验和已验证。第 68 批 RSS 持久结果与 `DownloadStation2`/VMM 独立文档只修正客户端反馈和证据引用，不提升 `observed`、`read-verified` 或写行为等级；第 69 批后台上传持久结果只保留公开 File Station 调用的客户端语义，不形成新的真实 NAS 证据。真实任务字段、权限、断线、取消、挂载切换和副作用仍待专用目标验收。共享文件夹复合管理、完整防火墙规则、电源计划保存、USB 安全弹出和内存压缩设置仍保持关闭；其他 DSM build、套件版本与权限组合仍需验证。Download Station、VMM 与 Container Manager 已进入 macOS 实现，但内部接口写操作仍以专用目标验收为发布前置条件。
+
+## 2026-09-29 Photos macOS 增量对齐影响
+
+用户已授权增量扩展上传、相册/分享管理、标签/评级/日期、移动/复制共享契约。完整账本见 `docs/development/MACOS_PHOTOS_PARITY_20260929_ZH.md`，接口证据见 `docs/api/discovery/endpoints/photos-management.md`。新增写方法默认关闭，仅有官方静态结构和合成测试，不升级为真实 NAS 兼容结论。macOS 批量删除、月份稳定与自动核对沿用既有删除门禁；新增批量保存使用原有只读接口。iPhone/iPad 共用 Apple 协议的默认不支持实现，保持既有单项删除界面；Android/Windows 仅记录影响，未改代码或开放新入口。未完成的网页能力与验证条件在账本明确列出，不计作完整对齐。
+
+2026-09-29 后续明确授权：用户要求取消新增照片功能的默认禁用。Apple 实际 Photos Repository 已移除人工能力白名单，macOS 按真实接口支持开放上述功能；保留权限、确认与结果校验。其他端 UI/存储仍未修改；接口开放不能表述为跨版本验证通过。专用合成图片/相册的网页验证与最新包记录见 `docs/development/MACOS_PHOTOS_PARITY_20260929_ZH.md` 末尾。
+
+
+### 2026-09-29 Photos 后续波次
+
+Photos 多文件上传和相册目标复用已有单文件上传/成员接口；封面使用既有 set_cover/get/Thumbnail 通道。合成验证与真实版本兼容性分开记录，未新增 behavior-verified 版本结论，继续按用户明确授权开放实际支持入口。
+
+
+### 2026-09-29 Photos 标签与日期增量
+
+Photos 新标签使用已记录 GeneralTag.create/list，日期偏移复用已记录 Item.set(time)，不猜测 shift_time 参数。尚无当前版本真实行为结论；取消人工默认禁用的用户授权继续有效，实际 API/权限检查保留。
+
+
+### 2026-09-29 Photos 目录层级与高级管理发现
+
+个人空间 Folder.create v1(target_id,name) / get v2 已进入 macOS 层级上传；创建回执必须按编号、父目录、名称和 view/manage 权限回读，未知不重放。不设人工白名单，真实 NAS 写入仍为 PENDING_USER_VALIDATION，合成测试不提升环境等级。photos-file-management 已同步；另登记条件相册、人物、照片请求与预览重建四组静态候选，高级分享补充静态结构。31 项端点引用校验通过。不得把候选登记或网页参数读取称为 behavior-verified。
+
+
+### 2026-09-29 条件相册增量
+
+photos-condition-albums 已接入 macOS：ConditionAlbum v3 create/get/set_condition/suggest/peek_item_count，Album v4 列表识别 type=condition。仅个人来源，所有者和目录可见性检查、原规则冲突检测、去重与完整回读；未新增环境行为等级。PENDING_USER_VALIDATION：专用合成条件相册创建/编辑及只读预览，NAS/Photos 版本、日期边界和建议非空结构待核对。
+
+回滚可移除条件相册入口、命令和新增默认字段/方法，既有普通相册、时间轴和上传流程保留；不迁移已有持久化。完整证据见 MACOS_PHOTOS_PARITY_20260929_ZH.md 与 photos-advanced-management.md。
+
+
+### 2026-09-29 分享现状与访问方式增量
+
+macOS 接入只读分享快照、当前设置初始化、仅受邀者模式、已有保护标记与复制链接；不修改时不提交，保存校验原快照并保留密码/有效期。公开访问只有查看/下载，upload 是具名成员角色。新增领域 albumSharing 与 shareAlbum 可选快照，旧调用默认兼容；不改持久化、权限或工具链。iOS/iPadOS 共享领域受影响但无新 UI、未运行移动构建；Android/Windows 本轮只同步契约影响，不改实现。密码/有效期编辑与成员增删改仍未完成，NAS 写入为 PENDING_USER_VALIDATION，无人工验证白名单。回滚移除新方法/快照/入口即可，无数据迁移。详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md 和 photos-management.md。
+
+
+### 2026-09-29 Photos 分享成员增量
+
+macOS 已接入用户/群组候选、成员添加/移除与角色调整；type+id 识别身份，按原快照计算差量，保存后核对完整角色名单。普通相册成员可上传，条件相册不提供上传角色。未知列表不当空名单，原未知角色不静默降级，原密码/有效期保留，关闭状态不意外启用。新增共享领域成员类型、sharingRecipients 默认方法和 shareAlbum.members 可选参数；无存储/权限/工具链变更。iOS/iPadOS 共享领域增量但无新 UI、未运行移动构建；Android/Windows 仅同步影响。真实权限写入 PENDING_USER_VALIDATION，不设验证白名单。回滚移除成员增量，不影响基本分享。高级分享剩余密码与有效期编辑，详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md。
+
+
+### 2026-09-29 Photos 人物命名与合并增量
+
+macOS 人物卡片接入命名/清空名称和合并，表单显示人物封面、名称与照片数量；独立按真实能力开放。新增共享领域 peopleNames/peopleMerge、renamePerson/mergePeople、managementPeople、结果 person/removedPersonIDs 和分类缩略图默认方法，无存储格式变更。合并前后核对照片集合、目录权限和目标快照，结果自动确认，同操作不重发；更新当前列表而不跳到最新照片。分类封面使用当前分类列表的授权缩略图，避免把人物编号用于相册查询。iOS/iPadOS 共享领域受影响但无新增 UI、未运行移动构建；Android/Windows 仅更新影响计划。真实 NAS 人物写入 PENDING_USER_VALIDATION，无人工禁用/验证白名单；人脸分离、封面和识别纠正仍未完成。回滚移除人物入口/命令/结果增量，既有照片流程保留；无依赖、权限或持久化迁移。详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md 与 photos-advanced-management.md。

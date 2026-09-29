@@ -1,19 +1,19 @@
-## macOS 1.0.9
+## macOS 1.0.11
 
-- 修复开启挂载读写或删除权限时的闪退。
-- 更新弹窗直接显示更新日志，无需跳转网页查看。
+- 下载管理改为分类与表格布局，支持搜索、排序、批量操作和任务详情；未选择任务时隐藏详情，也可以手动关闭。
+- 优化 BT 搜索弹窗的布局、加载与错误状态，精简下载映像窗口的切换栏。
+- 照片支持批量删除并自动核对结果，修复时间轴跳转后位置漂移和删除后回到最新照片的问题。
+- 扩展个人照片管理：上传文件与目录、移动和复制、标签与评级、描述及拍摄日期编辑。
+- 增加普通相册和条件相册管理、分享成员与权限设置，以及人物命名和合并；修复人物分类封面取错图片。
 
-## English — macOS 1.0.9
+部分照片功能取决于 NAS 的 Synology Photos 版本与账号权限。分享密码/有效期编辑、照片收集请求管理、人脸识别纠正、预览重建、共享空间完整写操作和重启后的上传恢复仍在完善。
 
-- Fixed a crash when enabling editing or deletion for a mount.
-- Release notes now appear directly in the update window.
+## English — macOS 1.0.11
 
-## macOS 1.0.10
+- Redesigned download management with categories, a sortable and searchable table, batch actions, and task details. Details stay hidden until a task is selected and can be closed manually.
+- Improved the BT search dialog layout, loading and error states, and simplified the image download tab bar.
+- Added batch photo deletion with automatic result checks. Fixed timeline position shifts after date jumps and returning to the newest photos after deletion.
+- Expanded personal photo management with file and folder uploads, moving and copying, tags, ratings, descriptions, and capture-date editing.
+- Added regular and conditional album management, sharing members and permissions, and person naming and merging. Fixed incorrect covers in photo categories.
 
-- 修复更新说明中 HTML 特殊字符显示异常和中英文内容分隔识别错误。
-- 完善 NAS 管理与服务设置，支持容器镜像拉取及远程挂载故障恢复。
-
-## English — macOS 1.0.10
-
-- Fixed HTML entity rendering and Chinese/English section detection in release notes.
-- Expanded NAS and service management, with container image pulling and remote mount recovery.
+Some photo features depend on the Synology Photos version and account permissions. Sharing password and expiration editing, photo request management, face corrections, preview regeneration, complete shared-space write operations, and upload recovery after restarting are still being developed.

@@ -24,6 +24,7 @@
 		4440F05E83E5ED0F48DAC304 /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = 068B0CB217B93D2E04F6CB21 /* DsmLocalization */; };
 		46CE97C3D80547D7061224F2 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9DB7D94AFC947DE39DF8D1 /* LoginView.swift */; };
 		4991FA2CB347811AEB834677 /* PhotoLibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */; };
+		4B1D1A6C8E02EE02141476E3 /* PhotoManagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */; };
 		59342F280657F1325F5695BE /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */; };
 		59C06DE7124461270B9173C6 /* ChatWorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2A90B20C76F1C8B23067D1 /* ChatWorkspaceModel.swift */; };
 		6C6EE7AF31CE7819C5075FC2 /* DesktopDriveDomainController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D983F7627104AB0720B16971 /* DesktopDriveDomainController.swift */; };
@@ -105,6 +106,7 @@
 		6499C1A22746CC05B3929D4F /* ProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderEnumerator.swift; sourceTree = "<group>"; };
 		73A190EAB72D1587728A072E /* LanStash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LanStash.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		749F58346E89043A97184CFB /* DesktopDriveMappingTransactionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveMappingTransactionCoordinator.swift; sourceTree = "<group>"; };
+		7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoManagementPanel.swift; sourceTree = "<group>"; };
 		852694B5E54505BB153EF98A /* FilePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewView.swift; sourceTree = "<group>"; };
 		867D32EDC1609777EE056B6B /* ProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderItem.swift; sourceTree = "<group>"; };
 		8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoMetadataExtractor.swift; sourceTree = "<group>"; };
@@ -212,6 +214,7 @@
 				AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */,
 				1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */,
 				27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */,
+				7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */,
 				8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */,
 				3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */,
 				2578503BB6C863138963CE6B /* ServiceManagementModel.swift */,
@@ -395,6 +398,7 @@
 				836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */,
 				4991FA2CB347811AEB834677 /* PhotoLibraryModel.swift in Sources */,
 				E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */,
+				4B1D1A6C8E02EE02141476E3 /* PhotoManagementPanel.swift in Sources */,
 				D733D79BB2B46B2F6E5C06E9 /* PhotoMetadataExtractor.swift in Sources */,
 				9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */,
 				AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */,
@@ -446,7 +450,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -455,7 +459,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;
@@ -539,7 +543,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -547,7 +551,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -562,7 +566,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -570,7 +574,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -646,7 +650,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -655,7 +659,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;

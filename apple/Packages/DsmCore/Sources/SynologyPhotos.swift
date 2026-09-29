@@ -50,6 +50,7 @@ public struct SynologyPhoto: Identifiable, Hashable, Sendable {
     public var focalLength: String? = nil
     public var iso: String? = nil
     public var rating: Int? = nil
+    public var tags: [SynologyPhotoFilterChoice]? = nil
     public var addressComponents: [String] = []
     public var latitude: Double? = nil
     public var longitude: Double? = nil
@@ -215,6 +216,16 @@ public struct SynologyPhotoSharedEntry: Identifiable, Equatable, Sendable {
 
 /// 替换后的照片库只接受 Photos 身份，不提供扫描文件夹或 FileItem 转换入口。
 public protocol SynologyPhotosServing: Sendable {
+    func managementPeople() async throws -> [SynologyPhotoCollection]
+    func albumSharing(id: Int) async throws -> SynologyPhotoSharingState
+    func sharingRecipients() async throws -> [SynologyPhotoShareRecipient]
+    func albumCondition(id: Int) async throws -> SynologyPhotoAlbumCondition
+    func conditionSuggestions(keyword: String) async throws -> [String: [SynologyPhotoConditionOption]]
+    func conditionItemCount(_ condition: SynologyPhotoAlbumCondition) async throws -> Int
+    func managementFeatures() async -> Set<SynologyPhotosManagementFeature>
+    func prepareMutation(_ mutation: SynologyPhotosMutation) async throws
+    func performMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress) async throws -> SynologyPhotosMutationResult
+    func reviewMutation(operationID: UUID) async throws -> SynologyPhotosMutationResult
     func prepareDeletion(_ photo: SynologyPhoto) async throws
     func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult
     func reviewDeletion(_ photo: SynologyPhoto) async throws -> SynologyPhotoDeletionResult
@@ -223,6 +234,8 @@ public protocol SynologyPhotosServing: Sendable {
     func searchTimeline(in space: SynologyPhotoSpace, keyword: String) async throws -> [SynologyPhotoDay]
     func photos(in space: SynologyPhotoSpace, query: SynologyPhotoQuery, offset: Int, limit: Int) async throws -> SynologyPhotoPage
     func thumbnail(for photo: SynologyPhoto) async throws -> Data
+    func thumbnail(for album: SynologyPhotoCollection) async throws -> Data
+    func thumbnail(for collection: SynologyPhotoCollection, category: SynologyPhotoCategory) async throws -> Data
     func rootFolder(in space: SynologyPhotoSpace) async throws -> SynologyPhotoCollection
     func folders(in space: SynologyPhotoSpace, parentID: Int, offset: Int, limit: Int) async throws -> [SynologyPhotoCollection]
     func albums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection]
@@ -243,14 +256,30 @@ public struct SynologyPhotoCollection: Identifiable, Equatable, Sendable {
     public let name: String
     public let parentID: Int?
     public let itemCount: Int?
+    public let thumbnail: SynologyPhotoThumbnail?
+    public let isConditional: Bool
 
-    public init(id: Int, name: String, parentID: Int? = nil, itemCount: Int? = nil) {
+    public init(id: Int, name: String, parentID: Int? = nil, itemCount: Int? = nil, thumbnail: SynologyPhotoThumbnail? = nil, isConditional: Bool = false) {
+        self.isConditional = isConditional
+        self.thumbnail = thumbnail
         self.id = id; self.name = name; self.parentID = parentID; self.itemCount = itemCount
     }
 }
 
 // 新增读取能力采用显式不支持，既有合成 Repository 不伪造成功结果。
 public extension SynologyPhotosServing {
+    func thumbnail(for collection: SynologyPhotoCollection, category: SynologyPhotoCategory) async throws -> Data { throw CapabilitySelectionError.unsupported(apiName: "Photos.CategoryThumbnail") }
+    func managementPeople() async throws -> [SynologyPhotoCollection] { throw CapabilitySelectionError.unsupported(apiName: "Photos.Person") }
+    func albumSharing(id: Int) async throws -> SynologyPhotoSharingState { throw CapabilitySelectionError.unsupported(apiName: "Photos.Sharing") }
+    func sharingRecipients() async throws -> [SynologyPhotoShareRecipient] { throw CapabilitySelectionError.unsupported(apiName: "Photos.Sharing.Members") }
+    func albumCondition(id: Int) async throws -> SynologyPhotoAlbumCondition { throw CapabilitySelectionError.unsupported(apiName: "Photos.ConditionAlbum") }
+    func conditionSuggestions(keyword: String) async throws -> [String: [SynologyPhotoConditionOption]] { throw CapabilitySelectionError.unsupported(apiName: "Photos.ConditionAlbum") }
+    func conditionItemCount(_ condition: SynologyPhotoAlbumCondition) async throws -> Int { throw CapabilitySelectionError.unsupported(apiName: "Photos.ConditionAlbum") }
+    func thumbnail(for album: SynologyPhotoCollection) async throws -> Data { throw CapabilitySelectionError.unsupported(apiName: "Photos.AlbumThumbnail") }
+    func managementFeatures() async -> Set<SynologyPhotosManagementFeature> { [] }
+    func prepareMutation(_ mutation: SynologyPhotosMutation) async throws { throw CapabilitySelectionError.unsupported(apiName: "Photos.Management") }
+    func performMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress) async throws -> SynologyPhotosMutationResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Management") }
+    func reviewMutation(operationID: UUID) async throws -> SynologyPhotosMutationResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Management") }
     func prepareDeletion(_ photo: SynologyPhoto) async throws { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete") }
     func deletePhoto(_ photo: SynologyPhoto, operationID: UUID) async throws -> SynologyPhotoDeletionResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete") }
     func reviewDeletion(_ photo: SynologyPhoto) async throws -> SynologyPhotoDeletionResult { throw CapabilitySelectionError.unsupported(apiName: "Photos.Delete") }

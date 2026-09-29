@@ -111,3 +111,46 @@ apple/Apps/DsmMac/            只读 macOS 参考实现
 - Chat 语音、加密、实时通话、多附件和未经验证的服务器管理写操作；
 - Container/VMM 生命周期、网络、删除、控制台和其他高风险内部写；
 - 将桌面“后续”能力写进移动真机待办，或用 `PENDING_USER_VALIDATION` 掩盖范围外工作。
+
+## 2026-09-29 Photos macOS 增量对齐影响
+
+用户已授权增量扩展上传、相册/分享管理、标签/评级/日期、移动/复制共享契约。完整账本见 `docs/development/MACOS_PHOTOS_PARITY_20260929_ZH.md`，接口证据见 `docs/api/discovery/endpoints/photos-management.md`。新增写方法默认关闭，仅有官方静态结构和合成测试，不升级为真实 NAS 兼容结论。macOS 批量删除、月份稳定与自动核对沿用既有删除门禁；新增批量保存使用原有只读接口。iPhone/iPad 共用 Apple 协议的默认不支持实现，保持既有单项删除界面；Android/Windows 仅记录影响，未改代码或开放新入口。未完成的网页能力与验证条件在账本明确列出，不计作完整对齐。
+
+2026-09-29 后续明确授权：用户要求取消新增照片功能的默认禁用。Apple 实际 Photos Repository 已移除人工能力白名单，macOS 按真实接口支持开放上述功能；保留权限、确认与结果校验。其他端 UI/存储仍未修改；接口开放不能表述为跨版本验证通过。专用合成图片/相册的网页验证与最新包记录见 `docs/development/MACOS_PHOTOS_PARITY_20260929_ZH.md` 末尾。
+
+
+### 2026-09-29 Photos 后续波次
+
+iPhone/iPad 影响：SynologyPhotoCollection.thumbnail 为可选增量，初始化默认 nil；SynologyPhotosServing.thumbnail(for: collection) 有默认不支持实现。共享 Model 新增上传队列，但移动 UI 未接入；macOS 队列不自动扩大移动端范围，无持久化迁移。
+
+
+### 2026-09-29 Photos 标签与日期增量
+
+iPhone/iPad 影响：共享管理命令增量 createTag/shiftDates、tagCreation 能力及结果可选 tag。结果初始化默认参数保持源兼容，枚举穷尽分支需包含新增命令；共享 Model 的部分完成续做固定原始目标。移动 UI、存储和权限不变。
+
+
+### 2026-09-29 Photos 目录上传共享影响
+
+共享 Apple 领域新增 folders/createFolder 和默认 nil 的结果 folder，Repository 按实际能力开放；共享 Model 增加进程内目录创建队列。iPhone/iPad 本轮不增加目录选择 UI，不迁移桌面拖放/书签或存储；移动端目录导入范围仍由专项计划决定。macOS 109 项 XCTest 与 6 项本地化测试通过；本轮未运行 iOS/iPadOS 构建，不能以 macOS 结果代替。
+
+
+### 2026-09-29 条件相册增量
+
+共享 Apple 领域增量 conditionAlbums/createConditionAlbum/setAlbumCondition、条件值和集合 isConditional（默认 false）；服务读取方法有默认显式不支持实现。共享 DsmJSONValue 添加 decimal/null，原请求编码不变。iPhone/iPad 本轮无新 UI、无存储变更，未运行移动构建。macOS 回归不能代替移动构建；移动条件编辑范围仍按专项计划取舍。
+
+回滚可移除条件相册入口、命令和新增默认字段/方法，既有普通相册、时间轴和上传流程保留；不迁移已有持久化。完整证据见 MACOS_PHOTOS_PARITY_20260929_ZH.md 与 photos-advanced-management.md。
+
+
+### 2026-09-29 分享现状与访问方式增量
+
+macOS 接入只读分享快照、当前设置初始化、仅受邀者模式、已有保护标记与复制链接；不修改时不提交，保存校验原快照并保留密码/有效期。公开访问只有查看/下载，upload 是具名成员角色。新增领域 albumSharing 与 shareAlbum 可选快照，旧调用默认兼容；不改持久化、权限或工具链。iOS/iPadOS 共享领域受影响但无新 UI、未运行移动构建；Android/Windows 本轮只同步契约影响，不改实现。密码/有效期编辑与成员增删改仍未完成，NAS 写入为 PENDING_USER_VALIDATION，无人工验证白名单。回滚移除新方法/快照/入口即可，无数据迁移。详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md 和 photos-management.md。
+
+
+### 2026-09-29 Photos 分享成员增量
+
+macOS 已接入用户/群组候选、成员添加/移除与角色调整；type+id 识别身份，按原快照计算差量，保存后核对完整角色名单。普通相册成员可上传，条件相册不提供上传角色。未知列表不当空名单，原未知角色不静默降级，原密码/有效期保留，关闭状态不意外启用。新增共享领域成员类型、sharingRecipients 默认方法和 shareAlbum.members 可选参数；无存储/权限/工具链变更。iOS/iPadOS 共享领域增量但无新 UI、未运行移动构建；Android/Windows 仅同步影响。真实权限写入 PENDING_USER_VALIDATION，不设验证白名单。回滚移除成员增量，不影响基本分享。高级分享剩余密码与有效期编辑，详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md。
+
+
+### 2026-09-29 Photos 人物命名与合并增量
+
+macOS 人物卡片接入命名/清空名称和合并，表单显示人物封面、名称与照片数量；独立按真实能力开放。新增共享领域 peopleNames/peopleMerge、renamePerson/mergePeople、managementPeople、结果 person/removedPersonIDs 和分类缩略图默认方法，无存储格式变更。合并前后核对照片集合、目录权限和目标快照，结果自动确认，同操作不重发；更新当前列表而不跳到最新照片。分类封面使用当前分类列表的授权缩略图，避免把人物编号用于相册查询。iOS/iPadOS 共享领域受影响但无新增 UI、未运行移动构建；Android/Windows 仅更新影响计划。真实 NAS 人物写入 PENDING_USER_VALIDATION，无人工禁用/验证白名单；人脸分离、封面和识别纠正仍未完成。回滚移除人物入口/命令/结果增量，既有照片流程保留；无依赖、权限或持久化迁移。详情见 MACOS_PHOTOS_PARITY_20260929_ZH.md 与 photos-advanced-management.md。

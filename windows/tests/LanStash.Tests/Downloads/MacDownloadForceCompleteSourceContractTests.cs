@@ -28,8 +28,12 @@ public sealed class MacDownloadForceCompleteSourceContractTests
         var model = Read("apple/Apps/DsmMac/Sources/ServiceManagementModel.swift");
         Assert.DoesNotContain("taskAndData", view);
         Assert.Contains("case finishIncomplete", view);
-        Assert.Contains("deleteDownloads(forceComplete: forceComplete)", view);
-        Assert.Contains("func deleteDownloads(forceComplete: Bool)", model);
+        Assert.Contains("deleteDownloads(forceComplete: forceComplete, confirmedIDs: ids)", view);
+        Assert.Contains("confirmedDeleteIDs = model.downloadSelection", view);
+        Assert.Contains("let ids = confirmedDeleteIDs", view);
+        Assert.Contains("func deleteDownloads(forceComplete: Bool, confirmedIDs: Set<String>? = nil)", model);
+        Assert.Contains("confirmedIDs == downloadSelection", model);
+        Assert.Contains("confirmedIDs.isSubset(of: currentIDs)", model);
         Assert.Contains("removeData: forceComplete", model);
         Assert.Contains("download-task.finish-incomplete", model);
         Assert.Contains("force_complete", Read("apple/Packages/DsmNetwork/Sources/DsmServiceManagementRepository.swift"));
