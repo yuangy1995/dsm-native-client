@@ -282,3 +282,55 @@
 - 2026-09-29 后续：`photos-sharing-management` 接入具名成员候选、添加/移除/角色差量和最终回读；static + 合成验证，真实成员目录和权限写入待验。密码、有效期编辑仍未接入。
 
 - 2026-09-29 后续：`photos-people-management` 已接入个人空间命名/清空名称与合并及照片集合核对；人脸纠正、分离、封面未实现。仍为 static + 合成验证，未执行真实 NAS 写入。分类封面改用分类列表缩略图，不按人物编号查询相册。
+
+### `photos-similar-items`
+
+- 2026-09-30 macOS 分组分类、月份列表、组内预览、推荐设置、移出、拆组和会话内撤销接入；原件清理仍后续。
+- [静态参数、权限、失败与五端影响](photos-similar-items.md)；无真实 NAS 验收。
+
+
+- 2026-09-30 `photos-library-read`：新增整相册Album.download v2、个人/共享目录Download.download v2归档下载；POST口令/数组编码、下载角色、ZIP有限读取校验和macOS原生菜单见[稳定记录](photos-library-read.md)。static及合成测试，不代表真实NAS兼容。
+
+- 2026-09-30 `photos-library-read`：补齐原尺寸JPEG实际设置、支持格式及convert v2→download流程，可能生成派生缓存，索引改为mixed；仅static/合成测试，完整约束见[端点记录](photos-library-read.md)。
+
+
+2026-09-30增量：[文件夹封面设置](photos-management.md#2026-09-30-文件夹封面)与[封面读取](photos-library-read.md#文件夹封面读取2026-09-30)，静态证据、单选/目录边界/回执与封面组合核对，真实NAS待用户验证。
+
+
+2026-09-30补充：[文件夹排序保存与读取](photos-management.md#文件夹排序保存与读取2026-09-30)，Folder.set_order v1、目录/用户默认顺序、按序分页与原目录同步；static，真实NAS待用户验收。
+
+2026-09-30：[文件夹重命名与主页面排序](photos-management.md#文件夹重命名与主页面排序2026-09-30)完成原生接入与契约记录；rename v1固定目录/管理权/完整路径自动回读，证据仍static，未代测真实NAS写入。
+
+2026-09-30：[文件夹与照片混合删除](photos-item-deletion.md#2026-09-30-文件夹与照片混合删除)按官方BackgroundTask.File主流程接入；纠正Browse.Folder.delete候选并保留历史线索。静态/合成证据，未新增真实NAS写验证。
+
+2026-09-30增量：[照片与多目录混选归档](photos-library-read.md#2026-09-30-多目录与照片混选归档下载)，官方静态POST数组参数、权限与身份预检及原生整组选项导出；static，真实NAS待用户验收。
+
+2026-09-30增量：[原生文件夹拖放及重复项候选](photos-management.md#2026-09-30-原生文件夹拖放移动与重复项静态线索)：macOS复用现有move，已选组快照、预选确认；默认设置候选仍static且未接入。
+
+
+### `photos-duplicate-settings`
+
+- 内部 `SYNO.Foto.Setting.User` get/set v1：upload_default_action(ignore/rename)、copy_move_default_action(skip/overwrite)。静态版本表、差异保存与回读已确认；Apple实现严格快照/差异字段/去重/最终核对。
+- macOS设置和单次策略开放，上传忽略与新上传区分，移动复制覆盖需确认；真实NAS验证由用户执行，不提升static等级。详见[重复项默认设置与执行](photos-management.md)。
+
+- `photos-concept-visibility`：[主题分类显示隐藏、封面与误分类移除](photos-advanced-management.md)，个人/共享Concept v1/v2，static，实际NAS待用户验证。
+
+- `photos-display-settings`：[照片显示偏好](photos-management.md)，个人设置get/set v1，static，真实NAS待用户验证。
+
+- `photos-recognition-settings`：[个人照片识别设置](photos-management.md)，User get/set及Admin get v1，static，真实NAS待验。
+
+- `photos-automatic-preview`：[自动预览候选与执行协议](photos-advanced-management.md)，ConvertedFile v3候选/上传、Download v2单元读取、本机转换及未知回执媒体核对已实现；设置与后台串行扫描已接通，entry目录可见任务/批次外优先仍进行中，static与合成测试。
+
+- `photos-shared-space-settings`：管理员共享空间启停、识别和顶层公开分享设置，见[高级管理](photos-advanced-management.md)；static，NAS待用户验证。
+
+- `photos-global-settings-cache`：全局识别/分享/格式排除/JPEG及转换缓存，见[高级管理](photos-advanced-management.md)；static，多阶段核对，NAS待用户验证。
+
+- `photos-shared-space-members`：共享成员/自动备份和按成员目录权限，见[高级管理](photos-advanced-management.md)；static，原生成员/目录草稿、最终确认、分阶段保存、自动核对与本人实际权限更新已接入；真实NAS仍待用户验证。
+
+- `photos-library-maintenance`：个人/共享当前空间重新索引、异常预览生成与自动核对，见[高级管理](photos-advanced-management.md)；static；已接入新格式提示已读及管理员全用户/普通用户个人补预览，提交确认不代表后台全部完成。
+
+2026-10-01补充：photos-advanced-management.md记录临时分享与冻结条件相册静态候选；尚未实现，无行为验证，不代表普通相册分享已完整对齐。
+
+2026-10-01接入进度：临时分享的创建、保留副本、已停止临时相册清理已进入Core/Repository，本地测试进行中；macOS组合界面和冻结相册仍未完成，不提升static证据等级。
+
+- [Photos后台任务中心](photos-background-tasks.md)：统一列表、取消、清理与错误详情；2026-10-01仅static，macOS已接入并通过本地合成回归。

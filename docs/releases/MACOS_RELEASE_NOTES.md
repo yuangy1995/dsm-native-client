@@ -1,19 +1,23 @@
-## macOS 1.0.11
+## macOS 1.0.12
 
-- 下载管理改为分类与表格布局，支持搜索、排序、批量操作和任务详情；未选择任务时隐藏详情，也可以手动关闭。
-- 优化 BT 搜索弹窗的布局、加载与错误状态，精简下载映像窗口的切换栏。
-- 照片支持批量删除并自动核对结果，修复时间轴跳转后位置漂移和删除后回到最新照片的问题。
-- 扩展个人照片管理：上传文件与目录、移动和复制、标签与评级、描述及拍摄日期编辑。
-- 增加普通相册和条件相册管理、分享成员与权限设置，以及人物命名和合并；修复人物分类封面取错图片。
+- 完善照片分享：支持密码与有效期、临时分享、保留相册副本，以及照片收集请求的创建和管理。
+- 扩展人物与分类整理：支持人脸纠正、人物封面与显示设置、主题整理，以及相似照片的推荐、移出、取消分组和撤销。
+- 完善共享空间管理，支持成员、文件夹权限及相关设置；按照片来源和实际上传者核对编辑资格。
+- 增加预览重建、自动预览处理、转换失败恢复、新格式提示和照片库维护；补齐相关显示、识别与重复文件设置。
+- 上传任务支持退出应用后恢复；结果不明确时先核对，避免重复上传，已上传成功的照片无需因加入相册失败而重新上传。
+- 增加后台移动和复制任务的进度、错误详情、取消、清理及目标位置跳转；完善目录操作、拖放和整册下载。
+- 补齐冻结相册恢复、分享列表快捷操作、预览窗口直接管理、缩略图大小和幻灯片；改善触控板缩放，并保持浏览位置与照片选择。
 
-部分照片功能取决于 NAS 的 Synology Photos 版本与账号权限。分享密码/有效期编辑、照片收集请求管理、人脸识别纠正、预览重建、共享空间完整写操作和重启后的上传恢复仍在完善。
+部分功能取决于 NAS 的 Synology Photos 版本、媒体格式与账号权限。本次更新不改变 NAS 配置或已有照片；涉及删除和分享的操作仍需确认。
 
-## English — macOS 1.0.11
+## English — macOS 1.0.12
 
-- Redesigned download management with categories, a sortable and searchable table, batch actions, and task details. Details stay hidden until a task is selected and can be closed manually.
-- Improved the BT search dialog layout, loading and error states, and simplified the image download tab bar.
-- Added batch photo deletion with automatic result checks. Fixed timeline position shifts after date jumps and returning to the newest photos after deletion.
-- Expanded personal photo management with file and folder uploads, moving and copying, tags, ratings, descriptions, and capture-date editing.
-- Added regular and conditional album management, sharing members and permissions, and person naming and merging. Fixed incorrect covers in photo categories.
+- Expanded photo sharing with passwords, expiration dates, temporary links, retained album copies, and photo request creation and management.
+- Added face corrections, person covers and visibility settings, topic organization, and similar-photo recommendations, removal, ungrouping, and undo.
+- Expanded shared-space member, folder-permission, and settings management. Editing eligibility is checked against the photo source and actual contributor.
+- Added preview regeneration, automatic preview processing, recovery from conversion failures, new-format prompts, and library maintenance, along with display, recognition, and duplicate-file settings.
+- Upload tasks can recover after restarting the app. Uncertain results are checked before continuing to avoid duplicate uploads; successfully uploaded photos do not need to be uploaded again when adding them to an album fails.
+- Added progress, error details, cancellation, record cleanup, and destination navigation for background move and copy tasks. Improved folder actions, drag and drop, and full-album downloads.
+- Added frozen-album recovery, sharing-list shortcuts, direct actions in the preview window, thumbnail sizing, and slideshows. Improved trackpad zoom while preserving browsing position and selection.
 
-Some photo features depend on the Synology Photos version and account permissions. Sharing password and expiration editing, photo request management, face corrections, preview regeneration, complete shared-space write operations, and upload recovery after restarting are still being developed.
+Some features depend on the Synology Photos version, media format, and account permissions. Installing this update does not change NAS settings or existing photos. Deletion and sharing actions still require confirmation.

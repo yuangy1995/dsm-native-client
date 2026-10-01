@@ -1,3 +1,4 @@
+import DsmCore
 import SwiftUI
 import XCTest
 @testable import DsmMacExecutable
@@ -17,6 +18,130 @@ private final class ChromeReentrantWindow: NSWindow {
 
 @MainActor
 final class MacAppearanceTests: XCTestCase {
+    func test人脸裁剪保持坐标颜色并限制JPEG尺寸() throws {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 640, pixelsHigh: 640, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 2560, bitsPerPixel: 32))
+        let bytes = try XCTUnwrap(bitmap.bitmapData)
+        for y in 0..<640 { for x in 0..<640 {
+            let offset = y * bitmap.bytesPerRow + x * 4
+            bytes[offset] = y < 320 ? 255 : 0; bytes[offset + 1] = 0; bytes[offset + 2] = y < 320 ? 0 : 255; bytes[offset + 3] = 255
+        } }
+        let image = try XCTUnwrap(bitmap.cgImage)
+        for (y, red) in [(0.0, true), (0.5, false)] {
+            let data = try PhotoFaceEditing.jpeg(image, bounds: .init(x: 0, y: y, width: 0.5, height: 0.5))
+            XCTAssertTrue(data.starts(with: [0xff, 0xd8, 0xff]))
+            let decoded = try XCTUnwrap(NSBitmapImageRep(data: data))
+            XCTAssertEqual(decoded.pixelsWide, 256); XCTAssertEqual(decoded.pixelsHigh, 256)
+            let color = try XCTUnwrap(decoded.colorAt(x: 128, y: 128)?.usingColorSpace(.deviceRGB))
+            XCTAssertGreaterThan(red ? color.redComponent : color.blueComponent, 0.9)
+        }
+        XCTAssertThrowsError(try PhotoFaceEditing.jpeg(image, bounds: .init(x: 0.9, y: 0, width: 0.5, height: 0.5)))
+    }
+
+    func test人脸画框反向拖动边界和无效小框() throws {
+        let bounds = try XCTUnwrap(PhotoFaceEditing.square(from: .init(x: 180, y: 140), to: .init(x: 80, y: 40), in: .init(width: 400, height: 200)))
+        XCTAssertEqual(bounds.x, 0.2); XCTAssertEqual(bounds.y, 0.2)
+        XCTAssertEqual(bounds.width * 400, bounds.height * 200)
+        XCTAssertNil(PhotoFaceEditing.square(from: .init(x: 5, y: 5), to: .init(x: 10, y: 10), in: .init(width: 400, height: 200)))
+        let edge = try XCTUnwrap(PhotoFaceEditing.square(from: .init(x: 200, y: 100), to: .init(x: 999, y: 999), in: .init(width: 400, height: 200)))
+        XCTAssertTrue(edge.isValid); XCTAssertEqual(edge.y + edge.height, 1)
+    }
+
+    func test人脸编辑无变化不写入改框成对替换移除可撤销() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 160, height: 120, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        let image = try XCTUnwrap(context.makeImage())
+        let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "synthetic.jpg", sizeBytes: 1, takenAt: Date(), indexedAt: Date(), folderID: 9, mediaType: "photo")
+        let bounds = SynologyPhotoFaceBounds(x: 0.1, y: 0.2, width: 0.3, height: 0.4)
+        let original = SynologyPhotoFaceRegion(id: 71, personID: 0, name: "", bounds: bounds)
+        var draft = PhotoFaceDraft(id: "original", original: original, bounds: bounds, personID: 0, name: "")
+        XCTAssertTrue(try PhotoFaceEditing.changes(photo: photo, image: image, drafts: [draft], people: []).isEmpty)
+        draft.removed = true
+        XCTAssertEqual(try PhotoFaceEditing.changes(photo: photo, image: image, drafts: [draft], people: []), [.remove(original)])
+        draft.removed = false; draft.name = "Target"; draft.bounds.x = 0.2
+        let changes = try PhotoFaceEditing.changes(photo: photo, image: image, drafts: [draft], people: [])
+        XCTAssertEqual(changes.count, 2)
+        guard case .add(let face) = changes[1] else { return XCTFail("移动框必须生成新脸") }
+        XCTAssertEqual(face.temporaryID, "7-0"); XCTAssertEqual(face.name, "Target"); XCTAssertTrue(face.jpeg.starts(with: [0xff, 0xd8, 0xff]))
+        draft.bounds = original.bounds
+        XCTAssertEqual(try PhotoFaceEditing.changes(photo: photo, image: image, drafts: [draft], people: []), [.reassign(original, person: nil, name: "Target")])
+    }
+
+    func test图片预览接收捏合与滚轮但不截获其他窗口或区域() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: .borderless, backing: .buffered, defer: false)
+        let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; other.isReleasedWhenClosed = false
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        window.contentView = host
+        var magnifications: [CGFloat] = []
+        var scrolls: [CGFloat] = []
+        let reader = ImageZoomGestureReader.Coordinator(onScroll: { delta, _ in scrolls.append(delta) }, onMagnify: { magnifications.append($0) })
+        reader.attach(to: host)
+        defer { reader.detach(); window.contentView = nil; window.close(); other.close() }
+        for delta in [CGFloat(0.3), -0.1, -0.2] {
+            XCTAssertNil(reader.handle(ImageGestureEvent(window: window, type: .magnify, delta: delta)))
+        }
+        XCTAssertEqual(magnifications, [0.3, -0.1, -0.2])
+        XCTAssertTrue(scrolls.isEmpty)
+        XCTAssertNil(reader.handle(ImageGestureEvent(window: window, type: .scrollWheel, delta: 2)))
+        XCTAssertEqual(scrolls, [2])
+        let outside = ImageGestureEvent(window: window, type: .magnify, delta: 1, point: NSPoint(x: 250, y: 50))
+        XCTAssertTrue(reader.handle(outside) === outside)
+        let anotherWindow = ImageGestureEvent(window: other, type: .magnify, delta: 1)
+        XCTAssertTrue(reader.handle(anotherWindow) === anotherWindow)
+        let unrelated = ImageGestureEvent(window: window, type: .leftMouseDown, delta: 1)
+        XCTAssertTrue(reader.handle(unrelated) === unrelated)
+        XCTAssertEqual(magnifications.count, 3)
+    }
+
+    func test照片实际可见面积跨越八成时更新且滚动不重复报告() async {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let clip = NSClipView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        clip.postsBoundsChangedNotifications = true
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        let reader = PhotoPreviewVisibilityReader.VisibilityView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        var reports: [Bool] = []
+        reader.onChange = { reports.append($0) }
+        document.addSubview(reader); clip.documentView = document; window.contentView = clip
+        defer { reader.detach(); window.contentView = nil; window.close() }
+        await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true])
+        clip.scroll(to: NSPoint(x: 20, y: 0)); await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true], "恰好80%仍在优先队列，不重复报告")
+        clip.scroll(to: NSPoint(x: 21, y: 0)); await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true, false])
+        clip.scroll(to: NSPoint(x: 15, y: 15)); await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true, false], "按面积而不是单边比例判断")
+        clip.scroll(to: .zero); await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true, false, true])
+        reader.setFrameOrigin(NSPoint(x: 150, y: 0)); await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true, false, true, false], "布局推到视口外时移除优先级")
+        XCTAssertNil(reader.hitTest(.zero), "不能截获缩略图点击")
+    }
+
+    func test照片可见登记处理隐藏空尺寸和移除视图() async {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
+        let reader = PhotoPreviewVisibilityReader.VisibilityView(frame: .zero)
+        var reports: [Bool] = []
+        reader.onChange = { reports.append($0) }
+        host.addSubview(reader); window.contentView = host
+        defer { reader.detach(); window.contentView = nil; window.close() }
+        await drainVisibilityUpdates(); XCTAssertTrue(reports.isEmpty)
+        reader.setFrameSize(NSSize(width: 100, height: 100)); await drainVisibilityUpdates()
+        reader.isHidden = true; await drainVisibilityUpdates()
+        reader.isHidden = false; await drainVisibilityUpdates()
+        reader.removeFromSuperview(); await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true, false, true, false])
+        host.addSubview(reader); await drainVisibilityUpdates()
+        reader.detach(); reader.scheduleReport(); await drainVisibilityUpdates()
+        XCTAssertEqual(reports, [true, false, true, false, true, false], "拆卸取消登记，排队回调不能重新登记")
+    }
+
+    private func drainVisibilityUpdates() async {
+        await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
+    }
+
     func test冷启动先恢复外观再创建原生选择框且可切回系统() throws {
         let application = NSApplication.shared
         let original = application.appearance
@@ -421,4 +546,23 @@ final class MacAppearanceTests: XCTestCase {
         XCTAssertEqual(store.fogTransparency, MacAppearanceStore.defaultFogTransparency)
         XCTAssertEqual(store.inkTransparency, MacAppearanceStore.defaultInkTransparency)
     }
+}
+
+/// 合成公开NSEvent属性验证事件路由，不伪造系统触控设备或连接真实NAS。
+private final class ImageGestureEvent: NSEvent {
+    private let targetWindow: NSWindow
+    private let eventType: NSEvent.EventType
+    private let eventDelta: CGFloat
+    private let point: NSPoint
+    init(window: NSWindow, type: NSEvent.EventType, delta: CGFloat, point: NSPoint = NSPoint(x: 100, y: 50)) {
+        targetWindow = window; eventType = type; eventDelta = delta; self.point = point
+        super.init()
+    }
+    required init?(coder: NSCoder) { nil }
+    override var window: NSWindow? { targetWindow }
+    override var type: NSEvent.EventType { eventType }
+    override var locationInWindow: NSPoint { point }
+    override var magnification: CGFloat { eventDelta }
+    override var scrollingDeltaY: CGFloat { eventDelta }
+    override var hasPreciseScrollingDeltas: Bool { true }
 }

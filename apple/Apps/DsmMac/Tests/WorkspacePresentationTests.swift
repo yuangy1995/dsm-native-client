@@ -17,6 +17,2404 @@ final class WorkspacePresentationTests: XCTestCase {
     private var artifacts: URL!
     private static var preparedApplication = false
 
+    func test冻结相册恢复中英浅深色表单与确认操作() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ordinary", "rebuild", "noRules", "error", "loading", "cancel"] {
+                    let service = FrozenPhotoServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await service.configure(fails: mode == "error", bare: mode == "noRules", held: mode == "loading")
+                    await model.selectSection(.albums)
+                    let album = await service.fixture()
+                    var cancelled = false
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: .restoreFrozenAlbum, photos: [], album: album), onCancel: { cancelled = true })
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 680, height: 660)); window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    defer { window.contentView = nil; window.close(); model.cancel() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-frozen-\(mode)-\(language.rawValue)-\(scheme)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    if mode == "loading" { await service.release(); try await settle(host) }
+                    if mode == "rebuild" {
+                        try click(window, at: NSPoint(x: 150, y: 431)); try await settle(host)
+                        try snapshot(host, name: "photos-frozen-edit-\(language.rawValue)-\(scheme)")
+                    }
+                    if mode == "cancel" {
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+                        window.sendEvent(event); try await settle(host)
+                        XCTAssertTrue(cancelled)
+                        let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    }
+                    if mode == "ordinary" || mode == "rebuild" {
+                        try click(window, at: NSPoint(x: 578, y: 32)); try await settle(host)
+                        let commands = await service.commands; XCTAssertEqual(commands.count, 1)
+                        if mode == "ordinary", let command = commands.first { guard case .unfreezeAlbum = command else { XCTFail(); continue } }
+                        if mode == "rebuild", let command = commands.first { guard case .rebuildFrozenAlbum = command else { XCTFail(); continue } }
+                    }
+                }
+            }
+        }
+    }
+
+    func test后台任务窗口中英浅深色五状态与错误详情() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["normal", "empty", "filtered", "failure", "loading"] {
+                    let service = BackgroundPhotoServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh()
+                    if mode == "empty" { await service.setTasks([]) }
+                    if mode == "failure" { await service.configureList(fails: true) }
+                    if mode == "loading" { await service.configureList(held: true) }
+                    if mode == "normal" {
+                        await service.setTasks([service.fixture(id: 42, status: .waiting), service.fixture(id: 43, status: .processing), service.fixture(id: 44, status: .done)])
+                    }
+                    let host = NSHostingView(rootView: PhotoBackgroundTasksPanel(model: model).background(scheme == .dark ? Color(white: 0.13) : .white).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 680, height: 580)); window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    if mode == "filtered" {
+                        let control = try XCTUnwrap(nativeViews(host, of: NSSegmentedControl.self).first)
+                        control.selectedSegment = 2; control.sendAction(control.action, to: control.target)
+                        try await settle(host)
+                    }
+                    try snapshot(host, name: "photos-background-\(mode)-\(language.rawValue)-\(scheme)")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty, "查看任务及筛选不会取消或清理任务")
+                    if mode == "loading" { await service.releaseList() }
+                    window.contentView = nil; window.close(); model.cancel()
+                }
+                for mode in ["normal", "empty", "failure"] {
+                    let service = BackgroundPhotoServiceStub(), model = SynologyPhotosModel(repository: service)
+                    await model.refresh(); await service.configureErrors(fails: mode == "failure", empty: mode == "empty")
+                    let task = await service.fixture(status: .done)
+                    let host = NSHostingView(rootView: PhotoBackgroundTaskErrorsPanel(model: model, task: task).background(scheme == .dark ? Color(white: 0.13) : .white).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 600, height: 460)); window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua); try await settle(host)
+                    try snapshot(host, name: "photos-background-errors-\(mode)-\(language.rawValue)-\(scheme)")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    window.contentView = nil; window.close(); model.cancel()
+                }
+            }
+        }
+    }
+
+    func test后台任务确认取消与固定范围清理中英浅深色() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["dismiss", "cancel", "clear"] {
+                    let service = BackgroundPhotoServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let task = await service.fixture(status: mode == "clear" ? .done : .waiting)
+                    await service.setTasks([task]); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoBackgroundTasksPanel(model: model)
+                        .background(scheme == .dark ? Color(white: 0.13) : .white).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 680, height: 580)); window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    defer { if let alert = window.attachedSheet { window.endSheet(alert) }; window.contentView = nil; window.close(); model.cancel() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-background-before-\(mode)-\(language.rawValue)-\(scheme)")
+                    try click(window, at: mode == "clear" ? NSPoint(x: 90, y: 32) : NSPoint(x: 50, y: 384))
+                    try await settle(host)
+                    let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                    let key = mode == "dismiss" ? "photos.delete.cancel" : mode == "cancel" ? "photos.tasks.cancel" : "photos.tasks.clear"
+                    let button = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string(key) })
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty, "必须在确认后才改变任务")
+                    if mode == "clear" { await service.setTasks([task, service.fixture(id: 43, status: .done)]) }
+                    button.performClick(nil); try await settle(host)
+                    let commands = await service.commands
+                    XCTAssertEqual(commands.count, mode == "dismiss" ? 0 : 1)
+                    if mode == "cancel" { XCTAssertEqual(commands, [.cancelBackgroundTask(task)]) }
+                    if mode == "clear" {
+                        XCTAssertEqual(commands, [.clearBackgroundTasks([task])])
+                        let remaining = try await service.backgroundTasks(); XCTAssertEqual(remaining.map(\.id), [43])
+                    }
+                    try snapshot(host, name: "photos-background-after-\(mode)-\(language.rawValue)-\(scheme)")
+                }
+            }
+        }
+    }
+
+    func test由我共享列表直接管理双语浅深色取消只读及停止更新() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = DatePhotoServiceStub(); await service.enableManagement(); await service.configureSharing(.view)
+                await service.configureSharedAlbumSort(.init(field: .shareModified, direction: .descending))
+                await service.configureSharedAlbumEntries([.init(id: "9", title: "Synthetic shared album", albumID: 9)])
+                let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await model.selectSection(.sharing); await model.selectShareScope(.withOthers)
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1400, height: 820))
+                defer { window.contentView = nil; window.close(); model.cancel() }
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                try snapshot(host, name: "photos-sharing-row-\(language.rawValue)-\(scheme)")
+                for saving in [false, true] {
+                    try click(window, at: NSPoint(x: 1290, y: 658)); try await settle(host)
+                    let sheet = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(sheet.contentView)
+                    try await settle(content); XCTAssertNil(model.selectedAlbum)
+                    let before = await service.managementWriteCount; XCTAssertEqual(before, 0, "打开管理只读，不创建链接或修改分享")
+                    try snapshot(content, name: "photos-sharing-direct-\(saving)-\(language.rawValue)-\(scheme)")
+                    if saving {
+                        await service.configureSharedAlbumEntries([])
+                        try click(sheet, at: NSPoint(x: 140, y: 539)); try await settle(content)
+                        try click(sheet, at: NSPoint(x: 610, y: 32))
+                    } else { try click(sheet, at: NSPoint(x: 490, y: 32)) }
+                    try await settle(host)
+                    for _ in 0..<100 where model.isManaging { try await Task.sleep(for: .milliseconds(2)) }
+                }
+                XCTAssertEqual(model.section, .sharing); XCTAssertEqual(model.shareScope, .withOthers); XCTAssertNil(model.selectedAlbum)
+                XCTAssertTrue(model.sharedEntries.isEmpty); XCTAssertFalse(model.needsSharedListRefresh)
+                let writes = await service.managementWriteCount; XCTAssertEqual(writes, 1)
+                try snapshot(host, name: "photos-sharing-stopped-\(language.rawValue)-\(scheme)")
+            }
+        }
+    }
+
+    func test照片缩略图五档中英浅深色按钮键盘及历史位置保持() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = ThumbnailSizingPhotoService(), model = SynologyPhotosModel(repository: service)
+                await model.refresh(); await model.jumpToMonth(.init(year: 2020, month: 3))
+                model.toggleSelection(try XCTUnwrap(model.items.first))
+                let ids = model.items.map(\.id), selected = model.selectedPhotoIDs
+                let host = NSHostingView(rootView: PhotoThumbnailSizeControls(model: model)
+                    .frame(width: 300, height: 80).background(Color(nsColor: .windowBackgroundColor))
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 300, height: 80))
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                try snapshot(host, name: "photos-thumbnail-controls-\(language.rawValue)-\(scheme)")
+                for _ in 0..<4 { try click(window, at: NSPoint(x: 238, y: 40)) }
+                try await settle(host); XCTAssertEqual(model.thumbnailSize, .extraLarge)
+                for _ in 0..<5 { try click(window, at: NSPoint(x: 62, y: 40)) }
+                try await settle(host); XCTAssertEqual(model.thumbnailSize, .small)
+                try click(window, at: NSPoint(x: 90, y: 40))
+                try await settle(host)
+                let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, characters: String(UnicodeScalar(NSRightArrowFunctionKey)!),
+                    charactersIgnoringModifiers: String(UnicodeScalar(NSRightArrowFunctionKey)!), isARepeat: false, keyCode: 124))
+                window.sendEvent(key); try await settle(host)
+                XCTAssertEqual(model.thumbnailSize, .medium, "原生滑杆可通过方向键调整")
+                for positions in [[120.0, 160, 210], [210.0, 160, 120]] {
+                    for (index, x) in positions.enumerated() {
+                        let type: NSEvent.EventType = index == 0 ? .leftMouseDown : .leftMouseDragged
+                        let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: 40), modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                            eventNumber: 0, clickCount: 1, pressure: 1))
+                        window.sendEvent(event)
+                    }
+                    let up = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: NSPoint(x: positions.last!, y: 40), modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                        eventNumber: 0, clickCount: 1, pressure: 0))
+                    window.sendEvent(up); try await settle(host)
+                    XCTAssertEqual(model.thumbnailSize, positions.last == 210 ? .extraLarge : .medium, "拖动滑杆改变尺寸")
+                }
+                window.contentView = nil; window.close()
+
+                let gallery = NSHostingView(rootView: SynologyPhotosView(model: model)
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let galleryWindow = attach(gallery, size: NSSize(width: 1400, height: 820))
+                try await settle(gallery)
+                let scroll = try XCTUnwrap(nativeViews(gallery, of: NSScrollView.self).max { $0.bounds.height < $1.bounds.height })
+                let document = try XCTUnwrap(scroll.documentView)
+                document.scroll(NSPoint(x: 0, y: 400)); try await settle(gallery)
+                let originalHeight = document.bounds.height, reads = await service.pageReads
+                XCTAssertGreaterThan(scroll.documentVisibleRect.minY, 300)
+                galleryWindow.makeKeyAndOrderFront(nil)
+                try click(galleryWindow, at: NSPoint(x: 1375, y: 19)); try await settle(gallery)
+                XCTAssertEqual(model.thumbnailSize, .comfortable)
+                XCTAssertGreaterThan(document.bounds.height, originalHeight)
+                XCTAssertGreaterThan(scroll.documentVisibleRect.minY, 200, "改变尺寸不回到照片列表开头")
+                XCTAssertEqual(model.items.map(\.id), ids); XCTAssertEqual(model.selectedPhotoIDs, selected)
+                XCTAssertEqual(model.selectedTimelineMonthID, 202003)
+                let finalReads = await service.pageReads; XCTAssertEqual(finalReads, reads, "调整布局不重新请求列表")
+                try snapshot(gallery, name: "photos-thumbnail-gallery-\(language.rawValue)-\(scheme)")
+                galleryWindow.contentView = nil; galleryWindow.close(); model.cancel()
+            }
+        }
+    }
+
+    func test照片旋转预览中英浅深色保存状态和原位置保持() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        func fixture(width: Int, height: Int) throws -> Data {
+            let context = try XCTUnwrap(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(NSColor.systemBlue.cgColor); context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            context.setFillColor(NSColor.systemOrange.cgColor); context.fill(CGRect(x: 10, y: 10, width: 40, height: 40))
+            return try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = SlideshowPhotoServiceStub()
+                await service.enableRotation(pending: true)
+                await service.setImage(try fixture(width: 160, height: 120)); await service.setRotatedImage(try fixture(width: 120, height: 160))
+                let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await model.refresh(); await model.jumpToMonth(.init(year: 2020, month: 3))
+                let ids = model.items.map(\.id)
+                model.showPreview(try XCTUnwrap(model.items.first))
+                for _ in 0..<100 where model.isPreparingPreview { try await Task.sleep(for: .milliseconds(2)) }
+                let host = NSHostingView(rootView: SynologyPhotoPreview(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1040, height: 720))
+                try await settle(host)
+                XCTAssertTrue(model.canRotatePreview)
+                try snapshot(host, name: "photos-rotate-ready-\(language.rawValue)-\(scheme)")
+                model.rotatePreview()
+                for _ in 0..<100 where model.isManaging { try await Task.sleep(for: .milliseconds(2)) }
+                XCTAssertNotNil(model.pendingMutationID); XCTAssertFalse(model.canRotatePreview)
+                await service.resolveRotation(); model.reviewPendingMutation()
+                for _ in 0..<100 where model.isManaging || model.isPreparingPreview { try await Task.sleep(for: .milliseconds(2)) }
+                try await settle(host)
+                XCTAssertEqual(model.previewPhoto?.orientation, 8); XCTAssertEqual(model.items.map(\.id), ids)
+                try snapshot(host, name: "photos-rotate-saved-\(language.rawValue)-\(scheme)")
+                model.closePreview(); window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test相册列表范围与分享排序中英浅深色原生菜单() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await service.configureLists([.init(id: 21, name: "Fixture album")]); await model.selectSection(.albums)
+                let host = NSHostingView(rootView: PhotoAlbumListControls(model: model).padding(20).frame(width: 600, height: 140)
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 600, height: 140))
+                defer { window.contentView = nil; window.close() }
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                for (key, x) in [("photos.albumList.my_album", 80.0), ("photos.albumList.create_time", 550.0), ("workspace.sort.descending", 550.0)] {
+                    let chosen = expectation(description: "列表菜单实际选择")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = tracked else { return }
+                            DispatchQueue.main.async {
+                                let index = menu.indexOfItem(withTitle: L10n.string(key))
+                                XCTAssertGreaterThanOrEqual(index, 0); menu.cancelTrackingWithoutAnimation()
+                                if index >= 0 { menu.performActionForItem(at: index) }; chosen.fulfill()
+                            }
+                        }
+                    }
+                    try click(window, at: NSPoint(x: x, y: 70)); await fulfillment(of: [chosen], timeout: 2)
+                    NotificationCenter.default.removeObserver(observer); try await settle(host)
+                }
+                XCTAssertEqual(model.albumListDisplay, .mine); XCTAssertEqual(model.albumListSort, .init(field: .created, direction: .descending))
+                let commands = await service.commands; XCTAssertEqual(commands.count, 3)
+                try snapshot(host, name: "photos-list-preferences-\(language.rawValue)-\(scheme)")
+                let albumGallery = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let albumWindow = attach(albumGallery, size: NSSize(width: 1040, height: 680))
+                try await settle(albumGallery); try snapshot(albumGallery, name: "photos-album-list-gallery-\(language.rawValue)-\(scheme)")
+                albumWindow.contentView = nil; albumWindow.close(); window.makeKeyAndOrderFront(nil)
+                await model.selectSection(.sharing); try await settle(host)
+                XCTAssertNil(model.albumListDisplay); XCTAssertEqual(model.albumListSort?.field, .name)
+                let checked = expectation(description: "分享菜单不含创建时间和分享状态")
+                let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                    nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                    MainActor.assumeIsolated {
+                        guard let menu = tracked else { return }
+                        DispatchQueue.main.async {
+                            XCTAssertEqual(menu.indexOfItem(withTitle: L10n.string("photos.albumList.create_time")), -1)
+                            XCTAssertEqual(menu.indexOfItem(withTitle: L10n.string("photos.albumList.share_status")), -1)
+                            let index = menu.indexOfItem(withTitle: L10n.string("photos.albumList.share_modify_time"))
+                            XCTAssertGreaterThanOrEqual(index, 0); menu.cancelTrackingWithoutAnimation()
+                            if index >= 0 { menu.performActionForItem(at: index) }; checked.fulfill()
+                        }
+                    }
+                }
+                try click(window, at: NSPoint(x: 550, y: 70)); await fulfillment(of: [checked], timeout: 2)
+                NotificationCenter.default.removeObserver(observer); try await settle(host)
+                XCTAssertEqual(model.albumListSort, .init(field: .shareModified, direction: .ascending))
+                try snapshot(host, name: "photos-sharing-list-preferences-\(language.rawValue)-\(scheme)")
+                let gallery = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let galleryWindow = attach(gallery, size: NSSize(width: 1040, height: 680))
+                try await settle(gallery); try snapshot(gallery, name: "photos-sharing-list-gallery-\(language.rawValue)-\(scheme)")
+                galleryWindow.contentView = nil; galleryWindow.close()
+            }
+        }
+    }
+
+    func test相册排序双语浅深色原生菜单保存并显示当前相册() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await service.configureAlbumSort(.init())
+                await service.setAlbumAccess(.init(albumID: 21, currentUserID: 12, isOwner: false, canDownload: false, canContribute: false))
+                await model.selectSection(.albums); await model.open(.init(id: 21, name: "Fixture album"))
+                for key in ["photos.folderSort.filesize", "workspace.sort.descending"] {
+                    let current = try XCTUnwrap(model.currentSortAlbum)
+                    let host = NSHostingView(rootView: PhotoFolderSortMenu(accessibilityID: "photos.albumSort", sort: current.sort, changeSort: model.changeCurrentAlbumSort)
+                        .frame(width: 240, height: 120).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 240, height: 120))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-album-sort-menu-\(key)-\(language.rawValue)-\(scheme)")
+                    let inspected = expectation(description: "相册排序选择")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = tracked else { return }
+                            DispatchQueue.main.async {
+                                for field in SynologyPhotoSort.Field.allCases { XCTAssertTrue(menu.items.contains { $0.title == L10n.string("photos.folderSort." + field.rawValue) }) }
+                                let index = menu.indexOfItem(withTitle: L10n.string(key))
+                                XCTAssertGreaterThanOrEqual(index, 0); menu.cancelTrackingWithoutAnimation()
+                                if index >= 0 { menu.performActionForItem(at: index) }; inspected.fulfill()
+                            }
+                        }
+                    }
+                    // 测试宿主将实际菜单固定在240×120内容区域中央。
+                    try click(window, at: NSPoint(x: 120, y: 60))
+                    await fulfillment(of: [inspected], timeout: 2); NotificationCenter.default.removeObserver(observer)
+                    try await settle(host)
+                }
+                let commands = await service.commands
+                XCTAssertEqual(commands, [.setAlbumSort(id: 21, original: .init(), sort: .init(field: .filesize)),
+                    .setAlbumSort(id: 21, original: .init(field: .filesize), sort: .init(field: .filesize, direction: .descending))])
+                XCTAssertEqual(model.selectedAlbum?.id, 21); XCTAssertEqual(model.currentSortAlbum?.sort, .init(field: .filesize, direction: .descending))
+                let gallery = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(gallery, size: NSSize(width: 1040, height: 680))
+                try await settle(gallery); try snapshot(gallery, name: "photos-album-sort-gallery-\(language.rawValue)-\(scheme)")
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test自动预览失败恢复提示中英浅深色保持历史月份() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service,
+                    previewConversionSupport: .init(hevc: true, vc1: false, video: true))
+                let profile = UUID(), filename = "Fixture-preview.heic"
+                let task = SynologyPhotoAutomaticPreviewTask(profileID: profile, space: .personal, unitID: 701, filename: filename,
+                    typeCode: 0, needsThumbnail: true, needsVideo: false)
+                let photo = SynologyPhoto(id: .init(profileID: profile, space: .personal, unitID: 7), filename: filename, sizeBytes: 8,
+                    takenAt: Date(timeIntervalSince1970: 1583107200), indexedAt: .distantPast, folderID: 9, mediaType: "photo")
+                await service.configureDisplay(.init(), photos: [photo]); await service.configureAutomatic(enabled: true, tasks: [task])
+                await service.recordNextAutomaticFailure(); await model.refresh(); await model.jumpToMonth(.init(year: 2020, month: 3))
+                await model.processAutomaticPreview()
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1040, height: 720))
+                defer { model.cancel(); window.contentView = nil; window.close() }
+                try await settle(host)
+                try snapshot(host, name: "photos-failure-recovery-\(language.rawValue)-\(scheme)")
+                XCTAssertEqual(model.automaticPreviewError, L10n.string("photos.automatic.failureRecorded", filename))
+                XCTAssertEqual(model.automaticPreviewCompleted, 0); XCTAssertEqual(model.selectedTimelineMonthID, 202003)
+                let commands = await service.commands; XCTAssertEqual(commands.count, 1)
+            }
+        }
+    }
+
+    func test自动预览设置中英浅深色正常加载错误与无转换器() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ready", "loading", "error", "unsupported"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in },
+                        previewConversionSupport: .init(hevc: mode != "unsupported", vc1: false, video: mode != "unsupported"))
+                    await service.configureAutomatic(enabled: true, tasks: [])
+                    await service.configureAutomaticRead(fails: mode == "error", held: mode == "loading")
+                    await model.refresh()
+                    let host = NSHostingView(rootView: PhotoAutomaticPreviewSettingsPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 340))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-automatic-\(language.rawValue)-\(scheme)-\(mode)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "ready" || mode == "unsupported" {
+                        // 560×340合成窗口，开关位置由本轮中英浅深色截图核对。
+                        try click(window, at: NSPoint(x: 512, y: 240)); try await settle(host)
+                        try snapshot(host, name: "photos-automatic-\(language.rawValue)-\(scheme)-\(mode)-edited")
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                        let commands = await service.commands
+                        XCTAssertEqual(commands, [.setAutomaticPreview(original: true, enabled: false)])
+                        XCTAssertEqual(model.automaticPreviewEnabled, false)
+                    }
+                }
+            }
+        }
+    }
+
+    func test共享成员中英浅深色正常空关闭加载错误与筛选() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ready", "empty", "disabled", "loading", "error", "candidatesError"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let member = SynologyPhotoSharedMember(recipient: .init(id: .init(type: "user", value: .integer(12)), name: "Fixture member"), role: .entry)
+                    let protected = SynologyPhotoSharedMember(recipient: .init(id: .init(type: "group", value: .integer(12)), name: "administrators"), role: .management)
+                    let unknown = SynologyPhotoSharedMember(recipient: .init(id: .init(type: "group", value: .integer(15)), name: "Fixture unknown"), role: "future", autoBackup: false)
+                    let original = SynologyPhotoSharedMembers(profileID: UUID(), administratorID: 12, isEnabled: mode != "disabled", members: mode == "empty" ? [] : [member, protected, unknown])
+                    await service.configureMembers(original, fails: mode == "error", candidatesFail: mode == "candidatesError", held: mode == "loading")
+                    await model.refresh()
+                    let host = NSHostingView(rootView: PhotoSharedMembersPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 780, height: 620))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-members-\(language.rawValue)-\(scheme)-\(mode)")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "ready" {
+                        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.members.search") })
+                        window.makeFirstResponder(field)
+                        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                        editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0)); try await settle(host)
+                        try snapshot(host, name: "photos-members-\(language.rawValue)-\(scheme)-filtered-empty")
+                        editor.selectAll(nil); editor.insertText("", replacementRange: NSRange(location: NSNotFound, length: 0))
+                        window.makeFirstResponder(nil); try await settle(host)
+                        // 坐标来自780×620合成窗口首行复选框，分别覆盖两种语言布局。
+                        try click(window, at: NSPoint(x: language == .english ? 570 : 594, y: 470)); try await settle(host)
+                        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }; try await settle(host)
+                        let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                        let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                        let save = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string("photos.duplicates.save") })
+                        save.performClick(nil); try await settle(host)
+                        var changed = member; changed.autoBackup = true
+                        let saved = await service.commands
+                        XCTAssertEqual(saved, [.setSharedMembers(original: original, members: [changed, protected, unknown], folderEdits: [])])
+                    }
+                }
+            }
+        }
+    }
+
+    func test共享成员目录中英浅深色正常空错误与筛选完成不写入() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ready", "empty", "loading", "error"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let profile = UUID(), member = SynologyPhotoSharedMember(recipient: .init(id: .init(type: "user", value: .integer(12)), name: "Fixture member"), role: .entry)
+                    let original = SynologyPhotoSharedMembers(profileID: profile, administratorID: 12, isEnabled: true, members: [member])
+                    let root = SynologyPhotoMemberFolder(profileID: profile, memberID: member.id, rootID: 1,
+                        folder: .init(id: 9, name: "Fixture folder", parentID: 1, space: .shared), depth: 0, privacy: "public-download", directRole: "view", revision: "fixture")
+                    let child = SynologyPhotoMemberFolder(profileID: profile, memberID: member.id, rootID: 1,
+                        folder: .init(id: 10, name: "Fixture child", parentID: 9, space: .shared), depth: 1, privacy: "private", directRole: nil, revision: "fixture")
+                    await service.configureMembers(original, folders: mode == "empty" ? [] : [root, child], foldersFail: mode == "error", foldersHeld: mode == "loading")
+                    await model.refresh()
+                    var completed = false
+                    let host = NSHostingView(rootView: PhotoMemberFolderPermissionsPanel(model: model, member: member, initial: nil) { edit in
+                        if mode == "ready" { XCTAssertEqual(edit?.expectedRole(for: root), "upload"); XCTAssertTrue(edit?.canSave == true) }
+                        else { XCTAssertNil(edit) }
+                        completed = true
+                    }.environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 700, height: 570))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-member-folders-\(language.rawValue)-\(scheme)-\(mode)")
+                    if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "ready" {
+                        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.members.folderSearch") })
+                        window.makeFirstResponder(field)
+                        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                        editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0)); try await settle(host)
+                        try snapshot(host, name: "photos-member-folders-\(language.rawValue)-\(scheme)-filtered-empty")
+                        editor.selectAll(nil); editor.insertText("", replacementRange: NSRange(location: NSNotFound, length: 0))
+                        window.makeFirstResponder(nil); try await settle(host)
+                        let chosen = expectation(description: "选择文件夹上传权限")
+                        let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                            nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                            MainActor.assumeIsolated {
+                                guard let menu = tracked else { return }
+                                DispatchQueue.main.async {
+                                    let index = menu.indexOfItem(withTitle: L10n.string("photos.members.folderRole.upload"))
+                                    menu.cancelTrackingWithoutAnimation(); XCTAssertGreaterThanOrEqual(index, 0)
+                                    if index >= 0 { menu.performActionForItem(at: index) }; chosen.fulfill()
+                                }
+                            }
+                        }
+                        try click(window, at: NSPoint(x: 600, y: 406))
+                        await fulfillment(of: [chosen], timeout: 2); NotificationCenter.default.removeObserver(observer)
+                        try await settle(host)
+                        try click(window, at: NSPoint(x: 24, y: 406)); try await settle(host)
+                        try snapshot(host, name: "photos-member-folders-\(language.rawValue)-\(scheme)-edited-expanded")
+                    }
+                    if mode != "error" {
+                        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }; try await settle(host)
+                        XCTAssertTrue(completed)
+                    }
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                }
+            }
+        }
+    }
+
+    func test全局设置中英浅深色正常受限空加载错误与缓存状态() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ready", "restricted", "empty", "loading", "error", "cacheError", "clearing", "zero"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let profile = UUID()
+                    let original = SynologyPhotoGlobalSettings(profileID: profile, administratorID: 12,
+                        values: mode == "empty" ? [:] : [.person: true, .concept: false, .similar: true, .userSharing: true, .guestInfo: false, .originalJPEG: true],
+                        excludedExtensions: mode == "empty" ? nil : ["RAW"], hasHEVC: mode != "restricted",
+                        personalRecognition: [.person: true, .similar: true], sharedRecognition: [.person: true, .similar: true],
+                        personalSpaceEnabled: true, sharedSpaceEnabled: true, sharedRole: .management)
+                    await service.configureGlobal(original, fails: mode == "error", held: mode == "loading")
+                    await service.configureCache(.init(profileID: profile, administratorID: 12, sizeBytes: mode == "zero" ? 0 : 2048, isClearing: mode == "clearing"), fails: mode == "cacheError")
+                    await model.refresh()
+                    let host = NSHostingView(rootView: PhotoGlobalSettingsPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 620, height: 680))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-global-\(language.rawValue)-\(scheme)-\(mode)")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "ready" || mode == "cacheError" {
+                        // 620×680的合成原生表单，坐标沿本轮截图中的首项开关。
+                        try click(window, at: NSPoint(x: 573, y: 554)); try await settle(host)
+                        try snapshot(host, name: "photos-global-\(language.rawValue)-\(scheme)-\(mode)-edited")
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                        let sheet = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(sheet.contentView)
+                        let button = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string("photos.duplicates.save") })
+                        button.performClick(nil); try await settle(host)
+                        let saved = await service.commands
+                        XCTAssertEqual(saved, [.setGlobalSettings(original: original, enabled: original.enabled.subtracting([.person]), excludedExtensions: original.excludedExtensions)])
+                    }
+
+                }
+            }
+        }
+    }
+
+    func test新格式提示中英浅深色范围已读受限加载错误与最终提交() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["admin", "personal", "submitted", "none", "unavailable", "loading", "error"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let prompt = SynologyPhotoCodecPrompt(profileID: UUID(), userID: 12,
+                        isAdministrator: mode == "admin", shouldShow: mode != "none", personalSpaceEnabled: mode != "unavailable",
+                        generationAlreadySubmitted: mode == "submitted")
+                    await service.configureCodec(prompt, fails: mode == "error", held: mode == "loading"); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoCodecPromptPanel(model: model, initial: nil).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 580, height: 300))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-codec-\(language.rawValue)-\(scheme)-\(mode)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "admin" || mode == "personal" {
+                        try click(window, at: NSPoint(x: 510, y: 32)); try await settle(host)
+                        let commands = await service.commands
+                        XCTAssertEqual(commands, [.respondToCodecPrompt(prompt, generate: true)])
+                    } else if mode == "submitted" || mode == "unavailable" {
+                        // Esc与“稍后/关闭提示”使用同一取消快捷键，只保存提示状态。
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+                        window.sendEvent(event); try await settle(host)
+                        let commands = await service.commands
+                        XCTAssertEqual(commands, [.respondToCodecPrompt(prompt, generate: false)])
+                    }
+                }
+            }
+        }
+    }
+
+    func test整库维护中英浅深色空闲运行受限加载与错误() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ready", "running", "unsupported", "loading", "error"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let original = SynologyPhotoLibraryMaintenanceStatus(profileID: UUID(), userID: 12, space: .personal,
+                        indexingCount: mode == "running" ? 2 : 0, previewCount: mode == "running" ? 3 : 0,
+                        supportsPreviewGeneration: mode != "unsupported")
+                    await service.configureMaintenance(original, fails: mode == "error", held: mode == "loading"); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoLibraryMaintenancePanel(model: model, space: .personal).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 620, height: 400))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-maintenance-\(language.rawValue)-\(scheme)-\(mode)")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "ready" {
+                        // 620×400合成窗口：先取消确认，再次开始只产生一个固定维护命令。
+                        try click(window, at: NSPoint(x: 572, y: 267)); try await settle(host)
+                        let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                        let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                        let cancel = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string("photos.delete.cancel") })
+                        cancel.performClick(nil); try await settle(host)
+                        let cancelled = await service.commands; XCTAssertTrue(cancelled.isEmpty)
+                        try click(window, at: NSPoint(x: 572, y: 267)); try await settle(host)
+                        let nextAlert = try XCTUnwrap(window.attachedSheet), nextContent = try XCTUnwrap(nextAlert.contentView)
+                        try snapshot(nextContent, name: "photos-maintenance-confirm-\(language.rawValue)-\(scheme)")
+                        let start = try XCTUnwrap(nativeViews(nextContent, of: NSButton.self).first { $0.title == L10n.string("photos.maintenance.start") })
+                        start.performClick(nil); try await settle(host)
+                        let saved = await service.commands; XCTAssertEqual(saved, [.maintainLibrary(original, .reindex)])
+                    }
+                }
+            }
+        }
+    }
+
+    func test共享空间设置中英浅深色正常关闭受限空加载与错误() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ready", "disabled", "last", "restricted", "empty", "loading", "error"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let original = SynologyPhotoSharedSpaceSettings(profileID: UUID(), administratorID: 12,
+                        isEnabled: mode != "disabled", personalSpaceEnabled: mode != "last", role: .management,
+                        values: mode == "empty" ? [:] : [.person: true, .concept: false, .similar: true, .publicRoot: false],
+                        globallyEnabled: mode == "restricted" ? [] : [.person, .concept, .similar])
+                    await service.configureSharedSettings(original, fails: mode == "error", held: mode == "loading"); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoSharedSpaceSettingsPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 580, height: 480))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-shared-settings-\(language.rawValue)-\(scheme)-\(mode)")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    if mode == "loading" { await service.releasePage(); try await settle(host) }
+                    if mode == "ready" || mode == "restricted" {
+                        // 坐标来自580×480的本轮合成截图；确认实际开关和键盘保存路径。
+                        try click(window, at: NSPoint(x: 532, y: 243)); try await settle(host)
+                        if mode == "ready" { try snapshot(host, name: "photos-shared-settings-\(language.rawValue)-\(scheme)-edited") }
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                        let saved = await service.commands
+                        XCTAssertEqual(saved, mode == "ready" ? [.setSharedSpaceSettings(original: original, enabled: [.similar])] : [])
+                    }
+                }
+            }
+        }
+    }
+
+    func test个人照片识别中英浅深色可编辑受限空与错误() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["ready", "admin", "home", "empty", "error"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let original = SynologyPhotoRecognitionSettings(values: mode == "empty" ? [:] : [.person: true, .concept: false, .similar: true],
+                        globallyEnabled: mode == "admin" ? [.person, .similar] : [.person, .concept, .similar], personalSpaceEnabled: mode != "home")
+                    await service.configureRecognition(original, fails: mode == "error"); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoRecognitionSettingsPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 380))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-recognition-\(language.rawValue)-\(scheme)-\(mode)")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    if mode == "ready" || mode == "admin" || mode == "home" {
+                        // 560×380窗口的开关位置来自本轮合成截图。
+                        try click(window, at: NSPoint(x: 512, y: 243))
+                        if mode == "ready" { try click(window, at: NSPoint(x: 512, y: 280)) }
+                        try await settle(host)
+                        if mode == "ready" { try snapshot(host, name: "photos-recognition-\(language.rawValue)-\(scheme)-edited") }
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                        let saved = await service.commands
+                        XCTAssertEqual(saved, mode == "ready" ? [.setRecognitionSettings(original: original, enabled: [.concept, .similar])] : [])
+                    }
+                }
+            }
+        }
+    }
+
+    func test照片显示偏好在预览和幻灯片显示底部信息() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        let context = try XCTUnwrap(CGContext(data: nil, width: 640, height: 420, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.systemBlue.cgColor); context.fill(CGRect(x: 0, y: 0, width: 640, height: 420))
+        let image = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for info in [false, true] {
+                    let service = SlideshowPhotoServiceStub(displayPreferences: .init(dateFormat: .daySlash, showsPreviewInfo: info))
+                    await service.setImage(image)
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.refresh(); await model.jumpToMonth(.init(year: 2020, month: 3))
+                    model.showPreview(try XCTUnwrap(model.items.first))
+                    for _ in 0..<100 where model.isPreparingPreview { try await Task.sleep(for: .milliseconds(2)) }
+                    XCTAssertEqual(model.displayPreferences?.showsPreviewInfo, info)
+                    XCTAssertEqual(model.previewPhoto?.description, "Fixture description")
+                    for slideshow in [false, true] {
+                        let view = slideshow ? AnyView(PhotoSlideshowView(model: model)) : AnyView(SynologyPhotoPreview(model: model))
+                        let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                        let window = attach(host, size: NSSize(width: 1040, height: 720))
+                        try await settle(host)
+                        try snapshot(host, name: "photos-display-preview-\(language.rawValue)-\(scheme)-\(info)-\(slideshow)")
+                        window.contentView = nil; window.close()
+                    }
+                    model.closePreview(); XCTAssertEqual(model.selectedTimelineMonthID, 202003)
+                }
+            }
+        }
+    }
+
+    func test照片默认排序字段和方向改变确认取消保留草稿再保存() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for directionOnly in [false, true] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let original = SynologyPhotoDisplaySettings()
+                    var updated = original
+                    if directionOnly { updated.defaultSort.direction = .descending } else { updated.defaultSort.field = .filename }
+                    await service.configureDisplay(original); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoDisplaySettingsPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 600, height: 500))
+                    defer { model.cancel(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    let chosen = expectation(description: "更改默认排序")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = tracked else { return }
+                            DispatchQueue.main.async {
+                                let title = L10n.string(directionOnly ? "workspace.sort.descending" : "photos.folderSort.filename")
+                                let index = menu.indexOfItem(withTitle: title)
+                                menu.cancelTrackingWithoutAnimation(); XCTAssertGreaterThanOrEqual(index, 0)
+                                if index >= 0 { menu.performActionForItem(at: index) }; chosen.fulfill()
+                            }
+                        }
+                    }
+                    // 位置来自600×500的显示设置截图，分别点默认字段和排序方向。
+                    try click(window, at: NSPoint(x: 550, y: directionOnly ? 247 : 285))
+                    await fulfillment(of: [chosen], timeout: 2); NotificationCenter.default.removeObserver(observer)
+                    try await settle(host)
+                    let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                    if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }; try await settle(host)
+                    let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                    try snapshot(content, name: "photos-sort-confirm-\(language.rawValue)-\(scheme)-\(directionOnly ? "direction" : "field")")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    let cancel = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string("photos.delete.cancel") })
+                    cancel.performClick(nil); try await settle(host)
+                    let cancelled = await service.commands; XCTAssertTrue(cancelled.isEmpty); XCTAssertEqual(model.displayPreferences, original)
+                    // 取消只关闭确认，编辑值仍保留，再次保存不需要重选菜单。
+                    if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }; try await settle(host)
+                    let nextAlert = try XCTUnwrap(window.attachedSheet), nextContent = try XCTUnwrap(nextAlert.contentView)
+                    let save = try XCTUnwrap(nativeViews(nextContent, of: NSButton.self).first { $0.title == L10n.string("photos.duplicates.save") })
+                    save.performClick(nil); try await settle(host)
+                    let saved = await service.commands; XCTAssertEqual(saved, [.setDisplaySettings(original: original, updated: updated)])
+                    XCTAssertEqual(model.displayPreferences, updated)
+                }
+            }
+        }
+    }
+
+    func test照片显示设置中英浅深色读取保存和错误() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for fails in [false, true] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await service.configureDisplay(.init(), fails: fails); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoDisplaySettingsPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 600, height: 500))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-display-\(language.rawValue)-\(scheme)-\(fails ? "error" : "form")")
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    if !fails {
+                        let chosen = expectation(description: "切换月份分组")
+                        let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                            nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                            MainActor.assumeIsolated {
+                                guard let menu = tracked else { return }
+                                DispatchQueue.main.async {
+                                    let index = menu.indexOfItem(withTitle: L10n.string("photos.display.month"))
+                                    menu.cancelTrackingWithoutAnimation(); XCTAssertGreaterThanOrEqual(index, 0)
+                                    if index >= 0 { menu.performActionForItem(at: index) }; chosen.fulfill()
+                                }
+                            }
+                        }
+                        // 600×500窗口控件位置来自本轮合成截图。
+                        try click(window, at: NSPoint(x: 550, y: 400))
+                        await fulfillment(of: [chosen], timeout: 2); NotificationCenter.default.removeObserver(observer)
+                        try click(window, at: NSPoint(x: 550, y: 172)); try await settle(host)
+                        try snapshot(host, name: "photos-display-\(language.rawValue)-\(scheme)-edited")
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                        let saved = await service.commands
+                        XCTAssertEqual(saved, [.setDisplaySettings(original: .init(), updated: .init(grouping: .month, showsPreviewInfo: true))])
+                        XCTAssertEqual(model.displayPreferences?.grouping, .month)
+                        XCTAssertEqual(model.displayPreferences?.showsPreviewInfo, true)
+                    }
+                }
+            }
+        }
+    }
+
+    func test重复项设置双语浅深色读取保存取消与失败() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["read", "save", "overwrite", "cancelOverwrite", "error"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh(); await service.failDuplicateRead(mode == "error")
+                    let host = NSHostingView(rootView: PhotoDuplicateSettingsPanel(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 340))
+                    defer { if let sheet = window.attachedSheet { window.endSheet(sheet) }; window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-duplicate-settings-\(mode)-\(language.rawValue)-\(scheme)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    if ["save", "overwrite", "cancelOverwrite"].contains(mode) {
+                        let overwrite = mode != "save"
+                        let chosen = expectation(description: "更改重复项处理规则")
+                        let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                            nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                            MainActor.assumeIsolated {
+                                guard let menu = tracked else { return }
+                                DispatchQueue.main.async {
+                                    let index = menu.indexOfItem(withTitle: L10n.string(overwrite ? "photos.duplicates.overwrite" : "photos.duplicates.ignore"))
+                                    menu.cancelTrackingWithoutAnimation(); XCTAssertGreaterThanOrEqual(index, 0)
+                                    if index >= 0 { menu.performActionForItem(at: index) }; chosen.fulfill()
+                                }
+                            }
+                        }
+                        // 560×340窗口中的原生菜单位置依据本轮渲染截图，SwiftUI Picker并非NSPopUpButton。
+                        try click(window, at: NSPoint(x: overwrite ? (language == .english ? 420 : 240) : 250, y: overwrite ? 202 : 247))
+                        await fulfillment(of: [chosen], timeout: 2); NotificationCenter.default.removeObserver(observer)
+                        try await settle(host)
+                        try snapshot(host, name: "photos-duplicate-settings-edited-\(mode)-\(language.rawValue)-\(scheme)")
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                        if overwrite {
+                            let beforeConfirm = await service.commands; XCTAssertTrue(beforeConfirm.isEmpty)
+                            let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                            try snapshot(content, name: "photos-duplicate-default-confirm-\(mode)-\(language.rawValue)-\(scheme)")
+                            let button = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string(mode == "cancelOverwrite" ? "photos.delete.cancel" : "photos.duplicates.save") })
+                            button.performClick(nil); try await settle(host)
+                        }
+                        let commands = await service.commands
+                        let expected: [SynologyPhotosMutation] = mode == "cancelOverwrite" ? [] : [.setDuplicateSettings(original: .init(upload: .rename, transfer: .skip), updated: .init(upload: overwrite ? .rename : .ignore, transfer: overwrite ? .overwrite : .skip))]
+                        XCTAssertEqual(commands, expected)
+                    } else {
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+                        if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                        let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    func test移动覆盖规则双语浅深色确认前不提交且取消无写入() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for confirm in [true, false] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let folder = SynologyPhotoCollection(id: 11, name: "Destination", parentID: 1, path: "/Destination")
+                    await service.addFolder(folder); await service.setDuplicateDefaults(.init(upload: .ignore, transfer: .overwrite))
+                    let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "fixture.jpg", sizeBytes: 128,
+                        takenAt: .distantPast, indexedAt: .distantPast, folderID: 1, mediaType: "photo")
+                    await service.setFolderPhotos([photo]); await model.refresh(); await model.selectSection(.folders)
+                    let path = try XCTUnwrap(model.photoDropPath(to: folder))
+                    let sheet = PhotoManagementSheet(kind: .move, photos: [photo], transferPath: path)
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 470))
+                    defer { if let sheet = window.attachedSheet { window.endSheet(sheet) }; window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    try snapshot(host, name: "photos-duplicate-move-\(confirm)-\(language.rawValue)-\(scheme)")
+                    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                    if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }; try await settle(host)
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                    try snapshot(content, name: "photos-duplicate-warning-\(confirm)-\(language.rawValue)-\(scheme)")
+                    let button = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string(confirm ? "photos.duplicates.overwriteConfirm" : "photos.delete.cancel") })
+                    button.performClick(nil); try await settle(host)
+                    let commands = await service.commands
+                    XCTAssertEqual(commands, confirm ? [.move([photo], folderID: 11, destinationSpace: .personal, duplicate: .overwrite)] : [])
+                }
+            }
+        }
+    }
+
+    func test拖放预选目标双语浅深色固定混选确认取消与无效路径() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["confirm", "cancel", "invalid"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    let folders = [10, 11].map { SynologyPhotoCollection(id: $0, name: "Folder \($0)", parentID: 1, path: "/Folder \($0)") }
+                    for folder in folders { await service.addFolder(folder) }
+                    let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "fixture.jpg", sizeBytes: 128,
+                        takenAt: .distantPast, indexedAt: .distantPast, folderID: 1, mediaType: "photo")
+                    await service.setFolderPhotos([photo]); await model.refresh(); await model.selectSection(.folders)
+                    model.toggleSelection(photo); model.toggleFolderSelection(folders[0])
+                    let token = try XCTUnwrap(model.beginPhotoDrag(photo: photo))
+                    let selection = try XCTUnwrap(model.takePhotoDrop(token: token, to: folders[1]))
+                    var path = try XCTUnwrap(model.photoDropPath(to: folders[1]))
+                    if state == "invalid" { path[0] = .init(id: 99, name: "Changed root", path: "/") }
+                    let sheet = PhotoManagementSheet(kind: .move, photos: selection.photos, folders: selection.folders, transferPath: path)
+                    model.clearSelection()
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 470)); try await settle(host)
+                    window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-drag-confirm-\(state)-\(language.rawValue)-\(scheme)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    let cancel = state == "cancel"
+                    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: cancel ? "\u{1b}" : "\r", charactersIgnoringModifiers: cancel ? "\u{1b}" : "\r", isARepeat: false, keyCode: cancel ? 53 : 36))
+                    if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+                    try await settle(host)
+                    let commands = await service.commands
+                    XCTAssertEqual(commands, state == "confirm" ? [.move([photo], folderID: 11, destinationSpace: .personal, folders: [folders[0]])] : [])
+                    window.contentView = nil; window.close()
+                }
+                let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service)
+                await model.refresh(); await model.selectSection(.folders); await model.open(try XCTUnwrap(model.collections.first))
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1100, height: 720)); try await settle(host)
+                try snapshot(host, name: "photos-drag-navigation-\(language.rawValue)-\(scheme)")
+                XCTAssertEqual(model.folderHistory.count, 2)
+                let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test目录权限保存双语浅深色确认取消和父目录限制() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["save", "edit", "cancel", "restricted"] {
+                    let service = FolderSharingServiceStub(mode: mode == "restricted" ? .parentRestricted : .normal)
+                    let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh()
+                    let folder = SynologyPhotoCollection(id: 9, name: "Fixture folder", parentID: mode == "restricted" ? 8 : 1,
+                        path: mode == "restricted" ? "/Parent/Fixture" : "/Fixture", space: .shared)
+                    let host = NSHostingView(rootView: PhotoFolderSharingPanel(model: model, folder: folder).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 620, height: 540))
+                    defer { if let sheet = window.attachedSheet { window.endSheet(sheet) }; window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    if mode == "edit" {
+                        func choose(_ title: String, at point: NSPoint) async throws {
+                            let chosen = expectation(description: "选择目录权限选项")
+                            let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                                nonisolated(unsafe) let trackedMenu = notification.object as? NSMenu
+                                MainActor.assumeIsolated {
+                                    guard let menu = trackedMenu else { return }
+                                    DispatchQueue.main.async {
+                                        let index = menu.indexOfItem(withTitle: title)
+                                        menu.cancelTrackingWithoutAnimation()
+                                        XCTAssertGreaterThanOrEqual(index, 0)
+                                        if index >= 0 { menu.performActionForItem(at: index) }
+                                        chosen.fulfill()
+                                    }
+                                }
+                            }
+                            defer { NotificationCenter.default.removeObserver(observer) }
+                            try click(window, at: point); await fulfillment(of: [chosen], timeout: 2)
+                        }
+                        // 固定620×540测试窗口，菜单位置来自同轮实际渲染截图。
+                        try await choose(L10n.string("photos.manage.link.download"), at: NSPoint(x: 250, y: 425))
+                        try await choose(L10n.string("photos.sharing.passwordRemove"), at: NSPoint(x: 180, y: 288))
+                        try await choose(L10n.string("photos.sharing.role.upload"), at: NSPoint(x: 460, y: 211))
+                        try await settle(host)
+                    }
+                    try snapshot(host, name: "photos-permission-save-\(mode)-\(language.rawValue)-\(scheme)")
+                    let before = await service.writes; XCTAssertEqual(before, 0)
+                    let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                    if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                    try await settle(host)
+                    let beforeConfirmation = await service.writes; XCTAssertEqual(beforeConfirmation, 0)
+                    if mode == "restricted" { XCTAssertNil(window.attachedSheet); continue }
+                    let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                    try snapshot(content, name: "photos-permission-confirm-\(mode)-\(language.rawValue)-\(scheme)")
+                    let title = L10n.string(mode != "cancel" ? "photos.folderSharing.save" : "photos.delete.cancel")
+                    let button = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == title })
+                    button.performClick(nil); try await settle(host)
+                    let commands = await service.commands
+                    if mode == "cancel" { XCTAssertTrue(commands.isEmpty) }
+                    else {
+                        XCTAssertEqual(commands.count, 1)
+                        guard case .setFolderSharing(let original, let access, let members, let password, let applies) = commands.first else { XCTFail("确认后应保存目录权限"); continue }
+                        XCTAssertEqual(original.folder, folder); XCTAssertEqual(access, mode == "edit" ? .download : .invited); XCTAssertEqual(members?.count, 2)
+                        if mode == "edit" { XCTAssertEqual(password, ""); XCTAssertEqual(members?.first?.role, "upload") }
+                        else { XCTAssertNil(password) }
+                        XCTAssertTrue(applies)
+                    }
+                }
+            }
+        }
+    }
+
+    func test共享目录权限查看双语浅深色成员空未知父目录限制及错误均无写入() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in [FolderSharingServiceStub.Mode.normal, .empty, .unreadableMembers, .parentRestricted, .failure] {
+                    let service = FolderSharingServiceStub(mode: mode), model = SynologyPhotosModel(repository: service)
+                    await model.refresh()
+                    let folder = SynologyPhotoCollection(id: 9, name: "Fixture folder", parentID: mode == .parentRestricted ? 8 : 1,
+                        path: mode == .parentRestricted ? "/Parent/Fixture" : "/Fixture", space: .shared)
+                    let host = NSHostingView(rootView: PhotoFolderSharingPanel(model: model, folder: folder).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 620, height: 540)); try await settle(host)
+                    try snapshot(host, name: "photos-folder-permissions-\(mode)-\(language.rawValue)-\(scheme)")
+                    let targets = await service.targets, writes = await service.writes
+                    XCTAssertEqual(targets, [folder]); XCTAssertEqual(writes, 0)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test文件夹移动复制双语浅深色固定混合目标且无效目录与读取失败不提交() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["move", "copy", "same-parent", "failure"] {
+                    let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh(); await model.selectSection(.folders)
+                    if state != "same-parent" { await model.open(try XCTUnwrap(model.collections.first)) }
+                    let folders = model.collections, photos = model.items
+                    if state == "failure" { await service.configure(.failure) }
+                    let kind: PhotoManagementKind = state == "copy" ? .copy : .move
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: kind, photos: photos, folders: folders))
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 470)); try await settle(host)
+                    window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-folder-transfer-\(state)-\(language.rawValue)-\(scheme)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    model.clearSelection()
+                    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                    if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+                    try await settle(host)
+                    let commands = await service.commands
+                    let expected: [SynologyPhotosMutation] = state == "move" ? [.move(photos, folderID: 1, destinationSpace: .personal, folders: folders)] : state == "copy" ? [.copy(photos, folderID: 1, destinationSpace: .personal, folders: folders)] : []
+                    XCTAssertEqual(commands, expected)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test文件夹删除确认双语浅深色空选择取消及混合目标固定() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["folder", "mixed", "empty", "cancel"] {
+                    let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh(); await model.selectSection(.folders)
+                    let folders = state == "empty" ? [] : model.collections
+                    let photos = state == "mixed" ? model.items : []
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: .deleteFolders, photos: photos, folders: folders))
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 360)); try await settle(host)
+                    window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-folder-delete-\(state)-\(language.rawValue)-\(scheme)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    model.clearSelection()
+                    let key = state == "cancel" ? "\u{1b}" : "\r"
+                    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false, keyCode: state == "cancel" ? 53 : 36))
+                    if !window.performKeyEquivalent(with: event) { window.sendEvent(event) }
+                    try await settle(host)
+                    let commands = await service.commands
+                    XCTAssertEqual(commands, state == "empty" || state == "cancel" ? [] : [.deleteFolderItems(photos: photos, folders: folders)])
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test文件夹主页面混合选择双语浅深色显示选择数量与目录勾选() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service)
+                await model.refresh(); await model.selectSection(.folders); model.selectLoadedItems()
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1100, height: 720)); try await settle(host)
+                XCTAssertEqual(model.selectedItemCount, 2); XCTAssertTrue(model.canDeleteSelection); XCTAssertFalse(model.canManageSelection)
+                try snapshot(host, name: "photos-folder-selection-\(language.rawValue)-\(scheme)")
+                let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test独立新建目录双语浅深色空名称及回车提交() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await model.refresh(); await model.selectSection(.folders)
+                let folder = try XCTUnwrap(model.currentCreationFolder)
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: .createFolder, photos: [], folder: folder, space: folder.space))
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 560, height: 270)); try await settle(host)
+                window.makeKeyAndOrderFront(nil)
+                let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.folder.name") })
+                XCTAssertEqual(field.stringValue, "")
+                try snapshot(host, name: "photos-create-folder-empty-\(language.rawValue)-\(scheme)")
+                try click(window, at: NSPoint(x: 465, y: 32)); try await settle(host)
+                let emptyCommands = await service.commands; XCTAssertTrue(emptyCommands.isEmpty)
+                window.makeFirstResponder(field)
+                let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                editor.insertText("New folder", replacementRange: NSRange(location: NSNotFound, length: 0))
+                window.makeFirstResponder(nil); try await settle(host)
+                try snapshot(host, name: "photos-create-folder-ready-\(language.rawValue)-\(scheme)")
+                let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                try await settle(host)
+                let commands = await service.commands; XCTAssertEqual(commands, [.createFolder(parentID: folder.id, name: "New folder", space: folder.space)])
+                XCTAssertTrue(model.collections.contains { $0.name == "New folder" }); XCTAssertEqual(model.currentCreationFolder, folder)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test目录重命名双语浅深色编辑并回车提交固定目录() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await model.refresh(); await model.selectSection(.folders)
+                let folder = try XCTUnwrap(model.collections.first)
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: .renameFolder, photos: [], folder: folder))
+                    .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 560, height: 220)); try await settle(host)
+                window.makeKeyAndOrderFront(nil)
+                let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.folder.name") })
+                XCTAssertEqual(field.stringValue, folder.name)
+                window.makeFirstResponder(field)
+                let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                editor.selectAll(nil); editor.insertText("Renamed", replacementRange: NSRange(location: NSNotFound, length: 0))
+                window.makeFirstResponder(nil); try await settle(host)
+                try snapshot(host, name: "photos-folder-rename-\(language.rawValue)-\(scheme)")
+                let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                try await settle(host)
+                let commands = await service.commands; XCTAssertEqual(commands, [.renameFolder(folder: folder, name: "Renamed")])
+                XCTAssertEqual(model.collections.first?.name, "Renamed"); XCTAssertEqual(model.section, .folders)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test主文件夹页面双语浅深色根目录显示排序且无封面入口() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service)
+                await model.refresh(); await model.selectSection(.folders)
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1100, height: 720)); try await settle(host)
+                XCTAssertEqual(model.currentSortFolder?.folder.id, 1); XCTAssertNil(model.currentCoverFolder)
+                try snapshot(host, name: "photos-main-folder-sort-\(language.rawValue)-\(scheme)")
+                let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test封面排序菜单中英浅深色实际选择字段方向并保存固定目录() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await model.refresh()
+                let folder = SynologyPhotoCollection(id: 9, name: "Fixture folder", path: "/Fixture")
+                let host = NSHostingView(rootView: PhotoFolderCoverPanel(model: model, target: .init(folder: folder)).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 680, height: 620)); try await settle(host)
+                window.makeKeyAndOrderFront(nil)
+                for key in ["photos.folderSort.filesize", "workspace.sort.descending"] {
+                    let inspected = expectation(description: "排序菜单实际选择")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let trackedMenu = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = trackedMenu else { return }
+                            DispatchQueue.main.async {
+                                for field in SynologyPhotoSort.Field.allCases { XCTAssertTrue(menu.items.contains { $0.title == L10n.string("photos.folderSort." + field.rawValue) }) }
+                                let index = menu.items.firstIndex { $0.title == L10n.string(key) }
+                                XCTAssertNotNil(index)
+                                menu.cancelTrackingWithoutAnimation()
+                                if let index { menu.performActionForItem(at: index) }
+                                inspected.fulfill()
+                            }
+                        }
+                    }
+                    try click(window, at: NSPoint(x: 625, y: 512))
+                    await fulfillment(of: [inspected], timeout: 2)
+                    NotificationCenter.default.removeObserver(observer)
+                    try await settle(host)
+                }
+                let commands = await service.commands
+                XCTAssertEqual(commands, [.setFolderSort(folder: folder, sort: .init(field: .filesize)), .setFolderSort(folder: folder, sort: .init(field: .filesize, direction: .descending))])
+                let reads = await service.photoReads
+                XCTAssertEqual(reads.last?.0, .folder(id: 9, sort: .init(field: .filesize, direction: .descending)))
+                try snapshot(host, name: "photos-folder-sort-\(language.rawValue)-\(scheme)")
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test目录封面选择器中英浅深色五种状态且回车只提交固定目标() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        let context = try XCTUnwrap(CGContext(data: nil, width: 320, height: 240, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.systemTeal.cgColor); context.fill(CGRect(x: 0, y: 0, width: 320, height: 240))
+        let image = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["normal", "selected", "empty", "error", "loading"] {
+                    let service = FolderCoverServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh()
+                    let photo = try XCTUnwrap(model.items.first)
+                    let mode: FolderCoverServiceStub.Mode = state == "empty" ? .empty : state == "error" ? .failure : state == "loading" ? .loading : .normal
+                    await service.configure(mode, image: image)
+                    let folder = SynologyPhotoCollection(id: 9, name: "Fixture folder", path: "/Fixture")
+                    let target = PhotoFolderCoverTarget(folder: folder, photo: state == "selected" ? photo : nil)
+                    let host = NSHostingView(rootView: PhotoFolderCoverPanel(model: model, target: target).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 680, height: 620)); try await settle(host)
+                    try snapshot(host, name: "photos-folder-cover-\(state)-\(language.rawValue)-\(scheme)")
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    if state == "selected" {
+                        window.makeKeyAndOrderFront(nil)
+                        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                        try await settle(host)
+                        let calls = await service.commands; XCTAssertEqual(calls, [.setFolderCover(folder: folder, photo: photo)])
+                    }
+                    window.contentView = nil; window.close(); await service.release()
+                }
+            }
+        }
+    }
+
+    func test幻灯片中英浅深色播放暂停加载失败并且退出保留位置() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        let context = try XCTUnwrap(CGContext(data: nil, width: 640, height: 420, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.systemBlue.cgColor); context.fill(CGRect(x: 0, y: 0, width: 640, height: 420))
+        let image = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["playing", "paused", "loading", "error"] {
+                    let service = SlideshowPhotoServiceStub(), clock = SlideshowTestClock()
+                    await service.setImage(image)
+                    if state == "loading" { await service.holdPreview() }
+                    let model = SynologyPhotosModel(repository: service, slideshowDelay: { try await clock.wait() })
+                    await model.refresh(); await model.jumpToMonth(.init(year: 2020, month: 3)); model.startSlideshow()
+                    if state != "loading" {
+                        for _ in 0..<1000 where model.isPreparingPreview { try await Task.sleep(for: .milliseconds(1)) }
+                    }
+                    if state == "paused" { model.toggleSlideshowPlayback() }
+                    if state == "error" { model.slideshowPlaybackFailed() }
+                    let host = NSHostingView(rootView: PhotoSlideshowView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1000, height: 720)); try await settle(host)
+                    try snapshot(host, name: "photos-slideshow-\(state)-\(language.rawValue)-\(scheme)")
+                    XCTAssertEqual(model.isPreparingPreview, state == "loading")
+                    XCTAssertEqual(model.isSlideshowPlaying, state == "playing" || state == "loading")
+                    window.makeKeyAndOrderFront(nil)
+                    let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+                    if !window.performKeyEquivalent(with: escape) { window.sendEvent(escape) }
+                    try await settle(host)
+                    XCTAssertFalse(model.isSlideshowPresented); XCTAssertEqual(model.selectedTimelineMonthID, 202003)
+                    model.closePreview(); await service.releasePreview(); await clock.tick()
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test共享人物管理表单中英浅深色沿共享读取且不提前写入() async throws {
+        let language = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = language }
+        for locale in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = locale
+            for scheme in [ColorScheme.light, .dark] {
+                for kind in [PhotoManagementKind.renamePerson, .mergePeople, .peopleVisibility, .removeFaces, .reassignFaces, .personCover] {
+                    let service = DatePhotoServiceStub(space: .shared)
+                    await service.enableManagement(); await service.configureRequestAccess(spaces: [.shared], manager: true)
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.refresh()
+                    let person = SynologyPhotoCollection(id: 31, name: "Fixture shared person", itemCount: 2, space: .shared)
+                    let photos = kind == .personCover ? Array(model.items.prefix(1)) : ([PhotoManagementKind.removeFaces, .reassignFaces].contains(kind) ? model.items : [])
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model,
+                        sheet: .init(kind: kind, photos: photos, person: person, space: .shared)).preferredColorScheme(scheme))
+                    let large = [.mergePeople, .peopleVisibility, .removeFaces, .reassignFaces].contains(kind)
+                    let size = large ? NSSize(width: 680, height: 660) : NSSize(width: 560, height: 470)
+                    let window = attach(host, size: size)
+                    try await settle(host)
+                    try snapshot(host, name: "photos-shared-people-\(kind.rawValue)-\(locale.rawValue)-\(scheme)")
+                    let reads = await service.peopleReadSpaces, writes = await service.managementWriteCount
+                    XCTAssertTrue(reads.allSatisfy { $0 == .shared }); XCTAssertEqual(writes, 0)
+                    if [.mergePeople, .peopleVisibility, .reassignFaces].contains(kind) { XCTAssertFalse(reads.isEmpty) }
+                    XCTAssertEqual(host.bounds.size, size)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test共享人物显示窗口回车只提交共享目标() async throws {
+        let service = DatePhotoServiceStub(space: .shared)
+        await service.enableManagement(); await service.configureRequestAccess(spaces: [.shared], manager: true)
+        let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+        await model.refresh(); await model.selectSection(.albums); await model.openCategory(.person)
+        let person = try XCTUnwrap(model.collections.first)
+        let host = NSHostingView(rootView: PhotoManagementPanel(model: model,
+            sheet: .init(kind: .peopleVisibility, photos: [], person: person, space: .shared)))
+        let window = attach(host, size: NSSize(width: 680, height: 660))
+        defer { window.contentView = nil; window.close() }
+        try await settle(host); window.makeKeyAndOrderFront(nil)
+        let before = await service.managementCommands; XCTAssertTrue(before.isEmpty)
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+        try await settle(host)
+        let commands = await service.managementCommands
+        XCTAssertEqual(commands.count, 1); XCTAssertEqual(commands.first?.space, .shared)
+        guard case .setPeopleVisibility(let people, let visible) = commands.first else { return XCTFail("应提交共享人物显示设置") }
+        XCTAssertEqual(people.first?.person, person); XCTAssertFalse(visible)
+        XCTAssertEqual(model.selectedSpace, .shared); XCTAssertFalse(model.collections.contains { $0.id == person.id })
+    }
+
+    func test未完成预览恢复中英浅深色四种状态且打开不写入() async throws {
+        let language = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = language }
+        for locale in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = locale
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "empty", "error", "loading"] {
+                    let service = DatePhotoServiceStub()
+                    await service.enableManagement(); await service.configureRequestAccess(spaces: [.personal, .shared], manager: true)
+                    let model = SynologyPhotosModel(repository: service); await model.refresh()
+                    await service.setPreviewRecovery(state == "empty" ? [] : Array(model.items.prefix(2)), in: .personal,
+                        failure: state == "error", delay: state == "loading" ? .seconds(5) : nil)
+                    let host = NSHostingView(rootView: PhotoPreviewRecoveryPanel(model: model, initialSpace: .personal).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 640, height: 540))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-preview-recovery-\(state)-\(locale.rawValue)-\(scheme)")
+                    let writes = await service.managementWriteCount, reads = await service.previewRecoveryReads
+                    XCTAssertEqual(writes, 0); XCTAssertEqual(reads, [.personal])
+                    if state != "loading" {
+                        let picker = try XCTUnwrap(nativeViews(host, of: NSSegmentedControl.self).first)
+                        XCTAssertEqual(picker.segmentCount, 2)
+                        picker.selectedSegment = 1; XCTAssertTrue(picker.sendAction(picker.action, to: picker.target))
+                        try await settle(host)
+                        let switchedReads = await service.previewRecoveryReads
+                        XCTAssertEqual(switchedReads, [.personal, .shared])
+                        let afterWrites = await service.managementWriteCount; XCTAssertEqual(afterWrites, 0)
+                    }
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test恢复预览窗口回车仅继续原所选照片且保持相册位置() async throws {
+        let service = DatePhotoServiceStub(); await service.enableManagement()
+        let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in }); await model.refresh()
+        let targets = Array(model.items.prefix(2)); await service.setPreviewRecovery(targets, in: .personal)
+        let originalItems = model.items
+        let host = NSHostingView(rootView: PhotoPreviewRecoveryPanel(model: model, initialSpace: .personal))
+        let window = attach(host, size: NSSize(width: 640, height: 540))
+        defer { window.contentView = nil; window.close() }
+        try await settle(host); window.makeKeyAndOrderFront(nil)
+        let before = await service.managementWriteCount; XCTAssertEqual(before, 0)
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+        try await settle(host)
+        let commands = await service.managementCommands
+        XCTAssertEqual(commands, [.regeneratePreviews(targets, resuming: true)])
+        XCTAssertEqual(model.items, originalItems); XCTAssertFalse(model.isManaging); XCTAssertNil(model.pendingMutationID)
+    }
+
+    func test混合来源编辑表单中英浅深色保留两空间目标且不提前提交() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = DatePhotoServiceStub()
+                await service.enableManagement(); await service.configureRequestAccess(spaces: [.personal, .shared], manager: true)
+                let model = SynologyPhotosModel(repository: service); await model.refresh()
+                let personal = try XCTUnwrap(model.items.first)
+                let shared = SynologyPhoto(id: .init(profileID: personal.id.profileID, space: .shared, unitID: personal.id.unitID),
+                    filename: "Fixture shared.jpg", sizeBytes: 128, takenAt: personal.takenAt, indexedAt: personal.indexedAt, folderID: 109, mediaType: "photo")
+                XCTAssertTrue(model.canEditSelection([personal, shared], supportsMixedSpaces: true))
+                XCTAssertFalse(model.canEditSelection([personal, shared], supportsMixedSpaces: false))
+                for kind in [PhotoManagementKind.rating, .date, .shiftDates, .regeneratePreviews] {
+                    let sheet = PhotoManagementSheet(kind: kind, photos: [personal, shared])
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 470))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-mixed-\(kind.rawValue)-\(language.rawValue)-\(scheme)")
+                    let commands = await service.managementCommands
+                    XCTAssertTrue(commands.isEmpty); XCTAssertEqual(sheet.photos.map(\.id.space), [.personal, .shared])
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test相册移动后读取失败中英浅深色保持相册并可只读重试() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub(); await service.setSpaces([.personal, .shared])
+                let personal = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "Fixture.jpg", sizeBytes: 128,
+                    takenAt: Date(timeIntervalSince1970: 1583020800), indexedAt: Date(timeIntervalSince1970: 1583020800), folderID: 9, mediaType: "photo",
+                    albumContext: .init(albumID: 21, ownerUserID: 12, providerUserID: 12))
+                let shared = SynologyPhoto(id: .init(profileID: personal.id.profileID, space: .shared, unitID: 107), filename: personal.filename,
+                    sizeBytes: personal.sizeBytes, takenAt: personal.takenAt, indexedAt: personal.indexedAt, folderID: 109, mediaType: "photo",
+                    albumContext: .init(albumID: 21, ownerUserID: 0, providerUserID: 12))
+                await service.setAlbumPhotos([personal]); await service.setMovedAlbumPhotos([shared], failures: 3)
+                await service.setAlbumAccess(.init(albumID: 21, currentUserID: 12, isOwner: true, canDownload: true, canContribute: true))
+                let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await model.selectSection(.albums); await model.open(.init(id: 21, name: "Fixture album"))
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1100, height: 720))
+                try await settle(host)
+                model.submitMutation(.move([personal], folderID: 109, destinationSpace: .shared))
+                for _ in 0..<2000 where model.isManaging { await Task.yield() }
+                try await settle(host)
+                XCTAssertFalse(model.isManaging); XCTAssertTrue(model.needsAlbumRefresh); XCTAssertEqual(model.items, [personal])
+                XCTAssertEqual(model.errorMessage, L10n.string("photos.manage.albumRefreshFailed"))
+                try snapshot(host, name: "photos-album-refresh-error-\(language.rawValue)-\(scheme)")
+                // 自定义 SwiftUI 按钮没有 NSButton；合成绘制检查文案，调用同一重试动作检查恢复。
+                await model.retryAlbumRefresh()
+                try await settle(host)
+                XCTAssertFalse(model.needsAlbumRefresh); XCTAssertEqual(model.items, [shared]); XCTAssertNil(model.errorMessage)
+                XCTAssertEqual(model.selectedAlbum?.id, 21)
+                let commands = await service.commands; XCTAssertEqual(commands.count, 1)
+                try snapshot(host, name: "photos-album-refresh-recovered-\(language.rawValue)-\(scheme)")
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test跨空间移动复制表单中英浅深色切换目标且不提前提交() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for kind in [PhotoManagementKind.move, .copy] {
+                    let service = PhotoUploadServiceStub(); await service.setSpaces([.personal, .shared])
+                    await service.addFolder(.init(id: 9, name: "Fixture personal folder", parentID: 1))
+                    await service.addFolder(.init(id: 109, name: "Fixture shared folder", parentID: 101, space: .shared))
+                    let model = SynologyPhotosModel(repository: service); await model.refresh()
+                    let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "Fixture.jpg", sizeBytes: 128,
+                        takenAt: Date(timeIntervalSince1970: 1583020800), indexedAt: Date(timeIntervalSince1970: 1583020800), folderID: 9, mediaType: "photo")
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: kind, photos: [photo])).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 470))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-space-transfer-\(kind.rawValue)-personal-\(language.rawValue)-\(scheme)")
+                    let picker = try XCTUnwrap(nativeViews(host, of: NSSegmentedControl.self).first)
+                    XCTAssertEqual(picker.segmentCount, 2)
+                    picker.selectedSegment = 1
+                    XCTAssertTrue(picker.sendAction(picker.action, to: picker.target))
+                    try await settle(host)
+                    let reads = await service.conditionFolderSpaces, commands = await service.commands
+                    XCTAssertEqual(reads, [.personal, .shared]); XCTAssertTrue(commands.isEmpty)
+                    try snapshot(host, name: "photos-space-transfer-\(kind.rawValue)-shared-\(language.rawValue)-\(scheme)")
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test相册转加确认中英浅深色显示可添加目标且不提前写入() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub()
+                await service.setAlbumAccess(.init(albumID: 21, currentUserID: 12, isOwner: false, canDownload: true, canContribute: true))
+                await service.setAddableAlbums([.init(id: 22, name: "Fixture owned album"), .init(id: 23, name: "Fixture contributor album")])
+                let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "Fixture shared photo.jpg", sizeBytes: 128,
+                    takenAt: Date(timeIntervalSince1970: 1583020800), indexedAt: Date(timeIntervalSince1970: 1583020800), folderID: 9, mediaType: "photo",
+                    albumContext: .init(albumID: 21, ownerUserID: 99, providerUserID: 12))
+                await service.setAlbumPhoto(photo)
+                let model = SynologyPhotosModel(repository: service)
+                await model.selectSection(.albums); await model.open(.init(id: 21, name: "Fixture source"))
+                XCTAssertTrue(model.canAddToAlbum([photo])); XCTAssertFalse(model.canModifyOriginal(photo))
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: .addAlbum, photos: [photo], album: model.selectedAlbum)).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 720, height: 620))
+                try await settle(host)
+                try snapshot(host, name: "photos-album-transfer-\(language.rawValue)-\(scheme)")
+                let reads = await service.addableAlbumReads, commands = await service.commands
+                XCTAssertEqual(reads, 1); XCTAssertTrue(commands.isEmpty)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test相册协作角色与直接上传表单中英浅深色布局() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for role in ["view", "download", "upload"] {
+                    let service = PhotoUploadServiceStub(); await service.setSpaces([])
+                    await service.setAlbumAccess(.init(albumID: 21, currentUserID: 12, isOwner: false, canDownload: role != "view", canContribute: role == "upload"))
+                    let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "Fixture shared photo.jpg", sizeBytes: 128,
+                        takenAt: Date(timeIntervalSince1970: 1583020800), indexedAt: Date(timeIntervalSince1970: 1583020800), folderID: 9, mediaType: "photo",
+                        albumContext: .init(albumID: 21, ownerUserID: 99, providerUserID: 12))
+                    await service.setAlbumPhoto(photo)
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.selectSection(.albums); await model.open(.init(id: 21, name: "Fixture album")); model.toggleSelection(photo)
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1100, height: 720))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-collaboration-\(role)-\(language.rawValue)-\(scheme)")
+                    XCTAssertEqual(model.canUploadPhotos, role == "upload"); XCTAssertEqual(model.canDownload(photo), role != "view")
+                    XCTAssertEqual(model.canRemoveAlbumSelection, role == "upload"); XCTAssertFalse(model.canDeleteSelection)
+                    window.contentView = nil; window.close()
+                    if role == "upload" {
+                        let panel = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: .upload, photos: [], album: model.selectedAlbum)).preferredColorScheme(scheme))
+                        let panelWindow = attach(panel, size: NSSize(width: 720, height: 620))
+                        try await settle(panel)
+                        try snapshot(panel, name: "photos-collaboration-upload-panel-\(language.rawValue)-\(scheme)")
+                        let folders = await service.conditionFolderSpaces; XCTAssertTrue(folders.isEmpty)
+                        panelWindow.contentView = nil; panelWindow.close()
+                    }
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                }
+            }
+        }
+    }
+
+    func test相册来源不可直接访问时中英浅深色浏览及错误布局() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for albumID in [21, 22] {
+                    let service = PhotoUploadServiceStub(); await service.setSpaces([])
+                    let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .shared, unitID: 7), filename: "Fixture shared photo.jpg", sizeBytes: 128,
+                        takenAt: Date(timeIntervalSince1970: 1583020800), indexedAt: Date(timeIntervalSince1970: 1583020800), folderID: 9, mediaType: "photo",
+                        albumContext: .init(albumID: albumID, ownerUserID: 0))
+                    await service.setAlbumPhoto(photo)
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.refresh(); await model.selectSection(.albums); await model.open(.init(id: 21, name: "Fixture album"))
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1100, height: 720))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-album-context-\(albumID == 21 ? "normal" : "error")-\(language.rawValue)-\(scheme)")
+                    XCTAssertEqual(host.bounds.height, 720, accuracy: 1)
+                    XCTAssertEqual(model.items.count, albumID == 21 ? 1 : 0)
+                    XCTAssertEqual(model.errorMessage == nil, albumID == 21)
+                    XCTAssertTrue(model.managementFeatures.isEmpty)
+                    let commands = await service.commands; XCTAssertTrue(commands.isEmpty)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test整册与文件夹下载菜单中英浅深色且打开不下载() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for kind in ["album", "folder", "folders", "mixed"] {
+                    let service = PhotoUploadServiceStub()
+                    let model = SynologyPhotosModel(repository: service); await model.refresh()
+                    let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "fixture.jpg", sizeBytes: 128,
+                        takenAt: .distantPast, indexedAt: .distantPast, folderID: 1, mediaType: "photo")
+                    let folders = [10, 11].map { SynologyPhotoCollection(id: $0, name: "Child\($0)", parentID: 1, path: "/Child\($0)") }
+                    let target: SynologyPhotoArchiveTarget = kind == "album" ? .album(id: 21) : kind == "folder" ? .folder(id: 1, space: .personal) :
+                        .selection(photos: kind == "mixed" ? [photo] : [], folders: folders)
+                    let host = NSHostingView(rootView: PhotoArchiveDownloadMenu(target: target, name: "Fixture", model: model)
+                        .frame(width: 320, height: 120).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 320, height: 120)); try await settle(host)
+                    window.makeKeyAndOrderFront(nil)
+                    let inspected = expectation(description: "检查整集合下载菜单")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let trackedMenu = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = trackedMenu else { return }
+                            DispatchQueue.main.async {
+                                let titles = menu.items.map { $0.title }
+                                XCTAssertTrue(titles.contains(L10n.string("photos.download.original")))
+                                XCTAssertTrue(titles.contains(L10n.string("photos.download.jpeg")))
+                                menu.cancelTrackingWithoutAnimation(); inspected.fulfill()
+                            }
+                        }
+                    }
+                    try click(window, at: NSPoint(x: 160, y: 60))
+                    await fulfillment(of: [inspected], timeout: 2)
+                    NotificationCenter.default.removeObserver(observer)
+                    try snapshot(host, name: "photos-archive-menu-\(kind)-\(language.rawValue)-\(scheme)")
+                    let calls = await service.archiveCalls; XCTAssertTrue(calls.isEmpty)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test文件夹混选下载工具栏中英浅深色保留整组选项() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["unselected", "folders", "mixed", "empty"] {
+                    let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service)
+                    if state != "empty" {
+                        for id in [10, 11] { await service.addFolder(.init(id: id, name: "Fixture \(id)", parentID: 1, path: "/Fixture \(id)")) }
+                        if state == "mixed" {
+                            let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "fixture.jpg", sizeBytes: 128,
+                                takenAt: .distantPast, indexedAt: .distantPast, folderID: 1, mediaType: "photo")
+                            await service.setFolderPhotos([photo])
+                        }
+                    }
+                    await model.refresh(); await model.selectSection(.folders)
+                    if ["folders", "mixed"].contains(state) { model.selectLoadedItems() }
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1100, height: 720)); try await settle(host)
+                    try snapshot(host, name: "photos-mixed-download-\(state)-\(language.rawValue)-\(scheme)")
+                    if case .selection(let photos, let folders) = model.selectedArchive {
+                        XCTAssertEqual(folders.count, 2); XCTAssertEqual(photos.count, state == "mixed" ? 1 : 0)
+                        XCTAssertTrue(model.canDownloadArchive(try XCTUnwrap(model.selectedArchive)))
+                    } else { XCTAssertTrue(["unselected", "empty"].contains(state)) }
+                    XCTAssertEqual(host.bounds.height, 720, accuracy: 1)
+                    let calls = await service.archiveCalls; XCTAssertTrue(calls.isEmpty)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test整集合下载页面中英浅深色与相册只读权限布局() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["album", "folder", "denied"] {
+                    let service = PhotoUploadServiceStub()
+                    await service.setAlbumAccess(.init(albumID: 21, currentUserID: 12, isOwner: false, canDownload: state != "denied", canContribute: true))
+                    let model = SynologyPhotosModel(repository: service)
+                    if state == "folder" { await model.selectSection(.folders) }
+                    else { await model.selectSection(.albums); await model.open(.init(id: 21, name: "Fixture album")) }
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1100, height: 720)); try await settle(host)
+                    try snapshot(host, name: "photos-archive-page-\(state)-\(language.rawValue)-\(scheme)")
+                    let target = try XCTUnwrap(model.currentArchive?.target)
+                    XCTAssertEqual(model.canDownloadArchive(target), state != "denied")
+                    XCTAssertEqual(host.bounds.height, 720, accuracy: 1)
+                    let calls = await service.archiveCalls; XCTAssertTrue(calls.isEmpty)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test照片下载格式菜单中英浅深色且打开不下载() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for (ext, video, enabled) in [("heic", false, true), ("heic", false, false), ("jpg", false, true), ("mov", true, true)] {
+                    let service = SharedCategoryServiceStub()
+                    await service.setOriginalSizeJPEG(enabled)
+                    let subject = SynologyPhotosModel(repository: service); await subject.refresh()
+                    let photo = SynologyPhoto(id: .init(profileID: UUID(), space: .personal, unitID: 7), filename: "fixture.\(ext)",
+                        sizeBytes: 128, takenAt: .distantPast, indexedAt: .distantPast, folderID: 9, mediaType: video ? "video" : "photo")
+                    let host = NSHostingView(rootView: PhotoDownloadMenu(photo: photo, model: subject).frame(width: 320, height: 120).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 320, height: 120)); try await settle(host)
+                    window.makeKeyAndOrderFront(nil)
+                    let inspected = expectation(description: "检查下载格式菜单")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let trackedMenu = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = trackedMenu else { return }
+                            DispatchQueue.main.async {
+                                let titles = menu.items.map { $0.title }
+                                XCTAssertTrue(titles.contains(L10n.string("photos.download.original")))
+                                XCTAssertEqual(titles.contains(L10n.string("photos.download.jpeg")), !video)
+                                XCTAssertEqual(titles.contains(L10n.string("photos.download.originalSizeJPEG")), enabled && ext == "heic")
+                                menu.cancelTrackingWithoutAnimation(); inspected.fulfill()
+                            }
+                        }
+                    }
+                    try click(window, at: NSPoint(x: 160, y: 60))
+                    await fulfillment(of: [inspected], timeout: 2)
+                    NotificationCenter.default.removeObserver(observer)
+                    try snapshot(host, name: "photos-download-menu-\(ext)-\(enabled)-\(language.rawValue)-\(scheme)")
+                    let requests = await service.downloadRequests; XCTAssertTrue(requests.isEmpty)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test相似识别状态中英浅深色运行等待与完成布局() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["running", "waiting", "done"] {
+                    let service = SharedCategoryServiceStub()
+                    await service.configureSimilarStatus(.init(waitingCount: state == "done" ? 0 : 12, stage: state, migrationComplete: true))
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.refresh(); await model.selectSection(.albums); await model.openCategory(.similar)
+                    await model.refreshSimilarStatus()
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1100, height: 720))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-similar-status-\(state)-\(language.rawValue)-\(scheme)")
+                    XCTAssertEqual(model.similarStatus?.isVisible, state != "done")
+                    XCTAssertEqual(model.similarStatus?.isRunning, state == "running")
+                    XCTAssertEqual(model.items.count, 1)
+                    let commands = await service.similarCommands; XCTAssertTrue(commands.isEmpty)
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test相似照片预览中英浅深色加载错误与组内正常布局() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        let context = try XCTUnwrap(CGContext(data: nil, width: 160, height: 120, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.systemBlue.cgColor); context.fill(CGRect(x: 0, y: 0, width: 160, height: 120))
+        let image = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "error", "loading"] {
+                    let service = SharedCategoryServiceStub()
+                    let subject = SynologyPhotosModel(repository: service)
+                    await service.configurePreviews([image]); await service.configureSimilar(fails: state == "error", hold: state == "loading")
+                    await subject.refresh(); await subject.selectSection(.albums); await subject.openCategory(.similar)
+                    subject.showPreview(try XCTUnwrap(subject.items.first))
+                    if state == "loading" { await service.waitForSimilar() }
+                    else { for _ in 0..<100 where subject.isPreparingPreview || subject.isLoadingSimilarPreview { try await Task.sleep(nanoseconds: 1_000_000) } }
+                    let host = NSHostingView(rootView: SynologyPhotoPreview(model: subject).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1000, height: 720))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-similar-preview-\(state)-\(language.rawValue)-\(scheme)")
+                    XCTAssertNotNil(subject.previewData)
+                    if state == "ready" { XCTAssertEqual(subject.previewSimilarDetail?.photos.count, 2) }
+                    if state == "error" { XCTAssertNotNil(subject.similarPreviewError) }
+                    subject.closePreview(); if state == "loading" { await service.releaseSimilar() }
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test分类拼图中英浅深色正常空错误加载且保持分类入口() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        let context = try XCTUnwrap(CGContext(data: nil, width: 160, height: 120, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let images = try [NSColor.systemRed, .systemGreen, .systemBlue, .systemOrange].map { color in
+            context.setFillColor(color.cgColor); context.fill(CGRect(x: 0, y: 0, width: 160, height: 120))
+            return try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "empty", "error", "loading"] {
+                    let service = SharedCategoryServiceStub()
+                    await service.configurePreviews(state == "empty" ? [] : images, fails: state == "error", delay: state == "loading" ? 10_000_000_000 : 0)
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.refresh(); await model.selectSpace(.shared); await model.selectSection(.albums)
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1100, height: 720))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-category-collage-\(state)-\(language.rawValue)-\(scheme)")
+                    XCTAssertTrue(model.showsCategories); XCTAssertNil(model.errorMessage)
+                    let reads = await service.previewReads
+                    XCTAssertEqual(Set(reads.map { $0.0 }), Set(SynologyPhotoCategory.allCases))
+                    XCTAssertTrue(reads.allSatisfy { $0.1 == .shared })
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test共享分类中英浅深色正常空错误与权限布局() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["categories", "people", "empty", "error", "entry"] {
+                    let service = SharedCategoryServiceStub()
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.refresh(); await model.selectSpace(.shared)
+                    await service.configure(manager: state != "entry", fails: state == "error", empty: state == "empty")
+                    await model.selectSection(.albums)
+                    if state == "people" { await model.openCategory(.person) }
+                    let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1100, height: 720))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-shared-categories-\(state)-\(language.rawValue)-\(scheme)")
+                    XCTAssertEqual(model.selectedSpace, .shared)
+                    XCTAssertEqual(host.bounds.height, 720, accuracy: 1)
+                    let albumReads = await service.albumReads; XCTAssertEqual(albumReads, 1)
+                    if state == "categories" { XCTAssertTrue(model.showsCategories) }
+                    if state == "people" { XCTAssertEqual(model.collections.count, 2); XCTAssertTrue(model.collections.allSatisfy { $0.space == .shared }) }
+                    if state == "entry" { XCTAssertTrue(model.sharedCategoriesRequireManagement) }
+                    if state == "error" { XCTAssertNotNil(model.errorMessage) }
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test上传恢复中英浅深色待核对重新选择错误与继续布局() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "pending", "source", "error", "empty"] {
+                    let root = FileManager.default.temporaryDirectory.appendingPathComponent("photos-recovery-ui-\(UUID().uuidString)", isDirectory: true)
+                    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                    defer { try? FileManager.default.removeItem(at: root) }
+                    let source = root.appendingPathComponent("Fixture photograph.jpg")
+                    try Data(repeating: 1, count: 128).write(to: source)
+                    var file = try XCTUnwrap(PhotoUploadPreparation.prepare([source]).files.first)
+                    if state == "source" { file.recoveryBookmark = Data("invalid bookmark".utf8) }
+                    let service = PhotoUploadServiceStub(), identity = try await service.uploadRecoveryIdentity(), operationID = UUID()
+                    let store = PhotoUploadRecoveryStore(url: root.appendingPathComponent("journal/queue.json"))
+                    if state != "empty" {
+                        try store.save(identity: identity, entries: [PhotoUploadEntry(file: file, album: nil, folder: .init(id: 9, name: "Fixture folder"))],
+                            directories: [], pendingEntryID: state == "pending" ? file.id : nil, pendingDirectory: nil,
+                            pendingOperationID: state == "pending" ? operationID : nil)
+                        if state == "pending" {
+                            try store.checkpoint(.init(mutation: .upload(file: source, size: file.size, modifiedAt: file.modifiedAt, folderID: 9), operationID: operationID, profileID: service.profile, userID: 12))
+                        }
+                        if state == "error" { try Data("invalid".utf8).write(to: store.url) }
+                    }
+                    let model = SynologyPhotosModel(repository: service, uploadRecoveryStore: .init(url: store.url), deletionReviewDelay: { _ in })
+                    await model.refresh()
+                    let host = NSHostingView(rootView: PhotoUploadQueuePanel(model: model).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 620, height: 480))
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-upload-recovery-\(state)-\(language.rawValue)-\(scheme)")
+                    XCTAssertEqual(model.canResumeUploads, state == "ready")
+                    XCTAssertEqual(model.uploadPersistenceError != nil, state == "error")
+                    XCTAssertEqual(model.pendingMutationID != nil, state == "pending")
+                    if state == "source" { XCTAssertEqual(model.uploadQueue.first?.file.requiresSourceSelection, true) }
+                    let before = await service.commands; XCTAssertTrue(before.isEmpty)
+                    if state == "ready" {
+                        try click(window, at: NSPoint(x: 504, y: 34))
+                        for _ in 0..<200 where model.isManaging || model.uploadQueue.first?.state != .completed { try await Task.sleep(for: .milliseconds(5)) }
+                        XCTAssertEqual(model.uploadQueue.first?.state, .completed)
+                        let calls = await service.commands; XCTAssertEqual(calls.count, 1)
+                    }
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test预览直接操作中英浅深色菜单打开表单并固定当前照片() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for personContext in [false, true] {
+                    let service = DatePhotoServiceStub(); await service.enableManagement()
+                    let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh()
+                    if personContext {
+                        await model.selectSection(.albums); await model.openCategory(.person)
+                        await model.open(try XCTUnwrap(model.collections.first))
+                    }
+                    let photo = try XCTUnwrap(model.items.first), other = try XCTUnwrap(model.items.last)
+                    model.showPreview(photo); model.toggleSelection(other)
+                    let person = model.selectedCategoryItem
+                    let host = NSHostingView(rootView: SynologyPhotoPreview(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1040, height: 720))
+                    defer { model.closePreview(); window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "photos-preview-actions-before-\(personContext)-\(language.rawValue)-\(scheme)")
+                    let kind: PhotoManagementKind = personContext ? .personCover : .rating
+                    let chosen = expectation(description: "预览更多菜单打开编辑表单")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let tracked = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = tracked else { return }
+                            DispatchQueue.main.async {
+                                for expected in [PhotoManagementKind.addAlbum, .createAlbum, .rating, .description, .date, .shiftDates, .tagsCreate, .tagsAdd, .tagsRemove, .move, .copy] {
+                                    let item = menu.item(withTitle: expected.title)
+                                    XCTAssertNotNil(item, expected.rawValue); XCTAssertEqual(item?.isEnabled, true, expected.rawValue)
+                                }
+                                XCTAssertEqual(menu.item(withTitle: PhotoManagementKind.removeAlbum.title)?.isEnabled, false)
+                                XCTAssertEqual(menu.item(withTitle: PhotoManagementKind.cover.title)?.isEnabled, false)
+                                for expected in [PhotoManagementKind.removeFaces, .reassignFaces, .personCover] {
+                                    XCTAssertEqual(menu.item(withTitle: expected.title)?.isEnabled, personContext ? true : nil)
+                                }
+                                let index = menu.indexOfItem(withTitle: kind.title)
+                                XCTAssertGreaterThanOrEqual(index, 0); menu.cancelTrackingWithoutAnimation()
+                                if index >= 0 { menu.performActionForItem(at: index) }; chosen.fulfill()
+                            }
+                        }
+                    }
+                    // 同尺寸合成截图中“更多”按钮位于分享按钮左侧。
+                    try click(window, at: NSPoint(x: 820, y: 686)); await fulfillment(of: [chosen], timeout: 2)
+                    NotificationCenter.default.removeObserver(observer); try await settle(host)
+                    let sheet = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(sheet.contentView)
+                    try snapshot(content, name: "photos-preview-actions-confirm-\(personContext)-\(language.rawValue)-\(scheme)")
+                    let before = await service.managementCommands; XCTAssertTrue(before.isEmpty)
+                    model.clearSelection(); model.toggleSelection(other)
+                    sheet.makeKeyAndOrderFront(nil); try await settle(content)
+                    XCTAssertTrue(model.canEditSelection([photo], supportsMixedSpaces: false))
+                    let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: sheet.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                    if language == .english { try click(sheet, at: NSPoint(x: 490, y: 32)) }
+                    else if !sheet.performKeyEquivalent(with: enter) { sheet.sendEvent(enter) }
+                    try await settle(host)
+                    for _ in 0..<200 where model.isManaging { try await Task.sleep(for: .milliseconds(10)) }
+                    XCTAssertFalse(model.isManaging)
+                    let commands = await service.managementCommands
+                    let expected: SynologyPhotosMutation = personContext ? .setPersonCover(person: try XCTUnwrap(person), photo: photo) : .edit([photo], .rating(0))
+                    XCTAssertEqual(commands, [expected]); XCTAssertNil(window.attachedSheet)
+                    XCTAssertEqual(model.selectedPhotoIDs, [other.id])
+                }
+            }
+        }
+    }
+
+    func test预览重建工具栏中英浅深色显示并打开确认() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        let context = try XCTUnwrap(CGContext(data: nil, width: 160, height: 120, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(NSColor.systemBlue.cgColor); context.fill(CGRect(x: 0, y: 0, width: 160, height: 120))
+        let data = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = DatePhotoServiceStub(); await service.enableManagement(); await service.enablePreviewDetails(); await service.setPreviewFixture(data)
+                let model = SynologyPhotosModel(repository: service)
+                await model.refresh()
+                let photo = try XCTUnwrap(model.items.first); model.showPreview(photo)
+                for _ in 0..<100 where model.isPreparingPreview { try await Task.sleep(for: .milliseconds(2)) }
+                let host = NSHostingView(rootView: SynologyPhotoPreview(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1040, height: 720))
+                defer { model.closePreview(); window.contentView = nil; window.close() }
+                try await settle(host)
+                XCTAssertTrue(model.canRegeneratePreviews([photo])); XCTAssertNotNil(model.previewData)
+                try snapshot(host, name: "photos-preview-role-toolbar-\(language.rawValue)-\(scheme)")
+                let before = await service.managementCommands; XCTAssertTrue(before.isEmpty)
+                // 实际入口点击位置由同尺寸的合成截图核对。
+                window.makeKeyAndOrderFront(nil)
+                try click(window, at: NSPoint(x: 913, y: 686)); try await settle(host)
+                let sheet = try XCTUnwrap(window.attachedSheet)
+                let content = try XCTUnwrap(sheet.contentView)
+                try snapshot(content, name: "photos-preview-role-confirm-\(language.rawValue)-\(scheme)")
+                let after = await service.managementCommands; XCTAssertTrue(after.isEmpty)
+                let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: sheet.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+                if !sheet.performKeyEquivalent(with: escape) { sheet.sendEvent(escape) }
+                try await settle(host)
+                XCTAssertNil(window.attachedSheet)
+                let cancelled = await service.managementCommands; XCTAssertTrue(cancelled.isEmpty)
+            }
+        }
+    }
+
+    func test预览重建中英浅深色确认只提交打开表单时的选择() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = DatePhotoServiceStub()
+                await service.enableManagement()
+                let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await model.refresh(); await model.jumpToMonth(.init(year: 2014, month: 8))
+                let photo = try XCTUnwrap(model.items.first)
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model,
+                    sheet: .init(kind: .regeneratePreviews, photos: [photo])).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 560, height: 470))
+                defer { window.contentView = nil; window.close() }
+                try await settle(host)
+                try snapshot(host, name: "photos-preview-rebuild-\(language.rawValue)-\(scheme)")
+                let initial = await service.managementWriteCount
+                XCTAssertEqual(initial, 0)
+                model.clearSelection(); window.makeKeyAndOrderFront(nil)
+                let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                try await settle(host)
+                let commands = await service.managementCommands
+                XCTAssertEqual(commands, [.regeneratePreviews([photo])])
+                XCTAssertEqual(model.selectedTimelineMonthID, 201408)
+            }
+        }
+    }
+
+    func test人脸编辑居中新增填写姓名回车保存含裁剪图() async throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 640, height: 480, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.7, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+        let data = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        for space in SynologyPhotoSpace.allCases {
+        let service = DatePhotoServiceStub(space: space)
+        await service.configureRequestAccess(spaces: [space], manager: space == .shared)
+        await service.enableManagement(); await service.configureFaces(empty: true)
+        let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+        await model.refresh()
+        let photo = try XCTUnwrap(model.items.first)
+        let host = NSHostingView(rootView: PhotoFaceEditor(model: model, target: .init(photo: photo, data: data)))
+        let window = attach(host, size: NSSize(width: 1040, height: 720))
+        defer { window.contentView = nil; window.close() }
+        try await settle(host); window.makeKeyAndOrderFront(nil)
+        try click(window, at: NSPoint(x: 850, y: 94))
+        try await settle(host)
+        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.people.name") })
+        window.makeFirstResponder(field)
+        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+        editor.insertText("Synthetic person", replacementRange: NSRange(location: NSNotFound, length: 0))
+        window.makeFirstResponder(nil)
+        try await settle(host)
+        try snapshot(host, name: "photos-manual-face-center-before-save-\(space.rawValue)")
+        let initial = await service.managementCommands
+        XCTAssertTrue(initial.isEmpty)
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+        try await settle(host)
+        let commands = await service.managementCommands
+        XCTAssertEqual(commands.count, 1)
+        guard case .editPhotoFaces(let savedPhoto, let changes) = commands.first, case .add(let face) = changes.first else { return XCTFail("应提交完整人脸保存") }
+        XCTAssertEqual(savedPhoto.id.space, space); XCTAssertEqual(commands.first?.space, space)
+        let readSpaces = await service.peopleReadSpaces; XCTAssertEqual(readSpaces, [space])
+        XCTAssertEqual(savedPhoto.id, photo.id); XCTAssertEqual(changes.count, 1); XCTAssertEqual(face.name, "Synthetic person")
+        let jpeg = try XCTUnwrap(NSBitmapImageRep(data: face.jpeg))
+        XCTAssertLessThanOrEqual(max(jpeg.pixelsWide, jpeg.pixelsHigh), 256)
+        XCTAssertEqual(face.bounds.width * 640, face.bounds.height * 480, accuracy: 0.001)
+        }
+    }
+
+    func test图片内人脸编辑中英浅深色正常空错误布局不提前写入() async throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 640, height: 480, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.7, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: 640, height: 480))
+        let data = try XCTUnwrap(NSBitmapImageRep(cgImage: XCTUnwrap(context.makeImage())).representation(using: .png, properties: [:]))
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["normal", "empty", "error"] {
+                    let service = DatePhotoServiceStub()
+                    await service.enableManagement(); await service.configureFaces(empty: mode == "empty"); await service.configurePeople(fails: mode == "error")
+                    let model = SynologyPhotosModel(repository: service)
+                    await model.refresh()
+                    let photo = try XCTUnwrap(model.items.first)
+                    let host = NSHostingView(rootView: PhotoFaceEditor(model: model, target: .init(photo: photo, data: data)).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 1040, height: 720))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-manual-face-\(language.rawValue)-\(scheme)-\(mode)")
+                    let writes = await service.managementWriteCount
+                    XCTAssertEqual(writes, 0); XCTAssertEqual(host.bounds.size, NSSize(width: 1040, height: 720))
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test主题封面和误分类移出双语浅深色确认与错误恢复() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        for language in [AppLanguageSelection.english, .simplifiedChinese] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["cover", "remove", "error"] {
+                    let service = DatePhotoServiceStub()
+                    await service.enableManagement(); await service.configureConcepts(count: 2)
+                    let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh(); await model.selectSection(.albums); await model.openCategory(.concept)
+                    await model.open(try XCTUnwrap(model.collections.first))
+                    await model.jumpToMonth(try XCTUnwrap(model.timelineMonths.last))
+                    let concept = try XCTUnwrap(model.selectedCategoryItem), photo = try XCTUnwrap(model.items.first), month = model.selectedTimelineMonthID
+                    if mode == "error" { await service.configureConcepts(fails: true) }
+                    let kind: PhotoManagementKind = mode == "cover" ? .conceptCover : .removeConceptItems
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model,
+                        sheet: .init(kind: kind, photos: [photo], concept: concept)).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 560, height: 470))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-concept-management-\(language)-\(scheme)-\(mode)")
+                    let initial = await service.managementCommands
+                    XCTAssertTrue(initial.isEmpty); XCTAssertEqual(host.bounds.size, NSSize(width: 560, height: 470))
+                    if mode != "error" {
+                        window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                        try await settle(host)
+                        let commands = await service.managementCommands
+                        XCTAssertEqual(commands.count, 1); XCTAssertEqual(commands.first?.photos.map(\.id), [photo.id])
+                        XCTAssertEqual(model.selectedTimelineMonthID, month)
+                        if mode == "cover" { XCTAssertEqual(model.selectedCategoryItem?.thumbnail?.unitID, photo.id.unitID) }
+                        else { XCTAssertFalse(model.items.contains { $0.id == photo.id }) }
+                        XCTAssertTrue(model.collections.isEmpty)
+                    }
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test主题显示隐藏中英浅深色正常空错误和搜索确认() async throws {
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage }
+        for language in [AppLanguageSelection.english, .simplifiedChinese] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["normal", "empty", "error"] {
+                    let service = DatePhotoServiceStub()
+                    await service.enableManagement()
+                    let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh(); await model.openCategory(.concept)
+                    let concept = try XCTUnwrap(model.collections.first)
+                    await service.configureConcepts(empty: mode == "empty", fails: mode == "error")
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model,
+                        sheet: .init(kind: .conceptVisibility, photos: [], concept: concept)).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 680, height: 660))
+                    try await settle(host)
+                    try snapshot(host, name: "photos-concepts-\(language)-\(scheme)-\(mode)")
+                    let initial = await service.managementCommands
+                    XCTAssertTrue(initial.isEmpty); XCTAssertEqual(host.bounds.size, NSSize(width: 680, height: 660))
+                    if mode == "normal" {
+                        window.makeKeyAndOrderFront(nil)
+                        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.concepts.search") })
+                        window.makeFirstResponder(field)
+                        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                        editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0))
+                        try await settle(host)
+                        try snapshot(host, name: "photos-concepts-\(language)-\(scheme)-search-empty")
+                        editor.selectAll(nil); editor.insertText("", replacementRange: NSRange(location: NSNotFound, length: 0))
+                        window.makeFirstResponder(nil); try await settle(host)
+                        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                        try await settle(host)
+                        let commands = await service.managementCommands
+                        XCTAssertEqual(commands.count, 1)
+                        guard case .setConceptVisibility(let originals, let visible) = commands.first else { return XCTFail("必须提交主题显示操作") }
+                        XCTAssertEqual(originals.map(\.id), [concept.id]); XCTAssertFalse(visible)
+                        XCTAssertFalse(model.collections.contains { $0.id == concept.id })
+                    }
+                    window.contentView = nil; window.close()
+                }
+            }
+        }
+    }
+
+    func test人物显示隐藏表单正常空错误浅深色布局不提前写入() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for mode in ["normal", "empty", "error"] {
+                let service = DatePhotoServiceStub()
+                await service.enableManagement()
+                await service.configurePeople(empty: mode == "empty", fails: mode == "error")
+                let model = SynologyPhotosModel(repository: service)
+                await model.refresh()
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model,
+                    sheet: .init(kind: .peopleVisibility, photos: [])).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 680, height: 660))
+                try await settle(host)
+                try snapshot(host, name: "photos-people-visibility-\(mode)-\(scheme)")
+                XCTAssertEqual(host.bounds.size, NSSize(width: 680, height: 660))
+                let writes = await service.managementWriteCount
+                XCTAssertEqual(writes, 0)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test人物显示搜索空状态保留选择并回车只隐藏目标() async throws {
+        let service = DatePhotoServiceStub()
+        await service.enableManagement()
+        let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+        await model.refresh(); await model.openCategory(.person)
+        let person = try XCTUnwrap(model.collections.first)
+        let host = NSHostingView(rootView: PhotoManagementPanel(model: model,
+            sheet: .init(kind: .peopleVisibility, photos: [], person: person)))
+        let window = attach(host, size: NSSize(width: 680, height: 660))
+        defer { window.contentView = nil; window.close() }
+        try await settle(host)
+        window.makeKeyAndOrderFront(nil)
+        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.people.search") })
+        window.makeFirstResponder(field)
+        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+        editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0))
+        try await settle(host)
+        try snapshot(host, name: "photos-people-visibility-search-empty")
+        let initial = await service.managementCommands
+        XCTAssertTrue(initial.isEmpty)
+        editor.selectAll(nil); editor.insertText("", replacementRange: NSRange(location: NSNotFound, length: 0))
+        window.makeFirstResponder(nil)
+        try await settle(host)
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+        try await settle(host)
+        let commands = await service.managementCommands
+        XCTAssertEqual(commands.count, 1)
+        guard case .setPeopleVisibility(let originals, let visible) = commands.first else { return XCTFail("必须提交人物显示操作") }
+        XCTAssertEqual(originals.map(\.id), [person.id]); XCTAssertFalse(visible)
+        XCTAssertFalse(model.collections.contains { $0.id == person.id })
+    }
+
+    func test人脸选择纠正封面和空错误浅深色布局不提前写入() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for mode in ["remove", "reassign", "cover", "empty", "error"] {
+                let service = DatePhotoServiceStub()
+                await service.enableManagement()
+                await service.configurePeople(fails: mode == "error")
+                await service.configureFaces(empty: mode == "empty")
+                let model = SynologyPhotosModel(repository: service)
+                await model.refresh()
+                let photos = mode == "cover" ? Array(model.items.prefix(1)) : model.items
+                let kind: PhotoManagementKind = mode == "cover" ? .personCover : mode == "reassign" ? .reassignFaces : .removeFaces
+                let sheet = PhotoManagementSheet(kind: kind, photos: photos, person: .init(id: 31, name: "Fixture person", itemCount: 2))
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                let size = mode == "cover" ? NSSize(width: 560, height: 470) : NSSize(width: 680, height: 660)
+                let window = attach(host, size: size)
+                try await settle(host)
+                try snapshot(host, name: "photos-faces-\(mode)-\(scheme)")
+                let writes = await service.managementWriteCount
+                XCTAssertEqual(writes, 0)
+                XCTAssertEqual(host.bounds.size, size)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test人脸窗口取消一张后回车只提交其余人脸() async throws {
+        let service = DatePhotoServiceStub()
+        await service.enableManagement()
+        let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+        await model.refresh()
+        let photos = model.items
+        XCTAssertGreaterThan(photos.count, 1)
+        let sheet = PhotoManagementSheet(kind: .removeFaces, photos: photos, person: .init(id: 31, name: "Fixture person", itemCount: 6))
+        let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(.light))
+        let window = attach(host, size: NSSize(width: 680, height: 660))
+        defer { window.contentView = nil; window.close() }
+        try await settle(host)
+        window.makeKeyAndOrderFront(nil)
+        try click(window, at: NSPoint(x: 44, y: 371))
+        try await settle(host)
+        try snapshot(host, name: "photos-faces-after-uncheck")
+        let initial = await service.managementCommands
+        XCTAssertTrue(initial.isEmpty)
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+
+        try await settle(host)
+        try snapshot(host, name: "photos-faces-after-submit")
+        let commands = await service.managementCommands
+        XCTAssertEqual(commands.count, 1)
+        guard case .removePersonFaces(let person, let faces) = commands.first else { return XCTFail("应提交人脸移出命令") }
+        XCTAssertEqual(person.id, 31)
+        XCTAssertEqual(faces.map { $0.photo.id }, photos.dropFirst().map(\.id))
+        XCTAssertEqual(faces.map(\.id), photos.dropFirst().map { $0.id.unitID + 70 })
+    }
+
     func test人物命名合并空列表和错误浅深色布局() async throws {
         for scheme in [ColorScheme.light, .dark] {
             for mode in ["rename", "merge", "empty", "error"] {
@@ -34,6 +2432,62 @@ final class WorkspacePresentationTests: XCTestCase {
                 let writes = await repository.managementWriteCount
                 XCTAssertEqual(writes, 0)
                 XCTAssertEqual(host.bounds.size, size)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test条件相册来源中英浅深色切换并按来源读取() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let repository = PhotoUploadServiceStub()
+                await repository.setSpaces([.personal, .shared]); await repository.setConditionSpace(.shared)
+                let model = SynologyPhotosModel(repository: repository); await model.refresh()
+                let sheet = PhotoManagementSheet(kind: .editConditionAlbum, photos: [], album: .init(id: 21, name: "Fixture rule album", isConditional: true))
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 680, height: 660))
+                try await settle(host)
+                let shared = L10n.string("shared.17d2e16862f16829"), personal = L10n.string("shared.51fcaa8035fc61e2")
+                window.makeKeyAndOrderFront(nil)
+                try snapshot(host, name: "photos-condition-source-\(language.rawValue)-\(scheme)")
+                for title in [personal, shared] {
+                    let selected = expectation(description: "切换条件照片来源")
+                    let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                        nonisolated(unsafe) let trackedMenu = notification.object as? NSMenu
+                        MainActor.assumeIsolated {
+                            guard let menu = trackedMenu else { return }
+                            DispatchQueue.main.async {
+                                let index = menu.indexOfItem(withTitle: title)
+                                menu.cancelTrackingWithoutAnimation()
+                                if index >= 0 { menu.performActionForItem(at: index) }
+                                XCTAssertGreaterThanOrEqual(index, 0)
+                                selected.fulfill()
+                            }
+                        }
+                    }
+                    try click(window, at: NSPoint(x: 145, y: 535))
+                    await fulfillment(of: [selected], timeout: 2)
+                    NotificationCenter.default.removeObserver(observer)
+                    try await settle(host)
+                }
+                let reads = await repository.conditionSuggestionSpaces
+                XCTAssertEqual(reads, [.shared, .personal, .shared])
+                let folders = await repository.conditionFolderSpaces
+                XCTAssertEqual(folders, [.shared, .personal, .shared])
+                let before = await repository.commands; XCTAssertTrue(before.isEmpty)
+                // 来回切换后回车沿既有保存语义提交，规则必须完整恢复，不能提交空草稿。
+                let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                try await settle(host)
+                let writes = await repository.commands
+                XCTAssertEqual(writes.count, 1)
+                guard case .setAlbumCondition(let id, let originalCondition, let condition) = writes.first else { return XCTFail("应保存完整条件") }
+                XCTAssertEqual(id, 21); XCTAssertEqual(condition, originalCondition); XCTAssertEqual(condition.sourceSpace, .shared)
+                XCTAssertEqual(condition.values("general_tag"), [.integer(8)])
                 window.contentView = nil; window.close()
             }
         }
@@ -87,6 +2541,51 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test上传任务后续操作中英浅深色完成错误和空队列() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = PhotoUploadServiceStub(), model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                await service.setAlbumAccess(.init(albumID: 30, currentUserID: 12, isOwner: true, canDownload: true, canContribute: true))
+                await model.refresh()
+                let file = PhotoUploadFile(url: URL(fileURLWithPath: "/synthetic/Fixture-photo.png"), size: 128, modifiedAt: .distantPast)
+                model.enqueueUploads([file], album: .init(id: 30, name: "Fixture album"), folder: nil)
+                for _ in 0..<2000 where model.isManaging { await Task.yield() }
+                XCTAssertEqual(model.uploadQueue.first?.state, .completed)
+                var host = NSHostingView(rootView: PhotoUploadQueuePanel(model: model).preferredColorScheme(scheme))
+                var window = attach(host, size: NSSize(width: 620, height: 480))
+                defer { window.contentView = nil; window.close(); model.cancel() }
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                try snapshot(host, name: "photos-upload-actions-completed-\(language.rawValue)-\(scheme)")
+                try click(window, at: NSPoint(x: 70, y: 324)); try await settle(host)
+                XCTAssertNotNil(model.uploadNavigationError); XCTAssertEqual(model.section, .timeline)
+                try await settle(host); try snapshot(host, name: "photos-upload-actions-error-\(language.rawValue)-\(scheme)")
+                await service.addFolder(.init(id: 9, name: "Fixture folder", parentID: 1, path: "/Fixture folder"))
+                await service.addFolder(.init(id: 1, name: "/", parentID: 0, path: "/"))
+                try click(window, at: NSPoint(x: 70, y: 324)); try await settle(host)
+                XCTAssertEqual(model.folderHistory.map(\.id), [1, 9]); XCTAssertNil(model.uploadNavigationError)
+                // 成功导航会关闭任务窗口，后续操作按用户重新打开队列的路径验证。
+                window.contentView = nil; window.close()
+                host = NSHostingView(rootView: PhotoUploadQueuePanel(model: model).preferredColorScheme(scheme))
+                window = attach(host, size: NSSize(width: 620, height: 480))
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                try click(window, at: NSPoint(x: 170, y: 324)); try await settle(host)
+                XCTAssertEqual(model.selectedAlbum?.id, 30)
+                // 成功导航会关闭任务窗口，后续操作按用户重新打开队列的路径验证。
+                window.contentView = nil; window.close()
+                host = NSHostingView(rootView: PhotoUploadQueuePanel(model: model).preferredColorScheme(scheme))
+                window = attach(host, size: NSSize(width: 620, height: 480))
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                try click(window, at: NSPoint(x: 550, y: 324))
+                try await settle(host); XCTAssertTrue(model.uploadQueue.isEmpty)
+                try snapshot(host, name: "photos-upload-actions-empty-\(language.rawValue)-\(scheme)")
+                let commands = await service.commands.count; XCTAssertEqual(commands, 2, "导航和移除任务记录不写NAS")
+            }
+        }
+    }
+
     func test多文件上传确认与队列浅深色布局() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -125,10 +2624,10 @@ final class WorkspacePresentationTests: XCTestCase {
 
     func test分享窗口读取现状与错误浅深色布局且不写入() async throws {
         for scheme in [ColorScheme.light, .dark] {
-            for mode in ["disabled", "invited", "download", "error", "membersError", "empty", "uploadRole"] {
+            for mode in ["disabled", "invited", "download", "error", "membersError", "empty", "uploadRole", "noExpiration", "unknownExpiration", "expired"] {
                 let repository = DatePhotoServiceStub()
                 await repository.enableManagement()
-                await repository.configureSharing(mode == "invited" ? .invited : mode == "disabled" ? .disabled : .download, fails: mode == "error", role: mode == "uploadRole" ? "upload" : "view", recipientsFail: mode == "membersError", empty: mode == "empty")
+                await repository.configureSharing(mode == "invited" ? .invited : mode == "disabled" ? .disabled : .download, fails: mode == "error", role: mode == "uploadRole" ? "upload" : "view", recipientsFail: mode == "membersError", empty: mode == "empty", expiration: mode == "unknownExpiration" ? nil : mode == "noExpiration" ? 0 : mode == "expired" ? 100 : 2_000_000_000)
                 let model = SynologyPhotosModel(repository: repository)
                 await model.refresh()
                 let sheet = PhotoManagementSheet(kind: .sharing, photos: [], album: .init(id: 3, name: "Fixture album"))
@@ -141,6 +2640,356 @@ final class WorkspacePresentationTests: XCTestCase {
                 XCTAssertEqual(writes, 0)
                 window.contentView = nil; window.close()
             }
+        }
+    }
+
+    func test共享收集默认目录和成员选目录中英浅深色确认() async throws {
+        let original = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = original }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for mode in ["manager", "entry", "selected", "personalFirst"] {
+                    let service = DatePhotoServiceStub(space: .shared)
+                    await service.enableManagement()
+                    await service.configureRequestAccess(spaces: mode == "personalFirst" ? [.shared, .personal] : [.shared], manager: mode == "manager")
+                    let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+                    await model.refresh()
+                    let sheet = PhotoManagementSheet(kind: .createRequest, photos: [],
+                        folder: mode == "selected" ? .init(id: 9, name: "Sample", path: "/Sample") : nil, space: .shared)
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 680, height: 660))
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host)
+                    try snapshot(host, name: "photos-request-destination-\(mode)-\(language.rawValue)-\(scheme)")
+                    let before = await service.managementWriteCount
+                    XCTAssertEqual(before, 0)
+                    window.makeKeyAndOrderFront(nil); window.makeFirstResponder(nil)
+                    let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+                    if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                    try await settle(host)
+                    let commands = await service.managementCommands
+                    if mode == "entry" {
+                        XCTAssertTrue(commands.isEmpty, "未选择目录不能发送无权创建的默认路径")
+                        try click(window, at: NSPoint(x: 100, y: 318))
+                        try await settle(host)
+                        try click(window, at: NSPoint(x: 320, y: 210))
+                        try await settle(host)
+                        if !window.performKeyEquivalent(with: enter) { window.sendEvent(enter) }
+                        try await settle(host)
+                        let selectedCommands = await service.managementCommands
+                        XCTAssertEqual(selectedCommands.count, 1)
+                        guard case .createPhotoRequest(let settings) = selectedCommands.first else { return XCTFail("成员选定目录后应可创建") }
+                        XCTAssertEqual(settings.space, .shared)
+                        XCTAssertEqual(settings.folderID, 9)
+                        XCTAssertEqual(settings.folderPath, "/Sample")
+                    } else {
+                        XCTAssertEqual(commands.count, 1)
+                        guard case .createPhotoRequest(let settings) = commands.first else { return XCTFail("确认后应创建照片收集") }
+                        XCTAssertEqual(settings.space, mode == "personalFirst" ? .personal : .shared)
+                        XCTAssertEqual(settings.folderID, mode == "selected" ? 9 : nil)
+                        XCTAssertEqual(settings.folderPath, mode == "selected" ? "/Sample" : SynologyPhotoRequestSettings.defaultFolderPath(subject: settings.subject))
+                    }
+                }
+            }
+        }
+    }
+
+    func test照片收集创建编辑删除和错误浅深色布局不提前写入() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            for mode in ["create", "folder", "album", "edit", "delete", "error", "albumError", "invalidFolder", "shared"] {
+                let repository = DatePhotoServiceStub(space: mode == "shared" ? .shared : .personal)
+                await repository.enableManagement()
+                await repository.configureRequests(fails: mode == "error", albumsFail: mode == "albumError", invalidFolder: mode == "invalidFolder")
+                let model = SynologyPhotosModel(repository: repository)
+                await model.refresh()
+                let kind: PhotoManagementKind = ["create", "folder", "album"].contains(mode) ? .createRequest : mode == "delete" ? .deleteRequest : .editRequest
+                let sheet = PhotoManagementSheet(kind: kind, photos: [],
+                    album: mode == "album" ? .init(id: 3, name: "Fixture private album") : nil,
+                    folder: mode == "folder" ? .init(id: 9, name: "Sample", path: "/Sample") : nil,
+                    requestID: kind == .createRequest ? nil : "fixture-request")
+                let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 680, height: 660))
+                try await settle(host)
+                try snapshot(host, name: "photos-request-\(mode)-\(scheme)")
+                XCTAssertEqual(host.bounds.size, NSSize(width: 680, height: 660))
+                let writes = await repository.managementWriteCount
+                XCTAssertEqual(writes, 0)
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test照片收集搜索跨页自动加载及空错误浅深色布局() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let repository = DatePhotoServiceStub()
+            await repository.enableManagement()
+            await repository.configureRequestTitles(["First request", "Second request", "Trip request"])
+            let model = SynologyPhotosModel(repository: repository, pageSize: 2)
+            await model.selectShareScope(.requests)
+            await model.selectSection(.sharing)
+            model.requestSearchText = "Trip"
+            let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 1180, height: 780))
+            try await settle(host)
+            XCTAssertEqual(model.visibleSharedEntries.map(\.title), ["Trip request"])
+            XCTAssertFalse(model.hasMoreCollections)
+            try snapshot(host, name: "photos-request-search-\(scheme)")
+            model.requestSearchText = "No match"
+            try await settle(host)
+            try snapshot(host, name: "photos-request-no-results-\(scheme)")
+            model.requestSearchText = ""
+            await repository.configureRequestTitles([])
+            await model.refresh()
+            try await settle(host)
+            try snapshot(host, name: "photos-request-empty-\(scheme)")
+            await repository.configureRequests(fails: true)
+            await model.refresh()
+            try await settle(host)
+            XCTAssertNotNil(model.errorMessage)
+            try snapshot(host, name: "photos-request-list-error-\(scheme)")
+            let writes = await repository.managementWriteCount
+            XCTAssertEqual(writes, 0)
+            window.contentView = nil; window.close()
+        }
+    }
+
+    func test临时分享停止确认双语浅深色保留副本及取消() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for action in ["stop", "keep", "cancel"] {
+                    let repository = DatePhotoServiceStub(); await repository.enableManagement(); await repository.configureTemporarySharing()
+                    let model = SynologyPhotosModel(repository: repository, deletionReviewDelay: { _ in }); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: .init(kind: .sharing, photos: [], album: .init(id: 9, name: "Synthetic temporary share")))
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 680, height: 660)); try await settle(host)
+                    defer { if let alert = window.attachedSheet { window.endSheet(alert) }; window.contentView = nil; window.close() }
+                    window.makeKeyAndOrderFront(nil)
+                    try click(window, at: NSPoint(x: 140, y: 539)); try await settle(host)
+                    try snapshot(host, name: "photos-temporary-stop-settings-\(action)-\(language)-\(scheme)")
+                    try click(window, at: NSPoint(x: 610, y: 32)); try await settle(host)
+                    let alert = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(alert.contentView)
+                    try snapshot(content, name: "photos-temporary-stop-confirm-\(action)-\(language)-\(scheme)")
+                    let key = action == "cancel" ? "photos.delete.cancel" : (action == "keep" ? "photos.temporary.keep" : "photos.temporary.stop")
+                    let button = try XCTUnwrap(nativeViews(content, of: NSButton.self).first { $0.title == L10n.string(key) })
+                    let before = await repository.managementCommands; XCTAssertTrue(before.isEmpty)
+                    button.performClick(nil); try await settle(host)
+                    let commands = await repository.managementCommands
+                    XCTAssertEqual(commands.count, action == "cancel" ? 0 : (action == "keep" ? 3 : 2))
+                    if action != "cancel" {
+                        guard case .deleteTemporaryAlbum(9, _, let copy) = commands.last else { return XCTFail("只清理目标临时相册") }
+                        XCTAssertEqual(copy, action == "keep" ? 10 : nil)
+                        XCTAssertFalse(model.hasTemporarySharingCleanup)
+                    }
+                }
+            }
+        }
+    }
+
+    func test临时分享创建窗口关闭及设置窗口Esc自动清理() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for pending in [true, false] {
+                    let repository = DatePhotoServiceStub(); await repository.enableManagement(pending: pending)
+                    let model = SynologyPhotosModel(repository: repository, deletionReviewDelay: { _ in }); await model.refresh()
+                    let host = NSHostingView(rootView: PhotoSelectionSharingPanel(model: model, photos: Array(model.items.prefix(2)))
+                        .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 580, height: 330)); try await settle(host)
+                    defer { window.contentView = nil; window.close() }
+                    window.makeKeyAndOrderFront(nil)
+                    let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.manage.albumName") })
+                    window.makeFirstResponder(field)
+                    let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                    editor.insertText("Synthetic temporary share", replacementRange: NSRange(location: NSNotFound, length: 0))
+                    window.makeFirstResponder(nil); try await settle(host)
+                    try click(window, at: NSPoint(x: 465, y: 32)); try await settle(host)
+                    if pending {
+                        XCTAssertNotNil(model.pendingMutationID)
+                        try snapshot(host, name: "photos-temporary-cancel-pending-\(language)-\(scheme)")
+                        try click(window, at: NSPoint(x: 550, y: 300)); try await settle(host)
+                        await repository.enableManagement(); model.reviewPendingMutation()
+                    } else {
+                        window.setContentSize(NSSize(width: 680, height: 660)); try await settle(host)
+                        try snapshot(host, name: "photos-temporary-cancel-settings-\(language)-\(scheme)")
+                        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+                        if !window.performKeyEquivalent(with: escape) { window.sendEvent(escape) }
+                    }
+                    try await settle(host)
+                    XCTAssertFalse(model.hasTemporarySharingCleanup); XCTAssertNil(model.pendingMutationID)
+                    let commands = await repository.managementCommands; XCTAssertEqual(commands.count, 3)
+                    guard case .deleteTemporaryAlbum(9, _, nil) = commands.last else { return XCTFail("关闭后不保留临时相册，也不重复创建") }
+                }
+            }
+        }
+    }
+
+    func test选片直接分享中英浅深色预检失败重试待核对及同窗分享() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+              for space in [SynologyPhotoSpace.personal, .shared] {
+                let repository = DatePhotoServiceStub(space: space)
+                await repository.configureRequestAccess(spaces: [.personal, .shared], manager: true)
+                await repository.limitSharingToPersonal()
+                await repository.enableManagement(pending: true)
+                await repository.configureSharing(.disabled, empty: true, expiration: 0)
+                let model = SynologyPhotosModel(repository: repository, deletionReviewDelay: { _ in })
+                await model.refresh(); await model.selectSpace(space); await model.jumpToMonth(.init(year: 2014, month: 8))
+                let photos = Array(model.items.prefix(2))
+                XCTAssertEqual(photos.count, 2)
+                let ids = model.items.map(\.id), month = model.selectedTimelineMonthID
+                let host = NSHostingView(rootView: PhotoSelectionSharingPanel(model: model, photos: photos).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 580, height: 330))
+                defer { window.contentView = nil; window.close() }
+                try await settle(host)
+                let initial = await repository.managementCommands
+                XCTAssertTrue(initial.isEmpty, "打开窗口不创建相册或公开照片")
+                try snapshot(host, name: "photos-selection-share-initial-\(language)-\(scheme)-\(space)")
+                window.makeKeyAndOrderFront(nil)
+                let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.manage.albumName") })
+                window.makeFirstResponder(field)
+                let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                editor.selectAll(nil)
+                editor.insertText("Synthetic selection", replacementRange: NSRange(location: NSNotFound, length: 0))
+                try await settle(host)
+                await repository.failNextManagementPreparation()
+                try click(window, at: NSPoint(x: 465, y: 32))
+                try await settle(host)
+                XCTAssertFalse(model.isManaging); XCTAssertNil(model.pendingMutationID)
+                let failed = await repository.managementCommands
+                XCTAssertTrue(failed.isEmpty)
+                try snapshot(host, name: "photos-selection-share-failed-\(language)-\(scheme)-\(space)")
+                try click(window, at: NSPoint(x: 465, y: 32))
+                try await settle(host)
+                XCTAssertNotNil(model.pendingMutationID)
+                XCTAssertEqual(model.automaticMutationReviewID, model.pendingMutationID)
+                let pending = await repository.managementCommands
+                XCTAssertEqual(pending, [.createTemporaryAlbum(name: "Synthetic selection", photos: photos)])
+                try snapshot(host, name: "photos-selection-share-pending-\(language)-\(scheme)-\(space)")
+                try click(window, at: NSPoint(x: 465, y: 32))
+                await repository.enableManagement()
+                model.reviewPendingMutation()
+                try await settle(host)
+                window.setContentSize(NSSize(width: 680, height: 660))
+                try await settle(host)
+                XCTAssertNil(model.pendingMutationID)
+                XCTAssertTrue(nativeViews(host, of: NSTextField.self).filter(\.isEditable).allSatisfy { $0.placeholderString != L10n.string("photos.manage.albumName") }, "核对后直接进入同窗分享设置")
+                let commands = await repository.managementCommands
+                XCTAssertEqual(commands, [.createTemporaryAlbum(name: "Synthetic selection", photos: photos)], "读取分享设置不改变访问范围，待核对也不重复创建")
+                XCTAssertEqual(model.items.map(\.id), ids); XCTAssertEqual(model.selectedTimelineMonthID, month)
+                try snapshot(host, name: "photos-selection-share-settings-\(language)-\(scheme)-\(space)")
+                window.makeFirstResponder(nil)
+                try click(window, at: NSPoint(x: 200, y: 495))
+                try await settle(host)
+                try snapshot(host, name: "photos-selection-share-access-\(language)-\(scheme)-\(space)")
+                try click(window, at: NSPoint(x: 610, y: 32))
+                try await settle(host)
+                let final = await repository.managementCommands
+                XCTAssertEqual(final.count, 2)
+                guard case .shareAlbum(let id, let access, let original, let members, let expiration, let password) = final.last else {
+                    return XCTFail("最后确认才写入分享设置")
+                }
+                XCTAssertEqual(id, 9); XCTAssertEqual(access, .view); XCTAssertEqual(original?.access, .invited)
+                XCTAssertNil(members); XCTAssertNil(expiration); XCTAssertNil(password)
+                XCTAssertEqual(model.managementLink?.absoluteString, "https://example.invalid/share/fixture")
+                XCTAssertEqual(model.items.map(\.id), ids); XCTAssertEqual(model.selectedTimelineMonthID, month)
+
+              }
+            }
+        }
+    }
+
+    func test收集窗口回车新建相册后自动选中且不提前创建收集() async throws {
+        let repository = DatePhotoServiceStub()
+        await repository.enableManagement()
+        let model = SynologyPhotosModel(repository: repository, deletionReviewDelay: { _ in })
+        await model.refresh()
+        let sheet = PhotoManagementSheet(kind: .createRequest, photos: [], album: .init(id: 3, name: "Fixture private album"))
+        let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(.dark))
+        let window = attach(host, size: NSSize(width: 680, height: 660))
+        defer { window.contentView = nil; window.close() }
+        try await settle(host)
+        window.makeKeyAndOrderFront(nil)
+        try click(window, at: NSPoint(x: 24, y: 221))
+        try await Task.sleep(for: .milliseconds(250))
+        try await settle(host)
+        try snapshot(host, name: "photos-request-new-album-expanded-dark")
+        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("photos.manage.albumName") })
+        window.makeFirstResponder(field)
+        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+        editor.selectAll(nil)
+        editor.insertText("Synthetic target", replacementRange: NSRange(location: NSNotFound, length: 0))
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        window.sendEvent(enter)
+        try await Task.sleep(for: .milliseconds(250))
+        try await settle(host)
+        let firstCommands = await repository.managementCommands
+        XCTAssertEqual(firstCommands, [.createAlbum(name: "Synthetic target", photos: [])])
+        try snapshot(host, name: "photos-request-new-album-selected-dark")
+        try click(window, at: NSPoint(x: 555, y: 30))
+        try await settle(host)
+        let commands = await repository.managementCommands
+        XCTAssertEqual(commands.count, 2)
+        guard case .createPhotoRequest(let settings) = commands.last else { return XCTFail("确认后才创建收集") }
+        XCTAssertEqual(settings.albumID, 9)
+        XCTAssertNil(settings.albumPassphrase)
+    }
+
+    func test分享密码选择显示安全输入且不提前写入() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let repository = DatePhotoServiceStub()
+            await repository.enableManagement()
+            await repository.configureSharing(.download)
+            let model = SynologyPhotosModel(repository: repository)
+            await model.refresh()
+            let sheet = PhotoManagementSheet(kind: .sharing, photos: [], album: .init(id: 3, name: "Fixture album"))
+            let host = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 680, height: 660))
+            defer { window.contentView = nil; window.close() }
+            try await settle(host)
+            XCTAssertTrue(nativeViews(host, of: NSSecureTextField.self).isEmpty)
+            window.makeKeyAndOrderFront(nil)
+            func selectPasswordOption(_ title: String) async throws {
+                let selected = expectation(description: "选择密码操作")
+                let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { notification in
+                    // 通知限定主队列，AppKit菜单仅在主线程访问。
+                    nonisolated(unsafe) let trackedMenu = notification.object as? NSMenu
+                    MainActor.assumeIsolated {
+                        guard let menu = trackedMenu else { return }
+                        DispatchQueue.main.async {
+                            let index = menu.indexOfItem(withTitle: title)
+                            menu.cancelTrackingWithoutAnimation()
+                            if index >= 0 { menu.performActionForItem(at: index) }
+                            XCTAssertGreaterThanOrEqual(index, 0)
+                            selected.fulfill()
+                        }
+                    }
+                }
+                defer { NotificationCenter.default.removeObserver(observer) }
+                try click(window, at: NSPoint(x: 170, y: 371))
+                await fulfillment(of: [selected], timeout: 2)
+            }
+            try await selectPasswordOption(L10n.string("photos.sharing.passwordSet"))
+            try await settle(host)
+            XCTAssertEqual(nativeViews(host, of: NSSecureTextField.self).count, 1)
+            try snapshot(host, name: "photos-sharing-password-new-\(scheme)")
+            try await selectPasswordOption(L10n.string("photos.sharing.passwordRemove"))
+            try await settle(host)
+            XCTAssertTrue(nativeViews(host, of: NSSecureTextField.self).isEmpty)
+            let writes = await repository.managementWriteCount
+            XCTAssertEqual(writes, 0, "切换密码编辑选项不能提前修改分享")
         }
     }
 
@@ -163,6 +3012,84 @@ final class WorkspacePresentationTests: XCTestCase {
             }
             let writes = await repository.managementWriteCount
             XCTAssertEqual(writes, 0, "仅打开表单不能发出修改或创建分享链接")
+        }
+    }
+
+    func test共享照片批量管理和评级表单浅深色布局() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let service = DatePhotoServiceStub(space: .shared)
+            await service.enableManagement()
+            let model = SynologyPhotosModel(repository: service, pageSize: 6)
+            await model.refresh(); await model.jumpToMonth(.init(year: 2014, month: 8))
+            model.selectGroup(Array(model.items.prefix(2)))
+            let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 1100, height: 720))
+            try await settle(host)
+            try snapshot(host, name: "photos-shared-management-\(scheme)")
+            XCTAssertTrue(model.canManageSelection); XCTAssertTrue(model.canDeleteSelection)
+            window.contentView = nil; window.close()
+            let sheet = PhotoManagementSheet(kind: .rating, photos: model.selectedPhotos, space: .shared)
+            let form = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+            let formWindow = attach(form, size: NSSize(width: 560, height: 470))
+            try await settle(form)
+            try snapshot(form, name: "photos-shared-rating-\(scheme)")
+            formWindow.contentView = nil; formWindow.close()
+            let writes = await service.managementWriteCount
+            XCTAssertEqual(writes, 0, "打开共享管理表单不能修改照片")
+        }
+    }
+
+    func test照片空间选择和共享上传目标浅深色布局() async throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let service = PhotoUploadServiceStub()
+            await service.setSpaces([.personal, .shared])
+            let model = SynologyPhotosModel(repository: service)
+            await model.refresh()
+            await model.selectSpace(.shared)
+            let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                .environment(MacAppearanceStore()).preferredColorScheme(scheme))
+            let window = attach(host, size: NSSize(width: 1100, height: 720))
+            try await settle(host)
+            try snapshot(host, name: "photos-shared-space-\(scheme)")
+            XCTAssertEqual(model.selectedSpace, .shared)
+            XCTAssertEqual(host.bounds.width, 1100, accuracy: 1)
+            window.contentView = nil; window.close()
+            let sheet = PhotoManagementSheet(kind: .upload, photos: [], folder: .init(id: 9, name: "Fixture shared folder"), space: .shared)
+            let form = NSHostingView(rootView: PhotoManagementPanel(model: model, sheet: sheet).preferredColorScheme(scheme))
+            let formWindow = attach(form, size: NSSize(width: 560, height: 470))
+            try await settle(form)
+            try snapshot(form, name: "photos-shared-upload-\(scheme)")
+            XCTAssertEqual(form.bounds.height, 470, accuracy: 1)
+            formWindow.contentView = nil; formWindow.close()
+            let commands = await service.commands
+            XCTAssertTrue(commands.isEmpty, "仅查看空间和上传确认不能上传文件")
+        }
+    }
+
+    func test照片长断线删除显示自动继续且不要求手动核对() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let repository = DatePhotoServiceStub(); await repository.failReviews(true)
+                let model = SynologyPhotosModel(repository: repository, pageSize: 6, deletionReviewDelay: { seconds in
+                    if seconds == 15 { try await Task.sleep(for: .seconds(60)) }
+                })
+                await model.refresh(); await model.jumpToMonth(.init(year: 2014, month: 8))
+                model.confirmDeletion(model.items[0])
+                for _ in 0..<100 where model.isDeleting { try await Task.sleep(for: .milliseconds(5)) }
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore()).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 1100, height: 720))
+                defer { model.cancel(); window.contentView = nil; window.close() }
+                try await settle(host)
+                XCTAssertEqual(model.deletionMessage, L10n.string("photos.selection.reviewContinuing"))
+                XCTAssertFalse(nativeViews(host, of: NSButton.self).contains { $0.title == L10n.string("photos.selection.retryReview") })
+                XCTAssertEqual(model.selectedTimelineMonthID, 201408); XCTAssertFalse(model.isDeleting)
+                try snapshot(host, name: "photos-delete-continuing-\(language.rawValue)-\(scheme)")
+                let deletes = await repository.deleteIDs; XCTAssertEqual(deletes, [4])
+            }
         }
     }
 
@@ -2433,6 +5360,27 @@ final class WorkspacePresentationTests: XCTestCase {
 @Observable
 private final class PageTabSelectionProbe {
     var value = 0
+}
+
+private actor ThumbnailSizingPhotoService: SynologyPhotosServing {
+    let profileID = UUID()
+    var pageReads = 0
+    func access() async throws -> SynologyPhotosAccess { .init(spaces: [.personal], packageVersion: "fixture") }
+    func timeline(in space: SynologyPhotoSpace) async throws -> [SynologyPhotoDay] {
+        [.init(year: 2020, month: 3, day: 15, itemCount: 80)]
+    }
+    func searchTimeline(in space: SynologyPhotoSpace, keyword: String) async throws -> [SynologyPhotoDay] {
+        try await timeline(in: space)
+    }
+    func photos(in space: SynologyPhotoSpace, query: SynologyPhotoQuery, offset: Int, limit: Int) async throws -> SynologyPhotoPage {
+        pageReads += 1
+        let date = Calendar(identifier: .gregorian).date(from: DateComponents(year: 2020, month: 3, day: 15))!
+        let all = (1...80).map { SynologyPhoto(id: .init(profileID: profileID, space: space, unitID: $0),
+            filename: "Synthetic-\($0).jpg", sizeBytes: 128, takenAt: date, indexedAt: date, folderID: 1, mediaType: "photo") }
+        let items = Array(all.dropFirst(offset).prefix(limit))
+        return .init(items: items, offset: offset, nextOffset: offset + items.count, hasMore: offset + items.count < all.count)
+    }
+    func thumbnail(for photo: SynologyPhoto) async throws -> Data { Data() }
 }
 
 private struct PresentationLayoutMarker: NSViewRepresentable {

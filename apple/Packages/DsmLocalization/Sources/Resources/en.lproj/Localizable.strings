@@ -4206,7 +4206,7 @@
 "photos.manage.completed" = "Operation completed.";
 "photos.manage.partial" = "Some items could not be processed. Check the destination before trying again.";
 "photos.manage.savedCount" = "Saved %lld originals.";
-"photos.manage.savePartial" = "Saved %lld of %lld originals. Check the destination folder for the remaining items.";
+"photos.manage.savePartial" = "Saved %lld of %lld files. Check the connection and destination folder, then try again.";
 "photos.manage.upload" = "Upload photos";
 "photos.manage.createAlbum" = "Create album";
 "photos.manage.download" = "Download originals";
@@ -4220,8 +4220,8 @@
 "photos.manage.removeAlbum" = "Remove from album";
 "photos.manage.renameAlbum" = "Rename album";
 "photos.manage.deleteAlbum" = "Delete album";
-"photos.manage.move" = "Move photos";
-"photos.manage.copy" = "Copy photos";
+"photos.manage.move" = "Move to Folder";
+"photos.manage.copy" = "Copy to Folder";
 "photos.manage.sharing" = "Manage sharing";
 "photos.manage.unrated" = "Unrated";
 "photos.manage.dateHint" = "All selected photos will use the same date and time.";
@@ -4236,7 +4236,7 @@
 "photos.manage.link.disabled" = "Turn off sharing";
 "photos.manage.link.view" = "Anyone with the link can view";
 "photos.manage.link.download" = "Anyone with the link can view and download";
-"photos.manage.shareHint" = "This allows people with the link to access the album. Make sure its contents can be shared. Existing passwords and expiration dates are kept.";
+"photos.manage.shareHint" = "This allows people with the link to access the album. Make sure its contents can be shared.";
 
 "photos.manage.cover" = "Set album cover";
 "photos.manage.coverHint" = "Use this photo as the cover of this album.";
@@ -4280,7 +4280,7 @@
 "photos.upload.noMedia" = "No photos or videos to upload. Choose files or a folder containing photos or videos.";
 
 "photos.upload.preserveDirectories" = "Keep folder structure";
-"photos.upload.preserveHint" = "Folders with the same name will be combined. Files with the same name will be saved separately.";
+"photos.upload.preserveHint" = "Folders with the same name will be combined.";
 "photos.upload.state.preparingFolders" = "Preparing folders";
 
 // 条件相册
@@ -4357,3 +4357,556 @@
 "photos.people.noOthers" = "No other people to merge";
 "photos.people.noOthersHint" = "You can merge people after more faces have been recognized.";
 "photos.people.photoCount" = "Photos: %lld";
+
+"photos.sharing.expiration" = "Expiration";
+"photos.sharing.expirationKeep" = "Keep current setting";
+"photos.sharing.expirationUnlimited" = "No expiration";
+"photos.sharing.expirationDate" = "Expiration date";
+"photos.sharing.expirationPast" = "This date has passed. Choose today or a later date.";
+
+"photos.sharing.password" = "Password protection";
+"photos.sharing.passwordKeep" = "Keep current setting";
+"photos.sharing.passwordSet" = "Set a new password";
+"photos.sharing.passwordRemove" = "Remove password protection";
+"photos.sharing.passwordPlaceholder" = "Enter a new password";
+
+"photos.request.create" = "Create photo request";
+"photos.request.edit" = "Edit photo request";
+"photos.request.delete" = "Delete photo request";
+"photos.request.subject" = "Title";
+"photos.request.description" = "Description";
+"photos.request.lengthLimit" = "Use up to 50 characters for the title and 100 for the description.";
+"photos.request.defaultFolder" = "Use the default collection folder";
+"photos.request.defaultSubject" = "Photo request — %@";
+"photos.request.search" = "Search photo requests";
+"photos.request.noResults" = "No matching photo requests. Try another search.";
+"photos.request.clearSearch" = "Clear search";
+"photos.request.chooseFolder" = "Choose destination folder";
+"photos.request.useFolder" = "Use this folder";
+"photos.request.invalidFolder" = "The original folder is unavailable. Choose another destination.";
+"photos.request.album" = "Also add to album";
+"photos.request.noAlbum" = "Do not add to an album";
+"photos.request.privateAlbumHint" = "This album is not shared. People submitting photos cannot view it.";
+"photos.request.limitSize" = "Limit individual file size";
+"photos.request.sizeMiB" = "Size (MiB)";
+"photos.request.sizeRange" = "MiB (1–3000)";
+"photos.request.createHint" = "Anyone with the collection link can submit photos and videos to the selected destination.";
+"photos.request.deleteConfirm" = "This collection link will stop working after deletion. Delete this request?";
+"photos.request.changed" = "This photo request has changed. Reopen it before making changes.";
+"photos.request.folderReadFailed" = "Could not load folders. Retry or check your photo access permissions.";
+"photos.request.albumReadFailed" = "Could not load available albums. Please retry.";
+
+"photos.people.removeFaces" = "Remove from Person";
+"photos.people.reassignFaces" = "Assign to Another Person";
+"photos.people.cover" = "Set Person Cover";
+"photos.people.facesHint" = "Choose the faces to remove or assign. Original photos will be kept.";
+"photos.people.destination" = "Assign to";
+"photos.people.newPerson" = "New Person";
+"photos.people.noFaces" = "No Matching Faces";
+"photos.people.noFacesHint" = "No faces belonging to this person were found in the selected photos. Close this window and choose other photos.";
+"photos.people.faceCount" = "%lld faces selected";
+"photos.people.coverHint" = "Use the selected photo as this person’s cover.";
+
+"photos.people.visibility" = "Manage people visibility";
+"photos.people.applyVisibility" = "Apply";
+"photos.people.visibilityAction" = "Visibility";
+"photos.people.show" = "Show people";
+"photos.people.hide" = "Hide people";
+"photos.people.search" = "Search people";
+"photos.people.visibilityHint" = "Hiding people does not delete photos. Change up to 100 people at a time.";
+"photos.people.visibilityEmpty" = "No matching people";
+"photos.people.visibilityEmptyHint" = "Recognized people will appear here. Try again later.";
+"photos.people.searchEmptyHint" = "Try another name or clear the search.";
+"photos.people.visible" = "Visible";
+"photos.people.hidden" = "Hidden";
+"photos.people.visibilityCount" = "%lld people selected";
+
+"photos.faces.edit" = "Edit faces";
+"photos.faces.add" = "Add face box";
+"photos.faces.drawHint" = "Drag on the photo to draw a face box.";
+"photos.faces.editHint" = "Select a face. Drag the box or its lower-right corner to adjust it.";
+"photos.faces.keepPhotos" = "Removing a face marker keeps the original photo.";
+"photos.faces.save" = "Save changes";
+"photos.faces.canvas" = "Face editing area";
+"photos.faces.resize" = "Resize face box";
+"photos.faces.emptyHint" = "Add a face box on the photo, or use the centered box button below.";
+"photos.faces.undoRemove" = "Undo removal";
+"photos.faces.horizontal" = "Horizontal position";
+"photos.faces.vertical" = "Vertical position";
+"photos.faces.remove" = "Remove face marker";
+"photos.faces.addCentered" = "Add centered face box";
+"photos.faces.failed" = "Could not edit faces. Check your connection and try again.";
+"photos.faces.size" = "Face box size";
+
+"photos.preview.rebuild" = "Regenerate Previews";
+"photos.preview.rebuildHint" = "Regenerate previews for the selected photos and videos. Original files will be kept.";
+"photos.preview.rebuilding" = "Updating previews…";
+
+"photos.request.selectFolderHint" = "Choose a folder where you can upload photos.";
+
+"photos.categories.sharedFolders" = "Browse the shared photos available to you in Folders.";
+
+"photos.condition.source" = "Photo source";
+
+"photos.transfer.destination" = "Destination space";
+
+"photos.manage.albumRefreshFailed" = "The operation finished, but the album could not be refreshed. Please try again.";
+"photos.preview.recovery.title" = "Unfinished previews";
+"photos.preview.recovery.empty" = "No unfinished previews";
+"photos.preview.recovery.emptyHint" = "You can close this window or refresh to check again.";
+"photos.preview.recovery.confirm" = "Continue rebuilding previews for the selected photos. Original photos will be kept.";
+"photos.preview.recovery.limit" = "Select up to 100 photos at a time.";
+"photos.preview.recovery.resume" = "Continue rebuilding";
+"photos.preview.recovery.failed" = "Unable to load unfinished previews. Check your connection and try again.";
+"photos.preview.recovery.clear" = "Clear selection";
+
+"photos.category.similar" = "Similar Photos";
+"photos.similar.loading" = "Loading similar photos…";
+"photos.similar.failed" = "Couldn’t load the group. Please try again.";
+"photos.similar.count" = "%lld similar photos";
+"photos.similar.topPick" = "Top pick";
+"photos.similar.empty" = "No similar photos found. You can refresh to check again.";
+
+"photos.similar.manage" = "Manage similar photos";
+"photos.similar.setTopPick" = "Set as top pick";
+"photos.similar.remove" = "Remove selected photos from group";
+"photos.similar.ungroup" = "Ungroup these photos";
+"photos.similar.undo" = "Undo group changes";
+"photos.similar.confirm" = "Confirm changes";
+"photos.similar.topPickConfirm" = "Set the current photo as the top pick for this group?";
+"photos.similar.ungroupConfirm" = "Ungroup these similar photos? All originals will be kept, and you can undo this change.";
+"photos.similar.removeConfirm" = "Remove the %lld selected photos from this group? The originals will be kept, and you can undo this change.";
+
+"photos.similar.processing" = "Analyzing %lld photos…";
+"photos.similar.scheduled" = "Similar photo processing is scheduled";
+
+"photos.similar.keepSelected" = "Keep selected, delete others";
+"photos.similar.cleanupConfirm" = "Keep the %lld selected photos and delete the other %lld photos in this group from the NAS? Deleted originals will also be removed from their albums. Recovery depends on your NAS settings.";
+"photos.similar.refreshFailed" = "Couldn’t refresh the similar photo group. Please try refreshing it again.";
+"photos.similar.changed" = "This group has changed. Refresh the group and select photos again.";
+
+"photos.similar.ungroupSelected" = "Ungroup selected groups";
+"photos.similar.ungroupSelectedConfirm" = "Ungroup the %lld selected groups? All original photos will be kept, and completed group changes can be undone.";
+"photos.similar.continueGroups" = "Continue remaining groups";
+"photos.similar.cancelRemaining" = "Cancel remaining groups";
+
+"photos.download.original" = "Original file";
+"photos.download.jpeg" = "Compressed JPEG";
+"photos.download.savedWithOriginals" = "Saved %lld items; %lld kept their original format.";
+
+"photos.download.album" = "Download entire album";
+"photos.download.folder" = "Download entire folder";
+"photos.download.selection" = "Download selected items";
+"photos.download.defaultName" = "Photos";
+"photos.download.archiveJPEGHint" = "Items that cannot be converted will keep their original format.";
+"photos.download.cancel" = "Cancel download";
+
+"photos.slideshow.start" = "Slideshow";
+"photos.slideshow.pause" = "Pause slideshow";
+"photos.slideshow.play" = "Resume slideshow";
+"photos.slideshow.stop" = "Exit slideshow";
+"photos.slideshow.failed" = "Playback stopped. Try resuming, or switch to another photo.";
+
+"photos.download.originalSizeJPEG" = "Original-size JPEG";
+
+"photos.folderCover.set" = "Set as folder cover";
+
+"photos.folderCover.change" = "Change folder cover";
+
+"photos.folderCover.back" = "Back to parent folder";
+
+"photos.folderCover.empty" = "No photos in this folder";
+
+"photos.folderCover.emptyHint" = "Choose another folder, or add photos here first.";
+
+"photos.folderCover.hint" = "Choose one photo as the folder cover.";
+
+"photos.folderCover.more" = "Load more photos";
+
+"photos.folderCover.failed" = "Unable to load photos. Check the connection and try again.";
+
+"photos.folderSort.title" = "Sort";
+
+"photos.folderSort.filename" = "Name";
+
+"photos.folderSort.filesize" = "Size";
+
+"photos.folderSort.item_type" = "Type";
+
+"photos.folderSort.takentime" = "Date taken";
+
+"photos.folder.rename" = "Rename Folder";
+
+"photos.folder.name" = "Folder name";
+
+"photos.folder.invalidName" = "Use a name of up to 255 characters, without a leading or trailing period, slashes, a colon, or a reserved system name.";
+
+"photos.folder.deleteTitle" = "Delete Selected Items";
+
+"photos.folder.deleteConfirm" = "Delete %d folders and %d photos or videos from your NAS? Everything inside the folders will also be deleted and removed from albums. Recovery depends on your NAS settings.";
+
+"photos.folder.selectLoaded" = "Select loaded items";
+
+"photos.folderSharing.title" = "Folder permissions";
+"photos.folderSharing.management" = "Full-access users only";
+"photos.folderSharing.parentRestricted" = "The parent folder is restricted to full-access users. Change its permissions before sharing this folder.";
+"photos.folderSharing.protected" = "On";
+"photos.folderSharing.unprotected" = "Off";
+"photos.folderSharing.unknown" = "Unavailable";
+"photos.folderSharing.role.manage" = "Manage";
+"photos.folderSharing.readFailed" = "Could not load folder permissions. Check your connection and try again.";
+"photos.folderSharing.apply" = "Apply to all subfolders";
+"photos.folderSharing.save" = "Save permissions";
+"photos.folderSharing.confirmTitle" = "Save folder permissions?";
+"photos.folderSharing.confirm" = "Change access to “%@”? People may gain or lose access, and changing password protection affects its sharing link.";
+"photos.folderSharing.confirmChildren" = "Change access to “%@” and all its subfolders? Existing subfolder permissions will be replaced, and people may gain or lose access.";
+"photos.folderSharing.partial" = "Folder permissions were saved, but the default subfolder option could not be saved. Reopen folder permissions to check it.";
+
+"photos.duplicates.title" = "Duplicate handling";
+
+"photos.duplicates.upload" = "When uploading duplicates";
+
+"photos.duplicates.transfer" = "When moving or copying items with the same name";
+
+"photos.duplicates.ignore" = "Ignore duplicates";
+
+"photos.duplicates.rename" = "Rename and keep both";
+
+"photos.duplicates.skip" = "Skip items with the same name";
+
+"photos.duplicates.overwrite" = "Overwrite existing items";
+
+"photos.duplicates.overwriteTitle" = "Overwrite existing items?";
+
+"photos.duplicates.overwriteWarning" = "Items with the same name at the destination will be replaced. Confirm that you no longer need those items.";
+
+"photos.duplicates.defaultOverwriteWarning" = "Future moves and copies will default to replacing items with the same name at the destination. You can change this option for each operation.";
+
+"photos.duplicates.save" = "Save settings";
+
+"photos.upload.state.skipped" = "Duplicate ignored";
+
+"photos.duplicates.overwriteConfirm" = "Overwrite and continue";
+
+"photos.albumList.all_album" = "All albums";
+"photos.albumList.my_album" = "My albums";
+"photos.albumList.album_name" = "Album name";
+"photos.albumList.album_type" = "Album type";
+"photos.albumList.start_time" = "Earliest photo date";
+"photos.albumList.create_time" = "Date created";
+"photos.albumList.share_status" = "Sharing status";
+"photos.albumList.share_modify_time" = "Sharing updated";
+"photos.albumList.readFailed" = "Could not load album display settings. Refresh to try again.";
+
+"photos.media.rotate" = "Rotate Left and Save";
+
+"photos.concepts.visibility" = "Show or Hide Topics";
+"photos.concepts.search" = "Search topics";
+"photos.concepts.visibilityHint" = "Hiding a topic keeps its photos in your library.";
+"photos.concepts.visibilityEmpty" = "No Topics Found";
+"photos.concepts.visibilityEmptyHint" = "Try a different search, or wait for photo recognition to finish.";
+"photos.concepts.visibilityCount" = "%lld topics selected";
+"photos.concepts.show" = "Show Topics";
+"photos.concepts.hide" = "Hide Topics";
+"photos.concepts.cover" = "Set as Topic Cover";
+"photos.concepts.remove" = "Remove from Topic";
+"photos.concepts.coverHint" = "Use this photo as the topic cover.";
+"photos.concepts.removeHint" = "Remove the selected photos from this topic. The originals will stay in your library.";
+"photos.concepts.belowThreshold" = "This topic will no longer appear because too few photos remain. Your photos will stay in the library.";
+
+"photos.settings.title" = "Photo Settings";
+"photos.display.title" = "Photo Display Settings";
+"photos.display.grouping" = "Timeline grouping";
+"photos.display.day" = "By day";
+"photos.display.month" = "By month";
+"photos.display.date" = "Date format";
+"photos.display.time" = "Time format";
+"photos.display.clock12" = "12-hour clock";
+"photos.display.clock24" = "24-hour clock";
+"photos.display.sort" = "Default photo order";
+"photos.display.sortHint" = "Used for folders without their own sort order.";
+"photos.display.previewInfo" = "Show photo information in previews and slideshows";
+"photos.selection.month" = "Select loaded photos in this month";
+
+"photos.recognition.title" = "Personal Photo Recognition";
+"photos.recognition.enable_person" = "Recognize people";
+"photos.recognition.enable_concept" = "Recognize subjects";
+"photos.recognition.enable_similar" = "Recognize similar photos";
+"photos.recognition.homeRequired" = "Enable Personal Space on your NAS first.";
+"photos.recognition.adminRequired" = "Ask your administrator to enable this recognition feature.";
+"photos.recognition.empty" = "No recognition settings available";
+"photos.recognition.emptyHint" = "Check whether recognition is available in Photos settings on your NAS.";
+
+"photos.automatic.title" = "Automatic previews";
+"photos.automatic.enabled" = "Automatically generate missing photo and video previews";
+"photos.automatic.description" = "Generate missing previews on this Mac while browsing Photos. Originals stay unchanged.";
+"photos.automatic.unsupported" = "No preview converter is currently available on this Mac. This setting can still be used on other supported devices.";
+"photos.automatic.processing" = "Generating preview: %@";
+"photos.automatic.reviewing" = "Checking preview results…";
+"photos.automatic.completed" = "Generated %d previews";
+"photos.automatic.paused" = "Preview generation paused";
+"photos.automatic.pause" = "Pause";
+"photos.automatic.resume" = "Resume";
+"photos.automatic.failed" = "Some previews could not be completed. Choose Resume to retry.";
+"photos.sharedSettings.title" = "Shared Space Settings";
+"photos.sharedSettings.status" = "Shared Space";
+"photos.sharedSettings.on" = "Enabled";
+"photos.sharedSettings.off" = "Disabled";
+"photos.sharedSettings.enable" = "Enable Shared Space";
+"photos.sharedSettings.disable" = "Disable Shared Space";
+"photos.sharedSettings.lastSpace" = "Enable Personal Space before disabling Shared Space.";
+"photos.sharedSettings.folderDisabled" = "The shared photo folder is disabled. If enabling fails, restore the folder in DSM and try again.";
+"photos.sharedSettings.preferences" = "Shared Photo Settings";
+"photos.sharedSettings.person" = "Recognize people in shared photos";
+"photos.sharedSettings.concept" = "Recognize subjects in shared photos";
+"photos.sharedSettings.similar" = "Find similar photos in Shared Space";
+"photos.sharedSettings.publicRoot" = "Allow public sharing of top-level folders";
+"photos.sharedSettings.empty" = "This NAS does not provide editable shared photo settings.";
+"photos.sharedSettings.confirmTitle" = "Confirm Shared Space Change";
+"photos.sharedSettings.enableConfirm" = "Users with access permission will be able to use Shared Space. Enable it now?";
+"photos.sharedSettings.disableConfirm" = "Users will no longer be able to browse Shared Space, and its shares may become unavailable. This disables the space without deleting photos or saving other pending changes in this form. Continue?";
+"photos.sharedSettings.publicConfirm" = "Users with the appropriate permissions will be able to share top-level folders publicly. Save this change?";
+"photos.sharedSettings.privateConfirm" = "Public sharing of top-level folders will be restricted. Save this change?";
+"photos.sharedSettings.globalRequired" = "Enable the corresponding photo recognition features in Global Settings first.";
+
+/* 照片全局设置与转换缓存 */
+"photos.global.title" = "Global settings";
+"photos.global.recognition" = "Recognition";
+"photos.global.sharing" = "Sharing";
+"photos.global.userSharing" = "Allow non-admin users to share photos";
+"photos.global.guestInfo" = "Allow guests to view photo information";
+"photos.global.originalJPEG" = "Allow original-size JPEG downloads";
+"photos.global.excluded" = "Excluded file formats";
+"photos.global.conversion" = "JPEG conversion and cache";
+"photos.global.cache" = "Conversion cache";
+"photos.global.codecRequired" = "Enable HEVC support on your NAS, then reopen these settings.";
+"photos.global.clearCache" = "Clear conversion cache";
+"photos.global.clearing" = "Clearing cache…";
+"photos.global.cacheFailed" = "Could not read the cache size. Select Refresh to try again.";
+"photos.global.empty" = "No editable global settings are available. Check the NAS web app.";
+"photos.global.confirmTitle" = "Confirm global settings changes";
+"photos.global.saveConfirm" = "These settings affect Photos on this NAS.";
+"photos.global.recognitionConfirm" = "The selected recognition features will also be turned off in personal and shared spaces.";
+"photos.global.sharingConfirm" = "Turning this off prevents non-admin users from sharing photos.";
+"photos.global.guestConfirm" = "Guests will be able to view details of shared photos.";
+"photos.global.excludedConfirm" = "Photos and videos in excluded formats will no longer appear. Original files will be kept.";
+"photos.global.clearConfirm" = "The conversion cache will be cleared. Original photos and videos will be kept. Later JPEG downloads may need conversion again.";
+"photos.global.pending" = "Checking settings and cache results. This will update automatically.";
+"photos.global.partial" = "Some settings were saved. Reopen Global settings to review the current state and finish the remaining changes.";
+"photos.global.person" = "Enable people recognition";
+"photos.global.concept" = "Enable subject recognition";
+"photos.global.similar" = "Enable similar photo recognition";
+
+"photos.members.title" = "Shared Space Members";
+"photos.members.pending" = "Checking saved member and folder permissions. This will update automatically.";
+"photos.members.partial" = "Some permissions were saved. Reopen Shared Space Members to review the current permissions before continuing.";
+"photos.members.refreshFailed" = "Permissions were updated, but photos couldn’t be loaded. Refresh to try again.";
+"photos.members.disabled" = "Shared Space Is Off";
+"photos.members.enableFirst" = "Turn on Shared Space in its settings first.";
+"photos.members.search" = "Search members";
+"photos.members.add" = "Add Member";
+"photos.members.backup" = "Auto Backup";
+"photos.members.backupAll" = "Allow Auto Backup for All Editable Members";
+"photos.members.backupNone" = "Turn Off Auto Backup for All Editable Members";
+"photos.members.empty" = "No Shared Space Members";
+"photos.members.emptyHint" = "Add members to set their Shared Space access.";
+"photos.members.noMatches" = "No Matches";
+"photos.members.searchHint" = "Try another keyword or clear the search.";
+"photos.members.candidateHint" = "Try another search. Members already added are not listed here.";
+"photos.members.group" = "Group";
+"photos.members.user" = "User";
+"photos.members.protected" = "System administrators group";
+"photos.members.unknownRole" = "This permission cannot be edited here yet";
+"photos.members.role" = "Role";
+"photos.members.role.entry" = "Custom Access";
+"photos.members.role.management" = "Full Access";
+"photos.members.folders" = "Folder Permissions";
+"photos.members.remove" = "Remove Member";
+"photos.members.confirmTitle" = "Save Shared Permissions?";
+"photos.members.confirmMessage" = "These changes affect access to view, upload, and manage shared photos. Removing members or folder viewing access may also remove access to subfolders. Turning off Auto Backup prevents that member from automatically backing up to Shared Space.";
+"photos.members.loadFailed" = "Couldn’t load members. Check your connection and try again.";
+"photos.members.folderLoadFailed" = "Couldn’t load folder permissions. Check your connection and try again.";
+"photos.members.done" = "Done";
+"photos.members.folderSearch" = "Search folders";
+"photos.members.grantAll" = "Grant to All";
+"photos.members.revokeAll" = "Revoke This and Higher Permissions from All";
+"photos.members.allFolders" = "All Folders";
+"photos.members.noFolders" = "No Folders to Configure";
+"photos.members.noFoldersHint" = "You can add the member now and assign permissions after creating shared folders.";
+"photos.members.publicMinimum" = "Public access: %@";
+"photos.members.folderRole" = "Folder permission";
+"photos.members.noDirectGrant" = "No Direct Grant";
+"photos.members.expand" = "Expand Subfolders";
+"photos.members.collapse" = "Collapse Subfolders";
+"photos.members.folderRole.view" = "View";
+"photos.members.folderRole.download" = "Download";
+"photos.members.folderRole.upload" = "Upload";
+"photos.members.folderRole.manage" = "Manage";
+
+"photos.display.sortConfirmTitle" = "Change Default Sort Order?";
+"photos.display.sortConfirmMessage" = "The default sort order will change to “%@ · %@”. Save this change?";
+
+"photos.maintenance.title" = "Photo Library Maintenance";
+"photos.maintenance.personal" = "Personal Space";
+"photos.maintenance.shared" = "Shared Space";
+"photos.maintenance.reindex" = "Re-index";
+"photos.maintenance.previews" = "Generate Missing Previews";
+"photos.maintenance.reindexDescription" = "Check the photo library for missing photos or incomplete information.";
+"photos.maintenance.previewsDescription" = "Generate previews missing after changes to format support.";
+"photos.maintenance.previewUnavailable" = "This preview generation feature is not currently supported by your NAS.";
+"photos.maintenance.running" = "In progress";
+"photos.maintenance.start" = "Start";
+"photos.maintenance.confirmTitle" = "Start Photo Library Maintenance?";
+"photos.maintenance.confirmReindex" = "Re-index photos in %@. This may take some time for a large library.";
+"photos.maintenance.confirmPreviews" = "Generate missing previews in %@. This may take some time for a large library.";
+"photos.maintenance.readFailed" = "Unable to read the library status. Check your connection and try again.";
+"photos.maintenance.pending" = "Checking library maintenance status. This will continue automatically when connected.";
+
+"photos.selection.reviewContinuing" = "Checking the deletion result. This will continue automatically when the connection is restored.";
+
+"photos.codec.title" = "New Format Support";
+
+"photos.codec.allUsers" = "New format support is available. Generate missing previews for all users? Existing photos will be kept. This may take some time.";
+
+"photos.codec.personal" = "New format support is available. Generate missing previews in your Personal Space? Existing photos will be kept. This may take some time.";
+
+"photos.codec.generate" = "Generate Previews";
+
+"photos.codec.later" = "Later";
+
+"photos.codec.dismiss" = "Dismiss Message";
+
+"photos.codec.none" = "There are no new format support messages.";
+
+"photos.codec.unavailable" = "Personal Space is unavailable. You can generate previews after it is enabled.";
+
+"photos.codec.submitted" = "Preview generation has been started. You can continue browsing while it runs.";
+
+"photos.codec.partial" = "Preview generation has started, but the message status could not be saved. Continue to save it without restarting generation.";
+
+"photos.codec.pending" = "Checking whether your request was received. This will continue automatically when the connection is restored.";
+
+"photos.codec.readFailed" = "Unable to read the format support message. Check your connection and try again.";
+
+"photos.automatic.failureRecorded" = "The preview for “%@” could not be generated. Select the photo and choose Rebuild Preview to try again.";
+
+"photos.selectionShare.title" = "Create Share Link";
+"photos.selectionShare.configure" = "Create and Set Up Sharing";
+"photos.selectionShare.hint" = "Create a temporary share for these photos, then adjust access. Cancelling stops the share and removes the temporary album. Your photos are kept.";
+"photos.selectionShare.preparing" = "Preparing the album. The result will be checked automatically.";
+"photos.selectionShare.unavailable" = "Sharing is currently unavailable for these photos. Check your connection and permissions, then try again.";
+
+"photos.folder.create" = "New Folder";
+"photos.folder.creating" = "Creating folder. The result will update automatically.";
+"photos.folder.createdRefreshFailed" = "The folder was created, but the list could not be updated. Refresh to see it.";
+
+"photos.temporary.stopping" = "Stopping sharing…";
+"photos.temporary.reviewing" = "The sharing result will update automatically.";
+"photos.temporary.retryHint" = "Sharing could not be finished. Retry to continue from the last completed step.";
+"photos.temporary.stopped" = "Sharing stopped. Your photos are kept.";
+"photos.temporary.kept" = "Sharing stopped and a copy was saved as an album.";
+"photos.temporary.stopTitle" = "Stop this temporary share?";
+"photos.temporary.stop" = "Stop Sharing";
+"photos.temporary.keep" = "Stop and Keep an Album";
+"photos.temporary.stopHint" = "The temporary album will be removed. You can keep a copy as a regular album. Your original photos will not be deleted.";
+"photos.temporary.copyChanged" = "The albums have changed. Both have been kept. Check their contents before retrying.";
+"photos.temporary.keepExisting" = "Keep Existing Albums";
+"photos.temporary.cleanupCancelled" = "Cleanup cancelled. Existing albums have been kept.";
+"photos.thumbnail.size" = "Thumbnail size";
+"photos.thumbnail.smaller" = "Smaller thumbnails";
+"photos.thumbnail.larger" = "Larger thumbnails";
+"photos.thumbnail.level" = "Size %ld of 5";
+"photos.sharing.savedRefreshFailed" = "The sharing list could not be refreshed. Refresh it to see the latest changes.";
+"photos.sharing.listUpdated" = "Sharing list updated.";
+
+"photos.upload.openFolder" = "Open Location";
+
+"photos.upload.openAlbum" = "Go to Album";
+
+"photos.upload.cancelQueued" = "Cancel Upload";
+
+"photos.upload.clearEntry" = "Remove Record";
+
+"photos.upload.openFailed" = "Could not open the upload destination. Check your connection and access, then try again.";
+
+/* NAS 后台任务 */
+"photos.tasks.title" = "Background Tasks";
+"photos.tasks.filter" = "Task filter";
+"photos.tasks.all" = "All";
+"photos.tasks.active" = "In Progress";
+"photos.tasks.finished" = "Finished";
+"photos.tasks.loadFailed" = "Unable to Load Tasks";
+"photos.tasks.loadFailedHint" = "Could not retrieve the latest tasks. Check your connection and refresh.";
+"photos.tasks.empty" = "No Background Tasks";
+"photos.tasks.emptyHint" = "Copy or move photos to see their progress here.";
+"photos.tasks.filterEmpty" = "No Matching Tasks";
+"photos.tasks.filterEmptyHint" = "Select All to see other tasks.";
+"photos.tasks.clearCompleted" = "Clear Finished Tasks";
+"photos.tasks.checkResult" = "Check Result";
+"photos.tasks.cancelTitle" = "Cancel This Task?";
+"photos.tasks.clearTitle" = "Clear Selected Task Records?";
+"photos.tasks.cancel" = "Cancel Task";
+"photos.tasks.clear" = "Clear Record";
+"photos.tasks.cancelHint" = "Completed copies or moves will remain. The remaining work will stop.";
+"photos.tasks.clearHint" = "Only the selected task records will be cleared. Photos and folders will remain.";
+"photos.tasks.copy" = "Copy Photos";
+"photos.tasks.move" = "Move Photos";
+"photos.tasks.other" = "Other Task";
+"photos.tasks.progress" = "Processed %d of %d items";
+"photos.tasks.counts" = "Processed %d of %d · Failed %d · Skipped %d · Replaced %d";
+"photos.tasks.errors" = "Error Details";
+"photos.tasks.waiting" = "Waiting";
+"photos.tasks.processing" = "In Progress";
+"photos.tasks.aborting" = "Canceling";
+"photos.tasks.unknown" = "Status unavailable. Please refresh.";
+"photos.tasks.cancelled" = "Canceled";
+"photos.tasks.failed" = "Failed";
+"photos.tasks.partial" = "Partially Completed";
+"photos.tasks.done" = "Completed";
+"photos.tasks.errorsFailedHint" = "Could not retrieve error details. The task may have been cleared. Go back and refresh the task list.";
+"photos.tasks.noErrors" = "No Error Records";
+"photos.tasks.noErrorsHint" = "There are no error details available for this task.";
+"photos.tasks.errorKind.item" = "Photo or Video";
+"photos.tasks.errorKind.folder" = "Folder";
+"photos.tasks.errorKind.unknown" = "Item";
+"photos.tasks.reason.quota_full" = "Your storage quota is full. Free up space or contact your administrator.";
+"photos.tasks.reason.space_full" = "Storage is full. Free up space and try again.";
+"photos.tasks.reason.skipped" = "The destination is inside the source folder. Choose another location.";
+"photos.tasks.reason.not_existed" = "The item no longer exists. Refresh and select it again.";
+"photos.tasks.reason.target_not_existed" = "The destination folder no longer exists. Choose another location.";
+"photos.tasks.reason.excluded_extension" = "This file type is excluded. Check your photo settings or contact your administrator.";
+"photos.tasks.reason.unknown" = "This item could not be completed. Check access and available space before trying again.";
+
+/* 冻结条件相册恢复 */
+"photos.frozen.restore" = "Restore album";
+"photos.frozen.hint" = "This album has stopped adding matching photos automatically.";
+"photos.frozen.unsupported" = "Conditions that are no longer supported";
+"photos.frozen.separator" = ", ";
+"photos.frozen.action" = "Restore as";
+"photos.frozen.saveOrdinary" = "Save as a regular album";
+"photos.frozen.rebuild" = "Rebuild conditional album";
+"photos.frozen.ordinaryHint" = "Keep the photos currently in this album. You can add and remove photos manually after restoring it; the old conditions will no longer update it.";
+"photos.frozen.rebuildHint" = "Create a new album using the conditions below, then remove the old album after verifying the new one. Original photos are kept. Existing sharing links and member settings do not transfer to the new album.";
+"photos.frozen.partial" = "The new album was created, but the old album could not be removed. Check both albums, then remove the old one manually.";
+"photos.frozen.recentlyAdded" = "Recently added";
+"photos.frozen.recentlyCommented" = "Recently commented";
+"photos.frozen.updated" = "Updated date";
+"photos.frozen.people" = "People";
+"photos.frozen.location" = "Location";
+"photos.frozen.rating" = "Rating";
+"photos.frozen.camera" = "Camera";
+"photos.frozen.lens" = "Lens";
+"photos.frozen.flash" = "Flash";
+"photos.frozen.other" = "Other legacy conditions";
+
+// 上传任务跨重启恢复
+"photos.upload.recovery.readFailed" = "Previous uploads could not be restored. Check that you are connected with the original account, then try again.";
+"photos.upload.recovery.saveFailed" = "Upload progress could not be saved, so further uploads are paused. Check the available space on this Mac, then try again.";
+"photos.upload.recovery.sourceChanged" = "The selected file does not match the original. Choose the original file.";
+"photos.upload.recovery.sourceNeeded" = "Choose the original file again to continue uploading.";
+"photos.upload.recovery.reselect" = "Choose File Again";
+"photos.upload.recovery.resume" = "Continue Uploads";
+"photos.upload.recovery.clearUnresolved" = "Remove Record After Checking…";
+"photos.upload.recovery.clearTitle" = "Have you checked the result on your NAS?";
+"photos.upload.recovery.clearConfirmed" = "Checked, Remove Record";
+"photos.upload.recovery.clearMessage" = "First check in Synology Photos whether the photo or folder was created. Removing this record will not undo completed work or upload again. Uploading the file later may create a duplicate.";

@@ -333,6 +333,7 @@ extension SynologyPhotoCategory {
         case .location: L10n.string("photos.category.location")
         case .tags: L10n.string("photos.category.tags")
         case .videos: L10n.string("photos.category.videos")
+        case .similar: L10n.string("photos.category.similar")
         }
     }
     var mobileSymbol: String {
@@ -343,6 +344,7 @@ extension SynologyPhotoCategory {
         case .location: "mappin.and.ellipse"
         case .tags: "tag"
         case .videos: "video"
+        case .similar: "square.stack.3d.up"
         }
     }
 }

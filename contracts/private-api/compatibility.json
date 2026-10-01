@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-09-29",
+  "updatedAt": "2026-10-01",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -62,16 +62,43 @@
   ],
   "endpoints": [
     {
+      "id": "photos-similar-items",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "个人/共享相似分类、月份分页、分组预览及推荐设置、移出、拆组与本会话撤销；固定原件/成员与操作编号，双重回读，未知不重放，撤销拒绝覆盖其他组；已接入保留所选删除其他（复用原件删除与原位分组回读）、多组拆分/撤销及get_status识别状态。按实际设置/权限/能力开放，static及合成验证不代表NAS兼容。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.Foto.Browse.Similar",
+        "SYNO.Foto.Browse.SimilarItem",
+        "SYNO.Foto.Browse.SimilarTimeline",
+        "SYNO.FotoTeam.Browse.Similar",
+        "SYNO.FotoTeam.Browse.SimilarItem",
+        "SYNO.FotoTeam.Browse.SimilarTimeline"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "分类缺失不阻断其他功能；来源或分组身份不符拒绝显示，读取失败可重试，不扫描替代，不设置待实测禁用门禁。",
+      "documentRef": "docs/api/discovery/endpoints/photos-similar-items.md",
+      "verifications": []
+    },
+    {
       "id": "photos-condition-albums",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人空间条件相册创建、完整规则读取/修改、条件建议和数量预览；按实际 v3 能力与所有者权限开放，无人工验证白名单。当前为官方静态证据与 macOS 合成验证，未形成 NAS 行为结论。",
+      "capability": "个人/共享来源条件相册创建、规则读取/修改、建议和数量预览；统一Foto接口，个人user_id为当前用户、共享为0，共享来源需management权限。2026-10-01冻结恢复已实现：独立freeze_album，NormalAlbum.set_unfreeze v1标量id；重建读取Album v4 condition_object/cant_migrate_condition，经ConditionAlbum.create v3核对新相册后Album.delete旧id数组，不继承分享。来源仅static，798项相关XCTest、6项本地化及1项UI/28张合成截图通过，独立Release临时签名包及Sparkle实际加载/DMG校验通过，不代表NAS行为兼容。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
       "apiNames": [
         "SYNO.Foto.Browse.ConditionAlbum",
-        "SYNO.Foto.Browse.Album"
+        "SYNO.Foto.Browse.Album",
+        "SYNO.Foto.Browse.NormalAlbum"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -87,12 +114,17 @@
       "id": "photos-people-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人空间人物命名与合并已接入、合成验证；人脸纠正与封面尚未实现，真实 NAS 写入未验证",
+      "capability": "个人与共享空间人物命名、合并、批量显示/隐藏及恢复、所选照片人脸列表、移出/归入既有或新人物和人物封面；图片内画框/调整/纠正/移除及JPEG上传已接入两空间。相册内手动人脸按实际个人提供者/共享management资格，保留识别开启、原图身份、人脸归属与回执编号校验。来源固定、混选拒绝、封面缓存隔离，写后核对成员/名称/show/封面；未知不重放，真实NAS写入待用户验证",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
       "apiNames": [
-        "SYNO.Foto.Browse.Person"
+        "SYNO.Foto.Browse.Person",
+        "SYNO.Foto.Browse.Item",
+        "SYNO.Foto.Upload.Face",
+        "SYNO.FotoTeam.Browse.Person",
+        "SYNO.FotoTeam.Browse.Item",
+        "SYNO.FotoTeam.Upload.Face"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -108,12 +140,15 @@
       "id": "photos-request-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "照片收集请求创建/修改/删除；静态参数，尚未实现",
+      "capability": "照片收集请求创建/修改/删除主流程；个人/共享目录、addable自有/共享相册、日期/大小限制、差量更新、清除相册-1和精确标识回读；未知创建不按名称追认；macOS接入文件夹/普通相册快捷创建、默认标题、窗口内新建目标相册与跨页列表搜索；默认目标个人优先、共享management自动目录、entry明确选择目录，编辑保留目标",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
       "apiNames": [
-        "SYNO.Foto.PhotoRequest"
+        "SYNO.Foto.PhotoRequest",
+        "SYNO.Foto.Browse.NormalAlbum",
+        "SYNO.Foto.Browse.Folder",
+        "SYNO.FotoTeam.Browse.Folder"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -129,21 +164,25 @@
       "id": "photos-preview-regeneration",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "照片预览重建，NAS 与外部客户端流程尚待补齐",
+      "capability": "混合个人/共享预览按来源独立订阅和提交；照片预览重建NAS分支已接入：EIO4同源WSS订阅后按明确unit_id发起并核对完成事件，失败恢复、批量部分结果与局部更新；本机ImageIO图片及AVFoundation视频取帧、三档JPEG和ConvertedFile v3上传已接入，转换后核对身份权限，未知上传不重放；通知短暂断线可限次重连并重订阅原目标，不重放重建写入；已接list_regenerating队列读取/确认继续，初次恢复不重复标记；丢失通知按提交前新鲜版本基准、原件身份、新版本和队列共同核对，无法证明时保留未知，官方队列重排及手动仅缩略图已有静态证据；真实行为待用户验证，无人工白名单 2026-10-01已按官方worker及菜单补齐共享普通目录下载角色、相册本人提供者的预览重建资格；相册读取保留album_id，写入仍按原空间发送item_id/unit_id；普通相册纯下载者和来源关闭不放行，转换后重新核对资格；冻结相册保留多选重建，仅预览窗口不提供。原件编辑门槛不变；803项XCTest、6项本地化、最终8项聚焦及2项UI/12张合成截图通过，NAS角色行为仍待用户验证。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
       "apiNames": [
         "SYNO.Foto.RegeneratePreview",
-        "SYNO.FotoTeam.RegeneratePreview"
+        "SYNO.FotoTeam.RegeneratePreview",
+        "SYNO.Foto.Upload.ConvertedFile",
+        "SYNO.FotoTeam.Upload.ConvertedFile"
       ],
       "paths": [
-        "/webapi/entry.cgi"
+        "/webapi/entry.cgi",
+        "/FotoSocketIo/socket.io/"
       ],
       "methods": [
-        "POST"
+        "POST",
+        "GET"
       ],
-      "fallback": "静态证据不代表行为兼容；按真实能力与权限接入，未知写结果不重放，不按名称追认创建结果，不增加验证白名单。",
+      "fallback": "静态证据不代表行为兼容；按真实能力与权限接入，通知未知不重放、不提前恢复标记、不把请求已接受当完成，不增加验证白名单。",
       "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
       "verifications": []
     },
@@ -151,14 +190,16 @@
       "id": "photos-sharing-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "相册分享现状、访问方式与具名成员管理；用户/群组候选、角色差量保存和完整回读；保留密码与有效期，无验证白名单，真实行为另记",
+      "capability": "相册分享现状、具名成员、有效期与密码管理；新增get_permission v1读取实际下载/贡献角色，权限未知不沿用旧授权。静态与合成验证，真实NAS待验。 新增共享目录前两层权限只读：Folder.get sharing_info、FolderPermission.get_config/get_folder_link、共享成员候选；固定目录/父级身份与共享management，未知字段不当关闭或空名单。update/set_config仅静态候选，尚未接入保存，不声称完整目录权限管理。 共享目录FolderPermission.update/set_config保存已接入，四种访问范围/成员角色/密码/子目录选项，预检快照与身份、统一去重和自动回读；默认配置失败单独报告部分完成，丢失回执不猜子目录或新密码生效。macOS入口开放，static/PENDING_USER_VALIDATION，无新增真实环境结论。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "critical",
       "apiNames": [
         "SYNO.Foto.Sharing.Passphrase",
         "SYNO.Foto.Browse.Album",
-        "SYNO.Foto.Sharing.Misc"
+        "SYNO.Foto.Sharing.Misc",
+        "SYNO.FotoTeam.Browse.Folder",
+        "SYNO.FotoTeam.Sharing.FolderPermission"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -167,6 +208,70 @@
         "POST"
       ],
       "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。拒绝跨空间和非所有者操作；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-duplicate-settings",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "当前Photos用户的上传和移动复制重复项默认设置。Setting.User get/set v1，严格读取ignore/rename与skip/overwrite枚举、提交前比较完整原快照、只写差异字段、按操作编号去重并最终回读。macOS可单次覆盖默认规则，队列固定确认值，无本地持久化变化。官方证据static，真实NAS待用户验收。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.Foto.Setting.User"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "仅按真实接口能力开放；读取失败提供重试，不静默选择覆盖；未知写结果只读核对不重放，权限拒绝不换接口。无人工未验证禁用。",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-display-settings",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "当前Photos用户的显示偏好：日/月分组、九种日期格式、12/24小时、默认照片排序及预览/幻灯片底部信息。Setting.User get/set v1，只写已改变字段，冻结原快照、操作编号去重、回读六项一致后应用。原生分组/日期/预览同步更新，默认排序沿目录已有覆盖规则；排序字段或方向变更需确认，取消保留草稿。static，真实NAS待用户验收。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "low",
+      "apiNames": [
+        "SYNO.Foto.Setting.User"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "读取缺失或未知枚举不猜值保存，旧服务保留既有浏览方式；保存失败可恢复，未知结果只读核对不重放。不增加人工待实测门禁。",
+      "documentRef": "docs/api/discovery/endpoints/photos-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-recognition-settings",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "个人Photos人物、主题与相似照片识别设置。User get/set v1与Admin get v1，保留缺字段、全局开关与个人空间条件；仅改变可编辑字段，写前核对完整快照，未知结果只回读不重放。分类能力和入口局部更新，共享空间不受个人设置影响。static，实际NAS待用户验收。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "medium",
+      "apiNames": [
+        "SYNO.Foto.Setting.User",
+        "SYNO.Foto.Setting.Admin"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "缺失字段不猜关闭、不写入未知项；管理员关闭或个人空间未开启时按真实条件不可编辑，用户可查看原因；读取失败可重试，不阻断图库。无人工待实测门禁。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -174,12 +279,13 @@
       "id": "photos-upload",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人照片 multipart 上传、客户端多文件队列与当前相册/文件夹目标；用户于 2026-09-29 授权按实际接口能力开放，不设验证白名单；具体环境结果另记",
+      "capability": "个人/共享空间multipart队列、目录导入及相册直接上传；相册使用album_id或passphrase、PhotoLibrary目录，不加timeline目的字段，回读编号/大小/提供者，完成不重复add_item。切页保留队列目标，无空间贡献者可上传；真实NAS待验。 2026-09-30新增duplicate=ignore/rename显式策略；ignore回执按返回编号、名称及目标/相册重新读取已有照片，skippedCount与新上传数量分离，不要求原提供者或大小变为上传者内容。未知结果不重传；static/PENDING_USER_VALIDATION。 macOS新增本机跨重启队列：按连接及当前账号隔离，写前意图与收到的编号回执原子保存，恢复只读核对；已上传但未加入相册只补加入步骤，无回执不按名称猜测。新增Apple协议默认不支持，其他端不启用本机持久化。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
       "apiNames": [
-        "SYNO.Foto.Upload.Item"
+        "SYNO.Foto.Upload.Item",
+        "SYNO.FotoTeam.Upload.Item"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -187,7 +293,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。拒绝跨空间和非所有者操作；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。",
+      "fallback": "固定操作空间，不将共享编号回退至个人接口。上传前核对实际空间和目录权限，未知结果仅在原空间回读，不重复上传，不按名称猜测成功。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -195,14 +301,16 @@
       "id": "photos-file-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人照片移动、复制、逐级创建上传目录与结果核对；用户于 2026-09-29 授权按实际接口能力开放，不设验证白名单；具体环境结果另记",
+      "capability": "个人/共享照片移动复制：同空间及个人到共享移动，个人与共享双向复制；源API固定、目标空间/目录与后台任务数量回读。逐级上传目录保留；跨空间移动后当前相册按已加载范围更新身份；网页相册菜单不提供混合来源移动。真实NAS待用户验收，无人工版本白名单。 新增Folder.set_cover v2单选目录封面；固定空间/目标，核对管理权、照片身份及可查看后代，成功回执与序号0封面可读共同确认，不回读或猜测item_id。static/PENDING_USER_VALIDATION。 新增Folder.set_order v1浏览排序偏好：固定目录和view权限，操作编号去重，严格回读两个排序字段；丢失回执只查询不重放。 新增Folder.rename v1(id,name)：固定单目录及原路径/manage，重新读取同一编号及完整新路径/父目录；回执丢失只读核对，局部更新保留浏览位置。static，真实NAS待用户验收。 新增多目录/照片混选move/copy：folder_id与source_folder_ids，固定父级/路径/权限，拒绝自身后代；任务total按目录内容核对，不等同顶层选择数，完成后局部更新。静态证据，真实NAS待用户验收。 macOS文件夹页增加原生拖放到可见目录、上级按钮和路径导航，固定整组照片/目录后预选既有确认表单；不新增API，沿现有skip和自动任务核对。重复项默认设置及overwrite执行仍待后续接入，静态候选不等于已实现。 2026-09-30重复项执行已补齐：action随确认选择skip/overwrite，覆盖有独立用户确认，任务overwrite计数必须在范围内且符合所选策略，身份与任务核对保留。默认设置另见photos-duplicate-settings，真实NAS待验。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
       "apiNames": [
         "SYNO.Foto.BackgroundTask.File",
         "SYNO.Foto.BackgroundTask.Info",
-        "SYNO.Foto.Browse.Folder"
+        "SYNO.Foto.Browse.Folder",
+        "SYNO.FotoTeam.Browse.Folder",
+        "SYNO.FotoTeam.BackgroundTask.File"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -210,7 +318,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。拒绝跨空间和非所有者操作；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。",
+      "fallback": "按实际接口、空间和目录权限开放；跨空间任务需核对目标owner/目录/total与完成状态。缺目标回执只按已知任务编号查询list_user_task；未知不重放、不按名称猜测，不回退File Station；共享到个人移动不属于当前网页方向。 封面读失败自动只读重查；写回执丢失保持未知，不重放。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -218,7 +326,7 @@
       "id": "photos-album-management",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "相册创建、命名、成员、封面设置/读取与删除；用户于 2026-09-29 授权按实际接口能力开放，不设验证白名单；具体环境结果另记",
+      "capability": "2026-10-01临时分享生命周期：create(shared=true)、temporary_shared、copy(source_album_id)及已停止临时相册清理已接入Core/Repository，按回执身份、完整成员、所有权与分享快照核对；macOS已接入创建取消清理、停止并保留副本、关闭/Esc及未知结果持续核对；preservedCopyID仅作本地清理前完整成员复查，明确失败可保留现有相册，未知结果不可放弃核对。完整网页对齐仍有其他待办。static，未进行真实NAS行为验证。 普通相册创建/命名/封面/删除与混合来源成员；新增addable目标列表、贡献角色添加及按provider移除成员。所有者用id，贡献者用passphrase，明确部分失败逐项回读，未知不重放；本人提供的相册项目在原空间启用时可转加或新建目标；原空间关闭时不提供转加，与网页一致。 新增相册内照片四字段/双向排序：Album.get v4读取，set_order v1保存；Item.list携带相同排序分页；查看权限独立于上传和原空间开启，过期设置冲突拒绝，回读缺省不能冒充保存证明。 新增相册首页及两类分享列表独立排序：get/set_album_list_order v2；全部/我的相册显示范围get/set_album_list_display v3；固定范围跨页传参和原偏好冲突检查，不改变相册内容或共享权限。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
@@ -232,7 +340,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。拒绝跨空间和非所有者操作；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。",
+      "fallback": "按真实角色开放；原件操作与相册成员权限分离，贡献者仅可移除本人提供的成员。确认、身份快照、重复提交保护及最终回读保留；未知不重放、不按名称猜测、不回退File Station。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -240,13 +348,16 @@
       "id": "photos-item-metadata",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "照片说明、评级、绝对/相对日期、既有标签编辑与标签创建；用户于 2026-09-29 授权按实际接口能力开放，不设验证白名单；具体环境结果另记",
+      "capability": "个人/共享照片评级、描述、绝对日期与相对日期偏移、标签增删与新建；评级和日期允许两空间混合，预检全部来源能力/身份/共享管理权后按空间分发，部分结果只续作未完成目标；描述和标签仍同空间。真实NAS写入待验，无人工版本白名单 已接入预览逆时针旋转：个人/共享Item.set v2(id数组,rotate_action=counter_clockwise)，支持媒体与EXIF镜像方向按官方static定义；写前管理权限/身份/方向快照，写后get v5核对方向和宽高，未知结果不重放。真实NAS待用户验证。相册资料与旋转按实际provider_user_id和来源空间判断：个人空间提供者可编辑，共享相册需全局management；混合共享相册还需全部由本人提供，条件/冻结相册保留本人原件资格。删除和搬移不扩大。",
       "classification": "internal",
       "operation": "write",
       "risk": "high",
       "apiNames": [
         "SYNO.Foto.Browse.Item",
-        "SYNO.Foto.Browse.GeneralTag"
+        "SYNO.Foto.Browse.GeneralTag",
+        "SYNO.FotoTeam.Browse.Item",
+        "SYNO.FotoTeam.Browse.GeneralTag",
+        "SYNO.FotoTeam.Browse.Folder"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -254,7 +365,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。拒绝跨空间和非所有者操作；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。",
+      "fallback": "按用户明确授权取消默认禁用与验证白名单；仍按实际接口版本、空间和权限判定可用性。按功能允许混合来源；相册编辑重新读取提供者，原件删除/移动仍保留原权限检查；未知结果只读核对，不重放、不按名称猜测成功、不回退 File Station。",
       "documentRef": "docs/api/discovery/endpoints/photos-management.md",
       "verifications": []
     },
@@ -262,12 +373,15 @@
       "id": "photos-item-deletion",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "单项原件删除；合成 PNG 单次删除及刷新回读已验证，macOS 按用户授权跨 DSM／Photos 版本依接口能力开放个人空间供测试，App 与异常路径待验",
+      "capability": "个人/共享照片原件删除：macOS批量选择、逐项预检提交、自动只读核对并保留月份；共享管理角色或目录manage权限，未知结果不重放。共享实现为static与合成验证，真实NAS待验 新增同父目录多文件夹及照片混合删除：Foto/FotoTeam.BackgroundTask.File v1数组参数，任务done且无错误后完整分页回读父目录及照片空结果，局部更新；未知不重放，部分失败不猜测逐目录结果。静态证据，不扩展历史单照片实机结论。",
       "classification": "internal",
       "operation": "write",
       "risk": "critical",
       "apiNames": [
-        "SYNO.Foto.BackgroundTask.File"
+        "SYNO.Foto.BackgroundTask.File",
+        "SYNO.FotoTeam.BackgroundTask.File",
+        "SYNO.FotoTeam.Browse.Item",
+        "SYNO.FotoTeam.Browse.Folder"
       ],
       "paths": [
         "/webapi/entry.cgi"
@@ -283,9 +397,9 @@
       "id": "photos-library-read",
       "componentId": "synology-photos",
       "scope": "Synology Photos",
-      "capability": "个人照片库、12 类标准筛选、共享只读列表与媒体读取；共享排序已修正；无转换版视频改读原件、其他转换质量按实际列表选择，App 格式兼容待验",
+      "capability": "个人照片库、12类标准筛选、共享列表和媒体读取；Apple Repository接入entry/management权限与FotoTeam读取，macOS支持共享人物/主题/地点/标签分类和空间导航；统一Category发现，集合及缩略图缓存携带空间，同编号隔离，entry转目录浏览。共享人物管理另见photos-people-management，相册来源已接入；静态证据与合成测试不代表NAS兼容验收 相册列表和照片读取使用统一Foto入口，照片owner_user_id=0时保留共享身份；相册封面带album_id授权，不依赖个人空间开启。 相册项目增加可选albumContext，详情/缩略图/视频/实况/原件经统一Foto携带album_id；无原空间权限也按相册授权请求，Photos有效但空间均关闭仍可浏览相册，拒绝不回退原件。原件写权限独立，真实NAS待用户验证，相册协作角色见photos-sharing-management、photos-album-management和photos-upload。 分类首页新增最多四张拼图缩略图读取，固定显式选择空间，不覆盖完整分类封面缓存；人物保留person/unit类型，视频type=video，单张失败不阻断分类。相似项目实现另见photos-similar-items。新增Download v2 optimized_jpeg读取、实际JPEG/原格式校验和相似组全部成员导出；macOS菜单开放，static及合成验证不等于真实NAS兼容。 新增整相册Album.download v2与目录Download.download v2归档，目标固定相册或空间/目录，POST仅请求体传分享口令；实际下载角色和目录权限预检，ZIP有限尾部完整结束记录检查，取消/失败保留本地旧文件。仍static/PENDING_USER_VALIDATION。 macOS幻灯片复用既有媒体和照片查询，只读独立分页；官方三秒/视频结束/暂停循环语义为static，未新增NAS接口或实际兼容环境。 新增原尺寸JPEG：Setting.User.ame_status.has_hevc与Setting.Admin.enable_converted_original_jpeg实际条件，Download.convert v2后original_size_jpeg单项下载；核对身份和下载权、去重、取消、完整JPEG及不覆盖。convert可能生成派生缓存，属于mixed；static/PENDING_USER_VALIDATION。 目录封面解析thumbnail数组；默认unit拼图、自定义type=folder加folder_cover_seq且不传size，固定个人/共享路径，单图失败占位。 目录排序读取Folder.sort_by/sort_direction，逐字段沿用户设置和官方默认值降级；Item.list按四字段/两方向逐页请求，子目录按名称同方向，旧调用默认行为保留。 多目录及照片混选归档已接入：同一空间/父目录的item_id与folder_id合并一次POST，逐项权限/身份预检，固定选择且取消失败保留本地文件；仍static，真实NAS待用户验收。 上传任务导航增量公开folder(id:in:)只读契约，复用已记录Browse.Folder.get v2，读取当前名称/父目录并检查空间、编号及目录查看权；macOS先回读照片所在目录再构建完整路径，直接相册上传不授予原件目录访问。无新NAS写入，仍static/PENDING_USER_VALIDATION。",
       "classification": "internal",
-      "operation": "read",
+      "operation": "mixed",
       "risk": "high",
       "apiNames": [
         "SYNO.Foto.UserInfo",
@@ -308,11 +422,26 @@
         "SYNO.Foto.Download",
         "SYNO.Foto.Browse.Unit",
         "SYNO.Foto.Sharing.Misc",
-        "SYNO.Foto.PhotoRequest"
+        "SYNO.Foto.PhotoRequest",
+        "SYNO.FotoTeam.Browse.Timeline",
+        "SYNO.FotoTeam.Browse.Item",
+        "SYNO.FotoTeam.Browse.Folder",
+        "SYNO.FotoTeam.Browse.RecentlyAdded",
+        "SYNO.FotoTeam.Search.Search",
+        "SYNO.FotoTeam.Search.Filter",
+        "SYNO.FotoTeam.Thumbnail",
+        "SYNO.FotoTeam.Streaming",
+        "SYNO.FotoTeam.Download",
+        "SYNO.FotoTeam.Browse.Unit",
+        "SYNO.FotoTeam.Browse.Person",
+        "SYNO.FotoTeam.Browse.Concept",
+        "SYNO.FotoTeam.Browse.Geocoding",
+        "SYNO.FotoTeam.Browse.GeneralTag"
       ],
       "paths": [
         "/webapi/entry.cgi",
-        "/synofoto/api/v2/p/Thumbnail/get"
+        "/synofoto/api/v2/p/Thumbnail/get",
+        "/synofoto/api/v2/t/Thumbnail/get"
       ],
       "methods": [
         "POST",
@@ -1216,6 +1345,187 @@
           "notes": "当前组件版本为 1.8.2-10090；没有完成内部 Adapter 契约测试，不得提升证据等级。"
         }
       ]
+    },
+    {
+      "id": "photos-concept-visibility",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "个人/共享主题的隐藏项列表、批量显示隐藏、单张封面、批量移出误分类；固定快照/成员/权限，自动回读封面编号或完整成员并确认原件保留，低于显示阈值局部更新，未知不重放。实际NAS待用户验证。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "medium",
+      "apiNames": [
+        "SYNO.Foto.Browse.Concept",
+        "SYNO.FotoTeam.Browse.Concept"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "按真实空间权限与Concept v2能力开放；缺visibility不猜状态，未知只读核对且不重放，不阻断图库浏览。",
+      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-automatic-preview",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "自动预览设置、后台候选与可见Item/实况Unit候选、单元原件读取、本机转换、ConvertedFile上传与未知核对。macOS已接80%可见比例、2秒去抖、前2后3及小集合缩减（排除视频）、格式1至3级与后台4级顺序、同级当前/相邻优先及跨来源单元去重；共享entry按目录下载权处理可见项，后台扫描仍限management。真实NAS未验证，证据static及合成测试。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "medium",
+      "apiNames": [
+        "SYNO.Foto.Upload.ConvertedFile",
+        "SYNO.FotoTeam.Upload.ConvertedFile",
+        "SYNO.Foto.Download",
+        "SYNO.FotoTeam.Download",
+        "SYNO.Foto.Streaming",
+        "SYNO.FotoTeam.Streaming",
+        "SYNO.Foto.Thumbnail",
+        "SYNO.FotoTeam.Thumbnail",
+        "SYNO.Foto.Setting.User",
+        "SYNO.Foto.Browse.Item",
+        "SYNO.Foto.Browse.Unit",
+        "SYNO.Foto.Browse.Folder",
+        "SYNO.FotoTeam.Browse.Item",
+        "SYNO.FotoTeam.Browse.Unit",
+        "SYNO.FotoTeam.Browse.Folder"
+      ],
+      "paths": [
+        "/webapi/entry.cgi",
+        "/synofoto/api/v2/p/Thumbnail/get",
+        "/synofoto/api/v2/t/Thumbnail/get"
+      ],
+      "methods": [
+        "POST",
+        "GET"
+      ],
+      "fallback": "按后台/可见原来源复查身份和权限，状态/权限变化在提交前结束；共享entry仅限实际有下载权的照片，不扫描全库。提交后回执未知只读核对、不重传、不因候选消失确认。明确媒体转换失败按阶段set_broken，取消/网络/资源/权限及未知上传回执不标记；标记回执丢失只接受可见单元的实际broken字段，后台无直接状态证据则保留待核对。视频档位与缩略图缓存核对仍待真实NAS验证；失去权限或不能证明结果保持待核对。",
+      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-shared-space-settings",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "管理员共享空间启停、共享识别及顶层文件夹公开分享设置；固定身份和原值、差量写入、重复保护与自动回读。static与合成证据，NAS待用户验证。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.Foto.UserInfo",
+        "SYNO.Foto.Setting.User",
+        "SYNO.Foto.Setting.Admin",
+        "SYNO.Foto.Setting.TeamSpace"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "仅实际DSM管理员和接口可用时提供共享设置；缺字段不猜默认值，旧快照或身份变化拒绝提交，未知仅回读不重放，读取错误可重试。保留最后一个空间，不以管理员身份授予照片访问；无待实测人工禁用。",
+      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-shared-space-members",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "共享成员、自动备份与按成员目录权限；原生草稿、最终确认、分阶段保存、后台自动核对和本人权限更新已接入。官方static证据，NAS待用户验证。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.Foto.UserInfo",
+        "SYNO.Foto.Setting.TeamSpace",
+        "SYNO.Foto.Sharing.Misc",
+        "SYNO.FotoTeam.Browse.Folder",
+        "SYNO.FotoTeam.Sharing.FolderBatchPermission"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "独立核对DSM管理员，权限/会话变化丢弃旧结果，成员不省略当前用户，保留数字/字符串及用户/群组身份；缺字段失败恢复，未知角色保留，系统administrators群组不可修改。目录读取不创建链接；固定完整快照，成员/批量目录/单目录分阶段写入，未知只读核对不重放，明确失败仍核对部分应用；原生入口按真实权限开放，个人月份保持，撤权使在途分页失效；不声明NAS行为兼容。",
+      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-global-settings-cache",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "管理员全局识别、普通用户分享、访客详情、格式排除、原尺寸JPEG与转换缓存；按步骤保存并自动核对，static与合成证据，NAS待用户验证。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.Foto.UserInfo",
+        "SYNO.Foto.Setting.User",
+        "SYNO.Foto.Setting.Admin",
+        "SYNO.Foto.Setting.TeamSpace",
+        "SYNO.Foto.Download"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "按真实管理员/字段/HEVC与接口能力开放。快照变化拒绝覆盖，缓存读取错误不阻断其他设置；未知仅回读不重放，部分完成报告实际结果，自动继续核对。无待实测人工禁用。",
+      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-library-maintenance",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "个人/共享空间重新索引和异常预览生成；Wizard新格式提示已读与管理员全用户/普通用户个人补预览已接入。证据static，NAS待用户验证。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.Foto.Index",
+        "SYNO.FotoTeam.Index",
+        "SYNO.Foto.UserInfo",
+        "SYNO.Foto.Setting.User",
+        "SYNO.Foto.Setting.TeamSpace",
+        "SYNO.Foto.Setting.Wizard"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "保留真实身份/空间/管理员及适用的H.264条件。当前空间维护以明确回执和对应计数归零结束核对；新格式动作只确认提交与提示已读，不用个人计数冒充全用户完成。未知回执只读等待不重发；生成已接收而提示保存明确失败时仅补保存提示。不设人工未实测禁用。",
+      "documentRef": "docs/api/discovery/endpoints/photos-advanced-management.md",
+      "verifications": []
+    },
+    {
+      "id": "photos-background-tasks",
+      "componentId": "synology-photos",
+      "scope": "Synology Photos",
+      "capability": "当前用户NAS复制/移动后台任务列表、状态、取消、固定快照清理和错误详情。统一Info v1；取消保留已完成部分；未知回执仅回读。2026-10-01 static，macOS已接入并通过本地合成回归，真实NAS未验证。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "medium",
+      "apiNames": [
+        "SYNO.Foto.BackgroundTask.Info"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "任务读取失败不影响图库；未知操作/状态不猜写入；取消及清理按任务身份快照确认与去重；尚待核对的本机搬移任务禁止先清理。",
+      "documentRef": "docs/api/discovery/endpoints/photos-background-tasks.md",
+      "verifications": []
     }
   ]
 }

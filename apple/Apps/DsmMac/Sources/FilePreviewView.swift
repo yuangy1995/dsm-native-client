@@ -1208,14 +1208,27 @@ struct FittedImagePreview: View {
                         height: min(maxPanY, max(-maxPanY, panOffset.height + value.translation.height))
                     )
                 })
-            .onChange(of: zoom) { _, _ in panOffset = .zero }
             .onChange(of: geometry.size) { _, _ in panOffset = .zero }
             .background {
-                ImageScrollWheelReader { delta, isPrecise in
+                ImageZoomGestureReader(onScroll: { delta, isPrecise in
                     guard isZoomEnabled else { return }
                     let step = isPrecise ? delta * 0.012 : delta * 0.08
                     updateZoom(zoom + step)
-                }
+                }, onMagnify: { delta in
+                    guard isZoomEnabled else { return }
+                    // AppKit提供逐次缩放增量；手势期间直接跟手，保留已平移的位置。
+                    let nextZoom = min(5, max(0.25, zoom + delta))
+                    let ratio = nextZoom / zoom
+                    let limitX = max(0, (rotatedWidth * fittedScale * nextZoom - geometry.size.width) / 2)
+                    let limitY = max(0, (rotatedHeight * fittedScale * nextZoom - geometry.size.height) / 2)
+                    var transaction = Transaction(animation: nil)
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        panOffset = CGSize(width: min(limitX, max(-limitX, panOffset.width * ratio)),
+                                           height: min(limitY, max(-limitY, panOffset.height * ratio)))
+                        zoom = nextZoom
+                    }
+                })
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -1255,6 +1268,7 @@ struct FittedImagePreview: View {
 
     private func updateZoom(_ value: CGFloat) {
         let newValue = min(5, max(0.25, value))
+        panOffset = .zero
         if reduceMotion {
             zoom = newValue
         } else {
@@ -1265,11 +1279,12 @@ struct FittedImagePreview: View {
     }
 }
 
-private struct ImageScrollWheelReader: NSViewRepresentable {
+struct ImageZoomGestureReader: NSViewRepresentable {
     let onScroll: (CGFloat, Bool) -> Void
+    let onMagnify: (CGFloat) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onScroll: onScroll)
+        Coordinator(onScroll: onScroll, onMagnify: onMagnify)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -1280,6 +1295,7 @@ private struct ImageScrollWheelReader: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.onScroll = onScroll
+        context.coordinator.onMagnify = onMagnify
         context.coordinator.attach(to: nsView)
     }
 
@@ -1290,25 +1306,34 @@ private struct ImageScrollWheelReader: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         var onScroll: (CGFloat, Bool) -> Void
+        var onMagnify: (CGFloat) -> Void
         private weak var hostView: NSView?
         private var monitor: Any?
 
-        init(onScroll: @escaping (CGFloat, Bool) -> Void) {
+        init(onScroll: @escaping (CGFloat, Bool) -> Void, onMagnify: @escaping (CGFloat) -> Void) {
             self.onScroll = onScroll
+            self.onMagnify = onMagnify
         }
 
         func attach(to view: NSView) {
             hostView = view
             guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { @MainActor [weak self] event in
-                guard let self,
-                      event.window === self.hostView?.window,
-                      let hostView = self.hostView else { return event }
-                let point = hostView.convert(event.locationInWindow, from: nil)
-                guard hostView.bounds.contains(point) else { return event }
-                self.onScroll(event.scrollingDeltaY, event.hasPreciseScrollingDeltas)
-                return nil
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { @MainActor [weak self] event in
+                guard let self else { return event }
+                return self.handle(event)
             }
+        }
+
+        func handle(_ event: NSEvent) -> NSEvent? {
+            guard let hostView, let window = hostView.window, event.window === window else { return event }
+            let point = hostView.convert(event.locationInWindow, from: nil)
+            guard hostView.bounds.contains(point) else { return event }
+            switch event.type {
+            case .magnify: onMagnify(event.magnification)
+            case .scrollWheel: onScroll(event.scrollingDeltaY, event.hasPreciseScrollingDeltas)
+            default: return event
+            }
+            return nil
         }
 
         func detach() {
@@ -1340,7 +1365,7 @@ private struct PDFDocumentView: NSViewRepresentable {
 
 struct VideoPlayerView: View {
     let source: MediaStreamSource
-    let onDownload: () -> Void
+    let onDownload: (() -> Void)?
     @State private var player: AVPlayer?
     @State private var resourceLoaderDelegate: DsmAVAssetResourceLoaderDelegate?
     @State private var playbackGeneration = UUID()
@@ -1402,8 +1427,10 @@ struct VideoPlayerView: View {
                     Button(L10n.string("ui.b8784c8dd5636ff2")) {
                         setupPlayer()
                     }
-                        Button(L10n.string("ui.d683d1f7d649b079"), action: onDownload)
-                            .buttonStyle(.borderedProminent)
+                        if let onDownload {
+                            Button(L10n.string("ui.d683d1f7d649b079"), action: onDownload)
+                                .buttonStyle(.borderedProminent)
+                        }
                     }
                 }
                 .padding(24)

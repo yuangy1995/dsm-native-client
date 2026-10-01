@@ -4206,7 +4206,7 @@
 "photos.manage.completed" = "操作已完成。";
 "photos.manage.partial" = "部分项目未能完成。请检查目标位置后再操作。";
 "photos.manage.savedCount" = "已保存 %lld 个原件。";
-"photos.manage.savePartial" = "已保存 %lld / %lld 个原件。其余项目未保存，请检查目标文件夹。";
+"photos.manage.savePartial" = "已保存 %lld / %lld 个文件。请检查连接和目标文件夹后重试。";
 "photos.manage.upload" = "上传照片";
 "photos.manage.createAlbum" = "创建相册";
 "photos.manage.download" = "下载原件";
@@ -4220,8 +4220,8 @@
 "photos.manage.removeAlbum" = "从相册移除";
 "photos.manage.renameAlbum" = "重命名相册";
 "photos.manage.deleteAlbum" = "删除相册";
-"photos.manage.move" = "移动照片";
-"photos.manage.copy" = "复制照片";
+"photos.manage.move" = "移动到文件夹";
+"photos.manage.copy" = "复制到文件夹";
 "photos.manage.sharing" = "管理分享";
 "photos.manage.unrated" = "未评级";
 "photos.manage.dateHint" = "所选照片将使用同一个拍摄日期和时间。";
@@ -4236,7 +4236,7 @@
 "photos.manage.link.disabled" = "关闭分享";
 "photos.manage.link.view" = "获得链接的人可查看";
 "photos.manage.link.download" = "获得链接的人可查看和下载";
-"photos.manage.shareHint" = "这会允许获得链接的人访问相册。请确认相册内容适合分享。已有密码和有效期保持原设置。";
+"photos.manage.shareHint" = "这会允许获得链接的人访问相册。请确认相册内容适合分享。";
 
 "photos.manage.cover" = "设为相册封面";
 "photos.manage.coverHint" = "将这张照片设为当前相册的封面。";
@@ -4280,7 +4280,7 @@
 "photos.upload.noMedia" = "没有可上传的照片或视频，请重新选择文件或包含照片、视频的文件夹。";
 
 "photos.upload.preserveDirectories" = "保留文件夹层级";
-"photos.upload.preserveHint" = "同名文件夹合并使用，同名文件另行保存。";
+"photos.upload.preserveHint" = "同名文件夹合并使用。";
 "photos.upload.state.preparingFolders" = "正在准备文件夹";
 
 // 条件相册
@@ -4357,3 +4357,556 @@
 "photos.people.noOthers" = "没有其他可合并的人物";
 "photos.people.noOthersHint" = "识别出更多人物后，即可选择并合并。";
 "photos.people.photoCount" = "照片：%lld";
+
+"photos.sharing.expiration" = "有效期";
+"photos.sharing.expirationKeep" = "保持当前设置";
+"photos.sharing.expirationUnlimited" = "不限日期";
+"photos.sharing.expirationDate" = "到期日期";
+"photos.sharing.expirationPast" = "该日期已过期，请选择今天或之后的日期。";
+
+"photos.sharing.password" = "密码保护";
+"photos.sharing.passwordKeep" = "保留当前设置";
+"photos.sharing.passwordSet" = "设置新密码";
+"photos.sharing.passwordRemove" = "取消密码保护";
+"photos.sharing.passwordPlaceholder" = "输入新密码";
+
+"photos.request.create" = "创建收集请求";
+"photos.request.edit" = "编辑收集请求";
+"photos.request.delete" = "删除收集请求";
+"photos.request.subject" = "标题";
+"photos.request.description" = "说明";
+"photos.request.lengthLimit" = "标题最多 50 个字符，说明最多 100 个字符。";
+"photos.request.defaultFolder" = "使用默认收集文件夹";
+"photos.request.defaultSubject" = "%@的照片收集";
+"photos.request.search" = "搜索照片收集";
+"photos.request.noResults" = "没有找到匹配的照片收集，请换个关键词。";
+"photos.request.clearSearch" = "清除搜索";
+"photos.request.chooseFolder" = "选择保存文件夹";
+"photos.request.useFolder" = "保存到当前文件夹";
+"photos.request.invalidFolder" = "原文件夹已不可用，请重新选择保存位置。";
+"photos.request.album" = "同时添加到相册";
+"photos.request.noAlbum" = "不添加到相册";
+"photos.request.privateAlbumHint" = "此相册未共享，提交照片的人无法查看相册。";
+"photos.request.limitSize" = "限制单个文件大小";
+"photos.request.sizeMiB" = "大小（MiB）";
+"photos.request.sizeRange" = "MiB（1–3000）";
+"photos.request.createHint" = "拥有收集链接的人可以向所选位置提交照片和视频。";
+"photos.request.deleteConfirm" = "删除后，此收集链接将无法继续使用。确认删除此请求？";
+"photos.request.changed" = "收集请求已发生变化，请重新打开后再修改。";
+"photos.request.folderReadFailed" = "无法读取文件夹，请重试或检查照片访问权限。";
+"photos.request.albumReadFailed" = "无法读取可选相册，请重试。";
+
+"photos.people.removeFaces" = "移出此人物";
+"photos.people.reassignFaces" = "归入其他人物";
+"photos.people.cover" = "设为人物封面";
+"photos.people.facesHint" = "选择要移出或重新归类的人脸，原照片会保留。";
+"photos.people.destination" = "归入";
+"photos.people.newPerson" = "新人物";
+"photos.people.noFaces" = "没有匹配的人脸";
+"photos.people.noFacesHint" = "所选照片中未找到属于此人物的人脸，请关闭窗口后选择其他照片。";
+"photos.people.faceCount" = "已选择 %lld 张人脸";
+"photos.people.coverHint" = "将所选照片设为此人物的封面。";
+
+"photos.people.visibility" = "管理人物显示";
+"photos.people.applyVisibility" = "应用";
+"photos.people.visibilityAction" = "显示方式";
+"photos.people.show" = "显示人物";
+"photos.people.hide" = "隐藏人物";
+"photos.people.search" = "搜索人物";
+"photos.people.visibilityHint" = "隐藏人物不会删除照片。每次最多修改 100 个人物。";
+"photos.people.visibilityEmpty" = "没有匹配的人物";
+"photos.people.visibilityEmptyHint" = "识别到的人物会显示在这里，稍后可重试。";
+"photos.people.searchEmptyHint" = "试试其他名字，或清空搜索。";
+"photos.people.visible" = "已显示";
+"photos.people.hidden" = "已隐藏";
+"photos.people.visibilityCount" = "已选择 %lld 个人物";
+
+"photos.faces.edit" = "编辑人脸";
+"photos.faces.add" = "添加人脸框";
+"photos.faces.drawHint" = "在照片上拖动画出人脸框。";
+"photos.faces.editHint" = "选择人脸，拖动框或右下角可调整位置和大小。";
+"photos.faces.keepPhotos" = "移除人脸标记不会删除原照片。";
+"photos.faces.save" = "保存修改";
+"photos.faces.canvas" = "人脸编辑区域";
+"photos.faces.resize" = "调整人脸框大小";
+"photos.faces.emptyHint" = "点击添加人脸框，或在下方添加居中的框。";
+"photos.faces.undoRemove" = "撤销移除";
+"photos.faces.horizontal" = "水平位置";
+"photos.faces.vertical" = "垂直位置";
+"photos.faces.remove" = "移除人脸标记";
+"photos.faces.addCentered" = "添加居中人脸框";
+"photos.faces.failed" = "暂时无法编辑人脸。请检查连接后重试。";
+"photos.faces.size" = "人脸框大小";
+
+"photos.preview.rebuild" = "重新生成预览";
+"photos.preview.rebuildHint" = "重新生成所选照片和视频的预览，原始文件会保留。";
+"photos.preview.rebuilding" = "正在更新预览…";
+
+"photos.request.selectFolderHint" = "请选择可以上传照片的文件夹。";
+
+"photos.categories.sharedFolders" = "请在文件夹中浏览你有权查看的共享照片。";
+
+"photos.condition.source" = "照片来源";
+
+"photos.transfer.destination" = "目标空间";
+
+"photos.manage.albumRefreshFailed" = "操作已完成，暂时无法更新相册。请重试。";
+"photos.preview.recovery.title" = "未完成的预览";
+"photos.preview.recovery.empty" = "没有未完成的预览";
+"photos.preview.recovery.emptyHint" = "可以关闭此窗口，或刷新后再次查看。";
+"photos.preview.recovery.confirm" = "继续为所选照片重建预览，原始照片会保留。";
+"photos.preview.recovery.limit" = "每次最多选择 100 张照片。";
+"photos.preview.recovery.resume" = "继续重建";
+"photos.preview.recovery.failed" = "无法读取未完成的预览。请检查连接后重试。";
+"photos.preview.recovery.clear" = "清除选择";
+
+"photos.category.similar" = "相似照片";
+"photos.similar.loading" = "正在加载相似照片…";
+"photos.similar.failed" = "无法加载这组照片，请重试。";
+"photos.similar.count" = "%lld 张相似照片";
+"photos.similar.topPick" = "推荐照片";
+"photos.similar.empty" = "还没有相似照片，可以刷新后再查看。";
+
+"photos.similar.manage" = "管理相似照片";
+"photos.similar.setTopPick" = "设为推荐照片";
+"photos.similar.remove" = "将所选照片移出分组";
+"photos.similar.ungroup" = "拆分这组照片";
+"photos.similar.undo" = "撤销分组更改";
+"photos.similar.confirm" = "确认更改";
+"photos.similar.topPickConfirm" = "将当前照片设为这组的推荐照片？";
+"photos.similar.ungroupConfirm" = "拆分这组相似照片？所有原照片都会保留，可以撤销此次分组更改。";
+"photos.similar.removeConfirm" = "将所选的 %lld 张照片移出这组？原照片会保留，可以撤销此次分组更改。";
+
+"photos.similar.processing" = "正在分析 %lld 张照片…";
+"photos.similar.scheduled" = "等待处理相似照片";
+
+"photos.similar.keepSelected" = "保留所选，删除其他";
+"photos.similar.cleanupConfirm" = "保留所选的 %lld 张照片，并从 NAS 删除同组的其余 %lld 张照片？删除的原件也会从所属相册中移除，能否恢复取决于 NAS 设置。";
+"photos.similar.refreshFailed" = "无法刷新相似照片分组，请重试刷新。";
+"photos.similar.changed" = "这组照片已发生变化，请刷新分组后重新选择。";
+
+"photos.similar.ungroupSelected" = "拆分所选分组";
+"photos.similar.ungroupSelectedConfirm" = "拆分所选的 %lld 组相似照片？所有原照片都会保留，可以撤销已完成的分组更改。";
+"photos.similar.continueGroups" = "继续处理剩余分组";
+"photos.similar.cancelRemaining" = "取消剩余分组";
+
+"photos.download.original" = "原始文件";
+"photos.download.jpeg" = "压缩版 JPEG";
+"photos.download.savedWithOriginals" = "已保存 %lld 项，其中 %lld 项保留原格式。";
+
+"photos.download.album" = "下载整个相册";
+"photos.download.folder" = "下载整个文件夹";
+"photos.download.selection" = "下载所选项目";
+"photos.download.defaultName" = "照片";
+"photos.download.archiveJPEGHint" = "无法转换的项目会保留原格式。";
+"photos.download.cancel" = "取消下载";
+
+"photos.slideshow.start" = "幻灯片播放";
+"photos.slideshow.pause" = "暂停播放";
+"photos.slideshow.play" = "继续播放";
+"photos.slideshow.stop" = "退出幻灯片";
+"photos.slideshow.failed" = "播放已停止。请尝试继续播放，或切换到其他照片。";
+
+"photos.download.originalSizeJPEG" = "原尺寸 JPEG";
+
+"photos.folderCover.set" = "设为文件夹封面";
+
+"photos.folderCover.change" = "更改文件夹封面";
+
+"photos.folderCover.back" = "返回上级文件夹";
+
+"photos.folderCover.empty" = "此文件夹中没有照片";
+
+"photos.folderCover.emptyHint" = "请选择其他文件夹，或先在此处添加照片。";
+
+"photos.folderCover.hint" = "选择一张照片作为文件夹封面。";
+
+"photos.folderCover.more" = "加载更多照片";
+
+"photos.folderCover.failed" = "暂时无法读取照片，请检查连接后重试。";
+
+"photos.folderSort.title" = "排序";
+
+"photos.folderSort.filename" = "名称";
+
+"photos.folderSort.filesize" = "大小";
+
+"photos.folderSort.item_type" = "类型";
+
+"photos.folderSort.takentime" = "拍摄时间";
+
+"photos.folder.rename" = "重命名文件夹";
+
+"photos.folder.name" = "文件夹名称";
+
+"photos.folder.invalidName" = "名称不超过255个字符，不能以点开头或结尾，也不能包含斜杠、冒号或使用系统保留名称。";
+
+"photos.folder.deleteTitle" = "删除所选项目";
+
+"photos.folder.deleteConfirm" = "要从 NAS 删除 %d 个文件夹和 %d 张照片或视频吗？文件夹内的全部内容也会删除，并从相册中移除。能否恢复取决于 NAS 的设置。";
+
+"photos.folder.selectLoaded" = "选择已加载项目";
+
+"photos.folderSharing.title" = "文件夹权限";
+"photos.folderSharing.management" = "仅限拥有完整访问权限的用户";
+"photos.folderSharing.parentRestricted" = "父文件夹仅允许拥有完整访问权限的用户访问。请先修改父文件夹权限，再分享此文件夹。";
+"photos.folderSharing.protected" = "已开启";
+"photos.folderSharing.unprotected" = "未开启";
+"photos.folderSharing.unknown" = "未能读取";
+"photos.folderSharing.role.manage" = "管理";
+"photos.folderSharing.readFailed" = "无法读取文件夹权限。请检查连接后重试。";
+"photos.folderSharing.apply" = "应用到所有子文件夹";
+"photos.folderSharing.save" = "保存权限";
+"photos.folderSharing.confirmTitle" = "保存文件夹权限？";
+"photos.folderSharing.confirm" = "要更改“%@”的访问权限吗？成员可能获得或失去访问权，修改密码保护也会影响分享链接。";
+"photos.folderSharing.confirmChildren" = "要更改“%@”及其所有子文件夹的访问权限吗？子文件夹现有权限会被替换，成员可能获得或失去访问权。";
+"photos.folderSharing.partial" = "文件夹权限已保存，但未能保存子文件夹选项。请重新打开文件夹权限检查。";
+
+"photos.duplicates.title" = "重复项处理";
+
+"photos.duplicates.upload" = "上传重复照片时";
+
+"photos.duplicates.transfer" = "移动或复制同名项目时";
+
+"photos.duplicates.ignore" = "忽略重复照片";
+
+"photos.duplicates.rename" = "重命名并保留两份";
+
+"photos.duplicates.skip" = "跳过同名项目";
+
+"photos.duplicates.overwrite" = "覆盖已有项目";
+
+"photos.duplicates.overwriteTitle" = "覆盖已有项目？";
+
+"photos.duplicates.overwriteWarning" = "目标中同名的项目将被替换。请确认这些项目不再需要。";
+
+"photos.duplicates.defaultOverwriteWarning" = "以后移动或复制时将默认覆盖目标中的同名项目。每次操作仍可更改此选项。";
+
+"photos.duplicates.save" = "保存设置";
+
+"photos.upload.state.skipped" = "已忽略重复照片";
+
+"photos.duplicates.overwriteConfirm" = "覆盖并继续";
+
+"photos.albumList.all_album" = "全部相册";
+"photos.albumList.my_album" = "我的相册";
+"photos.albumList.album_name" = "相册名称";
+"photos.albumList.album_type" = "相册类型";
+"photos.albumList.start_time" = "最早拍摄时间";
+"photos.albumList.create_time" = "创建时间";
+"photos.albumList.share_status" = "分享状态";
+"photos.albumList.share_modify_time" = "分享更新时间";
+"photos.albumList.readFailed" = "暂时无法读取相册显示设置，请刷新重试。";
+
+"photos.media.rotate" = "向左旋转并保存";
+
+"photos.concepts.visibility" = "显示或隐藏主题";
+"photos.concepts.search" = "搜索主题";
+"photos.concepts.visibilityHint" = "隐藏主题不会删除照片。";
+"photos.concepts.visibilityEmpty" = "没有找到主题";
+"photos.concepts.visibilityEmptyHint" = "请尝试其他关键词，或等待照片识别完成。";
+"photos.concepts.visibilityCount" = "已选择 %lld 个主题";
+"photos.concepts.show" = "显示主题";
+"photos.concepts.hide" = "隐藏主题";
+"photos.concepts.cover" = "设为主题封面";
+"photos.concepts.remove" = "移出此主题";
+"photos.concepts.coverHint" = "将这张照片设为主题封面。";
+"photos.concepts.removeHint" = "只从当前主题移出所选照片，图库中的原件会保留。";
+"photos.concepts.belowThreshold" = "剩余照片较少，此主题将不再显示。照片仍保留在图库中。";
+
+"photos.settings.title" = "照片设置";
+"photos.display.title" = "照片显示设置";
+"photos.display.grouping" = "时间线分组";
+"photos.display.day" = "按日";
+"photos.display.month" = "按月";
+"photos.display.date" = "日期格式";
+"photos.display.time" = "时间格式";
+"photos.display.clock12" = "12 小时制";
+"photos.display.clock24" = "24 小时制";
+"photos.display.sort" = "默认照片排序";
+"photos.display.sortHint" = "用于尚未单独设置排序的文件夹。";
+"photos.display.previewInfo" = "在预览和幻灯片中显示照片信息";
+"photos.selection.month" = "选择本月已加载的照片";
+
+"photos.recognition.title" = "个人照片识别";
+"photos.recognition.enable_person" = "识别人物";
+"photos.recognition.enable_concept" = "识别主题";
+"photos.recognition.enable_similar" = "识别相似照片";
+"photos.recognition.homeRequired" = "请先在 NAS 中开启个人照片空间。";
+"photos.recognition.adminRequired" = "请联系管理员开启此项识别。";
+"photos.recognition.empty" = "暂无可用的识别设置";
+"photos.recognition.emptyHint" = "请在 NAS 的照片设置中检查识别功能是否可用。";
+
+"photos.automatic.title" = "自动生成预览";
+"photos.automatic.enabled" = "自动补齐照片和视频预览";
+"photos.automatic.description" = "浏览照片时，由这台 Mac 补齐缺少的预览。原件保持不变。";
+"photos.automatic.unsupported" = "这台 Mac 目前没有可用的预览转换器。此设置仍可用于其他受支持的设备。";
+"photos.automatic.processing" = "正在生成预览：%@";
+"photos.automatic.reviewing" = "正在确认预览结果…";
+"photos.automatic.completed" = "已生成 %d 项预览";
+"photos.automatic.paused" = "预览生成已暂停";
+"photos.automatic.pause" = "暂停";
+"photos.automatic.resume" = "继续";
+"photos.automatic.failed" = "有预览未能完成，可点继续重试。";
+"photos.sharedSettings.title" = "共享空间设置";
+"photos.sharedSettings.status" = "共享空间";
+"photos.sharedSettings.on" = "已启用";
+"photos.sharedSettings.off" = "已停用";
+"photos.sharedSettings.enable" = "启用共享空间";
+"photos.sharedSettings.disable" = "停用共享空间";
+"photos.sharedSettings.lastSpace" = "请先启用个人空间，再停用共享空间。";
+"photos.sharedSettings.folderDisabled" = "共享照片文件夹已停用。如启用失败，请先在 DSM 中恢复文件夹。";
+"photos.sharedSettings.preferences" = "共享照片设置";
+"photos.sharedSettings.person" = "识别共享照片中的人物";
+"photos.sharedSettings.concept" = "识别共享照片的主题";
+"photos.sharedSettings.similar" = "识别共享空间的相似照片";
+"photos.sharedSettings.publicRoot" = "允许公开分享顶层文件夹";
+"photos.sharedSettings.empty" = "当前 NAS 未提供可修改的共享照片设置。";
+"photos.sharedSettings.confirmTitle" = "确认修改共享空间";
+"photos.sharedSettings.enableConfirm" = "启用后，有访问权限的用户可以使用共享空间。现在启用？";
+"photos.sharedSettings.disableConfirm" = "停用后，用户将无法浏览共享空间，其中的分享也可能无法访问。此操作只停用空间，不删除照片，也不会保存本表单中其他尚未保存的修改。继续？";
+"photos.sharedSettings.publicConfirm" = "允许后，具有相应权限的用户可以公开分享顶层文件夹。确认保存？";
+"photos.sharedSettings.privateConfirm" = "关闭后，顶层文件夹的公开分享将受到限制。确认保存？";
+"photos.sharedSettings.globalRequired" = "请先在全局设置中启用相应的照片识别功能。";
+
+/* 照片全局设置与转换缓存 */
+"photos.global.title" = "全局设置";
+"photos.global.recognition" = "识别功能";
+"photos.global.sharing" = "分享";
+"photos.global.userSharing" = "允许普通用户分享照片";
+"photos.global.guestInfo" = "允许访客查看照片信息";
+"photos.global.originalJPEG" = "允许下载原尺寸 JPEG";
+"photos.global.excluded" = "不显示的文件格式";
+"photos.global.conversion" = "JPEG 转换与缓存";
+"photos.global.cache" = "转换缓存";
+"photos.global.codecRequired" = "请先在 NAS 中启用 HEVC 支持，然后重新打开此设置。";
+"photos.global.clearCache" = "清理转换缓存";
+"photos.global.clearing" = "正在清理缓存…";
+"photos.global.cacheFailed" = "无法读取缓存大小，请点刷新重试。";
+"photos.global.empty" = "当前 NAS 未提供可修改的全局设置。请在网页端查看。";
+"photos.global.confirmTitle" = "确认修改全局设置";
+"photos.global.saveConfirm" = "这些设置会影响此 NAS 的照片功能。";
+"photos.global.recognitionConfirm" = "关闭的识别功能也会在个人和共享空间中关闭。";
+"photos.global.sharingConfirm" = "关闭后，普通用户将无法使用照片分享功能。";
+"photos.global.guestConfirm" = "访客将可以查看已分享照片的详细信息。";
+"photos.global.excludedConfirm" = "被排除格式的照片和视频将不再显示，原文件仍会保留。";
+"photos.global.clearConfirm" = "转换缓存将被清理，原照片和视频不会删除。以后下载 JPEG 时可能需要重新转换。";
+"photos.global.pending" = "正在核对设置和缓存处理结果，将自动更新。";
+"photos.global.partial" = "部分设置已保存。请重新打开全局设置查看当前状态并完成剩余修改。";
+"photos.global.person" = "启用人物识别";
+"photos.global.concept" = "启用主题识别";
+"photos.global.similar" = "启用相似照片识别";
+
+"photos.members.title" = "共享成员管理";
+"photos.members.pending" = "正在确认成员和文件夹权限的保存结果，会自动更新。";
+"photos.members.partial" = "部分权限已保存。请重新打开共享成员管理查看当前权限后继续。";
+"photos.members.refreshFailed" = "权限已更新，但照片暂时无法加载。请刷新后重试。";
+"photos.members.disabled" = "共享空间尚未启用";
+"photos.members.enableFirst" = "请先在共享空间设置中启用共享空间。";
+"photos.members.search" = "搜索成员";
+"photos.members.add" = "添加成员";
+"photos.members.backup" = "自动备份";
+"photos.members.backupAll" = "允许所有可编辑成员自动备份";
+"photos.members.backupNone" = "关闭所有可编辑成员自动备份";
+"photos.members.empty" = "尚无共享成员";
+"photos.members.emptyHint" = "添加成员以设置共享空间访问权限。";
+"photos.members.noMatches" = "没有匹配结果";
+"photos.members.searchHint" = "请尝试其他关键词或清空搜索。";
+"photos.members.candidateHint" = "请调整搜索；已添加的成员不会重复显示。";
+"photos.members.group" = "用户组";
+"photos.members.user" = "用户";
+"photos.members.protected" = "系统管理员组";
+"photos.members.unknownRole" = "暂不支持编辑此权限";
+"photos.members.role" = "角色";
+"photos.members.role.entry" = "自定义权限";
+"photos.members.role.management" = "管理权限";
+"photos.members.folders" = "文件夹权限";
+"photos.members.remove" = "移除成员";
+"photos.members.confirmTitle" = "保存共享权限？";
+"photos.members.confirmMessage" = "更改将影响成员查看、上传和管理共享照片的权限。移除成员或撤销文件夹查看权限也可能取消其子文件夹访问；自动备份关闭后，该成员将无法自动备份到共享空间。";
+"photos.members.loadFailed" = "无法加载共享成员。请检查连接后重试。";
+"photos.members.folderLoadFailed" = "无法加载文件夹权限。请检查连接后重试。";
+"photos.members.done" = "完成";
+"photos.members.folderSearch" = "搜索文件夹";
+"photos.members.grantAll" = "全部授予";
+"photos.members.revokeAll" = "全部撤销此权限及更高权限";
+"photos.members.allFolders" = "所有文件夹";
+"photos.members.noFolders" = "没有可设置的文件夹";
+"photos.members.noFoldersHint" = "可以先添加成员，创建共享文件夹后再分配权限。";
+"photos.members.publicMinimum" = "公开访问：%@";
+"photos.members.folderRole" = "文件夹权限";
+"photos.members.noDirectGrant" = "不单独授权";
+"photos.members.expand" = "展开子文件夹";
+"photos.members.collapse" = "收起子文件夹";
+"photos.members.folderRole.view" = "查看";
+"photos.members.folderRole.download" = "下载";
+"photos.members.folderRole.upload" = "上传";
+"photos.members.folderRole.manage" = "管理";
+
+"photos.display.sortConfirmTitle" = "更改默认排序？";
+"photos.display.sortConfirmMessage" = "默认排序将改为“%@ · %@”。是否保存？";
+
+"photos.maintenance.title" = "照片库维护";
+"photos.maintenance.personal" = "个人空间";
+"photos.maintenance.shared" = "共享空间";
+"photos.maintenance.reindex" = "重新索引";
+"photos.maintenance.previews" = "补生成异常预览";
+"photos.maintenance.reindexDescription" = "重新检查照片库，更新未显示或信息不完整的照片。";
+"photos.maintenance.previewsDescription" = "补生成因格式支持变化而缺失的照片和视频预览。";
+"photos.maintenance.previewUnavailable" = "NAS 当前不支持此预览生成功能。";
+"photos.maintenance.running" = "正在处理";
+"photos.maintenance.start" = "开始";
+"photos.maintenance.confirmTitle" = "开始照片库维护？";
+"photos.maintenance.confirmReindex" = "将重新索引“%@”中的照片。照片较多时可能需要一段时间。";
+"photos.maintenance.confirmPreviews" = "将补生成“%@”中缺失的预览。照片较多时可能需要一段时间。";
+"photos.maintenance.readFailed" = "无法读取照片库维护状态，请检查连接后重试。";
+"photos.maintenance.pending" = "正在核对照片库维护状态，连接恢复后会自动继续。";
+
+"photos.selection.reviewContinuing" = "正在核对删除结果，连接恢复后会自动继续。";
+
+"photos.codec.title" = "新格式支持";
+
+"photos.codec.allUsers" = "新的格式支持已就绪。要为所有用户补生成缺失的预览吗？原照片会保留，处理可能需要一段时间。";
+
+"photos.codec.personal" = "新的格式支持已就绪。要为个人空间补生成缺失的预览吗？原照片会保留，处理可能需要一段时间。";
+
+"photos.codec.generate" = "生成预览";
+
+"photos.codec.later" = "稍后";
+
+"photos.codec.dismiss" = "关闭提示";
+
+"photos.codec.none" = "暂无新的格式支持提示。";
+
+"photos.codec.unavailable" = "个人空间尚未开启，开启后可生成预览。";
+
+"photos.codec.submitted" = "已开始生成预览，你可以继续浏览照片。";
+
+"photos.codec.partial" = "已开始生成预览，但提示状态未保存。继续操作只会保存提示状态，不会重新生成。";
+
+"photos.codec.pending" = "正在核对请求是否已接收，连接恢复后会自动继续。";
+
+"photos.codec.readFailed" = "无法读取格式支持提示，请检查连接后重试。";
+
+"photos.automatic.failureRecorded" = "“%@”的预览生成失败。可选中照片并选择“重建预览”重试。";
+
+"photos.selectionShare.title" = "创建共享链接";
+"photos.selectionShare.configure" = "创建并设置分享";
+"photos.selectionShare.hint" = "为所选照片创建临时分享，再调整访问范围。取消会停止分享并移除临时相册，原照片保留。";
+"photos.selectionShare.preparing" = "正在准备相册，会自动确认结果。";
+"photos.selectionShare.unavailable" = "暂时无法为这些照片创建分享。请检查连接和权限后重试。";
+
+"photos.folder.create" = "新建文件夹";
+"photos.folder.creating" = "正在创建文件夹，结果会自动更新。";
+"photos.folder.createdRefreshFailed" = "文件夹已创建，但列表更新失败。请刷新查看。";
+
+"photos.temporary.stopping" = "正在停止分享…";
+"photos.temporary.reviewing" = "分享结果会自动更新。";
+"photos.temporary.retryHint" = "分享操作尚未完成。请重试以继续未完成的步骤。";
+"photos.temporary.stopped" = "已停止分享，原照片已保留。";
+"photos.temporary.kept" = "已停止分享，并已保存为普通相册。";
+"photos.temporary.stopTitle" = "停止这个临时分享？";
+"photos.temporary.stop" = "停止分享";
+"photos.temporary.keep" = "停止并保存为相册";
+"photos.temporary.stopHint" = "临时相册将被移除，你也可以保留一份普通相册。原照片不会被删除。";
+"photos.temporary.copyChanged" = "相册内容已变化，已保留两份相册。请核对内容后重试。";
+"photos.temporary.keepExisting" = "保留现有相册";
+"photos.temporary.cleanupCancelled" = "已取消后续清理，现有相册已保留。";
+"photos.thumbnail.size" = "缩略图大小";
+"photos.thumbnail.smaller" = "缩小缩略图";
+"photos.thumbnail.larger" = "放大缩略图";
+"photos.thumbnail.level" = "第 %ld 档，共 5 档";
+"photos.sharing.savedRefreshFailed" = "暂时无法刷新分享列表。请刷新列表查看最新结果。";
+"photos.sharing.listUpdated" = "分享列表已更新。";
+
+"photos.upload.openFolder" = "打开所在位置";
+
+"photos.upload.openAlbum" = "前往相册";
+
+"photos.upload.cancelQueued" = "取消上传";
+
+"photos.upload.clearEntry" = "移除记录";
+
+"photos.upload.openFailed" = "暂时无法打开上传位置。请检查连接和访问权限后重试。";
+
+/* NAS 后台任务 */
+"photos.tasks.title" = "后台任务";
+"photos.tasks.filter" = "任务范围";
+"photos.tasks.all" = "全部";
+"photos.tasks.active" = "进行中";
+"photos.tasks.finished" = "已结束";
+"photos.tasks.loadFailed" = "无法载入任务";
+"photos.tasks.loadFailedHint" = "无法取得最新任务。请检查连接后刷新。";
+"photos.tasks.empty" = "暂无后台任务";
+"photos.tasks.emptyHint" = "开始复制或移动照片后，可在这里查看进度。";
+"photos.tasks.filterEmpty" = "没有符合条件的任务";
+"photos.tasks.filterEmptyHint" = "选择“全部”查看其他任务。";
+"photos.tasks.clearCompleted" = "清理已结束任务";
+"photos.tasks.checkResult" = "核对结果";
+"photos.tasks.cancelTitle" = "取消此任务？";
+"photos.tasks.clearTitle" = "清理所选任务记录？";
+"photos.tasks.cancel" = "取消任务";
+"photos.tasks.clear" = "清理记录";
+"photos.tasks.cancelHint" = "已完成的复制或移动会保留，其余部分将停止。";
+"photos.tasks.clearHint" = "仅清理已选择的任务记录，不会删除照片或文件夹。";
+"photos.tasks.copy" = "复制照片";
+"photos.tasks.move" = "移动照片";
+"photos.tasks.other" = "其他任务";
+"photos.tasks.progress" = "已处理 %d / %d 项";
+"photos.tasks.counts" = "已处理 %d / %d · 失败 %d · 跳过 %d · 替换 %d";
+"photos.tasks.errors" = "错误详情";
+"photos.tasks.waiting" = "等待中";
+"photos.tasks.processing" = "处理中";
+"photos.tasks.aborting" = "正在取消";
+"photos.tasks.unknown" = "状态暂不可用，请刷新";
+"photos.tasks.cancelled" = "已取消";
+"photos.tasks.failed" = "任务失败";
+"photos.tasks.partial" = "部分完成";
+"photos.tasks.done" = "已完成";
+"photos.tasks.errorsFailedHint" = "无法取得错误详情。任务可能已被清理，请返回刷新任务列表。";
+"photos.tasks.noErrors" = "没有错误记录";
+"photos.tasks.noErrorsHint" = "此任务目前没有可查看的错误详情。";
+"photos.tasks.errorKind.item" = "照片或视频";
+"photos.tasks.errorKind.folder" = "文件夹";
+"photos.tasks.errorKind.unknown" = "项目";
+"photos.tasks.reason.quota_full" = "账户空间不足。请释放空间或联系管理员。";
+"photos.tasks.reason.space_full" = "存储空间不足。请释放空间后重新操作。";
+"photos.tasks.reason.skipped" = "目标位于原文件夹内。请选择其他位置。";
+"photos.tasks.reason.not_existed" = "项目已不存在。请刷新后重新选择。";
+"photos.tasks.reason.target_not_existed" = "目标文件夹已不存在。请选择其他位置。";
+"photos.tasks.reason.excluded_extension" = "此类文件已被排除。请检查照片设置或联系管理员。";
+"photos.tasks.reason.unknown" = "此项目未能完成。请检查访问权限和可用空间后重试。";
+
+/* 冻结条件相册恢复 */
+"photos.frozen.restore" = "恢复相册";
+"photos.frozen.hint" = "此相册已暂停自动添加符合条件的照片。";
+"photos.frozen.unsupported" = "无法继续使用的旧条件";
+"photos.frozen.separator" = "、";
+"photos.frozen.action" = "恢复方式";
+"photos.frozen.saveOrdinary" = "保存为普通相册";
+"photos.frozen.rebuild" = "重新创建条件相册";
+"photos.frozen.ordinaryHint" = "保留相册中的现有照片。恢复后可以手动添加和移除照片，不再按旧条件自动更新。";
+"photos.frozen.rebuildHint" = "用下方条件创建新相册，确认创建成功后移除旧相册。照片原件不会删除，旧分享链接和成员设置不会转移到新相册。";
+"photos.frozen.partial" = "新相册已创建，但旧相册未能移除。请检查两册内容，再手动移除旧相册。";
+"photos.frozen.recentlyAdded" = "最近添加";
+"photos.frozen.recentlyCommented" = "最近评论";
+"photos.frozen.updated" = "更新时间";
+"photos.frozen.people" = "人物";
+"photos.frozen.location" = "地点";
+"photos.frozen.rating" = "评级";
+"photos.frozen.camera" = "相机";
+"photos.frozen.lens" = "镜头";
+"photos.frozen.flash" = "闪光灯";
+"photos.frozen.other" = "其他旧条件";
+
+// 上传任务跨重启恢复
+"photos.upload.recovery.readFailed" = "无法恢复上次的上传任务。请确认连接的是原来的账号，然后重试。";
+"photos.upload.recovery.saveFailed" = "无法保存上传进度，后续上传已暂停。请检查本机可用空间后重试。";
+"photos.upload.recovery.sourceChanged" = "所选文件与原文件不一致。请选择原来的文件。";
+"photos.upload.recovery.sourceNeeded" = "需要重新选择原文件才能继续上传。";
+"photos.upload.recovery.reselect" = "重新选择文件";
+"photos.upload.recovery.resume" = "继续上传";
+"photos.upload.recovery.clearUnresolved" = "核对后移除记录…";
+"photos.upload.recovery.clearTitle" = "是否已在 NAS 核对结果？";
+"photos.upload.recovery.clearConfirmed" = "已核对，移除记录";
+"photos.upload.recovery.clearMessage" = "请先在 Synology Photos 中查看照片或文件夹是否已经创建。移除记录不会撤销已完成的操作，也不会再次上传；以后重新上传可能产生重复照片。";

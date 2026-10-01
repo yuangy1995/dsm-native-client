@@ -666,7 +666,8 @@ final class WorkspaceModel {
         self.desktopDriveSessionBridge = desktopDriveSessionBridge
         self.allowsVerifiedRestore = repository.allowsVerifiedRestore
         self.allowsRemoteMountManagement = repository.allowsRemoteMountManagement
-        self.photoLibrary = SynologyPhotosModel(repository: photosRepository)
+        self.photoLibrary = SynologyPhotosModel(repository: photosRepository,
+            uploadRecoveryStore: photosRepository is SynologyPhotosRepository ? .forProfile(profile) : nil)
         self.chat = ChatWorkspaceModel(
             repository: chatRepository,
             currentAccountName: profile.usernameHint,
