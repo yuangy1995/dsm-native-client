@@ -291,10 +291,12 @@ private struct FileStationPolicyAccountPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.string("files.settings.selectedAccounts")).font(.title2.bold())
-            Picker(L10n.string("files.principals.user"), selection: $kind) {
+            Picker(L10n.string("files.settings.accountType"), selection: $kind) {
                 Text(L10n.string("files.principals.user")).tag(FileStationPrincipal.Kind.user)
                 Text(L10n.string("files.principals.group")).tag(FileStationPrincipal.Kind.group)
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
             TextField(L10n.string("files.principals.search"), text: $query)
             if loading && rows.isEmpty { ProgressView().fillsAvailableContentArea() }
             else if error != nil { FileSettingsLoadError(error: error) { Task { await load(reset: true) } } }

@@ -68,7 +68,7 @@ extension DsmFileRepository {
         guard data.total >= offset, data.usergrp_settings.count <= limit, offset + data.usergrp_settings.count <= data.total,
               !data.usergrp_settings.isEmpty || offset == data.total else { throw Self.advancedFileError() }
         let items = try data.usergrp_settings.map { row -> FileStationMountAccount in
-            guard let id = kind == .user ? row.uid : row.gid, id >= 0, !row.name.isEmpty else { throw Self.advancedFileError() }
+            guard let id = kind == .user ? row.uid?.value : row.gid?.value, id >= 0, !row.name.isEmpty else { throw Self.advancedFileError() }
             return .init(profileID: profileID, id: .init(kind: kind, value: id), name: row.name, enabled: row.enabled, canModify: row.is_modifiable, source: source)
         }
         guard Set(items.map(\.id)).count == items.count else { throw Self.advancedFileError() }
@@ -222,7 +222,7 @@ extension DsmFileRepository {
     private func fileSettingsParameters(_ change: FileStationSettingsChange) async throws -> (String, [String: DsmParameterValue]) {
         switch change {
         case .general(let old, let new):
-            guard new.remoteMounts != .selected, new.isoMounts != .selected, (0...999_999_999).contains(new.defaultLinkLimit),
+            guard new.bandwidth != .notConfigured, new.remoteMounts != .selected, new.isoMounts != .selected, (0...999_999_999).contains(new.defaultLinkLimit),
                   new.schedule.isEmpty || FileStationWeeklySchedule.isValid(new.schedule, perAccount: false),
                   new.bandwidth != .scheduled || FileStationWeeklySchedule.isValid(new.schedule, perAccount: false) else { throw Self.advancedFileError() }
             var result: [String: DsmParameterValue] = [:]
@@ -264,6 +264,8 @@ extension DsmFileRepository {
                 kind == .user ? "user_settings" : "group_settings": .array([.object([
                     kind == .user ? "uid" : "gid": .integer(baseline.id.value), "enabled": .boolean(enabled)])])])])
         case .bandwidth(let old, let new):
+            // notexist 只表示读取时没有账号配置；未验证将其作为恢复默认的写值。
+            guard new.policy != .notConfigured else { throw Self.advancedFileError() }
             guard old != new, [new.uploadLimit, new.downloadLimit, new.alternateUploadLimit, new.alternateDownloadLimit].allSatisfy({
                 $0 == 0 || (10...999_999_999).contains($0)
             }), new.schedule.isEmpty || FileStationWeeklySchedule.isValid(new.schedule, perAccount: true),
@@ -352,7 +354,20 @@ private struct FileSettingsPayload: Decodable, Sendable {
 }
 private struct FileMountAccessPayload: Decodable, Sendable { let user_enabled_type: FileStationMountAccessScope }
 private struct FileMountAccountPayload: Decodable, Sendable {
-    struct Row: Decodable, Sendable { let name: String; let uid: Int?; let gid: Int?; let enabled: Bool; let is_modifiable: Bool }
+    struct Identifier: Decodable, Sendable {
+        let value: Int
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let number = try? container.decode(Int.self) { value = number; return }
+            // 官方本机名单将 uid/gid 返回为数字字符串；不转换布尔、空值或非数字身份。
+            let text = try container.decode(String.self)
+            guard !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }), let number = Int(text) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid account identifier")
+            }
+            value = number
+        }
+    }
+    struct Row: Decodable, Sendable { let name: String; let uid: Identifier?; let gid: Identifier?; let enabled: Bool; let is_modifiable: Bool }
     let total: Int; let usergrp_settings: [Row]
 }
 private struct FilePolicyAccountsPayload: Decodable, Sendable {

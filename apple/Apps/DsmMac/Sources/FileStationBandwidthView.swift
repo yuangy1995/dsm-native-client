@@ -24,7 +24,7 @@ struct FileStationBandwidthView: View {
                     Text(L10n.string("files.settings.domainGroups")).tag(FileStationBandwidthEntry.OwnerType.domainGroup)
                     Text(L10n.string("files.settings.ldapUsers")).tag(FileStationBandwidthEntry.OwnerType.ldapUser)
                     Text(L10n.string("files.settings.ldapGroups")).tag(FileStationBandwidthEntry.OwnerType.ldapGroup)
-                }
+                }.labelsHidden()
                 TextField(L10n.string("files.principals.search"), text: $query)
                 Button(L10n.string("files.sharing.refresh")) { Task { await load(reset: true) } }.disabled(loading)
             }
@@ -39,7 +39,8 @@ struct FileStationBandwidthView: View {
                     HStack {
                         Text(row.name)
                         Spacer()
-                        Text(row.policy == .disabled ? L10n.string("files.settings.unlimited") : row.policy == .scheduled
+                        Text(row.policy == .notConfigured ? unconfiguredBandwidthTitle(row.ownerType)
+                            : row.policy == .disabled ? L10n.string("files.settings.unlimited") : row.policy == .scheduled
                             ? L10n.string("files.settings.scheduleLimit") : L10n.string("files.settings.alwaysLimit"))
                             .foregroundStyle(.secondary)
                         Button(L10n.string("files.settings.editLimit")) { selected = row }
@@ -68,7 +69,14 @@ struct FileStationBandwidthView: View {
     }
 }
 
-private struct FileStationBandwidthEditor: View {
+private func unconfiguredBandwidthTitle(_ ownerType: FileStationBandwidthEntry.OwnerType) -> String {
+    switch ownerType {
+    case .localUser, .ldapUser, .domainUser: L10n.string("files.settings.groupBandwidth")
+    case .localGroup, .ldapGroup, .domainGroup: L10n.string("files.settings.noBandwidthConfiguration")
+    }
+}
+
+struct FileStationBandwidthEditor: View {
     let model: WorkspaceModel
     let baseline: FileStationBandwidthEntry
     @Environment(\.dismiss) private var dismiss
@@ -83,11 +91,14 @@ private struct FileStationBandwidthEditor: View {
             Text(baseline.name).textSelection(.enabled)
             Form {
                 Picker(L10n.string("files.settings.speedPolicy"), selection: $value.policy) {
+                    if baseline.policy == .notConfigured {
+                        Text(unconfiguredBandwidthTitle(baseline.ownerType)).tag(FileStationBandwidthPolicy.notConfigured)
+                    }
                     Text(L10n.string("files.settings.unlimited")).tag(FileStationBandwidthPolicy.disabled)
                     Text(L10n.string("files.settings.alwaysLimit")).tag(FileStationBandwidthPolicy.enabled)
                     Text(L10n.string("files.settings.scheduleLimit")).tag(FileStationBandwidthPolicy.scheduled)
                 }
-                if value.policy != .disabled {
+                if value.policy == .enabled || value.policy == .scheduled {
                     Text(L10n.string("files.settings.rateUnits")).foregroundStyle(.secondary)
                     TextField(L10n.string("files.settings.uploadLimit"), value: $value.uploadLimit, format: .number.locale(L10n.locale))
                     TextField(L10n.string("files.settings.downloadLimit"), value: $value.downloadLimit, format: .number.locale(L10n.locale))
@@ -99,7 +110,8 @@ private struct FileStationBandwidthEditor: View {
                 }
             }.formStyle(.grouped).disabled(locked)
             if !validRates { Text(L10n.string("files.settings.invalidRate")).foregroundStyle(.red) }
-            FileSettingsCommitControls(model: model, change: !validRates || value == baseline ? nil : .bandwidth(baseline: baseline, updated: value), locked: $locked)
+            FileSettingsCommitControls(model: model, change: !validRates || value == baseline || value.policy == .notConfigured
+                ? nil : .bandwidth(baseline: baseline, updated: value), locked: $locked)
             Button(L10n.string("files.common.close")) { dismiss() }.keyboardShortcut(.cancelAction)
         }.padding(24).frame(width: 760, height: 680)
             .onChange(of: value.policy) { _, policy in
@@ -126,7 +138,9 @@ struct FileStationScheduleEditor: View {
                 Text(L10n.string("files.settings.unlimited")).tag(UInt8(48))
                 Text(L10n.string("files.settings.defaultLimit")).tag(UInt8(49))
                 if perAccount { Text(L10n.string("files.settings.alternateLimit")).tag(UInt8(50)) }
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if FileStationWeeklySchedule.isValid(value, perAccount: perAccount) {
                 ScrollView(.horizontal) {
                     Grid(horizontalSpacing: 2, verticalSpacing: 4) {

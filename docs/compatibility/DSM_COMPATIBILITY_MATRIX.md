@@ -2,6 +2,8 @@
 
 ## File Station 本轮增量的兼容边界
 
+2026-10-02 设置读取修复：在 DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559 的官方页面只读确认 `VFS.User.get` 本机用户/群组编号使用数字字符串。macOS 及共享 Apple 解码兼容整数/数字字符串，保留权限布尔与写保护；限速名单同步支持 `policy=notexist`，用户显示应用群组限速、群组显示未设置限速，拒绝将该读取标记回写；iPhone/iPad 无新增入口，Android/Windows 后续适配遵循同一编号语义。本次未归入既有设备基线，也未验证真实写入，见[类型更正记录](../api/discovery/endpoints/file-station-package-settings.md#2026-10-02-本机账号名单类型更正)。
+
 2026-10-02 Office 后续增量仅在 macOS 接入系统 Quick Look 与本机编辑自动回传，复用现有公开下载、GetInfo、CheckPermission、Upload 和 MD5 能力，没有新增私有接口或已验证的 DSM 写兼容环境。合成测试核对内容变化、版本冲突及未知结果不重放，不能替代真实 NAS/编辑器验证；公开 Upload 不提供条件替换事务，并发检查与写入仍有竞态。详见 [Office 使用与验收说明](../../apple/Apps/DsmMac/README.md)。
 
 公开增量依据 Search v2、Sharing v3、Extract v2、BackgroundTask v3 和 List.list，文件夹上传复用 CreateFolder/Upload。DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559 的官方网页提供全文、具名分享/收集、权限、ISO、VFS、目录来源与主题图片的只读或静态证据；云授权页以完全合成参数验证了 major/minor 最小启动参数。macOS 已接入相关流程，但没有新增真实写兼容环境。按用户追加要求取消精确固件白名单和专用测试开关，仍检查实际 API 版本范围、会话权限、目标确认、重复保护及回读。真实云授权回调及 NAS 副作用不由合成自动化证明，详见 [文件功能说明](../../apple/Apps/DsmMac/README.md)。

@@ -389,7 +389,7 @@
 "shared.5350a51d42c2c339" = "请输入虚拟机名称。";
 "shared.539873656a8d3b33" = "压缩包名称过长，请缩短名称后重试。";
 "shared.53f82a3866fbda42" = "请输入用户名和密码。";
-"shared.5503b9b2eb669c4e" = "NAS 返回的信息无法读取，请确认 DSM 已更新到受支持版本。";
+"shared.5503b9b2eb669c4e" = "暂时无法读取 NAS 的信息。请刷新后重试；若仍失败，请反馈此问题。";
 "shared.55106e700c58cc74" = "无法读取压缩包中的内容，请检查文件是否完整。";
 "shared.555f70678d804174" = "目标会话暂时无法用于转发，请刷新会话列表后重试。";
 "shared.5670981d6f978923" = "目标存储不支持这么大的文件。";
@@ -590,7 +590,7 @@
 "shared.f9112198a60b7d70" = "描述不能超过 1024 个字符。";
 "shared.f9672d024946937d" = "这台 NAS 暂不能校验重复文件。";
 "shared.f975fe7c14e442cf" = "群聊已创建，但部分成员可能还没有加入。请在群晖 Chat 中检查成员列表。";
-"shared.f98d542d79142efa" = "NAS 返回的数据无法读取，请确认 DSM 已更新到受支持版本。";
+"shared.f98d542d79142efa" = "暂时无法读取 NAS 的数据。请刷新后重试；若仍失败，请反馈此问题。";
 "shared.fa24cc9d55caa0ef" = "请一次发送一个附件。当前文件发送完成后，可以继续选择下一个文件。";
 "shared.fac438462e2f0a41" = "当前连接暂不支持重命名，请更新 DSM 后重试。";
 "shared.fad38b1708c3a0f5" = "映像仍在处理中，请稍后刷新查看结果。";
@@ -5160,6 +5160,7 @@
 "files.permissions.confirmOwner" = "我同意更改所有者或所属群组，这可能改变文件的访问权限。";
 "files.permissions.confirmChanges" = "我了解部分账号可能失去访问权限。";
 "files.permissions.loadFailed" = "无法读取权限";
+"files.permissions.readOnly" = "此处只能查看权限。请在 DSM 中管理此位置的权限。";
 "files.permissions.saved" = "权限已保存。";
 "files.permissions.pending" = "部分修改仍在进行或尚未检查。请先重新检查结果，再进行其他修改。";
 "files.permissions.partial-failure" = "部分权限修改失败，已应用的修改仍被保留。请先在 File Station 中检查权限。";
@@ -5254,6 +5255,9 @@
 "files.settings.save" = "保存设置";
 "files.settings.adminAccess" = "管理员自动保留访问权限。";
 "files.settings.accountType" = "账号类型";
+"files.settings.editAccountPermissions" = "修改权限";
+"files.settings.groupBandwidth" = "应用群组限速";
+"files.settings.noBandwidthConfiguration" = "未设置限速";
 "files.settings.localUsers" = "本地账号";
 "files.settings.localGroups" = "本地群组";
 "files.settings.domainUsers" = "域账号";
@@ -5346,7 +5350,7 @@
 
 "files.settings.accountSource" = "账号来源";
 
-"files.settings.source.local" = "NAS 本机账号";
+"files.settings.source.local" = "本机账号";
 
 "files.settings.source.ldap" = "LDAP 账号";
 

@@ -504,6 +504,168 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test账号选择隐藏单一来源并靠左保留多来源与用户群组切换() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for multiple in [false, true] {
+                    for state in ["ready", "empty", "error", "loading", "filtered"] {
+                        let fixture = try WorkspaceViewFixture(count: 0)
+                        await fixture.repository.configureAdvanced(state: state == "filtered" ? "ready" : state)
+                        await fixture.repository.configureMountDirectories(multiple
+                            ? [.init(source: .local, name: ""), .init(source: .ldap, name: "")]
+                            : [.init(source: .local, name: "")])
+                        let host = NSHostingView(rootView: FileStationMountAccountList(model: fixture.model)
+                            .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                            .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                        let window = attach(host, size: .init(width: 620, height: 500))
+                        defer { window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                        window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                        window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                        try await settle(host)
+                        if state == "filtered" {
+                            let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("files.principals.search") })
+                            XCTAssertTrue(window.makeFirstResponder(field))
+                            let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                            editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0))
+                            try await settle(host)
+                        }
+                        let elements = remoteFlowElements(host)
+                        let hasSource = elements.contains { $0.value("accessibilityIdentifier") as? String == "files.settings.accountSource" }
+                        XCTAssertEqual(hasSource, multiple && state != "loading" && state != "error")
+                        let control = try XCTUnwrap(nativeViews(host, of: NSSegmentedControl.self).first { $0.segmentCount == 2 })
+                        let controlFrame = control.convert(control.bounds, to: host)
+                        XCTAssertEqual(controlFrame.minX, 24, accuracy: 8, "用户/群组按钮组应与内容左边缘对齐")
+                        if state == "ready" {
+                            control.selectedSegment = 1; control.sendAction(control.action, to: control.target)
+                            try await settle(host)
+                            let kinds = await fixture.repository.mountAccountKinds
+                            XCTAssertEqual(kinds.last, .group)
+                            let buttons = remoteFlowElements(host).filter { $0.accessibilityRole() == .button }
+                            XCTAssertTrue(buttons.contains { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.settings.editAccountPermissions") })
+                            XCTAssertFalse(buttons.contains { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.sharing.edit") })
+                        }
+                        try snapshot(host, name: "file-account-controls-\(multiple ? "multiple" : "single")-\(state)-\(language.rawValue)-\(scheme)")
+                        await fixture.repository.releaseAdvancedReads(); try await settle(host)
+                        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                    }
+                }
+            }
+        }
+    }
+
+    func test未配置限速正确显示群组继承且打开编辑器不产生保存() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 0)
+                await fixture.repository.configureAdvanced(state: "ready", access: .init(isAdministrator: true, writesEnabled: true))
+                await fixture.repository.configureBandwidth(policy: .notConfigured)
+                defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                let list = NSHostingView(rootView: FileStationBandwidthView(model: fixture.model)
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                let listWindow = attach(list, size: .init(width: 760, height: 550))
+                listWindow.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                listWindow.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                try await settle(list)
+                let labels = remoteFlowElements(list).flatMap { [$0.accessibilityLabel(), $0.accessibilityTitle(), $0.value("accessibilityValue") as? String].compactMap { $0 } }
+                XCTAssertTrue(labels.contains(L10n.string("files.settings.groupBandwidth")))
+                XCTAssertFalse(labels.contains(L10n.string("files.settings.unlimited")))
+                try snapshot(list, name: "file-bandwidth-unconfigured-list-\(language.rawValue)-\(scheme)")
+                listWindow.contentView = nil; listWindow.close()
+                for owner in [FileStationBandwidthEntry.OwnerType.localUser, .localGroup] {
+                    let page = try await fixture.repository.listFileStationBandwidth(ownerType: owner, offset: 0, limit: 100)
+                    let baseline = try XCTUnwrap(page.items.first)
+                    let host = NSHostingView(rootView: FileStationBandwidthEditor(model: fixture.model, baseline: baseline)
+                        .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                        .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: 760, height: 680))
+                    defer { window.contentView = nil; window.close() }
+                    window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    window.makeKeyAndOrderFront(nil); try await settle(host)
+                    let elements = remoteFlowElements(host)
+                    let texts = elements.flatMap { [$0.accessibilityLabel(), $0.accessibilityTitle(), $0.value("accessibilityValue") as? String].compactMap { $0 } }
+                    XCTAssertTrue(texts.contains(L10n.string(owner == .localUser ? "files.settings.groupBandwidth" : "files.settings.noBandwidthConfiguration")))
+                    XCTAssertFalse(texts.contains(L10n.string("files.settings.rateUnits")))
+                    let save = try XCTUnwrap(elements.first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.settings.save") })
+                    XCTAssertEqual(save.value("isAccessibilityEnabled") as? Bool ?? save.value("accessibilityEnabled") as? Bool, false)
+                    try snapshot(host, name: "file-bandwidth-unconfigured-\(owner.rawValue)-\(language.rawValue)-\(scheme)")
+                }
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func test权限读取加载错误空内容和共享根只读双语主题() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "readonly", "empty", "error", "loading"] {
+                    let fixture = try WorkspaceViewFixture(count: 0)
+                    let readOnly = state == "readonly"
+                    await fixture.repository.configureAdvanced(state: readOnly ? "ready" : state,
+                        access: .init(isAdministrator: true, writesEnabled: true), permissionEditable: !readOnly)
+                    let item = FileItem(profileID: fixture.model.profile.id, name: "Synthetic folder",
+                        path: readOnly ? "/synthetic" : "/synthetic/folder", kind: .directory,
+                        mountPointType: readOnly ? "shared_folder" : "normal")
+                    let host = NSHostingView(rootView: FilePermissionEditor(model: fixture.model, item: item)
+                        .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                        .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: 720, height: 680))
+                    defer { window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                    window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                    try await settle(host)
+                    let elements = remoteFlowElements(host)
+                    let labels = elements.compactMap { $0.value("accessibilityValue") as? String ?? $0.accessibilityLabel() ?? $0.accessibilityTitle() }
+                    if readOnly {
+                        XCTAssertTrue(labels.contains(L10n.string("files.permissions.readOnly")))
+                        XCTAssertTrue(labels.contains(L10n.string("files.permissions.owner", "示例账号 Synthetic user")))
+                        let recursive = try XCTUnwrap(elements.first { $0.accessibilityRole() == .checkBox && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.permissions.recursive") })
+                        XCTAssertEqual(recursive.value("isAccessibilityEnabled") as? Bool ?? recursive.value("accessibilityEnabled") as? Bool, false)
+                        let disclosure = try XCTUnwrap(elements.first { $0.accessibilityRole() == .disclosureTriangle })
+                        XCTAssertEqual(disclosure.value("isAccessibilityEnabled") as? Bool ?? disclosure.value("accessibilityEnabled") as? Bool, true, "只读规则必须允许展开")
+                        XCTAssertEqual(disclosure.value("accessibilityPerformPress") as? Bool, true, "只读规则必须响应辅助功能展开操作")
+                        try await settle(host)
+                        try snapshot(host, name: "file-permissions-expanded-\(language.rawValue)-\(scheme)")
+                        let right = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .checkBox && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.permissions.right.read") })
+                        XCTAssertEqual(right.value("isAccessibilityEnabled") as? Bool ?? right.value("accessibilityEnabled") as? Bool, false)
+                    } else if state == "error" {
+                        XCTAssertTrue(labels.contains(L10n.string("files.permissions.loadFailed")))
+                        XCTAssertTrue(labels.contains(L10n.string("files.advanced.readFailed")))
+                    } else if state == "empty" {
+                        XCTAssertTrue(labels.contains(L10n.string("files.permissions.noExplicit")))
+                    }
+                    let save = try XCTUnwrap(elements.first { $0.value("accessibilityIdentifier") as? String == "filePermissions.save" })
+                    XCTAssertEqual(save.value("isAccessibilityEnabled") as? Bool ?? save.value("accessibilityEnabled") as? Bool, false)
+                    try click(window, at: window.convertPoint(fromScreen: .init(x: save.accessibilityFrame().midX, y: save.accessibilityFrame().midY)))
+                    try await settle(host)
+                    let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                    try snapshot(host, name: "file-permissions-read-\(state)-\(language.rawValue)-\(scheme)")
+                    await fixture.repository.releaseAdvancedReads(); try await settle(host)
+                }
+            }
+        }
+    }
+
     func test文件高级管理四态双语主题且权限受限账号不提交() async throws {
         let previous = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previous }
@@ -6073,7 +6235,7 @@ final class WorkspacePresentationTests: XCTestCase {
         let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
         XCTAssertGreaterThan(data.count, 1_000)
         try data.write(to: artifacts.appendingPathComponent(name + ".png"))
-        if name.hasPrefix("file-"), ProcessInfo.processInfo.environment["LANSTASH_UI_NATIVE_SCREENSHOTS"] == "1",
+        if ProcessInfo.processInfo.environment["LANSTASH_UI_NATIVE_SCREENSHOTS"] == "1",
            let window = view.window {
             let capture = Process()
             capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -6411,6 +6573,13 @@ private actor PresentationFileRepository: FileRepository {
     private(set) var readCalls = 0
     private(set) var directorySizeCalls = 0
     private var advancedState: String?
+    private var advancedAccessOverride: FileStationAdvancedAccess?
+    private var permissionEditable = true
+    private var mountDirectoriesOverride: [FileStationMountDirectory]?
+    private var bandwidthPolicyOverride: FileStationBandwidthPolicy?
+    func configureBandwidth(policy: FileStationBandwidthPolicy) { bandwidthPolicyOverride = policy }
+    private(set) var mountAccountKinds: [FileStationPrincipal.Kind] = []
+    func configureMountDirectories(_ directories: [FileStationMountDirectory]) { mountDirectoriesOverride = directories }
     private var advancedWaiters: [CheckedContinuation<Void, Never>] = []
     private var vfsProfilesOverride: [FileVFSProfile]?
     private var virtualFolders: [FileVirtualFolder] = []
@@ -6436,7 +6605,9 @@ private actor PresentationFileRepository: FileRepository {
     }
     func holdNextVFSRead() { holdsNextVFSRead = true }
     func releaseVFSRead() { vfsReadWaiter?.resume(); vfsReadWaiter = nil }
-    func configureAdvanced(state: String) { advancedState = state }
+    func configureAdvanced(state: String, access: FileStationAdvancedAccess? = nil, permissionEditable: Bool = true) {
+        advancedState = state; advancedAccessOverride = access; self.permissionEditable = permissionEditable
+    }
     func releaseAdvancedReads() {
         if advancedState == "loading" { advancedState = "ready" }
         let waiters = advancedWaiters; advancedWaiters = []; waiters.forEach { $0.resume() }
@@ -6447,15 +6618,15 @@ private actor PresentationFileRepository: FileRepository {
         if advancedState == nil || advancedState == "error" { throw PresentationRepositoryError.unexpectedOperation }
     }
     func loadFileStationAdvancedAccess() async throws -> FileStationAdvancedAccess {
-        try await advancedRead(); return .init(isAdministrator: true, writesEnabled: vfsMutationStatus != nil)
+        try await advancedRead(); return advancedAccessOverride ?? .init(isAdministrator: true, writesEnabled: vfsMutationStatus != nil)
     }
     func loadFilePermissions(_ item: FileItem) async throws -> FilePermissionSnapshot {
         try await advancedRead()
-        return .init(target: item, resolvedPath: "/volume-synthetic" + item.path, isACL: true, canChangePermissions: true,
+        return .init(target: item, resolvedPath: "/volume-synthetic" + item.path, isACL: true, canChangePermissions: permissionEditable,
             isInherited: true, rules: advancedState == "empty" ? [] : [
                 .init(ownerType: "user", ownerName: "示例账号 Synthetic user", effect: .allow, rights: [.readData, .readAttributes, .readPermissions], inheritance: [.thisFolder]),
                 .init(ownerType: "group", ownerName: "示例群组 Synthetic group", effect: .allow, rights: [.readData], inheritance: [.childFiles], level: 1)],
-            owner: .init(name: "示例账号 Synthetic user", type: "user", value: "user:synthetic", canChange: true), posixMode: nil)
+            owner: .init(name: "示例账号 Synthetic user", type: "user", value: "user:synthetic", canChange: permissionEditable), posixMode: nil)
     }
     func remoteMountInventory() async throws -> RemoteMountInventory {
         try await advancedRead()
@@ -6501,7 +6672,7 @@ private actor PresentationFileRepository: FileRepository {
         return .init(folderPath: path, items: items, offset: 0, total: items.count, hasMore: false)
     }
     func loadFileStationMountDirectories() async throws -> FileStationMountDirectories {
-        try await advancedRead(); return .init(items: [.init(source: .local, name: ""), .init(source: .ldap, name: ""), .init(source: .domain("SYNTHETIC"), name: "SYNTHETIC")], hasUnavailableSources: false)
+        try await advancedRead(); return .init(items: mountDirectoriesOverride ?? [.init(source: .local, name: ""), .init(source: .ldap, name: ""), .init(source: .domain("SYNTHETIC"), name: "SYNTHETIC")], hasUnavailableSources: false)
     }
     func loadFileStationSettings() async throws -> FileStationSettings {
         try await advancedRead()
@@ -6513,7 +6684,7 @@ private actor PresentationFileRepository: FileRepository {
     func listFileStationBandwidth(ownerType: FileStationBandwidthEntry.OwnerType, offset: Int, limit: Int) async throws -> FileStationBandwidthPage {
         try await advancedRead()
         let rows: [FileStationBandwidthEntry] = advancedState == "empty" ? [] : [.init(profileID: profileID, name: "示例账号 Synthetic user", ownerType: ownerType,
-            policy: .scheduled, schedule: String(repeating: "1", count: 168), uploadLimit: 42, downloadLimit: 84, alternateUploadLimit: 24, alternateDownloadLimit: 48)]
+            policy: bandwidthPolicyOverride ?? .scheduled, schedule: String(repeating: "1", count: 168), uploadLimit: 42, downloadLimit: 84, alternateUploadLimit: 24, alternateDownloadLimit: 48)]
         return .init(items: rows, total: rows.count, nextOffset: rows.count)
     }
     func loadFileStationSharingTheme() async throws -> FileStationSharingTheme {
@@ -6523,6 +6694,7 @@ private actor PresentationFileRepository: FileRepository {
     }
     func listFileStationMountAccounts(kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationMountAccountPage {
         try await advancedRead()
+        mountAccountKinds.append(kind)
         let rows: [FileStationMountAccount] = advancedState == "empty" || !query.isEmpty ? [] : [.init(profileID: profileID, id: .init(kind: kind, value: 1001),
             name: "示例账号 Synthetic user", enabled: true, canModify: true)]
         return .init(items: rows, total: rows.count, nextOffset: rows.count)

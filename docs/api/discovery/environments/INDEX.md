@@ -20,6 +20,8 @@
 
 ## 待归属观察
 
+- [2026-10-02 File Station 设置读取故障核查](2026-10-02-file-station-settings-read-fix.md)：DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559；本机用户和群组名单的 uid/gid 数字字符串、原生权限布尔及限速 notexist 未配置状态已只读核对。临时草稿已取消，没有保存设置或权限，不提升历史设备基线或写验证等级。
+
 - [2026-10-02 File Station 官方包静态核查](2026-10-02-file-station-official-package.md)：浏览器会话不可访问；官方包无法用标准归档读取，未获得新字段证据，不改变历史兼容等级。
 
 - [2026-10-01 Photos 后台任务与冻结相册续查](2026-10-01-photos-remaining-observation.md)：浏览器恢复后的官方静态资源只读核对，完整版本仍未知，不执行真实NAS写入。

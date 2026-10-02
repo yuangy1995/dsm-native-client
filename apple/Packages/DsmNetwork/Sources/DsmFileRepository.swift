@@ -1427,10 +1427,10 @@ public actor DsmFileRepository: FileRepository {
         }
     }
 
-    /// 权限编辑使用完整路径映射，拒绝缺字段；不改变普通浏览的宽容解码。
+    /// 权限读取显式请求完整路径映射，拒绝缺字段；不改变普通浏览的附加字段与宽容解码。
     func permissionTarget(path: String) async throws -> (FileItem, String, Bool) {
         let payload: FileInfoPayload = try await advancedFileCall(DsmAPIName.fileStationList, method: "getinfo", version: 2,
-            parameters: ["path": .stringArray([path]), "additional": .stringArray(Self.getInfoAdditionalFields)])
+            parameters: ["path": .stringArray([path]), "additional": .stringArray(Self.getInfoAdditionalFields + ["real_path"])])
         guard payload.files.count == 1, let entry = payload.files.first, entry.path == path,
               entry.code == nil || entry.code == 0, let file = entry.file,
               let resolved = file.additional?.realPath, resolved.hasPrefix("/"),

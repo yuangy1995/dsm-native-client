@@ -39,6 +39,74 @@ final class FileStationParityTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(badReport.hasUnavailableSources); XCTAssertEqual(badReport.items.count, 1)
     }
 
+    func test远程账号名单读取官方数字字符串编号() async throws {
+        for kind in FileStationPrincipal.Kind.allCases {
+            let key = kind == .user ? "uid" : "gid"
+            let transport = ParityTransport([try response(["offset": 0, "total": 2, "usergrp_settings": [
+                ["name": "synthetic-locked", key: "1001", "enabled": true, "is_modifiable": false],
+                ["name": "synthetic-editable", key: "1002", "enabled": false, "is_modifiable": true]
+            ]])])
+            let page = try await repository(transport).listFileStationMountAccounts(kind: kind, query: "", offset: 0, limit: 100)
+            XCTAssertEqual(page.items.map(\.id.value), [1001, 1002])
+            XCTAssertTrue(page.items.allSatisfy { $0.id.kind == kind && $0.source == .local })
+            XCTAssertEqual(page.items.map(\.enabled), [true, false])
+            XCTAssertEqual(page.items.map(\.canModify), [false, true])
+            XCTAssertEqual(page.nextOffset, 2)
+            XCTAssertEqual(page.total, 2)
+        }
+    }
+
+    func test远程账号名单拒绝无效或重复编号且布尔权限不作宽松转换() async throws {
+        let invalidIDs: [Any] = ["", "not-an-id", "-1", -1, true, 1001.5, "9223372036854775808", NSNull()]
+        for kind in FileStationPrincipal.Kind.allCases {
+            let key = kind == .user ? "uid" : "gid"
+            for id in invalidIDs {
+                let transport = ParityTransport([try response(["total": 1, "usergrp_settings": [
+                    ["name": "synthetic-user", key: id, "enabled": false, "is_modifiable": true]
+                ]])])
+                do {
+                    _ = try await repository(transport).listFileStationMountAccounts(kind: kind, query: "", offset: 0, limit: 100)
+                    XCTFail("无效编号必须拒绝，不能伪造账号身份")
+                } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+            }
+            let duplicate = ParityTransport([try response(["total": 2, "usergrp_settings": [
+                ["name": "synthetic-a", key: 1001, "enabled": false, "is_modifiable": true],
+                ["name": "synthetic-b", key: "1001", "enabled": false, "is_modifiable": true]
+            ]])])
+            do {
+                _ = try await repository(duplicate).listFileStationMountAccounts(kind: kind, query: "", offset: 0, limit: 100)
+                XCTFail("两种编码的相同编号仍属于同一身份，不能作为两个账号返回")
+            } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        }
+        for field in ["enabled", "is_modifiable"] {
+            var row: [String: Any] = ["name": "synthetic-user", "uid": "1001", "enabled": false, "is_modifiable": true]
+            row[field] = "true"
+            let transport = ParityTransport([try response(["total": 1, "usergrp_settings": [row]])])
+            do {
+                _ = try await repository(transport).listFileStationMountAccounts(kind: .user, query: "", offset: 0, limit: 100)
+                XCTFail("修复编号格式不能放宽权限布尔值")
+            } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        }
+    }
+
+    func test远程账号数字字符串读取后保存与回读保持同一身份() async throws {
+        let before = try response(["total": 1, "usergrp_settings": [
+            ["name": "synthetic-user", "uid": "1001", "enabled": false, "is_modifiable": true]
+        ]])
+        let after = try response(["total": 1, "usergrp_settings": [
+            ["name": "synthetic-user", "uid": 1001, "enabled": true, "is_modifiable": true]
+        ]])
+        let transport = ParityTransport([before] + (try accessResponses()) + [before, before, try response([:]), after])
+        let repo = try repository(transport)
+        let page = try await repo.listFileStationMountAccounts(kind: .user, query: "", offset: 0, limit: 100)
+        let result = try await repo.changeFileStationSettings(.mountAccount(baseline: XCTUnwrap(page.items.first), enabled: true), confirmed: true)
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let calls = await transport.requests
+        let writes = calls.filter { parameters($0)["method"] == "set" }
+        XCTAssertEqual(writes.count, 1)
+        try assertRequestFixture(XCTUnwrap(writes.first), folder: "set-mount-account")
+    }
+
     func test域和LDAP挂载账号按来源读取且单账号保存回读保留来源() async throws {
         for source in [FileStationMountAccountSource.ldap, .domain("OU=Example,DC=invalid")] {
             let row: (Bool) throws -> ParityTransport.Response = { enabled in
@@ -334,6 +402,68 @@ final class FileStationParityTests: XCTestCase, @unchecked Sendable {
         let calls = await transport.requests; XCTAssertEqual(calls.filter { parameters($0)["method"] == "mount_iso" }.count, 1)
     }
 
+    func test权限读取必须主动请求真实路径() async throws {
+        let transport = ParityTransport(try permissionPages())
+        let repo = try repository(transport)
+        let snapshot = try await repo.loadFilePermissions(permissionItem(profileID: repo.profileID))
+        XCTAssertEqual(snapshot.resolvedPath, "/volume-synthetic/synthetic/folder")
+        XCTAssertTrue(snapshot.canChangePermissions)
+        XCTAssertEqual(snapshot.owner?.canChange, true)
+        let calls = await transport.requests
+        let request = try XCTUnwrap(calls.first)
+        let additional = try JSONDecoder().decode([String].self, from: Data(XCTUnwrap(parameters(request)["additional"]).utf8))
+        XCTAssertTrue(additional.contains("real_path"), "NAS 只返回主动请求的附加字段，权限读取必须请求真实路径")
+        XCTAssertTrue(additional.contains("perm"))
+        XCTAssertTrue(additional.contains("owner"))
+    }
+
+    func test权限缺少实际路径时不猜测路径也不继续读取ACL() async throws {
+        let transport = ParityTransport(try permissionPages(omitsRealPath: true))
+        let repo = try repository(transport)
+        do {
+            _ = try await repo.loadFilePermissions(permissionItem(profileID: repo.profileID))
+            XCTFail("缺少 NAS 返回的实际路径时不能读取或修改权限")
+        } catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        let calls = await transport.requests
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(parameters(calls[0])["api"], DsmAPIName.fileStationList)
+        XCTAssertEqual(parameters(calls[0])["method"], "getinfo")
+    }
+
+    func test共享根挂载和回收站可读取ACL但不开放修改() async throws {
+        for (path, mount) in [("/synthetic", "normal"), ("/synthetic", "shared_folder"),
+                              ("/synthetic/mount", "cifs"), ("/synthetic/#recycle/folder", "normal")] {
+            let transport = ParityTransport(try permissionPages(path: path, mountPointType: mount) + accessResponses())
+            let repo = try repository(transport)
+            let item = FileItem(profileID: repo.profileID, name: "Synthetic folder", path: path, kind: .directory)
+            let snapshot = try await repo.loadFilePermissions(item)
+            XCTAssertEqual(snapshot.target.path, path)
+            XCTAssertEqual(snapshot.owner?.name, "synthetic-user")
+            XCTAssertEqual(snapshot.rules.count, 2)
+            XCTAssertFalse(snapshot.canChangePermissions)
+            XCTAssertEqual(snapshot.owner?.canChange, false)
+            var rules = snapshot.rules.filter { $0.level == 0 }; rules[0].rights.insert(.writeData)
+            do {
+                _ = try await repo.changeFilePermissions(.init(baseline: snapshot, explicitRules: rules,
+                    confirmedScope: false, confirmedOwner: false, confirmedAccessRemoval: true))
+                XCTFail("受保护位置只能读取，不得提交权限修改")
+            } catch let error as AppError { XCTAssertEqual(error.category, .permissionDenied) }
+            let calls = await transport.requests
+            XCTAssertFalse(calls.contains { parameters($0)["method"] == "set" })
+        }
+    }
+
+    func test共享根POSIX权限与所有者可以读取但不开放修改() async throws {
+        let transport = ParityTransport(try posixPages(path: "/synthetic", mountPointType: "shared_folder"))
+        let repo = try repository(transport)
+        let snapshot = try await repo.loadFilePermissions(.init(profileID: repo.profileID, name: "Synthetic share", path: "/synthetic", kind: .directory))
+        XCTAssertFalse(snapshot.isACL)
+        XCTAssertEqual(snapshot.posixMode, "755")
+        XCTAssertEqual(snapshot.target.owner, "synthetic-user")
+        XCTAssertEqual(snapshot.target.group, "synthetic-group")
+        XCTAssertFalse(snapshot.canChangePermissions)
+    }
+
     func testACL仅写显式规则保留继承并等待后台任务完成() async throws {
         let transport = ParityTransport(try permissionPages() + accessResponses() + permissionPages()
             + [response(["is_denied": false])] + permissionPages()
@@ -459,6 +589,69 @@ final class FileStationParityTests: XCTestCase, @unchecked Sendable {
         let fields = parameters(try XCTUnwrap(calls.first { parameters($0)["method"] == "set" }))
         XCTAssertEqual(fields["enabled_sharing_privilege"], "1001"); XCTAssertEqual(fields["sharing_allow"], "per_user")
         XCTAssertNil(fields["disabled_sharing_privilege"]); XCTAssertNil(fields["enabled_file_request_privilege"])
+    }
+
+    func test限速读取未单独配置的用户和群组() async throws {
+        for ownerType in [FileStationBandwidthEntry.OwnerType.localUser, .localGroup] {
+            var root = URL(fileURLWithPath: #filePath)
+            for _ in 0..<5 { root.deleteLastPathComponent() }
+            let suffix = ownerType == .localUser ? "user" : "group"
+            let fixture = root.appendingPathComponent("contracts/fixtures-redacted/file-station/settings/synthetic-bandwidth-unconfigured-" + suffix + "/response.json")
+            let transport = ParityTransport([.success(try Data(contentsOf: fixture))])
+            let repo = try repository(transport)
+            let page = try await repo.listFileStationBandwidth(ownerType: ownerType, offset: 0, limit: 100)
+            let row = try XCTUnwrap(page.items.first)
+            XCTAssertEqual(row.policy.rawValue, "notexist", "未单独配置不能被当成不限速")
+            XCTAssertEqual(row.ownerType, ownerType)
+            XCTAssertEqual(page.total, 1); XCTAssertEqual(page.nextOffset, 1)
+            let calls = await transport.requests
+            XCTAssertEqual(calls.count, 1)
+            XCTAssertEqual(parameters(calls[0])["method"], "list")
+            XCTAssertEqual(parameters(calls[0])["owner_type"], ownerType.rawValue)
+        }
+    }
+
+    func test未配置限速可明确设定并回读但不提交未配置标记() async throws {
+        let schedule = String(repeating: "1", count: 168)
+        let transport = ParityTransport(try [bandwidthPage(policy: "notexist")] + accessResponses()
+            + [bandwidthPage(policy: "notexist"), bandwidthPage(policy: "notexist"), response([:]), bandwidthPage(limit: 42, schedule: schedule)])
+        let repo = try repository(transport)
+        let page = try await repo.listFileStationBandwidth(ownerType: .localUser, offset: 0, limit: 100)
+        let old = try XCTUnwrap(page.items.first)
+        var updated = old; updated.policy = .scheduled; updated.uploadLimit = 42; updated.schedule = schedule
+        let result = try await repo.changeFileStationSettings(.bandwidth(baseline: old, updated: updated), confirmed: true)
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let calls = await transport.requests
+        let writes = calls.filter { parameters($0)["method"] == "set" }
+        XCTAssertEqual(writes.count, 1)
+        try assertRequestFixture(XCTUnwrap(writes.first), folder: "set-bandwidth", substitutions: ["2" + String(repeating: "1", count: 167): schedule])
+
+        let rejected = ParityTransport(try [bandwidthPage()] + accessResponses() + [bandwidthPage()])
+        let rejectedRepo = try repository(rejected)
+        let current = try await rejectedRepo.listFileStationBandwidth(ownerType: .localUser, offset: 0, limit: 100)
+        let baseline = try XCTUnwrap(current.items.first)
+        var reset = baseline; reset.policy = .notConfigured
+        do { _ = try await rejectedRepo.changeFileStationSettings(.bandwidth(baseline: baseline, updated: reset), confirmed: true); XCTFail("不能猜测恢复群组配置的写入方式") }
+        catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        let rejectedCalls = await rejected.requests
+        XCTAssertFalse(rejectedCalls.contains { parameters($0)["method"] == "set" })
+    }
+
+    func test限速未知策略及服务级未配置状态仍拒绝() async throws {
+        for policy in ["unknown-policy", "", "NotExist"] {
+            let transport = ParityTransport(try [bandwidthPage(policy: policy)])
+            let repo = try repository(transport)
+            do { _ = try await repo.listFileStationBandwidth(ownerType: .localUser, offset: 0, limit: 100); XCTFail("不能将未知策略默认成不限速") }
+            catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        }
+        let transport = ParityTransport(try [settingsPage()] + accessResponses() + [settingsPage()])
+        let repo = try repository(transport)
+        let baseline = try await repo.loadFileStationSettings()
+        var updated = baseline; updated.bandwidth = .notConfigured
+        do { _ = try await repo.changeFileStationSettings(.general(baseline: baseline, updated: updated), confirmed: true); XCTFail("账号状态不能写入服务总开关") }
+        catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        let calls = await transport.requests
+        XCTAssertFalse(calls.contains { parameters($0)["method"] == "set" })
     }
 
     func test限速指定账号与每周时间编码并拒绝低于十的非零值() async throws {
@@ -816,9 +1009,9 @@ final class FileStationParityTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(fields["posix_mode_recur"], "false"); XCTAssertNil(fields["owner"])
     }
 
-    private func posixPages(mode: Int = 755) throws -> [ParityTransport.Response] {
-        try [response(["files": [["name": "folder", "path": "/synthetic/folder", "isdir": true, "additional": [
-            "real_path": "/volume-synthetic/synthetic/folder", "mount_point_type": "normal", "size": 0,
+    private func posixPages(mode: Int = 755, path: String = "/synthetic/folder", mountPointType: String = "normal") throws -> [ParityTransport.Response] {
+        try [response(["files": [["name": "folder", "path": path, "isdir": true, "additional": [
+            "real_path": "/volume-synthetic" + path, "mount_point_type": mountPointType, "size": 0,
             "owner": ["user": "synthetic-user", "group": "synthetic-group"],
             "perm": ["is_acl_mode": false, "posix": mode, "adv_right": ["read": true, "write": true]]]]]])] + accessResponses()
     }
@@ -838,9 +1031,10 @@ final class FileStationParityTests: XCTestCase, @unchecked Sendable {
             "sharing_group_privilege": ["items": []], "file_request_privilege": ["items": []], "file_request_group_privilege": ["items": []],
             "sharing_default_limit": "1000", "bandwidth_enable": "bandwidth_disable", "schedule_plan": "", "enable_sharing_custom_setting": customPage ? "true" : "false"])
     }
-    private func bandwidthPage(limit: Int = 0, schedule: String = "") throws -> ParityTransport.Response {
-        try response(["total": 1, "bandwidths": [["name": "synthetic-user", "protocol": "FileStation", "owner_type": "local_user",
-            "policy": schedule.isEmpty ? "disabled" : "scheduled", "schedule_plan": schedule, "upload_limit_1": limit,
+    private func bandwidthPage(limit: Int = 0, schedule: String = "", policy: String? = nil,
+                               ownerType: FileStationBandwidthEntry.OwnerType = .localUser) throws -> ParityTransport.Response {
+        try response(["total": 1, "bandwidths": [["name": "synthetic-user", "protocol": "FileStation", "owner_type": ownerType.rawValue,
+            "policy": policy ?? (schedule.isEmpty ? "disabled" : "scheduled"), "schedule_plan": schedule, "upload_limit_1": limit,
             "upload_limit_2": 0, "download_limit_1": 0, "download_limit_2": 0]]])
     }
     private func vfsConfiguration(alias: String = "Remote") -> FileVFSConfiguration {
@@ -875,13 +1069,14 @@ final class FileStationParityTests: XCTestCase, @unchecked Sendable {
         return try response(["files": items])
     }
     private func permissionItem(profileID: UUID) -> FileItem { .init(profileID: profileID, name: "folder", path: "/synthetic/folder", kind: .directory) }
-    private func permissionPages(changed: Bool = false) throws -> [ParityTransport.Response] {
+    private func permissionPages(changed: Bool = false, path: String = "/synthetic/folder", mountPointType: String = "normal", omitsRealPath: Bool = false) throws -> [ParityTransport.Response] {
         let rights = Dictionary(uniqueKeysWithValues: FileACLRight.allCases.map { ($0.rawValue, $0 == .readData || (changed && $0 == .writeData)) })
         let inheritance = Dictionary(uniqueKeysWithValues: FileACLInheritance.allCases.map { ($0.rawValue, $0 == .thisFolder) })
-        return try [response(["files": [["name": "folder", "path": "/synthetic/folder", "isdir": true, "additional": [
-            "real_path": "/volume-synthetic/synthetic/folder", "mount_point_type": "normal", "size": 0,
+        var additional: [String: Any] = ["mount_point_type": mountPointType, "size": 0,
             "owner": ["user": "synthetic-user", "group": "synthetic-group"],
-            "perm": ["is_acl_mode": true, "posix": 755, "adv_right": ["read": true, "write": true]]]]]]),
+            "perm": ["is_acl_mode": true, "posix": 755, "adv_right": ["read": true, "write": true]]]
+        if !omitsRealPath { additional["real_path"] = "/volume-synthetic" + path }
+        return try [response(["files": [["name": "folder", "path": path, "isdir": true, "additional": additional]]]),
             response(["is_acl": true, "change_permission": true, "is_inherited": true, "acl": [
                 ["owner_type": "user", "owner_name": "synthetic-user", "owner_id": 1000, "permission_type": "allow", "permission": rights, "inherit": inheritance, "level": 0],
                 ["owner_type": "group", "owner_name": "synthetic-group", "permission_type": "allow", "permission": Dictionary(uniqueKeysWithValues: FileACLRight.allCases.map { ($0.rawValue, $0 == .readData) }), "inherit": inheritance, "level": 1]]]),

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-mount-account-string-ids",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "69057",
+    "update": "12",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.FileStation.VFS.User",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "get"
+  },
+  "scenario": "按官方只读观察的数字字符串编号及原生权限布尔类型重建的合成样本；不含真实账号或编号，不代表权限写入验证。",
+  "redactedFields": [],
+  "package": {
+    "name": "File Station",
+    "version": "1.4.1-1559"
+  }
+}

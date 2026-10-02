@@ -24,10 +24,16 @@ struct FileStationMountAccountList: View {
                 Spacer()
                 Button(L10n.string("files.common.close")) { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            Picker(L10n.string("files.settings.accountSource"), selection: $source) {
-                ForEach(directories) { directory in
-                    Text(directoryName(directory)).tag(directory.source)
+            if directories.count > 1 {
+                Picker(L10n.string("files.settings.accountSource"), selection: $source) {
+                    ForEach(directories) { directory in
+                        Text(directoryName(directory)).tag(directory.source)
+                    }
                 }
+                .labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("files.settings.accountSource")
             }
             if directoryError {
                 HStack {
@@ -35,10 +41,13 @@ struct FileStationMountAccountList: View {
                     Button(L10n.string("files.common.retry")) { Task { await loadDirectories() } }
                 }
             }
-            Picker(L10n.string("files.principals.user"), selection: $kind) {
+            Picker(L10n.string("files.settings.accountType"), selection: $kind) {
                 Text(L10n.string("files.principals.user")).tag(FileStationPrincipal.Kind.user)
                 Text(L10n.string("files.principals.group")).tag(FileStationPrincipal.Kind.group)
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("files.settings.accountKind")
             TextField(L10n.string("files.principals.search"), text: $query)
             if loading && rows.isEmpty { ProgressView().fillsAvailableContentArea() }
             else if error != nil { FileSettingsLoadError(error: error) { Task { await load(reset: true) } } }
@@ -53,7 +62,7 @@ struct FileStationMountAccountList: View {
                             Text(L10n.string(row.enabled ? "files.settings.accountAllowed" : "files.settings.accountDenied")).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(L10n.string("files.sharing.edit")) { editing = row }.disabled(!row.canModify)
+                        Button(L10n.string("files.settings.editAccountPermissions")) { editing = row }.disabled(!row.canModify)
                     }
                 }
                 if nextOffset < total {

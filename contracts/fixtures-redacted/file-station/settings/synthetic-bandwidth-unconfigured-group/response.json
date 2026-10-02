@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "data": {
+    "total": 1,
+    "bandwidths": [
+      {
+        "name": "synthetic-group",
+        "protocol": "FileStation",
+        "owner_type": "local_group",
+        "policy": "notexist",
+        "schedule_plan": "111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+        "upload_limit_1": 0,
+        "upload_limit_2": 0,
+        "download_limit_1": 0,
+        "download_limit_2": 0
+      }
+    ]
+  }
+}

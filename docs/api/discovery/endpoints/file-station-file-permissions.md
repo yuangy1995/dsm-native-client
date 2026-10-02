@@ -27,3 +27,11 @@ ACL 规则 effect 为 allow/deny，permission 的十三个键与 inherit 的四�
 POSIX 的 additional.perm.posix 是前端按百位/十位/个位拆分的三位权限数字（例如 755）；不是把 755 再转八进制。首轮普通账号只读 POSIX，管理员可编辑当前项目或确认递归。ACL 依据 change_permission 开放权限编辑，所有者修改首轮限管理员。共享根、回收站和挂载对象保持只读，避免扩大至共享配置。以上均 synthetic/static，实际保存及继承行为 PENDING_USER_VALIDATION。
 
 源码：`DsmFileRepository+Permissions.swift`、`FilePermissionEditor.swift`；合成自动化：`FileStationParityTests`。请求样本为 `contracts/request-fixtures/file-station/set-acl` 与 `set-posix`，响应为 `contracts/fixtures-redacted/file-station/permissions`，结构描述为 `contracts/schemas/file-station-permissions.schema.json`。部分失败在关闭表单后仍通过统一核查入口保留，不以稍后根项匹配清除子树失败。
+
+## 2026-10-02 读取故障修复
+
+1.0.13 的权限读取要求 `additional.real_path`，但 `List.getinfo` 复用了未包含 `real_path` 的普通详情字段列表。NAS 按请求返回附加字段时，客户端在调用 ACL 之前即因缺少路径映射报错。新增请求回归已在旧实现复现此遗漏；修复只在权限读取中显式请求既有契约中的 `real_path`，不扩大普通详情读取、不猜测路径、不放宽缺字段校验。
+
+共享根、挂载位置及回收站的已有写入范围限制同时用于生成只读快照，所有者和权限规则仍可读取；界面允许展开只读规则，修改控件保持禁用。字段名、版本、响应结构及公开接口保持原契约，证据等级仍为 synthetic/static。五端影响：共享 Apple 网络层为兼容修复，macOS 完成相应界面与回归；iPhone/iPad 没有新增入口，Android/Windows 无代码或契约变更。
+
+`PENDING_USER_VALIDATION`：使用修复测试包，以原账号打开共享根和普通子目录的“所有者与权限”，确认所有者、显式和继承规则可显示；共享根只读，展开规则不会提交修改。若仍失败，仅反馈 DSM/File Station 版本、位置类别、操作步骤及脱敏提示，不提供真实路径、账号、会话或原始响应。本轮未连接真实 NAS，也未执行权限写入。

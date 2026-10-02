@@ -395,7 +395,9 @@ struct PhotoManagementPanel: View {
         Picker(L10n.string("photos.people.visibilityAction"), selection: $visibilityDesired) {
             Text(L10n.string(isConcept ? "photos.concepts.show" : "photos.people.show")).tag(true)
             Text(L10n.string(isConcept ? "photos.concepts.hide" : "photos.people.hide")).tag(false)
-        }.pickerStyle(.segmented)
+        }.pickerStyle(.segmented).labelsHidden()
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: .infinity, alignment: .leading)
         TextField(L10n.string(isConcept ? "photos.concepts.search" : "photos.people.search"), text: $peopleSearch).textFieldStyle(.roundedBorder)
         Text(L10n.string(isConcept ? "photos.concepts.visibilityHint" : "photos.people.visibilityHint")).foregroundStyle(.secondary)
         if filteredVisibilityEntries.isEmpty {
@@ -543,7 +545,9 @@ struct PhotoManagementPanel: View {
             Picker(L10n.string("photos.manage.shiftDirection"), selection: $shiftForward) {
                 Text(L10n.string("photos.manage.shiftLater")).tag(true)
                 Text(L10n.string("photos.manage.shiftEarlier")).tag(false)
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
             HStack {
                 TextField(L10n.string("photos.manage.shiftAmount"), value: $shiftAmount, format: .number.locale(L10n.locale)).textFieldStyle(.roundedBorder)
                 Picker(L10n.string("photos.manage.shiftUnit"), selection: $shiftUnit) {
@@ -612,7 +616,9 @@ struct PhotoManagementPanel: View {
                     ForEach(model.transferDestinationSpaces(for: sheet.photos, copying: sheet.kind == .copy, folders: sheet.folders), id: \.self) { space in
                         Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
                     }
-                }.pickerStyle(.segmented)
+                }.pickerStyle(.segmented).labelsHidden()
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             folderPicker
             PhotoTransferDuplicatePicker(selection: $transferDuplicate)
@@ -1998,7 +2004,10 @@ struct PhotoPreviewRecoveryPanel: View {
                     ForEach(model.spaces, id: \.self) { item in
                         Text(L10n.string(item == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(item)
                     }
-                }.pickerStyle(.segmented).padding(16)
+                }.pickerStyle(.segmented).labelsHidden()
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
             }
             Group {
                 if isLoading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
@@ -3711,7 +3720,9 @@ struct PhotoBackgroundTasksPanel: View {
                     Text(L10n.string("photos.tasks.all")).tag(0)
                     Text(L10n.string("photos.tasks.active")).tag(1)
                     Text(L10n.string("photos.tasks.finished")).tag(2)
-                }.pickerStyle(.segmented).frame(maxWidth: 330)
+                }.pickerStyle(.segmented).labelsHidden()
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: 330, alignment: .leading)
                 Spacer()
                 Button(L10n.string("photos.library.refresh")) { Task { await refresh() } }.disabled(isLoading)
             }.padding(.horizontal, 20).padding(.bottom, 12)

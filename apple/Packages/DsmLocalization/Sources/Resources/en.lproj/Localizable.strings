@@ -387,7 +387,7 @@
 "shared.5350a51d42c2c339" = "Please enter a virtual machine name.";
 "shared.539873656a8d3b33" = "The compressed package name is too long, please shorten the name and try again.";
 "shared.53f82a3866fbda42" = "Please enter username and password.";
-"shared.5503b9b2eb669c4e" = "The information returned by the NAS cannot be read, please confirm that the DSM has been updated to a supported version.";
+"shared.5503b9b2eb669c4e" = "The information from the NAS could not be read. Refresh and try again. If it still fails, report this issue.";
 "shared.55106e700c58cc74" = "Unable to read the contents of the compressed package, please check whether the file is complete.";
 "shared.555f70678d804174" = "The target session is temporarily unavailable for forwarding. Please refresh the session list and try again.";
 "shared.5670981d6f978923" = "The target storage does not support such large files.";
@@ -588,7 +588,7 @@
 "shared.f9112198a60b7d70" = "Description cannot exceed 1024 characters.";
 "shared.f9672d024946937d" = "This NAS is currently unable to verify duplicate files.";
 "shared.f975fe7c14e442cf" = "The group chat has been created, but some members may not have joined yet. Please check the member list in Synology Chat.";
-"shared.f98d542d79142efa" = "The data returned by the NAS cannot be read. Please confirm that the DSM has been updated to a supported version.";
+"shared.f98d542d79142efa" = "The data from the NAS could not be read. Refresh and try again. If it still fails, report this issue.";
 "shared.fa24cc9d55caa0ef" = "Please send one attachment at a time. After the current file is sent, you can continue to select the next file.";
 "shared.fac438462e2f0a41" = "The current connection does not support renaming. Please update DSM and try again.";
 "shared.fad38b1708c3a0f5" = "The image is still being processed, please refresh later to see the results.";
@@ -5160,6 +5160,7 @@
 "files.permissions.confirmOwner" = "I agree to change the owner or group, which may change access to this file.";
 "files.permissions.confirmChanges" = "I understand that some accounts may lose access.";
 "files.permissions.loadFailed" = "Could not load permissions";
+"files.permissions.readOnly" = "Permissions are read-only here. Manage permissions for this location in DSM.";
 "files.permissions.saved" = "Permissions saved.";
 "files.permissions.pending" = "Some changes are still running or could not be checked. Check the result again before making another change.";
 "files.permissions.partial-failure" = "Some permission changes failed. Changes already applied were kept. Review permissions in File Station before continuing.";
@@ -5254,6 +5255,9 @@
 "files.settings.save" = "Save settings";
 "files.settings.adminAccess" = "Administrators keep access automatically.";
 "files.settings.accountType" = "Account type";
+"files.settings.editAccountPermissions" = "Edit permissions";
+"files.settings.groupBandwidth" = "Use group limits";
+"files.settings.noBandwidthConfiguration" = "No limits configured";
 "files.settings.localUsers" = "Local accounts";
 "files.settings.localGroups" = "Local groups";
 "files.settings.domainUsers" = "Domain accounts";
@@ -5346,7 +5350,7 @@
 
 "files.settings.accountSource" = "Account source";
 
-"files.settings.source.local" = "NAS accounts";
+"files.settings.source.local" = "Local accounts";
 
 "files.settings.source.ldap" = "LDAP accounts";
 

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-bandwidth-unconfigured-group",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "69057",
+    "update": "12",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.BandwidthControl",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "list"
+  },
+  "scenario": "按官方只读观察重建未单独配置限速的群组合成样本；notexist 不等同 disabled，不含真实账号，不代表写入验证。",
+  "redactedFields": [],
+  "package": {
+    "name": "File Station",
+    "version": "1.4.1-1559"
+  }
+}

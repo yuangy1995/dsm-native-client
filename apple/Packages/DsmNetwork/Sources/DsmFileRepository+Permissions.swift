@@ -15,6 +15,7 @@ extension DsmFileRepository {
     public func loadFilePermissions(_ item: FileItem) async throws -> FilePermissionSnapshot {
         guard item.profileID == profileID else { throw Self.advancedFileError() }
         let (target, resolved, isACL) = try await permissionTarget(path: item.path)
+        let editableTarget = Self.permissionTargetAllowsEditing(target)
         if isACL {
             let acl: PermissionACLPayload = try await advancedFileCall(DsmAPIName.coreACL, method: "get",
                 parameters: ["type": .string("all"), "file_path": .string(resolved), "include_noname_rules": .boolean(true)])
@@ -29,16 +30,16 @@ extension DsmFileRepository {
                     rights: Set(FileACLRight.allCases.filter { row.permission[$0.rawValue] == true }),
                     inheritance: Set(FileACLInheritance.allCases.filter { row.inherit[$0.rawValue] == true }), level: row.level)
             }
-            return .init(target: target, resolvedPath: resolved, isACL: true, canChangePermissions: acl.change_permission,
+            return .init(target: target, resolvedPath: resolved, isACL: true, canChangePermissions: editableTarget && acl.change_permission,
                 isInherited: acl.is_inherited, rules: rules,
-                owner: .init(name: owner.name, type: owner.type, value: owner.value, canChange: owner.hasPrivilege), posixMode: nil)
+                owner: .init(name: owner.name, type: owner.type, value: owner.value, canChange: editableTarget && owner.hasPrivilege), posixMode: nil)
         }
         guard let mode = target.permissions?.posixMode, Self.validPOSIXMode(String(format: "%03d", mode)) else {
             throw Self.advancedFileError()
         }
         // POSIX 所有者授权尚无完整会话身份契约，首轮仅管理员可修改。
         let access = try await loadFileStationAdvancedAccess()
-        return .init(target: target, resolvedPath: resolved, isACL: false, canChangePermissions: access.isAdministrator,
+        return .init(target: target, resolvedPath: resolved, isACL: false, canChangePermissions: editableTarget && access.isAdministrator,
             isInherited: false, rules: [], owner: nil, posixMode: String(format: "%03d", mode))
     }
 
@@ -53,9 +54,7 @@ extension DsmFileRepository {
         activeAdvancedFileChanges.insert(key)
         defer { activeAdvancedFileChanges.remove(key) }
         try await requireAdvancedFileWrite(administrator: !baseline.isACL || change.owner != nil || change.group != nil)
-        guard baseline.target.profileID == profileID, baseline.target.path.split(separator: "/").count >= 2,
-              baseline.target.kind == .file || baseline.target.isDirectory,
-              baseline.target.mountPointType == "normal", !baseline.target.isRecyclePath,
+        guard baseline.target.profileID == profileID, Self.permissionTargetAllowsEditing(baseline.target),
               !change.recursive || (baseline.target.isDirectory && change.confirmedScope),
               (change.owner == nil && change.group == nil) || change.confirmedOwner,
               change.confirmedAccessRemoval else { throw Self.advancedFileError(.permissionDenied, "files.permissions.confirmRequired") }
@@ -172,6 +171,13 @@ extension DsmFileRepository {
             try Task.checkCancellation()
         } while true
         throw Self.advancedFileError(.conflict, "files.sharing.audienceChanged")
+    }
+
+    /// 读取可展示共享根等受保护位置，编辑范围与实际提交使用同一限制。
+    private static func permissionTargetAllowsEditing(_ target: FileItem) -> Bool {
+        target.path.split(separator: "/").count >= 2
+            && (target.kind == .file || target.isDirectory)
+            && target.mountPointType == "normal" && !target.isRecyclePath
     }
 
     private static func validPOSIXMode(_ mode: String) -> Bool {

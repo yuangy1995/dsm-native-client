@@ -2,7 +2,11 @@ import Foundation
 
 public enum FileStationAccessScope: String, CaseIterable, Codable, Sendable { case administrators = "admin", everyone, selected = "per_user" }
 public enum FileStationMountAccessScope: String, CaseIterable, Codable, Sendable { case administrators = "admin", everyone = "all", selected = "custom" }
-public enum FileStationBandwidthPolicy: String, CaseIterable, Codable, Sendable { case disabled, enabled, scheduled }
+public enum FileStationBandwidthPolicy: String, CaseIterable, Codable, Sendable {
+    case disabled, enabled, scheduled
+    // 账号没有独立限速配置；用户沿用群组设置，不能等同于不限速，也不能直接回写。
+    case notConfigured = "notexist"
+}
 
 public struct FileStationPolicyAccountID: Hashable, Comparable, Sendable {
     public let kind: FileStationPrincipal.Kind

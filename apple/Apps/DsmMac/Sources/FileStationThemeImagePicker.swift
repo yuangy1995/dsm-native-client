@@ -33,7 +33,10 @@ struct FileStationThemeImagePicker: View {
                 Text(L10n.string("files.theme.history")).tag(Source.history)
                 Text(L10n.string("files.theme.local")).tag(Source.local)
                 if kind == .background { Text(L10n.string("files.theme.defaults")).tag(Source.defaults) }
-            }.pickerStyle(.segmented).disabled(busy)
+            }.pickerStyle(.segmented).labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(busy)
             if source == .nas {
                 HStack {
                     Button {

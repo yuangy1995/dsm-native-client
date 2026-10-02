@@ -57,3 +57,19 @@ VFS 自定义名单已接入本机用户/组分页、可修改标识和单 uid/g
 upload 为 multipart，type 与 upload_image 文件字段，成功 data.path 作为历史身份；上传后回查历史，之后页面应用需要独立确认。上传超时保存当前会话内图片摘要，不重复发送同一图片；用户查看历史后可选取已上传项，其他图片和页面设置不被阻断。摘要不包含文件路径、内容或凭据。图片来源为 fromDS/history/default：NAS 保留完整路径，历史/默认用文件名。Theme.set 保存回执和 logo_seq/background_seq 变化同时成立才确认换图成功；单独序列变化不证明未知写完成。
 
 本轮未执行真实上传或主题写入。合成 fixture 覆盖 list/get/upload、历史清单及目录来源；源码为 `DsmFileRepository+ThemeImages.swift`、`FileStationThemeImagePicker.swift`，自动化在 `FileStationParityTests`。真实图片尺寸限制、所有支持格式和最终页面显示由用户验收，不增加推测的文件大小上限。
+
+## 2026-10-02 本机账号名单类型更正
+
+[本轮只读核查](../environments/2026-10-02-file-station-settings-read-fix.md)重新确认 DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559。官方名单的 VFS.User.get v1 返回成功，但用户 `uid` 和群组 `gid` 都是十进制数字字符串；`offset/total` 为整数，`enabled/is_modifiable` 为原生布尔。此前仅按整数解码编号的客户端会把成功响应误报为无法读取设置，合成回归已复现同一错误。
+
+读取适配只为该端点的 uid/gid 接受整数或数字字符串，转换后仍需有效的非负编号，不接受空值、非数字、布尔、溢出或重复身份；权限布尔不作宽松转换。确认快照、来源、可修改标识、提交去重及单账号保存/回读规则保持不变。新增合成响应为 `contracts/fixtures-redacted/file-station/settings/synthetic-mount-account-string-ids`，旧整数样本保留；Schema 的更正仅限 `mountAccounts`，不扩大尚未验证的其他设置响应。
+
+五端影响：macOS 修复名单读取及来源/用户组控件；Apple 共享网络层兼容增量可供 iPhone/iPad 复用，没有新增移动入口；Android/Windows 后续接入此端点时应采用相同编号语义，本轮不修改两端代码。读取格式达到本次待归属观察的 `read-verified`，真实保存、其他权限和其他版本仍须用户验收；分享账号等其他端点不借此提升证据等级。
+
+## 2026-10-02 未配置限速状态更正
+
+上述早期枚举记录不完整。[追加只读核查](../environments/2026-10-02-file-station-settings-read-fix.md#传输限速追加核查)在相同 DSM/套件版本观察到本机用户和群组的 `policy=notexist`；官方用户列表显示应用群组设置。该值表示没有独立账号配置，不能归并为 `disabled`。新增读取枚举并保留未知值拒绝，用户显示“应用群组限速”，群组显示“未设置限速”。首次打开编辑器保持原状态，未作修改时不保存；仅可明确选择既有 `disabled/enabled/scheduled` 策略，仓库拒绝把 `notexist` 发往账号或服务级设置。未新增恢复群组配置的写操作。
+
+响应 Schema 及 `synthetic-bandwidth-unconfigured-user/group` 合成样本已同步；`FileStationParityTests` 覆盖两类读取、已配置策略、首次明确设定后回读、未知策略拒绝及禁止回写未配置标记。该标记只补全共享 Apple 内存模型，没有会话/持久化格式、公开 DSM 请求或存储迁移；回滚可撤销本轮解析与界面变更，NAS 原数据不受影响。
+
+五端影响：macOS 接入名单与编辑状态；iPhone/iPad 共享模型和网络层兼容读取，不新增设置入口；Windows/Android 后续接入应保留“继承或未配置”和“不限速”的区别，不借本次修复改变两端源码。真实保存、实际速度、群组继承计算及域/LDAP 均为 `PENDING_USER_VALIDATION`，本轮不提升写验证等级。

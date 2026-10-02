@@ -275,12 +275,16 @@
             ],
             "properties": {
               "uid": {
-                "type": "integer",
-                "minimum": 0
+                "oneOf": [
+                  { "type": "integer", "minimum": 0 },
+                  { "type": "string", "pattern": "^[0-9]+$" }
+                ]
               },
               "gid": {
-                "type": "integer",
-                "minimum": 0
+                "oneOf": [
+                  { "type": "integer", "minimum": 0 },
+                  { "type": "string", "pattern": "^[0-9]+$" }
+                ]
               },
               "name": {
                 "type": "string"
@@ -347,7 +351,8 @@
                 "enum": [
                   "disabled",
                   "enabled",
-                  "scheduled"
+                  "scheduled",
+                  "notexist"
                 ]
               },
               "schedule_plan": {

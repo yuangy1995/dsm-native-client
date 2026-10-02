@@ -36,6 +36,8 @@ struct FilePermissionEditor: View {
                     VStack(alignment: .leading, spacing: 16) {
                         if access?.writesEnabled != true {
                             Text(L10n.string("files.advanced.permissionUnavailable")).foregroundStyle(.secondary)
+                        } else if !permitsChanges {
+                            Text(L10n.string("files.permissions.readOnly")).foregroundStyle(.secondary)
                         }
                         ownerFields(snapshot)
                         Divider()
@@ -43,7 +45,7 @@ struct FilePermissionEditor: View {
                             Text(L10n.string("files.permissions.explicit")).font(.headline)
                             if rules.isEmpty { Text(L10n.string("files.permissions.noExplicit")).foregroundStyle(.secondary) }
                             ForEach(rules.indices, id: \.self) { index in
-                                ruleEditor(index).disabled(!editable || !snapshot.canChangePermissions)
+                                ruleEditor(index)
                             }
                             Button(L10n.string("files.permissions.addAccount")) { picked = []; pickerRole = 0 }
                                 .disabled(!editable || !snapshot.canChangePermissions)
@@ -130,7 +132,10 @@ struct FilePermissionEditor: View {
             .onChange(of: recursive) { _, _ in resetConfirmation() }
     }
 
-    private var editable: Bool { !busy && submitted == nil && access?.writesEnabled == true }
+    private var permitsChanges: Bool {
+        snapshot?.canChangePermissions == true || (snapshot?.owner?.canChange == true && access?.isAdministrator == true)
+    }
+    private var editable: Bool { !loading && !busy && submitted == nil && access?.writesEnabled == true && permitsChanges }
     private var hasChanges: Bool {
         guard let snapshot else { return false }
         return rules != snapshot.rules.filter { $0.level == 0 } || mode != (snapshot.posixMode ?? "000") || owner != nil || group != nil
@@ -179,24 +184,26 @@ struct FilePermissionEditor: View {
     }
     private func ruleEditor(_ index: Int) -> some View {
         DisclosureGroup {
-            Picker(L10n.string("files.permissions.effect"), selection: $rules[index].effect) {
-                ForEach(FileACLRule.Effect.allCases, id: \.self) { Text(effectTitle($0)).tag($0) }
-            }
-            LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], alignment: .leading) {
-                ForEach(FileACLRight.allCases, id: \.self) { right in
-                    Toggle(rightTitle(right), isOn: Binding(get: { rules[index].rights.contains(right) }, set: { enabled in
-                        if enabled { rules[index].rights.insert(right) } else { rules[index].rights.remove(right) }
-                    }))
+            Group {
+                Picker(L10n.string("files.permissions.effect"), selection: $rules[index].effect) {
+                    ForEach(FileACLRule.Effect.allCases, id: \.self) { Text(effectTitle($0)).tag($0) }
                 }
-            }
-            if item.isDirectory {
-                ForEach(FileACLInheritance.allCases, id: \.self) { scope in
-                    Toggle(inheritanceTitle(scope), isOn: Binding(get: { rules[index].inheritance.contains(scope) }, set: { enabled in
-                        if enabled { rules[index].inheritance.insert(scope) } else { rules[index].inheritance.remove(scope) }
-                    }))
+                LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], alignment: .leading) {
+                    ForEach(FileACLRight.allCases, id: \.self) { right in
+                        Toggle(rightTitle(right), isOn: Binding(get: { rules[index].rights.contains(right) }, set: { enabled in
+                            if enabled { rules[index].rights.insert(right) } else { rules[index].rights.remove(right) }
+                        }))
+                    }
                 }
-            }
-            Button(L10n.string("files.permissions.removeRule"), role: .destructive) { rules.remove(at: index) }
+                if item.isDirectory {
+                    ForEach(FileACLInheritance.allCases, id: \.self) { scope in
+                        Toggle(inheritanceTitle(scope), isOn: Binding(get: { rules[index].inheritance.contains(scope) }, set: { enabled in
+                            if enabled { rules[index].inheritance.insert(scope) } else { rules[index].inheritance.remove(scope) }
+                        }))
+                    }
+                }
+                Button(L10n.string("files.permissions.removeRule"), role: .destructive) { rules.remove(at: index) }
+            }.disabled(!editable || snapshot?.canChangePermissions != true)
         } label: {
             Text(rules[index].ownerName.isEmpty ? L10n.string("files.permissions.unknownAccount") : rules[index].ownerName)
             Text(effectTitle(rules[index].effect)).foregroundStyle(.secondary)
@@ -247,7 +254,7 @@ struct FilePermissionEditor: View {
             let loaded = try await model.loadFilePermissions(item)
             snapshot = loaded; rules = loaded.rules.filter { $0.level == 0 }; mode = loaded.posixMode ?? "000"
             access = try await model.loadFileStationAdvancedAccess()
-        } catch { self.error = (error as? AppError)?.safeUserMessage ?? L10n.string("files.permissions.loadFailed") }
+        } catch { self.error = (error as? AppError)?.safeUserMessage ?? L10n.string("files.advanced.readFailed") }
     }
     private func save(review: Bool) async {
         guard let snapshot, !busy else { return }

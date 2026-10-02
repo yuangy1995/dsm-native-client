@@ -1622,7 +1622,7 @@
       "id": "file-station-package-settings",
       "componentId": "file-station",
       "scope": "File Station",
-      "capability": "套件设置、各目录来源的挂载名单、带宽、分享页面布局及图片选择上传；具体等级见稳定记录，真实写待用户验证。",
+      "capability": "套件设置、各目录来源的挂载名单、带宽、分享页面布局及图片选择上传；2026-10-02 待归属只读观察确认本机用户/群组 uid/gid 为数字字符串，客户端兼容整数和数字字符串，并补全 BandwidthControl.list 的 notexist 未配置状态，禁止作为写入策略；具体等级见稳定记录，真实写待用户验证。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
