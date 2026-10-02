@@ -31,6 +31,21 @@ public enum DsmAPIName {
     public static let fileStationMount = "SYNO.FileStation.Mount"
     /// 同组内部挂载清单及断开接口，固定 v1；不复用 Mount 的文件树卸载变体。
     public static let fileStationMountList = "SYNO.FileStation.Mount.List"
+    /// 内部扩展，依据 File Station 1.4.1-1559 官方前端。
+    public static let fileStationProperty = "SYNO.FileStation.Property"
+    public static let fileStationACLOwner = "SYNO.FileStation.Property.ACLOwner"
+    public static let coreACL = "SYNO.Core.ACL"
+    public static let fileStationSettings = "SYNO.FileStation.Settings"
+    public static let fileStationVFSUser = "SYNO.FileStation.VFS.User"
+    public static let coreBandwidthControl = "SYNO.Core.BandwidthControl"
+    public static let coreDirectoryLDAP = "SYNO.Core.Directory.LDAP"
+    public static let coreDirectoryDomain = "SYNO.Core.Directory.Domain"
+    public static let coreThemeImage = "SYNO.Core.Theme.Image"
+    public static let coreFileSharingTheme = "SYNO.Core.Theme.FileSharingLogin"
+    public static let fileStationVFSProtocol = "SYNO.FileStation.VFS.Protocol"
+    public static let fileStationVFSProfile = "SYNO.FileStation.VFS.Profile"
+    public static let fileStationVFSConnection = "SYNO.FileStation.VFS.Connection"
+    public static let fileStationUserGroup = "SYNO.FileStation.UserGrp"
     /// Synology Chat 套件内部接口；仅在 DSM 能力发现明确返回时启用。
     public static let chatChannel = "SYNO.Chat.Channel"
     /// Synology Chat 命名会话内部接口；用于创建群聊和邀请成员。
@@ -225,6 +240,20 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.fileStationVirtualFolder,
         DsmAPIName.fileStationMount,
         DsmAPIName.fileStationMountList,
+        DsmAPIName.fileStationProperty,
+        DsmAPIName.fileStationACLOwner,
+        DsmAPIName.coreACL,
+        DsmAPIName.fileStationSettings,
+        DsmAPIName.fileStationVFSUser,
+        DsmAPIName.coreBandwidthControl,
+        DsmAPIName.coreFileSharingTheme,
+        DsmAPIName.coreThemeImage,
+        DsmAPIName.coreDirectoryLDAP,
+        DsmAPIName.coreDirectoryDomain,
+        DsmAPIName.fileStationVFSProtocol,
+        DsmAPIName.fileStationVFSProfile,
+        DsmAPIName.fileStationVFSConnection,
+        DsmAPIName.fileStationUserGroup,
         DsmAPIName.fileStationBackgroundTask,
         DsmAPIName.chatChannel,
         DsmAPIName.chatChannelNamed,
@@ -424,6 +453,20 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.fileStationVirtualFolder: 2...2,
         DsmAPIName.fileStationMount: 1...1,
         DsmAPIName.fileStationMountList: 1...1,
+        DsmAPIName.fileStationProperty: 1...1,
+        DsmAPIName.fileStationACLOwner: 1...1,
+        DsmAPIName.coreACL: 1...1,
+        DsmAPIName.fileStationSettings: 1...1,
+        DsmAPIName.fileStationVFSUser: 1...1,
+        DsmAPIName.coreBandwidthControl: 1...1,
+        DsmAPIName.coreFileSharingTheme: 1...1,
+        DsmAPIName.coreThemeImage: 1...1,
+        DsmAPIName.coreDirectoryLDAP: 1...1,
+        DsmAPIName.coreDirectoryDomain: 1...2,
+        DsmAPIName.fileStationVFSProtocol: 1...1,
+        DsmAPIName.fileStationVFSProfile: 1...1,
+        DsmAPIName.fileStationVFSConnection: 1...1,
+        DsmAPIName.fileStationUserGroup: 1...1,
         DsmAPIName.fileStationBackgroundTask: 3...3,
         // Chat Server 没有公开普通用户聊天契约，范围按运行时返回值与已验证实现取交集。
         DsmAPIName.chatChannel: 1...5,

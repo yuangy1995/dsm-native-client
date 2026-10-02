@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.upload-theme-image.synthetic-request",
+  "module": "file-station",
+  "operation": "uploadThemeImage",
+  "api": {
+    "name": "SYNO.Core.Theme.Image",
+    "method": "upload",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "multipart"
+  },
+  "parameters": [
+    {
+      "name": "type",
+      "valueType": "string",
+      "encodedValue": "fbsharing_login_logo"
+    },
+    {
+      "name": "upload_image",
+      "valueType": "binary",
+      "encodedValue": "<synthetic-png-data>"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "multipart"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "multipart"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

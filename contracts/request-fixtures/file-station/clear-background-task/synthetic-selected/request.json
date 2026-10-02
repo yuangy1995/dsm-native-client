@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.clear-background-task.synthetic-selected",
+  "module": "file-station",
+  "operation": "clearBackgroundTask",
+  "api": {
+    "name": "SYNO.FileStation.BackgroundTask",
+    "method": "clear_finished",
+    "preferredVersion": 3,
+    "resolvedVersion": 3,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "taskid",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-task-id>\"]"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

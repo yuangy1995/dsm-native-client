@@ -11,12 +11,12 @@
 2026-09-19 Windows 已按用户授权开放现有 NAS 专用管理和容器网络验证入口，保留
 接口、权限、确认、预检、防重复及结果核查；不再仅因未行为验收固定关闭。旧通用
 辅助/未实现能力不包括在内，记录中的历史关闭状态以此客户端补充为准，API 契约和
-真实环境证据不变。详情见 [Windows 开放账本](../../../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-09-19-可测试入口开放nas-专用流程与容器网络)。
+真实环境证据不变。详情见 [Windows 开放账本](../../../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#windows-平台转换与恢复)。
 
 2026-09-19 Windows Chat 高级入口策略已更新：移除单一 DSM/套件 build 白名单及
 系统套件列表依赖，普通 Chat 用户按绑定会话和对应接口能力使用；操作前仍核对会话
 可访问性、消息归属，保留确认/去重/结果核查。仅客户端授权策略变化，无新 API 或
-真实行为证据；其他四端不改。见 [Chat 开放账本](../../../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#2026-09-19-可测试入口开放chat-高级操作)。
+真实行为证据；其他四端不改。见 [Chat 开放账本](../../../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md#windows-平台转换与恢复)。
 
 ### Container 映像列表与下载任务边界
 
@@ -240,7 +240,7 @@
 - 创建响应需要候选 `channel_id/id`，但不能单凭候选判断成功；单聊重读会话列表，群聊另外使用 `Member.get` v1 的 `user_ids` 确认所有所选成员。`success=false` 的显式拒绝与传输未知分开处理，沿用现有固定请求 ID、串行创建和待核对结果处理。
 - 仍需当前账号有 Chat 使用权限，版本缺失/Member 缺失时不开放对应创建；加密会话不因编码修复而开放。没有手动发送消息、创建群聊或执行权限变更。
 - Apple Adapter：`apple/Packages/DsmNetwork/Sources/DsmChatRepository.swift`；FORM 和 JSON 的能力、完整创建链、数组编码、回读及去重测试见同包 `Tests/DsmChatRepositoryTests.swift`；JSON 合成请求见 `contracts/request-fixtures/chat/create-private-group/synthetic-json/request.json`。
-- 五端影响与剩余工作见[本轮修复和功能真实性审计](../../../development/MACOS_ENTRY_FIXES_AND_FUNCTION_AUDIT_20260909_ZH.md)。本次不替代其他 build/套件版本的兼容复验，不提高既有创建操作的实机验证等级。
+- 五端影响与剩余工作见[本轮修复和功能真实性审计](../../../../apple/Apps/DsmMac/README.md)。本次不替代其他 build/套件版本的兼容复验，不提高既有创建操作的实机验证等级。
 
 ### `chat-realtime`
 
@@ -334,3 +334,11 @@
 2026-10-01接入进度：临时分享的创建、保留副本、已停止临时相册清理已进入Core/Repository，本地测试进行中；macOS组合界面和冻结相册仍未完成，不提升static证据等级。
 
 - [Photos后台任务中心](photos-background-tasks.md)：统一列表、取消、清理与错误详情；2026-10-01仅static，macOS已接入并通过本地合成回归。
+
+## 2026-10-02 File Station 扩展
+
+- [文件内容索引搜索](file-station-content-search.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。
+- [具名分享、次数限制与文件请求](file-station-sharing-extended.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。
+- [文件所有者、POSIX 与 ACL](file-station-file-permissions.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。
+- [VFS 远程协议与云盘连接](file-station-vfs-connections.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。
+- [套件设置、挂载/分享授权、带宽与分享页面](file-station-package-settings.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。

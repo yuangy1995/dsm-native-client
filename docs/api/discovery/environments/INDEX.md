@@ -20,6 +20,8 @@
 
 ## 待归属观察
 
+- [2026-10-02 File Station 官方包静态核查](2026-10-02-file-station-official-package.md)：浏览器会话不可访问；官方包无法用标准归档读取，未获得新字段证据，不改变历史兼容等级。
+
 - [2026-10-01 Photos 后台任务与冻结相册续查](2026-10-01-photos-remaining-observation.md)：浏览器恢复后的官方静态资源只读核对，完整版本仍未知，不执行真实NAS写入。
 
 - [2026-09-26 NAS 设置读取回归](2026-09-26-nas-settings-read-observation.md)：观察到账号启停枚举和分离的电源计划容器；系统活动仅静态候选，未提升历史设备等级，写入待用户验证。
@@ -60,3 +62,5 @@
 ## 非设备静态来源读取尝试
 
 - [2026-09-30 Photos 1.9.1-10928 官方公开包](2026-09-30-photos-1-9-1-official-package.md)与[1.7.0-0795归档包](2026-09-30-photos-1-7-0-official-package.md)：标准归档工具未能读取内部脚本，没有新增API证据或设备基线；未安装、执行、解密或访问NAS。
+
+- [2026-10-02 File Station 官方页面续查](2026-10-02-file-station-live-observation.md)：DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559；待归属；全文 start 与设置读取、静态扩展契约，无真实写验证。

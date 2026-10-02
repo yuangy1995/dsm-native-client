@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.create-vfs-cloud-profile.synthetic-request",
+  "module": "file-station",
+  "operation": "createVfsCloudProfile",
+  "api": {
+    "name": "SYNO.FileStation.VFS.Profile",
+    "method": "create",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "account",
+      "valueType": "string",
+      "redacted": true
+    },
+    {
+      "name": "access_token",
+      "valueType": "string",
+      "redacted": true
+    },
+    {
+      "name": "refresh_token",
+      "valueType": "string",
+      "redacted": true
+    },
+    {
+      "name": "client_id",
+      "valueType": "string",
+      "encodedValue": "synthetic-client"
+    },
+    {
+      "name": "expires_in",
+      "valueType": "integer",
+      "encodedValue": "3600"
+    },
+    {
+      "name": "protocol",
+      "valueType": "string",
+      "encodedValue": "google"
+    },
+    {
+      "name": "hostname",
+      "valueType": "string",
+      "redacted": true
+    },
+    {
+      "name": "alias",
+      "valueType": "string",
+      "encodedValue": "Cloud"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

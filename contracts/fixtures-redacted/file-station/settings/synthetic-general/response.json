@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "data": {
+    "transfer_log_enable": false,
+    "use_unix_default_perm": false,
+    "enable_list_usergrp": true,
+    "sharing_allow": "admin",
+    "file_request_allow": "admin",
+    "rf_allow": "admin",
+    "vd_allow": "admin",
+    "sharing_privilege": {
+      "items": []
+    },
+    "sharing_group_privilege": {
+      "items": []
+    },
+    "file_request_privilege": {
+      "items": []
+    },
+    "file_request_group_privilege": {
+      "items": []
+    },
+    "sharing_default_limit": "1000",
+    "bandwidth_enable": "bandwidth_disable",
+    "schedule_plan": "",
+    "enable_sharing_custom_setting": "false"
+  }
+}

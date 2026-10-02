@@ -3124,8 +3124,9 @@ final class DsmFileRepositoryTests: XCTestCase {
     }
 
     func test读取压缩包内容用于密码与文件名检测() async throws {
+        // 官方 Extract.list 的 path 是包内相对路径；绝对路径由独立安全测试拒绝。
         let response = DsmHTTPResponse(
-            data: Data(#"{"success":true,"data":{"items":[{"itemid":7,"name":"存档","path":"/存档","size":0,"pack_size":0,"mtime":"0","is_dir":true}]}}"#.utf8),
+            data: Data(#"{"success":true,"data":{"items":[{"itemid":7,"name":"存档","path":"存档","size":0,"pack_size":0,"mtime":"0","is_dir":true}]}}"#.utf8),
             statusCode: 200
         )
         let transport = MockHTTPTransport(responses: [response])
@@ -3142,7 +3143,7 @@ final class DsmFileRepositoryTests: XCTestCase {
             password: "REDACTED_ARCHIVE_PASSWORD"
         )
 
-        XCTAssertEqual(items, [ArchiveItem(id: 7, name: "存档", path: "/存档", isDirectory: true)])
+        XCTAssertEqual(items, [ArchiveItem(id: 7, name: "存档", path: "存档", isDirectory: true, sizeBytes: 0)])
         let requests = await transport.recordedRequests()
         let request = try XCTUnwrap(requests.first)
         let body = try XCTUnwrap(request.httpBody.flatMap { String(data: $0, encoding: .utf8) })

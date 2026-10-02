@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "data": {
+    "taskid": "<redacted:search-task>",
+    "has_not_index_share": true
+  }
+}

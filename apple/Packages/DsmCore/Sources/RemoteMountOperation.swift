@@ -11,15 +11,17 @@ public struct RemoteMountSetup: Equatable, Sendable, CustomStringConvertible, Cu
     public let readOnly: Bool
     public let nfsVersion: RemoteMountNFSVersion
     public let nfsTransport: RemoteMountNFSTransport
+    public let automaticMount: Bool
     public init(_ configuration: RemoteMountConfiguration) {
         protocolType = configuration.protocolType; server = configuration.server; remotePath = configuration.remotePath
         mountPoint = configuration.mountPoint; username = configuration.username; domain = configuration.domain; readOnly = configuration.readOnly
         nfsVersion = configuration.nfsVersion; nfsTransport = configuration.nfsTransport
+        automaticMount = configuration.automaticMount
     }
     public func configuration(password: String = "") -> RemoteMountConfiguration {
         RemoteMountConfiguration(protocolType: protocolType, server: server, remotePath: remotePath, mountPoint: mountPoint,
             username: username, password: protocolType == .smb ? password : "", domain: domain, readOnly: readOnly,
-            nfsVersion: nfsVersion, nfsTransport: nfsTransport)
+            nfsVersion: nfsVersion, nfsTransport: nfsTransport, automaticMount: automaticMount)
     }
     public var description: String { "RemoteMountSetup" }
     public var debugDescription: String { description }

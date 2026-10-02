@@ -1,0 +1,16 @@
+{
+  "success": true,
+  "data": {
+    "profiles": [
+      {
+        "id": "<redacted:cloud-profile>",
+        "protocol": "google",
+        "protocol_name": "Google Drive",
+        "uri": "<redacted:remote-uri>",
+        "alias": "Synthetic cloud",
+        "account": "<redacted:cloud-account>",
+        "connect_status": 1
+      }
+    ]
+  }
+}

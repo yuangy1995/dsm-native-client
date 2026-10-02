@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.mount-iso.synthetic-request",
+  "module": "file-station",
+  "operation": "mountISO",
+  "api": {
+    "name": "SYNO.FileStation.Mount",
+    "method": "mount_iso",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "source",
+      "valueType": "string",
+      "encodedValue": "<synthetic-source>"
+    },
+    {
+      "name": "mount_point",
+      "valueType": "string",
+      "encodedValue": "<synthetic-target>"
+    },
+    {
+      "name": "auto_mount",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "user_set",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

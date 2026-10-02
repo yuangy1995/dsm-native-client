@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.archive-list.synthetic-child-page",
+  "module": "file-station",
+  "operation": "listArchivePage",
+  "api": {
+    "name": "SYNO.FileStation.Extract",
+    "method": "list",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "file_path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-archive-path>"
+    },
+    {
+      "name": "item_id",
+      "valueType": "integer",
+      "encodedValue": "7"
+    },
+    {
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "sort_by",
+      "valueType": "string",
+      "encodedValue": "name"
+    },
+    {
+      "name": "sort_direction",
+      "valueType": "string",
+      "encodedValue": "asc"
+    },
+    {
+      "name": "codepage",
+      "valueType": "string",
+      "encodedValue": "chs"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "readOnlyAutomatic",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

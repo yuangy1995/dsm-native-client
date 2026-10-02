@@ -17,7 +17,8 @@ final class RemoteMountRecoveryTests: XCTestCase {
         XCTAssertEqual(operation.stage, .verifyingConnection)
         let setup = try XCTUnwrap(operation.setup)
         XCTAssertEqual(Set(Mirror(reflecting: setup).children.compactMap(\.label)),
-            Set(["protocolType", "server", "remotePath", "mountPoint", "username", "domain", "readOnly", "nfsVersion", "nfsTransport"]))
+            Set(["protocolType", "server", "remotePath", "mountPoint", "username", "domain", "readOnly", "nfsVersion", "nfsTransport", "automaticMount"]))
+        XCTAssertEqual(setup.automaticMount, configuration.automaticMount)
         XCTAssertFalse(Mirror(reflecting: setup).children.contains { ($0.value as? String) == "synthetic-secret" })
         XCTAssertEqual(String(reflecting: operation), "RemoteMountOperation")
         do { try await repository.createRemoteMount(configuration); XCTFail("未知不能重发") }

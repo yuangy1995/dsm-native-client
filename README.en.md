@@ -1,5 +1,5 @@
 <!-- doc-role: entrypoint -->
-<!-- last-reviewed: 2026-09-15 -->
+<!-- last-reviewed: 2026-10-02 -->
 
 # LanStash
 
@@ -28,6 +28,7 @@ The current milestone is native-client alignment and device validation across al
 - Multiple NAS profiles, HTTPS addresses, and QuickConnect IDs.
 - DSM sign-in, two-factor verification, session restoration, and platform secure storage.
 - File and shared-folder browsing, search, upload, download, copy, move, rename, compression, extraction, and sharing.
+- On macOS, native system previews for Word, Excel, and PowerPoint, plus automatic saving back to the NAS after editing in a local app; unchanged content is not uploaded.
 - Native Synology Photos personal timelines, month navigation, 12 filter categories, album/shared-entry browsing, media previews, and original-file saving; single-item personal deletion retains confirmation, permission checks, and result verification.
 - Synology Chat conversations, attachments, reminders, polls, and scheduled messages.
 - Entry points for Download Station, Container Manager, Virtual Machine Manager, and NAS settings.
@@ -35,6 +36,8 @@ The current milestone is native-client alignment and device validation across al
 - Light and dark modes, keyboard and touch input, dynamic type, screen readers, and reduced motion.
 
 Some capabilities depend on DSM or package versions. LanStash prefers Synology's public APIs. Internal APIs are explicitly marked in the implementation and compatibility documentation and isolated behind capability discovery.
+
+Document auto save requires LanStash to keep running. Conflicts or uncertain save results pause further uploads and preserve the local copy. Quitting stops synchronization, and restarting does not restore editing sessions. This workflow is implemented only on macOS; validation with real editors and a NAS remains pending. See the [Office preview and editing record](apple/Apps/DsmMac/README.md) for usage, the isolated test package, and validation scope.
 
 All five production Photos routes use Synology Photos directly, without falling back to File Station scanning when the package is unavailable. Sharing an original through the operating system does not create a Photos sharing link. Uploads, album editing, shared spaces, and automatic backup retain their separate scope. See the [Photos plan](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md) for implementation, performance boundaries, and per-platform validation.
 
@@ -133,7 +136,7 @@ Follow [`SECURITY.md`](SECURITY.md) when reporting a vulnerability. Do not attac
 
 ## Documentation
 
-- [Current development and acceptance plan](docs/development/NATIVE_DSM_FILE_APP_DEVELOPMENT_PLAN_ZH.md)
+- [Documentation index](docs/README.md)
 - [Current progress](docs/progress/STATUS.md)
 - [Product roadmap](docs/progress/ROADMAP.md)
 - [Platform feature matrix](docs/progress/PLATFORM_MATRIX.md)
@@ -144,7 +147,7 @@ Follow [`SECURITY.md`](SECURITY.md) when reporting a vulnerability. Do not attac
 - [Community Compatibility Matrix](docs/compatibility/COMMUNITY_COMPATIBILITY_MATRIX_EN.md)
 - [Architecture](docs/architecture/ARCHITECTURE.md)
 - [Security baseline](docs/security/SECURITY_BASELINE.md)
-- [DSM Web API reference](docs/api/DSM_WEB_API_REFERENCE_ZH.md)
+- [API implementation reference by feature](docs/api/README.md)
 - [DSM and package private API discovery process](docs/api/discovery/README.md)
 - [Locale contract](contracts/localization/README.md)
 

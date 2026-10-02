@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": {
+    "total": 1,
+    "usergrp_settings": [
+      {
+        "uid": 1001,
+        "name": "synthetic-user",
+        "enabled": false,
+        "is_modifiable": true
+      }
+    ]
+  }
+}

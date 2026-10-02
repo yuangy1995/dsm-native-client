@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.list-mount-domain-accounts.synthetic-request",
+  "module": "file-station",
+  "operation": "listMountDomainAccounts",
+  "api": {
+    "name": "SYNO.FileStation.VFS.User",
+    "method": "get",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "content",
+      "valueType": "string",
+      "encodedValue": "user_settings"
+    },
+    {
+      "name": "type",
+      "valueType": "string",
+      "encodedValue": "domain"
+    },
+    {
+      "name": "usergroup",
+      "valueType": "string",
+      "encodedValue": "user"
+    },
+    {
+      "name": "domain",
+      "valueType": "string",
+      "encodedValue": "SYNTHETIC"
+    },
+    {
+      "name": "substr",
+      "valueType": "string",
+      "encodedValue": "<synthetic-filter>"
+    },
+    {
+      "name": "offset",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "limit",
+      "valueType": "integer",
+      "encodedValue": "100"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

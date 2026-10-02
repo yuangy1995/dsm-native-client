@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.search.synthetic-content",
+  "module": "file-station",
+  "operation": "search",
+  "api": {
+    "name": "SYNO.FileStation.Search",
+    "method": "start",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "folder_path",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-folder>\"]"
+    },
+    {
+      "name": "pattern",
+      "valueType": "string",
+      "encodedValue": "synthetic content"
+    },
+    {
+      "name": "recursive",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "filetype",
+      "valueType": "string",
+      "encodedValue": "all"
+    },
+    {
+      "name": "search_content",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "search_type",
+      "valueType": "string",
+      "encodedValue": "advance"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

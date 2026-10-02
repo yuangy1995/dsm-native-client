@@ -139,7 +139,7 @@ final class RequestFixtureContractTests: XCTestCase {
                 #"{"success":true,"data":{"links":[{"id":"synthetic-link","path":"/<synthetic-path>","url":"https://share.example.invalid/synthetic","qrcode":"synthetic","error":0}]}}"#
             ),
             response(
-                #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"synthetic-link","name":"Synthetic","path":"/<synthetic-path>","url":"https://share.example.invalid/synthetic","has_password":true,"date_expired":"2026-08-20"}]}}"#
+                #"{"success":true,"data":{"offset":0,"total":1,"links":[{"id":"synthetic-link","name":"Synthetic","path":"/<synthetic-path>","url":"https://share.example.invalid/synthetic","has_password":true,"date_available":"2026-08-10","date_expired":"2026-08-20"}]}}"#
             ),
         ])
         let repository = try makeRepository(

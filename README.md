@@ -1,5 +1,5 @@
 <!-- doc-role: entrypoint -->
-<!-- last-reviewed: 2026-09-15 -->
+<!-- last-reviewed: 2026-10-02 -->
 
 # 岚仓（LanStash）
 
@@ -28,6 +28,7 @@
 - 多 NAS 配置、HTTPS 地址和 QuickConnect ID。
 - DSM 登录、双重验证、会话恢复和平台安全存储。
 - 文件与共享文件夹浏览、搜索、上传、下载、复制、移动、重命名、压缩、解压和分享。
+- macOS 支持 Word、Excel、PowerPoint 系统原生预览，以及用本机应用编辑后自动保存回 NAS；内容未变化不上传。
 - 原生 Synology Photos 个人时间线、年月定位、12 类筛选、相册／共享读取、媒体预览和原件保存；个人单项删除保留确认、权限与结果核对。
 - Synology Chat 会话、附件、提醒、投票和定时消息能力。
 - Download Station、Container Manager、Virtual Machine Manager 和 NAS 设置入口。
@@ -35,6 +36,8 @@
 - 浅色/深色模式、键盘、触控、动态文字、屏幕阅读器和降低动态效果适配。
 
 部分能力依赖 DSM 或套件版本。项目优先使用 Synology 官方公开 API；必须使用内部 API 时，会在实现与兼容文档中明确标注并通过能力探测隔离。
+
+macOS 文档自动保存需保持岚仓运行；冲突或结果不明时暂停并保留本机副本，退出后不继续同步，重启不自动恢复。此功能只在 macOS 接入，真实编辑器与 NAS 验收仍待完成；使用步骤、独立测试包和验证范围见 [Office 预览与编辑记录](apple/Apps/DsmMac/README.md)。
 
 五端正式照片入口均直接使用 Synology Photos，套件不可用时不会退回 File Station 扫描。系统原件分享不代表支持创建 Photos 分享链接；上传、相册编辑、共享空间和自动备份按各自范围控制。实现、性能边界与逐端验收统一见[照片计划](docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。
 
@@ -136,8 +139,8 @@ dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runt
 
 ## 文档入口
 
-- [当前开发与验收计划](docs/development/NATIVE_DSM_FILE_APP_DEVELOPMENT_PLAN_ZH.md)
-- [Android 原生客户端完善、进度与换电脑计划](docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)
+- [文档总目录](docs/README.md)
+- [Android 原生客户端长期计划](docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)
 - [当前进度](docs/progress/STATUS.md)
 - [产品路线图](docs/progress/ROADMAP.md)
 - [平台功能矩阵](docs/progress/PLATFORM_MATRIX.md)
@@ -148,7 +151,7 @@ dotnet build src/LanStash.App/LanStash.App.csproj --configuration Release --runt
 - [社区兼容矩阵](docs/compatibility/COMMUNITY_COMPATIBILITY_MATRIX_ZH.md)
 - [总体架构](docs/architecture/ARCHITECTURE.md)
 - [安全基线](docs/security/SECURITY_BASELINE.md)
-- [DSM Web API 参考](docs/api/DSM_WEB_API_REFERENCE_ZH.md)
+- [按功能分类的 API 实现参考](docs/api/README.md)
 - [DSM 与套件私有 API 发现规范](docs/api/discovery/README.md)
 - [语言契约说明](contracts/localization/README.md)
 

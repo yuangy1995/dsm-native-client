@@ -297,6 +297,22 @@ struct MacToolbarButtonStyle: ButtonStyle {
     }
 }
 
+/// 路径整块区域均可点击，保持原生按钮的键盘与辅助功能操作。
+struct MacPathButtonStyle: ButtonStyle {
+    var current = false
+    @State private var hovered = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: current ? .medium : .regular))
+            .foregroundStyle(current ? Color.primary : Color.secondary)
+            .padding(.horizontal, 8)
+            .frame(minWidth: 32, minHeight: 32)
+            .contentShape(Rectangle())
+            .background(Color.primary.opacity(configuration.isPressed ? 0.12 : hovered ? 0.07 : 0), in: RoundedRectangle(cornerRadius: 7))
+            .onHover { hovered = $0 }
+    }
+}
+
 extension View {
     /// 保留原生菜单与键盘操作，仅移除系统按钮实色底板。
     func macThemedMenu() -> some View {

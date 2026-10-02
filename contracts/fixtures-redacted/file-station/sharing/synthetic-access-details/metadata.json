@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-access-details",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "69057",
+    "update": "12",
+    "architecture": "unknown"
+  },
+  "accountRole": "standard",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.FileStation.Sharing",
+    "path": "entry.cgi",
+    "version": 3,
+    "method": "list"
+  },
+  "scenario": "合成具名访问与空日期响应，不保留真实账号、路径或 URL。",
+  "redactedFields": [],
+  "package": {
+    "version": "1.4.1-1559",
+    "name": "File Station"
+  }
+}

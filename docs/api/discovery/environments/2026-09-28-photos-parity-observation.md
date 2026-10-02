@@ -26,7 +26,7 @@
 ## 相关记录
 
 - `docs/api/discovery/endpoints/photos-management.md`
-- `docs/development/MACOS_PHOTOS_PARITY_20260929_ZH.md`
+- `docs/development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md`
 - `contracts/private-api/compatibility.json`
 
 ## 安全与限制

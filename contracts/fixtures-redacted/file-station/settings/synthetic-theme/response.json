@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "data": {
+    "enable_logo_customize": true,
+    "enable_background_customize": true,
+    "logo_position": "leftup",
+    "background_position": "fill",
+    "background_color": "#FFFFFF",
+    "footer_msg": "Synthetic footer",
+    "enable_footer_html": false
+  }
+}

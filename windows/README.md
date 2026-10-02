@@ -1,12 +1,12 @@
 <!-- doc-role: platform-readme -->
-<!-- last-reviewed: 2026-09-16 -->
+<!-- last-reviewed: 2026-10-02 -->
 
 # Windows 原生客户端
 
 Windows 客户端使用 C#、WinUI 3、HttpClient、System.Text.Json 和 Windows Credential Locker。
 2026-09-16 按用户提供的 macOS 浅色／深色截图重建原生工作区、文件页、登录、照片、消息与 NAS 设置布局。
 协议、认证、会话存储和危险写门保持既有实现；本次界面交付不等于全部 macOS 功能已完成对齐。
-范围、测试与缺口统一见[原生重建账本](../docs/development/WINDOWS_NATIVE_REBUILD_ZH.md)。
+范围、测试与缺口统一见[Windows 长期计划](../docs/development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。
 
 ```text
 LanStash.Domain          领域模型与跨模块契约
@@ -15,6 +15,8 @@ LanStash.Application     特性模型、用例、平台无关协调
 LanStash.App             WinUI 3 原生界面
 LanStash.Tests           不依赖真实 NAS 的自动化测试
 ```
+
+开发 API 时先读[按功能实现参考](../docs/api/README.md)，保留 macOS 的请求与恢复语义，并按 Windows 原生交互实现。
 
 ## 当前范围
 

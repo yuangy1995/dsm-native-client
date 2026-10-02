@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dsm-native-client/file-station-mount-inventory.schema.json",
+  "title": "file-station-mount-inventory",
+  "description": "仅描述已记录的成功响应白名单；额外字段不会成为客户端默认值或写入依据。",
+  "type": "object",
+  "required": [
+    "success",
+    "data"
+  ],
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "mountConfig",
+        "remoteList",
+        "isoList"
+      ],
+      "properties": {
+        "mountConfig": {
+          "type": "object",
+          "required": [
+            "enable_remote_mount",
+            "enable_iso_mount"
+          ],
+          "properties": {
+            "enable_remote_mount": {
+              "type": "boolean"
+            },
+            "enable_iso_mount": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "remoteList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "source",
+              "mount_point"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "mount_point": {
+                "type": "string"
+              },
+              "auto_mount": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "isoList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "source",
+              "mount_point"
+            ],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "mount_point": {
+                "type": "string"
+              },
+              "auto_mount": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.set-bandwidth.synthetic-request",
+  "module": "file-station",
+  "operation": "setBandwidth",
+  "api": {
+    "name": "SYNO.Core.BandwidthControl",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "bandwidths",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"name\":\"synthetic-user\",\"protocol\":\"FileStation\",\"owner_type\":\"local_user\",\"policy\":\"scheduled\",\"schedule_plan\":\"211111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\"upload_limit_1\":42,\"download_limit_1\":0,\"upload_limit_2\":0,\"download_limit_2\":0}]"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

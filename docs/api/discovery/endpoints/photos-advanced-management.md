@@ -130,7 +130,7 @@ Chrome 恢复可用后，从已加载官方 react_bundle.js 静态复核；未�
 
 macOS 人物卡片提供命名/清空名称及合并入口，能力独立：命名只需 Person v1，合并需 Person v2、Timeline v5、Item v4、Folder v2。操作前重新读取目标名称/数量；合并读取全部人物照片并检查目录权限，同操作编号不重复提交，写后自动核对名称、来源消失和目标照片并集。清空少于两张照片的人物名称后列表可能隐去，只有成功回执与隐去结果同时成立才确认；回执丢失不按隐去推断成功。
 
-领域增量为 peopleNames/peopleMerge、renamePerson/mergePeople、managementPeople、结果 person/removedPersonIDs，旧调用默认兼容。分类封面通过当前授权分类列表中的缩略图读取，按分类隔离、重新授权清空，不再将人物编号当作相册编号。合成测试覆盖冲突、权限、回执丢失、照片重叠并集、来源残留、重复身份、能力独立和封面隔离。证据仍为 static 与本地自动化，无真实 NAS 写入；不新增版本验证白名单。人脸分离/纠正/封面及共享空间仍未实现。真实环境条件和步骤见 MACOS_PHOTOS_PARITY_20260929_ZH.md。
+领域增量为 peopleNames/peopleMerge、renamePerson/mergePeople、managementPeople、结果 person/removedPersonIDs，旧调用默认兼容。分类封面通过当前授权分类列表中的缩略图读取，按分类隔离、重新授权清空，不再将人物编号当作相册编号。合成测试覆盖冲突、权限、回执丢失、照片重叠并集、来源残留、重复身份、能力独立和封面隔离。证据仍为 static 与本地自动化，无真实 NAS 写入；不新增版本验证白名单。人脸分离/纠正/封面及共享空间仍未实现。真实环境条件和步骤见 NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md。
 
 
 ## 2026-09-29 有效期日期绑定补证与实现
@@ -248,7 +248,7 @@ macOS个人照片预览接入编辑人脸：加载原有框、鼠标绘制/拖�
 
 预检拒绝混合空间的人物、脸和照片；合并按当前空间核对成员照片并集、目录权限和授权代次。人物、人脸缩略图分别按空间隔离缓存，上传丢失回执后的精确JPEG回读也走同一空间；记录未知不重复写。结果人物及显示状态携带来源，界面仅更新对应空间的卡片/筛选/月份/预览，不刷新到最新照片。移除人脸仅操作识别标记，原照片保留。
 
-未进行真实NAS人物写入，证据等级保持static，合成验证不登记behavior-verified；用户验收步骤和构建证据见MACOS_PHOTOS_PARITY_20260929_ZH.md。iOS/iPadOS共享Apple契约与Repository但不新增界面；Windows/Android只记录迁移语义，本轮未改其代码，无存储迁移、新依赖或工具链变化。
+未进行真实NAS人物写入，证据等级保持static，合成验证不登记behavior-verified；用户验收步骤和构建证据见NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md。iOS/iPadOS共享Apple契约与Repository但不新增界面；Windows/Android只记录迁移语义，本轮未改其代码，无存储迁移、新依赖或工具链变化。
 
 ### 2026-09-29 共享条件来源静态复核
 

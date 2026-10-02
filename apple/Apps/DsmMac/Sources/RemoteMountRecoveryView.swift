@@ -9,7 +9,6 @@ struct RemoteMountRecoveryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selection: UUID?
     @State private var password = ""
-    @State private var confirmedOperation: RemoteMountOperation?
     @State private var abandoningOperation: RemoteMountOperation?
     @State private var actionTask: Task<Void, Never>?
     @State private var actionGeneration = UUID()
@@ -47,24 +46,18 @@ struct RemoteMountRecoveryView: View {
                     SecureField(L10n.string("ui.a621ab606db2a11f"), text: $password).disabled(model.isManagingRemoteMount)
                     Text(L10n.string("remote-mount.recovery.password")).font(.caption).foregroundStyle(.secondary)
                 }
-                if operation.stage.canContinue {
-                    Toggle(L10n.string("remote-mount.confirm"), isOn: Binding(
-                        get: { confirmedOperation == operation }, set: { confirmedOperation = $0 ? operation : nil }
-                    )).disabled(model.isManagingRemoteMount)
-                }
                 HStack {
                     if operation.stage.requiresReview {
                         Button(L10n.string("remote-mount.recovery.check")) {
-                            clearConfirmation()
+                            clearPassword()
                             perform { await model.reviewRemoteMountOperation(operation) }
                         }.disabled(model.isManagingRemoteMount)
                     }
                     if operation.stage.canContinue {
                         Button(L10n.string(operation.stage == .readyToConnect ? "remote-mount.recovery.connect" : "remote-mount.recovery.disconnect")) {
-                            guard confirmedOperation == operation else { return }
-                            let enteredPassword = password; clearConfirmation()
+                            let enteredPassword = password; clearPassword()
                             perform { await model.continueRemoteMountOperation(operation, password: enteredPassword, confirmed: true) }
-                        }.disabled(model.isManagingRemoteMount || confirmedOperation != operation).buttonStyle(.borderedProminent)
+                        }.disabled(model.isManagingRemoteMount).buttonStyle(.borderedProminent)
                         Button(L10n.string("remote-mount.recovery.stop")) { abandoningOperation = operation }.disabled(model.isManagingRemoteMount)
                     }
                 }
@@ -86,22 +79,21 @@ struct RemoteMountRecoveryView: View {
             guard !Task.isCancelled else { return }
             selection = selected?.id
         }
-        .onChange(of: selection) { _, _ in clearConfirmation() }
-        .onChange(of: password) { _, _ in confirmedOperation = nil }
-        .onChange(of: model.remoteMountOperations) { _, _ in clearConfirmation(); selection = selected?.id }
-        .onDisappear { clearConfirmation(); actionGeneration = UUID(); actionTask?.cancel(); actionTask = nil }
+        .onChange(of: selection) { _, _ in clearPassword() }
+        .onChange(of: model.remoteMountOperations) { _, _ in clearPassword(); selection = selected?.id }
+        .onDisappear { clearPassword(); actionGeneration = UUID(); actionTask?.cancel(); actionTask = nil }
         .alert(L10n.string("remote-mount.recovery.stop"), isPresented: Binding(
             get: { abandoningOperation != nil }, set: { if !$0 { abandoningOperation = nil } }
         )) {
             Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) { abandoningOperation = nil }
             Button(L10n.string("remote-mount.recovery.stop"), role: .destructive) {
                 guard let operation = abandoningOperation else { return }
-                abandoningOperation = nil; clearConfirmation()
+                abandoningOperation = nil; clearPassword()
                 perform { await model.abandonRemoteMountOperation(operation, confirmed: true) }
             }
         } message: { Text(L10n.string("remote-mount.recovery.stop-warning")) }
     }
-    private func clearConfirmation() { password = ""; confirmedOperation = nil }
+    private func clearPassword() { password = "" }
     private func perform(_ action: @escaping @MainActor () async -> Void) {
         guard actionTask == nil else { return }
         let generation = UUID(); actionGeneration = generation

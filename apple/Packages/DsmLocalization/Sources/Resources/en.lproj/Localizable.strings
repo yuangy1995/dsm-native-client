@@ -51,10 +51,10 @@
 "container.logs.info" = "Information";
 "container.logs.warning" = "Warning";
 "container.logs.error" = "Error";
-"photos.service.permission" = "You don’t have access to this photo space. Ask the NAS administrator to check your Photos permissions, then try again.";
+"photos.service.permission" = "You cannot access these photos. Ask your NAS administrator to check your photo permissions, then try again.";
 "photos.service.unavailable" = "Photos is unavailable. Check that Synology Photos is installed and running on your NAS, then reconnect.";
 "photos.service.invalidResponse" = "The photo library could not be loaded. Refresh and try again.";
-"photos.library.space" = "Photo space";
+"photos.library.space" = "Photo source";
 "photos.library.empty" = "There are no photos to show here. Check your library in Synology Photos, then refresh.";
 "photos.library.more" = "Load more photos";
 "photos.library.search" = "Search photos";
@@ -188,7 +188,7 @@
 "region.settings.format-required" = "Enter a non-empty display format.";
 "region.settings.invalid" = "Review the display formats, time zone, time servers, and manual date before saving.";
 "region.settings.manual-date-required" = "Choose the date and time to set on the NAS.";
-"region.settings.ntp-warning" = "The configuration will be saved and read back first. If the time-server mode or server list changed, the NAS will then synchronize immediately; this may end the current login or temporarily affect certificate checks.";
+"region.settings.ntp-warning" = "Changing time synchronization or time servers adjusts the NAS clock immediately. You may need to sign in again or reconnect later.";
 "region.settings.partial" = "Some region or time changes were confirmed, but another setting or the immediate synchronization was not applied or could not be confirmed. Reconnect if necessary, reload every value, and do not save again until the current NAS time is known.";
 "region.settings.permission-denied" = "This account cannot change region and time settings. Use an account with system management permission.";
 "region.settings.saving" = "Saving region and time settings";
@@ -322,7 +322,7 @@
 "shared.14f852b3c59ec0c8" = "Please select a .torrent, .nzb, or .txt file containing the download URL.";
 "shared.15a56baee335807a" = "Download failed, please confirm that the current user has permission to read this file.";
 "shared.1750af3117ab4301" = "Please enter a network name.";
-"shared.17d2e16862f16829" = "Shared Space";
+"shared.17d2e16862f16829" = "Shared photos";
 "shared.18b4f39557c377e4" = "Login has expired, please log in again.";
 "shared.18c37943b50afde0" = "Please select a file, not a folder.";
 "shared.18e15bfc47d389cd" = "Unable to read saved login status, please log in again.";
@@ -383,7 +383,7 @@
 "shared.4da44b2e6887b5ed" = "Please enter the NAS address or QuickConnect ID.";
 "shared.4f060f32743040c5" = "The virtual machine priority setting is invalid, please select again.";
 "shared.51bdbefbc0c88421" = "The selected file cannot be read, please select again.";
-"shared.51fcaa8035fc61e2" = "Personal Space";
+"shared.51fcaa8035fc61e2" = "My photos";
 "shared.5350a51d42c2c339" = "Please enter a virtual machine name.";
 "shared.539873656a8d3b33" = "The compressed package name is too long, please shorten the name and try again.";
 "shared.53f82a3866fbda42" = "Please enter username and password.";
@@ -397,7 +397,7 @@
 "shared.59ee3335304d8042" = "The connection cannot be broken here.";
 "shared.59faeb679e4861af" = "Unable to prepare the remote console, please refresh and try again.";
 "shared.5c8573de7cce9571" = "Please select a save location on this Mac.";
-"shared.5dcc7495647890e0" = "This location cannot be opened because it is not in the current photo space.";
+"shared.5dcc7495647890e0" = "This location cannot be opened. Return to the folder list and choose another folder.";
 "shared.5e35450bf91845f5" = "The download is not completed yet and can be continued in the transfer center.";
 "shared.5f35ed652b825e19" = "This file or folder no longer exists.";
 "shared.60be7160962c7372" = "The NAS has not confirmed that the DDNS record has been deleted, please refresh and try again.";
@@ -424,7 +424,7 @@
 "shared.7031852e2ed8042f" = "Please enter the image name to search for.";
 "shared.7047a09e87d95943" = "Please start the virtual machine first, and then open the remote console.";
 "shared.706d4bbb975fcdc6" = "This virtual machine cannot be found, please refresh and try again.";
-"shared.7074fa008dad7ab4" = "Only folders in the current photo space can be read.";
+"shared.7074fa008dad7ab4" = "Choose a folder from the current photo list.";
 "shared.7172e0328c485e2d" = "The number of allowed failures should be 1 to 9999.";
 "shared.71baa97fe8c71269" = "The file operation did not complete.";
 "shared.71de0e6207d12dc7" = "File upload is not allowed in the current directory. Please confirm the permissions and server policy.";
@@ -628,7 +628,7 @@
 "ui.02fd538b5510e8ba" = "Search for photos or videos";
 "ui.03671d6ddf237f70" = "Message reminder";
 "ui.038b9263cfd8c1a8" = "Loading folder...";
-"ui.03ebb07bb59ddce2" = "The password or key is only used for this submission and is not saved in the Mac client. Before saving, the NAS will first verify the connection, and then re-read the record to confirm the result.";
+"ui.03ebb07bb59ddce2" = "The password or key is used only for this connection and is not saved on this Mac.";
 "ui.03f2e448dbfc3943" = "The virtual machine has been deleted.";
 "ui.041c8bf2f9cd31f3" = "This NAS has not yet returned to the system profile.";
 "ui.042274cf3d451290" = "Option %@";
@@ -690,7 +690,7 @@
 "ui.0bdd80480ee76860" = "The proxy affects NAS internet access. Check the address.";
 "ui.0bee1672c6d4a3a9" = "Move to…";
 "ui.0c00c2f57088c5fa" = "Two-step verification code";
-"ui.0c132f8c1951432b" = "There are currently no folders in the photo space.";
+"ui.0c132f8c1951432b" = "No folders yet.";
 "ui.0c1777d6b7a70cc7" = "Cancel this sharing?";
 "ui.0c184871f658375a" = "yesterday";
 "ui.0c349a4e26f357d7" = "There are no albums here yet";
@@ -841,7 +841,7 @@
 "ui.1eff9b7d894c0ff9" = "Modify…";
 "ui.1f0117cd8f4f1c48" = "There is no manageable installation image for this NAS yet.";
 "ui.1f0a01abb1908f19" = "Unable to complete operation";
-"ui.1f30f490b6eb4a19" = "I have checked, continue to connect";
+"ui.1f30f490b6eb4a19" = "Trust and connect";
 "ui.1f39096f50fcbc99" = "Task source";
 "ui.1f42dd983ef3248f" = "Networks in use may not be deleted. After removal, virtual machines connected to this network may not be able to communicate properly.";
 "ui.1f7269533836a148" = "No host assigned";
@@ -1560,7 +1560,7 @@
 "ui.8bdde5a2fb782204" = "Select an execution record.";
 "ui.8be0ea36a9bba286" = "Connecting…";
 "ui.8c04c080fcc61432" = "%@ errors";
-"ui.8c1040ae852de1b8" = "No photo space to view";
+"ui.8c1040ae852de1b8" = "Photos are unavailable";
 "ui.8c1a000858cfcd2d" = "Displays the storage space accessible to the currently logged in account, excluding storage space that is not authorized to be viewed.";
 "ui.8c22e5562e176879" = "Remove from recent visits";
 "ui.8c603369c2c12ca3" = "Enable firewall";
@@ -1822,7 +1822,7 @@
 "ui.aee88743413144a2" = "Refresh";
 "ui.af90a08fec8ee28d" = "load more";
 "ui.afb63a620bdcff15" = "safe";
-"ui.afbc722b9ad55bef" = "photo space";
+"ui.afbc722b9ad55bef" = "Photo source";
 "ui.afd0935d8e0eeb33" = "Preserve the folder structure within the compressed package";
 "ui.afe5b2261f44779b" = "Automatic login";
 "ui.affdb1b5d9e5b288" = "This drive does not have S.M.A.R.T. detection available.";
@@ -1995,7 +1995,7 @@
 "ui.c9b87f516a38ea36" = "Fri";
 "ui.c9b9ae7a61444ab7" = "Previous page";
 "ui.c9cb0f813cc56383" = "No scheduled tasks";
-"ui.c9e8421e4283b968" = "Please confirm that the personal photo space or shared photo space has been enabled in the NAS and allowed to be accessed by the current account.";
+"ui.c9e8421e4283b968" = "Enable Photos on your NAS and allow access for this account, then try again.";
 "ui.c9f2141af12cca30" = "Select users to start chatting or create a private group chat";
 "ui.ca0af0bbf50d2b45" = "Download image";
 "ui.ca2cc77f49f1ee00" = "File \"%@\" has been created.";
@@ -2043,7 +2043,7 @@
 "ui.d063937855cf99a7" = "Add options";
 "ui.d07abfb11e7e0d48" = "Check for updates failed";
 "ui.d09045a8a3d7a70e" = "Opening folder...";
-"ui.d0b56b3e4f2fb3cf" = "This NAS is not responding to media segment reads and is temporarily unavailable for streaming.";
+"ui.d0b56b3e4f2fb3cf" = "This media cannot be played here. Download it and open it with an app on your Mac.";
 "ui.d0b8762f8066116a" = "Once stopped, the test will not produce complete results; the test can still be restarted later.";
 "ui.d0b9d702115fa28d" = "Encrypted FTP";
 "ui.d0c9a0e81079a7b2" = "Enter password again";
@@ -2576,7 +2576,7 @@
 "desktopDrive.delete.summaryUnknown" = "Deletion has not been confirmed. Check the contents on your NAS first.";
 "desktopDrive.writeback.retryTitle" = "Have you checked the NAS file?";
 "desktopDrive.writeback.retryMessage" = "Continuing may replace the current NAS file with your local edits. Save a local copy first if you want to keep it separately.";
-"desktopDrive.writeback.retryConfirm" = "I've checked, save again";
+"desktopDrive.writeback.retryConfirm" = "Save again";
 "desktopDrive.writeback.loadError" = "Couldn't load or refresh these changes. Reopen this window and try again.";
 "desktopDrive.writeback.exportError" = "Couldn't save the local copy. Choose a new filename in a writable folder and try again.";
 "desktopDrive.writeback.stop" = "Stop retrying";
@@ -3014,13 +3014,13 @@
 "mobile.files.details.value.not-allowed" = "Not Allowed";
 "mobile.files.details.recycle-location" = "Recycle Bin";
 "mobile.photos.title" = "Photos";
-"mobile.photos.space" = "Photo Space";
+"mobile.photos.space" = "Photo source";
 "mobile.photos.filter.title" = "Show";
 "mobile.photos.filter.all" = "Folders and Photos";
 "mobile.photos.filter.images" = "Photos Only";
-"mobile.photos.loading.spaces" = "Finding photo spaces…";
+"mobile.photos.loading.spaces" = "Loading photos…";
 "mobile.photos.loading.album" = "Loading photos…";
-"mobile.photos.empty.spaces.title" = "No Photo Spaces Available";
+"mobile.photos.empty.spaces.title" = "Photos are unavailable";
 "mobile.photos.empty.spaces.message" = "Check that personal or shared photo folders are enabled on the NAS and available to this account.";
 "mobile.photos.empty.album.title" = "This Album Is Empty";
 "mobile.photos.empty.album.message" = "Add photos from another device, then refresh this album.";
@@ -3546,11 +3546,11 @@
 "mobile.photos.timeline.action.refresh" = "Scan again";
 "mobile.photos.timeline.action.clear-search" = "Clear search and filters";
 "mobile.photos.timeline.idle.title" = "Photo timeline";
-"mobile.photos.timeline.idle.message" = "Scan this photo space to group photos and videos by month. Nothing is uploaded or changed.";
+"mobile.photos.timeline.idle.message" = "Organize photos and videos by month without uploading or changing them.";
 "mobile.photos.timeline.loading.title" = "Scanning photos…";
 "mobile.photos.timeline.loading.progress" = "%lld folders scanned";
 "mobile.photos.timeline.empty.title" = "No photos or videos found";
-"mobile.photos.timeline.empty.message" = "Try scanning again after adding media to this photo space.";
+"mobile.photos.timeline.empty.message" = "Add photos or videos, then scan again.";
 "mobile.photos.timeline.filtered-empty.title" = "No matching media";
 "mobile.photos.timeline.filtered-empty.message" = "Try another file name or clear the current filters.";
 "mobile.photos.timeline.error.title" = "Couldn’t scan photos";
@@ -3558,7 +3558,7 @@
 "mobile.photos.timeline.partial.title" = "Some folders weren’t scanned";
 "mobile.photos.timeline.partial.message" = "%lld folders couldn’t be read. The photos shown are still available.";
 "mobile.photos.timeline.truncated.title" = "Showing a limited timeline";
-"mobile.photos.timeline.truncated.message" = "The scan stopped at the safe limit. Refine the photo space or scan again later.";
+"mobile.photos.timeline.truncated.message" = "There are too many photos and videos to show at once. Narrow the selection and try again.";
 "mobile.photos.timeline.search.prompt" = "Search file names";
 "mobile.photos.timeline.filter.title" = "Media filter";
 "mobile.photos.timeline.filter.all" = "All";
@@ -4049,7 +4049,7 @@
 "container-image.pull.search" = "Search images";
 "container-image.pull.tasks" = "Downloads";
 "container-image.pull.risk" = "Downloading uses NAS storage and may update an existing tag. Closing this window does not stop the NAS download.";
-"container-image.pull.confirm" = "I reviewed the selected image and tag";
+"container-image.pull.confirm" = "Download the selected image";
 "container-image.pull.review" = "Check download status";
 "container-image.pull.empty" = "No downloads recorded for this connection";
 "container-image.pull.empty-message" = "After signing in again or restarting the app, check existing downloads in DSM before starting them again.";
@@ -4077,8 +4077,8 @@
 "remote-mount.tcp" = "TCP";
 "remote-mount.udp" = "UDP";
 "remote-mount.create-impact" = "Connect the shared folder at the specified location without changing its access permissions. Automatic reconnection stays off.";
-"remote-mount.edit-impact" = "Changing the connection may interrupt access at this location. Check both locations; if the result is uncertain, check the NAS website before submitting again.";
-"remote-mount.confirm" = "I have checked the connection locations and impact. Continue.";
+"remote-mount.edit-impact" = "Saving replaces this remote connection and may briefly interrupt access.";
+"remote-mount.confirm" = "Confirm connection";
 "remote-mount.locations.overlap" = "The new and previous connection locations cannot be inside each other. Choose a separate location.";
 "remote-mount.identity.changed" = "The remote connection has changed or is no longer available. Refresh and check its source before trying again.";
 "remote-mount.disconnect.identity" = "Disconnect %@ from %@? Access through this connection will be interrupted. No folders or files will be deleted.";
@@ -4087,8 +4087,8 @@
 "remote-mount.recovery.required" = "This location has an unconfirmed operation. Open Unfinished connection operations to check it before submitting again.";
 "remote-mount.recovery.unavailable" = "This operation is unavailable. Refresh connections and check its status on the NAS website.";
 "remote-mount.recovery.unknown" = "The result is not confirmed yet. Check it before submitting the same operation again.";
-"remote-mount.recovery.ready-connect" = "The previous connection is disconnected. Check the settings before continuing with the new connection.";
-"remote-mount.recovery.ready-disconnect" = "The new connection is ready. Check it before continuing to disconnect the previous connection.";
+"remote-mount.recovery.ready-connect" = "The previous connection is disconnected. You can now connect the new location.";
+"remote-mount.recovery.ready-disconnect" = "The new connection is ready. You can disconnect the previous connection.";
 "remote-mount.recovery.completed" = "Connection status verified. Operation complete.";
 "remote-mount.recovery.failed" = "The operation did not complete. Check the permissions or settings before trying again.";
 "remote-mount.recovery.stopped" = "The remaining steps have been stopped. Completed changes have not been undone.";
@@ -4107,7 +4107,7 @@
 "remote-mount.recovery.account" = "Account: %@\nDomain: %@";
 "remote-mount.recovery.unset" = "Not provided";
 "remote-mount.recovery.nfs-options" = "Connection options: %@ / %@";
-"remote-mount.recovery.confirm-required" = "Check the current operation and confirm before continuing.";
+"remote-mount.recovery.confirm-required" = "Choose the connection operation to continue.";
 "remote-mount.recovery.session-limit" = "Records last only for this NAS session. Check unconfirmed operations on the NAS website before reconnecting or quitting the app.";
 "virtual-machine.power.restart-unavailable" = "Restart is not supported by this connection. Restart from inside the virtual machine instead.";
 "virtual-machine.power.review-required" = "A previous power or deletion operation still needs checking. Check its result before making another change.";
@@ -4632,7 +4632,7 @@
 "photos.recognition.enable_person" = "Recognize people";
 "photos.recognition.enable_concept" = "Recognize subjects";
 "photos.recognition.enable_similar" = "Recognize similar photos";
-"photos.recognition.homeRequired" = "Enable Personal Space on your NAS first.";
+"photos.recognition.homeRequired" = "Enable My photos in the Photos settings on your NAS first.";
 "photos.recognition.adminRequired" = "Ask your administrator to enable this recognition feature.";
 "photos.recognition.empty" = "No recognition settings available";
 "photos.recognition.emptyHint" = "Check whether recognition is available in Photos settings on your NAS.";
@@ -4654,7 +4654,7 @@
 "photos.sharedSettings.off" = "Disabled";
 "photos.sharedSettings.enable" = "Enable Shared Space";
 "photos.sharedSettings.disable" = "Disable Shared Space";
-"photos.sharedSettings.lastSpace" = "Enable Personal Space before disabling Shared Space.";
+"photos.sharedSettings.lastSpace" = "Enable My photos before turning off shared photos.";
 "photos.sharedSettings.folderDisabled" = "The shared photo folder is disabled. If enabling fails, restore the folder in DSM and try again.";
 "photos.sharedSettings.preferences" = "Shared Photo Settings";
 "photos.sharedSettings.person" = "Recognize people in shared photos";
@@ -4691,7 +4691,7 @@
 "photos.global.guestConfirm" = "Guests will be able to view details of shared photos.";
 "photos.global.excludedConfirm" = "Photos and videos in excluded formats will no longer appear. Original files will be kept.";
 "photos.global.clearConfirm" = "The conversion cache will be cleared. Original photos and videos will be kept. Later JPEG downloads may need conversion again.";
-"photos.global.pending" = "Checking settings and cache results. This will update automatically.";
+"photos.global.pending" = "Checking whether the settings have taken effect. This will update automatically.";
 "photos.global.partial" = "Some settings were saved. Reopen Global settings to review the current state and finish the remaining changes.";
 "photos.global.person" = "Enable people recognition";
 "photos.global.concept" = "Enable subject recognition";
@@ -4747,8 +4747,8 @@
 "photos.display.sortConfirmMessage" = "The default sort order will change to “%@ · %@”. Save this change?";
 
 "photos.maintenance.title" = "Photo Library Maintenance";
-"photos.maintenance.personal" = "Personal Space";
-"photos.maintenance.shared" = "Shared Space";
+"photos.maintenance.personal" = "My photos";
+"photos.maintenance.shared" = "Shared photos";
 "photos.maintenance.reindex" = "Re-index";
 "photos.maintenance.previews" = "Generate Missing Previews";
 "photos.maintenance.reindexDescription" = "Check the photo library for missing photos or incomplete information.";
@@ -4768,7 +4768,7 @@
 
 "photos.codec.allUsers" = "New format support is available. Generate missing previews for all users? Existing photos will be kept. This may take some time.";
 
-"photos.codec.personal" = "New format support is available. Generate missing previews in your Personal Space? Existing photos will be kept. This may take some time.";
+"photos.codec.personal" = "New format support is ready. Generate missing previews for your photos? Original photos will be kept, and this may take a while.";
 
 "photos.codec.generate" = "Generate Previews";
 
@@ -4778,13 +4778,13 @@
 
 "photos.codec.none" = "There are no new format support messages.";
 
-"photos.codec.unavailable" = "Personal Space is unavailable. You can generate previews after it is enabled.";
+"photos.codec.unavailable" = "Enable My photos in the Photos settings on your NAS before generating previews.";
 
 "photos.codec.submitted" = "Preview generation has been started. You can continue browsing while it runs.";
 
 "photos.codec.partial" = "Preview generation has started, but the message status could not be saved. Continue to save it without restarting generation.";
 
-"photos.codec.pending" = "Checking whether your request was received. This will continue automatically when the connection is restored.";
+"photos.codec.pending" = "Checking whether preview generation has started. This will continue when the connection returns.";
 
 "photos.codec.readFailed" = "Unable to read the format support message. Check your connection and try again.";
 
@@ -4908,5 +4908,597 @@
 "photos.upload.recovery.resume" = "Continue Uploads";
 "photos.upload.recovery.clearUnresolved" = "Remove Record After Checking…";
 "photos.upload.recovery.clearTitle" = "Have you checked the result on your NAS?";
-"photos.upload.recovery.clearConfirmed" = "Checked, Remove Record";
+"photos.upload.recovery.clearConfirmed" = "Remove record";
 "photos.upload.recovery.clearMessage" = "First check in Synology Photos whether the photo or folder was created. Removing this record will not undo completed work or upload again. Uploading the file later may create a duplicate.";
+
+// 文件功能对齐：分享结果与日期
+"files.sharing.loadFailed" = "Could not load shared links. Please try again.";
+"files.common.retry" = "Retry";
+"files.common.close" = "Close";
+"files.sharing.created" = "Link created";
+"files.sharing.denied" = "You do not have permission to share this item. Ask an administrator for access.";
+"files.sharing.unsupported" = "This device does not currently support creating links.";
+"files.sharing.cancelled" = "Cancelled before creating a link";
+"files.sharing.unverified" = "Result not confirmed. Refresh the shared links list and check before creating another link.";
+"files.sharing.failed" = "Could not create a link. Check that the item still exists and you have permission to share it.";
+"files.sharing.passwordLength" = "Use a password with no more than 16 characters.";
+"files.sharing.startDate" = "Start date";
+"files.sharing.endDate" = "Expiration date";
+"files.sharing.customDate" = "Custom date";
+"files.sharing.invalidDates" = "The expiration date cannot be earlier than the start date.";
+"files.sharing.creating" = "Creating shared links…";
+"files.sharing.systemShare" = "Share link…";
+"files.sharing.copyAll" = "Copy all successful links";
+"files.sharing.stopRemaining" = "Stop remaining items";
+
+// 文件夹上传
+"files.upload.queue" = "Upload details";
+"files.upload.title" = "Upload files and folders";
+"files.validation.replacementUnavailable" = "Replacing existing files is unavailable until verification is complete. Use a new folder to keep both copies.";
+"files.validation.passwordRemovalUnavailable" = "Removing a sharing password is unavailable until verification is complete.";
+"files.upload.destination" = "Upload to";
+"files.upload.preparing" = "Preparing upload…";
+"files.upload.failed" = "Upload did not finish. Check your connection and available space, then try again.";
+"files.upload.empty" = "Nothing to upload";
+"files.upload.chooseAgain" = "Choose files or folders and try again.";
+"files.upload.sameName" = "When a file has the same name";
+"files.upload.skip" = "Skip existing files";
+"files.upload.replace" = "Replace existing files";
+"files.upload.confirmReplace" = "I confirm that files with the same name will be replaced.";
+"files.upload.start" = "Start upload";
+"files.upload.linkSkipped" = "Symbolic link skipped";
+"files.upload.sourceUnavailable" = "Some items could not be read. Select them again and check access permissions.";
+"files.upload.parentFailed" = "The parent folder is not ready. Resolve its error before retrying.";
+"files.upload.sourceChanged" = "The local file changed. Select it again before uploading.";
+"files.upload.unverified" = "Result not confirmed. Check the upload result before sending this item again.";
+"files.upload.folderFailed" = "Could not confirm the destination folder. Refresh and check permissions.";
+"files.upload.sameNameSkipped" = "Existing file skipped";
+"files.upload.typeConflict" = "An item with the same name has a different type. Rename it or choose another location.";
+"files.upload.summary" = "%@ of %@ items completed or skipped";
+"files.upload.pause" = "Pause";
+"files.upload.cancel" = "Cancel remaining uploads";
+"files.upload.resume" = "Resume";
+"files.upload.retryFailed" = "Retry failed items";
+"files.upload.checkResults" = "Check upload results";
+"files.upload.cancelNotice" = "Cancelling keeps items already uploaded. Resuming starts a file from the beginning; uncertain results are checked first.";
+"files.upload.state.pending" = "Waiting";
+"files.upload.state.running" = "Uploading";
+"files.upload.state.succeeded" = "Completed";
+"files.upload.state.skipped" = "Skipped";
+"files.upload.state.failed" = "Failed";
+"files.upload.state.conflict" = "Name conflict";
+"files.upload.state.paused" = "Paused";
+"files.upload.state.cancelled" = "Cancelled";
+"files.upload.state.unverified" = "Needs checking";
+
+// 搜索条件与位置选择
+"files.upload.duplicateSource" = "Multiple local items have the same destination name. Upload them separately or rename them first.";
+"files.location.title" = "Choose a folder";
+"files.location.failed" = "Could not load folders. Check your connection and access permissions, then retry.";
+"files.location.empty" = "No subfolders";
+"files.location.selectCurrent" = "Choose this folder or go back to its parent.";
+"files.location.select" = "Choose this folder";
+"files.search.advanced" = "Advanced search";
+"files.search.reset" = "Reset conditions";
+"files.search.apply" = "Search";
+"files.search.extension" = "Extensions (e.g. jpg,png)";
+"files.search.kind" = "Type";
+"files.search.kind.all" = "Files and folders";
+"files.search.kind.file" = "Files";
+"files.search.kind.directory" = "Folders";
+"files.search.owner" = "Owner";
+"files.search.group" = "Group";
+"files.search.minimumSize" = "Larger than";
+"files.search.maximumSize" = "Smaller than";
+"files.search.sizeUnit" = "Size unit";
+"files.search.bytes" = "Bytes";
+"files.search.mib" = "MiB";
+"files.search.gib" = "GiB";
+"files.search.dates" = "Date conditions";
+"files.search.modified" = "Modified";
+"files.search.created" = "Created";
+"files.search.accessed" = "Accessed";
+"files.search.after" = "After";
+"files.search.before" = "Before";
+"files.search.removeLocation" = "Remove search location";
+"files.search.addLocation" = "Add search location";
+"files.search.subfolders" = "Include subfolders";
+"files.search.invalidConditions" = "Choose a search location and check the size and date ranges.";
+"files.search.unsupported" = "This device does not support these search conditions. Try fewer conditions.";
+"files.search.incomplete" = "Could not read all results. Please search again.";
+"files.search.searching" = "Searching…";
+"files.search.cancel" = "Stop search";
+
+// 分享管理
+"files.sharing.updated" = "Saved";
+"files.sharing.changeFailed" = "Could not make this change. Refresh the link, check permissions, and try again.";
+"files.sharing.manageUnsupported" = "This device does not currently support managing these links.";
+"files.sharing.changeUnverified" = "Result not confirmed. Refresh and check the link settings before submitting again.";
+"files.sharing.filter" = "Filter shared links";
+"files.sharing.refresh" = "Refresh";
+"files.sharing.selectedActions" = "Selected links";
+"files.sharing.copySelected" = "Copy selected links";
+"files.sharing.edit" = "Edit shared links";
+"files.sharing.availableOn" = "Available from: %@";
+"files.sharing.qr" = "Show QR code";
+"files.sharing.qrFailed" = "Could not generate a QR code. Copy the link to share it.";
+"files.sharing.itemResult" = "%@: %@";
+"files.sharing.password" = "Password";
+"files.sharing.keep" = "Keep unchanged";
+"files.sharing.setPassword" = "Set a new password";
+"files.sharing.removePassword" = "Remove password";
+"files.sharing.newPassword" = "New password";
+"files.sharing.confirmRemovePassword" = "I confirm removing the password. Anyone with the link can then access it without a password.";
+"files.sharing.immediate" = "Available immediately";
+"files.sharing.checkChanges" = "Choose a setting to change and check the dates and password length.";
+"files.sharing.save" = "Save changes";
+"files.sharing.status.valid" = "Active";
+"files.sharing.status.invalid" = "Not active yet";
+"files.sharing.status.expired" = "Expired";
+"files.sharing.status.broken" = "Original item unavailable";
+"files.sharing.status.unknown" = "Status unknown. Refresh to check";
+
+// 压缩包浏览与解压
+"files.archive.unsupported" = "This device does not support browsing archives or extracting selected items.";
+"files.archive.invalidSelection" = "The selected items could not be safely extracted. Reload the archive and select items again.";
+"files.archive.invalidList" = "The archive listing is incomplete or contains unsafe paths. Check the archive and try again.";
+"files.archive.changed" = "The archive changed. Close it, reopen it, and select its contents again.";
+"files.archive.loadFailed" = "Could not read the archive. Check its password, your connection, and whether the file is complete.";
+"files.archive.outputUnverified" = "Extraction ended, but not all output could be checked. Inspect the destination folder before handling unfinished items.";
+"files.archive.cancelled" = "Stopping extraction was requested. Extracted items are kept; check the destination folder.";
+"files.archive.destination" = "Extract to";
+"files.archive.chooseDestination" = "Change location…";
+"files.archive.password" = "Archive password (if any)";
+"files.archive.encoding" = "Filename encoding";
+"files.archive.encoding.auto" = "Automatic";
+"files.archive.encoding.chs" = "Simplified Chinese";
+"files.archive.encoding.cht" = "Traditional Chinese";
+"files.archive.encoding.enu" = "English";
+"files.archive.encoding.jpn" = "Japanese";
+"files.archive.encoding.krn" = "Korean";
+"files.archive.read" = "Load contents";
+"files.archive.scope" = "Extract";
+"files.archive.all" = "Entire archive";
+"files.archive.selected" = "Selected items";
+"files.archive.empty" = "No items to show";
+"files.archive.emptyNext" = "Go back, or check the password and encoding and reload.";
+"files.archive.openFolder" = "Open folder";
+"files.archive.more" = "Load more";
+
+// NAS 后台任务控制
+"files.tasks.unsupported" = "This task cannot be safely controlled here. Manage it in File Station.";
+"files.tasks.unverified" = "The task change could not be confirmed. Refresh the task list to check.";
+"files.tasks.cleared" = "The selected finished record was cleared. File contents were not changed.";
+"files.tasks.stopped" = "The task has ended. Check the files it already processed.";
+"files.tasks.scope" = "Finished does not mean successful. Clearing a record does not delete files or undo an operation.";
+"files.tasks.details" = "Task details";
+"files.tasks.clear" = "Clear this record";
+"files.tasks.stop" = "Stop this task";
+"files.tasks.clearNotice" = "Only this finished task record will be cleared. Files will not be deleted and completed operations will not be undone.";
+"files.tasks.stopNotice" = "Items already processed will be kept. Unfinished items may need further attention.";
+"files.tasks.created" = "Created";
+"files.tasks.reference" = "Task ID";
+
+/* 文件内容搜索 */
+"files.search.contents" = "Search file contents";
+"files.search.indexIncomplete" = "Some selected locations have not been indexed, so results may be incomplete. Ask an administrator to enable indexing for those locations.";
+"files.search.contentUnavailable" = "Content search is unavailable on this NAS. Try searching by name, or ask an administrator to check file indexing.";
+"files.search.contentRegex" = "Regular expressions apply to names. Turn off content search to use one.";
+
+/* 文件高级管理与收集 */
+"files.advanced.unavailable" = "This feature is unavailable on this NAS. You can continue with ordinary file operations.";
+"files.advanced.versionUnavailable" = "Changes are unavailable for this NAS version. Please use DSM to manage this setting.";
+"files.advanced.adminRequired" = "An administrator account is required to change this setting. Sign in with an administrator account and try again.";
+"files.advanced.readFailed" = "The current settings could not be checked. Refresh and try again.";
+"files.advanced.pendingChange" = "The previous change is not confirmed. Check its result in DSM before making another change.";
+"files.request.title" = "File request link";
+"files.request.create" = "Create a file request link";
+"files.request.name" = "Collection name";
+"files.request.message" = "Message for people uploading files";
+"files.request.confirmUpload" = "I understand that people with this link can upload files to the selected folder.";
+"files.request.writableFolderRequired" = "Choose a folder you can write to, then try again.";
+"files.sharing.namedAudience" = "Selected users and groups";
+"files.sharing.anyoneAudience" = "Anyone with the link";
+"files.sharing.accessSettings" = "Access and collection settings";
+"files.sharing.currentAudience" = "Current access";
+"files.sharing.changeAudience" = "New access";
+"files.sharing.chooseAudience" = "Choose users and groups";
+"files.sharing.audienceChanged" = "A selected account is no longer available. Refresh the account list and choose again.";
+"files.sharing.audienceRisk" = "This removes password and account restrictions from this link.";
+"files.sharing.currentAccessLimit" = "Current access limit";
+"files.sharing.unlimitedAccess" = "Unlimited";
+"files.sharing.editAccessLimit" = "Change access limit";
+"files.sharing.accessLimit" = "Access count";
+"files.sharing.accessLimitHint" = "Enter 1–9999, or 0 for unlimited access.";
+"files.sharing.invalidAccessLimit" = "Enter an access limit from 0 to 9999, then try again.";
+"files.sharing.confirmAccessChange" = "I understand that people not selected may lose access to this link.";
+"files.sharing.status.inactive" = "Not yet active";
+"files.principals.search" = "Search accounts";
+"files.principals.loadFailed" = "Could not load accounts";
+"files.principals.empty" = "No matching accounts";
+"files.principals.emptyDetail" = "Try another search or ask an administrator to check your access to the account list.";
+"files.principals.user" = "User";
+"files.principals.group" = "Group";
+"files.principals.more" = "Load more accounts";
+"files.principals.remove" = "Remove selected account";
+"files.principals.selected" = "%@ selected";
+
+/* ISO 与自动挂载 */
+"files.mount.automatic" = "Connect automatically after the NAS restarts";
+"files.mount.automaticImpact" = "The NAS will retain this connection for future restarts.";
+"files.iso.manage" = "ISO mounts";
+"files.iso.mount" = "Mount ISO";
+"files.iso.unmount" = "Unmount ISO";
+"files.iso.empty" = "No ISO images mounted";
+"files.iso.emptyDetail" = "Select an ISO file in the file browser and choose Mount ISO.";
+"files.iso.chooseDestination" = "Choose an existing empty folder";
+"files.iso.emptyFolderRequired" = "Choose an existing empty folder inside a shared folder.";
+"files.iso.unmountImpact" = "This disconnects the selected image. Its source file and destination folder are kept.";
+"files.iso.confirm" = "Connect the selected image";
+"files.iso.targetChanged" = "The image or destination has changed. Refresh and select it again.";
+"files.iso.loadFailed" = "Could not load mounts. Refresh and try again.";
+"files.iso.completed" = "The operation is complete.";
+"files.iso.unverified" = "The operation is not confirmed. Check the current state before making another change.";
+"files.iso.failed" = "The operation did not complete. Refresh the mounts and check your permissions.";
+"files.iso.review" = "Check connection status";
+
+/* 文件所有者与权限编辑 */
+"files.permissions.title" = "Owner and permissions";
+"files.permissions.changed" = "The item or its permissions changed. Close this window and load it again before editing.";
+"files.permissions.confirmRequired" = "Review the affected accounts and scope, then confirm the permission changes.";
+"files.permissions.cannotEdit" = "You cannot change these permissions. Ask an administrator for access.";
+"files.permissions.selfDenied" = "These changes would remove your access. Keep your access permissions and try again.";
+"files.permissions.explicit" = "Permissions on this item";
+"files.permissions.noExplicit" = "No permissions are set directly on this item.";
+"files.permissions.inherited" = "Permissions inherited from its parent";
+"files.permissions.noInherited" = "No inherited permissions.";
+"files.permissions.unknownAccount" = "Unavailable account";
+"files.permissions.addAccount" = "Add an account or group";
+"files.permissions.removing" = "Remove or change access: %@";
+"files.permissions.recursive" = "Also apply to all files and folders inside";
+"files.permissions.confirmRecursive" = "I agree to apply these permission changes to all items inside this folder.";
+"files.permissions.confirmOwner" = "I agree to change the owner or group, which may change access to this file.";
+"files.permissions.confirmChanges" = "I understand that some accounts may lose access.";
+"files.permissions.loadFailed" = "Could not load permissions";
+"files.permissions.saved" = "Permissions saved.";
+"files.permissions.pending" = "Some changes are still running or could not be checked. Check the result again before making another change.";
+"files.permissions.partial-failure" = "Some permission changes failed. Changes already applied were kept. Review permissions in File Station before continuing.";
+"files.permissions.failed" = "Permissions were not confirmed as saved. Reload the item to check its current permissions.";
+"files.permissions.review" = "Check changes";
+"files.permissions.save" = "Save permissions";
+"files.permissions.owner" = "Current owner: %@";
+"files.permissions.newOwner" = "New owner: %@";
+"files.permissions.chooseOwner" = "Choose owner";
+"files.permissions.keepOwner" = "Keep current owner";
+"files.permissions.group" = "Current group: %@";
+"files.permissions.newGroup" = "New group: %@";
+"files.permissions.chooseGroup" = "Choose group";
+"files.permissions.keepGroup" = "Keep current group";
+"files.permissions.effect" = "Access";
+"files.permissions.allow" = "Allow";
+"files.permissions.deny" = "Deny";
+"files.permissions.removeRule" = "Remove this permission";
+"files.permissions.ownerRole" = "Owner";
+"files.permissions.groupRole" = "Group";
+"files.permissions.everyoneRole" = "Others";
+"files.permissions.read" = "Read";
+"files.permissions.write" = "Write";
+"files.permissions.execute" = "Open / run";
+"files.permissions.chooseOne" = "Select one account for the owner, or one group for the group field.";
+"files.permissions.scope.current" = "This item";
+"files.permissions.scope.files" = "Files inside";
+"files.permissions.scope.folders" = "Folders inside";
+"files.permissions.scope.descendants" = "All levels inside";
+"files.permissions.right.read" = "Read files / list folders";
+"files.permissions.right.write" = "Write files / create files";
+"files.permissions.right.execute" = "Open folders / run files";
+"files.permissions.right.append" = "Append data / create folders";
+"files.permissions.right.delete" = "Delete this item";
+"files.permissions.right.deleteChildren" = "Delete items inside";
+"files.permissions.right.readAttributes" = "Read attributes";
+"files.permissions.right.writeAttributes" = "Change attributes";
+"files.permissions.right.readExtended" = "Read extended attributes";
+"files.permissions.right.writeExtended" = "Change extended attributes";
+"files.permissions.right.readPermissions" = "Read permissions";
+"files.permissions.right.changePermissions" = "Change permissions";
+"files.permissions.right.owner" = "Take ownership";
+
+/* File Station 套件设置 */
+"files.settings.title" = "File management settings";
+"files.settings.general" = "General";
+"files.settings.remoteAccess" = "Remote access";
+"files.settings.speed" = "Speed limits";
+"files.settings.appearance" = "Sharing page";
+"files.settings.recordTransfers" = "Record file transfers";
+"files.settings.defaultPermissions" = "Use default permissions for new files";
+"files.settings.showAccounts" = "Show account and group lists";
+"files.settings.sharePermission" = "Who can create sharing links";
+"files.settings.requestPermission" = "Who can create collection links";
+"files.settings.chooseAccounts" = "Choose accounts (%@ selected)";
+"files.settings.linkLimit" = "Default sharing links per account";
+"files.settings.mountPermission" = "Who can mount shared folders";
+"files.settings.isoPermission" = "Who can mount disc images";
+"files.settings.speedPolicy" = "When to apply speed limits";
+"files.settings.unlimited" = "No limit";
+"files.settings.alwaysLimit" = "Always apply limits";
+"files.settings.scheduleLimit" = "Follow a schedule";
+"files.settings.administrators" = "Administrators";
+"files.settings.everyone" = "All accounts";
+"files.settings.selectedAccounts" = "Selected accounts and groups";
+"files.settings.keepSelectedAccounts" = "Keep the existing selected accounts";
+"files.settings.remoteAccessScope" = "Save the access scope and account permissions separately.";
+"files.settings.keepLogo" = "Use a custom logo";
+"files.settings.logoPosition" = "Logo position";
+"files.settings.topLeft" = "Top left";
+"files.settings.topRight" = "Top right";
+"files.settings.bottomLeft" = "Bottom left";
+"files.settings.bottomRight" = "Bottom right";
+"files.settings.keepBackground" = "Use a custom background";
+"files.settings.backgroundPosition" = "Background layout";
+"files.settings.center" = "Center";
+"files.settings.fill" = "Fill";
+"files.settings.fit" = "Fit";
+"files.settings.stretch" = "Stretch";
+"files.settings.tile" = "Tile";
+"files.settings.backgroundColor" = "Background color";
+"files.settings.footer" = "Footer message";
+"files.settings.footerHTML" = "Use HTML formatting in the footer";
+"files.settings.invalidTheme" = "Use one line of up to 512 characters for the footer and choose a valid background color.";
+"files.settings.loadFailed" = "Could not load these settings";
+"files.settings.confirm" = "Save these changes";
+"files.settings.confirmRequired" = "Confirm the settings before saving. If a previous save is pending, check its result first.";
+"files.settings.changed" = "Settings changed while this window was open. Reopen it to review the latest settings.";
+"files.settings.saved" = "Settings saved.";
+"files.settings.pending" = "The save could not be fully checked. Check the result again before making another change.";
+"files.settings.failed" = "Settings were not confirmed as saved. Reopen this window to check the current values.";
+"files.settings.save" = "Save settings";
+"files.settings.adminAccess" = "Administrators keep access automatically.";
+"files.settings.accountType" = "Account type";
+"files.settings.localUsers" = "Local accounts";
+"files.settings.localGroups" = "Local groups";
+"files.settings.domainUsers" = "Domain accounts";
+"files.settings.domainGroups" = "Domain groups";
+"files.settings.ldapUsers" = "LDAP accounts";
+"files.settings.ldapGroups" = "LDAP groups";
+"files.settings.noAccounts" = "No accounts were returned for this type. Choose another account type or refresh.";
+"files.settings.editLimit" = "Edit speed limit";
+"files.settings.rateUnits" = "Speeds are in KB/s. Use 0 for no limit; other values must be at least 10.";
+"files.settings.uploadLimit" = "Default upload limit";
+"files.settings.downloadLimit" = "Default download limit";
+"files.settings.alternateUpload" = "Custom upload limit";
+"files.settings.alternateDownload" = "Custom download limit";
+"files.settings.invalidRate" = "Enter 0 or a whole number from 10 to 999,999,999 for each speed limit.";
+"files.settings.scheduleClock" = "The schedule uses the time set on your NAS.";
+"files.settings.paintSchedule" = "Apply to selected hours";
+"files.settings.defaultLimit" = "Default limit";
+"files.settings.alternateLimit" = "Custom limit";
+"files.settings.fillSchedule" = "Apply to the whole week";
+"files.settings.scheduleCell" = "%@, %@:00 — %@";
+
+/* NAS 管理的远程协议连接 */
+"files.vfs.title" = "FTP, WebDAV and cloud connections";
+"files.vfs.search" = "Find a connection";
+"files.vfs.add" = "Add connection";
+"files.vfs.empty" = "No connections";
+"files.vfs.emptyDetail" = "Add a connection supported by your NAS to manage it here.";
+"files.vfs.filteredEmpty" = "Try another name or clear the search.";
+"files.vfs.connected" = "Connected";
+"files.vfs.disconnected" = "Disconnected";
+"files.vfs.unknown" = "Status unavailable";
+"files.vfs.connect" = "Connect";
+"files.vfs.disconnect" = "Disconnect";
+"files.vfs.edit" = "Edit connection";
+"files.vfs.remove" = "Remove connection";
+"files.vfs.actions" = "Connection actions";
+"files.vfs.loadFailed" = "Could not load connections. Refresh and try again.";
+"files.vfs.confirmTarget" = "Confirm connection";
+"files.vfs.protocol" = "Connection type";
+"files.vfs.alias" = "Display name";
+"files.vfs.hostname" = "Server address";
+"files.vfs.port" = "Port";
+"files.vfs.account" = "Account";
+"files.vfs.replacePassword" = "Replace the saved password";
+"files.vfs.password" = "Password";
+"files.vfs.folder" = "Remote folder path";
+"files.vfs.moreOptions" = "More options";
+"files.vfs.filenameEncoding" = "Filename encoding";
+"files.vfs.singleConnection" = "Use one FTP connection";
+"files.vfs.confirmCleartext" = "I understand that this connection type does not encrypt data between the NAS and the remote server.";
+"files.vfs.confirmSave" = "Save these details on the NAS and connect to this server.";
+"files.vfs.saveConnect" = "Save and connect";
+"files.vfs.changed" = "The selected connection changed. Refresh the list and select it again.";
+"files.vfs.alreadyExists" = "A connection with these details or this name already exists. Review it before adding another.";
+"files.vfs.disconnectFirst" = "Disconnect this connection before removing its saved configuration.";
+"files.vfs.invalidConfiguration" = "Check the connection type, server address, port and display name, then try again.";
+"files.vfs.secureConnectionRequired" = "Connect to your NAS using HTTPS before saving remote account details.";
+"files.vfs.noChanges" = "No connection details have changed. Close this window or make a change first.";
+"files.vfs.identity-check" = "The server identity or cloud authorization needs attention. Check it in File Station before reconnecting.";
+"files.vfs.connection-failed" = "Could not connect. Check your network and account details, then try again.";
+"files.vfs.partial" = "The connection changed, but its saved configuration could not be confirmed. Check the result before making another change.";
+"files.vfs.completed" = "The connection operation is complete.";
+"files.vfs.pending" = "The operation is not confirmed yet. Select Check changes before trying to connect again.";
+"files.pending.title" = "Unfinished operations";
+"files.pending.scope" = "Operations with unconfirmed results appear here. Check their results before disconnecting.";
+"files.pending.empty" = "No unfinished operations";
+"files.pending.emptyDetail" = "Operations that need a result check will appear here.";
+"files.pending.noLongerPending" = "This operation has been resolved. Refresh the list.";
+"files.pending.verified" = "The change has taken effect.";
+"files.pending.kind.permissions" = "File permissions";
+"files.pending.kind.iso" = "ISO mount";
+"files.pending.kind.connection" = "Remote connection";
+"files.pending.kind.general" = "File service settings";
+"files.pending.kind.mountAccess" = "Remote access permission";
+"files.pending.kind.bandwidth" = "Transfer speed limits";
+"files.pending.kind.theme" = "Sharing page appearance";
+"files.settings.customSharingPage" = "Use a custom sharing page";
+"files.settings.manageLocalAccounts" = "Manage account permissions";
+"files.settings.localAccountScope" = "These permissions apply when access is limited to selected accounts.";
+"files.settings.accountLocked" = "This account’s permission cannot be changed here. Check its settings on the NAS.";
+"files.settings.accountAllowed" = "Access allowed";
+"files.settings.accountDenied" = "Access not allowed";
+"files.settings.allowRemoteAccess" = "Allow remote connections";
+"files.permissions.changeSummary" = "Changes to apply";
+"files.permissions.modeChange" = "Access mode: %@ → %@";
+"files.permissions.accountChange" = "Change permission rules for “%@”";
+"files.permissions.confirmRemoval" = "I confirm this may remove some access for the accounts above";
+
+"files.advanced.permissionUnavailable" = "Could not confirm permission to use this feature. Refresh, or ask an administrator to check your File Station access.";
+
+"files.settings.accountSource" = "Account source";
+
+"files.settings.source.local" = "NAS accounts";
+
+"files.settings.source.ldap" = "LDAP accounts";
+
+"files.settings.directoryUnavailable" = "Some directory accounts could not be loaded. Retry to refresh the available sources.";
+
+"files.vfs.browse" = "Browse files";
+
+"files.vfs.fileFilter" = "Filter files in this folder";
+
+"files.vfs.folderEmpty" = "No files to show";
+
+"files.vfs.folderEmptyDetail" = "This folder is empty. You can return to the parent folder or refresh.";
+
+"files.vfs.download" = "Download";
+
+"files.theme.chooseLogo" = "Choose logo";
+
+"files.theme.chooseBackground" = "Choose background";
+
+"files.theme.source" = "Image source";
+
+"files.theme.nas" = "NAS";
+
+"files.theme.history" = "Previously uploaded";
+
+"files.theme.local" = "This Mac";
+
+"files.theme.defaults" = "Built-in backgrounds";
+
+"files.theme.chooseLocal" = "Choose image…";
+
+"files.theme.uploadScope" = "The image will be added to the NAS image library. Save the page settings afterwards to apply it.";
+
+"files.theme.confirmUpload" = "Upload this image to the NAS";
+
+"files.theme.uploadSelect" = "Upload and select";
+
+"files.theme.select" = "Use this image";
+
+"files.theme.preview" = "Selected image preview";
+
+"files.theme.defaultNumber" = "Background %d";
+
+"files.theme.empty" = "No images here";
+
+"files.theme.emptyDetail" = "Choose another folder or upload an image from this Mac.";
+
+"files.theme.imageLoadFailed" = "The image could not be loaded. Refresh or choose another image.";
+
+"files.theme.invalidImage" = "This image could not be read. Choose a JPEG, PNG, GIF, or BMP image.";
+
+"files.theme.uploadUnknown" = "The upload could not be confirmed. Check Image history to avoid uploading the same image again.";
+
+"files.theme.chooseRequired" = "Choose an image for each custom appearance you enable.";
+
+"files.vfs.authorizeCloud" = "Authorize cloud account";
+"files.vfs.reauthorize" = "Sign in again";
+"files.vfs.cloudAuthorizationDetail" = "Sign in and authorize access on the cloud service page, then return here to save the connection.";
+"files.vfs.confirmCloudAccount" = "Connect this account to the NAS";
+"files.vfs.authorizationExpired" = "This sign-in attempt has expired. Close this window and authorize the account again.";
+"files.vfs.authorizationMismatch" = "The authorized account does not match this connection. Close this window and sign in with the original account.";
+"files.vfs.authorizationFailed" = "Authorization could not be completed. Check the sign-in page, close this window, then try again.";
+"files.vfs.authorizationClosed" = "The sign-in page was closed before authorization completed. Close this window and try again.";
+
+"files.vfs.browserAuthorizationWaiting" = "Sign in and authorize access in your browser, then return here to save the connection.";
+"files.vfs.openBrowser" = "Open browser";
+"files.vfs.browserAuthorizationComplete" = "Authorization complete. Return to LanStash to save the connection. You can close this tab.";
+
+/* 办公文档预览与本机编辑自动回传。 */
+"files.office.preview" = "Office document preview";
+"files.office.edit" = "Edit in an app";
+"files.office.editHelp" = "Save in your editor to automatically update the NAS file.";
+"files.office.openAutoSave" = "Open with Auto Save";
+"files.office.chooseApplication" = "Choose an App…";
+"files.office.localCopyTitle" = "Save an editing copy";
+"files.office.localCopyDetail" = "Keep LanStash running. Changes saved in your editor will automatically update the NAS file. This local copy will be kept.";
+"files.office.sessions" = "Document Auto Save";
+"files.office.noSessions" = "No documents being edited";
+"files.office.noSessionsDetail" = "Choose a Word, Excel, or PowerPoint file, then choose Edit in an app.";
+"files.office.preparing" = "Preparing document…";
+"files.office.watching" = "Auto Save is on";
+"files.office.waitingForSave" = "Waiting for saving to finish…";
+"files.office.saving" = "Saving to NAS…";
+"files.office.saved" = "Saved to NAS";
+"files.office.pausedTitle" = "Auto Save paused";
+"files.office.conflictTitle" = "NAS file changed";
+"files.office.reviewTitle" = "Check the save result";
+"files.office.stopped" = "Auto Save stopped";
+"files.office.localUnavailable" = "The local copy could not be read. Finish saving in your editor, then retry. Your local file has not been removed.";
+"files.office.conflict" = "The NAS file changed elsewhere. Your local changes are kept. Review both copies before uploading your version manually.";
+"files.office.unknown" = "The save result could not be confirmed. Your local copy is kept. Check the result before making another upload.";
+"files.office.paused" = "Auto Save could not continue. Check your connection and access to the NAS, then retry. Your local changes are kept.";
+"files.office.showCopy" = "Show Local Copy";
+"files.office.openCopy" = "Open Local Copy";
+"files.office.openFailed" = "The document could not be opened. Check that a compatible app is installed, then choose an app and try again. The local copy is kept.";
+"files.office.prepareFailed" = "The document could not be prepared for Auto Save. Refresh the file and check your connection and write access, then try again.";
+"files.office.retry" = "Resume Auto Save";
+"files.office.review" = "Check save result";
+"files.office.stop" = "Stop Auto Save";
+"files.office.stopTitle" = "Stop saving this document to the NAS?";
+"files.office.stopDetail" = "Further edits will stay in the local copy. Keep it and upload it manually if needed.";
+"files.office.quitBusy" = "Documents are still being saved";
+"files.office.quitBusyDetail" = "Wait for document preparation and saving to finish before quitting.";
+"files.office.keepRunning" = "Keep LanStash Running";
+"files.office.quitTitle" = "Quitting will stop Document Auto Save";
+"files.office.quitDetail" = "Local copies and changes not yet saved to the NAS will be kept. Auto Save does not continue after quitting or resume automatically when you reopen LanStash.";
+"files.office.quitKeepCopies" = "Quit and Keep Local Copies";
+
+"files.vfs.invalidAddress" = "Enter a hostname or a complete server URL. Enter your account and password in the fields below.";
+"files.vfs.addressTypeMismatch" = "The URL does not match the selected connection type, or your NAS does not support it. Choose a matching connection type.";
+"files.vfs.editAddressTypeMismatch" = "This URL uses a different connection type. Go back and add a new connection.";
+"files.vfs.invalidPort" = "Enter a port number from 1 to 65535, then try again.";
+"files.vfs.invalidAlias" = "Enter a display name of up to 255 characters.";
+"files.vfs.invalidEncoding" = "Enter a filename encoding, usually UTF-8.";
+"files.vfs.folderMismatch" = "The folder in the URL differs from the folder entered below. Keep the correct one and try again.";
+"files.sharing.confirmPublicAccess" = "I agree to remove password and account restrictions so anyone with the link can access it.";
+"navigation.parentFolders" = "Parent folders";
+"photos.source.switch" = "Switch photo source";
+"photos.folders.root" = "All folders";
+
+"files.vfs.addressExample" = "e.g. https://example.com/webdav";
+"files.vfs.folderExample" = "e.g. webdav/photos";
+"files.vfs.folderHint" = "Start browsing from this folder. A folder path in the server URL is filled in automatically.";
+
+"remote-locations.protocol.ftp" = "FTP";
+
+"remote-locations.protocol.sftp" = "SFTP";
+
+"remote-locations.protocol.webdav" = "WebDAV";
+
+"remote-locations.protocol.cloud" = "Cloud";
+
+"remote-locations.search" = "Search remote locations";
+
+"remote-locations.empty.description" = "Add a remote server or cloud drive to open and manage it here.";
+
+"remote-locations.connectionsLoadFailed" = "FTP, WebDAV, and cloud connections could not be refreshed. Please refresh to try again.";
+
+"remote-locations.addSharedFolder" = "SMB / NFS shared folder";
+
+"remote-locations.back" = "Back to Remote Locations";
+
+"files.vfs.connecting" = "Connecting…";
+"files.vfs.savingConnect" = "Saving and connecting…";
+
+"files.vfs.checkingConnection" = "Checking connection…";
+
+"files.vfs.checkConnection" = "Check connection";
+
+"files.vfs.connectPending" = "The connection could not be confirmed. Choose “Check connection” to view its status.";
+
+
+"files.vfs.disconnectWarning" = "You will need to reconnect to browse files. No files will be deleted.";
+
+"files.vfs.removeWarning" = "Remove this connection? Remote files will be kept, and you can add the connection again later.";

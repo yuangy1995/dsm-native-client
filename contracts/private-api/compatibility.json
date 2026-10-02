@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-10-01",
+  "updatedAt": "2026-10-02",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -527,7 +527,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "接口缺失或无权限不提交；提交结果不明只核查，不自动重发。2026-09-20 待归属 DSM 7.2.1-69057 U12 / File Station 1.4.1-1559 官方静态字段为 mount_type/server_ip/mount_point/user_set/auto_mount，CIFS account/passwd，NFS nfs_version/protocol；Mount.List.get 空清单与配置布尔已只读核查，Mount.List.unmount/reconnect 用挂载点数组。Windows 阶段式核心与原生管理已接通，按会话/能力/确认开放用户验证。Mac 已在源码纠正别名、断开端点、NFS 选项并移除无证据只读保证，保留输入校验/确认/取消/回查及不盲目回滚；Mac 已补严格清单与写后源身份/目录双重核查，确认前旧连接绑定、目标可用性和结束时新连接核查已接窗口/仓库源码；本次 Repository 内未知结果记录、只读核查、明确继续及结束未执行步骤已接核心/窗口源码，记录不含密码且不跨重连/进程，Swift/App 未编译，不能宣称已兼容。没有执行真实挂载或断开，不升级旧 lab-a 证据。",
+      "fallback": "接口缺失或无权限不提交；提交结果不明只核查，不自动重发。2026-09-20 待归属 DSM 7.2.1-69057 U12 / File Station 1.4.1-1559 官方静态字段为 mount_type/server_ip/mount_point/user_set/auto_mount，CIFS account/passwd，NFS nfs_version/protocol；Mount.List.get 空清单与配置布尔已只读核查，Mount.List.unmount/reconnect 用挂载点数组。Windows 阶段式核心与原生管理已接通，按会话/能力/确认开放用户验证。Mac 已在源码纠正别名、断开端点、NFS 选项并移除无证据只读保证，保留输入校验/确认/取消/回查及不盲目回滚；Mac 已补严格清单与写后源身份/目录双重核查，确认前旧连接绑定、目标可用性和结束时新连接核查已接窗口/仓库源码；本次 Repository 内未知结果记录、只读核查、明确继续及结束未执行步骤已接核心/窗口源码，记录不含密码且不跨重连/进程，源码与验收范围见 apple/Apps/DsmMac/README.md，历史自动化/构建证据见 docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md，不能宣称真实写兼容。没有执行真实挂载或断开，不升级旧 lab-a 证据。 2026-10-02 未取得当前会话；公开套件包静态核查未得到 ISO/VFS/设置新契约，不扩展内部写范围。",
       "documentRef": "docs/api/discovery/endpoints/file-station-remote-mount.md",
       "verifications": [
         {
@@ -1525,6 +1525,124 @@
       ],
       "fallback": "任务读取失败不影响图库；未知操作/状态不猜写入；取消及清理按任务身份快照确认与去重；尚待核对的本机搬移任务禁止先清理。",
       "documentRef": "docs/api/discovery/endpoints/photos-background-tasks.md",
+      "verifications": []
+    },
+    {
+      "id": "file-station-content-search",
+      "componentId": "file-station",
+      "scope": "File Station",
+      "capability": "文件内容索引搜索；2026-10-02待归属官方页面/静态证据，具体等级和实现状态见稳定记录。",
+      "classification": "internal",
+      "operation": "read",
+      "risk": "low",
+      "apiNames": [
+        "SYNO.FileStation.Search"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。真实写仍待用户验证。",
+      "documentRef": "docs/api/discovery/endpoints/file-station-content-search.md",
+      "verifications": []
+    },
+    {
+      "id": "file-station-sharing-extended",
+      "componentId": "file-station",
+      "scope": "File Station",
+      "capability": "具名分享、次数限制与文件请求；2026-10-02待归属官方页面/静态证据，具体等级和实现状态见稳定记录。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.FileStation.Sharing",
+        "SYNO.FileStation.UserGrp"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。真实写仍待用户验证。",
+      "documentRef": "docs/api/discovery/endpoints/file-station-sharing-extended.md",
+      "verifications": []
+    },
+    {
+      "id": "file-station-file-permissions",
+      "componentId": "file-station",
+      "scope": "File Station",
+      "capability": "文件所有者、POSIX 与 ACL；2026-10-02待归属官方页面/静态证据，具体等级和实现状态见稳定记录。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.FileStation.Property",
+        "SYNO.FileStation.Property.ACLOwner",
+        "SYNO.Core.ACL"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。真实写仍待用户验证。",
+      "documentRef": "docs/api/discovery/endpoints/file-station-file-permissions.md",
+      "verifications": []
+    },
+    {
+      "id": "file-station-vfs-connections",
+      "componentId": "file-station",
+      "scope": "File Station",
+      "capability": "VFS 远程协议及云盘连接、正式网页授权与原账号续授权、原 URI 分页浏览下载；静态契约及合成自动化不等于真实 NAS 或云服务验收。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.FileStation.VFS.Protocol",
+        "SYNO.FileStation.VFS.Profile",
+        "SYNO.FileStation.VFS.Connection",
+        "SYNO.FileStation.List",
+        "SYNO.Core.System"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。真实写仍待用户验证。",
+      "documentRef": "docs/api/discovery/endpoints/file-station-vfs-connections.md",
+      "verifications": []
+    },
+    {
+      "id": "file-station-package-settings",
+      "componentId": "file-station",
+      "scope": "File Station",
+      "capability": "套件设置、各目录来源的挂载名单、带宽、分享页面布局及图片选择上传；具体等级见稳定记录，真实写待用户验证。",
+      "classification": "internal",
+      "operation": "mixed",
+      "risk": "high",
+      "apiNames": [
+        "SYNO.FileStation.Settings",
+        "SYNO.FileStation.VFS.User",
+        "SYNO.Core.BandwidthControl",
+        "SYNO.Core.Theme.FileSharingLogin",
+        "SYNO.Core.Directory.LDAP",
+        "SYNO.Core.Directory.Domain",
+        "SYNO.Core.Theme.Image"
+      ],
+      "paths": [
+        "/webapi/entry.cgi"
+      ],
+      "methods": [
+        "POST"
+      ],
+      "fallback": "按用户要求不以实机证据等级或精确固件白名单禁用功能；能力发现、绑定会话实际权限、目标确认、去重和结果回读继续执行。未知不重放，读取失败不影响无关文件流程。真实写仍待用户验证。",
+      "documentRef": "docs/api/discovery/endpoints/file-station-package-settings.md",
       "verifications": []
     }
   ]

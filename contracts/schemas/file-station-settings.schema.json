@@ -1,0 +1,501 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dsm-native-client/file-station-settings.schema.json",
+  "title": "file-station-settings",
+  "description": "仅描述已记录的成功响应白名单；额外字段不会成为客户端默认值或写入依据。",
+  "type": "object",
+  "required": [
+    "success",
+    "data"
+  ],
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "data": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/general"
+        },
+        {
+          "$ref": "#/$defs/mountAccounts"
+        },
+        {
+          "$ref": "#/$defs/bandwidth"
+        },
+        {
+          "$ref": "#/$defs/theme"
+        },
+        {
+          "$ref": "#/$defs/themeImages"
+        },
+        {
+          "$ref": "#/$defs/themeImageUpload"
+        },
+        {
+          "$ref": "#/$defs/directoryDomains"
+        }
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "general": {
+      "type": "object",
+      "required": [
+        "transfer_log_enable",
+        "use_unix_default_perm",
+        "enable_list_usergrp",
+        "sharing_allow",
+        "file_request_allow",
+        "rf_allow",
+        "vd_allow",
+        "sharing_privilege",
+        "sharing_group_privilege",
+        "file_request_privilege",
+        "file_request_group_privilege",
+        "sharing_default_limit",
+        "bandwidth_enable",
+        "schedule_plan",
+        "enable_sharing_custom_setting"
+      ],
+      "properties": {
+        "transfer_log_enable": {
+          "type": "boolean"
+        },
+        "use_unix_default_perm": {
+          "type": "boolean"
+        },
+        "enable_list_usergrp": {
+          "type": "boolean"
+        },
+        "sharing_allow": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "everyone",
+            "per_user"
+          ]
+        },
+        "file_request_allow": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "everyone",
+            "per_user"
+          ]
+        },
+        "rf_allow": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "everyone"
+          ]
+        },
+        "vd_allow": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "everyone"
+          ]
+        },
+        "sharing_privilege": {
+          "type": "object",
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "gid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "sharing_group_privilege": {
+          "type": "object",
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "gid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "file_request_privilege": {
+          "type": "object",
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "gid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "file_request_group_privilege": {
+          "type": "object",
+          "required": [
+            "items"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "gid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "sharing_default_limit": {
+          "type": "string",
+          "pattern": "^[0-9]{1,9}$"
+        },
+        "bandwidth_enable": {
+          "type": "string",
+          "enum": [
+            "bandwidth_disable",
+            "bandwidth_enable",
+            "bandwidth_schedule"
+          ]
+        },
+        "schedule_plan": {
+          "type": "string",
+          "pattern": "^(?:[01]{168})?$"
+        },
+        "enable_sharing_custom_setting": {
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "mountAccounts": {
+      "type": "object",
+      "required": [
+        "total",
+        "usergrp_settings"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "usergrp_settings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "enabled",
+              "is_modifiable"
+            ],
+            "properties": {
+              "uid": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gid": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "is_modifiable": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "bandwidth": {
+      "type": "object",
+      "required": [
+        "total",
+        "bandwidths"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bandwidths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "protocol",
+              "owner_type",
+              "policy",
+              "schedule_plan",
+              "upload_limit_1",
+              "download_limit_1",
+              "upload_limit_2",
+              "download_limit_2"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "protocol": {
+                "const": "FileStation"
+              },
+              "owner_type": {
+                "type": "string",
+                "enum": [
+                  "local_user",
+                  "local_group",
+                  "domain_user",
+                  "domain_group",
+                  "ldap_user",
+                  "ldap_group"
+                ]
+              },
+              "policy": {
+                "type": "string",
+                "enum": [
+                  "disabled",
+                  "enabled",
+                  "scheduled"
+                ]
+              },
+              "schedule_plan": {
+                "type": "string",
+                "pattern": "^(?:[012]{168})?$"
+              },
+              "upload_limit_1": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "download_limit_1": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "upload_limit_2": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "download_limit_2": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "theme": {
+      "type": "object",
+      "required": [
+        "enable_logo_customize",
+        "enable_background_customize",
+        "logo_position",
+        "background_position",
+        "background_color",
+        "footer_msg",
+        "enable_footer_html"
+      ],
+      "properties": {
+        "enable_logo_customize": {
+          "type": "boolean"
+        },
+        "enable_background_customize": {
+          "type": "boolean"
+        },
+        "logo_position": {
+          "type": "string",
+          "enum": [
+            "rightup",
+            "leftup",
+            "rightbottom",
+            "leftbottom"
+          ]
+        },
+        "background_position": {
+          "type": "string",
+          "enum": [
+            "center",
+            "fill",
+            "fit",
+            "stretch",
+            "tile"
+          ]
+        },
+        "background_color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "footer_msg": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "enable_footer_html": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "themeImages": {
+      "type": "object",
+      "required": [
+        "list"
+      ],
+      "properties": {
+        "list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "path"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "filename": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "themeImageUpload": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "directoryDomains": {
+      "type": "object",
+      "required": [
+        "domain_list"
+      ],
+      "properties": {
+        "domain_list": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 2
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

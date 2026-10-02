@@ -31,7 +31,7 @@
 
 DsmCore 增加 `.similar` 分类/查询、分组快照与详情、两个只读服务方法（旧 Adapter 默认明确 unsupported）。macOS 使用现有预览、捏合与月份位置，不新增播放器。iOS/iPadOS 仅补齐共享枚举的两个穷尽分支，共享 Model 不展示新分类；移动端本轮不交付该功能。Android/Windows 记录等价语义后续迁移，不修改其源码。回滚本轮分类、领域增量和只读适配即可，无数据迁移。
 
-聚焦合成回归位于 SynologyPhotosRepositoryTests、SynologyPhotosModelTests、WorkspacePresentationTests；只使用虚构编号/图片。测试结果及构建交付见 [本轮账本](../../../development/MACOS_PHOTOS_PARITY_20260929_ZH.md)。合成通过不提升 NAS 证据等级。
+聚焦合成回归位于 SynologyPhotosRepositoryTests、SynologyPhotosModelTests、WorkspacePresentationTests；只使用虚构编号/图片。测试结果及构建交付见 [本轮账本](../../../development/NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)。合成通过不提升 NAS 证据等级。
 
 PENDING_USER_VALIDATION：NAS 已启用相似识别且有至少一组，分别在个人/共享管理来源打开相似分类，跳转旧月份、打开一组、键盘和点击切换成员、关闭再打开；确认推荐项和数量、成员来源及月份保留。断网后恢复并重试，快速关闭窗口不能闪回旧组。回传包版本、空间类别、操作及脱敏提示，不提供真实照片/路径/凭据。
 

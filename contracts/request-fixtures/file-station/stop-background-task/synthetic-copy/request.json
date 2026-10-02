@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.stop-background-task.synthetic-copy",
+  "module": "file-station",
+  "operation": "stopBackgroundTask",
+  "api": {
+    "name": "SYNO.FileStation.CopyMove",
+    "method": "stop",
+    "preferredVersion": 3,
+    "resolvedVersion": 3,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "taskid",
+      "valueType": "string",
+      "encodedValue": "<synthetic-task-id>"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

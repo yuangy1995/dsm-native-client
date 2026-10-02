@@ -17,6 +17,726 @@ final class WorkspacePresentationTests: XCTestCase {
     private var artifacts: URL!
     private static var preparedApplication = false
 
+    /// 通过公开辅助功能属性读取 SwiftUI 与 AppKit 节点，不依赖具体实现类。
+    private struct UIElement {
+        let object: NSObject
+        func value(_ key: String) -> Any? {
+            object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) : nil
+        }
+        func accessibilityRole() -> NSAccessibility.Role? {
+            (value("accessibilityRole") as? String).map(NSAccessibility.Role.init(rawValue:))
+        }
+        func accessibilityLabel() -> String? { value("accessibilityLabel") as? String }
+        func accessibilityTitle() -> String? { value("accessibilityTitle") as? String }
+        func accessibilityFrame() -> CGRect { (value("accessibilityFrame") as? NSValue)?.rectValue ?? .zero }
+    }
+    private func uiElements(_ item: NSObject, depth: Int = 0) -> [UIElement] {
+        guard depth < 18 else { return [] }
+        let children = (UIElement(object: item).value("accessibilityChildren") as? [Any] ?? []).compactMap { $0 as? NSObject }
+        return children.map { UIElement(object: $0) } + children.flatMap { uiElements($0, depth: depth + 1) }
+    }
+
+    private func remoteFlowElements(_ view: NSView) -> [UIElement] {
+        nativeViews(view, of: NSView.self).flatMap { uiElements($0) }
+    }
+
+    func test远程连接直接点击无确认弹窗且行内显示结果双语主题() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for status in [MutationResultStatus.confirmedSuccess, .confirmedFailure, .submittedButUnverified] {
+                    let fixture = try WorkspaceViewFixture(count: 0)
+                    await fixture.repository.configureAdvanced(state: "ready")
+                    let profile = remoteFlowProfile(fixture.model.profile.id, protocolID: "davs", state: .disconnected)
+                    await fixture.repository.configureVFS(profiles: [profile], status: status)
+                    await fixture.repository.holdNextVFSChange()
+                    let host = NSHostingView(rootView: RemoteLocationsView(model: fixture.model, onOpen: { _ in })
+                        .environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: 1000, height: 650))
+                    defer { window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                    window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                    try await settle(host)
+                    let connect = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.connect") })
+                    let point = window.convertPoint(fromScreen: .init(x: connect.accessibilityFrame().midX, y: connect.accessibilityFrame().midY))
+                    try click(window, at: point); try await settle(host)
+                    XCTAssertNil(window.attachedSheet, "普通连接必须直接执行，不能再次确认")
+                    XCTAssertEqual(fixture.model.fileVFSConnectionActivities[profile.id]?.isBusy, true)
+                    try click(window, at: point); try await settle(host)
+                    let during = await fixture.repository.writeCalls; XCTAssertEqual(during, 1)
+                    if status == .confirmedSuccess { try snapshot(host, name: "file-direct-connect-busy-\(language.rawValue)-\(scheme)") }
+                    await fixture.repository.releaseVFSChange()
+                    for _ in 0..<25 where fixture.model.fileVFSConnectionActivities[profile.id]?.isBusy == true { try await settle(host) }
+                    XCTAssertNil(window.attachedSheet)
+                    try snapshot(host, name: "file-direct-connect-\(status.rawValue)-\(language.rawValue)-\(scheme)")
+                    if status == .confirmedSuccess {
+                        XCTAssertEqual(fixture.model.remoteVFSProfiles.first?.state, .connected)
+                        XCTAssertNil(fixture.model.fileVFSConnectionActivities[profile.id])
+                    } else if status == .confirmedFailure {
+                        XCTAssertTrue(remoteFlowElements(host).contains { ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.connection-failed") })
+                        XCTAssertTrue(remoteFlowElements(host).contains { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.connect") })
+                    } else {
+                        let review = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.checkConnection") })
+                        XCTAssertFalse(remoteFlowElements(host).contains { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.connect") })
+                        try click(window, at: window.convertPoint(fromScreen: .init(x: review.accessibilityFrame().midX, y: review.accessibilityFrame().midY)))
+                        for _ in 0..<25 where fixture.model.fileVFSConnectionActivities[profile.id] != nil { try await settle(host) }
+                        XCTAssertEqual(fixture.model.remoteVFSProfiles.first?.state, .connected)
+                        XCTAssertNil(window.attachedSheet)
+                        let reviews = await fixture.repository.vfsReviews; XCTAssertEqual(reviews, 1)
+                    }
+                    let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 1)
+                }
+            }
+        }
+    }
+
+    func test远程连接主页直接展示筛选与浏览双语主题() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 0)
+                await fixture.repository.configureAdvanced(state: "ready")
+                await fixture.repository.configureVFS(profiles: remoteFlowProfiles(fixture.model.profile.id))
+                let host = NSHostingView(rootView: RemoteLocationsView(model: fixture.model, onOpen: { _ in })
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                let window = attach(host, size: .init(width: 1000, height: 650))
+                defer { window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                let rows = remoteFlowElements(host).compactMap { $0.value("accessibilityIdentifier") as? String }
+                for item in remoteFlowProfiles(fixture.model.profile.id) { XCTAssertTrue(rows.contains("remote-vfs.row." + item.id)) }
+                XCTAssertFalse(rows.contains("remote-vfs.browse.synthetic-ftp"), "未连接时不显示浏览按钮")
+                XCTAssertNil(window.attachedSheet)
+                try snapshot(host, name: "file-remote-flow-overview-\(language.rawValue)-\(scheme)")
+                let webdav = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("remote-locations.protocol.webdav") })
+                try click(window, at: window.convertPoint(fromScreen: .init(x: webdav.accessibilityFrame().midX, y: webdav.accessibilityFrame().midY)))
+                try await settle(host)
+                XCTAssertFalse(remoteFlowElements(host).contains { $0.value("accessibilityIdentifier") as? String == "remote-vfs.row.synthetic-sftp" })
+                let row = try XCTUnwrap(remoteFlowElements(host).first { $0.value("accessibilityIdentifier") as? String == "remote-vfs.row.synthetic-davs" })
+                let browse = try XCTUnwrap(remoteFlowElements(host).first { $0.value("accessibilityIdentifier") as? String == "remote-vfs.browse.synthetic-davs" })
+                XCTAssertGreaterThan(browse.accessibilityFrame().midX, row.accessibilityFrame().midX)
+                XCTAssertGreaterThanOrEqual(browse.accessibilityFrame().height, 36)
+                try click(window, at: window.convertPoint(fromScreen: .init(x: browse.accessibilityFrame().midX, y: browse.accessibilityFrame().midY)))
+                try await settle(host)
+                XCTAssertNil(window.attachedSheet, "应在主页内容区浏览，不再打开管理弹窗")
+                let back = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("remote-locations.back") })
+                XCTAssertTrue(remoteFlowElements(host).contains { ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel() ?? $0.accessibilityTitle())?.contains("Readme.txt") == true })
+                try snapshot(host, name: "file-remote-flow-browse-\(language.rawValue)-\(scheme)")
+                try click(window, at: window.convertPoint(fromScreen: .init(x: back.accessibilityFrame().midX, y: back.accessibilityFrame().midY)))
+                try await settle(host)
+                XCTAssertTrue(remoteFlowElements(host).contains { $0.value("accessibilityIdentifier") as? String == "remote-vfs.row.synthetic-davs" })
+                let search = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("remote-locations.search") })
+                window.makeFirstResponder(search); try await settle(host)
+                let editor = try XCTUnwrap(search.currentEditor() as? NSTextView)
+                editor.insertText("No matching remote connection", replacementRange: editor.selectedRange())
+                try await settle(host)
+                XCTAssertFalse(remoteFlowElements(host).contains { $0.value("accessibilityIdentifier") as? String == "remote-vfs.row.synthetic-davs" })
+                XCTAssertTrue(remoteFlowElements(host).contains { ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("remote-locations.filtered-empty.title") })
+                try snapshot(host, name: "file-remote-flow-filtered-\(language.rawValue)-\(scheme)")
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func test远程连接主页加载空内容错误双语主题() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["loading", "empty", "error"] {
+                    let fixture = try WorkspaceViewFixture(count: 0)
+                    await fixture.repository.configureAdvanced(state: state)
+                    let host = NSHostingView(rootView: RemoteLocationsView(model: fixture.model, onOpen: { _ in })
+                        .environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: 1000, height: 650))
+                    try await settle(host)
+                    if state == "loading" { XCTAssertTrue(fixture.model.isLoadingRemoteLocations) }
+                    else { XCTAssertTrue(fixture.model.remoteLocationsHasLoaded); XCTAssertTrue(fixture.model.remoteVFSProfiles.isEmpty) }
+                    if state == "error" { XCTAssertNotNil(fixture.model.remoteVFSProfilesError) }
+                    try snapshot(host, name: "file-remote-flow-\(state)-\(language.rawValue)-\(scheme)")
+                    await fixture.repository.releaseAdvancedReads(); try await settle(host)
+                    let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                    window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences()
+                }
+            }
+        }
+    }
+
+    func test远程连接成功自动关闭表单失败保留且只读确认后关闭() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute); NSApp.setActivationPolicy(.accessory) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let cases: [(MutationResultStatus, Bool)] = [(.confirmedSuccess, false), (.confirmedFailure, false), (.submittedButUnverified, false), (.confirmedSuccess, true)]
+                for (status, editing) in cases {
+                    let fixture = try WorkspaceViewFixture(count: 0)
+                    await fixture.repository.configureAdvanced(state: "ready")
+                    let existing = remoteFlowProfile(fixture.model.profile.id, protocolID: "davs")
+                    await fixture.repository.configureVFS(profiles: editing ? [existing] : [], status: status)
+                    await fixture.repository.holdNextVFSChange()
+                    let presentation = PageTabSelectionProbe()
+                    let host = NSHostingView(rootView: Color.clear.frame(width: 1000, height: 720)
+                        .macSheet(isPresented: Binding(get: { presentation.value == 1 }, set: { presentation.value = $0 ? 1 : 0 })) {
+                            FileVFSEditor(model: fixture.model, profile: editing ? existing : nil)
+                        }.environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: 1000, height: 720))
+                    defer { if let sheet = window.attachedSheet { window.endSheet(sheet) }; window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                    window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                    presentation.value = 1; try await settle(host)
+                    for _ in 0..<25 {
+                        if let content = window.attachedSheet?.contentView, !nativeViews(content, of: NSTextField.self).isEmpty { break }
+                        try await settle(host)
+                    }
+                    let sheet = try XCTUnwrap(window.attachedSheet), content = try XCTUnwrap(sheet.contentView)
+                    // 分组表单的标签在输入框外，名称字段是第一个可编辑文本框。
+                    let nameField = try XCTUnwrap(nativeViews(content, of: NSTextField.self).first { $0.isEditable })
+                    let addressField = try XCTUnwrap(nativeViews(content, of: NSTextField.self).first { $0.placeholderString == L10n.string("files.vfs.addressExample") })
+                    for (field, text) in [(nameField, "Sample WebDAV"), (addressField, "https://example.invalid/photos")] {
+                        sheet.makeFirstResponder(field); field.selectText(nil); try await settle(host)
+                        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+                        editor.insertText(text, replacementRange: editor.selectedRange()); try await settle(host)
+                        sheet.makeFirstResponder(nil); try await settle(host)
+                    }
+                    let save = try XCTUnwrap(remoteFlowElements(content).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.saveConnect") })
+                    try click(sheet, at: sheet.convertPoint(fromScreen: .init(x: save.accessibilityFrame().midX, y: save.accessibilityFrame().midY)))
+                    try await settle(host)
+                    let progress = try XCTUnwrap(remoteFlowElements(content).first { $0.value("accessibilityIdentifier") as? String == "files.vfs.saveProgress" })
+                    XCTAssertGreaterThan(progress.accessibilityFrame().width, 0)
+                    XCTAssertTrue(remoteFlowElements(content).contains { ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.savingConnect") })
+                    let busySave = try XCTUnwrap(remoteFlowElements(content).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.vfs.saveConnect") })
+                    XCTAssertEqual(busySave.value("isAccessibilityEnabled") as? Bool, false)
+                    let during = await fixture.repository.writeCalls; XCTAssertEqual(during, 1)
+                    try snapshot(content, name: "file-save-feedback-\(editing ? "edit" : "new")-\(status.rawValue)-\(language.rawValue)-\(scheme)")
+                    await fixture.repository.releaseVFSChange()
+                    for _ in 0..<25 {
+                        try await settle(host)
+                        if window.attachedSheet == nil || !remoteFlowElements(content).contains(where: { $0.value("accessibilityIdentifier") as? String == "files.vfs.saveProgress" }) { break }
+                    }
+                    if status == .confirmedSuccess {
+                        for _ in 0..<25 where presentation.value != 0 || window.attachedSheet != nil { try await settle(host) }
+                        XCTAssertEqual(presentation.value, 0); XCTAssertNil(window.attachedSheet)
+                        XCTAssertEqual(fixture.model.remoteVFSProfiles.map(\.alias), ["Sample WebDAV"])
+                    } else {
+                        XCTAssertEqual(presentation.value, 1); XCTAssertNotNil(window.attachedSheet)
+                        try snapshot(content, name: "file-remote-flow-result-\(status.rawValue)-\(language.rawValue)-\(scheme)")
+                        if status == .submittedButUnverified {
+                            let review = try XCTUnwrap(remoteFlowElements(content).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("files.permissions.review") })
+                            try click(sheet, at: sheet.convertPoint(fromScreen: .init(x: review.accessibilityFrame().midX, y: review.accessibilityFrame().midY)))
+                            for _ in 0..<25 where presentation.value != 0 || window.attachedSheet != nil { try await settle(host) }
+                            XCTAssertEqual(presentation.value, 0); XCTAssertNil(window.attachedSheet)
+                            let reviews = await fixture.repository.vfsReviews; XCTAssertEqual(reviews, 1)
+                        }
+                    }
+                    let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 1, "自动结束或查看结果不能重复连接")
+                }
+            }
+        }
+    }
+
+    func test界面修正路径整块可点击并合并底栏双语主题() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let accessibilityAttribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAccessibility = NSApp.accessibilityAttributeValue(accessibilityAttribute)
+        NSApp.accessibilitySetValue(true, forAttribute: accessibilityAttribute)
+        defer { NSApp.accessibilitySetValue(previousAccessibility, forAttribute: accessibilityAttribute); NSApp.setActivationPolicy(.accessory) }
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 3)
+                fixture.model.currentPath = "/synthetic/Archive/Reports"
+                let host = makeHost(fixture: fixture, mode: .grid, scheme: scheme, largeText: true)
+                let window = attach(host, size: .init(width: 640, height: 560))
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                let elements = uiElements(host)
+                let parent = try XCTUnwrap(elements.first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == "Archive" })
+                let rect = parent.accessibilityFrame()
+                XCTAssertGreaterThanOrEqual(rect.height, 32)
+                XCTAssertGreaterThanOrEqual(rect.width, 32)
+                let point = window.convertPoint(fromScreen: NSPoint(x: rect.minX + 3, y: rect.midY))
+                XCTAssertLessThan(point.y, 50, "路径应位于现有底栏")
+                window.makeKeyAndOrderFront(nil)
+                try snapshot(host, name: "file-ui-fixes-file-path-\(language.rawValue)-\(scheme)")
+                try click(window, at: point)
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                XCTAssertEqual(fixture.model.currentPath, "/synthetic/Archive", "点击文字外侧仍应导航")
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences()
+            }
+        }
+    }
+
+    func test界面修正照片单来源无重复标签且路径与操作共用一行() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let accessibilityAttribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAccessibility = NSApp.accessibilityAttributeValue(accessibilityAttribute)
+        NSApp.accessibilitySetValue(true, forAttribute: accessibilityAttribute)
+        defer { NSApp.accessibilitySetValue(previousAccessibility, forAttribute: accessibilityAttribute); NSApp.setActivationPolicy(.accessory) }
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let model = SynologyPhotosModel(repository: SynologyPhotosPresentationFixture(image: Data()))
+                await model.refresh(); await model.selectSection(.folders)
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model)
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                    .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                let window = attach(host, size: .init(width: 1100, height: 720))
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                let labels = uiElements(host).compactMap { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) }
+                XCTAssertFalse(labels.contains(L10n.string("photos.source.switch")))
+                XCTAssertFalse(labels.contains(L10n.string("shared.51fcaa8035fc61e2")))
+                let root = try XCTUnwrap(uiElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("photos.folders.root") })
+                let selection = try XCTUnwrap(uiElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("photos.selection.start") })
+                XCTAssertEqual(root.accessibilityFrame().midY, selection.accessibilityFrame().midY, accuracy: 2)
+                XCTAssertGreaterThanOrEqual(root.accessibilityFrame().height, 32)
+                try snapshot(host, name: "file-ui-fixes-photos-folders-\(language.rawValue)-\(scheme)")
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test界面修正普通连接无重复确认且工具按钮保持统一尺寸() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let accessibilityAttribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAccessibility = NSApp.accessibilityAttributeValue(accessibilityAttribute)
+        NSApp.accessibilitySetValue(true, forAttribute: accessibilityAttribute)
+        defer { NSApp.accessibilitySetValue(previousAccessibility, forAttribute: accessibilityAttribute); NSApp.setActivationPolicy(.accessory) }
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 3)
+                await fixture.repository.configureAdvanced(state: "ready")
+                let forms: [(String, AnyView, NSSize)] = [
+                    ("vfs", AnyView(FileVFSEditor(model: fixture.model, profile: nil)), .init(width: 650, height: 620)),
+                    ("remote", AnyView(RemoteMountEditorView(existingItem: nil, initialMountPoint: "/synthetic", onSave: { _ in XCTFail("不能自动连接"); return nil })), .init(width: 600, height: 620))]
+                for (name, view, size) in forms {
+                    let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: size)
+                    window.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                    try await settle(host)
+                    let labels = uiElements(host).compactMap { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) }
+                    XCTAssertFalse(labels.contains(L10n.string("remote-mount.confirm")))
+                    XCTAssertFalse(labels.contains(L10n.string("files.vfs.confirmSave")))
+                    if name == "vfs" {
+                        let address = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("files.vfs.addressExample") })
+                        window.makeFirstResponder(address); address.selectText(nil)
+                        try await settle(host)
+                        let editor = try XCTUnwrap(address.currentEditor() as? NSTextView)
+                        editor.insertText("https://example.invalid:5006/webdav/photos", replacementRange: editor.selectedRange())
+                        try await settle(host)
+                        window.makeFirstResponder(nil)
+                        try await settle(host)
+                        let folder = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("files.vfs.folderExample") })
+                        XCTAssertEqual(address.stringValue, "example.invalid")
+                        XCTAssertEqual(folder.stringValue, "webdav/photos")
+                        XCTAssertTrue(nativeViews(host, of: NSTextField.self).contains { $0.stringValue == "5006" })
+                        XCTAssertFalse(uiElements(host).compactMap { $0.accessibilityLabel() ?? $0.accessibilityTitle() }.contains(L10n.string("files.vfs.confirmCleartext")))
+                    }
+                    try snapshot(host, name: "file-ui-fixes-form-\(name)-\(language.rawValue)-\(scheme)")
+                    window.contentView = nil; window.close()
+                }
+                let host = makeWorkspaceHost(fixture: fixture)
+                let window = attach(host, size: .init(width: 1200, height: 740))
+                window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                for key in ["files.pending.title", "files.office.sessions"] {
+                    let button = try XCTUnwrap(uiElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string(key) })
+                    let rect = button.accessibilityFrame()
+                    XCTAssertGreaterThanOrEqual(rect.height, 36)
+                    XCTAssertLessThanOrEqual(rect.width, 48, "应与相邻图标按钮保持一致")
+                }
+                try snapshot(host, name: "file-ui-fixes-toolbar-\(language.rawValue)-\(scheme)")
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences()
+            }
+        }
+    }
+
+    func testOffice自动保存准备正常暂停冲突与未知结果双语主题() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("office-ui-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let repository = OfficeEditingTestRepository()
+                let item = await repository.currentItem()
+                let coordinator = OfficeEditingCoordinator()
+                let url = root.appendingPathComponent(UUID().uuidString + ".docx")
+                await repository.holdDownload()
+                let preparing = Task { try await coordinator.begin(item: item, localURL: url, repository: repository, monitor: false) }
+                for _ in 0..<100 {
+                    if await repository.isDownloadHeld { break }
+                    try await Task.sleep(for: .milliseconds(5))
+                }
+                let host = NSHostingView(rootView: OfficeEditingSessionsView(profileID: item.profileID, coordinator: coordinator)
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                    .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 780, height: 490))
+                window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                func capture(_ state: String) async throws {
+                    try await settle(host)
+                    try snapshot(host, name: "file-office-sessions-\(state)-\(language.rawValue)-\(scheme)")
+                }
+                try await capture("preparing")
+                await repository.releaseDownload()
+                let session = try await preparing.value
+                defer { session.stop() }
+                try await capture("watching")
+                try Data("edited".utf8).write(to: url)
+                await repository.setWritable(false)
+                await session.poll(); await session.poll(now: Date().addingTimeInterval(3))
+                XCTAssertEqual(session.phase, .paused)
+                try await capture("paused")
+                await repository.setWritable(true)
+                await repository.setBehavior(.timeoutBeforeWrite)
+                await session.retry(); await session.poll(now: Date().addingTimeInterval(3))
+                XCTAssertEqual(session.phase, .needsReview)
+                try await capture("review")
+                await repository.replaceRemote(Data("edited".utf8))
+                await session.review()
+                XCTAssertEqual(session.phase, .saved)
+                try await capture("saved")
+                await repository.replaceRemote(Data("remote-changed".utf8))
+                try Data("local-changed".utf8).write(to: url)
+                await session.poll(); await session.poll(now: Date().addingTimeInterval(3))
+                XCTAssertEqual(session.phase, .conflict)
+                try await capture("conflict")
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func testOffice文档原生预览三格式双语主题与自动保存空状态() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for ext in ["docx", "xlsx", "pptx"] {
+                    let url = try XCTUnwrap(Bundle.module.url(forResource: "sample", withExtension: ext, subdirectory: "Office"))
+                    let host = NSHostingView(rootView: OfficeDocumentPreview(url: url)
+                        .environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 900, height: 650))
+                    window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    try await settle(host)
+                    // 系统 Quick Look 异步载入文件，额外等待本机渲染，不启动外部应用。
+                    try await Task.sleep(for: .seconds(2))
+                    try snapshot(host, name: "file-office-\(ext)-\(language.rawValue)-\(scheme)")
+                    window.contentView = nil; window.close()
+                }
+                let host = NSHostingView(rootView: OfficeEditingSessionsView(profileID: UUID())
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                    .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 780, height: 490))
+                window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                try await settle(host)
+                try snapshot(host, name: "file-office-sessions-empty-\(language.rawValue)-\(scheme)")
+                window.contentView = nil; window.close()
+            }
+        }
+    }
+
+    func test文件远程浏览图片选择与云盘表单四态双语主题() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "empty", "error", "loading"] {
+                    let fixture = try WorkspaceViewFixture(count: state == "empty" ? 0 : 1)
+                    await fixture.repository.configureAdvanced(state: state)
+                    let profile = FileVFSProfile(profileID: fixture.model.profile.id, id: "synthetic-vfs", protocolID: "sftp", protocolName: "SFTP",
+                        uri: "sftp://synthetic", hostname: "example.invalid", port: 22, alias: "远程位置 Remote", account: "synthetic", codepage: "UTF-8", state: .connected)
+                    let views: [(String, AnyView, NSSize)] = [
+                        ("vfs-browser", AnyView(FileVFSBrowserView(model: fixture.model, profile: profile)), .init(width: 700, height: 540)),
+                        ("theme-images", AnyView(FileStationThemeImagePicker(model: fixture.model, kind: .background, onSelect: { _ in XCTFail("不能自动选择") })), .init(width: 760, height: 570)),
+                        ("cloud-form", AnyView(FileVFSCloudConnectionView(model: fixture.model, protocolID: "google", protocolName: "Google Drive", existing: nil)), .init(width: 560, height: 390))]
+                    for (name, view, size) in views {
+                        let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                            .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                        let window = attach(host, size: size)
+                        window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                        try await settle(host); window.makeKeyAndOrderFront(nil)
+                        try snapshot(host, name: "file-complete-\(name)-\(state)-\(language.rawValue)-\(scheme)")
+                        await fixture.repository.releaseAdvancedReads(); try await settle(host)
+                        window.contentView = nil; window.close()
+                        await fixture.repository.configureAdvanced(state: state)
+                    }
+                    await fixture.repository.releaseAdvancedReads()
+                    let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                    fixture.model.cancelAllWork(); fixture.cleanPreferences()
+                }
+            }
+        }
+    }
+
+    func test文件高级管理四态双语主题且权限受限账号不提交() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "empty", "error", "loading"] {
+                    let fixture = try WorkspaceViewFixture(count: 1)
+                    await fixture.repository.configureAdvanced(state: state)
+                    let views: [(String, AnyView, NSSize)] = [
+                        ("permissions", AnyView(FilePermissionEditor(model: fixture.model, item: fixture.model.items[0])), .init(width: 720, height: 680)),
+                        ("iso", AnyView(FileISOMountManagerView(model: fixture.model, onClose: {})), .init(width: 640, height: 460)),
+                        ("vfs", AnyView(RemoteLocationsView(model: fixture.model, onOpen: { _ in })), .init(width: 740, height: 560)),
+                        ("settings", AnyView(FileStationSettingsView(model: fixture.model)), .init(width: 800, height: 700)),
+                        ("mount-accounts", AnyView(FileStationMountAccountList(model: fixture.model)), .init(width: 620, height: 500)),
+                        ("bandwidth", AnyView(FileStationBandwidthView(model: fixture.model)), .init(width: 760, height: 550))
+                    ]
+                    for (name, view, size) in views {
+                        let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                            .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                        let window = attach(host, size: size)
+                        window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                        try await settle(host); window.makeKeyAndOrderFront(nil)
+                        try snapshot(host, name: "file-advanced-\(name)-\(state)-\(language.rawValue)-\(scheme)")
+                        if name == "permissions", state == "ready" || state == "empty" {
+                            // 固定 720×680 合成窗口右下角的保存按钮；已用原生截图核对两种语言的位置。
+                            let before = await fixture.repository.writeCalls
+                            try click(window, at: NSPoint(x: 654, y: 36)); try await settle(host)
+                            let after = await fixture.repository.writeCalls
+                            XCTAssertEqual(after, before, "权限受限账号点击后不得提交权限写入")
+                        }
+                        // 只释放合成读取，关闭窗口不会进行网络写入。
+                        await fixture.repository.releaseAdvancedReads(); try await settle(host)
+                        window.contentView = nil; window.close()
+                        await fixture.repository.configureAdvanced(state: state)
+                    }
+                    await fixture.repository.releaseAdvancedReads()
+                    let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                    fixture.model.cancelAllWork(); fixture.cleanPreferences()
+                }
+            }
+        }
+    }
+
+    func test文件高级管理筛选空状态可用键盘到达() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            let fixture = try WorkspaceViewFixture(count: 0)
+            await fixture.repository.configureAdvanced(state: "ready")
+            let views: [(String, AnyView, String)] = [
+                ("vfs", AnyView(RemoteLocationsView(model: fixture.model, onOpen: { _ in })), "remote-locations.search"),
+                ("accounts", AnyView(FileStationMountAccountList(model: fixture.model)), "files.principals.search"),
+                ("bandwidth", AnyView(FileStationBandwidthView(model: fixture.model)), "files.principals.search")
+            ]
+            for (name, view, key) in views {
+                let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).environment(\.locale, L10n.locale))
+                let window = attach(host, size: .init(width: 760, height: 560))
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string(key) })
+                XCTAssertTrue(window.makeFirstResponder(field))
+                let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0))
+                try await settle(host)
+                try snapshot(host, name: "file-advanced-\(name)-filtered-\(language.rawValue)")
+                window.contentView = nil; window.close()
+            }
+            let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            fixture.model.cancelAllWork(); fixture.cleanPreferences()
+        }
+    }
+
+    func test文件高级设置各标签与核查入口不自动提交() async throws {
+        NSApp.setActivationPolicy(.regular)
+        defer { NSApp.setActivationPolicy(.accessory) }
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 1)
+                await fixture.repository.configureAdvanced(state: "ready")
+                let host = NSHostingView(rootView: FileStationSettingsView(model: fixture.model)
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                let window = attach(host, size: .init(width: 800, height: 700))
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                try snapshot(host, name: "file-settings-initial-layout-\(language.rawValue)")
+                NSApp.activate(ignoringOtherApps: true)
+                for index in 0..<4 {
+                    let frame = try XCTUnwrap(window.contentView?.superview)
+                    let tabs = try XCTUnwrap(nativeViews(frame, of: NSSegmentedControl.self).first { $0.segmentCount == 4 })
+                    // 系统按本地化标题分配宽度；通过辅助功能位置发送真实鼠标事件，避免猜测等宽坐标。
+                    func descendants(_ item: NSAccessibilityProtocol, depth: Int = 0) -> [NSAccessibilityProtocol] {
+                        guard depth < 8 else { return [] }
+                        let children = (item.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityProtocol }
+                        return children + children.flatMap { descendants($0, depth: depth + 1) }
+                    }
+                    let all = descendants(tabs)
+                    let segments = all.filter { $0.accessibilityRole() == .radioButton }
+                    XCTAssertEqual(segments.count, 4)
+                    let segment = try XCTUnwrap(segments.indices.contains(index) ? segments[index] : nil)
+                    let rect = segment.accessibilityFrame()
+                    XCTAssertGreaterThan(rect.width, 0)
+                    let point = window.convertPoint(fromScreen: NSPoint(x: rect.midX, y: rect.midY))
+                    try click(window, at: point)
+                    try await settle(host)
+                    let refreshed = try XCTUnwrap(nativeViews(frame, of: NSSegmentedControl.self).first { $0.segmentCount == 4 })
+                    XCTAssertEqual(refreshed.selectedSegment, index)
+                    try snapshot(host, name: "file-settings-tab-\(index)-\(language.rawValue)-\(scheme)")
+                }
+                window.contentView = nil; window.close()
+                for state in ["ready", "empty"] {
+                    await fixture.repository.configureAdvanced(state: state)
+                    let pending = NSHostingView(rootView: FileStationPendingChangesView(model: fixture.model)
+                        .environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                    let pendingWindow = attach(pending, size: .init(width: 700, height: 460))
+                    try await settle(pending); pendingWindow.makeKeyAndOrderFront(nil)
+                    try snapshot(pending, name: "file-pending-\(state)-\(language.rawValue)-\(scheme)")
+                    pendingWindow.contentView = nil; pendingWindow.close()
+                }
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                fixture.model.cancelAllWork(); fixture.cleanPreferences()
+            }
+        }
+    }
+
+    func test文件归档浏览四态双语浅深色不提交() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for state in ["ready", "empty", "error", "loading"] {
+                    let fixture = try WorkspaceViewFixture(count: 0)
+                    let archive = FileItem(profileID: fixture.model.profile.id, name: "示例 Sample.zip", path: "/synthetic/Sample.zip", kind: .file, sizeBytes: 42)
+                    let rows = state == "empty" ? [] : [ArchiveItem(id: 1, name: "资料 Folder", path: "资料 Folder", isDirectory: true),
+                        ArchiveItem(id: 2, name: "零字节.txt", path: "零字节.txt", isDirectory: false, sizeBytes: 0)]
+                    await fixture.repository.configureArchive(archive, entries: [-1: rows], fails: state == "error", held: state == "loading")
+                    var submitted = false
+                    let host = NSHostingView(rootView: ArchiveExtractionView(model: fixture.model, item: archive,
+                        onExtract: { _, _ in submitted = true }, onCancel: {})
+                        .environment(MacAppearanceStore()).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: NSSize(width: 720, height: 620))
+                    window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "file-archive-\(state)-\(language.rawValue)-\(scheme)")
+                    await fixture.repository.releaseArchive(); try await settle(host)
+                    XCTAssertFalse(submitted)
+                    let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+                    window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences()
+                }
+            }
+        }
+    }
+
+    func test文件分享管理五态双语浅深色与筛选键盘() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 0)
+                let host = NSHostingView(rootView: ShareLinksView(model: fixture.model)
+                    .environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                    .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                let window = attach(host, size: NSSize(width: 900, height: 580))
+                window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                defer { window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                try await settle(host); window.makeKeyAndOrderFront(nil)
+                for state in ["loading", "empty", "error", "normal", "filtered"] {
+                    fixture.model.isLoadingShareLinks = state == "loading"
+                    fixture.model.shareLinksError = state == "error" ? L10n.string("files.sharing.loadFailed") : nil
+                    fixture.model.shareLinks = ["normal", "filtered"].contains(state)
+                        ? [.init(id: "synthetic", name: "共享示例 Sample.txt", path: "/synthetic/Sample.txt",
+                                 url: "https://example.invalid/sharing/synthetic", hasPassword: true,
+                                 expiresAt: "2026-10-31", availableAt: "2026-10-01", availabilityDateKnown: true, status: .valid)] : []
+                    try await settle(host)
+                    if state == "filtered" {
+                        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first {
+                            $0.placeholderString == L10n.string("files.sharing.filter")
+                        })
+                        XCTAssertTrue(window.makeFirstResponder(field))
+                        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                        editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0))
+                        try await settle(host)
+                    }
+                    try snapshot(host, name: "file-sharing-\(state)-\(language.rawValue)-\(scheme)")
+                    XCTAssertEqual(host.bounds.size, NSSize(width: 900, height: 580))
+                }
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func test文件新表单双语浅深色大字与取消不提交() async throws {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let fixture = try WorkspaceViewFixture(count: 1)
+                defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                var closed = false
+                let link = FileShareLink(id: "synthetic", name: "Sample", path: "/synthetic/Sample",
+                    url: "https://example.invalid/shared", availabilityDateKnown: true)
+                let views: [(String, AnyView, NSSize)] = [
+                    ("create", AnyView(ShareCreationView(model: fixture.model, targets: fixture.model.items, onClose: { closed = true })), NSSize(width: 520, height: 380)),
+                    ("edit", AnyView(FileShareEditView(model: fixture.model, links: [link], onClose: { closed = true })), NSSize(width: 540, height: 390)),
+                    ("search", AnyView(FileAdvancedSearchView(model: fixture.model)), NSSize(width: 1000, height: 420)),
+                    ("uploads", AnyView(FileUploadQueueView(model: fixture.model)), NSSize(width: 680, height: 560))
+                ]
+                for (name, view, size) in views {
+                    let host = NSHostingView(rootView: view.environment(MacAppearanceStore()).environment(\.locale, L10n.locale)
+                        .dynamicTypeSize(.accessibility3).preferredColorScheme(scheme))
+                    let window = attach(host, size: size)
+                    window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    defer { window.contentView = nil; window.close() }
+                    try await settle(host); window.makeKeyAndOrderFront(nil)
+                    try snapshot(host, name: "file-form-\(name)-\(language.rawValue)-\(scheme)")
+                    if name == "create" || name == "edit" {
+                        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                            characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+                        window.sendEvent(event); try await settle(host)
+                        XCTAssertTrue(closed, "\(name) 应响应 Esc"); closed = false
+                    }
+                }
+                let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
     func test冻结相册恢复中英浅深色表单与确认操作() async throws {
         let previous = AppLanguageStore.shared.selection
         defer { AppLanguageStore.shared.selection = previous }
@@ -5088,7 +5808,7 @@ final class WorkspacePresentationTests: XCTestCase {
                     ("share-links", AnyView(ShareLinksView(model: fixture.model))),
                     ("share-create", AnyView(ShareCreationView(model: fixture.model, targets: fixture.model.items, onClose: {}))),
                     ("archive-create", AnyView(ArchiveCreationView(targets: fixture.model.items, onCreate: { _, _, _, _ in }, onCancel: {}))),
-                    ("archive-extract", AnyView(ArchiveExtractionView(item: item, onExtract: { _, _, _ in }, onCancel: {}))),
+                    ("archive-extract", AnyView(ArchiveExtractionView(model: fixture.model, item: item, onExtract: { _, _ in }, onCancel: {}))),
                     ("archive-password", AnyView(ArchivePasswordView(archiveName: "synthetic.zip", errorMessage: nil, isChecking: false, onSubmit: { _ in }, onCancel: {}))),
                     ("properties", AnyView(FilePropertiesView(item: item, model: fixture.model))),
                     ("delete-confirm", AnyView(ModernDeleteConfirmationDialog(targets: fixture.model.items, profileName: fixture.model.profile.displayName, currentPath: "/synthetic", onConfirm: {}, onCancel: {}))),
@@ -5353,6 +6073,14 @@ final class WorkspacePresentationTests: XCTestCase {
         let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
         XCTAssertGreaterThan(data.count, 1_000)
         try data.write(to: artifacts.appendingPathComponent(name + ".png"))
+        if name.hasPrefix("file-"), ProcessInfo.processInfo.environment["LANSTASH_UI_NATIVE_SCREENSHOTS"] == "1",
+           let window = view.window {
+            let capture = Process()
+            capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            capture.arguments = ["-x", "-l\(window.windowNumber)", artifacts.appendingPathComponent("native-" + name + ".png").path]
+            try capture.run(); capture.waitUntilExit()
+            XCTAssertEqual(capture.terminationStatus, 0, "仅截取合成窗口；无屏幕录制权限时不能算视觉验收通过")
+        }
     }
 }
 
@@ -5465,6 +6193,193 @@ private actor PresentationAuthentication: AuthRepository, PasswordSecureStoring 
 }
 
 @MainActor
+final class WorkspaceRemoteConnectionsTests: XCTestCase {
+    func test直接连接在忙碌期间拒绝重复点击并刷新状态() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        let profile = remoteFlowProfile(fixture.model.profile.id, protocolID: "davs", state: .disconnected)
+        await fixture.repository.configureVFS(profiles: [profile], status: .confirmedSuccess)
+        await fixture.repository.holdNextVFSChange()
+        let first = Task { await fixture.model.connectFileVFS(profile) }
+        for _ in 0..<100 {
+            if await fixture.repository.hasHeldVFSChange { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(fixture.model.fileVFSConnectionActivities[profile.id]?.isBusy, true)
+        await fixture.model.connectFileVFS(profile)
+        let during = await fixture.repository.writeCalls; XCTAssertEqual(during, 1)
+        await fixture.repository.releaseVFSChange(); await first.value
+        XCTAssertNil(fixture.model.fileVFSConnectionActivities[profile.id])
+        XCTAssertEqual(fixture.model.remoteVFSProfiles.first?.state, .connected)
+    }
+
+    func test直接连接未知结果只能查看状态不能再次连接() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        let profile = remoteFlowProfile(fixture.model.profile.id, protocolID: "davs", state: .disconnected)
+        await fixture.repository.configureVFS(profiles: [profile], status: .submittedButUnverified)
+        await fixture.model.connectFileVFS(profile)
+        XCTAssertEqual(fixture.model.fileVFSConnectionActivities[profile.id]?.result?.requiresRefresh, true)
+        await fixture.model.refreshRemoteLocations()
+        await fixture.model.connectFileVFS(profile)
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 1)
+        await fixture.model.connectFileVFS(profile, review: true)
+        XCTAssertNil(fixture.model.fileVFSConnectionActivities[profile.id])
+        XCTAssertEqual(fixture.model.remoteVFSProfiles.first?.state, .connected)
+        let after = await fixture.repository.writeCalls; XCTAssertEqual(after, 1)
+        let reviews = await fixture.repository.vfsReviews; XCTAssertEqual(reviews, 1)
+    }
+
+    func test直接连接明确失败允许用户重试() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        let profile = remoteFlowProfile(fixture.model.profile.id, protocolID: "davs", state: .disconnected)
+        await fixture.repository.configureVFS(profiles: [profile], status: .confirmedFailure)
+        await fixture.model.connectFileVFS(profile)
+        XCTAssertEqual(fixture.model.fileVFSConnectionActivities[profile.id]?.result?.status, .confirmedFailure)
+        XCTAssertEqual(fixture.model.fileVFSConnectionActivities[profile.id]?.isBusy, false)
+        await fixture.repository.configureVFS(profiles: [profile], status: .confirmedSuccess)
+        await fixture.model.connectFileVFS(profile)
+        XCTAssertNil(fixture.model.fileVFSConnectionActivities[profile.id])
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 2)
+    }
+
+    func test直接连接不接受其他NAS条目已连接条目或关闭文件模块() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.model.connectFileVFS(remoteFlowProfile(UUID(), protocolID: "davs", state: .disconnected))
+        await fixture.model.connectFileVFS(remoteFlowProfile(fixture.model.profile.id, protocolID: "davs"))
+        fixture.model.isFileModuleEnabled = false
+        await fixture.model.connectFileVFS(remoteFlowProfile(fixture.model.profile.id, protocolID: "davs", state: .disconnected))
+        XCTAssertTrue(fixture.model.fileVFSConnectionActivities.isEmpty)
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+    }
+
+    func test主页同时加载共享文件夹和协议连接且排除分享占位() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        let profiles = remoteFlowProfiles(fixture.model.profile.id)
+        await fixture.repository.configureVFS(profiles: profiles + [remoteFlowProfile(fixture.model.profile.id, protocolID: "sharing")])
+        await fixture.repository.configureVirtualFolders([.init(item: .init(profileID: fixture.model.profile.id, name: "SMB Sample", path: "/synthetic/mount", kind: .directory), protocolType: .cifs)])
+        await fixture.model.refreshRemoteLocations()
+        XCTAssertEqual(fixture.model.remoteLocations.count, 1)
+        XCTAssertEqual(fixture.model.remoteVFSProfiles, profiles)
+        XCTAssertTrue(fixture.model.remoteLocationsHasLoaded)
+        XCTAssertFalse(fixture.model.isLoadingRemoteLocations)
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+    }
+
+    func test连接读取失败保留其他来源和之前可见连接并提示刷新() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        let profiles = remoteFlowProfiles(fixture.model.profile.id)
+        fixture.model.remoteVFSProfiles = profiles
+        await fixture.repository.configureVirtualFolders([.init(item: .init(profileID: fixture.model.profile.id, name: "SMB Sample", path: "/synthetic/mount", kind: .directory), protocolType: .cifs)])
+        await fixture.repository.configureVFS(profiles: [], readFails: true)
+        await fixture.model.refreshRemoteLocations()
+        XCTAssertEqual(fixture.model.remoteLocations.count, 1)
+        XCTAssertEqual(fixture.model.remoteVFSProfiles, profiles)
+        XCTAssertNotNil(fixture.model.remoteVFSProfilesError)
+        XCTAssertNil(fixture.model.remoteLocationsError)
+    }
+
+    func test连接成功返回前自动更新主页列表() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        await fixture.repository.configureVFS(profiles: [], status: .confirmedSuccess)
+        let result = try await fixture.model.changeFileVFS(.create(remoteFlowConfiguration))
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        XCTAssertEqual(fixture.model.remoteVFSProfiles.map(\.alias), [remoteFlowConfiguration.alias])
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 1)
+        let reads = await fixture.repository.vfsReads; XCTAssertEqual(reads, 1)
+    }
+
+    func test失败与结果未知不触发成功刷新或自动重试() async throws {
+        for status in [MutationResultStatus.confirmedFailure, .submittedButUnverified] {
+            let fixture = try WorkspaceViewFixture(count: 0)
+            defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+            await fixture.repository.configureAdvanced(state: "ready")
+            await fixture.repository.configureVFS(profiles: [], status: status)
+            let result = try await fixture.model.changeFileVFS(.create(remoteFlowConfiguration))
+            XCTAssertEqual(result.status, status)
+            XCTAssertFalse(fixture.model.remoteLocationsHasLoaded)
+            let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 1)
+            let reads = await fixture.repository.vfsReads; XCTAssertEqual(reads, 0)
+        }
+    }
+
+    func test只读查看结果确认成功后更新主页而不重新连接() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        let profiles = remoteFlowProfiles(fixture.model.profile.id)
+        await fixture.repository.configureVFS(profiles: profiles)
+        let result = try await fixture.model.changeFileVFS(.create(remoteFlowConfiguration), review: true)
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        XCTAssertEqual(fixture.model.remoteVFSProfiles, profiles)
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+        let reviews = await fixture.repository.vfsReviews; XCTAssertEqual(reviews, 1)
+    }
+
+    func test云盘授权保存成功也更新主页() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        let profile = remoteFlowProfile(fixture.model.profile.id, protocolID: "google")
+        await fixture.repository.configureVFS(profiles: [profile], status: .confirmedSuccess)
+        let auth = FileVFSCloudAuthorization(requestID: UUID(), profileID: fixture.model.profile.id, protocolID: "google",
+            account: "synthetic", clientID: nil, accessToken: "synthetic-token", refreshToken: nil, expiresIn: nil)
+        let result = try await fixture.model.authorizeFileVFS(.createCloud(.init(protocolID: "google", alias: profile.alias, account: "synthetic")), authorization: auth)
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        XCTAssertEqual(fixture.model.remoteVFSProfiles, [profile])
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 1)
+    }
+
+    func test旧刷新晚到不覆盖连接成功后的新列表() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        await fixture.repository.configureAdvanced(state: "ready")
+        await fixture.repository.configureVFS(profiles: [])
+        await fixture.repository.holdNextVFSRead()
+        let oldRefresh = Task { await fixture.model.refreshRemoteLocations() }
+        for _ in 0..<100 {
+            if await fixture.repository.hasHeldVFSRead { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let held = await fixture.repository.hasHeldVFSRead; XCTAssertTrue(held)
+        let profiles = remoteFlowProfiles(fixture.model.profile.id)
+        await fixture.repository.configureVFS(profiles: profiles)
+        await fixture.model.refreshRemoteLocations()
+        await fixture.repository.releaseVFSRead(); await oldRefresh.value
+        XCTAssertEqual(fixture.model.remoteVFSProfiles, profiles)
+        XCTAssertFalse(fixture.model.isLoadingRemoteLocations)
+    }
+}
+
+private var remoteFlowConfiguration: FileVFSConfiguration {
+    .init(protocolID: "davs", hostname: "example.invalid", port: 443, alias: "Sample WebDAV", account: "synthetic", folder: "photos")
+}
+private func remoteFlowProfile(_ profileID: UUID, protocolID: String, state: FileVFSProfile.State = .connected) -> FileVFSProfile {
+    .init(profileID: profileID, id: "synthetic-" + protocolID, protocolID: protocolID, protocolName: protocolID.uppercased(),
+        uri: protocolID + "://synthetic", hostname: "example.invalid", port: 443, alias: "Sample " + protocolID.uppercased(),
+        account: "synthetic", codepage: "UTF-8", state: state)
+}
+private func remoteFlowProfiles(_ profileID: UUID) -> [FileVFSProfile] {
+    ["ftp", "sftp", "davs", "google"].map { remoteFlowProfile(profileID, protocolID: $0, state: $0 == "ftp" ? .disconnected : .connected) }
+}
+private func remoteFlowResult(_ status: MutationResultStatus) throws -> MutationResult {
+    let success = status == .confirmedSuccess, unknown = status == .submittedButUnverified
+    return try .init(status: status, operation: "fileStationRemoteConnection", submitted: true, requiresRefresh: unknown,
+        counts: .init(succeeded: success ? 1 : 0, failed: success || unknown ? 0 : 1, unknown: unknown ? 1 : 0))
+}
+
+@MainActor
 final class WorkspaceConnectionRecoveryTests: XCTestCase {
     func test已有共享列表时重试仍重新读取当前目录并清除旧认证错误() async throws {
         let fixture = try WorkspaceViewFixture(count: 1)
@@ -5492,18 +6407,210 @@ private actor PresentationFileRepository: FileRepository {
     let profileID: UUID
     let allowsVerifiedRestore = false
     private(set) var writeCalls = 0
+    private(set) var shareEdits: [FileShareLinkEditRequest] = []
     private(set) var readCalls = 0
     private(set) var directorySizeCalls = 0
+    private var advancedState: String?
+    private var advancedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var vfsProfilesOverride: [FileVFSProfile]?
+    private var virtualFolders: [FileVirtualFolder] = []
+    func configureVirtualFolders(_ folders: [FileVirtualFolder]) { virtualFolders = folders }
+    func listVirtualFolders(offset: Int, limit: Int) -> FileVirtualFolderPage {
+        .init(folders: virtualFolders, offset: 0, total: virtualFolders.count, hasMore: false)
+    }
+    private var vfsMutationStatus: MutationResultStatus?
+    private var vfsReviewStatus: MutationResultStatus = .confirmedSuccess
+    private var vfsReadFails = false
+    private var holdsNextVFSRead = false
+    private var vfsReadWaiter: CheckedContinuation<Void, Never>?
+    private var holdsNextVFSChange = false
+    private var vfsChangeWaiter: CheckedContinuation<Void, Never>?
+    var hasHeldVFSChange: Bool { vfsChangeWaiter != nil }
+    func holdNextVFSChange() { holdsNextVFSChange = true }
+    func releaseVFSChange() { vfsChangeWaiter?.resume(); vfsChangeWaiter = nil }
+    private(set) var vfsReads = 0
+    private(set) var vfsReviews = 0
+    var hasHeldVFSRead: Bool { vfsReadWaiter != nil }
+    func configureVFS(profiles: [FileVFSProfile], status: MutationResultStatus? = nil, readFails: Bool = false) {
+        vfsProfilesOverride = profiles; vfsMutationStatus = status; vfsReadFails = readFails
+    }
+    func holdNextVFSRead() { holdsNextVFSRead = true }
+    func releaseVFSRead() { vfsReadWaiter?.resume(); vfsReadWaiter = nil }
+    func configureAdvanced(state: String) { advancedState = state }
+    func releaseAdvancedReads() {
+        if advancedState == "loading" { advancedState = "ready" }
+        let waiters = advancedWaiters; advancedWaiters = []; waiters.forEach { $0.resume() }
+    }
+    private func advancedRead() async throws {
+        readCalls += 1
+        if advancedState == "loading" { await withCheckedContinuation { advancedWaiters.append($0) } }
+        if advancedState == nil || advancedState == "error" { throw PresentationRepositoryError.unexpectedOperation }
+    }
+    func loadFileStationAdvancedAccess() async throws -> FileStationAdvancedAccess {
+        try await advancedRead(); return .init(isAdministrator: true, writesEnabled: vfsMutationStatus != nil)
+    }
+    func loadFilePermissions(_ item: FileItem) async throws -> FilePermissionSnapshot {
+        try await advancedRead()
+        return .init(target: item, resolvedPath: "/volume-synthetic" + item.path, isACL: true, canChangePermissions: true,
+            isInherited: true, rules: advancedState == "empty" ? [] : [
+                .init(ownerType: "user", ownerName: "示例账号 Synthetic user", effect: .allow, rights: [.readData, .readAttributes, .readPermissions], inheritance: [.thisFolder]),
+                .init(ownerType: "group", ownerName: "示例群组 Synthetic group", effect: .allow, rights: [.readData], inheritance: [.childFiles], level: 1)],
+            owner: .init(name: "示例账号 Synthetic user", type: "user", value: "user:synthetic", canChange: true), posixMode: nil)
+    }
+    func remoteMountInventory() async throws -> RemoteMountInventory {
+        try await advancedRead()
+        return .init(profileID: profileID, isRemoteMountingEnabled: true, connections: [],
+            isoConnections: advancedState == "empty" ? [] : [.init(profileID: profileID, source: "/synthetic/示例 Sample.iso", mountPoint: "/synthetic/mount", automaticMount: false)],
+            isISOMountingEnabled: true)
+    }
+    func listFileVFSProtocols() async throws -> [FileVFSProtocol] {
+        try await advancedRead()
+        return [.init(id: "dav", name: "WebDAV", defaultPort: 80, hasConnections: false),
+                .init(id: "davs", name: "WebDAV HTTPS", defaultPort: 443, hasConnections: false)]
+    }
+    func listFileVFSProfiles() async throws -> [FileVFSProfile] {
+        vfsReads += 1
+        try await advancedRead()
+        if vfsReadFails { throw PresentationRepositoryError.unexpectedOperation }
+        if let profiles = vfsProfilesOverride {
+            if holdsNextVFSRead {
+                holdsNextVFSRead = false
+                await withCheckedContinuation { vfsReadWaiter = $0 }
+            }
+            return profiles
+        }
+        return advancedState == "empty" ? [] : [.init(profileID: profileID, id: "synthetic-vfs", protocolID: "sftp", protocolName: "SFTP",
+            uri: "sftp://synthetic", hostname: "example.invalid", port: 22, alias: "远程位置 Remote", account: "synthetic", codepage: "UTF-8", state: .connected)]
+    }
+    func loadFileVFSDetail(_ profile: FileVFSProfile) async throws -> FileVFSDetail {
+        try await advancedRead()
+        return .init(profile: profile, configuration: .init(protocolID: profile.protocolID,
+            hostname: profile.hostname ?? "", port: profile.port ?? 443, alias: profile.alias,
+            account: profile.account ?? "", codepage: profile.codepage ?? "UTF-8", folder: "photos"))
+    }
+    func prepareFileVFSCloudAuthorization(protocolID: String) async throws -> FileVFSCloudAuthorizationRequest {
+        try await advancedRead()
+        return .init(profileID: profileID, protocolID: protocolID, loginURL: URL(string: "https://authorization.invalid/signin")!,
+            callbackName: "_webfmOAuthCallback")
+    }
+    func listFileVFSFolder(_ profile: FileVFSProfile, path: String, offset: Int, limit: Int) async throws -> FilePage {
+        try await advancedRead()
+        let items: [FileItem] = advancedState == "empty" ? [] : [
+            .init(profileID: profileID, name: "资料 Folder", path: path + "/folder", kind: .directory),
+            .init(profileID: profileID, name: "说明 Readme.txt", path: path + "/readme.txt", kind: .file)]
+        return .init(folderPath: path, items: items, offset: 0, total: items.count, hasMore: false)
+    }
+    func loadFileStationMountDirectories() async throws -> FileStationMountDirectories {
+        try await advancedRead(); return .init(items: [.init(source: .local, name: ""), .init(source: .ldap, name: ""), .init(source: .domain("SYNTHETIC"), name: "SYNTHETIC")], hasUnavailableSources: false)
+    }
+    func loadFileStationSettings() async throws -> FileStationSettings {
+        try await advancedRead()
+        return .init(profileID: profileID, recordsTransfers: true, usesDefaultPermissions: false, showsAccounts: true, sharing: .administrators,
+            fileRequests: .administrators, remoteMounts: .administrators, isoMounts: .administrators, sharingAccounts: [], requestAccounts: [],
+            defaultLinkLimit: 1000, bandwidth: .scheduled, schedule: String(repeating: "1", count: 168), usesCustomSharingPage: true)
+    }
+    func loadFileStationMountAccess() async throws -> FileStationMountAccessScope { try await advancedRead(); return .selected }
+    func listFileStationBandwidth(ownerType: FileStationBandwidthEntry.OwnerType, offset: Int, limit: Int) async throws -> FileStationBandwidthPage {
+        try await advancedRead()
+        let rows: [FileStationBandwidthEntry] = advancedState == "empty" ? [] : [.init(profileID: profileID, name: "示例账号 Synthetic user", ownerType: ownerType,
+            policy: .scheduled, schedule: String(repeating: "1", count: 168), uploadLimit: 42, downloadLimit: 84, alternateUploadLimit: 24, alternateDownloadLimit: 48)]
+        return .init(items: rows, total: rows.count, nextOffset: rows.count)
+    }
+    func loadFileStationSharingTheme() async throws -> FileStationSharingTheme {
+        try await advancedRead()
+        return .init(profileID: profileID, customLogo: true, customBackground: true, logoPosition: .topLeft,
+            backgroundPosition: .fill, backgroundColor: "#FFFFFF", footer: "分享示例 Shared sample", footerUsesHTML: false)
+    }
+    func listFileStationMountAccounts(kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationMountAccountPage {
+        try await advancedRead()
+        let rows: [FileStationMountAccount] = advancedState == "empty" || !query.isEmpty ? [] : [.init(profileID: profileID, id: .init(kind: kind, value: 1001),
+            name: "示例账号 Synthetic user", enabled: true, canModify: true)]
+        return .init(items: rows, total: rows.count, nextOffset: rows.count)
+    }
+    func pendingFileStationChanges() async -> [FileStationPendingChange] {
+        advancedState == "empty" ? [] : [.init(id: "settings:general", kind: .general), .init(id: "permissions:synthetic", kind: .permissions, target: "/synthetic/资料 Folder")]
+    }
+    func changeFilePermissions(_ change: FilePermissionChange) throws -> MutationResult { writeCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
+    func changeFileStationSettings(_ change: FileStationSettingsChange, confirmed: Bool) throws -> MutationResult { writeCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
+    func changeISOMount(_ change: FileISOMountChange) throws -> MutationResult { writeCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
+    func changeFileVFS(_ change: FileVFSChange, password: String?, confirmed: Bool) async throws -> MutationResult {
+        writeCalls += 1
+        guard confirmed, let status = vfsMutationStatus else { throw PresentationRepositoryError.unexpectedOperation }
+        if holdsNextVFSChange {
+            holdsNextVFSChange = false
+            await withCheckedContinuation { vfsChangeWaiter = $0 }
+        }
+        if status == .confirmedSuccess, case .create(let value) = change {
+            vfsProfilesOverride = [.init(profileID: profileID, id: "created-vfs", protocolID: value.protocolID,
+                protocolName: "WebDAV HTTPS", uri: "davs://synthetic", hostname: value.hostname, port: value.port,
+                alias: value.alias, account: value.account, codepage: value.codepage, state: .connected)]
+        }
+        if status == .confirmedSuccess, case .update(let baseline, let value) = change {
+            vfsProfilesOverride = [.init(profileID: profileID, id: baseline.profile.id, protocolID: value.protocolID,
+                protocolName: baseline.profile.protocolName, uri: baseline.profile.uri, hostname: value.hostname,
+                port: value.port, alias: value.alias, account: value.account, codepage: value.codepage, state: .connected)]
+        }
+        if status == .confirmedSuccess { completeSyntheticConnection(change) }
+        return try remoteFlowResult(status)
+    }
+    func reviewFileVFS(_ change: FileVFSChange) throws -> MutationResult {
+        vfsReviews += 1
+        if vfsReviewStatus == .confirmedSuccess { completeSyntheticConnection(change) }
+        return try remoteFlowResult(vfsReviewStatus)
+    }
+    private func completeSyntheticConnection(_ change: FileVFSChange) {
+        guard case .connect(let profile) = change else { return }
+        vfsProfilesOverride = vfsProfilesOverride?.map { item in
+            guard item.id == profile.id else { return item }
+            return .init(profileID: item.profileID, id: item.id, protocolID: item.protocolID, protocolName: item.protocolName,
+                uri: item.uri, hostname: item.hostname, port: item.port, alias: item.alias, account: item.account,
+                codepage: item.codepage, state: .connected)
+        }
+    }
+    func authorizeFileVFS(_ change: FileVFSChange, authorization: FileVFSCloudAuthorization, confirmed: Bool) async throws -> MutationResult {
+        try await changeFileVFS(change, password: nil, confirmed: confirmed)
+    }
     private var nextFolderError: AppError?
+    private var archiveItem: FileItem?
+    private var archiveEntries: [Int: [ArchiveItem]] = [:]
+    private var archiveFails = false
+    private var archiveHeld = false
+    private var archiveWaiter: CheckedContinuation<Void, Never>?
+    func configureArchive(_ item: FileItem, entries: [Int: [ArchiveItem]], fails: Bool = false, held: Bool = false) {
+        archiveItem = item; archiveEntries = entries; archiveFails = fails; archiveHeld = held
+    }
+    func releaseArchive() { archiveHeld = false; archiveWaiter?.resume(); archiveWaiter = nil }
+    func listArchivePage(filePath: String, parentID: Int, offset: Int, limit: Int, codepage: String?, password: String?) async throws -> ArchiveItemPage {
+        readCalls += 1
+        if archiveHeld { await withCheckedContinuation { archiveWaiter = $0 } }
+        if archiveFails || archiveItem == nil { throw PresentationRepositoryError.unexpectedOperation }
+        let all = archiveEntries[parentID] ?? [], page = Array(all.dropFirst(offset).prefix(limit))
+        return .init(items: page, offset: offset, total: all.count, hasMore: offset + page.count < all.count)
+    }
+    private var searchWaiters: [String: CheckedContinuation<[FileItem], Never>] = [:]
+    func isSearchPending(_ name: String) -> Bool { searchWaiters[name] != nil }
+    func finishSearch(_ name: String) {
+        searchWaiters.removeValue(forKey: name)?.resume(returning: [FileItem(profileID: profileID, name: name,
+            path: "/synthetic/" + name, kind: .file)])
+    }
+    func search(_ request: FileSearchRequest) async -> [FileItem] {
+        await withCheckedContinuation { searchWaiters[request.name] = $0 }
+    }
     init(profileID: UUID) { self.profileID = profileID }
-    func listShares(offset: Int, limit: Int) -> FilePage { readCalls += 1; return page(path: "/", offset: offset) }
+    func listShares(offset: Int, limit: Int) async throws -> FilePage {
+        if advancedState != nil { try await advancedRead() }
+        readCalls += 1; return page(path: "/", offset: offset)
+    }
     func failNextFolderRead(_ error: AppError) { nextFolderError = error }
     func listFolder(path: String, offset: Int, limit: Int) throws -> FilePage {
         readCalls += 1
         if let error = nextFolderError { nextFolderError = nil; throw error }
         return page(path: path, offset: offset)
     }
-    func getInfo(paths: [String]) -> [FileItem] { readCalls += 1; return [] }
+    func getInfo(paths: [String]) -> [FileItem] {
+        readCalls += 1
+        return archiveItem.map { paths.contains($0.path) ? [$0] : [] } ?? []
+    }
     func calculateDirectorySize(path: String) -> FileDirectorySizeSummary {
         readCalls += 1
         directorySizeCalls += 1
@@ -5527,6 +6634,10 @@ private actor PresentationFileRepository: FileRepository {
     func addFavoriteResult(path: String, name: String) throws -> MutationResult { writeCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
     func removeFavorite(path: String) throws { try rejectWrite() }
     func listShareLinks() -> [FileShareLink] { [] }
+    func editShareLink(_ request: FileShareLinkEditRequest) throws -> FileShareLinkEditOutcome {
+        shareEdits.append(request)
+        throw PresentationRepositoryError.unexpectedOperation
+    }
     func createShareLink(paths: [String], password: String?, expiresAt: String?) throws -> FileShareLink { writeCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
     func deleteShareLinks(ids: [String]) throws { try rejectWrite() }
     private func rejectWrite() throws { writeCalls += 1; throw PresentationRepositoryError.unexpectedOperation }
@@ -5580,5 +6691,109 @@ private struct SynologyPhotosPresentationFixture: SynologyPhotosServing {
     }
     func albums(offset: Int, limit: Int) async throws -> [SynologyPhotoCollection] {
         [SynologyPhotoCollection(id: 71, name: "Sample album", itemCount: 1)]
+    }
+}
+
+@MainActor
+final class FileStationSearchWorkflowTests: XCTestCase {
+    func test正文结果不按文件名二次过滤且正则保留名称语义() throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        let model = fixture.model
+        model.searchText = "contents-only"
+        model.advancedSearch = .init(folders: ["/synthetic"], name: model.searchText, searchesContents: true)
+        model.recursiveSearchResults = [.init(profileID: model.profile.id, name: "report.txt", path: "/synthetic/report.txt", kind: .file)]
+        XCTAssertEqual(model.filteredItems.map(\.name), ["report.txt"])
+        model.searchText = "/report.*/"
+        XCTAssertNotNil(model.searchErrorMessage)
+        model.advancedSearch?.searchesContents = false
+        XCTAssertNil(model.searchErrorMessage)
+        XCTAssertEqual(model.filteredItems.count, 1)
+    }
+
+    func test旧搜索晚返回不能覆盖新搜索且取消不接受结果() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        let model = fixture.model
+        model.searchScope = .subfolders
+        model.searchText = "old"; model.updateSearch()
+        try await waitForSearch("old", repository: fixture.repository)
+        model.searchText = "new"; model.updateSearch()
+        try await waitForSearch("new", repository: fixture.repository)
+        await fixture.repository.finishSearch("new")
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.recursiveSearchResults.map(\.name), ["new"])
+        await fixture.repository.finishSearch("old")
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(model.recursiveSearchResults.map(\.name), ["new"])
+        model.searchText = "cancel"; model.updateSearch()
+        try await waitForSearch("cancel", repository: fixture.repository)
+        model.cancelSearch(); await fixture.repository.finishSearch("cancel")
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(model.recursiveSearchResults.isEmpty)
+        XCTAssertFalse(model.isSearching)
+    }
+
+    private func waitForSearch(_ name: String, repository: PresentationFileRepository) async throws {
+        for _ in 0..<120 {
+            if await repository.isSearchPending(name) { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("搜索未发起")
+    }
+}
+
+@MainActor
+final class FileArchiveWorkflowTests: XCTestCase {
+    func test重复上传目标在传输列表中立即失败且不能重试() throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        let sources = ["a", "b"].map { name in
+            let url = URL(fileURLWithPath: "/synthetic-local/" + name)
+            return FileUploadSource(url: url, relativePath: "duplicate", kind: .file, size: 0, modifiedAt: nil, access: .init(url))
+        }
+        fixture.model.beginUploadBatch(sources: sources, destination: "/synthetic", overwrite: false)
+        XCTAssertEqual(fixture.model.transfers.count, 2)
+        XCTAssertTrue(fixture.model.transfers.allSatisfy { $0.state == .failed && !fixture.model.canRetryTransfer($0.id) })
+        XCTAssertFalse(fixture.model.uploadBatches[0].isRunning)
+    }
+
+    func test目录浏览分页选择子树且空选择不解压() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        let item = FileItem(profileID: fixture.model.profile.id, name: "archive.zip", path: "/synthetic/archive.zip", kind: .file, sizeBytes: 42)
+        let folder = ArchiveItem(id: 1, name: "folder", path: "folder", isDirectory: true)
+        let children = (2...202).map { ArchiveItem(id: $0, name: "\($0).txt", path: "folder/\($0).txt", isDirectory: false, sizeBytes: 0) }
+        await fixture.repository.configureArchive(item, entries: [-1: [folder, .init(id: 300, name: "outside.txt", path: "outside.txt", isDirectory: false)], 1: children])
+        let browser = fixture.model.makeArchiveBrowser(item)
+        await browser.reload(); browser.extractAll = false
+        XCTAssertFalse(browser.canExtract)
+        do { _ = try await browser.prepare(); XCTFail("空选择不能变成全部") } catch {}
+        browser.selected[folder.id] = folder
+        await browser.enter(folder)
+        XCTAssertEqual(browser.items.count, 200); XCTAssertTrue(browser.hasMore)
+        await browser.more(); XCTAssertEqual(browser.items.count, 201); XCTAssertFalse(browser.hasMore)
+        await browser.back()
+        let (request, inventory) = try await browser.prepare()
+        XCTAssertEqual(request.selection, .items([folder]))
+        XCTAssertEqual(inventory.count, 202); XCTAssertFalse(inventory.contains { $0.id == 300 })
+        await fixture.repository.configureArchive(item, entries: [-1: [.init(id: 1, name: "renamed", path: "renamed", isDirectory: true)]])
+        do { _ = try await browser.prepare(); XCTFail("所选项变化必须重新选择") } catch {}
+        let writes = await fixture.repository.writeCalls; XCTAssertEqual(writes, 0)
+    }
+
+    func test覆盖与移除密码不再被实测开关阻断() async throws {
+        let fixture = try WorkspaceViewFixture(count: 0)
+        defer { fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+        let item = FileItem(profileID: fixture.model.profile.id, name: "archive.zip", path: "/synthetic/archive.zip", kind: .file)
+        fixture.model.enqueueVerifiedExtraction(item, request: .init(filePath: item.path, destination: "/synthetic", overwrite: true), inventory: [])
+        let url = URL(fileURLWithPath: "/synthetic-local-file")
+        fixture.model.beginUploadBatch(sources: [.init(url: url, relativePath: "file", kind: .file, size: 0, modifiedAt: nil, access: .init(url))], destination: "/synthetic", overwrite: true)
+        let link = FileShareLink(id: "synthetic", name: "item", path: "/synthetic/item", url: "https://example.invalid/shared", hasPassword: true)
+        await fixture.model.editShareLinks([try .init(baseline: link, password: .remove, availableOn: nil, expiresOn: nil)])
+        XCTAssertFalse(fixture.model.transfers.isEmpty); XCTAssertEqual(fixture.model.uploadBatches.count, 1)
+        let edits = await fixture.repository.shareEdits
+        XCTAssertEqual(edits.count, 1)
+        guard case .remove = edits.first?.password else { return XCTFail("移除密码意图必须传递给仓库") }
     }
 }

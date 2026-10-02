@@ -160,12 +160,9 @@ struct PhotoLibraryView: View {
                 }
             }
             .pickerStyle(.menu)
+            .labelsHidden()
             .frame(maxWidth: 220)
             .accessibilityHint(L10n.string("ui.3e5a89a799968aab"))
-        } else if let space = model.selectedSpace {
-            Text(space.title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
     }
 

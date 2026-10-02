@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.edit-share-link.synthetic-keep-password",
+  "module": "file-station",
+  "operation": "editShareLink",
+  "api": {
+    "name": "SYNO.FileStation.Sharing",
+    "method": "edit",
+    "preferredVersion": 3,
+    "resolvedVersion": 3,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "id",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-link-id>\"]"
+    },
+    {
+      "name": "date_available",
+      "valueType": "string",
+      "encodedValue": "2026-10-02"
+    },
+    {
+      "name": "date_expired",
+      "valueType": "string",
+      "encodedValue": "2026-10-08"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

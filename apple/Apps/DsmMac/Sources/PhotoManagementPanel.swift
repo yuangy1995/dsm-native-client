@@ -604,21 +604,23 @@ struct PhotoManagementPanel: View {
         case .regeneratePreviews:
             Text(L10n.string("photos.preview.rebuildHint"))
         case .move, .copy:
-            Picker(L10n.string("photos.transfer.destination"), selection: Binding(get: { transferDestination }, set: { space in
-                transferSpace = space; folderPath = []; folders = []
-                Task { await load() }
-            })) {
-                ForEach(model.transferDestinationSpaces(for: sheet.photos, copying: sheet.kind == .copy, folders: sheet.folders), id: \.self) { space in
-                    Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
-                }
-            }.pickerStyle(.segmented)
+            if model.transferDestinationSpaces(for: sheet.photos, copying: sheet.kind == .copy, folders: sheet.folders).count > 1 {
+                Picker(L10n.string("photos.transfer.destination"), selection: Binding(get: { transferDestination }, set: { space in
+                    transferSpace = space; folderPath = []; folders = []
+                    Task { await load() }
+                })) {
+                    ForEach(model.transferDestinationSpaces(for: sheet.photos, copying: sheet.kind == .copy, folders: sheet.folders), id: \.self) { space in
+                        Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
+                    }
+                }.pickerStyle(.segmented)
+            }
             folderPicker
             PhotoTransferDuplicatePicker(selection: $transferDuplicate)
             if transferDuplicate == .overwrite { Text(L10n.string("photos.duplicates.overwriteWarning")).font(.callout).foregroundStyle(.secondary) }
         case .upload:
             Text(L10n.string("photos.upload.fileCount", uploadFiles.count)).font(.headline)
-            if !directAlbumUpload {
-                Text(L10n.string(sheet.space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829"))
+            if !directAlbumUpload, sheet.space == .shared {
+                Text(L10n.string("shared.17d2e16862f16829"))
                     .font(.callout).foregroundStyle(.secondary)
             }
             Text(L10n.string("photos.upload.destination", sheet.album?.name ?? sheet.folder?.name ??
@@ -814,16 +816,18 @@ struct PhotoManagementPanel: View {
                 Text(url.absoluteString).lineLimit(2).textSelection(.enabled)
             }
             Divider()
-            Picker(L10n.string("photos.library.space"), selection: Binding(get: { requestSettings.space }, set: { space in
-                guard space != requestSettings.space else { return }
-                requestSettings.space = space
-                requestSettings.folderID = nil; requestSettings.folderPath = ""
-                requestDefaultFolder = model.canUseDefaultRequestFolder(in: space)
-                showsRequestFolders = !requestDefaultFolder
-                Task { await loadRequestFolders() }
-            })) {
-                ForEach(model.spaces, id: \.self) { space in
-                    Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
+            if model.spaces.count > 1 {
+                Picker(L10n.string("photos.library.space"), selection: Binding(get: { requestSettings.space }, set: { space in
+                    guard space != requestSettings.space else { return }
+                    requestSettings.space = space
+                    requestSettings.folderID = nil; requestSettings.folderPath = ""
+                    requestDefaultFolder = model.canUseDefaultRequestFolder(in: space)
+                    showsRequestFolders = !requestDefaultFolder
+                    Task { await loadRequestFolders() }
+                })) {
+                    ForEach(model.spaces, id: \.self) { space in
+                        Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
+                    }
                 }
             }
             if model.canUseDefaultRequestFolder(in: requestSettings.space) {
@@ -1203,12 +1207,14 @@ struct PhotoManagementPanel: View {
                 if sheet.kind == .createConditionAlbum || sheet.kind == .restoreFrozenAlbum {
                     TextField(L10n.string("photos.manage.albumName"), text: $text).textFieldStyle(.roundedBorder)
                 }
-                Picker(L10n.string("photos.condition.source"), selection: Binding(get: { condition.sourceSpace }, set: { switchConditionSource($0) })) {
-                    ForEach(model.conditionSourceSpaces, id: \.self) { space in
-                        Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
+                if model.conditionSourceSpaces.count > 1 {
+                    Picker(L10n.string("photos.condition.source"), selection: Binding(get: { condition.sourceSpace }, set: { switchConditionSource($0) })) {
+                        ForEach(model.conditionSourceSpaces, id: \.self) { space in
+                            Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
+                        }
                     }
+                    .disabled(isSearchingConditions || isLoading)
                 }
-                .disabled(isSearchingConditions || isLoading)
                 Picker(L10n.string("photos.condition.media"), selection: Binding(get: {
                     let values = condition.values("item_type")
                     return values.isEmpty ? 0 : values == [.integer(-1)] ? -1 : values == [.integer(-2)] ? -2 : -3
@@ -1516,8 +1522,9 @@ struct PhotoUploadQueuePanel: View {
                             Spacer()
                             Text(uploadStateTitle(entry.state)).foregroundStyle(.secondary)
                         }
-                        Text(L10n.string(entry.space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829"))
-                            .font(.caption).foregroundStyle(.secondary)
+                        if entry.space == .shared {
+                            Text(L10n.string("shared.17d2e16862f16829")).font(.caption).foregroundStyle(.secondary)
+                        }
                         Text(L10n.string("photos.upload.destination", entry.album?.name ?? entry.folder?.name ?? L10n.string("photos.library.timeline")))
                             .font(.caption).foregroundStyle(.secondary)
                         if entry.state == .uploading { ProgressView(value: entry.progress) }
@@ -1986,11 +1993,13 @@ struct PhotoPreviewRecoveryPanel: View {
                     .buttonStyle(.plain).accessibilityLabel(L10n.string("photos.media.close"))
             }.padding(20)
             Divider()
-            Picker(L10n.string("photos.library.space"), selection: $space) {
-                ForEach(model.spaces, id: \.self) { item in
-                    Text(L10n.string(item == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(item)
-                }
-            }.pickerStyle(.segmented).padding(16)
+            if model.spaces.count > 1 {
+                Picker(L10n.string("photos.library.space"), selection: $space) {
+                    ForEach(model.spaces, id: \.self) { item in
+                        Text(L10n.string(item == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(item)
+                    }
+                }.pickerStyle(.segmented).padding(16)
+            }
             Group {
                 if isLoading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else if let error {
@@ -2890,8 +2899,7 @@ struct PhotoLibraryMaintenancePanel: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let status {
                     VStack(alignment: .leading, spacing: 24) {
-                        Text(L10n.string(space == .personal ? "photos.maintenance.personal" : "photos.maintenance.shared"))
-                            .font(.headline)
+                        if space == .shared { Text(L10n.string("photos.maintenance.shared")).font(.headline) }
                         maintenanceRow(.reindex, status: status)
                         Divider()
                         maintenanceRow(.previews, status: status)

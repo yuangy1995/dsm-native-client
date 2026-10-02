@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.edit-share-link.synthetic-audience",
+  "module": "file-station",
+  "operation": "editShareLink",
+  "api": {
+    "name": "SYNO.FileStation.Sharing",
+    "method": "edit",
+    "preferredVersion": 3,
+    "resolvedVersion": 3,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "id",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-link>\"]"
+    },
+    {
+      "name": "protect_type",
+      "valueType": "string",
+      "encodedValue": "user"
+    },
+    {
+      "name": "protect_users",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-user>\"]"
+    },
+    {
+      "name": "protect_groups",
+      "valueType": "stringArray",
+      "encodedValue": "[]"
+    },
+    {
+      "name": "new_protect_users",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-user>\"]"
+    },
+    {
+      "name": "new_protect_groups",
+      "valueType": "stringArray",
+      "encodedValue": "[]"
+    },
+    {
+      "name": "expire_times",
+      "valueType": "integer",
+      "encodedValue": "7"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

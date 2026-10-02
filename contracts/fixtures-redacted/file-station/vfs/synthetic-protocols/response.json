@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "data": {
+    "protocols": [
+      {
+        "protocol": "sftp",
+        "name": "SFTP",
+        "default_port": 22,
+        "has_server": false
+      }
+    ]
+  }
+}

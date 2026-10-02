@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dsm-native-client/file-station-sharing-details.schema.json",
+  "title": "file-station-sharing-details",
+  "description": "仅描述已记录的成功响应白名单；额外字段不会成为客户端默认值或写入依据。",
+  "type": "object",
+  "required": [
+    "success",
+    "data"
+  ],
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "offset",
+        "total",
+        "links"
+      ],
+      "properties": {
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "path",
+              "url",
+              "has_password",
+              "date_available",
+              "date_expired",
+              "status",
+              "protect_type",
+              "protect_users",
+              "protect_groups",
+              "expire_times",
+              "enable_upload",
+              "project_name",
+              "request_name",
+              "request_info"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "has_password": {
+                "type": "boolean"
+              },
+              "date_available": {
+                "type": "string"
+              },
+              "date_expired": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "protect_type": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "password",
+                  "user"
+                ]
+              },
+              "protect_users": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "protect_groups": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "expire_times": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "enable_upload": {
+                "type": "boolean"
+              },
+              "project_name": {
+                "type": "string"
+              },
+              "request_name": {
+                "type": "string"
+              },
+              "request_info": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

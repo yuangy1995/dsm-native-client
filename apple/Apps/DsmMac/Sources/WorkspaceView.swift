@@ -54,6 +54,9 @@ struct WorkspaceView: View {
     @State private var previewWindowController: FloatingPreviewWindowController?
     @State private var shareTargets: [FileItem] = []
     @State private var isRestoringSectionAfterUnsavedEdit = false
+    @State private var showsFileStationSettings = false
+    @State private var showsFileStationPendingChanges = false
+    @State private var showsOfficeEditingSessions = false
     @State private var showsFileInspector = true
     @State private var showsSidebar = true
     @State private var sidebarWidth: CGFloat = 241
@@ -217,6 +220,15 @@ struct WorkspaceView: View {
         } message: {
             Text(L10n.string("ui.2c33e68b793e860d"))
         }
+        .macSheet(item: $model.uploadSelection) { selection in
+            FileUploadConfirmationView(model: model, selection: selection)
+        }
+        .macSheet(isPresented: $model.showsUploadQueue) {
+            FileUploadQueueView(model: model)
+        }
+        .macSheet(isPresented: $showsFileStationSettings) { FileStationSettingsView(model: model) }
+        .macSheet(isPresented: $showsFileStationPendingChanges) { FileStationPendingChangesView(model: model) }
+        .macSheet(isPresented: $showsOfficeEditingSessions) { OfficeEditingSessionsView(profileID: model.profile.id) }
         .macSheet(item: $showingInfoItem) { item in
             FilePropertiesView(item: item, model: model)
         }
@@ -302,11 +314,14 @@ struct WorkspaceView: View {
                     .disabled(model.photoLibrary.isLoading)
                     .accessibilityIdentifier("photos.rescan")
                 } else if model.section == .transfers {
+                    if !model.uploadBatches.isEmpty {
+                        Button(L10n.string("files.upload.queue")) { model.showsUploadQueue = true }
+                    }
                     Button(L10n.string("ui.349c4b7eb1f36c5a")) {
                         clearCompleted()
                     }
                     .disabled(!canClearCompleted)
-                    
+
                     Button {
                         restoreFileBrowser()
                     } label: {
@@ -406,6 +421,22 @@ struct WorkspaceView: View {
                 .accessibilityAddTraits(viewMode == .list ? .isSelected : [])
             }
             .labelStyle(.iconOnly)
+            if !model.uploadBatches.isEmpty {
+                Button { model.showsUploadQueue = true } label: {
+                    Label(L10n.string("files.upload.queue"), systemImage: "arrow.up.circle")
+                }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.upload.queue"))
+            }
+            Button { showsFileStationPendingChanges = true } label: {
+                Label(L10n.string("files.pending.title"), systemImage: "clock.badge.questionmark")
+            }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.pending.title"))
+                .accessibilityIdentifier("workspace.pendingChanges")
+            Button { showsOfficeEditingSessions = true } label: {
+                Label(L10n.string("files.office.sessions"), systemImage: "doc.badge.arrow.up")
+            }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.office.sessions"))
+                .accessibilityIdentifier("workspace.officeSessions")
+            Button { showsFileStationSettings = true } label: {
+                Label(L10n.string("files.settings.title"), systemImage: "gearshape")
+            }.labelStyle(.iconOnly).buttonStyle(MacToolbarButtonStyle()).help(L10n.string("files.settings.title"))
             Button { showsFileInspector.toggle() } label: {
                 Label(L10n.string("workspace.inspector.title"), systemImage: "info.circle")
             }
@@ -626,7 +657,7 @@ struct WorkspaceView: View {
               !item.isDirectory else {
             return false
         }
-        return PreviewKind.classify(item) != .unsupported
+        return OfficeDocumentFormat.canPreview(item)
     }
 
     private func presentFloatingPreview() {
@@ -665,7 +696,7 @@ struct WorkspaceView: View {
         panel.title = L10n.string("ui.bf3f404e39b7d03e")
         panel.prompt = L10n.string("ui.9e07e3c0532d4976")
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {
             model.enqueueUploads(panel.urls, overwrite: false)
@@ -1362,14 +1393,25 @@ struct RemoteLocationsView: View {
     let onOpen: (FileItem) -> Void
     @State private var showsCreate = false
     @State private var showsRemoteMountRecovery = false
+    @State private var showsVFSCreate = false
+    @State private var browsingVFS: FileVFSProfile?
+    @State private var editingVFS: FileVFSProfile?
+    @State private var reauthorizingVFS: FileVFSProfile?
+    @State private var vfsAction: VFSActionSheet?
+    @State private var showsISOMounts = false
     @State private var editingItem: RemoteMountConnection?
     @State private var removingItem: RemoteMountConnection?
     @State private var filter: RemoteLocationFilter = .all
+    @State private var query = ""
 
     private enum RemoteLocationFilter: String, CaseIterable, Identifiable {
         case all
         case cifs
         case nfs
+        case ftp
+        case sftp
+        case webdav
+        case cloud
         case iso
 
         var id: String { rawValue }
@@ -1379,6 +1421,10 @@ struct RemoteLocationsView: View {
             case .all: L10n.string("remote-locations.filter.all")
             case .cifs: L10n.string("remote-locations.protocol.smb")
             case .nfs: L10n.string("remote-locations.protocol.nfs")
+            case .ftp: L10n.string("remote-locations.protocol.ftp")
+            case .sftp: L10n.string("remote-locations.protocol.sftp")
+            case .webdav: L10n.string("remote-locations.protocol.webdav")
+            case .cloud: L10n.string("remote-locations.protocol.cloud")
             case .iso: L10n.string("remote-locations.protocol.iso")
             }
         }
@@ -1386,11 +1432,27 @@ struct RemoteLocationsView: View {
         func includes(_ protocolType: FileVirtualProtocol) -> Bool {
             self == .all || rawValue == protocolType.rawValue
         }
+
+        func includes(_ profile: FileVFSProfile) -> Bool {
+            switch self {
+            case .all: true
+            case .ftp: profile.protocolID == "ftp"
+            case .sftp: profile.protocolID == "sftp"
+            case .webdav: ["dav", "davs"].contains(profile.protocolID)
+            case .cloud: FileVFSProtocol.cloudProtocolIDs.contains(profile.protocolID)
+            default: false
+            }
+        }
     }
 
     private var filteredLocations: [FileVirtualFolder] {
-        model.remoteLocations.filter { filter.includes($0.protocolType) }
+        model.remoteLocations.filter { filter.includes($0.protocolType) && (query.isEmpty || $0.item.name.localizedCaseInsensitiveContains(query)) }
     }
+
+    private var filteredProfiles: [FileVFSProfile] {
+        model.remoteVFSProfiles.filter { filter.includes($0) && (query.isEmpty || $0.alias.localizedCaseInsensitiveContains(query)) }
+    }
+    private var hasLocations: Bool { !model.remoteLocations.isEmpty || !model.remoteVFSProfiles.isEmpty }
 
     private var defaultMountPoint: String {
         let parent = model.shares.first(where: { $0.permissions?.canWrite == true })?.path
@@ -1400,9 +1462,21 @@ struct RemoteLocationsView: View {
     }
 
     var body: some View {
+        Group {
+            if let browsingVFS {
+                FileVFSBrowserView(model: model, profile: browsingVFS, onClose: { self.browsingVFS = nil })
+                    .id(browsingVFS.id)
+            } else { overview }
+        }
+    }
+
+    private var overview: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MacPageTabs(options: RemoteLocationFilter.allCases, selection: $filter, title: { $0.title })
-            .padding()
+            HStack(spacing: 12) {
+                MacPageTabs(options: RemoteLocationFilter.allCases, selection: $filter, title: { $0.title })
+                TextField(L10n.string("remote-locations.search"), text: $query)
+                    .textFieldStyle(.roundedBorder).frame(width: 200)
+            }.padding()
 
             if !model.unavailableRemoteLocationProtocols.isEmpty {
                 Label(
@@ -1433,7 +1507,7 @@ struct RemoteLocationsView: View {
                 .accessibilityAddTraits(.isStaticText)
             }
 
-            if let error = model.remoteLocationsError, !model.remoteLocations.isEmpty {
+            if let error = model.remoteLocationsError, hasLocations {
                 Label(error, systemImage: "wifi.exclamationmark")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -1442,12 +1516,17 @@ struct RemoteLocationsView: View {
                     .accessibilityAddTraits(.isStaticText)
             }
 
+            if let error = model.remoteVFSProfilesError, hasLocations {
+                Label(error, systemImage: "wifi.exclamationmark")
+                    .font(.callout).foregroundStyle(.secondary).padding(.horizontal).padding(.bottom, 12)
+            }
+
             Group {
                 if (!model.remoteLocationsHasLoaded || model.isLoadingRemoteLocations)
-                    && model.remoteLocations.isEmpty {
+                    && !hasLocations {
                     ProgressView(L10n.string("remote-locations.loading"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error = model.remoteLocationsError, model.remoteLocations.isEmpty {
+                } else if let error = model.remoteLocationsError ?? model.remoteVFSProfilesError, !hasLocations {
                     ContentUnavailableView {
                         Label(L10n.string("remote-locations.error.title"), systemImage: "wifi.exclamationmark")
                     } description: {
@@ -1457,32 +1536,34 @@ struct RemoteLocationsView: View {
                             Task { await model.refreshRemoteLocations() }
                         }
                     }
-                } else if filteredLocations.isEmpty, !model.remoteLocations.isEmpty {
+                } else if filteredLocations.isEmpty && filteredProfiles.isEmpty, hasLocations {
                     ContentUnavailableView {
                         Label(L10n.string("remote-locations.filtered-empty.title"), systemImage: "line.3.horizontal.decrease.circle")
                     } description: {
                         Text(L10n.string("remote-locations.filtered-empty.description"))
                     } actions: {
-                        Button(L10n.string("remote-locations.filter.show-all")) { filter = .all }
+                        Button(L10n.string("remote-locations.filter.show-all")) { filter = .all; query = "" }
                     }
-                } else if model.remoteLocations.isEmpty {
+                } else if !hasLocations {
                     VStack(spacing: 16) {
                     ContentUnavailableView(
                         L10n.string("ui.9155045b349728e4"),
                         systemImage: "network",
                         description: Text(
-                            model.allowsRemoteMountManagement
-                                ? L10n.string("ui.5021ceb1d3b63a2b")
-                                : L10n.string("ui.fe08319f29c48252")
+                            L10n.string("remote-locations.empty.description")
                         )
                     )
-                    if model.allowsRemoteMountManagement {
-                        Button(L10n.string("ui.21539a2c4f05e43d")) { showsCreate = true }
-                    }
+                    connectionMenu
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(filteredLocations) { folder in
+                    List {
+                        ForEach(filteredProfiles) { profile in
+                            FileVFSProfileRow(model: model, profile: profile, onOpen: { browsingVFS = profile },
+                                onEdit: { editingVFS = profile }, onReauthorize: { reauthorizingVFS = profile },
+                                onAction: { vfsAction = $0 })
+                        }
+                        ForEach(filteredLocations) { folder in
                         let location = folder.item
                         Button { onOpen(location) } label: {
                             Label {
@@ -1512,6 +1593,7 @@ struct RemoteLocationsView: View {
                                 }.disabled(model.isManagingRemoteMount)
                             }
                         }
+                        }
                     }
                 }
             }
@@ -1519,6 +1601,7 @@ struct RemoteLocationsView: View {
         .fillsAvailableContentArea(alignment: .topLeading)
         .navigationTitle(L10n.string("ui.6727073e65194528"))
         .macPageActions(title: L10n.string("ui.6727073e65194528")) {
+            Button(L10n.string("files.iso.manage")) { showsISOMounts = true }
             if !model.remoteMountOperations.isEmpty {
                 Button(L10n.string("remote-mount.recovery.title")) { showsRemoteMountRecovery = true }
                     .disabled(model.isManagingRemoteMount || showsCreate || editingItem != nil || removingItem != nil)
@@ -1530,17 +1613,7 @@ struct RemoteLocationsView: View {
             }
             .disabled(model.isLoadingRemoteLocations)
 
-            Button {
-                showsCreate = true
-            } label: {
-                Label(L10n.string("ui.21539a2c4f05e43d"), systemImage: "plus")
-            }
-            .disabled(!model.allowsRemoteMountManagement || model.isManagingRemoteMount)
-            .help(
-                model.allowsRemoteMountManagement
-                    ? L10n.string("ui.47be2e832d971204")
-                    : L10n.string("ui.0b41577c05d286f3")
-            )
+            connectionMenu
         }
         .macSheet(isPresented: $showsCreate) {
             RemoteMountEditorView(
@@ -1567,6 +1640,13 @@ struct RemoteLocationsView: View {
             }
         }
         .macSheet(isPresented: $showsRemoteMountRecovery) { RemoteMountRecoveryView(model: model) }
+        .macSheet(isPresented: $showsVFSCreate) { FileVFSEditor(model: model, profile: nil) }
+        .macSheet(item: $editingVFS) { FileVFSEditor(model: model, profile: $0) }
+        .macSheet(item: $reauthorizingVFS) {
+            FileVFSCloudConnectionView(model: model, protocolID: $0.protocolID, protocolName: $0.protocolName, existing: $0)
+        }
+        .macSheet(item: $vfsAction) { FileVFSActionView(model: model, sheet: $0) }
+        .macSheet(isPresented: $showsISOMounts) { FileISOMountManagerView(model: model) { showsISOMounts = false } }
         .alert(L10n.string("ui.d1df2211a0b4fb89"), isPresented: Binding(
             get: { removingItem != nil },
             set: { if !$0 { removingItem = nil } }
@@ -1582,6 +1662,16 @@ struct RemoteLocationsView: View {
                 Text(L10n.string("remote-mount.disconnect.identity", connection.mountPoint, connection.source))
             }
         }
+        .task { if !model.remoteLocationsHasLoaded && !model.isLoadingRemoteLocations { await model.refreshRemoteLocations() } }
+    }
+
+    private var connectionMenu: some View {
+        Menu {
+            Button(L10n.string("files.vfs.title")) { filter = .all; query = ""; showsVFSCreate = true }
+            Button(L10n.string("remote-locations.addSharedFolder")) { filter = .all; query = ""; showsCreate = true }
+                .disabled(!model.allowsRemoteMountManagement || model.isManagingRemoteMount)
+        } label: { Label(L10n.string("ui.21539a2c4f05e43d"), systemImage: "plus") }
+            .macThemedMenu()
     }
 
     private func protocolTitle(_ protocolType: FileVirtualProtocol) -> String {
@@ -1632,8 +1722,7 @@ struct RemoteMountEditorView: View {
     @State private var domain = ""
     @State private var nfsVersion: RemoteMountNFSVersion = .v3
     @State private var nfsTransport: RemoteMountNFSTransport = .tcp
-    @State private var confirmedConfiguration: RemoteMountConfiguration?
-    @State private var confirmedConnection: RemoteMountConnection?
+    @State private var automaticMount = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
@@ -1646,6 +1735,7 @@ struct RemoteMountEditorView: View {
         self.onSave = onSave
         _protocolType = State(initialValue: existingItem?.protocolType ?? .smb)
         _mountPoint = State(initialValue: initialMountPoint)
+        _automaticMount = State(initialValue: existingItem?.automaticMount ?? false)
         if let existingItem {
             let source = existingItem.source
             if existingItem.protocolType == .smb, source.hasPrefix("//"), let slash = source.dropFirst(2).firstIndex(of: "/") {
@@ -1681,6 +1771,11 @@ struct RemoteMountEditorView: View {
                 TextField(L10n.string("ui.d3716cc5a2f5a810"), text: $server, prompt: Text(L10n.string("ui.d7cebe5eb5bbe1b4")))
                 TextField(L10n.string("ui.9545e72a358cec9f"), text: $remotePath, prompt: Text(L10n.string("ui.cabd6e6b138047b3")))
                 TextField(L10n.string("ui.23efe7b33221d11f"), text: $mountPoint, prompt: Text(L10n.string("ui.f2201180d039ff88")))
+                Toggle(L10n.string("files.mount.automatic"), isOn: $automaticMount)
+
+                if automaticMount {
+                    Text(L10n.string("files.mount.automaticImpact")).font(.caption).foregroundStyle(.secondary)
+                }
 
                 if protocolType == .smb {
                     TextField(L10n.string("ui.1a3f0617d6de8e52"), text: $username)
@@ -1704,16 +1799,9 @@ struct RemoteMountEditorView: View {
             .formStyle(.grouped)
             .disabled(isSubmitting)
 
-            Text(L10n.string(existingItem == nil ? "remote-mount.create-impact" : "remote-mount.edit-impact"))
-                .font(.callout)
-            Toggle(L10n.string("remote-mount.confirm"), isOn: Binding(
-                get: { confirmedConfiguration == currentConfiguration && confirmedConnection == existingItem },
-                set: {
-                    confirmedConfiguration = $0 ? currentConfiguration : nil
-                    confirmedConnection = $0 ? existingItem : nil
-                }
-            ))
-                .disabled(isSubmitting)
+            if existingItem != nil {
+                Text(L10n.string("remote-mount.edit-impact")).font(.callout)
+            }
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -1743,27 +1831,17 @@ struct RemoteMountEditorView: View {
         .padding(24)
         .frame(width: 520)
         .interactiveDismissDisabled(isSubmitting)
-        .onChange(of: server) { _, _ in confirmedConfiguration = nil }
-        .onChange(of: remotePath) { _, _ in confirmedConfiguration = nil }
-        .onChange(of: mountPoint) { _, _ in confirmedConfiguration = nil }
-        .onChange(of: username) { _, _ in confirmedConfiguration = nil }
-        .onChange(of: password) { _, _ in confirmedConfiguration = nil }
-        .onChange(of: domain) { _, _ in confirmedConfiguration = nil }
         .onChange(of: protocolType) { _, newValue in
-            confirmedConfiguration = nil
             if newValue == .nfs { username = ""; password = ""; domain = "" }
         }
         .onChange(of: nfsVersion) { _, newValue in
-            confirmedConfiguration = nil
             if newValue == .v4 { nfsTransport = .tcp }
         }
-        .onChange(of: nfsTransport) { _, _ in confirmedConfiguration = nil }
-        .onChange(of: existingItem) { _, _ in confirmedConfiguration = nil; confirmedConnection = nil }
-        .onDisappear { password = ""; confirmedConfiguration = nil; confirmedConnection = nil }
+        .onDisappear { password = "" }
     }
 
     private var canSubmit: Bool {
-        confirmedConfiguration == currentConfiguration && confirmedConnection == existingItem && !server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !remotePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && mountPoint.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/")
     }
@@ -1779,7 +1857,8 @@ struct RemoteMountEditorView: View {
             domain: protocolType == .smb ? domain : "",
             readOnly: false,
             nfsVersion: nfsVersion,
-            nfsTransport: nfsTransport
+            nfsTransport: nfsTransport,
+            automaticMount: automaticMount
         )
     }
 
@@ -1789,8 +1868,6 @@ struct RemoteMountEditorView: View {
         errorMessage = nil
         let configuration = currentConfiguration
         password = ""
-        confirmedConfiguration = nil
-        confirmedConnection = nil
         Task {
             let failure = await onSave(configuration)
             isSubmitting = false
@@ -1800,137 +1877,6 @@ struct RemoteMountEditorView: View {
                 password = ""
                 dismiss()
             }
-        }
-    }
-}
-
-struct ShareCreationView: View {
-    @Bindable var model: WorkspaceModel
-    let targets: [FileItem]
-    let onClose: () -> Void
-    @State private var password = ""
-    @State private var expirationDays = 0
-    @State private var isCreating = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(L10n.string("ui.4c4f2eb53c85407b")).font(.title2.weight(.semibold))
-            Text(
-                targets.count == 1
-                    ? L10n.string("item.share.named", targets[0].name)
-                    : L10n.string("ui.e1b60edbc9502ad7", String(describing: targets.count))
-            )
-                .foregroundStyle(.secondary)
-            Form {
-                VStack(alignment: .leading, spacing: 4) {
-                    SecureField(L10n.string("ui.145ffb632a72ddbd"), text: $password)
-                        .onChange(of: password) { _, value in
-                            if value.count > 16 { password = String(value.prefix(16)) }
-                        }
-                    Text(L10n.string("ui.0f39ff632ac67207")).font(.caption).foregroundStyle(.secondary)
-                }
-                Picker(L10n.string("ui.9c2a28e8f98fb5df"), selection: $expirationDays) {
-                    Text(L10n.string("ui.824fe235445dd1be")).tag(0)
-                    Text(L10n.string("ui.38eefacbb326e37f")).tag(7)
-                    Text(L10n.string("ui.84ad2952a3089ce7")).tag(30)
-                    Text(L10n.string("ui.cb82f419192b0423")).tag(90)
-                }
-            }
-            HStack {
-                Spacer()
-                Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel, action: onClose)
-                Button {
-                    createLink()
-                } label: {
-                    if isCreating { ProgressView().controlSize(.small) } else { Text(L10n.string("ui.a71bf6df75763893")) }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isCreating)
-            }
-        }
-        .padding(24)
-        .frame(width: 440)
-    }
-
-    private func createLink() {
-        isCreating = true
-        Task {
-            let expiresAt: String?
-            if expirationDays == 0 {
-                expiresAt = nil
-            } else {
-                let date = Calendar.current.date(byAdding: .day, value: expirationDays, to: Date()) ?? Date()
-                expiresAt = date.formatted(.iso8601.year().month().day())
-            }
-            if let link = await model.createShareLink(
-                paths: targets.map(\.path),
-                password: password.isEmpty ? nil : password,
-                expiresAt: expiresAt
-            ) {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(link.url, forType: .string)
-                onClose()
-            }
-            isCreating = false
-        }
-    }
-}
-
-struct ShareLinksView: View {
-    @Bindable var model: WorkspaceModel
-    @State private var linkToDelete: FileShareLink?
-
-    var body: some View {
-        Group {
-            if model.isLoadingShareLinks {
-                ProgressView(L10n.string("ui.fe59090f0d4bc698"))
-            } else if model.shareLinks.isEmpty {
-                ContentUnavailableView(
-                    L10n.string("ui.a4a471232364a4e3"),
-                    systemImage: "link",
-                    description: Text(L10n.string("ui.9b90b76e744938f2"))
-                )
-            } else {
-                List(model.shareLinks) { link in
-                    HStack(spacing: 12) {
-                        Image(systemName: "link.circle.fill").foregroundStyle(.blue)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(link.name.isEmpty ? L10n.string("ui.15d422f6042e7855") : link.name)
-                            HStack(spacing: 8) {
-                                if link.hasPassword { Label(L10n.string("ui.8aa0da83b66e54f0"), systemImage: "lock.fill") }
-                                if let expiration = link.expiresAt { Text(L10n.string("ui.f491436ed3a96c9c", String(describing: expiration))) }
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button(L10n.string("ui.8e86f9b1d54f2c51")) {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(link.url, forType: .string)
-                            model.statusIsError = false
-                            model.statusMessage = L10n.string("ui.de1804fdf8096e84")
-                        }
-                        Button(L10n.string("ui.21d728b6664ca9bc"), role: .destructive) { linkToDelete = link }
-                    }
-                    .macDataRowSurface()
-                }
-            }
-        }
-        .fillsAvailableContentArea()
-        .navigationTitle(L10n.string("ui.76cdc4a13d1eecc0"))
-        .task { await model.loadShareLinks() }
-        .alert(L10n.string("ui.0c1777d6b7a70cc7"), isPresented: Binding(
-            get: { linkToDelete != nil },
-            set: { if !$0 { linkToDelete = nil } }
-        )) {
-            Button(L10n.string("ui.670ec25af8419f48"), role: .cancel) { linkToDelete = nil }
-            Button(L10n.string("ui.21d728b6664ca9bc"), role: .destructive) {
-                guard let link = linkToDelete else { return }
-                linkToDelete = nil
-                Task { await model.deleteShareLinks(ids: [link.id]) }
-            }
-        } message: {
-            Text(L10n.string("ui.0fefbd857362afbe"))
         }
     }
 }
@@ -1952,7 +1898,7 @@ struct FileBrowserView: View {
     @Binding var showsInspector: Bool
     @AppStorage("LanStash_FileGridSize") private var gridSize: FileGridSize = .medium
     @ScaledMetric(relativeTo: .body) private var gridScale = 1.0
-    
+
     @State private var sortOrder = [KeyPathComparator<FileItem>]()
     @State private var showsCreateFolderPrompt = false
     @State private var showsCreateFilePrompt = false
@@ -1960,6 +1906,7 @@ struct FileBrowserView: View {
     @State private var renameName = ""
     @State private var compressionTargets: [FileItem] = []
     @State private var extractionTarget: FileItem?
+    @State private var isoTarget: FileItem?
     @State private var newItemName = ""
     @State private var hoveredItemID: FileItem.ID?
     @State private var dropTargetItemID: FileItem.ID?
@@ -2019,6 +1966,79 @@ struct FileBrowserView: View {
         return items
     }
 
+    private var fileLocationControls: some View {
+        let selectedItems = model.selectedItems
+        return HStack(spacing: 8) {
+
+            fileBreadcrumbs
+            Spacer()
+            if model.isRefreshing {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            if viewMode == .grid { FileSortMenu(sortOrder: $sortOrder) }
+            Menu {
+                if viewMode == .grid {
+                    Picker(L10n.string("workspace.grid.size"), selection: $gridSize) {
+                        ForEach(FileGridSize.allCases) { size in
+                            Text(size.title).tag(size)
+                        }
+                    }
+                    Divider()
+                }
+                Picker(L10n.string("ui.72148c2201764726"), selection: $fileGrouping) {
+                    ForEach(FileGrouping.allCases) { group in
+                        Text(group.title).tag(group)
+                    }
+                }
+                Button(L10n.string("files.search.advanced")) { model.showsAdvancedSearch.toggle() }
+                Picker(L10n.string("workspace.search.scope"), selection: $model.searchScope) {
+                    ForEach(WorkspaceModel.SearchScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                Divider()
+                blankAreaContextMenu
+                if !selectedItems.isEmpty {
+                    Divider()
+                    selectionMoreActions(selectedItems)
+                }
+            } label: {
+                Text(L10n.string("workspace.actions.more"))
+            }
+            .macThemedMenu()
+            .controlSize(.small)
+            .tint(.primary)
+            .fixedSize()
+        }
+    }
+
+    private var fileBreadcrumbs: some View {
+        HStack(spacing: 2) {
+            if breadcrumbItems.count > 2 {
+                Menu {
+                    ForEach(breadcrumbItems.dropLast(2)) { item in
+                        Button(item.name) { Task { await model.navigate(to: item.path) } }
+                    }
+                } label: {
+                    Label(L10n.string("navigation.parentFolders"), systemImage: "ellipsis")
+                }.labelStyle(.iconOnly).menuStyle(.borderlessButton).fixedSize()
+                    .frame(minWidth: 32, minHeight: 32)
+                    .help(L10n.string("navigation.parentFolders"))
+            }
+            ForEach(breadcrumbItems.suffix(2)) { item in
+                if item.path != breadcrumbItems.suffix(2).first?.path || breadcrumbItems.count > 2 {
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+                Button { Task { await model.navigate(to: item.path) } } label: {
+                    Text(item.name).lineLimit(1).truncationMode(.middle)
+                }.buttonStyle(MacPathButtonStyle(current: item.isLast))
+                    .help(item.name).accessibilityLabel(item.name)
+                    .accessibilityIdentifier(item.isLast ? "files.path.current" : "files.path.parent")
+            }
+        }.accessibilityIdentifier("files.path")
+    }
+
     private var showsCompressionSheet: Binding<Bool> {
         Binding(
             get: { !compressionTargets.isEmpty },
@@ -2053,120 +2073,54 @@ struct FileBrowserView: View {
         GeometryReader { availableSpace in
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                    
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 6) {
-                                    ForEach(breadcrumbItems) { item in
-                                        if item.path != "/" {
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        }
-
-                                        if item.isLast {
-                                            Text(item.name)
-                                                .font(.system(size: 14))
-                                                .foregroundStyle(.secondary)
-                                        } else {
-                                            Button {
-                                                Task {
-                                                    await model.navigate(to: item.path)
-                                                }
-                                            } label: {
-                                                Text(item.name)
-                                                    .font(.system(size: 14))
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .onHover { inside in
-                                                if inside {
-                                                    NSCursor.pointingHand.push()
-                                                } else {
-                                                    NSCursor.pop()
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if breadcrumbItems.count == 1 {
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                        Text(L10n.string("workspace.navigation.files"))
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
+                    if model.searchIndexCoverage == .incomplete || model.searchErrorMessage != nil || model.statusMessage != nil || (desktopDriveManager?.statusSource == .userAction && desktopDriveManager?.statusMessage != nil) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if model.searchIndexCoverage == .incomplete {
+                                Label(L10n.string("files.search.indexIncomplete"), systemImage: "info.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
-                            Spacer()
-                            if model.isRefreshing {
-                                ProgressView()
-                                    .controlSize(.small)
+                            if let message = model.searchErrorMessage ?? model.statusMessage {
+                                Label(
+                                    message,
+                                    systemImage: model.searchErrorMessage != nil || model.statusIsError
+                                        ? "exclamationmark.triangle.fill"
+                                        : "info.circle"
+                                )
+                                    .font(.caption)
+                                    .foregroundStyle(model.searchErrorMessage != nil || model.statusIsError ? .red : .secondary)
                             }
-                            if viewMode == .grid { FileSortMenu(sortOrder: $sortOrder) }
-                            Menu {
-                                if viewMode == .grid {
-                                    Picker(L10n.string("workspace.grid.size"), selection: $gridSize) {
-                                        ForEach(FileGridSize.allCases) { size in
-                                            Text(size.title).tag(size)
-                                        }
-                                    }
-                                    Divider()
-                                }
-                                Picker(L10n.string("ui.72148c2201764726"), selection: $fileGrouping) {
-                                    ForEach(FileGrouping.allCases) { group in
-                                        Text(group.title).tag(group)
-                                    }
-                                }
-                                Picker(L10n.string("workspace.search.scope"), selection: $model.searchScope) {
-                                    ForEach(WorkspaceModel.SearchScope.allCases) { scope in
-                                        Text(scope.title).tag(scope)
-                                    }
-                                }
-                                Divider()
-                                blankAreaContextMenu
-                                if !selectedItems.isEmpty {
-                                    Divider()
-                                    selectionMoreActions(selectedItems)
-                                }
-                            } label: {
-                                Text(L10n.string("workspace.actions.more"))
-                            }
-                            .macThemedMenu()
-                            .controlSize(.large)
-                            .tint(.primary)
-                            .fixedSize()
-                        }
-                        if let message = model.searchErrorMessage ?? model.statusMessage {
-                            Label(
-                                message,
-                                systemImage: model.searchErrorMessage != nil || model.statusIsError
-                                    ? "exclamationmark.triangle.fill"
-                                    : "info.circle"
-                            )
+                            if let manager = desktopDriveManager,
+                               manager.statusSource == .userAction,
+                               let message = manager.statusMessage {
+                                Label(
+                                    message,
+                                    systemImage: manager.statusIsError
+                                        ? "exclamationmark.triangle.fill"
+                                        : "externaldrive.badge.checkmark"
+                                )
                                 .font(.caption)
-                                .foregroundStyle(model.searchErrorMessage != nil || model.statusIsError ? .red : .secondary)
+                                .foregroundStyle(manager.statusIsError ? .red : .secondary)
+                            }
                         }
-                        if let manager = desktopDriveManager,
-                           manager.statusSource == .userAction,
-                           let message = manager.statusMessage {
-                            Label(
-                                message,
-                                systemImage: manager.statusIsError
-                                    ? "exclamationmark.triangle.fill"
-                                    : "externaldrive.badge.checkmark"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(manager.statusIsError ? .red : .secondary)
-                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                        .background(MacGlassSurface(role: .toolbar))
+
+                        Divider()
+
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
-                    .background(MacGlassSurface(role: .toolbar))
-
-                    Divider()
-
+                    if model.showsAdvancedSearch {
+                        FileAdvancedSearchView(model: model)
+                        Divider()
+                    }
+                    if model.isSearching {
+                        HStack {
+                            ProgressView().controlSize(.small)
+                            Text(L10n.string("files.search.searching"))
+                            Spacer()
+                            Button(L10n.string("files.search.cancel")) { model.cancelSearch() }
+                        }.padding(.horizontal, 24).padding(.vertical, 8)
+                    }
                     if contentState == .content {
                         if viewMode == .list {
                             fileTable(items: orderedItems)
@@ -2196,6 +2150,7 @@ struct FileBrowserView: View {
                     }
                     Divider()
                     HStack(spacing: 12) {
+                        fileLocationControls
                             Text(
                                 model.hasMore
                                     ? L10n.string(
@@ -2222,7 +2177,6 @@ struct FileBrowserView: View {
                                 .disabled(model.isLoadingMore)
                             }
 
-                        Spacer(minLength: 0)
                     }
                     .font(.system(size: 12))
                     .padding(.horizontal, 24)
@@ -2302,6 +2256,7 @@ struct FileBrowserView: View {
         }
         .onChange(of: model.searchText) { _, _ in model.updateSearch() }
         .onChange(of: model.searchScope) { _, _ in model.updateSearch() }
+        .onChange(of: model.currentPath) { _, _ in model.updateSearch() }
         .dropDestination(for: URL.self) { urls, _ in
             model.enqueueUploads(urls)
             return true
@@ -2371,19 +2326,15 @@ struct FileBrowserView: View {
             }
         }
         .macSheet(item: $extractionTarget) { item in
-            ArchiveExtractionView(item: item) { createSubfolder, keepDirectoryStructure, overwrite in
+            ArchiveExtractionView(model: model, item: item) { request, inventory in
                 extractionTarget = nil
-                Task {
-                    await model.prepareExtraction(
-                        item,
-                        createSubfolder: createSubfolder,
-                        keepDirectoryStructure: keepDirectoryStructure,
-                        overwrite: overwrite
-                    )
-                }
+                model.enqueueVerifiedExtraction(item, request: request, inventory: inventory)
             } onCancel: {
                 extractionTarget = nil
             }
+        }
+        .macSheet(item: $isoTarget) { item in
+            FileISOMountView(model: model, source: item, connection: nil) { isoTarget = nil }
         }
         .macSheet(item: archivePasswordBinding) { request in
             ArchivePasswordView(
@@ -2420,6 +2371,9 @@ struct FileBrowserView: View {
             Button(L10n.string("ui.ec4cd05f5147b1a9")) { beginRename(item) }
                 .disabled(!canRename(item))
             Button(L10n.string("ui.e7028601e7da793d")) { showingInfoItem = item }
+            if item.kind == .file, item.fileExtension?.lowercased() == "iso", !item.isRecyclePath {
+                Button(L10n.string("files.iso.mount")) { isoTarget = item }
+            }
             Button(L10n.string(model.favorites.contains(where: { $0.path == item.path }) ? "ui.dca60869e7d26839" : "ui.0cfc396e4aa347ad")) {
                 model.toggleFavorite(item)
             }
@@ -2504,7 +2458,7 @@ struct FileBrowserView: View {
     private func toggleQuickPreview() {
         guard let item = model.selectedItem,
               !item.isDirectory,
-              PreviewKind.classify(item) != .unsupported else { return }
+              OfficeDocumentFormat.canPreview(item) else { return }
         if model.isPreviewPresented {
             model.dismissPreview()
         } else {
@@ -2564,10 +2518,13 @@ struct FileBrowserView: View {
             Button(L10n.string("ui.c771248e511fbf93")) {
                 Task { await model.open(item) }
             }
-        } else if PreviewKind.classify(item) != .unsupported {
+        } else if OfficeDocumentFormat.canPreview(item) {
             Button(L10n.string("ui.13d61fea9f174905")) {
                 Task { await model.open(item) }
             }
+        }
+        if OfficeDocumentFormat.supports(item) && !item.isRecyclePath {
+            OfficeDocumentEditingButton(model: model, item: item)
         }
         Button(L10n.string("ui.ec4cd05f5147b1a9")) {
             beginRename(item)
@@ -2861,6 +2818,7 @@ struct FileBrowserView: View {
             return ("all", L10n.string("ui.5c55a67935af8f45"))
         case .type:
             if item.isDirectory { return ("folder", L10n.string("ui.7c7802d8adaed72e")) }
+            if OfficeDocumentFormat.supports(item) { return ("document", L10n.string("ui.2687ccdbb1d2288a")) }
             switch PreviewKind.classify(item) {
             case .image: return ("image", L10n.string("ui.d24c10d37db0feea"))
             case .video: return ("video", L10n.string("ui.c20f7618d330a854"))
@@ -3424,60 +3382,6 @@ struct ArchiveCreationView: View {
     }
 }
 
-struct ArchiveExtractionView: View {
-    let item: FileItem
-    let onExtract: (Bool, Bool, Bool) -> Void
-    let onCancel: () -> Void
-
-    @State private var createSubfolder = true
-    @State private var keepDirectoryStructure = true
-    @State private var overwrite = false
-    @State private var confirmsOverwrite = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Label(L10n.string("ui.9f592131529b5467"), systemImage: "archivebox.fill")
-                .font(.title2.weight(.semibold))
-            Text(L10n.string("ui.c63d516cb699c824", String(describing: item.name)))
-                .foregroundStyle(.secondary)
-            Form {
-                Toggle(L10n.string("ui.82e9111f1c4f130c"), isOn: $createSubfolder)
-                Toggle(L10n.string("ui.afd0935d8e0eeb33"), isOn: $keepDirectoryStructure)
-                Toggle(L10n.string("ui.c834c7a717bae791"), isOn: $overwrite)
-                if overwrite {
-                    Label(L10n.string("ui.5d0f3a5095aeafa0"), systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-            }
-            HStack {
-                Spacer()
-                Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel, action: onCancel)
-                Button(L10n.string("ui.d63e300f62a9a232")) {
-                    if overwrite {
-                        confirmsOverwrite = true
-                    } else {
-                        startExtraction()
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(24)
-        .frame(width: 500)
-        .alert(L10n.string("ui.cf24ad005620d2c7"), isPresented: $confirmsOverwrite) {
-            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
-            Button(L10n.string("ui.3fcff1dca38adc47"), role: .destructive, action: startExtraction)
-        } message: {
-            Text(L10n.string("ui.a8bca50469cec17d"))
-        }
-    }
-
-    private func startExtraction() {
-        onExtract(createSubfolder, keepDirectoryStructure, overwrite)
-    }
-}
-
 struct ArchivePasswordView: View {
     let archiveName: String
     let errorMessage: String?
@@ -3900,7 +3804,7 @@ struct NASBackgroundTaskCenter: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.string("background-tasks.title"))
                         .font(.headline)
-                    Label(L10n.string("background-tasks.read-only"), systemImage: "eye")
+                    Text(L10n.string("files.tasks.scope"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -3982,7 +3886,13 @@ struct NASBackgroundTaskCenter: View {
                                     .padding(.top, 4)
 
                                 ForEach(visibleTasks) { task in
-                                    NASBackgroundTaskRow(task: task)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        NASBackgroundTaskRow(task: task)
+                                        FileBackgroundTaskActions(model: workspace, task: task)
+                                    }
+                                }
+                                if let message = workspace.serverTaskControlMessage {
+                                    Text(message).font(.caption).foregroundStyle(.secondary)
                                 }
 
                                 if let error = workspace.serverBackgroundTaskError {
@@ -4132,7 +4042,7 @@ private struct TransferRow: View {
     let onRetry: () -> Void
     let onCancel: () -> Void
     let onDelete: () -> Void
-    
+
     @State private var isConfirmingDeletion = false
     @State private var isHovered = false
 
@@ -4158,7 +4068,7 @@ private struct TransferRow: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        
+
                         Text(kindBadgeLabel)
                             .font(.system(size: 10, weight: .medium))
                             .padding(.horizontal, 6)
@@ -4167,7 +4077,7 @@ private struct TransferRow: View {
                             .foregroundStyle(.secondary)
                             .clipShape(Capsule())
                     }
-                    
+
                     if let failure = task.failureMessage {
                         Text(failure)
                             .font(.caption)
@@ -4229,11 +4139,11 @@ private struct TransferRow: View {
                     } else if canRetry && (task.state == .failed || task.state == .cancelled) {
                         TransferActionButton(icon: "arrow.clockwise", label: L10n.string("ui.b8784c8dd5636ff2"), color: .blue, action: onRetry)
                     }
-                    
+
                     if task.state == .queued || task.state == .running || task.state == .paused {
                         TransferActionButton(icon: "xmark", label: L10n.string("ui.2cd0f3be8738a86c"), color: .orange, action: onCancel)
                     }
-                    
+
                     // 醒目明确的删除任务按钮
                     TransferDeleteButton(
                         label: isFinishedState ? L10n.string("ui.f2cf9101bb2d8816") : L10n.string("ui.29dfebea0fdac1f6"),
@@ -5600,16 +5510,16 @@ extension FileItem {
     var modifiedTimeForSort: Date {
         times?.modifiedAt ?? Date.distantPast
     }
-    
+
     var sizeForSort: Int64 {
         sizeBytes ?? -1
     }
-    
+
     var fileTypeDisplay: String {
         if isDirectory { return L10n.string("ui.7c7802d8adaed72e") }
         return fileExtension?.uppercased() ?? L10n.string("ui.1bd7e9d2d5fd30e6")
     }
-    
+
     var ownerForSort: String {
         owner ?? ""
     }
@@ -5782,7 +5692,7 @@ private struct MacFolderArtwork: View {
 struct FileLargeIcon: View {
     let item: FileItem
     @Environment(\.colorScheme) private var scheme
-    
+
     var body: some View {
         Group {
             if item.isDirectory && item.name != "#recycle" {
@@ -5797,7 +5707,7 @@ struct FileLargeIcon: View {
         }
         .accessibilityHidden(true)
     }
-    
+
     private var symbol: String {
         if item.name == "#recycle" { return "trash.square.fill" }
         if item.isDirectory { return "folder.fill" }
@@ -5814,7 +5724,7 @@ struct FileLargeIcon: View {
             return "doc.fill"
         }
     }
-    
+
     private var color: Color {
         if item.name == "#recycle" { return .orange }
         if item.isDirectory { return MacAppearancePalette(scheme: scheme, increasedContrast: false).folderIcon }
@@ -5832,6 +5742,7 @@ struct FileLargeIcon: View {
 struct FilePropertiesView: View {
     let item: FileItem
     let model: WorkspaceModel
+    @State private var showPermissionEditor = false
     @Environment(\.dismiss) private var dismiss
 
     private var folderStatistics: FolderStatistics? { model.folderStatisticsResults[item.id] }
@@ -5907,8 +5818,10 @@ struct FilePropertiesView: View {
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 12) {
                         propertyRow("ui.43a7f4b4c5c88a2a", value: item.owner ?? "—")
                         propertyRow("ui.963ead08d78d597c", value: item.group ?? "—")
-                        propertyRow("ui.281d3a306f2dc6cd", value: item.permissions?.posixMode.map { String($0, radix: 8) } ?? "—")
+                        propertyRow("ui.281d3a306f2dc6cd", value: item.permissions?.posixMode.map { String(format: "%03d", $0) } ?? "—")
                     }
+                    Button(L10n.string("files.permissions.title")) { showPermissionEditor = true }
+
                 }
                 .font(.callout)
                 .padding(20)
@@ -5920,6 +5833,7 @@ struct FilePropertiesView: View {
         .frame(width: 560, height: 420)
         .background(MacGlassSurface(role: .content))
         .accessibilityLabel(L10n.string("ui.a748cc074f78de00"))
+        .sheet(isPresented: $showPermissionEditor) { FilePermissionEditor(model: model, item: item) }
         .task(id: item.id) { model.startFolderStatistics(for: item) }
     }
 

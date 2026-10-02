@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "data": {
+    "offset": 0,
+    "total": 1,
+    "links": [
+      {
+        "id": "<redacted:share-id>",
+        "name": "<redacted:file-name>",
+        "path": "<redacted:file-path>",
+        "url": "<redacted:share-url>",
+        "has_password": false,
+        "date_available": "",
+        "date_expired": "",
+        "status": "valid",
+        "protect_type": "user",
+        "protect_users": [
+          "<redacted:user-name>"
+        ],
+        "protect_groups": [],
+        "expire_times": 7,
+        "enable_upload": false,
+        "project_name": "SYNO.SDS.App.FileStation3.Instance",
+        "request_name": "",
+        "request_info": ""
+      }
+    ]
+  }
+}

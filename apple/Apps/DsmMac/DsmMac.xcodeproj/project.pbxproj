@@ -13,21 +13,33 @@
 		108966A1F81EFB36786F3660 /* MediaStreamRedirectPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */; };
 		15984B33D2FC6DC271096E4A /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */; };
 		1AEE3A43BA84D08A5688E6D7 /* DesktopDriveMappingTransactionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 749F58346E89043A97184CFB /* DesktopDriveMappingTransactionCoordinator.swift */; };
+		1DF11B871DCBFF8FFA423061 /* FileStationPrincipalPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88654D1BEADDF24EB170D5C0 /* FileStationPrincipalPicker.swift */; };
 		1E07976CF65B26FF6DCC92F7 /* AppContentLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA28F9CA875E65C60C3B1FE /* AppContentLayout.swift */; };
+		22FF82FAA577EB96423D26E0 /* FileVFSBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7887E62887B30F052D149BE9 /* FileVFSBrowserView.swift */; };
+		29374504B5910AFF6B40F0A3 /* FileStationMountAccountList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F9356097F9C9523ED5CCE8 /* FileStationMountAccountList.swift */; };
+		2D18591BF21FB97FE8F7010F /* FileAdvancedSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */; };
+		3588633B6EF10C5FA9B4D316 /* FileStationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77AC18D23D4D54011B4BD6FF /* FileStationSettingsView.swift */; };
+		3676E27ABA39476E47068AE4 /* FileBackgroundTaskActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F06210A92C55890615D9D36 /* FileBackgroundTaskActions.swift */; };
 		3679216DDA49A20D83B8411A /* NasAdministrationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */; };
 		39387DA256CFC2EDB2736FE9 /* DesktopDriveWritebackSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DAD2EBEC5B471DB87A73E25 /* DesktopDriveWritebackSettingsSheet.swift */; };
 		3D2E5047C4CC4EA551E248FA /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 6A578FB6D5B34A59438162B6 /* DsmNetwork */; };
 		3F7B3902FFF181AEC9D25BEE /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 55636F64951E9DD6841A1586 /* InfoPlist.strings */; };
 		3FCADE45FE1B6CE377E360BA /* DsmMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */; };
+		41E443DC11E3D7A292D0952A /* FileStationPendingChangesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2C17F633E7A97A64BD09425 /* FileStationPendingChangesView.swift */; };
 		427786CD64BD31B101EF1648 /* SynologyPhotosModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */; };
 		42BF5B5E814A964E72ED075E /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6244065C1FCDAD42A9B769D5 /* FileProviderExtension.swift */; };
+		441AF1825FA0812DDFC6AA03 /* OfficeDocumentEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1769392F5A94D9F749E5C0D1 /* OfficeDocumentEditing.swift */; };
 		4440F05E83E5ED0F48DAC304 /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = 068B0CB217B93D2E04F6CB21 /* DsmLocalization */; };
 		46CE97C3D80547D7061224F2 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9DB7D94AFC947DE39DF8D1 /* LoginView.swift */; };
 		4991FA2CB347811AEB834677 /* PhotoLibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */; };
 		4B1D1A6C8E02EE02141476E3 /* PhotoManagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */; };
 		59342F280657F1325F5695BE /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */; };
+		594AFC19D37245019FAA3E1C /* OfficeDocumentEditingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */; };
 		59C06DE7124461270B9173C6 /* ChatWorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2A90B20C76F1C8B23067D1 /* ChatWorkspaceModel.swift */; };
+		68495D7E6E950B08AD84115A /* FileShareAdvancedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB44615EFDB0A63A46354E68 /* FileShareAdvancedView.swift */; };
+		6C000BB5EE82DE0A02E6E858 /* FileLocationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20D1575DF13DD10E0CD1EC3A /* FileLocationPicker.swift */; };
 		6C6EE7AF31CE7819C5075FC2 /* DesktopDriveDomainController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D983F7627104AB0720B16971 /* DesktopDriveDomainController.swift */; };
+		6DBBC3254E551F09B7E016F3 /* FileShareBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E9000C7AE089029FC7CC9D /* FileShareBatch.swift */; };
 		6E494C113B6C2491904BC781 /* ChatWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */; };
 		756071EA5D77E4C53C9FCF75 /* AppIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = 903CFF29712CF8E5FC9DAB8F /* AppIcon.png */; };
 		7A69FF0E5AC572DB1C2EE0D5 /* PhotoUploadRecoveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74943FAB49D2FB051152CBEE /* PhotoUploadRecoveryStore.swift */; };
@@ -36,29 +48,45 @@
 		836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */; };
 		83D0BC284CA9C38A297A70BF /* MacFilePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9665B8659CF3AEC71209382 /* MacFilePresentation.swift */; };
 		841D608F0BAF7C2CEC96234A /* DsmNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 3B2A8675E12B02AFDAD476A1 /* DsmNetwork */; };
+		898C87ADDC1ECC668D3E94FC /* FileArchiveBrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97AE28664180F1C490CFEBB9 /* FileArchiveBrowserModel.swift */; };
 		89BA1323D0D84BB246D213BA /* DsmLocalization in Frameworks */ = {isa = PBXBuildFile; productRef = DD19F00B3A61C5DB02ADB503 /* DsmLocalization */; };
+		9034150C3EDB69FC2A3104F4 /* FileUploadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF46E4DA1435F1B99414C27E /* FileUploadPlan.swift */; };
 		9728A7945A860E79C3166107 /* ProviderOperationRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEB908BC08B01E03B6B4BC6 /* ProviderOperationRegistry.swift */; };
 		9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */; };
 		A8947CF70F1CC5F62D83C33C /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CAE6054DEF2A3BA368025AC9 /* Sparkle */; };
 		AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2578503BB6C863138963CE6B /* ServiceManagementModel.swift */; };
 		AC6936BB386C9A829A221F34 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6DF22565675FC82D7CC686 /* WorkspaceModel.swift */; };
+		B201EF93975A7FD864C1BB1F /* FileUploadBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 437C050468D12733396B29E1 /* FileUploadBatch.swift */; };
+		B3DA7CC7D189932DEBFAA409 /* FileVFSCloudAuthorizationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 324BA0FE1CE13A86B87C527C /* FileVFSCloudAuthorizationView.swift */; };
 		B6FA5CB7DA8790CA0A105940 /* NasAdministrationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */; };
 		B748536108879BA2D705F5CE /* MacAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */; };
+		C050D98ED49CAFDBCBE9714A /* FileVFSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B826C3501E08204CDDCFFC02 /* FileVFSViews.swift */; };
 		C3AFE337248691D6883C0CE7 /* FilePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852694B5E54505BB153EF98A /* FilePreviewView.swift */; };
 		C9E339D485378E1875A349E6 /* DesktopCloudDriveManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */; };
+		CB39734CF4B20FA707202162 /* FileShareCreationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B149137C8E1B05C6CAFD572 /* FileShareCreationView.swift */; };
 		CBFAB4666A25432A38C382B6 /* SynologyPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */; };
 		CCC4CD40C42D47613EAA8E2C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CA993277E25000CAE41B0447 /* Assets.xcassets */; };
+		CE455516CB215B947CA474D5 /* FileVFSForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56647EE10C3078E5D2FC80B0 /* FileVFSForm.swift */; };
 		D21ED85020993A9A901C5539 /* DesktopDriveDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D050EA6A48E7A390E1A89BE /* DesktopDriveDiagnostics.swift */; };
+		D2D5414D62C4D4A01421CB57 /* FilePermissionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBCFF89B4F9AF650B541BA15 /* FilePermissionEditor.swift */; };
+		D42D3EED63F88A4010CE8666 /* OfficeDocumentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34FD4C5D753F85BAD2C18CC8 /* OfficeDocumentPreview.swift */; };
+		D546D07B1A069D77D2FF9DDE /* FileShareManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FC3BFA2F265F092280DA5BF /* FileShareManagementView.swift */; };
 		D5668FBDA5A5683EEC686044 /* ProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6499C1A22746CC05B3929D4F /* ProviderEnumerator.swift */; };
+		D57BB489AE64410384B1C18F /* FileUploadViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53594B9C2C06D07097ADB39C /* FileUploadViews.swift */; };
 		D733D79BB2B46B2F6E5C06E9 /* PhotoMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */; };
 		D9F509ACD514897C93DBCCAD /* ProviderRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56B3E5F2DD3A282E12BA4A6 /* ProviderRuntime.swift */; };
 		DB1EE1D0FF0CE4357B6A5E54 /* ProviderErrorMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95BEAF224CE41E06152FECD6 /* ProviderErrorMapper.swift */; };
 		DF9A454EE827CB25400301C5 /* LanStashFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 21F2702AC3558C7DD3F3EA25 /* LanStashFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E299C8B6250241D030C2136C /* FileVFSCloudAuthorizationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16ED5F39E14843B118F32DF8 /* FileVFSCloudAuthorizationSession.swift */; };
 		E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */; };
 		E64E34C2F0F804681A008881 /* ProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867D32EDC1609777EE056B6B /* ProviderItem.swift */; };
 		E6BE5B8B9C8EBE612DD198CD /* ContainerImagePullModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA801D49D6F2CE2300B5374A /* ContainerImagePullModel.swift */; };
+		ED5CE92C2E629DA8387E9E20 /* FileStationThemeImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */; };
 		F06931669E2EB893B31BBBE0 /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */; };
+		F7F5489C7BAA445C74E15F68 /* ArchiveExtractionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12CB8707A3C36F92BC55DBE /* ArchiveExtractionView.swift */; };
 		FC17F5E31EB69CED526BB24C /* DesktopDriveDiagnosticExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAD292E2717BB0B33B6B7982 /* DesktopDriveDiagnosticExportSheet.swift */; };
+		FC6586D61A57AA7708C226A3 /* FileStationBandwidthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90BA11590C411CC95F58F85C /* FileStationBandwidthView.swift */; };
+		FF15A4ABFAC09F2D2B9AA774 /* FileISOMountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A126F343F524361735CE974 /* FileISOMountView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,52 +115,80 @@
 
 /* Begin PBXFileReference section */
 		0AEB908BC08B01E03B6B4BC6 /* ProviderOperationRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderOperationRegistry.swift; sourceTree = "<group>"; };
+		16ED5F39E14843B118F32DF8 /* FileVFSCloudAuthorizationSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileVFSCloudAuthorizationSession.swift; sourceTree = "<group>"; };
+		1769392F5A94D9F749E5C0D1 /* OfficeDocumentEditing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeDocumentEditing.swift; sourceTree = "<group>"; };
 		1D050EA6A48E7A390E1A89BE /* DesktopDriveDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveDiagnostics.swift; sourceTree = "<group>"; };
 		1DE7697E655CBAC946BEBF3F /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		1F06210A92C55890615D9D36 /* FileBackgroundTaskActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBackgroundTaskActions.swift; sourceTree = "<group>"; };
 		1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryModel.swift; sourceTree = "<group>"; };
 		1F6DF22565675FC82D7CC686 /* WorkspaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceModel.swift; sourceTree = "<group>"; };
+		20D1575DF13DD10E0CD1EC3A /* FileLocationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileLocationPicker.swift; sourceTree = "<group>"; };
 		21F2702AC3558C7DD3F3EA25 /* LanStashFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LanStashFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		226606003B75B91F9FA03683 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		2578503BB6C863138963CE6B /* ServiceManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementModel.swift; sourceTree = "<group>"; };
 		2712B93FA47D4BCFAF3CDB1B /* SynologyPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynologyPhotosView.swift; sourceTree = "<group>"; };
 		27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryView.swift; sourceTree = "<group>"; };
+		324BA0FE1CE13A86B87C527C /* FileVFSCloudAuthorizationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileVFSCloudAuthorizationView.swift; sourceTree = "<group>"; };
+		34FD4C5D753F85BAD2C18CC8 /* OfficeDocumentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeDocumentPreview.swift; sourceTree = "<group>"; };
 		3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteMountRecoveryView.swift; sourceTree = "<group>"; };
 		3D43383FD609AFA6A0605CEA /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
 		3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasAdministrationView.swift; sourceTree = "<group>"; };
+		437C050468D12733396B29E1 /* FileUploadBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadBatch.swift; sourceTree = "<group>"; };
 		46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DsmMacApp.swift; sourceTree = "<group>"; };
 		4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
 		4E1F96609F0323DC19D30EC7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		53594B9C2C06D07097ADB39C /* FileUploadViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadViews.swift; sourceTree = "<group>"; };
+		56647EE10C3078E5D2FC80B0 /* FileVFSForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileVFSForm.swift; sourceTree = "<group>"; };
+		5A126F343F524361735CE974 /* FileISOMountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileISOMountView.swift; sourceTree = "<group>"; };
+		5B149137C8E1B05C6CAFD572 /* FileShareCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareCreationView.swift; sourceTree = "<group>"; };
+		5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationThemeImagePicker.swift; sourceTree = "<group>"; };
 		5DAD2EBEC5B471DB87A73E25 /* DesktopDriveWritebackSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveWritebackSettingsSheet.swift; sourceTree = "<group>"; };
 		6244065C1FCDAD42A9B769D5 /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		6499C1A22746CC05B3929D4F /* ProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderEnumerator.swift; sourceTree = "<group>"; };
 		73A190EAB72D1587728A072E /* LanStash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LanStash.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74943FAB49D2FB051152CBEE /* PhotoUploadRecoveryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoUploadRecoveryStore.swift; sourceTree = "<group>"; };
 		749F58346E89043A97184CFB /* DesktopDriveMappingTransactionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveMappingTransactionCoordinator.swift; sourceTree = "<group>"; };
+		77AC18D23D4D54011B4BD6FF /* FileStationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationSettingsView.swift; sourceTree = "<group>"; };
+		7887E62887B30F052D149BE9 /* FileVFSBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileVFSBrowserView.swift; sourceTree = "<group>"; };
 		7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoManagementPanel.swift; sourceTree = "<group>"; };
 		852694B5E54505BB153EF98A /* FilePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewView.swift; sourceTree = "<group>"; };
 		867D32EDC1609777EE056B6B /* ProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderItem.swift; sourceTree = "<group>"; };
+		88654D1BEADDF24EB170D5C0 /* FileStationPrincipalPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationPrincipalPicker.swift; sourceTree = "<group>"; };
 		8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoMetadataExtractor.swift; sourceTree = "<group>"; };
 		903CFF29712CF8E5FC9DAB8F /* AppIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>"; };
+		90BA11590C411CC95F58F85C /* FileStationBandwidthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationBandwidthView.swift; sourceTree = "<group>"; };
 		95BEAF224CE41E06152FECD6 /* ProviderErrorMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderErrorMapper.swift; sourceTree = "<group>"; };
+		97AE28664180F1C490CFEBB9 /* FileArchiveBrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileArchiveBrowserModel.swift; sourceTree = "<group>"; };
 		9C86C1E7AC50E2616225F51D /* apple */ = {isa = PBXFileReference; lastKnownFileType = folder; name = apple; path = ../..; sourceTree = SOURCE_ROOT; };
 		9D89D62711D2351506A6E681 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAdvancedSearchView.swift; sourceTree = "<group>"; };
+		9FC3BFA2F265F092280DA5BF /* FileShareManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareManagementView.swift; sourceTree = "<group>"; };
 		A56B3E5F2DD3A282E12BA4A6 /* ProviderRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRuntime.swift; sourceTree = "<group>"; };
 		AD0C33B9D3123D5BE97C3C07 /* SynologyPhotosModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynologyPhotosModel.swift; sourceTree = "<group>"; };
 		AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoFolderDestinationPicker.swift; sourceTree = "<group>"; };
 		B3A50B5166E5AD3B95EA1CAA /* DesktopCloudDriveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCloudDriveManager.swift; sourceTree = "<group>"; };
+		B826C3501E08204CDDCFFC02 /* FileVFSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileVFSViews.swift; sourceTree = "<group>"; };
 		B9665B8659CF3AEC71209382 /* MacFilePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFilePresentation.swift; sourceTree = "<group>"; };
 		BAA28F9CA875E65C60C3B1FE /* AppContentLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContentLayout.swift; sourceTree = "<group>"; };
 		BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		BAF4D2E52FE8FDEB013A449D /* WorkspaceModuleAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceModuleAccess.swift; sourceTree = "<group>"; };
+		BB44615EFDB0A63A46354E68 /* FileShareAdvancedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareAdvancedView.swift; sourceTree = "<group>"; };
 		BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NasAdministrationModel.swift; sourceTree = "<group>"; };
+		C12CB8707A3C36F92BC55DBE /* ArchiveExtractionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveExtractionView.swift; sourceTree = "<group>"; };
+		C2C17F633E7A97A64BD09425 /* FileStationPendingChangesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationPendingChangesView.swift; sourceTree = "<group>"; };
 		CA801D49D6F2CE2300B5374A /* ContainerImagePullModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerImagePullModel.swift; sourceTree = "<group>"; };
 		CA993277E25000CAE41B0447 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementView.swift; sourceTree = "<group>"; };
 		D983F7627104AB0720B16971 /* DesktopDriveDomainController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveDomainController.swift; sourceTree = "<group>"; };
+		DBCFF89B4F9AF650B541BA15 /* FilePermissionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePermissionEditor.swift; sourceTree = "<group>"; };
 		DE9DB7D94AFC947DE39DF8D1 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppearance.swift; sourceTree = "<group>"; };
 		E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaStreamRedirectPolicy.swift; sourceTree = "<group>"; };
 		EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkspaceView.swift; sourceTree = "<group>"; };
+		EF46E4DA1435F1B99414C27E /* FileUploadPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadPlan.swift; sourceTree = "<group>"; };
+		F4E9000C7AE089029FC7CC9D /* FileShareBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareBatch.swift; sourceTree = "<group>"; };
+		F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeDocumentEditingView.swift; sourceTree = "<group>"; };
+		F9F9356097F9C9523ED5CCE8 /* FileStationMountAccountList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationMountAccountList.swift; sourceTree = "<group>"; };
 		FAD292E2717BB0B33B6B7982 /* DesktopDriveDiagnosticExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveDiagnosticExportSheet.swift; sourceTree = "<group>"; };
 		FE2A90B20C76F1C8B23067D1 /* ChatWorkspaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWorkspaceModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -195,6 +251,7 @@
 			children = (
 				BAA28F9CA875E65C60C3B1FE /* AppContentLayout.swift */,
 				BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */,
+				C12CB8707A3C36F92BC55DBE /* ArchiveExtractionView.swift */,
 				FE2A90B20C76F1C8B23067D1 /* ChatWorkspaceModel.swift */,
 				EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */,
 				CA801D49D6F2CE2300B5374A /* ContainerImagePullModel.swift */,
@@ -205,7 +262,31 @@
 				749F58346E89043A97184CFB /* DesktopDriveMappingTransactionCoordinator.swift */,
 				5DAD2EBEC5B471DB87A73E25 /* DesktopDriveWritebackSettingsSheet.swift */,
 				46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */,
+				9E40BD82223C91C25D32C0C1 /* FileAdvancedSearchView.swift */,
+				97AE28664180F1C490CFEBB9 /* FileArchiveBrowserModel.swift */,
+				1F06210A92C55890615D9D36 /* FileBackgroundTaskActions.swift */,
+				5A126F343F524361735CE974 /* FileISOMountView.swift */,
+				20D1575DF13DD10E0CD1EC3A /* FileLocationPicker.swift */,
+				DBCFF89B4F9AF650B541BA15 /* FilePermissionEditor.swift */,
 				852694B5E54505BB153EF98A /* FilePreviewView.swift */,
+				BB44615EFDB0A63A46354E68 /* FileShareAdvancedView.swift */,
+				F4E9000C7AE089029FC7CC9D /* FileShareBatch.swift */,
+				5B149137C8E1B05C6CAFD572 /* FileShareCreationView.swift */,
+				9FC3BFA2F265F092280DA5BF /* FileShareManagementView.swift */,
+				90BA11590C411CC95F58F85C /* FileStationBandwidthView.swift */,
+				F9F9356097F9C9523ED5CCE8 /* FileStationMountAccountList.swift */,
+				C2C17F633E7A97A64BD09425 /* FileStationPendingChangesView.swift */,
+				88654D1BEADDF24EB170D5C0 /* FileStationPrincipalPicker.swift */,
+				77AC18D23D4D54011B4BD6FF /* FileStationSettingsView.swift */,
+				5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */,
+				437C050468D12733396B29E1 /* FileUploadBatch.swift */,
+				EF46E4DA1435F1B99414C27E /* FileUploadPlan.swift */,
+				53594B9C2C06D07097ADB39C /* FileUploadViews.swift */,
+				7887E62887B30F052D149BE9 /* FileVFSBrowserView.swift */,
+				16ED5F39E14843B118F32DF8 /* FileVFSCloudAuthorizationSession.swift */,
+				324BA0FE1CE13A86B87C527C /* FileVFSCloudAuthorizationView.swift */,
+				56647EE10C3078E5D2FC80B0 /* FileVFSForm.swift */,
+				B826C3501E08204CDDCFFC02 /* FileVFSViews.swift */,
 				DE9DB7D94AFC947DE39DF8D1 /* LoginView.swift */,
 				4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */,
 				DF1E6D2F66C1068D2E20A49C /* MacAppearance.swift */,
@@ -213,6 +294,9 @@
 				E6FC011F3531054EAFEB7F62 /* MediaStreamRedirectPolicy.swift */,
 				BF05BE448D0653B1A065559A /* NasAdministrationModel.swift */,
 				3F276AF6EC0C343DF594E76B /* NasAdministrationView.swift */,
+				1769392F5A94D9F749E5C0D1 /* OfficeDocumentEditing.swift */,
+				F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */,
+				34FD4C5D753F85BAD2C18CC8 /* OfficeDocumentPreview.swift */,
 				AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */,
 				1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */,
 				27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */,
@@ -380,6 +464,7 @@
 			files = (
 				1E07976CF65B26FF6DCC92F7 /* AppContentLayout.swift in Sources */,
 				59342F280657F1325F5695BE /* AppUpdateController.swift in Sources */,
+				F7F5489C7BAA445C74E15F68 /* ArchiveExtractionView.swift in Sources */,
 				59C06DE7124461270B9173C6 /* ChatWorkspaceModel.swift in Sources */,
 				6E494C113B6C2491904BC781 /* ChatWorkspaceView.swift in Sources */,
 				E6BE5B8B9C8EBE612DD198CD /* ContainerImagePullModel.swift in Sources */,
@@ -390,7 +475,31 @@
 				1AEE3A43BA84D08A5688E6D7 /* DesktopDriveMappingTransactionCoordinator.swift in Sources */,
 				39387DA256CFC2EDB2736FE9 /* DesktopDriveWritebackSettingsSheet.swift in Sources */,
 				3FCADE45FE1B6CE377E360BA /* DsmMacApp.swift in Sources */,
+				2D18591BF21FB97FE8F7010F /* FileAdvancedSearchView.swift in Sources */,
+				898C87ADDC1ECC668D3E94FC /* FileArchiveBrowserModel.swift in Sources */,
+				3676E27ABA39476E47068AE4 /* FileBackgroundTaskActions.swift in Sources */,
+				FF15A4ABFAC09F2D2B9AA774 /* FileISOMountView.swift in Sources */,
+				6C000BB5EE82DE0A02E6E858 /* FileLocationPicker.swift in Sources */,
+				D2D5414D62C4D4A01421CB57 /* FilePermissionEditor.swift in Sources */,
 				C3AFE337248691D6883C0CE7 /* FilePreviewView.swift in Sources */,
+				68495D7E6E950B08AD84115A /* FileShareAdvancedView.swift in Sources */,
+				6DBBC3254E551F09B7E016F3 /* FileShareBatch.swift in Sources */,
+				CB39734CF4B20FA707202162 /* FileShareCreationView.swift in Sources */,
+				D546D07B1A069D77D2FF9DDE /* FileShareManagementView.swift in Sources */,
+				FC6586D61A57AA7708C226A3 /* FileStationBandwidthView.swift in Sources */,
+				29374504B5910AFF6B40F0A3 /* FileStationMountAccountList.swift in Sources */,
+				41E443DC11E3D7A292D0952A /* FileStationPendingChangesView.swift in Sources */,
+				1DF11B871DCBFF8FFA423061 /* FileStationPrincipalPicker.swift in Sources */,
+				3588633B6EF10C5FA9B4D316 /* FileStationSettingsView.swift in Sources */,
+				ED5CE92C2E629DA8387E9E20 /* FileStationThemeImagePicker.swift in Sources */,
+				B201EF93975A7FD864C1BB1F /* FileUploadBatch.swift in Sources */,
+				9034150C3EDB69FC2A3104F4 /* FileUploadPlan.swift in Sources */,
+				D57BB489AE64410384B1C18F /* FileUploadViews.swift in Sources */,
+				22FF82FAA577EB96423D26E0 /* FileVFSBrowserView.swift in Sources */,
+				E299C8B6250241D030C2136C /* FileVFSCloudAuthorizationSession.swift in Sources */,
+				B3DA7CC7D189932DEBFAA409 /* FileVFSCloudAuthorizationView.swift in Sources */,
+				CE455516CB215B947CA474D5 /* FileVFSForm.swift in Sources */,
+				C050D98ED49CAFDBCBE9714A /* FileVFSViews.swift in Sources */,
 				46CE97C3D80547D7061224F2 /* LoginView.swift in Sources */,
 				F06931669E2EB893B31BBBE0 /* LoginViewModel.swift in Sources */,
 				B748536108879BA2D705F5CE /* MacAppearance.swift in Sources */,
@@ -398,6 +507,9 @@
 				108966A1F81EFB36786F3660 /* MediaStreamRedirectPolicy.swift in Sources */,
 				B6FA5CB7DA8790CA0A105940 /* NasAdministrationModel.swift in Sources */,
 				3679216DDA49A20D83B8411A /* NasAdministrationView.swift in Sources */,
+				441AF1825FA0812DDFC6AA03 /* OfficeDocumentEditing.swift in Sources */,
+				594AFC19D37245019FAA3E1C /* OfficeDocumentEditingView.swift in Sources */,
+				D42D3EED63F88A4010CE8666 /* OfficeDocumentPreview.swift in Sources */,
 				836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */,
 				4991FA2CB347811AEB834677 /* PhotoLibraryModel.swift in Sources */,
 				E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */,
@@ -454,7 +566,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -463,7 +575,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.12;
+				MARKETING_VERSION = 1.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;
@@ -547,7 +659,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -555,7 +667,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.12;
+				MARKETING_VERSION = 1.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -570,7 +682,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -578,7 +690,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.12;
+				MARKETING_VERSION = 1.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_APP_BUNDLE_ID)";
 				PRODUCT_NAME = LanStash;
 				SDKROOT = macosx;
@@ -654,7 +766,7 @@
 				CODE_SIGN_ENTITLEMENTS = SupportingFiles/DsmFileProvider.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "SupportingFiles/DsmFileProvider-Info.plist";
@@ -663,7 +775,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.12;
+				MARKETING_VERSION = 1.0.13;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(LANSTASH_MAC_FILE_PROVIDER_BUNDLE_ID)";
 				PRODUCT_NAME = LanStashFileProvider;
 				SDKROOT = macosx;

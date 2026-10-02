@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-mounted",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "69057",
+    "update": "12",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.FileStation.Mount.List",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "get"
+  },
+  "scenario": "合成结构回归样本，不代表真实 NAS 写入验收。",
+  "redactedFields": [],
+  "package": {
+    "name": "File Station",
+    "version": "1.4.1-1559"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-content-unindexed",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "69057",
+    "update": "12",
+    "architecture": "unknown"
+  },
+  "accountRole": "standard",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.FileStation.Search",
+    "path": "entry.cgi",
+    "version": 2,
+    "method": "start"
+  },
+  "scenario": "内容搜索明确报告部分目录未建立索引。",
+  "redactedFields": [],
+  "package": {
+    "version": "1.4.1-1559",
+    "name": "File Station"
+  }
+}

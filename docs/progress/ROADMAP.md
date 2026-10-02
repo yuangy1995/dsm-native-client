@@ -1,5 +1,5 @@
 <!-- doc-role: roadmap -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-10-02 -->
 
 # 产品路线图
 
@@ -15,11 +15,11 @@
   清单齐备后，再单独编排真正的 Release Preflight。
 - 在此之前，不把质量工作流通过表述为签名、安装、升级、回滚、真机或真实 NAS 通过。
 
-### macOS 首个 Beta
+### macOS 后续候选与覆盖补齐
 
 - 在受控环境完成 Developer ID 签名、公证、票据装订、Gatekeeper、安装、升级和回退验收。
 - 使用专用 NAS 验证 Finder/File Provider、会话隔离、缓存、取消、恢复和危险写最终回读。
-- 在正式签名和真实环境结论形成前，不发布、不宣称稳定支持，也不开放未验证高风险内部写。
+- 在正式签名和真实环境结论形成前，不发布、不宣称稳定支持，高风险功能按实际授权、能力与权限保护，不把功能开放等同于验收通过。
 
 ### Android 发布门
 
@@ -33,7 +33,10 @@
 - 在专用 Windows 设备验证安装、更新、Explorer、Cloud Files、通知、托盘、外接卷和恢复。
 - 保持当前发布形态，除非另行批准签名、Identity、安装包或系统版本的迁移方案。
 
-## P1：结构债务与可维护性
+## P1：跨端增量与可维护性
+
+macOS 新增 Photos 管理、File Station 扩展与 Office 本机编辑形成 Windows 后续语义基线，按[Windows 计划](../development/WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)先形成用户主流程，再完成聚焦自动化与可用构建；iPhone/iPad 只实施移动计划中的核心/受限范围，Android 需独立确定范围。
+
 
 ### Android
 
@@ -65,18 +68,19 @@
   安全降级；不从网页文案或未验证请求推断契约。
 - 对文件、下载、Chat、NAS 管理、Container/VMM 的开放写操作，补齐专用环境的确认、
   权限、重复提交保护、断线与取消、最终状态回读证据。
+- macOS Office 预览与本机编辑自动回传已完成源码及本机自动化，后续按 [Office 验收清单](../../apple/Apps/DsmMac/README.md) 验证真实编辑器、NAS、旧格式、正式签名文件访问与辅助功能；不重复列为待开发功能。
 - 继续验证桌面云盘与 Cloud Files 的系统生命周期，不把模拟器、合成测试或静态审查写成
   真机通过。
 
 ## P3：后续产品候选
 
 - Apple 移动端自动照片备份、后台常驻传输、iPad 多窗口与 File Provider。
-- File Station 的异步目录大小、MD5、VFS 扩展和更完整的后台任务恢复。
-- Download Station 的高级 RSS、文件优先级、BT 协议设置、全局设置写入和删除已下载数据。
-- Container Manager 与 Virtual Machine Manager 的高级生命周期、网络、控制台和迁移能力。
+- File Station 尚未覆盖的远程服务扩展和更完整的后台任务恢复；已有 macOS 功能与边界见 [File Station 账本](../../apple/Apps/DsmMac/README.md)。
+- Download Station 尚未接入的 RSS 与更高阶协议选项；已实现的创建、设置、批量与删除语义见[下载 API](../api/reference/download-station.md)，不重复列为新功能。
+- Container Manager / VMM 的未覆盖高级拓扑与迁移；已有生命周期、网络管理和控制台按[容器](../api/reference/containers.md)及[虚拟机](../api/reference/virtual-machines.md)记录范围。
 - Synology Chat 的语音、投票参与、加密会话、多附件和实时通话。
 - Audio Station、Video Station、Note Station、Synology Drive、Calendar、Contacts、
-  Surveillance Station、Hyper Backup、Active Backup 和 Synology Office。
+  Surveillance Station、Hyper Backup、Active Backup 和 Synology Office。这里的 Synology Office 指 NAS 协作文档套件，与已接入的 macOS 本机 Office 文档预览/编辑不同。
 
 ## 进入条件
 

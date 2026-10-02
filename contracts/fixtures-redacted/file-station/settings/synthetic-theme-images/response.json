@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "data": {
+    "list": [
+      {
+        "index": 0,
+        "filename": "Synthetic.png",
+        "path": "<redacted:image-path>"
+      }
+    ]
+  }
+}

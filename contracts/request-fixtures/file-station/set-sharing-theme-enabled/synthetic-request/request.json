@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.set-sharing-theme-enabled.synthetic-request",
+  "module": "file-station",
+  "operation": "setSharingThemeEnabled",
+  "api": {
+    "name": "SYNO.FileStation.Settings",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "enable_sharing_custom_setting",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

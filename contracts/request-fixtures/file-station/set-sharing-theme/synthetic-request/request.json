@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.set-sharing-theme.synthetic-request",
+  "module": "file-station",
+  "operation": "setSharingTheme",
+  "api": {
+    "name": "SYNO.Core.Theme.FileSharingLogin",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "enable_logo_customize",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "enable_background_customize",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "logo_position",
+      "valueType": "string",
+      "encodedValue": "leftup"
+    },
+    {
+      "name": "background_position",
+      "valueType": "string",
+      "encodedValue": "fill"
+    },
+    {
+      "name": "background_color",
+      "valueType": "string",
+      "encodedValue": "#FFFFFF"
+    },
+    {
+      "name": "footer_msg",
+      "valueType": "string",
+      "encodedValue": "Synthetic footer"
+    },
+    {
+      "name": "enable_footer_html",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

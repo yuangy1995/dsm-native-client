@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dsm-native-client/file-station-permissions.schema.json",
+  "title": "file-station-permissions",
+  "description": "仅描述已记录的成功响应白名单；额外字段不会成为客户端默认值或写入依据。",
+  "type": "object",
+  "required": [
+    "success",
+    "data"
+  ],
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "data": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/acl"
+        },
+        {
+          "$ref": "#/$defs/task"
+        }
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "acl": {
+      "type": "object",
+      "required": [
+        "is_acl",
+        "change_permission",
+        "is_inherited",
+        "acl"
+      ],
+      "properties": {
+        "is_acl": {
+          "type": "boolean"
+        },
+        "change_permission": {
+          "type": "boolean"
+        },
+        "is_inherited": {
+          "type": "boolean"
+        },
+        "acl": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "owner_type",
+              "owner_name",
+              "permission_type",
+              "permission",
+              "inherit",
+              "level"
+            ],
+            "properties": {
+              "owner_type": {
+                "type": "string"
+              },
+              "owner_name": {
+                "type": "string"
+              },
+              "owner_id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "owner_is_internal": {
+                "type": "boolean"
+              },
+              "permission_type": {
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "deny"
+                ]
+              },
+              "permission": {
+                "type": "object",
+                "required": [
+                  "read_data",
+                  "write_data",
+                  "exe_file",
+                  "append_data",
+                  "delete",
+                  "delete_sub",
+                  "read_attr",
+                  "write_attr",
+                  "read_ext_attr",
+                  "write_ext_attr",
+                  "read_perm",
+                  "change_perm",
+                  "take_ownership"
+                ],
+                "properties": {
+                  "read_data": {
+                    "type": "boolean"
+                  },
+                  "write_data": {
+                    "type": "boolean"
+                  },
+                  "exe_file": {
+                    "type": "boolean"
+                  },
+                  "append_data": {
+                    "type": "boolean"
+                  },
+                  "delete": {
+                    "type": "boolean"
+                  },
+                  "delete_sub": {
+                    "type": "boolean"
+                  },
+                  "read_attr": {
+                    "type": "boolean"
+                  },
+                  "write_attr": {
+                    "type": "boolean"
+                  },
+                  "read_ext_attr": {
+                    "type": "boolean"
+                  },
+                  "write_ext_attr": {
+                    "type": "boolean"
+                  },
+                  "read_perm": {
+                    "type": "boolean"
+                  },
+                  "change_perm": {
+                    "type": "boolean"
+                  },
+                  "take_ownership": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "inherit": {
+                "type": "object",
+                "required": [
+                  "child_files",
+                  "child_folders",
+                  "this_folder",
+                  "all_descendants"
+                ],
+                "properties": {
+                  "child_files": {
+                    "type": "boolean"
+                  },
+                  "child_folders": {
+                    "type": "boolean"
+                  },
+                  "this_folder": {
+                    "type": "boolean"
+                  },
+                  "all_descendants": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "finished"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string"
+        },
+        "taskid": {
+          "type": "string"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "result": {
+          "type": "string"
+        },
+        "errno": {
+          "type": "integer"
+        },
+        "errItems": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

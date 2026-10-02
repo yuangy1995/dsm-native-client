@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dsm-native-client/file-station-vfs.schema.json",
+  "title": "file-station-vfs",
+  "description": "仅描述已记录的成功响应白名单；额外字段不会成为客户端默认值或写入依据。",
+  "type": "object",
+  "required": [
+    "success",
+    "data"
+  ],
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "data": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/protocols"
+        },
+        {
+          "$ref": "#/$defs/profiles"
+        }
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "protocols": {
+      "type": "object",
+      "required": [
+        "protocols"
+      ],
+      "properties": {
+        "protocols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "protocol",
+              "name",
+              "has_server"
+            ],
+            "properties": {
+              "protocol": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "default_port": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "has_server": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "profiles": {
+      "type": "object",
+      "required": [
+        "profiles"
+      ],
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "protocol",
+              "protocol_name",
+              "uri",
+              "alias",
+              "connect_status"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "protocol": {
+                "type": "string"
+              },
+              "protocol_name": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              },
+              "hostname": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "port": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "alias": {
+                "type": "string"
+              },
+              "account": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "codepage": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "connect_status": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

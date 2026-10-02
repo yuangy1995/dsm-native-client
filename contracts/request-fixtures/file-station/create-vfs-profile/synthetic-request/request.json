@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.create-vfs-profile.synthetic-request",
+  "module": "file-station",
+  "operation": "createVFSProfile",
+  "api": {
+    "name": "SYNO.FileStation.VFS.Profile",
+    "method": "create",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "protocol",
+      "valueType": "string",
+      "encodedValue": "sftp"
+    },
+    {
+      "name": "hostname",
+      "valueType": "string",
+      "redacted": true
+    },
+    {
+      "name": "port",
+      "valueType": "integer",
+      "encodedValue": "22"
+    },
+    {
+      "name": "alias",
+      "valueType": "string",
+      "encodedValue": "Remote"
+    },
+    {
+      "name": "account",
+      "valueType": "string",
+      "redacted": true
+    },
+    {
+      "name": "codepage",
+      "valueType": "string",
+      "encodedValue": "UTF-8"
+    },
+    {
+      "name": "uri_path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-remote-folder>"
+    },
+    {
+      "name": "max_connection",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "password",
+      "valueType": "string",
+      "redacted": true
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

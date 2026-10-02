@@ -21,12 +21,13 @@ jobs:
           set -euo pipefail
           test -f README.md
           test -f README.en.md
-          test -f docs/api/DSM_WEB_API_REFERENCE_ZH.md
-          test -f docs/development/NATIVE_DSM_FILE_APP_DEVELOPMENT_PLAN_ZH.md
+          test -f docs/README.md
+          test -f docs/api/README.md
+          test -f docs/api/reference/common.md
+          test -f docs/api/reference/requests.md
+          test -f docs/progress/ROADMAP.md
           test -f docs/progress/STATUS.md
           test -f docs/quality/ANDROID_QUALITY_BASELINE_ZH.md
-          test -f docs/archive/2026-h2/CROSS_PLATFORM_PARITY_HISTORY.md
-          test -f docs/archive/2026-h2/ANDROID_ALIGNMENT_HISTORY_82_89.md
           test -f docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md
           test -f contracts/README.md
 

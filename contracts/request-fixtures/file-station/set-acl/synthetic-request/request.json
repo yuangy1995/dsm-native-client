@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.set-acl.synthetic-request",
+  "module": "file-station",
+  "operation": "setACL",
+  "api": {
+    "name": "SYNO.Core.ACL",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "file_path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-real-path>"
+    },
+    {
+      "name": "change_acl",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "rules",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"owner_type\":\"user\",\"owner_name\":\"synthetic-user\",\"owner_id\":1000,\"permission_type\":\"allow\",\"permission\":{\"read_data\":true,\"write_data\":true,\"exe_file\":false,\"append_data\":false,\"delete\":false,\"delete_sub\":false,\"read_attr\":false,\"write_attr\":false,\"read_ext_attr\":false,\"write_ext_attr\":false,\"read_perm\":false,\"change_perm\":false,\"take_ownership\":false},\"inherit\":{\"child_files\":false,\"child_folders\":false,\"this_folder\":true,\"all_descendants\":false}}]"
+    },
+    {
+      "name": "inherited",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "acl_recur",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

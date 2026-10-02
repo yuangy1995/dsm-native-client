@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.set-posix.synthetic-request",
+  "module": "file-station",
+  "operation": "setPOSIX",
+  "api": {
+    "name": "SYNO.FileStation.Property",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "files",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-real-path>\"]"
+    },
+    {
+      "name": "dir_paths",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-path>\"]"
+    },
+    {
+      "name": "mode",
+      "valueType": "string",
+      "encodedValue": "750"
+    },
+    {
+      "name": "posix_mode_recur",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "posix_owner_recur",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "redactedDiscoveryRecord"
+  }
+}

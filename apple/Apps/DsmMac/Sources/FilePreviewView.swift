@@ -591,6 +591,9 @@ struct FileDetailView: View {
                 
                 Spacer()
 
+                if OfficeDocumentFormat.supports(item) && !item.isRecyclePath {
+                    OfficeDocumentEditingButton(model: model, item: item)
+                }
                 if item.isRecyclePath {
                     Button {
                         onRestore(item)
@@ -812,6 +815,17 @@ struct FileDetailView: View {
             }
         case .pdf(let url):
             PDFDocumentView(url: url)
+        case .office(let url):
+            VStack(spacing: 0) {
+                if let session = OfficeEditingCoordinator.shared.session(for: item) {
+                    HStack {
+                        Text(session.phase.title)
+                        if let message = session.message { Text(message).foregroundStyle(.secondary) }
+                        Spacer()
+                    }.font(.callout).padding(12)
+                }
+                OfficeDocumentPreview(url: url).fillsAvailableContentArea()
+            }
         case .video(let source):
             VideoPlayerView(source: source) {
                 onDownload(item, .archive)

@@ -127,6 +127,7 @@ enum FilePreviewState {
     case image(Data)
     case text(String, truncated: Bool)
     case pdf(URL)
+    case office(URL)
     case video(MediaStreamSource)
     case audio(MediaStreamSource)
     case unsupported(String)
@@ -398,16 +399,39 @@ final class WorkspaceModel {
     var searchScope: SearchScope = .currentFolder
     var recursiveSearchResults: [FileItem] = []
     var isSearching = false
+    var showsAdvancedSearch = false
+    var advancedSearch: FileSearchRequest?
+    var searchIndexCoverage: FileSearchIndexCoverage = .notRequested
+    @ObservationIgnored private var searchGeneration = 0
     var favorites: [FavoriteLocation] = []
     var recentLocations: [FavoriteLocation] = []
     var remoteLocations: [FileVirtualFolder] = []
+    struct FileVFSConnectionActivity {
+        let profile: FileVFSProfile
+        var isBusy: Bool
+        var result: MutationResult?
+        var error: String?
+    }
+    var remoteVFSProfiles: [FileVFSProfile] = []
+    var remoteVFSProfilesError: String?
+    private(set) var fileVFSConnectionActivities: [String: FileVFSConnectionActivity] = [:]
     var unavailableRemoteLocationProtocols: [FileVirtualProtocol] = []
     var remoteLocationsAreTruncated = false
     var remoteLocationsError: String?
     var isLoadingRemoteLocations = false
     var remoteLocationsHasLoaded = false
+    var uploadSelection: FileUploadSelection?
+    var uploadBatches: [FileUploadBatch] = []
+    var showsUploadQueue = false
+    var controllingServerTaskIDs = Set<String>()
+    var serverTaskControlMessage: String?
+    @ObservationIgnored private var uploadTransferIDs: [UUID: UUID] = [:]
     var shareLinks: [FileShareLink] = []
     var isLoadingShareLinks = false
+    var shareLinksError: String?
+    var isCreatingShareLinks = false
+    var isManagingShareLinks = false
+    var shareManagementResults: [FileShareManagementItem] = []
     var storageSpaceSummary: StorageSpaceSummary?
     var isLoadingStorageSpace = false
     var isManagingRemoteMount = false
@@ -770,9 +794,9 @@ final class WorkspaceModel {
     }
 
     var filteredItems: [FileItem] {
-        let source = searchScope == .subfolders && !searchText.isEmpty ? recursiveSearchResults : items
+        let source = usesServerSearch ? recursiveSearchResults : items
         let visible = source.filter { item in
-            Self.matchesSearch(item.name, query: searchText)
+            advancedSearch?.searchesContents == true || Self.matchesSearch(item.name, query: searchText)
         }
         return visible.sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory {
@@ -783,6 +807,9 @@ final class WorkspaceModel {
     }
 
     var searchErrorMessage: String? {
+        if advancedSearch?.searchesContents == true && Self.regularExpressionQuery(searchText) != nil {
+            return L10n.string("files.search.contentRegex")
+        }
         guard Self.regularExpressionQuery(searchText) != nil else { return nil }
         do {
             _ = try Self.makeSearchRegularExpression(searchText)
@@ -1063,6 +1090,9 @@ final class WorkspaceModel {
 
     func navigate(to path: String, recordingHistory: Bool = true) async {
         guard isFileModuleEnabled else { return }
+        cancelSearch()
+        advancedSearch = nil
+        recursiveSearchResults = []
         previewContextItems = nil
         let previousPath = currentPath
         navigationGeneration += 1
@@ -1125,33 +1155,65 @@ final class WorkspaceModel {
         }
     }
 
-    func updateSearch() {
+    var usesServerSearch: Bool {
+        advancedSearch != nil || (searchScope == .subfolders && !searchText.isEmpty)
+    }
+
+    func cancelSearch() {
+        searchGeneration += 1
         searchTask?.cancel()
+        isSearching = false
+    }
+
+    func applyAdvancedSearch(_ request: FileSearchRequest?) {
+        advancedSearch = request
+        updateSearch()
+    }
+
+    func updateSearch() {
+        cancelSearch()
         recursiveSearchResults = []
-        guard isFileModuleEnabled,
-              searchScope == .subfolders,
-              !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !currentPath.isEmpty else {
-            isSearching = false
-            return
-        }
+        searchIndexCoverage = .notRequested
+        guard isFileModuleEnabled, usesServerSearch, !currentPath.isEmpty else { return }
+        let generation = searchGeneration
         let query = searchText
         let folder = currentPath
+        var request = advancedSearch ?? FileSearchRequest(folders: [folder])
+        request.name = Self.regularExpressionQuery(query) == nil ? query : "*"
+        guard request.isValid, searchErrorMessage == nil else { return }
         searchTask = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else { return }
-            isSearching = true
-            defer { isSearching = false }
             do {
-                let serverQuery = Self.regularExpressionQuery(query) == nil ? query : "*"
-                recursiveSearchResults = try await repository.search(folderPath: folder, query: serverQuery)
+                try await Task.sleep(for: .milliseconds(350))
+                guard generation == searchGeneration, !Task.isCancelled else { return }
+                isSearching = true
+                let results = try await repository.searchWithReport(request)
+                guard generation == searchGeneration, !Task.isCancelled else { return }
+                recursiveSearchResults = results.items
+                searchIndexCoverage = results.indexCoverage
                 selection.removeAll()
-            } catch is CancellationError {
-                return
+                isSearching = false
             } catch {
+                guard generation == searchGeneration, !Task.isCancelled else { return }
+                isSearching = false
                 show(error)
             }
+        }
+    }
+
+    func loadFileFolders(_ path: String?) async throws -> [FileItem] {
+        if path == nil || path == "/" { return shares }
+        var folders: [FileItem] = []
+        var offset = 0
+        while true {
+            let page = try await repository.listFolder(path: path!, offset: offset, limit: 500)
+            folders.append(contentsOf: page.items.filter(\.isDirectory))
+            guard page.hasMore else { return folders }
+            guard !page.items.isEmpty else {
+                throw AppError(category: .invalidResponse, isRetryable: true,
+                               safeUserMessage: L10n.string("files.search.incomplete"))
+            }
+            offset = page.offset + page.items.count
         }
     }
 
@@ -1213,6 +1275,7 @@ final class WorkspaceModel {
         let generation = remoteLocationGeneration
         isLoadingRemoteLocations = true
         remoteLocationsError = nil
+        remoteVFSProfilesError = nil
         unavailableRemoteLocationProtocols = []
         remoteLocationsAreTruncated = false
         defer {
@@ -1222,13 +1285,20 @@ final class WorkspaceModel {
         }
         await refreshRemoteMountOperations()
         guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
+        async let folders: Void = refreshVirtualFolders(generation: generation)
+        async let connections: Void = refreshRemoteVFSProfiles(generation: generation)
+        _ = await (folders, connections)
+        guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
+        remoteLocationsHasLoaded = true
+    }
+
+    private func refreshVirtualFolders(generation: Int) async {
         do {
             let page = try await repository.listVirtualFolders(offset: 0, limit: 5_000)
             guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
             remoteLocations = page.folders
             unavailableRemoteLocationProtocols = page.unavailableProtocols
             remoteLocationsAreTruncated = page.isTruncated
-            remoteLocationsHasLoaded = true
         } catch let error as AppError where error.category == .apiUnavailable || error.category == .versionUnsupported {
             // 旧版 DSM 缺少官方虚拟文件夹能力时，仅显示共享列表中能明确识别协议的条目。
             guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
@@ -1241,11 +1311,24 @@ final class WorkspaceModel {
             }
             unavailableRemoteLocationProtocols = []
             remoteLocationsAreTruncated = false
-            remoteLocationsHasLoaded = true
         } catch {
             guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
             remoteLocationsError = Self.userMessage(for: error)
-            remoteLocationsHasLoaded = true
+        }
+    }
+
+    private func refreshRemoteVFSProfiles(generation: Int) async {
+        do {
+            let profiles = try await repository.listFileVFSProfiles()
+            guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
+            remoteVFSProfiles = profiles.filter { $0.protocolID != "sharing" }
+        } catch let error as AppError where error.category == .apiUnavailable || error.category == .versionUnsupported {
+            // 未提供这类连接的 NAS 仍可正常显示 SMB、NFS 和 ISO。
+            guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
+            remoteVFSProfiles = []
+        } catch {
+            guard isFileModuleEnabled, generation == remoteLocationGeneration else { return }
+            remoteVFSProfilesError = L10n.string("remote-locations.connectionsLoadFailed")
         }
     }
 
@@ -1513,15 +1596,37 @@ final class WorkspaceModel {
     }
 
     func loadShareLinks() async {
-        guard isFileModuleEnabled else { return }
+        guard isFileModuleEnabled, !isManagingShareLinks, !isCreatingShareLinks else { return }
         isLoadingShareLinks = true
+        shareLinksError = nil
         defer { isLoadingShareLinks = false }
         do {
             shareLinks = try await repository.listShareLinks()
         } catch {
-            // 分享链接列表为辅助功能，不污染主文件列表状态
-            shareLinks = []
+            shareLinksError = L10n.string("files.sharing.loadFailed")
         }
+    }
+
+    func createShareLinks(
+        targets: [FileItem], password: String?,
+        availableOn: FileShareLinkCalendarDate?, expiresOn: FileShareLinkCalendarDate?,
+        fileRequest: FileRequestConfiguration? = nil
+    ) async -> [FileShareBatchItem] {
+        guard isFileModuleEnabled, !isCreatingShareLinks else { return [] }
+        isCreatingShareLinks = true
+        defer { isCreatingShareLinks = false }
+        let results = await FileShareBatch.create(
+            targets: targets, password: password, availableOn: availableOn, expiresOn: expiresOn, fileRequest: fileRequest
+        ) { [repository] request in
+            try await repository.createShareLinkResult(request)
+        }
+        for result in results {
+            if let link = result.link {
+                shareLinks.removeAll { $0.id == link.id }
+                shareLinks.insert(link, at: 0)
+            }
+        }
+        return results
     }
 
     func createShareLink(paths: [String], password: String?, expiresAt: String?) async -> FileShareLink? {
@@ -1539,15 +1644,172 @@ final class WorkspaceModel {
         }
     }
 
-    func deleteShareLinks(ids: [String]) async {
-        guard isFileModuleEnabled else { return }
+    func editShareLinks(_ requests: [FileShareLinkEditRequest]) async {
+        guard isFileModuleEnabled, !isManagingShareLinks, !isCreatingShareLinks else { return }
+        isManagingShareLinks = true
+        shareManagementResults = []
+        defer { isManagingShareLinks = false }
+        for request in requests {
+            do {
+                let outcome = try await repository.editShareLink(request)
+                shareManagementResults.append(.init(link: request.baseline, status: outcome.result.status))
+                if let link = outcome.confirmedLink, let index = shareLinks.firstIndex(where: { $0.id == link.id }) { shareLinks[index] = link }
+            } catch let error as AppError where error.category == .versionUnsupported || error.category == .apiUnavailable || error.category == .permissionDenied || error.category == .conflict {
+                shareManagementResults.append(.init(link: request.baseline, status: error.category == .permissionDenied ? .permissionDenied : error.category == .conflict ? .confirmedFailure : .unsupported))
+            } catch {
+                shareManagementResults.append(.init(link: request.baseline, status: .submittedButUnverified))
+            }
+        }
+    }
+
+    func pendingFileStationChanges() async -> [FileStationPendingChange] { await repository.pendingFileStationChanges() }
+    func reviewPendingFileStationChange(id: String) async throws -> MutationResult {
+        try await repository.reviewPendingFileStationChange(id: id)
+    }
+
+    func listFileStationMountAccounts(source: FileStationMountAccountSource = .local, kind: FileStationPrincipal.Kind, query: String, offset: Int) async throws -> FileStationMountAccountPage {
+        try await repository.listFileStationMountAccounts(source: source, kind: kind, query: query, offset: offset, limit: 100)
+    }
+
+    func listFileStationThemeImages(kind: FileStationThemeImage.Kind) async throws -> [FileStationThemeImage] {
+        try await repository.listFileStationThemeImages(kind: kind)
+    }
+    func loadFileStationThemeImage(_ image: FileStationThemeImage) async throws -> Data {
+        try await repository.loadFileStationThemeImage(image)
+    }
+    func uploadFileStationThemeImage(data: Data, filename: String, kind: FileStationThemeImage.Kind) async throws -> FileStationThemeImage {
+        try await repository.uploadFileStationThemeImage(data: data, filename: filename, kind: kind, confirmed: true)
+    }
+
+    func loadFileStationMountDirectories() async throws -> FileStationMountDirectories {
+        try await repository.loadFileStationMountDirectories()
+    }
+
+    func loadFileStationAdvancedAccess() async throws -> FileStationAdvancedAccess {
+        try await repository.loadFileStationAdvancedAccess()
+    }
+
+    func loadFileStationPrincipals(prefix: String, offset: Int) async throws -> FileStationPrincipalPage {
+        try await repository.listFileStationPrincipals(prefix: prefix, offset: offset, limit: 200)
+    }
+
+    func prepareFileVFSCloudAuthorization(protocolID: String) async throws -> FileVFSCloudAuthorizationRequest {
+        try await repository.prepareFileVFSCloudAuthorization(protocolID: protocolID)
+    }
+    func authorizeFileVFS(_ change: FileVFSChange, authorization: FileVFSCloudAuthorization) async throws -> MutationResult {
+        guard isFileModuleEnabled else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+        }
+        let result = try await repository.authorizeFileVFS(change, authorization: authorization, confirmed: true)
+        if result.status == .confirmedSuccess { await refreshRemoteLocations() }
+        return result
+    }
+
+    func listFileVFSProtocols() async throws -> [FileVFSProtocol] { try await repository.listFileVFSProtocols() }
+    func listFileVFSFolder(_ profile: FileVFSProfile, path: String, offset: Int) async throws -> FilePage {
+        try await repository.listFileVFSFolder(profile, path: path, offset: offset, limit: 200)
+    }
+
+    func listFileVFSProfiles() async throws -> [FileVFSProfile] { try await repository.listFileVFSProfiles() }
+    func loadFileVFSDetail(_ profile: FileVFSProfile) async throws -> FileVFSDetail { try await repository.loadFileVFSDetail(profile) }
+    func connectFileVFS(_ profile: FileVFSProfile, review: Bool = false) async {
+        guard isFileModuleEnabled, profile.profileID == self.profile.id,
+              fileVFSConnectionActivities[profile.id]?.isBusy != true else { return }
+        let previous = fileVFSConnectionActivities[profile.id]
+        let target: FileVFSProfile
+        if review {
+            guard let previous, previous.result?.requiresRefresh == true else { return }
+            target = previous.profile
+        } else {
+            guard profile.state == .disconnected, previous?.result?.requiresRefresh != true else { return }
+            target = profile
+        }
+        var activity = FileVFSConnectionActivity(profile: target, isBusy: true, result: review ? previous?.result : nil)
+        fileVFSConnectionActivities[profile.id] = activity
         do {
-            try await repository.deleteShareLinks(ids: ids)
-            let wanted = Set(ids)
-            shareLinks.removeAll { wanted.contains($0.id) }
-            statusIsError = false
-            statusMessage = L10n.string("ui.e277407e7218c8fd")
-        } catch { show(error) }
+            let result = try await changeFileVFS(.connect(target), review: review)
+            if result.status == .confirmedSuccess { fileVFSConnectionActivities.removeValue(forKey: profile.id) }
+            else {
+                activity.isBusy = false; activity.result = result
+                fileVFSConnectionActivities[profile.id] = activity
+            }
+        } catch {
+            activity.isBusy = false
+            activity.error = (error as? AppError)?.safeUserMessage ?? L10n.string("files.vfs.connection-failed")
+            fileVFSConnectionActivities[profile.id] = activity
+        }
+    }
+    func changeFileVFS(_ change: FileVFSChange, password: String? = nil, review: Bool = false) async throws -> MutationResult {
+        guard isFileModuleEnabled else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+        }
+        let result = try await (review ? repository.reviewFileVFS(change) : repository.changeFileVFS(change, password: password, confirmed: true))
+        if result.status == .confirmedSuccess { await refreshRemoteLocations() }
+        return result
+    }
+
+    func loadFileStationSettings() async throws -> FileStationSettings { try await repository.loadFileStationSettings() }
+    func loadFileStationMountAccess() async throws -> FileStationMountAccessScope { try await repository.loadFileStationMountAccess() }
+    func loadFileStationSharingTheme() async throws -> FileStationSharingTheme { try await repository.loadFileStationSharingTheme() }
+    func listFileStationPolicyAccounts(kind: FileStationPrincipal.Kind, query: String, offset: Int) async throws -> FileStationPolicyAccountPage {
+        try await repository.listFileStationPolicyAccounts(kind: kind, query: query, offset: offset, limit: 100)
+    }
+    func listFileStationBandwidth(ownerType: FileStationBandwidthEntry.OwnerType, offset: Int) async throws -> FileStationBandwidthPage {
+        try await repository.listFileStationBandwidth(ownerType: ownerType, offset: offset, limit: 100)
+    }
+    func changeFileStationSettings(_ change: FileStationSettingsChange, review: Bool) async throws -> MutationResult {
+        guard isFileModuleEnabled else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+        }
+        return try await (review ? repository.reviewFileStationSettings(change) : repository.changeFileStationSettings(change, confirmed: true))
+    }
+
+    func loadFilePermissions(_ item: FileItem) async throws -> FilePermissionSnapshot {
+        try await repository.loadFilePermissions(item)
+    }
+    func changeFilePermissions(_ change: FilePermissionChange, reviewOnly: Bool) async throws -> MutationResult {
+        guard isFileModuleEnabled else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+        }
+        return try await (reviewOnly ? repository.reviewFilePermissions(change) : repository.changeFilePermissions(change))
+    }
+
+    func loadISOMounts() async throws -> [FileISOMountConnection] {
+        guard let mounts = try await repository.remoteMountInventory().isoConnections else {
+            throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+        }
+        return mounts
+    }
+    func loadISODestination(_ path: String) async throws -> FileItem {
+        guard let item = try await repository.getInfo(paths: [path]).first(where: { $0.path == path }) else {
+            throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("files.iso.targetChanged"))
+        }
+        return item
+    }
+    func changeISO(_ change: FileISOMountChange, reviewOnly: Bool = false) async throws -> MutationResult {
+        guard isFileModuleEnabled else {
+            throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+        }
+        let result = try await (reviewOnly ? repository.reviewISOMount(change) : repository.changeISOMount(change))
+        if result.status == .confirmedSuccess { await refreshRemoteLocations() }
+        return result
+    }
+
+    func deleteShareLinks(ids: [String]) async {
+        guard isFileModuleEnabled, !isManagingShareLinks, !isCreatingShareLinks else { return }
+        isManagingShareLinks = true
+        shareManagementResults = []
+        defer { isManagingShareLinks = false }
+        let targets = shareLinks.filter { ids.contains($0.id) }
+        for link in targets {
+            do {
+                let result = try await repository.deleteShareLinkResult(link)
+                shareManagementResults.append(.init(link: link, status: result.status))
+                if result.status == .confirmedSuccess { shareLinks.removeAll { $0.id == link.id } }
+            } catch {
+                shareManagementResults.append(.init(link: link, status: .submittedButUnverified))
+            }
+        }
     }
 
     func loadMore() async {
@@ -1617,6 +1879,39 @@ final class WorkspaceModel {
     func dismissPreview() {
         clearPreview()
         previewContextItems = nil
+    }
+
+    func beginOfficeEditing(_ item: FileItem, chooseApplication: Bool = false) {
+        guard isFileModuleEnabled, item.profileID == profile.id, OfficeDocumentFormat.supports(item),
+              !item.isRecyclePath, !OfficeEditingCoordinator.shared.preparingIDs.contains(item.id) else { return }
+        let application: URL?
+        if chooseApplication {
+            guard let chosen = OfficeDocumentActions.chooseApplication() else { return }
+            application = chosen
+        } else { application = nil }
+        if let existing = OfficeEditingCoordinator.shared.session(for: item) {
+            Task {
+                do { try await OfficeDocumentActions.open(existing.localURL, application: application) }
+                catch is CancellationError { }
+                catch { show(AppError(category: .unknown, isRetryable: true, safeUserMessage: L10n.string("files.office.openFailed"))) }
+            }
+            return
+        }
+        guard let localURL = OfficeDocumentActions.chooseLocalCopy(for: item) else { return }
+        Task {
+            var prepared: OfficeEditingSession?
+            do {
+                let session = try await OfficeEditingCoordinator.shared.begin(item: item, localURL: localURL, repository: repository)
+                prepared = session
+                guard isFileModuleEnabled, !session.isStopped else { session.stop(); return }
+                try await OfficeDocumentActions.open(session.localURL, application: application)
+            } catch is CancellationError { prepared?.stop() }
+            catch {
+                prepared?.stop()
+                let message = prepared != nil ? L10n.string("files.office.openFailed") : L10n.string("files.office.prepareFailed")
+                show(AppError(category: .unknown, isRetryable: true, safeUserMessage: message))
+            }
+        }
     }
 
     func thumbnailData(for item: FileItem) async -> Data? {
@@ -1794,6 +2089,24 @@ final class WorkspaceModel {
         previewTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
+                if OfficeDocumentFormat.supports(item) {
+                    let url = temporaryPreviewURL(for: item)
+                    do {
+                        let progress = previewProgressHandler()
+                        try await repository.download(remotePath: item.path, to: url, expectedSize: item.sizeBytes) { completed, total in
+                            progress(completed, total)
+                        }
+                        try Task.checkCancellation()
+                        previewFileURL = url
+                        previewLoadingSpeedBytesPerSecond = nil
+                        preview = .office(url)
+                        return
+                    } catch {
+                        await repository.removePartialDownload(to: url)
+                        try? FileManager.default.removeItem(at: url)
+                        throw error
+                    }
+                }
                 let kind = try await resolvedKindForPreview(item)
                 try Task.checkCancellation()
                 resolvedPreviewKind = kind
@@ -2152,25 +2465,62 @@ final class WorkspaceModel {
         guard isFileModuleEnabled, !folderPath.isEmpty else {
             return
         }
-        for url in urls {
-            let taskID = addTransfer(
-                kind: .upload,
-                displayName: url.lastPathComponent,
-                remotePath: folderPath
-            )
-            restartableTransfers[taskID] = .upload(
-                localURL: url,
-                folderPath: folderPath,
-                overwrite: overwrite
-            )
-            saveTransfers()
-            startUpload(
-                taskID: taskID,
-                localURL: url,
-                folderPath: folderPath,
-                overwrite: overwrite
-            )
+        uploadSelection = FileUploadSelection(urls: urls, destination: folderPath)
+    }
+
+    func beginUploadBatch(sources: [FileUploadSource], destination: String, overwrite: Bool) {
+        guard isFileModuleEnabled, !sources.isEmpty else { return }
+        let batch = FileUploadBatch(sources: sources, destination: destination, overwrite: overwrite, repository: repository)
+        for source in sources where source.kind == .file {
+            let parent = (source.relativePath as NSString).deletingLastPathComponent
+            let folder = destination + (parent.isEmpty ? "" : "/" + parent)
+            let id = addTransfer(kind: .upload, displayName: source.relativePath, remotePath: folder,
+                                 fileSizeBytes: source.size, totalUnits: source.size)
+            uploadTransferIDs[source.id] = id
+            restartableTransfers[id] = .upload(localURL: source.url, folderPath: folder, overwrite: overwrite)
         }
+        batch.onChange = { [weak self] entry in self?.updateUploadTransfer(entry) }
+        batch.entries.forEach(updateUploadTransfer)
+        batch.onSettled = { [weak self] in
+            guard let self else { return }
+            self.startNextUploadBatch()
+            Task { await self.refresh() }
+        }
+        uploadBatches.append(batch)
+        showsUploadQueue = true
+        saveTransfers()
+        startNextUploadBatch()
+    }
+
+    func startNextUploadBatch() {
+        guard isFileModuleEnabled, !uploadBatches.contains(where: \.isRunning) else { return }
+        uploadBatches.first(where: { !$0.isPaused && $0.hasPending })?.start()
+    }
+
+    private func uploadBatch(for taskID: UUID) -> FileUploadBatch? {
+        guard let entryID = uploadTransferIDs.first(where: { $0.value == taskID })?.key else { return nil }
+        return uploadBatches.first { batch in batch.entries.contains { $0.id == entryID } }
+    }
+
+    private func updateUploadTransfer(_ entry: FileUploadEntry) {
+        guard let id = uploadTransferIDs[entry.id], let index = transfers.firstIndex(where: { $0.id == id }) else { return }
+        let state: ActivityState = switch entry.state {
+        case .pending: .queued
+        case .running: .running
+        case .succeeded: .succeeded
+        case .skipped, .cancelled: .cancelled
+        case .failed, .conflict, .unverified: .failed
+        case .paused: .paused
+        }
+        let stateChanged = transfers[index].state != state
+        transfers[index].completedUnits = entry.completedBytes
+        transfers[index].state = state
+        transfers[index].failureMessage = entry.message
+        // 进行中的上传退出后不能从旧存储自动重放；会话内恢复由批次先核对结果。
+        if entry.state == .running || entry.needsReconciliation || entry.state == .unverified {
+            restartableTransfers[id] = nil
+        }
+        if stateChanged { saveTransfers() }
     }
 
     func createFolder(named rawName: String) async {
@@ -2618,6 +2968,16 @@ final class WorkspaceModel {
         }
     }
 
+    func makeArchiveBrowser(_ item: FileItem) -> FileArchiveBrowserModel {
+        FileArchiveBrowserModel(item: item, destination: currentPath, repository: repository)
+    }
+
+    func enqueueVerifiedExtraction(_ item: FileItem, request: FileExtractionRequest, inventory: [ArchiveItem]) {
+        enqueueExtraction(item, destinationFolder: request.destination, createSubfolder: request.createSubfolder,
+            keepDirectoryStructure: request.keepDirectories, overwrite: request.overwrite,
+            codepage: request.codepage, password: request.password, selection: request.selection, inventory: inventory)
+    }
+
     private func enqueueExtraction(
         _ item: FileItem,
         destinationFolder: String,
@@ -2625,9 +2985,11 @@ final class WorkspaceModel {
         keepDirectoryStructure: Bool,
         overwrite: Bool,
         codepage: String?,
-        password: String?
+        password: String?,
+        selection: FileArchiveSelection = .all,
+        inventory: [ArchiveItem] = []
     ) {
-        guard !item.isDirectory else { return }
+        guard isFileModuleEnabled, !item.isDirectory, selection.isValid else { return }
         let taskID = addTransfer(
             kind: .extract,
             displayName: item.name,
@@ -2648,15 +3010,17 @@ final class WorkspaceModel {
                     filename: permissionProbe,
                     createOnly: !overwrite
                 )
+                if !inventory.isEmpty {
+                    guard let current = try await repository.getInfo(paths: [item.path]).first(where: { $0.path == item.path }),
+                          current.kind == item.kind, current.sizeBytes == item.sizeBytes, current.times?.modifiedAt == item.times?.modifiedAt else {
+                        throw AppError(category: .conflict, isRetryable: false, safeUserMessage: L10n.string("files.archive.changed"))
+                    }
+                }
                 let updateProgress = progressHandler(for: taskID)
                 try await repository.extract(
-                    filePath: item.path,
-                    destinationFolder: destinationFolder,
-                    overwrite: overwrite,
-                    keepDirectoryStructure: keepDirectoryStructure,
-                    createSubfolder: createSubfolder,
-                    codepage: codepage,
-                    password: password,
+                    FileExtractionRequest(filePath: item.path, destination: destinationFolder, selection: selection,
+                        overwrite: overwrite, keepDirectories: keepDirectoryStructure, createSubfolder: createSubfolder,
+                        codepage: codepage, password: password),
                     progress: { completed, total in
                         let normalizedCompleted = total == nil && completed <= 1 ? completed * 100 : completed
                         let normalizedTotal = total ?? (completed <= 1 ? 100 : nil)
@@ -2671,12 +3035,26 @@ final class WorkspaceModel {
                         safeUserMessage: L10n.string("ui.5c351e141dbea40b")
                     )
                 }
+                if !inventory.isEmpty {
+                    let root = destinationFolder + (createSubfolder ? "/" + (item.name as NSString).deletingPathExtension : "")
+                    for entry in inventory where keepDirectoryStructure || !entry.isDirectory {
+                        let relative = keepDirectoryStructure ? entry.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) : entry.name
+                        let outputPath = root + "/" + relative
+                        guard let output = try await repository.getInfo(paths: [outputPath]).first(where: { $0.path == outputPath }),
+                              output.isDirectory == entry.isDirectory,
+                              entry.isDirectory || entry.sizeBytes == nil || output.sizeBytes == entry.sizeBytes else {
+                            throw AppError(category: .partialFailure, isRetryable: false,
+                                           safeUserMessage: L10n.string("files.archive.outputUnverified"))
+                        }
+                    }
+                }
                 finishTransfer(taskID)
                 if currentPath == destinationFolder { await refresh() }
                 statusIsError = false
                 statusMessage = L10n.string("ui.47963deffe8a1291", String(describing: item.name))
             } catch is CancellationError {
                 setTransferState(taskID, .cancelled)
+                statusMessage = L10n.string("files.archive.cancelled")
             } catch {
                 Self.isCancellation(error)
                     ? setTransferState(taskID, .cancelled)
@@ -3122,11 +3500,13 @@ final class WorkspaceModel {
     }
 
     func cancelTransfer(_ taskID: UUID) {
+        if let batch = uploadBatch(for: taskID) { batch.cancel(); return }
         setTransferState(taskID, .cancelling)
         runningTasks[taskID]?.cancel()
     }
 
     func pauseTransfer(_ taskID: UUID) {
+        if let batch = uploadBatch(for: taskID) { batch.pause(); return }
         guard restartableTransfers[taskID] != nil,
               transfers.first(where: { $0.id == taskID })?.state == .running else {
             return
@@ -3136,6 +3516,7 @@ final class WorkspaceModel {
     }
 
     func resumeTransfer(_ taskID: UUID) {
+        if let batch = uploadBatch(for: taskID) { batch.resume(); startNextUploadBatch(); return }
         guard isFileModuleEnabled,
               let transfer = restartableTransfers[taskID],
               transfers.first(where: { $0.id == taskID })?.state == .paused else {
@@ -3145,6 +3526,7 @@ final class WorkspaceModel {
     }
 
     func retryTransfer(_ taskID: UUID) {
+        if let batch = uploadBatch(for: taskID) { batch.retryFailed(); startNextUploadBatch(); return }
         guard isFileModuleEnabled,
               let transfer = restartableTransfers[taskID],
               let state = transfers.first(where: { $0.id == taskID })?.state,
@@ -3155,7 +3537,13 @@ final class WorkspaceModel {
     }
 
     func canRetryTransfer(_ taskID: UUID) -> Bool {
-        restartableTransfers[taskID] != nil
+        if let batch = uploadBatch(for: taskID) {
+            return batch.entries.contains {
+                uploadTransferIDs[$0.id] == taskID && $0.retryAllowed
+                    && [.failed, .conflict, .paused, .running].contains($0.state)
+            }
+        }
+        return restartableTransfers[taskID] != nil
     }
 
     private func restart(_ taskID: UUID, transfer: RestartableTransfer) {
@@ -3202,6 +3590,22 @@ final class WorkspaceModel {
             task.state == .succeeded || task.state == .cancelled ? task.id : nil
         }
         taskIDs.forEach(deleteTransfer)
+    }
+
+    func canStopServerTask(_ task: FileBackgroundTaskSummary) -> Bool { repository.canStopBackgroundTask(task) }
+
+    func controlServerTask(_ task: FileBackgroundTaskSummary, clearFinished: Bool) async {
+        guard isFileModuleEnabled, controllingServerTaskIDs.insert(task.id).inserted else { return }
+        defer { controllingServerTaskIDs.remove(task.id) }
+        do {
+            let result = try await repository.controlBackgroundTask(task, clearFinished: clearFinished)
+            serverTaskControlMessage = result.status == .confirmedSuccess
+                ? L10n.string(clearFinished ? "files.tasks.cleared" : "files.tasks.stopped")
+                : L10n.string("files.tasks.unverified")
+            await refreshServerBackgroundTasks()
+        } catch {
+            serverTaskControlMessage = Self.userMessage(for: error)
+        }
     }
 
     func refreshServerBackgroundTasks() async {
@@ -3257,6 +3661,10 @@ final class WorkspaceModel {
     }
 
     func deleteTransfer(_ taskID: UUID) {
+        if let batch = uploadBatch(for: taskID),
+           batch.entries.contains(where: { uploadTransferIDs[$0.id] == taskID && [.pending, .running, .paused].contains($0.state) }) {
+            batch.cancel()
+        }
         let runningTask = runningTasks[taskID]
         let restartableTransfer = restartableTransfers[taskID]
         runningTask?.cancel()
@@ -3281,12 +3689,13 @@ final class WorkspaceModel {
     }
 
     private func suspendFileModule() {
+        OfficeEditingCoordinator.shared.stop(profileID: profile.id)
         navigationGeneration += 1
         backgroundTaskGeneration += 1
         remoteLocationGeneration += 1
         previewTask?.cancel()
         previewTask = nil
-        searchTask?.cancel()
+        cancelSearch()
         searchTask = nil
         dragMoveUndoExpirationTask?.cancel()
         dragMoveUndoExpirationTask = nil
@@ -3294,6 +3703,8 @@ final class WorkspaceModel {
         toastDismissTask?.cancel()
         toastDismissTask = nil
         activeToast = nil
+        uploadBatches.forEach { $0.cancel() }
+        uploadSelection = nil
         runningTasks.values.forEach { $0.cancel() }
         for (itemID, task) in folderStatisticsTasks {
             cancellingFolderStatisticsIDs.insert(itemID)
@@ -3320,6 +3731,7 @@ final class WorkspaceModel {
         isLoadingRemoteLocations = false
         remoteLocationsHasLoaded = false
         remoteLocationsError = nil
+        remoteVFSProfilesError = nil
         unavailableRemoteLocationProtocols = []
         remoteLocationsAreTruncated = false
         isSearching = false

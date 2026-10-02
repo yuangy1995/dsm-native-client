@@ -197,6 +197,11 @@ def main() -> int:
     parser.add_argument("--strict-release", action="store_true", help="启用发布预检时效限制")
     args = parser.parse_args()
     errors = validate(strict_release=args.strict_release)
+    # 请求目录与契约快照共用既有文档门禁，防止新增样例后参考文档失步。
+    from generate_api_reference import OUTPUT, render
+
+    if not OUTPUT.is_file() or OUTPUT.read_text(encoding="utf-8") != render():
+        errors.append("API 参数目录过期：运行 python3 tools/codex/generate_api_reference.py")
     if errors:
         for error in errors:
             print(f"错误：{error}")

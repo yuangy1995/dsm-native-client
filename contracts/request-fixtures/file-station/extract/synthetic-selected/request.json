@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.extract.synthetic-selected",
+  "module": "file-station",
+  "operation": "extract",
+  "api": {
+    "name": "SYNO.FileStation.Extract",
+    "method": "start",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "codepage",
+      "valueType": "string",
+      "encodedValue": "chs"
+    },
+    {
+      "name": "create_subfolder",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "dest_folder_path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-destination-directory>"
+    },
+    {
+      "name": "file_path",
+      "valueType": "string",
+      "encodedValue": "<synthetic-archive-path>"
+    },
+    {
+      "name": "keep_dir",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "overwrite",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "item_id",
+      "valueType": "string",
+      "encodedValue": "3,8"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "standardWrite",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

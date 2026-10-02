@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "file-station.search.synthetic-advanced",
+  "module": "file-station",
+  "operation": "search",
+  "api": {
+    "name": "SYNO.FileStation.Search",
+    "method": "start",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "form"
+  },
+  "parameters": [
+    {
+      "name": "folder_path",
+      "valueType": "stringArray",
+      "encodedValue": "[\"<synthetic-folder-a>\",\"<synthetic-folder-b>\"]"
+    },
+    {
+      "name": "pattern",
+      "valueType": "string",
+      "encodedValue": "*.txt"
+    },
+    {
+      "name": "recursive",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "filetype",
+      "valueType": "string",
+      "encodedValue": "file"
+    },
+    {
+      "name": "extension",
+      "valueType": "string",
+      "encodedValue": "txt,md"
+    },
+    {
+      "name": "size_from",
+      "valueType": "integer",
+      "encodedValue": "1048576"
+    },
+    {
+      "name": "size_to",
+      "valueType": "integer",
+      "encodedValue": "2097152"
+    },
+    {
+      "name": "mtime_from",
+      "valueType": "integer",
+      "encodedValue": "100"
+    },
+    {
+      "name": "mtime_to",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "crtime_from",
+      "valueType": "integer",
+      "encodedValue": "100"
+    },
+    {
+      "name": "crtime_to",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "atime_from",
+      "valueType": "integer",
+      "encodedValue": "100"
+    },
+    {
+      "name": "atime_to",
+      "valueType": "integer",
+      "encodedValue": "200"
+    },
+    {
+      "name": "owner",
+      "valueType": "string",
+      "encodedValue": "<synthetic-owner>"
+    },
+    {
+      "name": "group",
+      "valueType": "string",
+      "encodedValue": "<synthetic-group>"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "publicDocumentation"
+  }
+}

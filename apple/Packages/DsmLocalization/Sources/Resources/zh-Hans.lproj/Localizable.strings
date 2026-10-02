@@ -1,10 +1,10 @@
 "container.network.delete.protected" = "默认网络不能删除。";
 "container.network.delete.inUse" = "此网络仍连接着容器，请先在 Container Manager 中断开连接，再删除网络。";
-"account.save.unverified" = "更改可能已提交，但结果尚未确认。请重新读取并在 DSM 中核对，不要重复保存。";
-"account.save.conflict" = "账号或用户组的信息已变化、不完整或暂不可编辑。请重新读取并核对字段后再保存。";
+"account.save.unverified" = "更改可能已提交，但结果尚未确认。请重新读取并在 DSM 中检查，不要重复保存。";
+"account.save.conflict" = "账号或用户组的信息已变化、不完整或暂不可编辑。请重新读取并检查字段后再保存。";
 "connection.disconnect.web-risk" = "断开网页连接可能会让本应用掉线，之后可能需要重新登录。";
-"task.command.unverified" = "任务请求可能已提交，但结果尚未确认。请在 DSM 中核对任务和运行记录后再操作。";
-"task.command.changed" = "任务已变化或暂不可操作，请重新读取并核对详情后继续。";
+"task.command.unverified" = "任务请求可能已提交，但结果尚未确认。请在 DSM 中检查任务和运行记录后再操作。";
+"task.command.changed" = "任务已变化或暂不可操作，请重新读取并检查详情后继续。";
 "app.about" = "关于%@";
 "container.network.create.ipv4" = "IPv4 配置";
 "container.network.create.ipv6" = "IPv6 配置";
@@ -24,7 +24,7 @@
 "container.network.validation.outsideSubnet" = "网关和 IP 范围必须位于填写的子网内。";
 "container.network.creation.unavailable" = "此 NAS 暂不能在 App 中创建网络，请先在 Container Manager 网页中创建。";
 "container.network.creation.inProgress" = "正在处理这个网络，请稍候。";
-"container.network.creation.review" = "尚未确认创建结果。请先在 Container Manager 网页中核对网络是否已创建，再重新连接 NAS。";
+"container.network.creation.review" = "尚未确认创建结果。请先在 Container Manager 网页中检查网络是否已创建，再重新连接 NAS。";
 "container.network.creation.nameTaken" = "已存在同名网络，请换一个名称。";
 "container.network.subnet" = "子网";
 "container.network.gateway" = "网关";
@@ -51,10 +51,10 @@
 "container.logs.info" = "信息";
 "container.logs.warning" = "警告";
 "container.logs.error" = "错误";
-"photos.service.permission" = "你暂时无法访问这个照片空间。请联系 NAS 管理员检查照片访问权限，然后重试。";
+"photos.service.permission" = "无法访问这些照片。请联系 NAS 管理员检查照片访问权限，然后重试。";
 "photos.service.unavailable" = "照片服务暂不可用。请检查 NAS 已安装并运行 Synology Photos，然后重新连接。";
 "photos.service.invalidResponse" = "暂时无法加载照片库，请刷新后重试。";
-"photos.library.space" = "照片空间";
+"photos.library.space" = "照片来源";
 "photos.library.empty" = "这里暂时没有可显示的照片。请在 Synology Photos 中检查照片库，然后刷新。";
 "photos.library.more" = "加载更多照片";
 "photos.library.search" = "搜索照片";
@@ -83,17 +83,17 @@
 "container-image.delete.cancelled" = "容器映像删除已取消，没有发送任何更改。";
 "container-image.delete.completed" = "所选镜像标签已删除。";
 "container-image.delete.failed" = "无法删除所选镜像标签。请刷新并检查它们是否仍存在或被容器使用。";
-"container-image.delete.partial" = "部分镜像标签已删除，其余结果尚未确认。请核查删除状态，不要再次提交。";
+"container-image.delete.partial" = "部分镜像标签已删除，其余结果尚未确认。请检查删除状态，不要再次提交。";
 "container-image.delete.permission-denied" = "当前账号无法删除这些镜像标签，请检查 Container Manager 权限。";
 "container-image.delete.unsupported" = "当前 NAS 不支持通过岚仓删除容器映像。";
-"container-image.delete.unverified" = "删除可能已经生效。请核查删除状态，不要再次提交。";
+"container-image.delete.unverified" = "删除可能已经生效。请检查删除状态，不要再次提交。";
 "container-network.delete.cancelled" = "容器网络删除已取消，没有发送任何更改。";
 "container-network.delete.completed" = "所选容器网络已删除。";
 "container-network.delete.failed" = "未能删除所选容器网络。请确认它们仍然存在且未被占用，然后重试。";
 "container-network.delete.partial" = "部分容器网络已删除，其余网络的结果尚未确认。请刷新网络列表后再决定是否重试。";
 "container-network.delete.permission-denied" = "当前账号不能删除这些容器网络。请使用管理员账号，或联系管理员授予权限。";
 "container-network.delete.unsupported" = "当前 NAS 不支持通过岚仓删除容器网络。";
-"container-network.delete.unverified" = "删除可能已经生效。请先刷新容器网络列表核对，再决定是否重试。";
+"container-network.delete.unverified" = "删除可能已经生效。请先刷新容器网络列表检查，再决定是否重试。";
 "chat.members.count" = "%@ 位成员";
 "chat.members.prefix" = "%@ 位成员 · ";
 "chat.target.accessibility" = "%@，%@，%@";
@@ -103,7 +103,7 @@
 "container.delete.partial" = "部分容器已删除，其余容器的结果尚未确认。请刷新容器列表后再决定是否重试。";
 "container.delete.permission-denied" = "当前账号不能删除这些容器。请使用管理员账号，或联系管理员授予权限。";
 "container.delete.unsupported" = "当前 NAS 不支持通过岚仓删除容器。";
-"container.delete.unverified" = "删除可能已经生效。请先刷新容器列表核对，再决定是否重试。";
+"container.delete.unverified" = "删除可能已经生效。请先刷新容器列表检查，再决定是否重试。";
 "download-task.delete.cancelled" = "下载任务删除已取消，没有发送任何更改。";
 "download-task.delete.completed" = "所选下载任务已删除。";
 "download-task.finish-incomplete.confirm-title" = "结束所选下载？";
@@ -118,7 +118,7 @@
 "download-task.delete.partial" = "部分下载任务已删除，其余任务的结果尚未确认。请刷新任务列表后再决定是否重试。";
 "download-task.delete.permission-denied" = "当前账号不能删除这些下载任务。请使用管理员账号，或联系管理员授予权限。";
 "download-task.delete.unsupported" = "当前 NAS 不支持通过岚仓删除下载任务。";
-"download-task.delete.unverified" = "删除可能已经生效。请先刷新下载任务列表核对，再决定是否重试。";
+"download-task.delete.unverified" = "删除可能已经生效。请先刷新下载任务列表检查，再决定是否重试。";
 "duration.hours_minutes" = "%@小时%@分";
 "file.delete.confirm" = "删除“%@”？";
 "folder.download.named" = "下载文件夹 %@";
@@ -136,12 +136,12 @@
 "nas.logs.total_count" = "%@ 条";
 "hardware.settings.cancelled" = "硬件设置请求尚未发送，操作已取消。";
 "hardware.settings.completed" = "硬件设置已保存。";
-"hardware.settings.failed" = "NAS 未应用这些硬件设置。请重新读取并核对当前值后再试。";
-"hardware.settings.partial" = "部分硬件设置已保存，其他设置未生效或尚未确认。已重新读取当前状态，请逐项核对后再决定是否重新保存。";
+"hardware.settings.failed" = "NAS 未应用这些硬件设置。请重新读取并检查当前值后再试。";
+"hardware.settings.partial" = "部分硬件设置已保存，其他设置未生效或尚未确认。已重新读取当前状态，请逐项检查后再决定是否重新保存。";
 "hardware.settings.permission-denied" = "当前账号不能修改硬件设置。请使用具备系统管理权限的账号。";
 "hardware.settings.saving" = "正在保存硬件设置";
 "hardware.settings.unsupported" = "这台 NAS 暂不支持通过 LanStash 修改这些硬件设置。";
-"hardware.settings.unverified" = "硬件设置请求可能已经提交，但结果尚未确认。请先重新读取并逐项核对硬件设置，再决定是否重新保存。";
+"hardware.settings.unverified" = "硬件设置请求可能已经提交，但结果尚未确认。请先重新读取并逐项检查硬件设置，再决定是否重新保存。";
 "network.address.automatic" = "自动获取地址 · %@";
 "network.address.unassigned" = "尚未分配";
 "network.ethernet.cancelled" = "网络设置修改已取消，没有发出请求。";
@@ -149,12 +149,12 @@
 "network.ethernet.failed" = "NAS 没有应用这些网络设置。请检查填写内容和当前连接后再重试。";
 "network.ethernet.permission-denied" = "当前账号不能修改网络设置。请使用具备网络管理权限的账号。";
 "network.ethernet.unsupported" = "当前 NAS 不支持通过岚仓修改这个网络接口。";
-"network.ethernet.unverified" = "网络设置请求可能已经提交，但结果尚未确认，当前连接也可能已经中断。请尝试使用新地址或原地址重新连接，核对网络设置后再决定是否重新保存。";
+"network.ethernet.unverified" = "网络设置请求可能已经提交，但结果尚未确认，当前连接也可能已经中断。请尝试使用新地址或原地址重新连接，检查网络设置后再决定是否重新保存。";
 "remote-access.section.quickconnect" = "QuickConnect";
 "remote-access.settings.cancelled" = "远程访问设置请求尚未发送，操作已取消。";
 "remote-access.settings.completed" = "远程访问设置已保存。";
 "remote-access.settings.failed" = "NAS 未应用这些远程访问设置。请重新读取当前值后再试。";
-"remote-access.settings.partial" = "部分远程访问设置已保存，其他设置未生效或尚未确认。必要时请先重新连接，重新读取当前设置并核对两项状态后再决定是否保存。";
+"remote-access.settings.partial" = "部分远程访问设置已保存，其他设置未生效或尚未确认。必要时请先重新连接，重新读取当前设置并检查两项状态后再决定是否保存。";
 "remote-access.settings.permission-denied" = "当前账号不能修改远程访问设置。请使用具备网络管理权限的账号。";
 "remote-access.settings.saving" = "正在保存远程访问设置";
 "remote-access.settings.unsupported" = "这台 NAS 暂不支持通过 LanStash 修改这些远程访问设置。";
@@ -162,8 +162,8 @@
 "file-services.settings.cancelled" = "文件服务设置请求尚未发送，操作已取消。";
 "file-services.settings.completed" = "文件服务设置已保存。";
 "file-services.settings.failed" = "NAS 未应用这些文件服务设置。请重新读取当前值后再试。";
-"file-services.settings.invalid" = "请先核对服务设置：端口必须在 1 到 65535 之间；启用中的 FTP 与 SFTP 不能使用相同端口；开启 Time Machine 共享时必须保持 SMB 开启。";
-"file-services.settings.partial" = "部分文件服务设置已保存，其他设置未生效或尚未确认。请重新读取全部文件服务设置并逐项核对，确认当前状态后再决定是否保存。";
+"file-services.settings.invalid" = "请先检查服务设置：端口必须在 1 到 65535 之间；启用中的 FTP 与 SFTP 不能使用相同端口；开启 Time Machine 共享时必须保持 SMB 开启。";
+"file-services.settings.partial" = "部分文件服务设置已保存，其他设置未生效或尚未确认。请重新读取全部文件服务设置并逐项检查，确认当前状态后再决定是否保存。";
 "file-services.settings.permission-denied" = "当前账号不能修改文件服务设置。请使用具备系统服务管理权限的账号。";
 "file-services.settings.saving" = "正在保存文件服务设置";
 "file-services.settings.unsupported" = "这台 NAS 暂不支持通过岚仓修改全部所选文件服务设置。";
@@ -171,8 +171,8 @@
 "terminal.settings.cancelled" = "远程终端设置请求尚未发送，操作已取消。";
 "terminal.settings.completed" = "远程终端设置已保存。";
 "terminal.settings.failed" = "NAS 未应用这些远程终端设置。请重新读取当前值后再试。";
-"terminal.settings.invalid" = "请先核对 SSH 端口，输入 1 到 65535 之间的数字。";
-"terminal.settings.partial" = "只有部分远程终端设置得到确认。请重新读取 SSH、Telnet 和 SSH 端口，逐项核对后再决定是否保存。";
+"terminal.settings.invalid" = "请先检查 SSH 端口，输入 1 到 65535 之间的数字。";
+"terminal.settings.partial" = "只有部分远程终端设置得到确认。请重新读取 SSH、Telnet 和 SSH 端口，逐项检查后再决定是否保存。";
 "terminal.settings.permission-denied" = "当前账号不能修改远程终端设置。请使用具备系统服务管理权限的账号。";
 "terminal.settings.port-invalid" = "请输入 1 到 65535 之间的端口。";
 "terminal.settings.saving" = "正在保存远程终端设置";
@@ -182,8 +182,8 @@
 "proxy.settings.completed" = "互联网代理设置已保存。";
 "proxy.settings.failed" = "NAS 未应用这些互联网代理设置。请重新读取当前值后再试。";
 "proxy.settings.host-invalid" = "请只输入代理主机名或 IP 地址，不要包含协议、路径或用户信息。";
-"proxy.settings.invalid" = "请先核对代理地址和端口后再保存。";
-"proxy.settings.partial" = "只有部分互联网代理设置得到确认。请重新读取开关、地址和端口，逐项核对后再决定是否保存。";
+"proxy.settings.invalid" = "请先检查代理地址和端口后再保存。";
+"proxy.settings.partial" = "只有部分互联网代理设置得到确认。请重新读取开关、地址和端口，逐项检查后再决定是否保存。";
 "proxy.settings.permission-denied" = "当前账号不能修改互联网代理设置。请使用具备网络管理权限的账号。";
 "proxy.settings.port-invalid" = "请输入 1 到 65535 之间的端口。";
 "proxy.settings.saving" = "正在保存互联网代理设置";
@@ -193,9 +193,9 @@
 "region.settings.completed" = "区域与时间设置已保存。";
 "region.settings.failed" = "NAS 未应用这些区域与时间设置。请重新读取当前值后再试。";
 "region.settings.format-required" = "请输入非空的显示格式。";
-"region.settings.invalid" = "请先核对显示格式、时区、时间服务器和手动日期后再保存。";
+"region.settings.invalid" = "请先检查显示格式、时区、时间服务器和手动日期后再保存。";
 "region.settings.manual-date-required" = "请选择要设置到 NAS 的日期与时间。";
-"region.settings.ntp-warning" = "客户端会先保存并回读配置；如果校时方式或服务器列表发生变化，NAS 随后会立即校时，这可能使当前登录失效或暂时影响证书核对。";
+"region.settings.ntp-warning" = "更改校时方式或时间服务器会立即调整 NAS 时间，可能需要重新登录，也可能暂时无法连接。";
 "region.settings.partial" = "部分区域或时间设置已确认，但其他设置或立即校时未生效或尚未确认。必要时请重新连接，重新读取全部值；确认 NAS 当前时间前不要再次保存。";
 "region.settings.permission-denied" = "当前账号不能修改区域与时间设置。请使用具备系统管理权限的账号。";
 "region.settings.saving" = "正在保存区域与时间设置";
@@ -204,12 +204,12 @@
 "region.settings.unverified" = "区域与时间请求可能已经改变 NAS 时钟并使连接中断，但结果尚未确认。请重新连接并读取全部值；确认 NAS 当前时间前不要再次保存。";
 "security.settings.cancelled" = "安全设置请求尚未发送，操作已取消。";
 "security.settings.completed" = "安全设置已保存。";
-"security.settings.failed" = "NAS 未应用这些安全设置。请核对当前设置后再试。";
-"security.settings.partial" = "部分安全设置已保存，其他设置未生效。已重新读取当前状态，请逐项核对后再决定是否重新保存。";
+"security.settings.failed" = "NAS 未应用这些安全设置。请检查当前设置后再试。";
+"security.settings.partial" = "部分安全设置已保存，其他设置未生效。已重新读取当前状态，请逐项检查后再决定是否重新保存。";
 "security.settings.permission-denied" = "当前账号不能修改安全设置。请使用具备安全管理权限的账号。";
 "security.settings.saving" = "正在保存安全设置";
 "security.settings.unsupported" = "这台 NAS 暂不支持通过 LanStash 修改这些安全设置。";
-"security.settings.unverified" = "安全设置请求可能已经提交，但结果尚未确认。请先重新读取并核对当前设置，再决定是否重新保存。";
+"security.settings.unverified" = "安全设置请求可能已经提交，但结果尚未确认。请先重新读取并检查当前设置，再决定是否重新保存。";
 "storage.disk-test.start.cancelled" = "硬盘检测请求尚未发送，操作已取消。";
 "storage.disk-test.start.completed" = "硬盘检测已开始。";
 "storage.disk-test.start.failed" = "硬盘检测未能开始。请刷新检测状态，并确认没有其他检测正在运行后再试。";
@@ -227,7 +227,7 @@
 "operation.skipped_duplicates" = "%@已跳过 %@ 个同名项目。";
 "package.control.busy" = "这个套件正在执行其他操作，请等待当前操作完成。";
 "package.control.cancelled" = "套件操作已取消，没有发出请求。";
-"package.control.failed" = "NAS 没有完成套件操作。请刷新套件列表并核对当前状态后再试。";
+"package.control.failed" = "NAS 没有完成套件操作。请刷新套件列表并检查当前状态后再试。";
 "package.control.in-progress" = "正在处理套件操作";
 "package.control.not-found" = "这个套件已不存在。请刷新套件列表。";
 "package.control.permission-denied" = "当前账号不能启动或停止套件。请使用具备套件管理权限的账号。";
@@ -237,13 +237,13 @@
 "package.start.confirm-button" = "启动套件";
 "package.start.confirm-message" = "要启动“%@”吗？相关服务可能需要一些时间才能使用。";
 "package.start.confirm-title" = "启动这个套件？";
-"package.start.unavailable" = "这个套件当前不能启动。请刷新套件列表并核对状态。";
+"package.start.unavailable" = "这个套件当前不能启动。请刷新套件列表并检查状态。";
 "package.start.unverified" = "启动请求可能已经提交，但结果尚未确认。请刷新套件列表；确认套件尚未运行前，不要再次启动。";
 "package.stop.completed" = "套件已停止。";
 "package.stop.confirm-button" = "停止套件";
 "package.stop.confirm-message" = "要停止“%@”吗？这个套件提供的功能和连接将暂时无法使用。";
 "package.stop.confirm-title" = "停止这个套件？";
-"package.stop.unavailable" = "这个套件当前不能停止。请刷新套件列表并核对状态。";
+"package.stop.unavailable" = "这个套件当前不能停止。请刷新套件列表并检查状态。";
 "package.stop.unverified" = "停止请求可能已经提交，但结果尚未确认。请刷新套件列表；确认套件仍在运行前，不要再次停止。";
 "package.upgrade.unsupported" = "岚仓暂不支持升级套件。";
 "package.uninstall.cancelled" = "卸载已取消，没有发出请求。";
@@ -251,19 +251,19 @@
 "package.uninstall.failed" = "NAS 没有完成卸载。请刷新套件列表，确认套件仍在后再重试。";
 "package.uninstall.permission-denied" = "当前账号不能卸载这个套件。请使用具备套件管理权限的账号。";
 "package.uninstall.unsupported" = "当前 NAS 不支持通过岚仓卸载这个套件。";
-"package.uninstall.unverified" = "卸载请求可能已经提交，但尚未确认结果。请先刷新套件列表核对，暂时不要再次卸载。";
+"package.uninstall.unverified" = "卸载请求可能已经提交，但尚未确认结果。请先刷新套件列表检查，暂时不要再次卸载。";
 "account.delete.cancelled" = "账号删除已取消，没有发出请求。";
 "account.delete.completed" = "账号已删除。";
 "account.delete.failed" = "NAS 没有删除这个账号。请刷新账号列表，确认账号仍在后再重试。";
 "account.delete.permission-denied" = "这个账号不能删除，或当前账号没有删除权限。";
 "account.delete.unsupported" = "当前 NAS 不支持通过岚仓删除账号。";
-"account.delete.unverified" = "删除请求可能已经提交，但尚未确认结果。请先刷新账号列表核对，暂时不要再次删除。";
+"account.delete.unverified" = "删除请求可能已经提交，但尚未确认结果。请先刷新账号列表检查，暂时不要再次删除。";
 "group.delete.cancelled" = "群组删除已取消，没有发出请求。";
 "group.delete.completed" = "群组已删除。";
 "group.delete.failed" = "NAS 没有删除这个群组。请刷新群组列表，确认群组仍在后再重试。";
 "group.delete.permission-denied" = "这个群组不能删除，或当前账号没有删除权限。";
 "group.delete.unsupported" = "当前 NAS 不支持通过岚仓删除群组。";
-"group.delete.unverified" = "删除请求可能已经提交，但尚未确认结果。请先刷新群组列表核对，暂时不要再次删除。";
+"group.delete.unverified" = "删除请求可能已经提交，但尚未确认结果。请先刷新群组列表检查，暂时不要再次删除。";
 "photo.albums.count" = "%@ 个相册";
 "photo.item.accessibility" = "%@，%@";
 "photo.type.album" = "相册";
@@ -278,28 +278,28 @@
 "settings.language.footer" = "系统语言不受支持时，岚仓会使用英语。";
 "settings.language.title" = "语言";
 "virtual-machine.delete.cancelled" = "虚拟机删除已取消，没有发送任何更改。";
-"virtual-machine.delete.authentication" = "登录已失效。请重新登录并核对虚拟机，再决定是否重新删除。";
+"virtual-machine.delete.authentication" = "登录已失效。请重新登录并检查虚拟机，再决定是否重新删除。";
 "virtual-machine.delete.completed" = "所选虚拟机已删除。";
 "virtual-machine.delete.failed" = "未能删除所选虚拟机。请确认它们仍然存在且已经停止，然后重试。";
-"virtual-machine.delete.partial" = "部分虚拟机已删除，其余尚未完成。请先在 NAS 上核对，再处理剩余项目。";
+"virtual-machine.delete.partial" = "部分虚拟机已删除，其余尚未完成。请先在 NAS 上检查，再处理剩余项目。";
 "virtual-machine.delete.permission-denied" = "当前账号不能删除这些虚拟机。请使用管理员账号，或联系管理员授予权限。";
 "virtual-machine.delete.unsupported" = "当前 NAS 不支持通过岚仓删除虚拟机。";
-"virtual-machine.delete.unverified" = "删除可能已经生效。请先刷新虚拟机列表核对，再决定是否重试。";
+"virtual-machine.delete.unverified" = "删除可能已经生效。请先刷新虚拟机列表检查，再决定是否重试。";
 "virtual-machine-image.delete.cancelled" = "虚拟机映像删除已取消，没有发送任何更改。";
-"virtual-machine-image.delete.authentication" = "登录已失效。请重新登录并核对映像，再决定是否重新删除。";
+"virtual-machine-image.delete.authentication" = "登录已失效。请重新登录并检查映像，再决定是否重新删除。";
 "virtual-machine-image.delete.completed" = "所选虚拟机映像已删除。";
 "virtual-machine-image.delete.failed" = "未能删除所选虚拟机映像。请确认它们仍然存在且未被占用，然后重试。";
-"virtual-machine-image.delete.partial" = "部分虚拟机映像已删除，其余尚未完成。请先在 NAS 上核对，再处理剩余项目。";
+"virtual-machine-image.delete.partial" = "部分虚拟机映像已删除，其余尚未完成。请先在 NAS 上检查，再处理剩余项目。";
 "virtual-machine-image.delete.permission-denied" = "当前账号不能删除这些虚拟机映像。请使用管理员账号，或联系管理员授予权限。";
 "virtual-machine-image.delete.unsupported" = "当前 NAS 不支持通过岚仓删除虚拟机映像。";
-"virtual-machine-image.delete.unverified" = "删除可能已经生效。请先刷新虚拟机映像列表核对，再决定是否重试。";
+"virtual-machine-image.delete.unverified" = "删除可能已经生效。请先刷新虚拟机映像列表检查，再决定是否重试。";
 "virtual-machine-network.delete.cancelled" = "虚拟机网络删除已取消，没有发送任何更改。";
 "virtual-machine-network.delete.completed" = "所选虚拟机网络已删除。";
 "virtual-machine-network.delete.failed" = "未能删除所选虚拟机网络。请确认它们仍然存在且未被占用，然后重试。";
 "virtual-machine-network.delete.partial" = "部分虚拟机网络已删除，其余网络的结果尚未确认。请刷新网络列表后再决定是否重试。";
 "virtual-machine-network.delete.permission-denied" = "当前账号不能删除这些虚拟机网络。请使用管理员账号，或联系管理员授予权限。";
 "virtual-machine-network.delete.unsupported" = "当前 NAS 不支持通过岚仓删除虚拟机网络。";
-"virtual-machine-network.delete.unverified" = "删除可能已经生效。请先刷新虚拟机网络列表核对，再决定是否重试。";
+"virtual-machine-network.delete.unverified" = "删除可能已经生效。请先刷新虚拟机网络列表检查，再决定是否重试。";
 "shared.006df27b0005ac55" = "请选择要聊天的用户。";
 "shared.015a36c415279fb5" = "所选安装映像已不可用，请刷新后重新选择。";
 "shared.03e86493986f245a" = "这台 NAS 的 File Station 版本暂不受支持。";
@@ -324,7 +324,7 @@
 "shared.14f852b3c59ec0c8" = "请选择 .torrent、.nzb 或包含下载网址的 .txt 文件。";
 "shared.15a56baee335807a" = "下载失败，请确认当前用户有权读取这个文件。";
 "shared.1750af3117ab4301" = "请输入网络名称。";
-"shared.17d2e16862f16829" = "共享空间";
+"shared.17d2e16862f16829" = "共享照片";
 "shared.18b4f39557c377e4" = "登录已过期，请重新登录。";
 "shared.18c37943b50afde0" = "请选择一个文件，不要选择文件夹。";
 "shared.18e15bfc47d389cd" = "无法读取已保存的登录状态，请重新登录。";
@@ -385,7 +385,7 @@
 "shared.4da44b2e6887b5ed" = "请输入 NAS 地址或 QuickConnect ID。";
 "shared.4f060f32743040c5" = "虚拟机优先级设置无效，请重新选择。";
 "shared.51bdbefbc0c88421" = "无法读取所选文件，请重新选择。";
-"shared.51fcaa8035fc61e2" = "个人空间";
+"shared.51fcaa8035fc61e2" = "我的照片";
 "shared.5350a51d42c2c339" = "请输入虚拟机名称。";
 "shared.539873656a8d3b33" = "压缩包名称过长，请缩短名称后重试。";
 "shared.53f82a3866fbda42" = "请输入用户名和密码。";
@@ -399,7 +399,7 @@
 "shared.59ee3335304d8042" = "这个连接不能在这里断开。";
 "shared.59faeb679e4861af" = "无法准备远程控制台，请刷新后重试。";
 "shared.5c8573de7cce9571" = "请选择这台 Mac 上的保存位置。";
-"shared.5dcc7495647890e0" = "无法打开这个位置，因为它不在当前照片空间中。";
+"shared.5dcc7495647890e0" = "无法打开这个位置。请返回文件夹列表重新选择。";
 "shared.5e35450bf91845f5" = "下载暂未完成，可以在传输中心继续。";
 "shared.5f35ed652b825e19" = "这个文件或文件夹已不存在。";
 "shared.60be7160962c7372" = "NAS 尚未确认 DDNS 记录已删除，请刷新后重试。";
@@ -426,14 +426,14 @@
 "shared.7031852e2ed8042f" = "请输入要搜索的映像名称。";
 "shared.7047a09e87d95943" = "请先启动虚拟机，再打开远程控制台。";
 "shared.706d4bbb975fcdc6" = "找不到这台虚拟机，请刷新后重试。";
-"shared.7074fa008dad7ab4" = "只能读取当前照片空间中的文件夹。";
+"shared.7074fa008dad7ab4" = "请选择当前照片列表中的文件夹。";
 "shared.7172e0328c485e2d" = "允许失败次数应为 1 到 9999。";
 "shared.71baa97fe8c71269" = "文件操作没有完成。";
 "shared.71de0e6207d12dc7" = "当前目录下不允许上传文件，请确认权限与服务器策略。";
 "shared.71f5972b6a39b58a" = "NAS 未能完成映像删除，请刷新后重试。";
 "shared.73537393048d9596" = "请先选择一个映像。";
 "shared.740aa171913b9fac" = "这台 NAS 的系统版本暂不支持读取压缩包内容。";
-"shared.747b72d0d6fc61f9" = "无法自动确认这台 NAS 的身份，请核对安全信息后继续。";
+"shared.747b72d0d6fc61f9" = "无法自动确认这台 NAS 的身份，请检查安全信息后继续。";
 "shared.75457fae2010a2d6" = "当前连接方式不能发送附件，请重新连接后重试。";
 "shared.75b08cdfd652ff42" = "当前用户没有使用群晖 Chat 的权限，请让管理员在 DSM 中开启应用权限。";
 "shared.783c6fb80b2f8038" = "没有找到这条定时消息，请刷新后重试。";
@@ -586,7 +586,7 @@
 "shared.f41be5e7aec143e3" = "处理器数量应在 1 到 64 之间。";
 "shared.f4697c2ce8685eba" = "请输入账号名称。";
 "shared.f57a2aff1b6f5542" = "请选择这台 NAS 支持的风扇模式。";
-"shared.f7c1562e7a9e3cd8" = "设置是否已保存尚未确认。请先在 DSM 中核查，不要重复保存。";
+"shared.f7c1562e7a9e3cd8" = "设置是否已保存尚未确认。请先在 DSM 中检查，不要重复保存。";
 "shared.f9112198a60b7d70" = "描述不能超过 1024 个字符。";
 "shared.f9672d024946937d" = "这台 NAS 暂不能校验重复文件。";
 "shared.f975fe7c14e442cf" = "群聊已创建，但部分成员可能还没有加入。请在群晖 Chat 中检查成员列表。";
@@ -629,7 +629,7 @@
 "ui.02fd538b5510e8ba" = "搜索照片或视频";
 "ui.03671d6ddf237f70" = "消息提醒";
 "ui.038b9263cfd8c1a8" = "正在载入文件夹…";
-"ui.03ebb07bb59ddce2" = "密码或密钥只用于本次提交，不会保存在 Mac 客户端。保存前会先由 NAS 验证连接，再重新读取记录确认结果。";
+"ui.03ebb07bb59ddce2" = "密码或密钥仅用于这次连接，不会保存在此 Mac 上。";
 "ui.03f2e448dbfc3943" = "虚拟机已删除。";
 "ui.041c8bf2f9cd31f3" = "这台 NAS 暂未返回系统概况。";
 "ui.042274cf3d451290" = "选项 %@";
@@ -691,7 +691,7 @@
 "ui.0bdd80480ee76860" = "代理会影响 NAS 联网，请确认地址可用。";
 "ui.0bee1672c6d4a3a9" = "移动到…";
 "ui.0c00c2f57088c5fa" = "双重验证代码";
-"ui.0c132f8c1951432b" = "当前照片空间中尚无文件夹。";
+"ui.0c132f8c1951432b" = "还没有文件夹。";
 "ui.0c1777d6b7a70cc7" = "取消这个分享？";
 "ui.0c184871f658375a" = "昨天";
 "ui.0c349a4e26f357d7" = "这里还没有相册";
@@ -842,7 +842,7 @@
 "ui.1eff9b7d894c0ff9" = "修改…";
 "ui.1f0117cd8f4f1c48" = "这台 NAS 还没有可管理的安装映像。";
 "ui.1f0a01abb1908f19" = "无法完成操作";
-"ui.1f30f490b6eb4a19" = "我已核对，继续连接";
+"ui.1f30f490b6eb4a19" = "信任并连接";
 "ui.1f39096f50fcbc99" = "任务来源";
 "ui.1f42dd983ef3248f" = "使用中的网络可能无法删除。删除后，连接到该网络的虚拟机可能无法正常通信。";
 "ui.1f7269533836a148" = "未分配主机";
@@ -984,7 +984,7 @@
 "ui.35d7a7756ff23adf" = "还没有运行记录";
 "ui.360480034cc3e9d3" = "操作系统";
 "ui.36517d179e0f88a8" = "正在读取目录…";
-"ui.3659936f4893e4e0" = "首次连接时可能需要核对这台 NAS 的安全信息；如果以后发生变化，岚仓会立即提醒你。";
+"ui.3659936f4893e4e0" = "首次连接时可能需要检查这台 NAS 的安全信息；如果以后发生变化，岚仓会立即提醒你。";
 "ui.366ada1d2fcfc4b3" = "系统日志";
 "ui.36745810fb80f3eb" = "保留安排";
 "ui.36b7dfe53cf9b5df" = "正在处理操作";
@@ -1064,7 +1064,7 @@
 "ui.41b3f0900cf8fd0f" = "搜索 Docker Hub 映像（例如 aliyunpan、nginx）";
 "ui.42107622c9bbf85c" = "没有读取到用户。请先重新连接；如果仍为空，请确认当前账号可以使用群晖 Chat。";
 "ui.421d797b31083050" = "需要压缩包密码";
-"ui.428cdf164eefc170" = "正在核对重复文件";
+"ui.428cdf164eefc170" = "正在检查重复文件";
 "ui.428fb8bfeecf7f91" = "异常";
 "ui.42b6ace9affb8353" = "压缩项目";
 "ui.42f5efe784424e46" = "证书名称";
@@ -1561,7 +1561,7 @@
 "ui.8bdde5a2fb782204" = "选择一条执行记录。";
 "ui.8be0ea36a9bba286" = "正在连接…";
 "ui.8c04c080fcc61432" = "%@ 个错误";
-"ui.8c1040ae852de1b8" = "没有可浏览的照片空间";
+"ui.8c1040ae852de1b8" = "暂时无法浏览照片";
 "ui.8c1a000858cfcd2d" = "显示当前登录账号可访问的存储空间，不包含无权查看的存储空间。";
 "ui.8c22e5562e176879" = "从最近访问中移除";
 "ui.8c603369c2c12ca3" = "启用防火墙";
@@ -1823,7 +1823,7 @@
 "ui.aee88743413144a2" = "刷新";
 "ui.af90a08fec8ee28d" = "加载更多";
 "ui.afb63a620bdcff15" = "安全";
-"ui.afbc722b9ad55bef" = "照片空间";
+"ui.afbc722b9ad55bef" = "照片来源";
 "ui.afd0935d8e0eeb33" = "保留压缩包内的文件夹结构";
 "ui.afe5b2261f44779b" = "自动登录";
 "ui.affdb1b5d9e5b288" = "这块硬盘没有提供可用的 S.M.A.R.T. 检测功能。";
@@ -1996,7 +1996,7 @@
 "ui.c9b87f516a38ea36" = "五";
 "ui.c9b9ae7a61444ab7" = "上一页";
 "ui.c9cb0f813cc56383" = "没有计划任务";
-"ui.c9e8421e4283b968" = "请确认个人照片空间或共享照片空间已在 NAS 中启用，并允许当前账号访问。";
+"ui.c9e8421e4283b968" = "请在 NAS 上启用照片功能，并允许当前账号访问，然后重试。";
 "ui.c9f2141af12cca30" = "选择用户开始聊天或创建私人群聊";
 "ui.ca0af0bbf50d2b45" = "下载映像";
 "ui.ca2cc77f49f1ee00" = "文件“%@”已创建。";
@@ -2044,7 +2044,7 @@
 "ui.d063937855cf99a7" = "添加选项";
 "ui.d07abfb11e7e0d48" = "检查更新失败";
 "ui.d09045a8a3d7a70e" = "正在打开文件夹…";
-"ui.d0b56b3e4f2fb3cf" = "这台 NAS 没有响应媒体分段读取，暂时无法流式播放。";
+"ui.d0b56b3e4f2fb3cf" = "暂时无法直接播放。请下载后用本机应用打开。";
 "ui.d0b8762f8066116a" = "停止后，本次检测不会产生完整结果；以后仍可重新开始检测。";
 "ui.d0b9d702115fa28d" = "加密 FTP";
 "ui.d0c9a0e81079a7b2" = "再次输入密码";
@@ -2160,7 +2160,7 @@
 "ui.e07f0d5f213bcc57" = "允许 SSH 连接";
 "ui.e09822e61214bb5f" = "安全防护";
 "ui.e0c9f46a0d2db5c0" = "没有下载任务";
-"ui.e0ce767ce95e74bd" = "系统无法自动确认这台 NAS 的身份。请在 DSM 控制面板或浏览器中核对下面的安全指纹，一致后再继续。";
+"ui.e0ce767ce95e74bd" = "系统无法自动确认这台 NAS 的身份。请在 DSM 控制面板或浏览器中检查下面的安全指纹，一致后再继续。";
 "ui.e0e2682d4801f7db" = "没有删除这个账号，请刷新后重试。";
 "ui.e0e9deb2554cf77c" = "没有可查看的账号或群组";
 "ui.e0f34707b69f67bd" = "无法整理：请检查 JSON 的括号、引号和逗号。";
@@ -2265,7 +2265,7 @@
 "ui.f060a7a7228db374" = "正在读取标签";
 "ui.f0ab22db233be1f5" = "将附件另存为…";
 "ui.f0b382eeac27d246" = "移除所选下载任务？";
-"ui.f0b77bcbb861e723" = "断开结果尚未确认，请重新读取连接列表或重新登录后核对，不要再次断开。";
+"ui.f0b77bcbb861e723" = "断开结果尚未确认，请重新读取连接列表或重新登录后检查，不要再次断开。";
 "ui.f0ce89906e42d561" = "RAID 类型";
 "ui.f0e2dfb1f52b1108" = "没有可管理的文件服务";
 "ui.f1217f463299df23" = "暂时无法读取 NAS 信息，请稍后重试。";
@@ -2329,8 +2329,8 @@
 "ui.8456cb379b109f1f" = "当前账号没有添加收藏的权限。请使用具备相应权限的账号。";
 "ui.1a328a0c6cdda7f4" = "当前 NAS 不支持添加收藏。";
 "ui.d5f06160eed23cb2" = "已取消添加收藏。";
-"ui.4d9a5f1438e2c7b1" = "删除请求已经发出，但暂时无法确认最终结果。请刷新文件列表核对，先不要再次删除。";
-"ui.6a2c0e8b7f314d95" = "只有部分项目已删除。请刷新文件列表并核对剩余项目，再决定是否继续。";
+"ui.4d9a5f1438e2c7b1" = "删除请求已经发出，但暂时无法确认最终结果。请刷新文件列表检查，先不要再次删除。";
+"ui.6a2c0e8b7f314d95" = "只有部分项目已删除。请刷新文件列表并检查剩余项目，再决定是否继续。";
 "ui.9b5e1c7a3d804f62" = "未能删除所选项目。请检查它们是否仍然存在或正在使用，然后再试。";
 "ui.3f7c1a9e5b206d84" = "当前账号没有删除部分所选项目的权限。请使用具备相应权限的账号。";
 "ui.8c2e6b4a1d957f30" = "当前 NAS 不支持通过此 App 删除所选项目。";
@@ -2402,13 +2402,13 @@
 "ddns.test.unverified" = "测试请求可能已经到达 NAS，但无法确认结果。请先检查连接，再重新测试。";
 "ddns.save.cancelled" = "记录在发送前已取消保存。";
 "ddns.save.completed" = "动态域名记录已保存。";
-"ddns.save.failed" = "保存后无法确认记录。请重新载入动态域名列表并核对记录，再决定是否重试。";
+"ddns.save.failed" = "保存后无法确认记录。请重新载入动态域名列表并检查记录，再决定是否重试。";
 "ddns.save.invalid" = "请先填写服务商、有效域名、账号和必需的密码或密钥。";
 "ddns.save.saving" = "正在保存动态域名记录";
-"ddns.save.unverified" = "保存请求可能已经到达 NAS。请重新载入记录列表并核对结果，不要立即再次保存。";
+"ddns.save.unverified" = "保存请求可能已经到达 NAS。请重新载入记录列表并检查结果，不要立即再次保存。";
 "ddns.delete.cancelled" = "删除请求在发送前已取消。";
 "ddns.delete.completed" = "动态域名记录已删除。";
-"ddns.delete.failed" = "无法确认记录已经删除。请重新载入列表并核对后再试。";
+"ddns.delete.failed" = "无法确认记录已经删除。请重新载入列表并检查后再试。";
 "ddns.delete.invalid" = "无法识别要删除的动态域名记录。";
 "ddns.delete.unverified" = "删除请求可能已经到达 NAS。请重新载入列表，确认记录是否仍存在后再决定是否删除。";
 "ddns.refresh.cancelled" = "地址更新请求在发送前已取消。";
@@ -2421,15 +2421,15 @@
 "ddns.editor.password-required" = "请输入创建这条记录所需的密码或密钥。";
 "ddns.editor.privacy-note" = "密码或密钥不会保存在本机。";
 "power.action.accepted-title" = "电源请求已接受";
-"power.action.attention-title" = "继续前请核对 NAS";
+"power.action.attention-title" = "继续前请检查 NAS";
 "power.action.cancelled-title" = "电源请求已取消";
 "power.action.failed-title" = "无法发送电源请求";
 "power.action.sending" = "正在发送电源请求";
 "power.action.busy" = "另一项关机或重启请求仍在进行。请等待当前操作结束。";
-"power.action.permission-denied" = "当前账号不能关机或重启 NAS。请使用管理员账号重新登录，并先核对 NAS 状态。";
+"power.action.permission-denied" = "当前账号不能关机或重启 NAS。请使用管理员账号重新登录，并先检查 NAS 状态。";
 "power.action.unsupported" = "这台 NAS 不提供所请求的关机或重启操作。";
 "power.action.preflight-failed" = "发送电源请求前无法完成 NAS 检查。请检查连接，并确认请求尚未发送后再试。";
-"power.action.session-expired" = "登录状态已经失效。请重新登录并先核对 NAS，再决定是否发送新的电源请求。";
+"power.action.session-expired" = "登录状态已经失效。请重新登录并先检查 NAS，再决定是否发送新的电源请求。";
 "power.action.unverified" = "发送电源请求时连接已经中断。NAS 可能正在关机或重启。请检查设备或等待它重新连接，现在不要再次发送请求。";
 "power.action.cancelled" = "电源请求在发送前已取消。";
 "power.action.rejected" = "NAS 拒绝了电源请求。请检查账号权限和设备当前状态后再决定是否重试。";
@@ -2437,7 +2437,7 @@
 "power.reboot.accepted" = "DSM 已接受重启请求，服务和连接将暂时不可用；这不代表已经确认 NAS 完成重启并重新上线。";
 "desktopDrive.title" = "本地磁盘挂载";
 "desktopDrive.diagnostics.title" = "诊断摘要";
-"desktopDrive.diagnostics.description" = "仅导出脱敏摘要，请先核对内容。";
+"desktopDrive.diagnostics.description" = "仅导出脱敏摘要，请先检查内容。";
 "desktopDrive.diagnostics.preview" = "预览诊断摘要";
 "desktopDrive.diagnostics.export" = "保存摘要…";
 "desktopDrive.diagnostics.close" = "关闭";
@@ -2567,8 +2567,8 @@
 "desktopDrive.delete.conflict" = "文件已变化或删除已暂停。请在岚仓的“读写设置”中检查后再试。";
 "desktopDrive.delete.unknown" = "尚未确认是否已删除。请在岚仓的“读写设置”中检查后再试。";
 "desktopDrive.delete.retry" = "再次删除";
-"desktopDrive.delete.retryTitle" = "已核对要删除的内容？";
-"desktopDrive.delete.retryMessage" = "将再次尝试删除“%@”。这可能无法恢复，请先核对 NAS 上的内容。";
+"desktopDrive.delete.retryTitle" = "已检查要删除的内容？";
+"desktopDrive.delete.retryMessage" = "将再次尝试删除“%@”。这可能无法恢复，请先检查 NAS 上的内容。";
 "desktopDrive.delete.stopMessage" = "停止后不会再尝试删除，但无法恢复已删除的文件。";
 "desktopDrive.delete.statusPaused" = "删除已暂停";
 "desktopDrive.delete.statusUnconfirmed" = "删除未确认";
@@ -2576,7 +2576,7 @@
 "desktopDrive.delete.summaryUnknown" = "未确认是否已删除。请先检查 NAS 上的内容。";
 "desktopDrive.writeback.retryTitle" = "已检查 NAS 上的文件？";
 "desktopDrive.writeback.retryMessage" = "继续可能用本机修改替换 NAS 上的当前文件。如需单独保留，请先另存本机副本。";
-"desktopDrive.writeback.retryConfirm" = "我已检查，重新保存";
+"desktopDrive.writeback.retryConfirm" = "重新保存";
 "desktopDrive.writeback.loadError" = "无法读取或刷新这些修改。请重新打开此窗口后再试。";
 "desktopDrive.writeback.exportError" = "无法保存本机副本。请选择可写入的文件夹和新的文件名后重试。";
 "desktopDrive.writeback.stop" = "停止重试";
@@ -2790,7 +2790,7 @@
 "communityReport.settings.message" = "生成脱敏的兼容性报告草稿。";
 "communityReport.settings.action" = "准备报告草稿…";
 "communityReport.title" = "社区兼容性报告草稿";
-"communityReport.description" = "核对信息后导出草稿，不会自动提交。";
+"communityReport.description" = "检查信息后导出草稿，不会自动提交。";
 "communityReport.preparing" = "正在准备公开字段…";
 "communityReport.empty.title" = "没有可用的测试项目";
 "communityReport.empty.message" = "请关闭此窗口，更新 App 后重试。";
@@ -2910,7 +2910,7 @@
 "mobile.activity.status-failed" = "传输失败";
 "mobile.activity.status-cancelled-before-submission" = "已在开始前取消";
 "mobile.activity.status-cancelled" = "已取消";
-"mobile.activity.status-result-needs-review" = "请核对结果";
+"mobile.activity.status-result-needs-review" = "请检查结果";
 "mobile.activity.operation-download-station" = "Download Station 任务";
 "mobile.activity.operation-file-copy-move" = "复制或移动文件和文件夹";
 "mobile.activity.operation-file-delete" = "删除文件";
@@ -3014,13 +3014,13 @@
 "mobile.files.details.value.not-allowed" = "不允许";
 "mobile.files.details.recycle-location" = "回收站";
 "mobile.photos.title" = "照片";
-"mobile.photos.space" = "照片空间";
+"mobile.photos.space" = "照片来源";
 "mobile.photos.filter.title" = "显示内容";
 "mobile.photos.filter.all" = "文件夹和照片";
 "mobile.photos.filter.images" = "仅照片";
-"mobile.photos.loading.spaces" = "正在查找照片空间…";
+"mobile.photos.loading.spaces" = "正在加载照片…";
 "mobile.photos.loading.album" = "正在加载照片…";
-"mobile.photos.empty.spaces.title" = "没有可用的照片空间";
+"mobile.photos.empty.spaces.title" = "暂时无法浏览照片";
 "mobile.photos.empty.spaces.message" = "请确认 NAS 已启用个人或共享照片文件夹，并允许当前账号访问。";
 "mobile.photos.empty.album.title" = "此相册为空";
 "mobile.photos.empty.album.message" = "请从其他设备添加照片，然后刷新此相册。";
@@ -3109,14 +3109,14 @@
 "mobile.chat.send.hint" = "将此消息发送到当前选中的会话。";
 "mobile.chat.action.send" = "发送";
 "mobile.chat.sending" = "正在发送…";
-"mobile.chat.send.failed" = "无法确认消息是否已发送。再次发送前，请先核对此会话。";
+"mobile.chat.send.failed" = "无法确认消息是否已发送。再次发送前，请先检查此会话。";
 "mobile.chat.message.action.delete" = "删除";
 "mobile.chat.message.delete.confirm.title" = "删除这条消息？";
 "mobile.chat.message.delete.confirm.message" = "这会从 Synology Chat 中删除此消息，且无法撤销。";
 "mobile.chat.message.delete.confirm.cancel" = "取消";
 "mobile.chat.message.delete.progress" = "正在删除消息…";
 "mobile.chat.message.delete.failed" = "无法删除这条消息。请刷新此会话后再试。";
-"mobile.chat.send.review" = "请刷新并核对此会话，然后再发送相同消息。";
+"mobile.chat.send.review" = "请刷新并检查此会话，然后再发送相同消息。";
 "mobile.chat.attachment.action.cancel" = "取消";
 "mobile.chat.attachment.action.files" = "选择文件";
 "mobile.chat.attachment.action.photos" = "选择照片";
@@ -3133,7 +3133,7 @@
 "mobile.chat.attachment.preview.hint" = "预览此附件。";
 "mobile.chat.attachment.remote.failed" = "无法准备此附件。请检查连接后重试。";
 "mobile.chat.attachment.remote.loading" = "正在准备附件…";
-"mobile.chat.attachment.review" = "无法确认附件是否已发送。再次发送前，请刷新并核对此会话。";
+"mobile.chat.attachment.review" = "无法确认附件是否已发送。再次发送前，请刷新并检查此会话。";
 "mobile.chat.attachment.save.hint" = "选择保存此附件副本的位置。";
 "mobile.chat.attachment.sending" = "正在发送附件…";
 "mobile.chat.attachment.thumbnail.loading" = "正在加载附件预览…";
@@ -3164,12 +3164,12 @@
 "mobile.downloads.create.creating.message" = "正在等待 NAS 确认新的下载任务。";
 "mobile.downloads.create.success.title" = "任务已创建";
 "mobile.downloads.create.success.message" = "NAS 已确认新的下载任务。";
-"mobile.downloads.create.review.title" = "再次尝试前请先核对 Download Station";
+"mobile.downloads.create.review.title" = "再次尝试前请先检查 Download Station";
 "mobile.downloads.create.review.message" = "请求可能已提交到 NAS，但 App 无法确认新任务。再次创建前，请刷新 Download Station。";
 "mobile.downloads.create.cancelled.title" = "已取消创建";
 "mobile.downloads.create.cancelled.message" = "任务已在发送前取消。";
 "mobile.downloads.create.conflict.title" = "下载任务已发生变化";
-"mobile.downloads.create.conflict.message" = "请刷新 Download Station 并核对任务列表后再试。";
+"mobile.downloads.create.conflict.message" = "请刷新 Download Station 并检查任务列表后再试。";
 "mobile.downloads.create.permission.title" = "你没有所需权限";
 "mobile.downloads.create.permission.message" = "请联系管理员获取权限，然后刷新 Download Station。";
 "mobile.downloads.create.unsupported.title" = "无法在这里添加此任务";
@@ -3187,7 +3187,7 @@
 "mobile.downloads.control.paused.title" = "任务已暂停";
 "mobile.downloads.control.resumed.title" = "任务已继续";
 "mobile.downloads.control.success.message" = "NAS 已确认最新任务状态。";
-"mobile.downloads.control.review.title" = "请先核对此任务";
+"mobile.downloads.control.review.title" = "请先检查此任务";
 "mobile.downloads.control.review.message" = "请求可能已提交到 NAS，但 App 无法确认结果。再次尝试前，请刷新 Download Station。";
 "mobile.downloads.control.cancelled.title" = "已取消操作";
 "mobile.downloads.control.cancelled.message" = "任务控制已在发送前取消。";
@@ -3210,7 +3210,7 @@
 "mobile.downloads.delete.deleting.message" = "正在等待 NAS 确认任务已移除。";
 "mobile.downloads.delete.success.title" = "任务已删除";
 "mobile.downloads.delete.success.message" = "任务已从 Download Station 中移除，已下载文件没有被删除。";
-"mobile.downloads.delete.review.title" = "再次尝试前请先核对 Download Station";
+"mobile.downloads.delete.review.title" = "再次尝试前请先检查 Download Station";
 "mobile.downloads.delete.review.message" = "请求可能已提交到 NAS，但 App 无法确认结果。再次删除前，请刷新 Download Station。";
 "mobile.downloads.delete.cancelled.title" = "已取消删除";
 "mobile.downloads.delete.cancelled.message" = "任务未被删除。";
@@ -3498,8 +3498,8 @@
 "mobile.files.share-link.action.share" = "分享链接";
 "mobile.files.share-link.copied" = "链接已复制。";
 "mobile.files.share-link.action.done" = "完成";
-"mobile.files.share-link.review.title" = "请先核对链接";
-"mobile.files.share-link.review.message" = "NAS 可能已经创建链接，但 App 无法确认。再次尝试前，请先在 DSM 中核对分享链接。";
+"mobile.files.share-link.review.title" = "请先检查链接";
+"mobile.files.share-link.review.message" = "NAS 可能已经创建链接，但 App 无法确认。再次尝试前，请先在 DSM 中检查分享链接。";
 "mobile.files.share-link.failure.title" = "未创建链接";
 "mobile.files.share-link.failure.generic" = "请检查连接后重试。";
 "mobile.files.share-link.failure.permission" = "你没有权限分享此项目。";
@@ -3521,7 +3521,7 @@
 "mobile.files.share-link.management.unsupported.message" = "此 NAS 暂不支持在这里管理分享链接。";
 "mobile.files.share-link.management.refresh" = "刷新链接";
 "mobile.files.share-link.management.row.title" = "分享链接";
-"mobile.files.share-link.management.truncated" = "只核对了前一部分链接，可能还有链接未显示。";
+"mobile.files.share-link.management.truncated" = "只检查了前一部分链接，可能还有链接未显示。";
 "mobile.files.share-link.management.return" = "返回链接列表";
 "mobile.files.share-link.delete.action" = "取消分享";
 "mobile.files.share-link.delete.confirm.title" = "取消此分享链接？";
@@ -3530,8 +3530,8 @@
 "mobile.files.share-link.delete.deleting" = "正在取消分享…";
 "mobile.files.share-link.delete.success.title" = "分享已取消";
 "mobile.files.share-link.delete.success.message" = "NAS 已确认此链接不再有效。";
-"mobile.files.share-link.delete.review.title" = "请先核对分享状态";
-"mobile.files.share-link.delete.review.message" = "请求已发送，但 App 无法确认链接是否已取消。再次更改前，请刷新分享链接或在 DSM 中核对。";
+"mobile.files.share-link.delete.review.title" = "请先检查分享状态";
+"mobile.files.share-link.delete.review.message" = "请求已发送，但 App 无法确认链接是否已取消。再次更改前，请刷新分享链接或在 DSM 中检查。";
 "mobile.files.share-link.delete.failure.title" = "未取消分享";
 "mobile.files.share-link.delete.failure.generic" = "请检查连接后重试。";
 "mobile.files.share-link.delete.failure.permission" = "你没有权限取消此分享链接。";
@@ -3546,11 +3546,11 @@
 "mobile.photos.timeline.action.refresh" = "重新扫描";
 "mobile.photos.timeline.action.clear-search" = "清除搜索和筛选";
 "mobile.photos.timeline.idle.title" = "照片时间线";
-"mobile.photos.timeline.idle.message" = "扫描此照片空间并按月份整理照片和视频。不会上传或更改任何内容。";
+"mobile.photos.timeline.idle.message" = "按月份整理照片和视频，不会上传或修改内容。";
 "mobile.photos.timeline.loading.title" = "正在扫描照片…";
 "mobile.photos.timeline.loading.progress" = "已扫描 %lld 个文件夹";
 "mobile.photos.timeline.empty.title" = "未找到照片或视频";
-"mobile.photos.timeline.empty.message" = "在此照片空间添加媒体后，请重新扫描。";
+"mobile.photos.timeline.empty.message" = "添加照片或视频后，请重新扫描。";
 "mobile.photos.timeline.filtered-empty.title" = "没有匹配的媒体";
 "mobile.photos.timeline.filtered-empty.message" = "请尝试其他文件名，或清除当前筛选。";
 "mobile.photos.timeline.error.title" = "无法扫描照片";
@@ -3558,7 +3558,7 @@
 "mobile.photos.timeline.partial.title" = "部分文件夹未扫描";
 "mobile.photos.timeline.partial.message" = "有 %lld 个文件夹无法读取，已显示的照片仍可使用。";
 "mobile.photos.timeline.truncated.title" = "时间线已达到显示上限";
-"mobile.photos.timeline.truncated.message" = "扫描已在安全上限处停止。请整理照片空间后再试。";
+"mobile.photos.timeline.truncated.message" = "照片和视频较多，暂时只显示已找到的内容。请缩小范围后重试。";
 "mobile.photos.timeline.search.prompt" = "搜索文件名";
 "mobile.photos.timeline.filter.title" = "媒体筛选";
 "mobile.photos.timeline.filter.all" = "全部";
@@ -3655,10 +3655,10 @@
 "mobile.files.mutation.error.unavailable" = "无法更改此位置。";
 "mobile.files.mutation.error.permission" = "你没有权限更改此项目。";
 "mobile.files.mutation.error.conflict" = "项目已发生变化或该名称已被使用。请刷新后重试。";
-"mobile.files.mutation.error.authentication" = "请重新登录，并先核对文件夹后再重试。";
-"mobile.files.mutation.error.unknown" = "无法确认更改结果。请先核对文件夹，再决定是否重试。";
-"mobile.files.mutation.review.title" = "需要核对";
-"mobile.files.mutation.review.message" = "请求可能已经发出，但无法确认结果。请刷新文件夹并核对项目后再决定是否重试。";
+"mobile.files.mutation.error.authentication" = "请重新登录，并先检查文件夹后再重试。";
+"mobile.files.mutation.error.unknown" = "无法确认更改结果。请先检查文件夹，再决定是否重试。";
+"mobile.files.mutation.review.title" = "需要检查";
+"mobile.files.mutation.review.message" = "请求可能已经发出，但无法确认结果。请刷新文件夹并检查项目后再决定是否重试。";
 "mobile.files.mutation.review.dismiss" = "关闭";
 "mobile.files.mutation.path.accessibility" = "当前文件夹：%@";
 "mobile.files.copy-move.copy.action" = "复制到…";
@@ -3685,8 +3685,8 @@
 "mobile.files.copy-move.working.copy" = "正在复制…";
 "mobile.files.copy-move.working.move" = "正在移动…";
 "mobile.files.copy-move.cancelling" = "正在取消…";
-"mobile.files.copy-move.review.title" = "核对此操作";
-"mobile.files.copy-move.review.message" = "操作可能已提交到 NAS。再次尝试前，请核对源位置和目标位置。";
+"mobile.files.copy-move.review.title" = "检查此操作";
+"mobile.files.copy-move.review.message" = "操作可能已提交到 NAS。再次尝试前，请检查源位置和目标位置。";
 "mobile.files.copy-move.review.dismiss" = "关闭";
 "mobile.files.copy-move.permission" = "你没有权限使用此目标位置。请选择其他文件夹，或联系管理员获取权限。";
 "mobile.files.copy-move.unsupported" = "所选项目或目标位置不支持此操作。";
@@ -3705,7 +3705,7 @@
 "mobile.files.copy-move.batch.copy.title" = "复制 %lld 个文件";
 "mobile.files.copy-move.batch.move.title" = "移动 %lld 个文件";
 "mobile.files.copy-move.batch.progress" = "已处理 %1$lld/%2$lld 个文件";
-"mobile.files.copy-move.batch.summary" = "已完成 %1$lld 个，失败 %2$lld 个，待核对 %3$lld 个，已取消 %4$lld 个，未开始 %5$lld 个";
+"mobile.files.copy-move.batch.summary" = "已完成 %1$lld 个，失败 %2$lld 个，待检查 %3$lld 个，已取消 %4$lld 个，未开始 %5$lld 个";
 "mobile.files.copy-move.batch.completed.title" = "批量操作已完成";
 "mobile.files.copy-move.batch.issues.title" = "需要处理";
 "mobile.files.copy-move.batch.issue.permission" = "没有权限";
@@ -3722,24 +3722,24 @@
 "mobile.files.recycle.destination.label" = "目标位置";
 "mobile.files.recycle.destination.accessibility" = "目标位置：%@";
 "mobile.files.recycle.move.message" = "这会将文件移到 NAS 回收站，不会永久删除文件。";
-"mobile.files.recycle.restore.message" = "这会将文件恢复到 NAS 上的原位置。如果无法确认结果，App 会请你核对文件夹。";
+"mobile.files.recycle.restore.message" = "这会将文件恢复到 NAS 上的原位置。如果无法确认结果，App 会请你检查文件夹。";
 "mobile.files.recycle.move.folder.message" = "这会将文件夹及其中内容移到 NAS 回收站，不会永久删除它们。";
-"mobile.files.recycle.restore.folder.message" = "这会将文件夹及其中内容恢复到 NAS 上的原位置。如果无法确认结果，App 会请你核对文件夹。";
+"mobile.files.recycle.restore.folder.message" = "这会将文件夹及其中内容恢复到 NAS 上的原位置。如果无法确认结果，App 会请你检查文件夹。";
 "mobile.files.recycle.cancel" = "取消";
 "mobile.files.recycle.move.submit" = "移到回收站";
 "mobile.files.recycle.restore.submit" = "恢复";
 "mobile.files.recycle.working.move" = "正在移到回收站…";
 "mobile.files.recycle.working.restore" = "正在恢复…";
 "mobile.files.recycle.cancelling" = "正在取消…";
-"mobile.files.recycle.review.title" = "再次尝试前请先核对";
-"mobile.files.recycle.review.message" = "请求可能已经提交到 NAS，但无法确认结果。再次尝试前，请核对源位置和目标位置。";
+"mobile.files.recycle.review.title" = "再次尝试前请先检查";
+"mobile.files.recycle.review.message" = "请求可能已经提交到 NAS，但无法确认结果。再次尝试前，请检查源位置和目标位置。";
 "mobile.files.recycle.review.dismiss" = "关闭";
 "mobile.files.recycle.permission.title" = "你没有所需权限";
 "mobile.files.recycle.permission.message" = "你的账户无法更改此项目。请联系管理员获取权限，然后刷新文件夹。";
 "mobile.files.recycle.unsupported.title" = "此操作不可用";
 "mobile.files.recycle.unsupported.message" = "此 NAS 或位置不支持此操作。你仍可继续浏览和保存副本。";
 "mobile.files.recycle.conflict.title" = "项目或目标位置已发生变化";
-"mobile.files.recycle.conflict.message" = "请刷新文件夹，然后核对项目后再试。";
+"mobile.files.recycle.conflict.message" = "请刷新文件夹，然后检查项目后再试。";
 "mobile.files.recycle.feedback.close" = "关闭";
 "mobile.files.recycle.progress.accessibility" = "%1$@，已完成 %2$lld%%";
 "mobile.downloads.bt-search.action" = "搜索 BT";
@@ -3795,7 +3795,7 @@
 "mobile.chat.create.title" = "新建会话";
 "mobile.chat.create.close" = "关闭";
 "mobile.chat.create.submit" = "创建";
-"mobile.chat.create.review.action" = "核对结果";
+"mobile.chat.create.review.action" = "检查结果";
 "mobile.chat.create.type" = "会话类型";
 "mobile.chat.create.direct" = "一对一聊天";
 "mobile.chat.create.group" = "私人群聊";
@@ -3813,10 +3813,10 @@
 "mobile.chat.create.filtered-empty.title" = "没有匹配的联系人";
 "mobile.chat.create.filtered-empty.message" = "请尝试其他姓名，或清除搜索。";
 "mobile.chat.create.clear-search" = "显示全部";
-"mobile.chat.create.review.title" = "再次尝试前请先核对";
-"mobile.chat.create.review.message" = "NAS 可能已经创建此会话。再次尝试前请先核对结果；不会重复发送创建请求。";
+"mobile.chat.create.review.title" = "再次尝试前请先检查";
+"mobile.chat.create.review.message" = "NAS 可能已经创建此会话。再次尝试前请先检查结果；不会重复发送创建请求。";
 "mobile.chat.create.permission" = "你没有创建此会话的权限。请让 NAS 管理员检查你的 Chat 访问权限。";
-"mobile.chat.create.authentication" = "登录已过期。请重新登录，然后核对会话是否已经创建。";
+"mobile.chat.create.authentication" = "登录已过期。请重新登录，然后检查会话是否已经创建。";
 "mobile.chat.create.unsupported" = "此 NAS 或 Chat Server 版本不提供这类会话。";
 "mobile.chat.create.failed" = "无法创建会话。请检查所选用户和 NAS 连接，然后重试。";
 "mobile.files.storage.title" = "当前账号可见空间";
@@ -4028,46 +4028,46 @@
 "photos.delete.changed" = "照片内容已变化，请刷新照片库后重新选择。";
 "photos.delete.denied" = "你没有删除这张照片的权限，请联系 NAS 管理员检查访问权限。";
 "photos.delete.failed" = "照片未能删除，请刷新照片库后重试。";
-"photos.delete.pending" = "删除结果尚未确认，请先核对结果，不要重复删除。";
-"photos.delete.review" = "核对删除结果";
-"photos.delete.reviewFailed" = "暂时无法核对删除结果，请检查连接后再次核对。";
+"photos.delete.pending" = "删除结果尚未确认，请先检查结果，不要重复删除。";
+"photos.delete.review" = "检查删除结果";
+"photos.delete.reviewFailed" = "暂时无法检查删除结果，请检查连接后再次检查。";
 "photos.delete.done" = "照片已删除。";
 "download.local.permission" = "无法写入所选位置，请重新选择保存位置后再试。";
 "download.local.space" = "没有足够空间保存文件，请释放空间后再试。";
 "container.control.changed" = "所选容器或其状态已改变。请刷新列表、重新选择后再试。";
-"container.control.unverified" = "尚无法确认操作是否完成。请先核对容器状态，不要重复提交。";
+"container.control.unverified" = "尚无法确认操作是否完成。请先检查容器状态，不要重复提交。";
 "container.inventory.invalid" = "无法读取容器列表。请刷新列表后重试。";
 "container.control.confirm.title" = "更改容器运行状态？";
 "container.control.confirm.message" = "将更改所选 %ld 个容器的运行状态，相关服务可能暂时中断。";
 "container.control.managed" = "此容器由套件管理，请在对应套件中进行操作。";
 "container.status.restarting" = "正在重启";
-"container-image.delete.in-use" = "所选镜像正在被容器使用，请先在 DSM 核对关联容器。";
-"container-image.delete.selection-changed" = "所选内容已变化或暂时无法删除。请刷新并重新核对镜像标签。";
+"container-image.delete.in-use" = "所选镜像正在被容器使用，请先在 DSM 检查关联容器。";
+"container-image.delete.selection-changed" = "所选内容已变化或暂时无法删除。请刷新并重新检查镜像标签。";
 "container-image.delete.confirm" = "确定删除所选的 %lld 个镜像标签？此操作无法撤销。有标签的镜像仅删除所选标签，无标签镜像将整体删除。";
-"container-image.delete.review" = "核查删除状态";
+"container-image.delete.review" = "检查删除状态";
 "container-image.pull.section" = "镜像任务";
 "container-image.pull.search" = "搜索镜像";
 "container-image.pull.tasks" = "下载任务";
 "container-image.pull.risk" = "下载会占用 NAS 空间，也可能更新已有标签。关闭此窗口不会停止 NAS 上的下载。";
-"container-image.pull.confirm" = "我已核对所选镜像和标签";
-"container-image.pull.review" = "核查下载状态";
+"container-image.pull.confirm" = "确认下载所选镜像";
+"container-image.pull.review" = "检查下载状态";
 "container-image.pull.empty" = "暂无本次连接的下载记录";
-"container-image.pull.empty-message" = "重新登录或重启应用后，请先在 DSM 核查已有下载，再决定是否重新开始。";
-"container-image.pull.review-needed" = "无法确认下载状态，请核查状态，不要再次提交。";
-"container-image.pull.no-receipt" = "下载可能已经开始，但未收到确认。请在 DSM 核查，不要再次提交。";
-"container-image.pull.read-failed" = "无法读取下载状态，请检查连接后重新核查。";
-"container-image.pull.sign-in" = "请重新连接 NAS 后核查下载状态，不要再次提交。";
+"container-image.pull.empty-message" = "重新登录或重启应用后，请先在 DSM 检查已有下载，再决定是否重新开始。";
+"container-image.pull.review-needed" = "无法确认下载状态，请检查状态，不要再次提交。";
+"container-image.pull.no-receipt" = "下载可能已经开始，但未收到确认。请在 DSM 检查，不要再次提交。";
+"container-image.pull.read-failed" = "无法读取下载状态，请检查连接后重新检查。";
+"container-image.pull.sign-in" = "请重新连接 NAS 后检查下载状态，不要再次提交。";
 "container-image.pull.ready" = "任务已结束，所选镜像已可用。";
 "container-image.pull.percent" = "正在下载：%.0f%%";
 "container-image.pull.downloading" = "正在下载…";
 "container-image.pull.permission" = "当前账号无法开始下载，请检查 Container Manager 权限。";
-"container-image.pull.conflict" = "所选标签已变化或有尚未结束的操作，请刷新并核查已有任务。";
-"container-image.pull.not-sent" = "未发送下载请求，请核对所选内容后重试。";
+"container-image.pull.conflict" = "所选标签已变化或有尚未结束的操作，请刷新并检查已有任务。";
+"container-image.pull.not-sent" = "未发送下载请求，请检查所选内容后重试。";
 "container-image.pull.failed" = "无法开始下载，请在 DSM 检查镜像和连接后重试。";
 "container-image.pull.unavailable" = "当前连接无法下载镜像，仍可搜索镜像或前往 DSM 管理。";
 "container-image.pull.unsupported" = "当前连接不支持下载镜像，请前往 DSM 管理。";
-"remote-mount.update.unverified" = "无法确认新旧远程连接的状态。请先在 DSM 核查两个位置，再进行其他更改。";
-"remote-mount.state.unverified" = "无法确认远程连接状态，请先在 DSM 核查后再继续。";
+"remote-mount.update.unverified" = "无法确认新旧远程连接的状态。请先在 DSM 检查两个位置，再进行其他更改。";
+"remote-mount.state.unverified" = "无法确认远程连接状态，请先在 DSM 检查后再继续。";
 "remote-mount.readonly.unsupported" = "无法通过此连接强制共享只读。请先在共享权限中设置只读访问，再关闭此选项重试。";
 "remote-mount.options.invalid" = "连接选项不正确。请检查域账号；NFS 不使用账号密码，NFS 4 仅支持 TCP。";
 "remote-mount.nfs-version" = "NFS 版本";
@@ -4077,27 +4077,27 @@
 "remote-mount.tcp" = "TCP";
 "remote-mount.udp" = "UDP";
 "remote-mount.create-impact" = "将在所填位置连接共享文件夹，不改变共享访问权限。自动重连保持关闭。";
-"remote-mount.edit-impact" = "修改可能暂时中断此位置的访问。请核对新旧位置；连接结果不明时先在 NAS 网页检查，不要重复提交。";
-"remote-mount.confirm" = "我已核对连接位置和影响，继续";
+"remote-mount.edit-impact" = "保存后会更换此远程连接，访问可能暂时中断。";
+"remote-mount.confirm" = "确认连接";
 "remote-mount.locations.overlap" = "新旧连接位置不能互相包含。请选择另一个独立位置。";
-"remote-mount.identity.changed" = "远程连接已变化或不可用。请刷新并核对来源后再操作。";
+"remote-mount.identity.changed" = "远程连接已变化或不可用。请刷新并检查来源后再操作。";
 "remote-mount.disconnect.identity" = "要断开位置 %@ 与来源 %@ 的连接吗？通过此连接的访问将中断，不会删除文件夹或文件。";
 "remote-mount.previous.identity" = "当前位置：%@\n当前来源：%@";
 "remote-mount.credentials-again" = "如共享需要登录，请重新填写账号和密码。";
-"remote-mount.recovery.required" = "此位置有尚未确认的操作。请先打开“未完成的连接操作”核查，不要重复提交。";
-"remote-mount.recovery.unavailable" = "暂时无法找到此操作。请刷新连接，并在 NAS 网页核对状态。";
-"remote-mount.recovery.unknown" = "尚未确认操作结果。请先核查，不要再次提交同一操作。";
-"remote-mount.recovery.ready-connect" = "旧连接已断开。核对设置后，可继续连接新配置。";
-"remote-mount.recovery.ready-disconnect" = "新连接已就绪。核对后，可继续断开旧连接。";
+"remote-mount.recovery.required" = "此位置有尚未确认的操作。请先打开“未完成的连接操作”检查，不要重复提交。";
+"remote-mount.recovery.unavailable" = "暂时无法找到此操作。请刷新连接，并在 NAS 网页检查状态。";
+"remote-mount.recovery.unknown" = "尚未确认操作结果。请先检查，不要再次提交同一操作。";
+"remote-mount.recovery.ready-connect" = "旧连接已断开，可以继续连接新位置。";
+"remote-mount.recovery.ready-disconnect" = "新连接已就绪，可以断开旧连接。";
 "remote-mount.recovery.completed" = "已核实连接状态，操作完成。";
 "remote-mount.recovery.failed" = "本次操作未完成。请检查权限或配置后重试。";
 "remote-mount.recovery.stopped" = "已停止后续步骤；已经完成的更改未还原。";
 "remote-mount.recovery.title" = "未完成的连接操作";
-"remote-mount.recovery.editor-error" = "%@\n请关闭此窗口，在远程连接页面打开“未完成的连接操作”核查或继续。";
+"remote-mount.recovery.editor-error" = "%@\n请关闭此窗口，在远程连接页面打开“未完成的连接操作”检查或继续。";
 "remote-mount.recovery.selection" = "连接位置";
 "remote-mount.recovery.destination" = "目标位置：%@\n服务器：%@\n共享文件夹：%@";
 "remote-mount.recovery.password" = "密码未保留。如共享需要密码，请重新输入。";
-"remote-mount.recovery.check" = "核查结果";
+"remote-mount.recovery.check" = "检查结果";
 "remote-mount.recovery.connect" = "继续连接新配置";
 "remote-mount.recovery.disconnect" = "继续断开旧连接";
 "remote-mount.recovery.stop" = "结束这次修改";
@@ -4107,12 +4107,12 @@
 "remote-mount.recovery.account" = "账号：%@\n域：%@";
 "remote-mount.recovery.unset" = "未填写";
 "remote-mount.recovery.nfs-options" = "连接选项：%@ / %@";
-"remote-mount.recovery.confirm-required" = "请核对当前操作并确认后继续。";
-"remote-mount.recovery.session-limit" = "记录仅保留在本次连接内；重新连接或退出应用前，请在 NAS 网页核对未确认的操作。";
+"remote-mount.recovery.confirm-required" = "请选择要继续的连接操作。";
+"remote-mount.recovery.session-limit" = "记录仅保留在本次连接内；重新连接或退出应用前，请在 NAS 网页检查未确认的操作。";
 "virtual-machine.power.restart-unavailable" = "当前连接不支持重启，请在虚拟机系统内重启。";
-"virtual-machine.power.review-required" = "此前的电源或删除操作尚待核对，请先确认其结果，再进行其他更改。";
-"virtual-machine.power.unverified" = "尚未确认电源状态已改变。再次选择同一操作将只核对结果，不会重复执行；重新连接前请先在 NAS 网页核对。";
-"virtual-machine.power.review-only" = "本次仅核对了此前的操作，没有开始新的操作。请刷新并重新选择仍需更改的虚拟机。";
+"virtual-machine.power.review-required" = "此前的电源或删除操作尚待检查，请先确认其结果，再进行其他更改。";
+"virtual-machine.power.unverified" = "尚未确认电源状态已改变。再次选择同一操作将只检查结果，不会重复执行；重新连接前请先在 NAS 网页检查。";
+"virtual-machine.power.review-only" = "本次仅检查了此前的操作，没有开始新的操作。请刷新并重新选择仍需更改的虚拟机。";
 "virtual-machine.power.target-changed" = "所选虚拟机已变化或状态不适合当前操作，请刷新状态后重新选择；前面的部分项目可能已完成。";
 "virtual-machine.startup.title" = "NAS 启动时";
 "virtual-machine.startup.off" = "保持关机";
@@ -4255,7 +4255,7 @@
 "photos.upload.state.addingToAlbum" = "正在加入相册";
 "photos.upload.state.completed" = "已完成";
 "photos.upload.state.failed" = "失败";
-"photos.upload.state.pendingReview" = "正在核对结果";
+"photos.upload.state.pendingReview" = "正在检查结果";
 "photos.upload.state.cancelled" = "已停止";
 
 "photos.manage.shiftDates" = "整体调整拍摄时间";
@@ -4632,7 +4632,7 @@
 "photos.recognition.enable_person" = "识别人物";
 "photos.recognition.enable_concept" = "识别主题";
 "photos.recognition.enable_similar" = "识别相似照片";
-"photos.recognition.homeRequired" = "请先在 NAS 中开启个人照片空间。";
+"photos.recognition.homeRequired" = "请先在 NAS 的照片设置中启用“我的照片”。";
 "photos.recognition.adminRequired" = "请联系管理员开启此项识别。";
 "photos.recognition.empty" = "暂无可用的识别设置";
 "photos.recognition.emptyHint" = "请在 NAS 的照片设置中检查识别功能是否可用。";
@@ -4654,7 +4654,7 @@
 "photos.sharedSettings.off" = "已停用";
 "photos.sharedSettings.enable" = "启用共享空间";
 "photos.sharedSettings.disable" = "停用共享空间";
-"photos.sharedSettings.lastSpace" = "请先启用个人空间，再停用共享空间。";
+"photos.sharedSettings.lastSpace" = "请先启用“我的照片”，再关闭共享照片。";
 "photos.sharedSettings.folderDisabled" = "共享照片文件夹已停用。如启用失败，请先在 DSM 中恢复文件夹。";
 "photos.sharedSettings.preferences" = "共享照片设置";
 "photos.sharedSettings.person" = "识别共享照片中的人物";
@@ -4691,7 +4691,7 @@
 "photos.global.guestConfirm" = "访客将可以查看已分享照片的详细信息。";
 "photos.global.excludedConfirm" = "被排除格式的照片和视频将不再显示，原文件仍会保留。";
 "photos.global.clearConfirm" = "转换缓存将被清理，原照片和视频不会删除。以后下载 JPEG 时可能需要重新转换。";
-"photos.global.pending" = "正在核对设置和缓存处理结果，将自动更新。";
+"photos.global.pending" = "正在确认设置是否生效，将自动更新。";
 "photos.global.partial" = "部分设置已保存。请重新打开全局设置查看当前状态并完成剩余修改。";
 "photos.global.person" = "启用人物识别";
 "photos.global.concept" = "启用主题识别";
@@ -4747,8 +4747,8 @@
 "photos.display.sortConfirmMessage" = "默认排序将改为“%@ · %@”。是否保存？";
 
 "photos.maintenance.title" = "照片库维护";
-"photos.maintenance.personal" = "个人空间";
-"photos.maintenance.shared" = "共享空间";
+"photos.maintenance.personal" = "我的照片";
+"photos.maintenance.shared" = "共享照片";
 "photos.maintenance.reindex" = "重新索引";
 "photos.maintenance.previews" = "补生成异常预览";
 "photos.maintenance.reindexDescription" = "重新检查照片库，更新未显示或信息不完整的照片。";
@@ -4760,15 +4760,15 @@
 "photos.maintenance.confirmReindex" = "将重新索引“%@”中的照片。照片较多时可能需要一段时间。";
 "photos.maintenance.confirmPreviews" = "将补生成“%@”中缺失的预览。照片较多时可能需要一段时间。";
 "photos.maintenance.readFailed" = "无法读取照片库维护状态，请检查连接后重试。";
-"photos.maintenance.pending" = "正在核对照片库维护状态，连接恢复后会自动继续。";
+"photos.maintenance.pending" = "正在检查照片库维护状态，连接恢复后会自动继续。";
 
-"photos.selection.reviewContinuing" = "正在核对删除结果，连接恢复后会自动继续。";
+"photos.selection.reviewContinuing" = "正在检查删除结果，连接恢复后会自动继续。";
 
 "photos.codec.title" = "新格式支持";
 
 "photos.codec.allUsers" = "新的格式支持已就绪。要为所有用户补生成缺失的预览吗？原照片会保留，处理可能需要一段时间。";
 
-"photos.codec.personal" = "新的格式支持已就绪。要为个人空间补生成缺失的预览吗？原照片会保留，处理可能需要一段时间。";
+"photos.codec.personal" = "新的格式支持已就绪。要补充生成缺失的照片预览吗？原照片会保留，处理可能需要一段时间。";
 
 "photos.codec.generate" = "生成预览";
 
@@ -4778,13 +4778,13 @@
 
 "photos.codec.none" = "暂无新的格式支持提示。";
 
-"photos.codec.unavailable" = "个人空间尚未开启，开启后可生成预览。";
+"photos.codec.unavailable" = "请先在 NAS 的照片设置中启用“我的照片”，再生成预览。";
 
 "photos.codec.submitted" = "已开始生成预览，你可以继续浏览照片。";
 
 "photos.codec.partial" = "已开始生成预览，但提示状态未保存。继续操作只会保存提示状态，不会重新生成。";
 
-"photos.codec.pending" = "正在核对请求是否已接收，连接恢复后会自动继续。";
+"photos.codec.pending" = "正在确认预览是否开始生成，连接恢复后会自动继续。";
 
 "photos.codec.readFailed" = "无法读取格式支持提示，请检查连接后重试。";
 
@@ -4809,7 +4809,7 @@
 "photos.temporary.stop" = "停止分享";
 "photos.temporary.keep" = "停止并保存为相册";
 "photos.temporary.stopHint" = "临时相册将被移除，你也可以保留一份普通相册。原照片不会被删除。";
-"photos.temporary.copyChanged" = "相册内容已变化，已保留两份相册。请核对内容后重试。";
+"photos.temporary.copyChanged" = "相册内容已变化，已保留两份相册。请检查内容后重试。";
 "photos.temporary.keepExisting" = "保留现有相册";
 "photos.temporary.cleanupCancelled" = "已取消后续清理，现有相册已保留。";
 "photos.thumbnail.size" = "缩略图大小";
@@ -4842,7 +4842,7 @@
 "photos.tasks.filterEmpty" = "没有符合条件的任务";
 "photos.tasks.filterEmptyHint" = "选择“全部”查看其他任务。";
 "photos.tasks.clearCompleted" = "清理已结束任务";
-"photos.tasks.checkResult" = "核对结果";
+"photos.tasks.checkResult" = "检查结果";
 "photos.tasks.cancelTitle" = "取消此任务？";
 "photos.tasks.clearTitle" = "清理所选任务记录？";
 "photos.tasks.cancel" = "取消任务";
@@ -4906,7 +4906,599 @@
 "photos.upload.recovery.sourceNeeded" = "需要重新选择原文件才能继续上传。";
 "photos.upload.recovery.reselect" = "重新选择文件";
 "photos.upload.recovery.resume" = "继续上传";
-"photos.upload.recovery.clearUnresolved" = "核对后移除记录…";
-"photos.upload.recovery.clearTitle" = "是否已在 NAS 核对结果？";
-"photos.upload.recovery.clearConfirmed" = "已核对，移除记录";
+"photos.upload.recovery.clearUnresolved" = "检查后移除记录…";
+"photos.upload.recovery.clearTitle" = "是否已在 NAS 检查结果？";
+"photos.upload.recovery.clearConfirmed" = "移除记录";
 "photos.upload.recovery.clearMessage" = "请先在 Synology Photos 中查看照片或文件夹是否已经创建。移除记录不会撤销已完成的操作，也不会再次上传；以后重新上传可能产生重复照片。";
+
+// 文件功能对齐：分享结果与日期
+"files.sharing.loadFailed" = "无法读取分享链接，请重试。";
+"files.common.retry" = "重试";
+"files.common.close" = "关闭";
+"files.sharing.created" = "链接已创建";
+"files.sharing.denied" = "没有分享权限，请向管理员申请访问。";
+"files.sharing.unsupported" = "此设备暂不支持创建链接。";
+"files.sharing.cancelled" = "已取消，未创建链接";
+"files.sharing.unverified" = "结果待检查，请刷新分享列表后检查，避免重复创建。";
+"files.sharing.failed" = "未能创建链接，请检查项目是否仍存在及分享权限。";
+"files.sharing.passwordLength" = "密码最多 16 个字符。";
+"files.sharing.startDate" = "开始日期";
+"files.sharing.endDate" = "到期日期";
+"files.sharing.customDate" = "自定义日期";
+"files.sharing.invalidDates" = "到期日期不能早于开始日期。";
+"files.sharing.creating" = "正在创建分享链接…";
+"files.sharing.systemShare" = "分享链接…";
+"files.sharing.copyAll" = "复制所有成功链接";
+"files.sharing.stopRemaining" = "停止后续创建";
+
+// 文件夹上传
+"files.upload.queue" = "上传详情";
+"files.upload.title" = "上传文件与文件夹";
+"files.validation.replacementUnavailable" = "替换现有文件尚待验证。可选择新文件夹，保留两份内容。";
+"files.validation.passwordRemovalUnavailable" = "移除分享密码尚待验证，暂不可用。";
+"files.upload.destination" = "上传到";
+"files.upload.preparing" = "正在整理上传内容…";
+"files.upload.failed" = "上传未完成，请检查连接和剩余空间后重试。";
+"files.upload.empty" = "没有待上传的内容";
+"files.upload.chooseAgain" = "请选择文件或文件夹后重试。";
+"files.upload.sameName" = "遇到同名文件";
+"files.upload.skip" = "跳过同名文件";
+"files.upload.replace" = "替换同名文件";
+"files.upload.confirmReplace" = "我确认替换同名文件，原文件内容将被覆盖。";
+"files.upload.start" = "开始上传";
+"files.upload.linkSkipped" = "符号链接已跳过";
+"files.upload.sourceUnavailable" = "无法读取部分内容，请重新选择并检查访问权限。";
+"files.upload.parentFailed" = "上级文件夹未准备好，请先处理该文件夹的错误后重试。";
+"files.upload.sourceChanged" = "本机文件已改变，请重新选择后上传。";
+"files.upload.unverified" = "结果待检查，请检查上传结果；未确认前不会自动重传。";
+"files.upload.folderFailed" = "无法确认目标文件夹，请刷新并检查权限。";
+"files.upload.sameNameSkipped" = "已跳过同名文件";
+"files.upload.typeConflict" = "同名项目的类型不同，请更名或选择其他位置。";
+"files.upload.summary" = "已完成或跳过 %@ / %@ 项";
+"files.upload.pause" = "暂停";
+"files.upload.cancel" = "取消后续上传";
+"files.upload.resume" = "继续";
+"files.upload.retryFailed" = "重试明确失败项";
+"files.upload.checkResults" = "检查上传结果";
+"files.upload.cancelNotice" = "取消会保留已上传的内容。暂停后的文件继续时会从头上传；结果不明时先检查。";
+"files.upload.state.pending" = "等待上传";
+"files.upload.state.running" = "正在上传";
+"files.upload.state.succeeded" = "已完成";
+"files.upload.state.skipped" = "已跳过";
+"files.upload.state.failed" = "失败";
+"files.upload.state.conflict" = "同名冲突";
+"files.upload.state.paused" = "已暂停";
+"files.upload.state.cancelled" = "已取消";
+"files.upload.state.unverified" = "待检查";
+
+// 搜索条件与位置选择
+"files.upload.duplicateSource" = "多个本机项目指向同一名称，请分开上传或先更名。";
+"files.location.title" = "选择文件夹";
+"files.location.failed" = "无法读取文件夹，请检查连接和访问权限后重试。";
+"files.location.empty" = "没有子文件夹";
+"files.location.selectCurrent" = "可以选择当前文件夹，或返回上一级。";
+"files.location.select" = "选择此文件夹";
+"files.search.advanced" = "高级搜索";
+"files.search.reset" = "重置条件";
+"files.search.apply" = "搜索";
+"files.search.extension" = "扩展名（例如 jpg,png）";
+"files.search.kind" = "类型";
+"files.search.kind.all" = "文件与文件夹";
+"files.search.kind.file" = "文件";
+"files.search.kind.directory" = "文件夹";
+"files.search.owner" = "所有者";
+"files.search.group" = "群组";
+"files.search.minimumSize" = "大于";
+"files.search.maximumSize" = "小于";
+"files.search.sizeUnit" = "大小单位";
+"files.search.bytes" = "字节";
+"files.search.mib" = "MiB";
+"files.search.gib" = "GiB";
+"files.search.dates" = "日期条件";
+"files.search.modified" = "修改时间";
+"files.search.created" = "创建时间";
+"files.search.accessed" = "访问时间";
+"files.search.after" = "晚于";
+"files.search.before" = "早于";
+"files.search.removeLocation" = "移除此搜索位置";
+"files.search.addLocation" = "添加搜索位置";
+"files.search.subfolders" = "包括子文件夹";
+"files.search.invalidConditions" = "请选择搜索位置，并检查大小和日期范围。";
+"files.search.unsupported" = "此设备暂不支持这些搜索条件，请减少条件后重试。";
+"files.search.incomplete" = "未能读取全部结果，请重新搜索。";
+"files.search.searching" = "正在搜索…";
+"files.search.cancel" = "停止搜索";
+
+// 分享管理
+"files.sharing.updated" = "已保存";
+"files.sharing.changeFailed" = "未能修改，请刷新链接后检查权限并重试。";
+"files.sharing.manageUnsupported" = "此设备暂不支持管理这些分享链接。";
+"files.sharing.changeUnverified" = "结果待检查，请刷新后检查链接设置，避免重复提交。";
+"files.sharing.filter" = "筛选分享链接";
+"files.sharing.refresh" = "刷新";
+"files.sharing.selectedActions" = "所选链接";
+"files.sharing.copySelected" = "复制所选链接";
+"files.sharing.edit" = "修改分享链接";
+"files.sharing.availableOn" = "开始日期：%@";
+"files.sharing.qr" = "显示二维码";
+"files.sharing.qrFailed" = "无法生成二维码，请复制链接分享。";
+"files.sharing.itemResult" = "%@：%@";
+"files.sharing.password" = "密码";
+"files.sharing.keep" = "保持不变";
+"files.sharing.setPassword" = "设置新密码";
+"files.sharing.removePassword" = "移除密码";
+"files.sharing.newPassword" = "新密码";
+"files.sharing.confirmRemovePassword" = "我确认移除密码，持有链接的人将无需密码即可访问。";
+"files.sharing.immediate" = "立即生效";
+"files.sharing.checkChanges" = "请选择要修改的设置，并检查日期和密码长度。";
+"files.sharing.save" = "保存修改";
+"files.sharing.status.valid" = "可访问";
+"files.sharing.status.invalid" = "尚未生效";
+"files.sharing.status.expired" = "已过期";
+"files.sharing.status.broken" = "原项目不可访问";
+"files.sharing.status.unknown" = "状态未知，请刷新检查";
+
+// 压缩包浏览与解压
+"files.archive.unsupported" = "此设备暂不支持浏览压缩包或解压所选项目。";
+"files.archive.invalidSelection" = "无法安全解压所选内容，请重新读取压缩包并选择项目。";
+"files.archive.invalidList" = "压缩包列表不完整或包含不安全路径，请检查压缩包后重试。";
+"files.archive.changed" = "压缩包已改变，请关闭后重新打开并选择内容。";
+"files.archive.loadFailed" = "无法读取压缩包，请检查密码、连接或文件是否完整。";
+"files.archive.outputUnverified" = "解压已结束，但未能检查全部输出。请检查目标文件夹，再决定如何处理未完成项。";
+"files.archive.cancelled" = "已请求停止解压；已经解压的内容会保留，请检查目标文件夹。";
+"files.archive.destination" = "解压到";
+"files.archive.chooseDestination" = "更改位置…";
+"files.archive.password" = "压缩包密码（如有）";
+"files.archive.encoding" = "文件名编码";
+"files.archive.encoding.auto" = "自动";
+"files.archive.encoding.chs" = "简体中文";
+"files.archive.encoding.cht" = "繁体中文";
+"files.archive.encoding.enu" = "英语";
+"files.archive.encoding.jpn" = "日语";
+"files.archive.encoding.krn" = "韩语";
+"files.archive.read" = "读取内容";
+"files.archive.scope" = "解压范围";
+"files.archive.all" = "整个压缩包";
+"files.archive.selected" = "所选项目";
+"files.archive.empty" = "没有可显示的项目";
+"files.archive.emptyNext" = "返回上一级，或检查密码和编码后重新读取。";
+"files.archive.openFolder" = "打开文件夹";
+"files.archive.more" = "载入更多";
+
+// NAS 后台任务控制
+"files.tasks.unsupported" = "此任务暂不支持安全控制，请在 File Station 中处理。";
+"files.tasks.unverified" = "无法确认任务已更新，请刷新任务列表后检查。";
+"files.tasks.cleared" = "已清理所选结束记录；文件内容未改变。";
+"files.tasks.stopped" = "任务已结束，请检查已经处理的文件。";
+"files.tasks.scope" = "已结束不代表成功；清理记录不会删除文件或撤销操作。";
+"files.tasks.details" = "任务详情";
+"files.tasks.clear" = "清理此记录";
+"files.tasks.stop" = "停止此任务";
+"files.tasks.clearNotice" = "只清理此任务的结束记录，不会删除文件，也不会撤销已完成的操作。";
+"files.tasks.stopNotice" = "停止后已经处理的内容会保留，未完成项可能需要重新处理。";
+"files.tasks.created" = "创建时间";
+"files.tasks.reference" = "任务编号";
+
+/* 文件内容搜索 */
+"files.search.contents" = "搜索文件内容";
+"files.search.indexIncomplete" = "部分搜索位置尚未建立索引，结果可能不完整。请联系管理员为这些位置开启索引。";
+"files.search.contentUnavailable" = "此 NAS 的文件内容搜索暂不可用。请尝试按名称搜索，或联系管理员检查文件索引。";
+"files.search.contentRegex" = "正则表达式用于名称筛选。请关闭文件内容搜索后使用。";
+
+/* 文件高级管理与收集 */
+"files.advanced.unavailable" = "此 NAS 暂不支持这项功能。你可以继续使用普通文件操作。";
+"files.advanced.versionUnavailable" = "此 NAS 版本暂不支持在这里修改。请前往 DSM 管理这项设置。";
+"files.advanced.adminRequired" = "需要管理员账号才能修改这项设置。请使用管理员账号登录后重试。";
+"files.advanced.readFailed" = "无法检查当前设置。请刷新后重试。";
+"files.advanced.pendingChange" = "上一次修改的结果尚未确认。请先在 DSM 中检查结果，再开始新的修改。";
+"files.request.title" = "文件收集链接";
+"files.request.create" = "创建文件收集链接";
+"files.request.name" = "收集名称";
+"files.request.message" = "给上传者的说明";
+"files.request.confirmUpload" = "我已知晓，持有此链接的人可以向所选文件夹上传文件。";
+"files.request.writableFolderRequired" = "请选择你有写入权限的文件夹后重试。";
+"files.sharing.namedAudience" = "指定用户和群组";
+"files.sharing.anyoneAudience" = "持有链接的任何人";
+"files.sharing.accessSettings" = "访问与收集设置";
+"files.sharing.currentAudience" = "当前访问范围";
+"files.sharing.changeAudience" = "新的访问范围";
+"files.sharing.chooseAudience" = "选择用户和群组";
+"files.sharing.audienceChanged" = "所选账号已不可用。请刷新账号列表后重新选择。";
+"files.sharing.audienceRisk" = "这会移除此链接的密码和账号限制。";
+"files.sharing.currentAccessLimit" = "当前访问次数上限";
+"files.sharing.unlimitedAccess" = "不限次数";
+"files.sharing.editAccessLimit" = "修改访问次数上限";
+"files.sharing.accessLimit" = "访问次数";
+"files.sharing.accessLimitHint" = "填写 1–9999；填写 0 表示不限次数。";
+"files.sharing.invalidAccessLimit" = "请填写 0–9999 范围内的访问次数后重试。";
+"files.sharing.confirmAccessChange" = "我了解未被选中的人员可能无法再打开此链接。";
+"files.sharing.status.inactive" = "尚未生效";
+"files.principals.search" = "搜索账号";
+"files.principals.loadFailed" = "无法读取账号";
+"files.principals.empty" = "没有符合条件的账号";
+"files.principals.emptyDetail" = "请尝试其他搜索词，或联系管理员检查你的账号列表访问权限。";
+"files.principals.user" = "用户";
+"files.principals.group" = "群组";
+"files.principals.more" = "加载更多账号";
+"files.principals.remove" = "移除所选账号";
+"files.principals.selected" = "已选择 %@ 项";
+
+/* ISO 与自动挂载 */
+"files.mount.automatic" = "NAS 重启后自动连接";
+"files.mount.automaticImpact" = "NAS 会保留此连接，并在今后重启时重新连接。";
+"files.iso.manage" = "ISO 挂载管理";
+"files.iso.mount" = "挂载 ISO";
+"files.iso.unmount" = "卸载 ISO";
+"files.iso.empty" = "没有已挂载的 ISO";
+"files.iso.emptyDetail" = "在文件列表中选中 ISO 文件，然后选择“挂载 ISO”。";
+"files.iso.chooseDestination" = "选择已有的空文件夹";
+"files.iso.emptyFolderRequired" = "请选择共享文件夹内已有的空文件夹。";
+"files.iso.unmountImpact" = "这会断开所选映像，保留来源文件和目标文件夹。";
+"files.iso.confirm" = "确认连接所选映像";
+"files.iso.targetChanged" = "映像或目标位置已变化。请刷新后重新选择。";
+"files.iso.loadFailed" = "无法读取挂载信息。请刷新后重试。";
+"files.iso.completed" = "操作已完成。";
+"files.iso.unverified" = "尚未确认操作是否完成。请先查看当前状态，再进行其他操作。";
+"files.iso.failed" = "操作未完成。请刷新挂载列表并检查账号权限。";
+"files.iso.review" = "查看连接状态";
+
+/* 文件所有者与权限编辑 */
+"files.permissions.title" = "所有者与权限";
+"files.permissions.changed" = "项目或权限已发生变化。请关闭窗口后重新打开，再进行修改。";
+"files.permissions.confirmRequired" = "请检查受影响的账号和范围，并确认权限修改。";
+"files.permissions.cannotEdit" = "当前账号无法修改这些权限，请联系管理员。";
+"files.permissions.selfDenied" = "这些修改会让你失去访问权限。请保留自己的访问权限后再试。";
+"files.permissions.explicit" = "此项目的权限";
+"files.permissions.noExplicit" = "此项目没有单独设置的权限。";
+"files.permissions.inherited" = "从上级文件夹继承的权限";
+"files.permissions.noInherited" = "没有继承的权限。";
+"files.permissions.unknownAccount" = "无法识别的账号";
+"files.permissions.addAccount" = "添加账号或群组";
+"files.permissions.removing" = "移除或更改访问权限：%@";
+"files.permissions.recursive" = "同时应用到其中所有文件和文件夹";
+"files.permissions.confirmRecursive" = "我同意将这些权限更改应用到文件夹内的所有项目。";
+"files.permissions.confirmOwner" = "我同意更改所有者或所属群组，这可能改变文件的访问权限。";
+"files.permissions.confirmChanges" = "我了解部分账号可能失去访问权限。";
+"files.permissions.loadFailed" = "无法读取权限";
+"files.permissions.saved" = "权限已保存。";
+"files.permissions.pending" = "部分修改仍在进行或尚未检查。请先重新检查结果，再进行其他修改。";
+"files.permissions.partial-failure" = "部分权限修改失败，已应用的修改仍被保留。请先在 File Station 中检查权限。";
+"files.permissions.failed" = "尚未确认权限保存成功。请重新打开项目，检查当前权限。";
+"files.permissions.review" = "查看修改结果";
+"files.permissions.save" = "保存权限";
+"files.permissions.owner" = "当前所有者：%@";
+"files.permissions.newOwner" = "新的所有者：%@";
+"files.permissions.chooseOwner" = "选择所有者";
+"files.permissions.keepOwner" = "保留当前所有者";
+"files.permissions.group" = "当前群组：%@";
+"files.permissions.newGroup" = "新的群组：%@";
+"files.permissions.chooseGroup" = "选择群组";
+"files.permissions.keepGroup" = "保留当前群组";
+"files.permissions.effect" = "访问方式";
+"files.permissions.allow" = "允许";
+"files.permissions.deny" = "拒绝";
+"files.permissions.removeRule" = "移除此项权限";
+"files.permissions.ownerRole" = "所有者";
+"files.permissions.groupRole" = "所属群组";
+"files.permissions.everyoneRole" = "其他人";
+"files.permissions.read" = "读取";
+"files.permissions.write" = "写入";
+"files.permissions.execute" = "进入／执行";
+"files.permissions.chooseOne" = "所有者请选择一个账号；所属群组请选择一个群组。";
+"files.permissions.scope.current" = "当前项目";
+"files.permissions.scope.files" = "其中的文件";
+"files.permissions.scope.folders" = "其中的文件夹";
+"files.permissions.scope.descendants" = "其中所有层级";
+"files.permissions.right.read" = "读取文件／列出文件夹";
+"files.permissions.right.write" = "写入文件／创建文件";
+"files.permissions.right.execute" = "进入文件夹／执行文件";
+"files.permissions.right.append" = "追加内容／创建文件夹";
+"files.permissions.right.delete" = "删除当前项目";
+"files.permissions.right.deleteChildren" = "删除其中的项目";
+"files.permissions.right.readAttributes" = "读取属性";
+"files.permissions.right.writeAttributes" = "修改属性";
+"files.permissions.right.readExtended" = "读取扩展属性";
+"files.permissions.right.writeExtended" = "修改扩展属性";
+"files.permissions.right.readPermissions" = "读取权限";
+"files.permissions.right.changePermissions" = "修改权限";
+"files.permissions.right.owner" = "取得所有权";
+
+/* File Station 套件设置 */
+"files.settings.title" = "文件管理设置";
+"files.settings.general" = "常规";
+"files.settings.remoteAccess" = "远程权限";
+"files.settings.speed" = "传输限速";
+"files.settings.appearance" = "分享页面";
+"files.settings.recordTransfers" = "记录文件传输日志";
+"files.settings.defaultPermissions" = "新文件使用默认权限";
+"files.settings.showAccounts" = "显示账号与群组列表";
+"files.settings.sharePermission" = "谁可以创建分享链接";
+"files.settings.requestPermission" = "谁可以创建文件收集链接";
+"files.settings.chooseAccounts" = "选择账号（已选 %@ 项）";
+"files.settings.linkLimit" = "每个账号默认可创建的分享链接数";
+"files.settings.mountPermission" = "谁可以挂载远程文件夹";
+"files.settings.isoPermission" = "谁可以挂载光盘镜像";
+"files.settings.speedPolicy" = "限速方式";
+"files.settings.unlimited" = "不限速";
+"files.settings.alwaysLimit" = "始终限速";
+"files.settings.scheduleLimit" = "按时间表限速";
+"files.settings.administrators" = "管理员";
+"files.settings.everyone" = "所有账号";
+"files.settings.selectedAccounts" = "指定账号与群组";
+"files.settings.keepSelectedAccounts" = "保留现有指定账号";
+"files.settings.remoteAccessScope" = "访问范围和账号权限分别保存。";
+"files.settings.keepLogo" = "使用自定义标志";
+"files.settings.logoPosition" = "标志图片位置";
+"files.settings.topLeft" = "左上角";
+"files.settings.topRight" = "右上角";
+"files.settings.bottomLeft" = "左下角";
+"files.settings.bottomRight" = "右下角";
+"files.settings.keepBackground" = "使用自定义背景";
+"files.settings.backgroundPosition" = "背景图片布局";
+"files.settings.center" = "居中";
+"files.settings.fill" = "填满";
+"files.settings.fit" = "适应";
+"files.settings.stretch" = "拉伸";
+"files.settings.tile" = "平铺";
+"files.settings.backgroundColor" = "背景颜色";
+"files.settings.footer" = "页脚文字";
+"files.settings.footerHTML" = "页脚使用 HTML 格式";
+"files.settings.invalidTheme" = "页脚请使用不超过 512 个字符的单行文字，并选择有效背景颜色。";
+"files.settings.loadFailed" = "无法读取这些设置";
+"files.settings.confirm" = "确认保存修改";
+"files.settings.confirmRequired" = "请先确认设置后再保存。如果之前的保存尚未检查，请先检查结果。";
+"files.settings.changed" = "设置在此窗口打开后发生了变化。请重新打开窗口，检查最新设置。";
+"files.settings.saved" = "设置已保存。";
+"files.settings.pending" = "尚未完整检查保存结果。请先重新检查，再进行其他修改。";
+"files.settings.failed" = "尚未确认设置保存成功。请重新打开窗口，检查当前设置。";
+"files.settings.save" = "保存设置";
+"files.settings.adminAccess" = "管理员自动保留访问权限。";
+"files.settings.accountType" = "账号类型";
+"files.settings.localUsers" = "本地账号";
+"files.settings.localGroups" = "本地群组";
+"files.settings.domainUsers" = "域账号";
+"files.settings.domainGroups" = "域群组";
+"files.settings.ldapUsers" = "LDAP 账号";
+"files.settings.ldapGroups" = "LDAP 群组";
+"files.settings.noAccounts" = "此类型没有返回账号。请选择其他账号类型或刷新。";
+"files.settings.editLimit" = "编辑限速";
+"files.settings.rateUnits" = "速度单位为 KB/s。0 表示不限速；其他数值须不低于 10。";
+"files.settings.uploadLimit" = "默认上传限速";
+"files.settings.downloadLimit" = "默认下载限速";
+"files.settings.alternateUpload" = "自定义上传限速";
+"files.settings.alternateDownload" = "自定义下载限速";
+"files.settings.invalidRate" = "每项限速请输入 0，或 10 至 999,999,999 之间的整数。";
+"files.settings.scheduleClock" = "时间表以 NAS 的时间为准。";
+"files.settings.paintSchedule" = "为所选时段设置";
+"files.settings.defaultLimit" = "默认限速";
+"files.settings.alternateLimit" = "自定义限速";
+"files.settings.fillSchedule" = "应用到整周";
+"files.settings.scheduleCell" = "%@，%@ 点 — %@";
+
+/* NAS 管理的远程协议连接 */
+"files.vfs.title" = "FTP、WebDAV 与云盘连接";
+"files.vfs.search" = "查找连接";
+"files.vfs.add" = "添加连接";
+"files.vfs.empty" = "没有连接";
+"files.vfs.emptyDetail" = "添加 NAS 支持的连接后，可在此管理。";
+"files.vfs.filteredEmpty" = "请尝试其他名称或清除搜索。";
+"files.vfs.connected" = "已连接";
+"files.vfs.disconnected" = "已断开";
+"files.vfs.unknown" = "状态暂不可用";
+"files.vfs.connect" = "连接";
+"files.vfs.disconnect" = "断开连接";
+"files.vfs.edit" = "编辑连接";
+"files.vfs.remove" = "移除连接";
+"files.vfs.actions" = "连接操作";
+"files.vfs.loadFailed" = "无法读取连接。请刷新后再试。";
+"files.vfs.confirmTarget" = "确认连接操作";
+"files.vfs.protocol" = "连接类型";
+"files.vfs.alias" = "显示名称";
+"files.vfs.hostname" = "服务器地址";
+"files.vfs.port" = "端口";
+"files.vfs.account" = "账号";
+"files.vfs.replacePassword" = "更换已保存的密码";
+"files.vfs.password" = "密码";
+"files.vfs.folder" = "远程文件夹路径";
+"files.vfs.moreOptions" = "更多选项";
+"files.vfs.filenameEncoding" = "文件名编码";
+"files.vfs.singleConnection" = "仅使用一个 FTP 连接";
+"files.vfs.confirmCleartext" = "我了解此连接方式不会加密 NAS 与远端服务器之间的数据。";
+"files.vfs.confirmSave" = "在 NAS 上保存这些信息并连接到此服务器。";
+"files.vfs.saveConnect" = "保存并连接";
+"files.vfs.changed" = "所选连接已发生变化。请刷新列表后重新选择。";
+"files.vfs.alreadyExists" = "已有使用这些信息或名称的连接。请先检查现有连接。";
+"files.vfs.disconnectFirst" = "请先断开此连接，再移除保存的配置。";
+"files.vfs.invalidConfiguration" = "请检查连接类型、服务器地址、端口和显示名称后再试。";
+"files.vfs.secureConnectionRequired" = "请先通过 HTTPS 连接 NAS，再保存远端账号信息。";
+"files.vfs.noChanges" = "连接信息没有变化。请关闭窗口，或修改信息后再保存。";
+"files.vfs.identity-check" = "服务器身份或云盘授权需要检查。请先在 File Station 中检查，再重新连接。";
+"files.vfs.connection-failed" = "连接失败。请检查网络和账号信息后重试。";
+"files.vfs.partial" = "连接已发生变化，但尚未确认保存的配置。请先检查结果，再进行其他修改。";
+"files.vfs.completed" = "连接操作已完成。";
+"files.vfs.pending" = "暂时无法确认操作是否完成。请点击“查看修改结果”，不要再次连接。";
+"files.pending.title" = "未完成的操作";
+"files.pending.scope" = "这里显示尚未确认结果的操作。退出连接前，请先查看结果。";
+"files.pending.empty" = "没有未完成的操作";
+"files.pending.emptyDetail" = "需要进一步确认结果的操作会显示在这里。";
+"files.pending.noLongerPending" = "此操作已处理，请刷新列表。";
+"files.pending.verified" = "修改已生效。";
+"files.pending.kind.permissions" = "文件权限";
+"files.pending.kind.iso" = "ISO 挂载";
+"files.pending.kind.connection" = "远程连接";
+"files.pending.kind.general" = "文件服务设置";
+"files.pending.kind.mountAccess" = "远程访问权限";
+"files.pending.kind.bandwidth" = "传输限速";
+"files.pending.kind.theme" = "分享页面外观";
+"files.settings.customSharingPage" = "使用自定义分享页面";
+"files.settings.manageLocalAccounts" = "管理账号权限";
+"files.settings.localAccountScope" = "这些权限在访问范围设为指定账号时生效。";
+"files.settings.accountLocked" = "此账号的权限不能在这里修改，请在 NAS 上检查账号设置。";
+"files.settings.accountAllowed" = "允许访问";
+"files.settings.accountDenied" = "不允许访问";
+"files.settings.allowRemoteAccess" = "允许使用远程连接";
+"files.permissions.changeSummary" = "将要修改";
+"files.permissions.modeChange" = "访问权限：%@ → %@";
+"files.permissions.accountChange" = "将修改“%@”的权限规则";
+"files.permissions.confirmRemoval" = "我确认可能移除以上账号的部分访问权限";
+
+"files.advanced.permissionUnavailable" = "无法确认此功能的使用权限。请刷新，或联系管理员检查文件服务权限。";
+
+"files.settings.accountSource" = "账号来源";
+
+"files.settings.source.local" = "NAS 本机账号";
+
+"files.settings.source.ldap" = "LDAP 账号";
+
+"files.settings.directoryUnavailable" = "部分目录账号未能读取，请重试以刷新可用来源。";
+
+"files.vfs.browse" = "浏览文件";
+
+"files.vfs.fileFilter" = "筛选当前文件夹";
+
+"files.vfs.folderEmpty" = "没有可显示的文件";
+
+"files.vfs.folderEmptyDetail" = "此文件夹为空，可以返回上级或刷新。";
+
+"files.vfs.download" = "下载";
+
+"files.theme.chooseLogo" = "选择标志图片";
+
+"files.theme.chooseBackground" = "选择背景图片";
+
+"files.theme.source" = "图片来源";
+
+"files.theme.nas" = "NAS";
+
+"files.theme.history" = "历史图片";
+
+"files.theme.local" = "此 Mac";
+
+"files.theme.defaults" = "内置背景";
+
+"files.theme.chooseLocal" = "选择图片…";
+
+"files.theme.uploadScope" = "图片会添加到 NAS 的图片库，随后保存页面设置才会应用。";
+
+"files.theme.confirmUpload" = "确认将这张图片上传到 NAS";
+
+"files.theme.uploadSelect" = "上传并选择";
+
+"files.theme.select" = "使用这张图片";
+
+"files.theme.preview" = "所选图片预览";
+
+"files.theme.defaultNumber" = "背景 %d";
+
+"files.theme.empty" = "这里没有图片";
+
+"files.theme.emptyDetail" = "请选择其他文件夹，或从此 Mac 上传图片。";
+
+"files.theme.imageLoadFailed" = "图片未能读取，请刷新或选择其他图片。";
+
+"files.theme.invalidImage" = "无法读取这张图片，请选择 JPEG、PNG、GIF 或 BMP 图片。";
+
+"files.theme.uploadUnknown" = "尚未确认图片是否已上传，请先在“历史图片”中查找，避免重复上传。";
+
+"files.theme.chooseRequired" = "请为启用的自定义外观选择图片。";
+
+"files.vfs.authorizeCloud" = "授权云盘账号";
+"files.vfs.reauthorize" = "重新授权";
+"files.vfs.cloudAuthorizationDetail" = "在云盘页面登录并授权，然后返回这里保存连接。";
+"files.vfs.confirmCloudAccount" = "将此账号连接到 NAS";
+"files.vfs.authorizationExpired" = "本次授权已失效。请关闭窗口，重新授权账号。";
+"files.vfs.authorizationMismatch" = "授权的账号与此连接不一致。请关闭窗口，使用原账号重新授权。";
+"files.vfs.authorizationFailed" = "未能完成授权。请检查登录页面，关闭此窗口后重试。";
+"files.vfs.authorizationClosed" = "登录页面已关闭，授权尚未完成。请关闭此窗口后重试。";
+
+"files.vfs.browserAuthorizationWaiting" = "请在浏览器中登录并授权，然后返回这里保存连接。";
+"files.vfs.openBrowser" = "打开浏览器";
+"files.vfs.browserAuthorizationComplete" = "授权成功。请回到 LanStash 保存连接，可以关闭此标签页。";
+
+/* 办公文档预览与本机编辑自动回传。 */
+"files.office.preview" = "办公文档预览";
+"files.office.edit" = "用本机应用编辑";
+"files.office.editHelp" = "在编辑应用中保存后，自动更新 NAS 上的文件。";
+"files.office.openAutoSave" = "打开并自动保存";
+"files.office.chooseApplication" = "选择应用…";
+"files.office.localCopyTitle" = "保存本机编辑副本";
+"files.office.localCopyDetail" = "请保持岚仓运行。在编辑应用中保存后，修改会自动保存回 NAS。本机副本将会保留。";
+"files.office.sessions" = "文档自动保存";
+"files.office.noSessions" = "没有正在编辑的文档";
+"files.office.noSessionsDetail" = "选择 Word、Excel 或 PowerPoint 文件，再选择“用本机应用编辑”。";
+"files.office.preparing" = "正在准备文档…";
+"files.office.watching" = "自动保存已开启";
+"files.office.waitingForSave" = "正在等待文档保存完成…";
+"files.office.saving" = "正在保存到 NAS…";
+"files.office.saved" = "已保存到 NAS";
+"files.office.pausedTitle" = "自动保存已暂停";
+"files.office.conflictTitle" = "NAS 文件已更改";
+"files.office.reviewTitle" = "需要确认保存结果";
+"files.office.stopped" = "自动保存已停止";
+"files.office.localUnavailable" = "无法读取本机副本。请在编辑应用中完成保存后重试；本机文件没有被删除。";
+"files.office.conflict" = "NAS 文件已被其他操作更改。本机修改已保留，请检查两个版本后再手动上传。";
+"files.office.unknown" = "暂时无法确认保存结果。本机副本已保留，请先检查保存结果，再决定是否重新上传。";
+"files.office.paused" = "自动保存暂时无法继续。请检查连接和 NAS 访问权限后重试，本机修改已保留。";
+"files.office.showCopy" = "显示本机副本";
+"files.office.openCopy" = "打开本机副本";
+"files.office.openFailed" = "文档未能打开。请确认已安装兼容的应用，选择应用后重试；本机副本已保留。";
+"files.office.prepareFailed" = "无法为文档开启自动保存。请刷新文件，检查连接和写入权限后重试。";
+"files.office.retry" = "重试自动保存";
+"files.office.review" = "查看保存结果";
+"files.office.stop" = "停止自动保存";
+"files.office.stopTitle" = "停止将此文档自动保存到 NAS？";
+"files.office.stopDetail" = "后续修改将只保留在本机副本中，需要时可手动上传。";
+"files.office.quitBusy" = "文档仍在保存中";
+"files.office.quitBusyDetail" = "请等待文档准备和保存完成后再退出。";
+"files.office.keepRunning" = "继续使用岚仓";
+"files.office.quitTitle" = "退出后将停止文档自动保存";
+"files.office.quitDetail" = "本机副本及尚未保存到 NAS 的修改将会保留。退出后不会继续自动保存，下次启动也不会自动恢复。";
+"files.office.quitKeepCopies" = "退出并保留本机副本";
+
+"files.vfs.invalidAddress" = "服务器地址格式不正确。请填写主机名或完整网址；账号和密码请填在下方。";
+"files.vfs.addressTypeMismatch" = "网址与所选连接类型不符，或此 NAS 不支持该连接方式。请选择对应的连接类型。";
+"files.vfs.editAddressTypeMismatch" = "此网址使用了不同的连接类型。请返回并添加一个新连接。";
+"files.vfs.invalidPort" = "端口应为 1–65535 之间的数字，请修改后重试。";
+"files.vfs.invalidAlias" = "请填写显示名称，最多 255 个字符。";
+"files.vfs.invalidEncoding" = "请选择文件名编码，通常使用 UTF-8。";
+"files.vfs.folderMismatch" = "网址中的文件夹与下方填写的不一致，请保留正确的一处后重试。";
+"files.sharing.confirmPublicAccess" = "我同意移除密码和账号限制，允许任何获得链接的人访问。";
+"navigation.parentFolders" = "上级文件夹";
+"photos.source.switch" = "切换照片来源";
+"photos.folders.root" = "所有文件夹";
+
+"files.vfs.addressExample" = "例如 https://example.com/webdav";
+"files.vfs.folderExample" = "例如 webdav/photos";
+"files.vfs.folderHint" = "连接后从这个文件夹开始浏览。网址中的路径会自动填入。";
+
+"remote-locations.protocol.ftp" = "FTP";
+
+"remote-locations.protocol.sftp" = "SFTP";
+
+"remote-locations.protocol.webdav" = "WebDAV";
+
+"remote-locations.protocol.cloud" = "云盘";
+
+"remote-locations.search" = "搜索远程位置";
+
+"remote-locations.empty.description" = "添加远程服务器或云盘后，可在这里打开和管理。";
+
+"remote-locations.connectionsLoadFailed" = "FTP、WebDAV 和云盘连接未能刷新。请点击刷新后重试。";
+
+"remote-locations.addSharedFolder" = "SMB / NFS 共享文件夹";
+
+"remote-locations.back" = "返回远程位置";
+
+"files.vfs.connecting" = "正在连接…";
+"files.vfs.savingConnect" = "正在保存并连接…";
+
+"files.vfs.checkingConnection" = "正在查看连接状态…";
+
+"files.vfs.checkConnection" = "查看连接状态";
+
+"files.vfs.connectPending" = "暂时无法确认是否已连接，请点击“查看连接状态”。";
+
+
+"files.vfs.disconnectWarning" = "断开后，需要重新连接才能浏览文件。不会删除文件。";
+
+"files.vfs.removeWarning" = "移除这条连接记录？远端文件不会被删除，需要时可以重新添加连接。";

@@ -340,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if let driver = updateController?.driver, driver.isRestartRequested, !driver.canRestart() {
             return .terminateCancel
         }
+        guard OfficeEditingCoordinator.shared.confirmTermination() else { return .terminateCancel }
         // 自动解除所有附着在窗口上的 Modal Sheet 或弹窗，确保 App 能响应 ⌘Q 和 Dock 菜单退出
         for window in NSApp.windows {
             if let sheet = window.attachedSheet {
@@ -387,7 +388,7 @@ struct DsmMacApp: App {
         let model = AppModel()
         _model = State(initialValue: model)
         _updates = StateObject(wrappedValue: AppUpdateController(canRestart: {
-            !model.isPreparingPaste && !model.connectedWorkspaces.contains {
+            !OfficeEditingCoordinator.shared.hasActiveSessions && !model.isPreparingPaste && !model.connectedWorkspaces.contains {
                 AppUpdateController.hasUnfinishedTransfers($0.transfers)
                     || $0.isEditingText || $0.isSavingText || $0.isMovingItemsByDrag
             }

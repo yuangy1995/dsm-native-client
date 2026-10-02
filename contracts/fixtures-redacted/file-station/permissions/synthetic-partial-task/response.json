@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "data": {
+    "task_id": "<redacted:permission-task>",
+    "finished": true,
+    "result": "fail",
+    "errItems": [
+      {}
+    ]
+  }
+}

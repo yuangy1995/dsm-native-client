@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "data": {
+    "mountConfig": {
+      "enable_remote_mount": true,
+      "enable_iso_mount": true
+    },
+    "remoteList": [],
+    "isoList": [
+      {
+        "type": "iso",
+        "source": "<redacted:iso-source>",
+        "mount_point": "<redacted:mount-point>",
+        "auto_mount": true
+      }
+    ]
+  }
+}

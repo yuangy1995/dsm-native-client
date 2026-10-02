@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "data": {
+    "profiles": [
+      {
+        "id": "<redacted:remote-profile>",
+        "protocol": "sftp",
+        "protocol_name": "SFTP",
+        "uri": "<redacted:remote-uri>",
+        "hostname": "<redacted:remote-host>",
+        "port": 22,
+        "alias": "Synthetic remote",
+        "account": "<redacted:remote-account>",
+        "codepage": "UTF-8",
+        "connect_status": 1
+      }
+    ]
+  }
+}

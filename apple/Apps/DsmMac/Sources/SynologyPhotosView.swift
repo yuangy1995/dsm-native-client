@@ -47,6 +47,7 @@ struct SynologyPhotosView: View {
                         else { Task { await model.selectSection(section) } }
                     }.buttonStyle(MacToolbarButtonStyle(selected: model.section == section))
                 }
+                photoSourceMenu
                 Spacer(minLength: 12)
                 Button { model.startSlideshow() } label: { Image(systemName: "play.rectangle") }
                     .help(L10n.string("photos.slideshow.start")).accessibilityLabel(L10n.string("photos.slideshow.start"))
@@ -166,30 +167,10 @@ struct SynologyPhotosView: View {
             .padding(16)
             .background(MacGlassSurface(role: .toolbar))
             .disabled(model.isDeleting || model.isCheckingDeletion || model.isBrowsingBlocked)
-            spaceControls
             if model.albumListScope == .albums, model.albumListSort != nil || model.albumListDisplay != nil {
                 PhotoAlbumListControls(model: model).padding(.horizontal, 16).padding(.vertical, 8)
             }
-            if let folder = model.currentCoverFolder {
-                HStack {
-                    Button(L10n.string("photos.folderCover.change")) { folderCoverTarget = .init(folder: folder) }
-                        .disabled(model.isManaging || model.pendingMutationID != nil)
-                    Spacer()
-                }.padding(.horizontal, 16)
-            }
-            if model.section == .folders, !model.folderHistory.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
-                        ForEach(model.folderHistory) { folder in
-                            if folder.id != model.folderHistory.first?.id { Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
-                            Button(folder.name) { Task { await model.navigateToFolder(folder) } }
-                                .buttonStyle(.plain).padding(.horizontal, 6).padding(.vertical, 8)
-                                .foregroundStyle(folder.id == model.folderHistory.last?.id ? Color.primary : .accentColor)
-                                .modifier(PhotoFolderDropTarget(model: model, target: folder, onDrop: showPhotoDrop))
-                        }
-                    }
-                }.scrollIndicators(.hidden).padding(.horizontal, 10)
-            } else if let title = model.selectedCategoryItem?.name ?? model.selectedCategory?.title ?? model.selectedAlbum?.name {
+            if let title = model.selectedCategoryItem?.name ?? model.selectedCategory?.title ?? model.selectedAlbum?.name {
                 HStack {
                     Text(title).font(.headline)
                     Spacer()
@@ -229,8 +210,10 @@ struct SynologyPhotosView: View {
                 }.padding(.horizontal, 16).padding(.bottom, 8)
             }
 
-            if !model.items.isEmpty || (model.section == .folders && !model.collections.isEmpty) {
-                HStack(spacing: 12) {
+            if !model.items.isEmpty || (model.section == .folders && (!model.collections.isEmpty || !model.folderHistory.isEmpty)) {
+                HStack(spacing: 8) {
+                    if model.section == .folders, !model.isSelecting { folderBreadcrumbs }
+                    if !model.isSelecting { Spacer(minLength: 8) }
                     Button {
                         if model.isSelecting { model.clearSelection() } else { model.isSelecting = true }
                     } label: {
@@ -294,7 +277,7 @@ struct SynologyPhotosView: View {
                         } label: {
                             Label(L10n.string("photos.delete.action"), systemImage: "trash")
                         }.disabled(!model.canDeleteSelection)
-                    } else { Spacer() }
+                    } else { folderActions }
                 }
                 .buttonStyle(MacToolbarButtonStyle())
                 .padding(.horizontal, 16).padding(.bottom, 10)
@@ -493,28 +476,72 @@ struct SynologyPhotosView: View {
         }
         .background(PhotoSlideshowPresentation(model: model, isPresented: model.isSlideshowPresented).frame(width: 0, height: 0))
     }
-    @ViewBuilder private var spaceControls: some View {
-            if model.section != .sharing, !model.spaces.isEmpty {
-                HStack {
-                    Picker(L10n.string("photos.library.space"), selection: Binding(get: { model.selectedSpace }, set: { space in
-                        Task { await model.selectSpace(space) }
-                    })) {
-                        ForEach(model.spaces, id: \.self) { space in
-                            Text(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829")).tag(space)
+    @ViewBuilder private var photoSourceMenu: some View {
+        if model.section != .sharing, model.spaces.count > 1 {
+            Menu {
+                ForEach(model.spaces, id: \.self) { space in
+                    Button { Task { await model.selectSpace(space) } } label: {
+                        Label(L10n.string(space == .personal ? "shared.51fcaa8035fc61e2" : "shared.17d2e16862f16829"),
+                              systemImage: model.selectedSpace == space ? "checkmark" : "photo.on.rectangle")
+                    }
+                }
+            } label: {
+                if model.selectedSpace == .shared { Label(L10n.string("shared.17d2e16862f16829"), systemImage: "person.2") }
+                else { Image(systemName: "photo.on.rectangle") }
+            }.menuStyle(.borderlessButton).fixedSize().frame(minWidth: 36, minHeight: 36)
+                .help(L10n.string("photos.source.switch"))
+                .accessibilityLabel(L10n.string("photos.source.switch"))
+                .accessibilityIdentifier("photos.space")
+                .disabled(model.isLoading || model.isManaging || model.pendingMutationID != nil)
+        } else if model.section != .sharing, model.selectedSpace == .shared {
+            Label(L10n.string("shared.17d2e16862f16829"), systemImage: "person.2").font(.callout)
+        }
+    }
+
+    private var folderBreadcrumbs: some View {
+        HStack(spacing: 2) {
+            if model.folderHistory.count > 2 {
+                Menu {
+                    ForEach(model.folderHistory.dropLast(2)) { folder in
+                        Button(folder.name == "/" ? L10n.string("photos.folders.root") : folder.name) {
+                            Task { await model.navigateToFolder(folder) }
                         }
-                    }.fixedSize().accessibilityIdentifier("photos.space")
-                    Spacer()
-                    if let current = model.currentSortFolder, model.canInspectFolderSharing(current.folder) {
-                        Button(L10n.string("photos.folderSharing.title")) { folderPermissionTarget = current.folder }
-                            .disabled(model.isManaging || model.isLoading)
                     }
-                    if let current = model.currentSortFolder {
-                        PhotoFolderSortMenu(sort: current.sort, changeSort: model.changeCurrentFolderSort)
-                            .disabled(model.isLoading || model.isManaging || model.pendingMutationID != nil || model.isDeleting || model.isCheckingDeletion)
-                    }
-                }.padding(.horizontal, 16).padding(.vertical, 8)
-                    .disabled(model.isDeleting || model.isCheckingDeletion || model.isBrowsingBlocked)
+                } label: { Label(L10n.string("navigation.parentFolders"), systemImage: "ellipsis") }
+                    .labelStyle(.iconOnly).menuStyle(.borderlessButton).fixedSize().frame(minWidth: 32, minHeight: 32)
             }
+            ForEach(model.folderHistory.suffix(2)) { folder in
+                if folder.id != model.folderHistory.suffix(2).first?.id || model.folderHistory.count > 2 {
+                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                }
+                Button { Task { await model.navigateToFolder(folder) } } label: {
+                    if folder.name == "/" { Label(L10n.string("photos.folders.root"), systemImage: "folder").labelStyle(.iconOnly) }
+                    else { Text(folder.name).lineLimit(1).truncationMode(.middle) }
+                }.buttonStyle(MacPathButtonStyle(current: folder.id == model.folderHistory.last?.id))
+                    .help(folder.name == "/" ? L10n.string("photos.folders.root") : folder.name)
+                    .accessibilityIdentifier(folder.id == model.folderHistory.last?.id ? "photos.path.current" : "photos.path.parent")
+                    .modifier(PhotoFolderDropTarget(model: model, target: folder, onDrop: showPhotoDrop))
+            }
+        }.accessibilityIdentifier("photos.path")
+    }
+
+    @ViewBuilder private var folderActions: some View {
+        if let current = model.currentSortFolder {
+            PhotoFolderSortMenu(sort: current.sort, changeSort: model.changeCurrentFolderSort)
+                .disabled(model.isLoading || model.isManaging || model.pendingMutationID != nil)
+        }
+        if model.currentCoverFolder != nil || model.currentSortFolder.map({ model.canInspectFolderSharing($0.folder) }) == true {
+            Menu {
+                if let folder = model.currentCoverFolder {
+                    Button(L10n.string("photos.folderCover.change")) { folderCoverTarget = .init(folder: folder) }
+                }
+                if let current = model.currentSortFolder, model.canInspectFolderSharing(current.folder) {
+                    Button(L10n.string("photos.folderSharing.title")) { folderPermissionTarget = current.folder }
+                }
+            } label: { Label(L10n.string("photos.manage.actions"), systemImage: "ellipsis") }
+                .labelStyle(.iconOnly).macThemedMenu()
+                .disabled(model.isManaging || model.isLoading || model.pendingMutationID != nil)
+        }
     }
 
     private func canManage(_ kind: PhotoManagementKind) -> Bool {

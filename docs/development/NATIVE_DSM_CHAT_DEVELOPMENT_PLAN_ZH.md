@@ -66,7 +66,7 @@
   源码、测试命令与下一波高级 Chat 差距见[Windows 持续实施账本](WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。
   这是既有私有契约的 Windows 实现修正，Apple/Android 源码、公开领域接口和持久化不变。
 
-- 2026-09-09 编码纠正：当前管理员网页在 DSM 7.2.1-69057 Update 12 / Chat 2.4.1-22111 返回的 `Anonymous` / `Named` / `Member` 均声明 JSON。Apple 共享 Adapter 已修正 FORM-only 能力误判，创建各阶段复用统一参数编码器，保留既有固定版本和回读检查；不改公开领域接口，不开放加密。macOS 入口随之恢复，iPhone/iPad 共享实现的行为变化须随移动端回归与用户验收，不能据 macOS 构建宣布移动端通过。Windows 既有 FORM-only 创建门应在独立切片同步；Android 需单独核对创建各阶段的格式声明与空数组，不在本轮修改。详见[本轮记录及五端影响](MACOS_ENTRY_FIXES_AND_FUNCTION_AUDIT_20260909_ZH.md)，真实创建仍为 `PENDING_USER_VALIDATION`。
+- 2026-09-09 编码纠正：当前管理员网页在 DSM 7.2.1-69057 Update 12 / Chat 2.4.1-22111 返回的 `Anonymous` / `Named` / `Member` 均声明 JSON。Apple 共享 Adapter 已修正 FORM-only 能力误判，创建各阶段复用统一参数编码器，保留既有固定版本和回读检查；不改公开领域接口，不开放加密。macOS 入口随之恢复，iPhone/iPad 共享实现的行为变化须随移动端回归与用户验收，不能据 macOS 构建宣布移动端通过。Windows 既有 FORM-only 创建门应在独立切片同步；Android 需单独核对创建各阶段的格式声明与空数组，不在本轮修改。详见[本轮记录及五端影响](../../apple/Apps/DsmMac/README.md)，真实创建仍为 `PENDING_USER_VALIDATION`。
 
 - 已建立用户、会话、附件、消息分页、提醒、投票、加密状态和逐项能力的共同 JSON Schema。
 - Apple 共享层已建立相同领域模型、输入校验和 `ChatRepository` 边界，并以正式自动化测试覆盖群聊、消息、Emoji、投票和未知字段兼容。

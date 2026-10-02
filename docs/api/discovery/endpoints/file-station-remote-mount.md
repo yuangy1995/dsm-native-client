@@ -113,3 +113,11 @@ Mac 后续恢复源码已接：相同 Repository 内记录操作编号和非密�
 断开不得调用 FileStation.Delete，不暗中清理本地或远程目录。默认自动挂载/开机
 重连、域账号、只读策略、并发占用、真实路径映射、升级与失败恢复尚未验证。
 不新增 NAS 权限或绕过证书。后续用户验收需专用可恢复远程共享和清晰目标。
+
+## 本轮回归与证据边界
+
+既有 macOS 源身份核查、阶段式恢复和原生入口的聚焦回归及目标构建记录已纳入 [File Station 账本](../../../../apple/Apps/DsmMac/README.md)。上文各历史波次的“未运行”只描述当时状态，不覆盖本次自动化结果。本次未进行真实连接、断开或持久自动挂载验证，不提升旧环境等级。ISO、FTP/SFTP/WebDAV/云盘和设置无新增契约；[官方包核查](../environments/2026-10-02-file-station-official-package.md)未取得资源，不能据此实现猜测字段。
+
+## 2026-10-02 ISO 静态补充
+
+[本轮官方 FileBrowser.js](../environments/2026-10-02-file-station-live-observation.md)确认 `Mount.mount_iso v1` 参数 source、mount_point、auto_mount、user_set。来源和挂载点均为 NAS 路径；客户端只允许明确选定现有空目录、user_set=true，不照搬隐式创建/卸载后删除目录。列表仍是 Mount.List.get 的 isoList，断开仅指定 mount_point。auto_mount 为持久行为，需单独确认；未挂载或卸载真实 ISO，证据仅 static，不提升历史验证。

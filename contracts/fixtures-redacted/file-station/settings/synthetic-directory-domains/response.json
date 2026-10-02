@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "data": {
+    "domain_list": [
+      [
+        "Synthetic directory",
+        "<redacted:domain-name>",
+        "Synthetic comment"
+      ]
+    ]
+  }
+}

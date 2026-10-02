@@ -87,7 +87,8 @@ let package = Package(
         .testTarget(
             name: "DsmMacTests",
             dependencies: ["DsmCore", "DsmLocalization", "DsmMacExecutable"],
-            path: "Apps/DsmMac/Tests"
+            path: "Apps/DsmMac/Tests",
+            resources: [.copy("Fixtures/Office")]
         ),
         .testTarget(
             name: "DsmFileProviderRuntimeTests",

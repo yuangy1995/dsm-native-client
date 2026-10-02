@@ -1,5 +1,5 @@
 <!-- doc-role: platform-readme -->
-<!-- last-reviewed: 2026-08-20 -->
+<!-- last-reviewed: 2026-10-02 -->
 
 # Android 原生客户端
 
@@ -33,6 +33,8 @@ DSM 请求契约、`MutationResult` 映射、持久化键、状态顺序、WorkM
 
 范围、后续候选和非目标请查看[平台功能矩阵](../docs/progress/PLATFORM_MATRIX.md)。当前
 源码、自动化、真机和发布状态请查看[当前开发进度](../docs/progress/STATUS.md)。
+
+API 与 macOS 基线按[功能参考](../docs/api/README.md)查阅；尚未接入的增量仍须按 Android 生命周期和权限单独适配。
 
 ## 质量门
 
@@ -70,5 +72,5 @@ python3 tools/localization/check_localization.py
 - [Android 长期计划](../docs/development/ANDROID_CLIENT_COMPLETION_PLAN_ZH.md)
 - [Android 质量基线](../docs/quality/ANDROID_QUALITY_BASELINE_ZH.md)
 - [功能实现与验证等级](../docs/quality/VERIFICATION_LEVELS_ZH.md)
-- [请求契约与写操作结果计划](../docs/development/REQUEST_CONTRACT_AND_MUTATION_RESULT_PLAN_ZH.md)
-- [历史对齐记录](../docs/archive/2026-h2/ANDROID_ALIGNMENT_HISTORY_82_89.md)
+- [请求契约与写操作结果计划](../docs/api/reference/common.md)
+- [历史对齐记录](../docs/archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)

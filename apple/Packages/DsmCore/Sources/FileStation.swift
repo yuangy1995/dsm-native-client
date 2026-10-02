@@ -335,6 +335,10 @@ public struct FileShareLink: Identifiable, Codable, Hashable, Sendable {
     public let url: String
     public let hasPassword: Bool
     public let expiresAt: String?
+    public let availableAt: String?
+    public let availabilityDateKnown: Bool?
+    public let status: FileShareLinkStatus?
+    public let advanced: FileShareAdvancedDetails?
 
     public init(
         id: String,
@@ -342,7 +346,11 @@ public struct FileShareLink: Identifiable, Codable, Hashable, Sendable {
         path: String,
         url: String,
         hasPassword: Bool = false,
-        expiresAt: String? = nil
+        expiresAt: String? = nil,
+        availableAt: String? = nil,
+        availabilityDateKnown: Bool? = nil,
+        status: FileShareLinkStatus? = nil,
+        advanced: FileShareAdvancedDetails? = nil
     ) {
         self.id = id
         self.name = name
@@ -350,6 +358,10 @@ public struct FileShareLink: Identifiable, Codable, Hashable, Sendable {
         self.url = url
         self.hasPassword = hasPassword
         self.expiresAt = expiresAt
+        self.availableAt = availableAt
+        self.availabilityDateKnown = availabilityDateKnown
+        self.status = status
+        self.advanced = advanced
     }
 }
 
@@ -431,12 +443,14 @@ public struct FileShareLinkCreateRequest: Sendable {
     public let password: String?
     public let availableOn: FileShareLinkCalendarDate?
     public let expiresOn: FileShareLinkCalendarDate?
+    public let fileRequest: FileRequestConfiguration?
 
     public init(
         target: FileItem,
         password: String? = nil,
         availableOn: FileShareLinkCalendarDate? = nil,
-        expiresOn: FileShareLinkCalendarDate? = nil
+        expiresOn: FileShareLinkCalendarDate? = nil,
+        fileRequest: FileRequestConfiguration? = nil
     ) throws {
         let normalizedPassword = password?.isEmpty == false ? password : nil
         guard target.path.hasPrefix("/"), target.path != "/" else {
@@ -452,6 +466,7 @@ public struct FileShareLinkCreateRequest: Sendable {
         self.password = normalizedPassword
         self.availableOn = availableOn
         self.expiresOn = expiresOn
+        self.fileRequest = fileRequest
     }
 }
 
@@ -537,10 +552,14 @@ public struct RemoteMountInventory: Sendable, Equatable, CustomStringConvertible
     public let profileID: UUID
     public let isRemoteMountingEnabled: Bool
     public let connections: [RemoteMountConnection]
+    public let isoConnections: [FileISOMountConnection]?
+    public let isISOMountingEnabled: Bool?
     public var description: String { "RemoteMountInventory" }
     public var debugDescription: String { description }
-    public init(profileID: UUID, isRemoteMountingEnabled: Bool, connections: [RemoteMountConnection]) {
+    public init(profileID: UUID, isRemoteMountingEnabled: Bool, connections: [RemoteMountConnection],
+                isoConnections: [FileISOMountConnection]? = nil, isISOMountingEnabled: Bool? = nil) {
         self.profileID = profileID; self.isRemoteMountingEnabled = isRemoteMountingEnabled; self.connections = connections
+        self.isoConnections = isoConnections; self.isISOMountingEnabled = isISOMountingEnabled
     }
 }
 
@@ -556,6 +575,7 @@ public struct RemoteMountConfiguration: Sendable, Equatable, CustomStringConvert
     public let readOnly: Bool
     public let nfsVersion: RemoteMountNFSVersion
     public let nfsTransport: RemoteMountNFSTransport
+    public let automaticMount: Bool
     public var description: String { "RemoteMountConfiguration" }
     public var debugDescription: String { description }
 
@@ -569,7 +589,8 @@ public struct RemoteMountConfiguration: Sendable, Equatable, CustomStringConvert
         domain: String = "",
         readOnly: Bool = false,
         nfsVersion: RemoteMountNFSVersion = .v3,
-        nfsTransport: RemoteMountNFSTransport = .tcp
+        nfsTransport: RemoteMountNFSTransport = .tcp,
+        automaticMount: Bool = false
     ) {
         self.protocolType = protocolType
         self.server = server
@@ -581,6 +602,7 @@ public struct RemoteMountConfiguration: Sendable, Equatable, CustomStringConvert
         self.readOnly = readOnly
         self.nfsVersion = nfsVersion
         self.nfsTransport = nfsTransport
+        self.automaticMount = automaticMount
     }
 }
 
@@ -757,6 +779,8 @@ public struct FileBackgroundTaskSummary: Identifiable, Equatable, Sendable {
     public let totalItemCount: Int?
     public let processedBytes: Int64?
     public let totalBytes: Int64?
+    public let apiVersion: Int?
+    public let method: String?
 
     public init(
         id: String,
@@ -767,7 +791,9 @@ public struct FileBackgroundTaskSummary: Identifiable, Equatable, Sendable {
         processedItemCount: Int?,
         totalItemCount: Int?,
         processedBytes: Int64?,
-        totalBytes: Int64?
+        totalBytes: Int64?,
+        apiVersion: Int? = nil,
+        method: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -778,10 +804,12 @@ public struct FileBackgroundTaskSummary: Identifiable, Equatable, Sendable {
         self.totalItemCount = totalItemCount
         self.processedBytes = processedBytes
         self.totalBytes = totalBytes
+        self.apiVersion = apiVersion
+        self.method = method
     }
 }
 
-public enum FileBackgroundTaskKind: Equatable, Sendable {
+public enum FileBackgroundTaskKind: Hashable, Sendable {
     case copyOrMove
     case delete
     case compress
@@ -862,6 +890,8 @@ public protocol FileRepository: PhotoFileServing, Sendable {
 
     func listShares(offset: Int, limit: Int) async throws -> FilePage
     func listBackgroundTasks(offset: Int, limit: Int) async throws -> FileBackgroundTaskPage
+    func canStopBackgroundTask(_ task: FileBackgroundTaskSummary) -> Bool
+    func controlBackgroundTask(_ task: FileBackgroundTaskSummary, clearFinished: Bool) async throws -> MutationResult
     func calculateDirectorySize(path: String) async throws -> FileDirectorySizeSummary
     func listVirtualFolders(offset: Int, limit: Int) async throws -> FileVirtualFolderPage
     func listRemoteMounts(offset: Int, limit: Int) async throws -> FilePage
@@ -945,7 +975,39 @@ public protocol FileRepository: PhotoFileServing, Sendable {
         progress: @escaping FileTransferProgress
     ) async throws
     func listArchiveItems(filePath: String, codepage: String?, password: String?) async throws -> [ArchiveItem]
+    func listArchivePage(filePath: String, parentID: Int, offset: Int, limit: Int, codepage: String?, password: String?) async throws -> ArchiveItemPage
+    func extract(_ request: FileExtractionRequest, progress: @escaping FileTransferProgress) async throws
     func search(folderPath: String, query: String) async throws -> [FileItem]
+    func search(_ request: FileSearchRequest) async throws -> [FileItem]
+    func searchWithReport(_ request: FileSearchRequest) async throws -> FileSearchResult
+    func loadFileStationAdvancedAccess() async throws -> FileStationAdvancedAccess
+    func pendingFileStationChanges() async -> [FileStationPendingChange]
+    func reviewPendingFileStationChange(id: String) async throws -> MutationResult
+    func listFileVFSProtocols() async throws -> [FileVFSProtocol]
+    func prepareFileVFSCloudAuthorization(protocolID: String) async throws -> FileVFSCloudAuthorizationRequest
+    func authorizeFileVFS(_ change: FileVFSChange, authorization: FileVFSCloudAuthorization, confirmed: Bool) async throws -> MutationResult
+    func listFileVFSProfiles() async throws -> [FileVFSProfile]
+    func listFileVFSFolder(_ profile: FileVFSProfile, path: String, offset: Int, limit: Int) async throws -> FilePage
+    func loadFileVFSDetail(_ profile: FileVFSProfile) async throws -> FileVFSDetail
+    func changeFileVFS(_ change: FileVFSChange, password: String?, confirmed: Bool) async throws -> MutationResult
+    func reviewFileVFS(_ change: FileVFSChange) async throws -> MutationResult
+    func loadFileStationSettings() async throws -> FileStationSettings
+    func loadFileStationMountAccess() async throws -> FileStationMountAccessScope
+    func listFileStationMountAccounts(kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationMountAccountPage
+    func loadFileStationMountDirectories() async throws -> FileStationMountDirectories
+    func listFileStationMountAccounts(source: FileStationMountAccountSource, kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationMountAccountPage
+    func listFileStationPolicyAccounts(kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationPolicyAccountPage
+    func listFileStationBandwidth(ownerType: FileStationBandwidthEntry.OwnerType, offset: Int, limit: Int) async throws -> FileStationBandwidthPage
+    func loadFileStationSharingTheme() async throws -> FileStationSharingTheme
+    func listFileStationThemeImages(kind: FileStationThemeImage.Kind) async throws -> [FileStationThemeImage]
+    func loadFileStationThemeImage(_ image: FileStationThemeImage) async throws -> Data
+    func uploadFileStationThemeImage(data: Data, filename: String, kind: FileStationThemeImage.Kind, confirmed: Bool) async throws -> FileStationThemeImage
+    func changeFileStationSettings(_ change: FileStationSettingsChange, confirmed: Bool) async throws -> MutationResult
+    func reviewFileStationSettings(_ change: FileStationSettingsChange) async throws -> MutationResult
+    func loadFilePermissions(_ item: FileItem) async throws -> FilePermissionSnapshot
+    func changeFilePermissions(_ change: FilePermissionChange) async throws -> MutationResult
+    func reviewFilePermissions(_ change: FilePermissionChange) async throws -> MutationResult
+    func listFileStationPrincipals(prefix: String, offset: Int, limit: Int) async throws -> FileStationPrincipalPage
     /// 使用 File Station 官方接口计算远程文件校验值。该操作只读，但大文件可能耗时较长。
     func fileMD5(remotePath: String) async throws -> String
     func listFavorites() async throws -> [FavoriteLocation]
@@ -961,8 +1023,12 @@ public protocol FileRepository: PhotoFileServing, Sendable {
     ) async throws -> FileShareLinkCreateOutcome
     func createShareLink(paths: [String], password: String?, expiresAt: String?) async throws -> FileShareLink
     func deleteShareLinks(ids: [String]) async throws
+    func editShareLink(_ request: FileShareLinkEditRequest) async throws -> FileShareLinkEditOutcome
+    func deleteShareLinkResult(_ link: FileShareLink) async throws -> MutationResult
     func storageSpaceSummary() async throws -> StorageSpaceSummary?
     func remoteMountInventory() async throws -> RemoteMountInventory
+    func changeISOMount(_ change: FileISOMountChange) async throws -> MutationResult
+    func reviewISOMount(_ change: FileISOMountChange) async throws -> MutationResult
     func createRemoteMount(_ configuration: RemoteMountConfiguration) async throws
     func updateRemoteMount(
         existingMountPoint: String,
@@ -978,6 +1044,136 @@ public protocol FileRepository: PhotoFileServing, Sendable {
 }
 
 public extension FileRepository {
+    func pendingFileStationChanges() async -> [FileStationPendingChange] { [] }
+    func reviewPendingFileStationChange(id: String) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileVFSProtocols() async throws -> [FileVFSProtocol] {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func prepareFileVFSCloudAuthorization(protocolID: String) async throws -> FileVFSCloudAuthorizationRequest {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func authorizeFileVFS(_ change: FileVFSChange, authorization: FileVFSCloudAuthorization, confirmed: Bool) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileVFSProfiles() async throws -> [FileVFSProfile] {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileVFSFolder(_ profile: FileVFSProfile, path: String, offset: Int, limit: Int) async throws -> FilePage {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func loadFileVFSDetail(_ profile: FileVFSProfile) async throws -> FileVFSDetail {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func changeFileVFS(_ change: FileVFSChange, password: String?, confirmed: Bool) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func reviewFileVFS(_ change: FileVFSChange) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func loadFileStationSettings() async throws -> FileStationSettings {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileStationMountAccounts(kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationMountAccountPage {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func loadFileStationMountDirectories() async throws -> FileStationMountDirectories {
+        .init(items: [.init(source: .local, name: "")], hasUnavailableSources: false)
+    }
+    func listFileStationMountAccounts(source: FileStationMountAccountSource, kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationMountAccountPage {
+        guard source == .local else {
+            throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+        }
+        return try await listFileStationMountAccounts(kind: kind, query: query, offset: offset, limit: limit)
+    }
+    func loadFileStationMountAccess() async throws -> FileStationMountAccessScope {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileStationPolicyAccounts(kind: FileStationPrincipal.Kind, query: String, offset: Int, limit: Int) async throws -> FileStationPolicyAccountPage {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileStationBandwidth(ownerType: FileStationBandwidthEntry.OwnerType, offset: Int, limit: Int) async throws -> FileStationBandwidthPage {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileStationThemeImages(kind: FileStationThemeImage.Kind) async throws -> [FileStationThemeImage] {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func loadFileStationThemeImage(_ image: FileStationThemeImage) async throws -> Data {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func uploadFileStationThemeImage(data: Data, filename: String, kind: FileStationThemeImage.Kind, confirmed: Bool) async throws -> FileStationThemeImage {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func loadFileStationSharingTheme() async throws -> FileStationSharingTheme {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func changeFileStationSettings(_ change: FileStationSettingsChange, confirmed: Bool) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func reviewFileStationSettings(_ change: FileStationSettingsChange) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func loadFilePermissions(_ item: FileItem) async throws -> FilePermissionSnapshot {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func changeFilePermissions(_ change: FilePermissionChange) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func reviewFilePermissions(_ change: FilePermissionChange) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func canStopBackgroundTask(_ task: FileBackgroundTaskSummary) -> Bool { false }
+    func controlBackgroundTask(_ task: FileBackgroundTaskSummary, clearFinished: Bool) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.tasks.unsupported"))
+    }
+    func listArchivePage(filePath: String, parentID: Int, offset: Int, limit: Int, codepage: String?, password: String?) async throws -> ArchiveItemPage {
+        throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.archive.unsupported"))
+    }
+    func extract(_ request: FileExtractionRequest, progress: @escaping FileTransferProgress) async throws {
+        guard case .all = request.selection else {
+            throw AppError(category: .versionUnsupported, isRetryable: false, safeUserMessage: L10n.string("files.archive.unsupported"))
+        }
+        try await extract(filePath: request.filePath, destinationFolder: request.destination,
+            overwrite: request.overwrite, keepDirectoryStructure: request.keepDirectories,
+            createSubfolder: request.createSubfolder, codepage: request.codepage, password: request.password, progress: progress)
+    }
+    func editShareLink(_ request: FileShareLinkEditRequest) async throws -> FileShareLinkEditOutcome {
+        throw AppError(category: .versionUnsupported, isRetryable: false,
+                       safeUserMessage: L10n.string("files.sharing.manageUnsupported"))
+    }
+    func deleteShareLinkResult(_ link: FileShareLink) async throws -> MutationResult {
+        throw AppError(category: .versionUnsupported, isRetryable: false,
+                       safeUserMessage: L10n.string("files.sharing.manageUnsupported"))
+    }
+    func search(_ request: FileSearchRequest) async throws -> [FileItem] {
+        guard request.folders.count == 1,
+              request == FileSearchRequest(folders: request.folders, name: request.name) else {
+            throw AppError(category: .versionUnsupported, isRetryable: false,
+                           safeUserMessage: L10n.string("files.search.unsupported"))
+        }
+        return try await search(folderPath: request.folders[0], query: request.name)
+    }
+    func searchWithReport(_ request: FileSearchRequest) async throws -> FileSearchResult {
+        guard !request.searchesContents else {
+            throw AppError(category: .versionUnsupported, isRetryable: false,
+                           safeUserMessage: L10n.string("files.search.contentUnavailable"))
+        }
+        return FileSearchResult(items: try await search(request))
+    }
+    func loadFileStationAdvancedAccess() async throws -> FileStationAdvancedAccess {
+        .init(isAdministrator: false, writesEnabled: false)
+    }
+    func changeISOMount(_ change: FileISOMountChange) async throws -> MutationResult {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func reviewISOMount(_ change: FileISOMountChange) async throws -> MutationResult {
+        throw AppError(category: .apiUnavailable, isRetryable: false, safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
+    func listFileStationPrincipals(prefix: String, offset: Int, limit: Int) async throws -> FileStationPrincipalPage {
+        throw AppError(category: .apiUnavailable, isRetryable: false,
+                       safeUserMessage: L10n.string("files.advanced.unavailable"))
+    }
     var allowsRemoteMountManagement: Bool { false }
     var fileShareLinkAvailability: FileShareLinkAvailability { .unsupported }
 
@@ -1346,12 +1542,14 @@ public struct ArchiveItem: Sendable, Equatable {
     public let name: String
     public let path: String
     public let isDirectory: Bool
+    public let sizeBytes: Int64?
 
-    public init(id: Int, name: String, path: String, isDirectory: Bool) {
+    public init(id: Int, name: String, path: String, isDirectory: Bool, sizeBytes: Int64? = nil) {
         self.id = id
         self.name = name
         self.path = path
         self.isDirectory = isDirectory
+        self.sizeBytes = sizeBytes
     }
 }
 

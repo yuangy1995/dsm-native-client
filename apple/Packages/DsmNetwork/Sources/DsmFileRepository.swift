@@ -212,6 +212,8 @@ private struct BackgroundTaskListPayload: Decodable, Sendable {
 
 private struct BackgroundTaskPayload: Decodable, Sendable {
     let api: String?
+    let version: Int?
+    let method: String?
     let taskID: String?
     let finished: Bool?
     let progress: Double?
@@ -221,7 +223,7 @@ private struct BackgroundTaskPayload: Decodable, Sendable {
     let total: Int64?
 
     private enum CodingKeys: String, CodingKey {
-        case api
+        case api, version, method
         case taskID = "taskid"
         case finished
         case progress
@@ -234,6 +236,8 @@ private struct BackgroundTaskPayload: Decodable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         api = try? container.decodeIfPresent(String.self, forKey: .api)
+        version = Self.decodeInteger(from: container, key: .version).flatMap(Int.init(exactly:))
+        method = try? container.decodeIfPresent(String.self, forKey: .method)
         taskID = try? container.decodeIfPresent(String.self, forKey: .taskID)
         finished = Self.decodeBool(from: container, key: .finished)
         progress = Self.decodeDouble(from: container, key: .progress)
@@ -635,15 +639,33 @@ private struct ShareListItemPayload: Decodable, Sendable {
     let url: String
     let hasPassword: Bool
     let expiresAt: String?
+    let availableAt: String?
+    let availabilityDateKnown: Bool
+    let status: FileShareLinkStatus?
+    let advanced: FileShareAdvancedDetails?
 
     private enum CodingKeys: String, CodingKey {
         case id, name, path, url
         case hasPassword = "has_password"
         case expiresAt = "date_expired"
+        case availableAt = "date_available"
+        case status
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        availabilityDateKnown = container.contains(.availableAt)
+        if let value = try? container.decode(String.self, forKey: .availableAt) {
+            availableAt = try Self.calendarValue(value)
+        } else if let value = try? container.decode(Int.self, forKey: .availableAt), value == 0 {
+            availableAt = nil
+        } else if !availabilityDateKnown {
+            availableAt = nil
+        } else {
+            throw FileShareLinkContractError.invalidDate
+        }
+        status = (try? container.decode(String.self, forKey: .status)).map { FileShareLinkStatus(rawValue: $0) ?? .unknown }
+        advanced = try? FileShareAdvancedPayload(from: decoder).details()
         if let value = try? container.decode(String.self, forKey: .id) {
             id = value.trimmingCharacters(in: .whitespacesAndNewlines)
         } else if let value = try? container.decode(Int.self, forKey: .id) {
@@ -703,11 +725,7 @@ private struct ShareListItemPayload: Decodable, Sendable {
             )
         }
         if let value = try? container.decode(String.self, forKey: .expiresAt) {
-            if value == "0" {
-                expiresAt = nil
-            } else {
-                expiresAt = try FileShareLinkCalendarDate(iso8601: value).iso8601
-            }
+            expiresAt = try Self.calendarValue(value)
         } else if let value = try? container.decode(Int.self, forKey: .expiresAt) {
             guard value == 0 else {
                 throw DecodingError.dataCorruptedError(
@@ -724,6 +742,38 @@ private struct ShareListItemPayload: Decodable, Sendable {
                 debugDescription: "Share expiration date is required."
             )
         }
+    }
+
+    private static func calendarValue(_ value: String) throws -> String? {
+        if value.isEmpty || value == "0" { return nil }
+        _ = try FileShareLinkCalendarDate(iso8601: String(value.prefix(10)))
+        if value.count == 10 { return value }
+        guard value.count == 19, value.dropFirst(10).first == " ",
+              value.range(of: #"^\d{4}-\d{2}-\d{2} (?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$"#, options: .regularExpression) != nil else {
+            throw FileShareLinkContractError.invalidDate
+        }
+        // NAS 本地时间原样保留；保留日期的编辑不截断时分秒。
+        return value
+    }
+}
+
+private struct FileShareAdvancedPayload: Decodable, Sendable {
+    let protect_type: FileShareAdvancedDetails.Protection
+    let protect_users: [String]
+    let protect_groups: [String]
+    let expire_times: Int
+    let enable_upload: Bool
+    let project_name: String
+    let request_name: String
+    let request_info: String
+    func details() throws -> FileShareAdvancedDetails {
+        guard expire_times >= 0,
+              ["SYNO.SDS.App.FileStation3.Instance", "SYNO.SDS.App.SharingUpload.Application"].contains(project_name) else {
+            throw FileShareLinkContractError.invalidTarget
+        }
+        return .init(protection: protect_type, users: protect_users, groups: protect_groups, maximumAccesses: expire_times,
+            isFileRequest: project_name == "SYNO.SDS.App.SharingUpload.Application", allowsUpload: enable_upload,
+            requestName: request_name, requestMessage: request_info)
     }
 }
 
@@ -880,6 +930,11 @@ private struct TaskStartPayload: Decodable, Sendable {
     let taskid: String
 }
 
+private struct FileSearchStartPayload: Decodable, Sendable {
+    let taskid: String
+    let has_not_index_share: Bool?
+}
+
 private struct FileMD5StatusPayload: Decodable, Sendable {
     let finished: Bool
     let md5: String?
@@ -917,7 +972,8 @@ private struct DirectorySizeStatusPayload: Decodable, Sendable {
 }
 
 private struct ArchiveListPayload: Decodable, Sendable {
-    let items: [ArchiveItemPayload]?
+    let items: [ArchiveItemPayload]
+    let total: Int?
 }
 
 private struct ArchiveItemPayload: Decodable, Sendable {
@@ -925,10 +981,21 @@ private struct ArchiveItemPayload: Decodable, Sendable {
     let name: String
     let path: String
     let isDirectory: Bool
+    let size: Int64?
 
     private enum CodingKeys: String, CodingKey {
-        case itemid, name, path
+        case itemid, name, path, size
+        case itemID = "item_id"
         case isDirectory = "is_dir"
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // 官方字段表使用 itemid，而同页示例使用 item_id；只兼容这两个公开拼写。
+        itemid = try c.decodeIfPresent(Int.self, forKey: .itemid) ?? c.decode(Int.self, forKey: .itemID)
+        name = try c.decode(String.self, forKey: .name)
+        path = try c.decode(String.self, forKey: .path)
+        isDirectory = try c.decode(Bool.self, forKey: .isDirectory)
+        size = try c.decodeIfPresent(Int64.self, forKey: .size)
     }
 }
 
@@ -972,7 +1039,8 @@ private struct BinaryEnvelope: Decodable, Sendable {
 private struct RemoteMountInventoryPayload: Decodable, Sendable {
     struct Configuration: Decodable, Sendable {
         let enabled: Bool
-        private enum CodingKeys: String, CodingKey { case enabled = "enable_remote_mount" }
+        let isoEnabled: Bool?
+        private enum CodingKeys: String, CodingKey { case enabled = "enable_remote_mount", isoEnabled = "enable_iso_mount" }
     }
     struct Connection: Decodable, Sendable {
         let type: String
@@ -990,6 +1058,7 @@ private struct RemoteMountInventoryPayload: Decodable, Sendable {
     }
     let mountConfig: Configuration
     let remoteList: [Connection]
+    let isoList: [Connection]?
 }
 
 private struct StreamingUploadPlan: @unchecked Sendable {
@@ -1033,18 +1102,27 @@ public actor DsmFileRepository: FileRepository {
     public nonisolated let allowsRemoteMountManagement: Bool
     public nonisolated let fileShareLinkAvailability: FileShareLinkAvailability
 
-    private let baseURL: URL
+    let baseURL: URL
     private let expectedHost: String
     private let pinnedCertificateSHA256: String?
-    private let capabilities: CapabilitySet
-    private let credential: DsmSessionCredential
-    private let transport: any DsmBinaryHTTPTransport
-    private let client: DsmAPIClient
+    let capabilities: CapabilitySet
+    let credential: DsmSessionCredential
+    let transport: any DsmBinaryHTTPTransport
+    let client: DsmAPIClient
+    var activeAdvancedFileChanges: Set<String> = []
+    var unverifiedAdvancedFileChanges: Set<String> = []
     private let directorySizePollingPolicy: DirectorySizePollingPolicy
     private var activeDeletionPaths: Set<String> = []
     private var activeDirectorySizePaths: Set<String> = []
     private var activeShareLinkPaths: Set<String> = []
-    private var activeRemoteMountPaths: Set<String> = []
+    private var activeBackgroundTaskIDs: Set<String> = []
+    var activeRemoteMountPaths: Set<String> = []
+    var pendingFileVFS: [String: PendingFileVFSChange] = [:]
+    var fileVFSCloudAuthorizationRequest: FileVFSCloudAuthorizationRequest?
+    var pendingFileStationSettings: [String: FileStationSettingsChange] = [:]
+    var acknowledgedFileStationSettings: Set<String> = []
+    var pendingFilePermissions: [String: PendingFilePermissionChange] = [:]
+    var pendingISOChanges: [String: FileISOMountChange] = [:]
     private var remoteMountOperations: [UUID: RemoteMountOperation] = [:]
     private var activeFileItemMutationPaths: Set<String> = []
     /// 提交状态未知的目标只能回读复核，不能再次发送写请求。
@@ -1161,6 +1239,10 @@ public actor DsmFileRepository: FileRepository {
         offset: Int = 0,
         limit: Int = 100
     ) async throws -> FileBackgroundTaskPage {
+        try await backgroundTaskPage(offset: offset, limit: limit, strict: false)
+    }
+
+    private func backgroundTaskPage(offset: Int, limit: Int, strict: Bool) async throws -> FileBackgroundTaskPage {
         let capability = try requireCapability(DsmAPIName.fileStationBackgroundTask)
         let requestedOffset = max(0, offset)
         // 官方允许 limit=0 返回全部任务；客户端始终限制为有界分页。
@@ -1190,6 +1272,13 @@ public actor DsmFileRepository: FileRepository {
             )
 
             let rawTasks = Array((payload.tasks ?? []).prefix(requestedLimit))
+            if strict {
+                guard let tasks = payload.tasks, let total = payload.total, payload.offset == requestedOffset,
+                      tasks.count <= requestedLimit, total >= requestedOffset + tasks.count,
+                      !tasks.isEmpty || requestedOffset == total else {
+                    throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("files.tasks.unverified"))
+                }
+            }
             var seenTaskIDs: Set<String> = []
             let tasks = rawTasks.compactMap { task -> FileBackgroundTaskSummary? in
                 guard let summary = Self.makeBackgroundTaskSummary(task),
@@ -1199,6 +1288,9 @@ public actor DsmFileRepository: FileRepository {
                 return summary
             }
             let resolvedOffset = min(max(0, payload.offset ?? requestedOffset), 1_000_000)
+            if strict && tasks.count != rawTasks.count {
+                throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("files.tasks.unverified"))
+            }
             let nextOffset = min(resolvedOffset + rawTasks.count, 1_000_000)
             let reportedTotal = min(max(0, payload.total ?? nextOffset), 1_000_000)
             let total = max(nextOffset, reportedTotal)
@@ -1211,6 +1303,77 @@ public actor DsmFileRepository: FileRepository {
             )
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
+        }
+    }
+
+    public nonisolated func canStopBackgroundTask(_ task: FileBackgroundTaskSummary) -> Bool {
+        let (name, version) = Self.backgroundTaskAPI(task.kind)
+        return task.state == .active && task.createdAt != nil && task.method == "start"
+            && task.apiVersion == version && capabilities[name]?.selectedVersion == version
+    }
+
+    private nonisolated static func backgroundTaskAPI(_ kind: FileBackgroundTaskKind) -> (String, Int) {
+        switch kind {
+        case .copyOrMove: (DsmAPIName.fileStationCopyMove, 3)
+        case .delete: (DsmAPIName.fileStationDelete, 2)
+        case .compress: (DsmAPIName.fileStationCompress, 3)
+        case .extract: (DsmAPIName.fileStationExtract, 2)
+        }
+    }
+
+    public func controlBackgroundTask(_ task: FileBackgroundTaskSummary, clearFinished: Bool) async throws -> MutationResult {
+        func outcome(_ status: MutationResultStatus, submitted: Bool) throws -> MutationResult {
+            let unknown = status == .submittedButUnverified || status == .cancellationRequestedAfterSubmission
+            return try makeMutationResult(status: status, operation: clearFinished ? "backgroundTaskClear" : "backgroundTaskStop",
+                submitted: submitted, requiresRefresh: unknown, succeeded: status == .confirmedSuccess ? 1 : 0,
+                failed: status == .confirmedFailure || status == .unsupported || status == .permissionDenied ? 1 : 0,
+                unknown: unknown ? 1 : 0, diagnosticTag: "file-station.background-task.control")
+        }
+        guard Self.normalizedBackgroundTaskID(task.id) == task.id, task.createdAt != nil,
+              task.method == "start", !activeBackgroundTaskIDs.contains(task.id),
+              clearFinished ? task.state == .finished : canStopBackgroundTask(task) else {
+            return try outcome(.unsupported, submitted: false)
+        }
+        activeBackgroundTaskIDs.insert(task.id)
+        defer { activeBackgroundTaskIDs.remove(task.id) }
+        let existing = try await findBackgroundTask(task.id)
+        guard let existing, existing.kind == task.kind, existing.createdAt == task.createdAt,
+              existing.apiVersion == task.apiVersion, existing.method == task.method,
+              existing.state == task.state else { return try outcome(.confirmedFailure, submitted: false) }
+        if Task.isCancelled { return try outcome(.cancelledBeforeSubmission, submitted: false) }
+        let api = clearFinished ? DsmAPIName.fileStationBackgroundTask : Self.backgroundTaskAPI(task.kind).0
+        let capability = try requireCapability(api)
+        let version = clearFinished ? 3 : Self.backgroundTaskAPI(task.kind).1
+        guard capability.selectedVersion == version else { return try outcome(.unsupported, submitted: false) }
+        do {
+            try await client.callVoid(path: capability.path, api: api, version: version,
+                method: clearFinished ? "clear_finished" : "stop", requestFormat: capability.requestFormat,
+                parameters: ["taskid": clearFinished ? .stringArray([task.id]) : .string(task.id)], credential: credential)
+        } catch let error as DsmNetworkError {
+            if case .api = error {
+                return try outcome(DsmErrorMapper.map(error).category == .permissionDenied ? .permissionDenied : .confirmedFailure, submitted: true)
+            }
+            if case .invalidRequest = error { return try outcome(.confirmedFailure, submitted: false) }
+        } catch { /* 写入结果未知时仅继续读取，不再次发送控制请求。 */ }
+        if Task.isCancelled { return try outcome(.cancellationRequestedAfterSubmission, submitted: true) }
+        do {
+            let current = try await findBackgroundTask(task.id)
+            let confirmed = clearFinished ? current == nil
+                : current?.kind == task.kind && current?.createdAt == task.createdAt && current?.state == .finished
+            return try outcome(confirmed ? .confirmedSuccess : .submittedButUnverified, submitted: true)
+        } catch { return try outcome(.submittedButUnverified, submitted: true) }
+    }
+
+    private func findBackgroundTask(_ id: String) async throws -> FileBackgroundTaskSummary? {
+        var offset = 0
+        while true {
+            let page = try await backgroundTaskPage(offset: offset, limit: 100, strict: true)
+            if let task = page.tasks.first(where: { $0.id == id }) { return task }
+            guard page.nextOffset < page.total else { return nil }
+            guard page.hasMore, page.nextOffset > offset else {
+                throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("files.tasks.unverified"))
+            }
+            offset = page.nextOffset
         }
     }
 
@@ -1256,6 +1419,29 @@ public actor DsmFileRepository: FileRepository {
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
         }
+    }
+
+    func requireSecureVFSSetup() throws {
+        guard baseURL.scheme?.lowercased() == "https" else {
+            throw Self.advancedFileError(.permissionDenied, "files.vfs.secureConnectionRequired")
+        }
+    }
+
+    /// 权限编辑使用完整路径映射，拒绝缺字段；不改变普通浏览的宽容解码。
+    func permissionTarget(path: String) async throws -> (FileItem, String, Bool) {
+        let payload: FileInfoPayload = try await advancedFileCall(DsmAPIName.fileStationList, method: "getinfo", version: 2,
+            parameters: ["path": .stringArray([path]), "additional": .stringArray(Self.getInfoAdditionalFields)])
+        guard payload.files.count == 1, let entry = payload.files.first, entry.path == path,
+              entry.code == nil || entry.code == 0, let file = entry.file,
+              let resolved = file.additional?.realPath, resolved.hasPrefix("/"),
+              !resolved.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }),
+              let isACL = file.additional?.perm?.isACLMode else { throw Self.advancedFileError() }
+        let raw = makeFileItem(file)
+        let item = FileItem(profileID: profileID, name: raw.name, path: raw.path, kind: raw.kind,
+            sizeBytes: raw.sizeBytes, owner: raw.owner, group: raw.group,
+            times: .init(modifiedAt: raw.times?.modifiedAt, createdAt: nil, accessedAt: nil),
+            permissions: raw.permissions, mountPointType: raw.mountPointType)
+        return (item, resolved, isACL)
     }
 
     public func getInfo(paths: [String]) async throws -> [FileItem] {
@@ -3503,6 +3689,18 @@ public actor DsmFileRepository: FileRepository {
         password: String?,
         progress: @escaping FileTransferProgress
     ) async throws {
+        try await extract(FileExtractionRequest(filePath: filePath, destination: destinationFolder,
+            overwrite: overwrite, keepDirectories: keepDirectoryStructure, createSubfolder: createSubfolder,
+            codepage: codepage, password: password), progress: progress)
+    }
+
+    public func extract(_ request: FileExtractionRequest, progress: @escaping FileTransferProgress) async throws {
+        guard request.selection.isValid else {
+            throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("files.archive.invalidSelection"))
+        }
+        let filePath = request.filePath, destinationFolder = request.destination
+        let overwrite = request.overwrite, keepDirectoryStructure = request.keepDirectories, createSubfolder = request.createSubfolder
+        let codepage = request.codepage, password = request.password
         let capability = try requireCapability(DsmAPIName.fileStationExtract)
         guard try selectedVersion(capability) >= 2 else {
             throw AppError(
@@ -3519,6 +3717,9 @@ public actor DsmFileRepository: FileRepository {
                 "keep_dir": .boolean(keepDirectoryStructure),
                 "create_subfolder": .boolean(createSubfolder)
             ]
+            if case .items(let selected) = request.selection {
+                parameters["item_id"] = .string(Array(Set(selected.map(\.id))).sorted().map(String.init).joined(separator: ","))
+            }
             if let codepage, !codepage.isEmpty {
                 parameters["codepage"] = .string(codepage)
             }
@@ -3546,6 +3747,23 @@ public actor DsmFileRepository: FileRepository {
         codepage: String?,
         password: String?
     ) async throws -> [ArchiveItem] {
+        var result: [ArchiveItem] = []
+        var offset = 0
+        while true {
+            let page = try await listArchivePage(filePath: filePath, parentID: -1, offset: offset, limit: 200,
+                                                 codepage: codepage, password: password)
+            result.append(contentsOf: page.items)
+            guard page.hasMore else { return result }
+            offset += page.items.count
+        }
+    }
+
+    public func listArchivePage(filePath: String, parentID: Int, offset: Int, limit: Int,
+                                codepage: String?, password: String?) async throws -> ArchiveItemPage {
+        guard parentID >= -1, offset >= 0, (1...500).contains(limit) else {
+            throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("files.archive.invalidSelection"))
+        }
+        try Task.checkCancellation()
         let capability = try requireCapability(DsmAPIName.fileStationExtract)
         guard try selectedVersion(capability) >= 2 else {
             throw AppError(
@@ -3557,11 +3775,11 @@ public actor DsmFileRepository: FileRepository {
         do {
             var parameters: [String: DsmParameterValue] = [
                 "file_path": .string(filePath),
-                "offset": .integer(0),
-                "limit": .integer(200),
+                "offset": .integer(offset),
+                "limit": .integer(limit),
                 "sort_by": .string("name"),
                 "sort_direction": .string("asc"),
-                "item_id": .integer(-1)
+                "item_id": .integer(parentID)
             ]
             if let codepage, !codepage.isEmpty {
                 parameters["codepage"] = .string(codepage)
@@ -3579,9 +3797,17 @@ public actor DsmFileRepository: FileRepository {
                 credential: credential,
                 as: ArchiveListPayload.self
             )
-            return (payload.items ?? []).map {
-                ArchiveItem(id: $0.itemid, name: $0.name, path: $0.path, isDirectory: $0.isDirectory)
+            let items = payload.items.map {
+                ArchiveItem(id: $0.itemid, name: $0.name, path: $0.path, isDirectory: $0.isDirectory, sizeBytes: $0.size)
             }
+            guard items.count <= limit, Set(items.map(\.id)).count == items.count,
+                  items.allSatisfy({ $0.id >= 0 && FileArchiveSelection.safeRelativePath($0.path) }),
+                  payload.total.map({ $0 >= offset + items.count && (!items.isEmpty || offset >= $0) }) ?? true else {
+                throw AppError(category: .invalidResponse, isRetryable: false,
+                               safeUserMessage: L10n.string("files.archive.invalidList"))
+            }
+            return ArchiveItemPage(items: items, offset: offset, total: payload.total,
+                hasMore: payload.total.map { offset + items.count < $0 } ?? (items.count == limit))
         } catch let error as DsmNetworkError {
             throw DsmErrorMapper.map(error)
         }
@@ -3725,22 +3951,54 @@ public actor DsmFileRepository: FileRepository {
     }
 
     public func search(folderPath: String, query: String) async throws -> [FileItem] {
+        try await search(FileSearchRequest(folders: [folderPath], name: query))
+    }
+
+    public func search(_ request: FileSearchRequest) async throws -> [FileItem] {
+        try await searchWithReport(request).items
+    }
+
+    public func searchWithReport(_ request: FileSearchRequest) async throws -> FileSearchResult {
+        guard request.isValid else {
+            throw AppError(category: .invalidResponse, isRetryable: false,
+                           safeUserMessage: L10n.string("files.search.invalidConditions"))
+        }
+        try Task.checkCancellation()
         let capability = try requireCapability(DsmAPIName.fileStationSearch)
+        _ = try selectedVersion(capability, minimum: 2)
+        var parameters: [String: DsmParameterValue] = [
+            "folder_path": .stringArray(request.folders), "pattern": .string(request.name),
+            "recursive": .boolean(request.recursive), "filetype": .string(request.kind.rawValue)
+        ]
+        if request.searchesContents {
+            parameters["search_content"] = .boolean(true)
+            parameters["search_type"] = .string("advance")
+        }
+        for (key, value) in [("extension", request.fileExtension), ("owner", request.owner), ("group", request.group)] where !value.isEmpty {
+            parameters[key] = .string(value)
+        }
+        if let value = request.minimumBytes { parameters["size_from"] = .integer(Int(value)) }
+        if let value = request.maximumBytes { parameters["size_to"] = .integer(Int(value)) }
+        for (prefix, range) in [("mtime", request.modified), ("crtime", request.created), ("atime", request.accessed)] {
+            if let value = range.from { parameters[prefix + "_from"] = .integer(Int(value.timeIntervalSince1970)) }
+            if let value = range.to { parameters[prefix + "_to"] = .integer(Int(value.timeIntervalSince1970)) }
+        }
         let start = try await client.call(
             path: capability.path,
             api: capability.name,
             version: try selectedVersion(capability),
             method: "start",
             requestFormat: capability.requestFormat,
-            parameters: [
-                "folder_path": .stringArray([folderPath]),
-                "pattern": .string(query),
-                "recursive": .boolean(true)
-            ],
+            parameters: parameters,
             credential: credential,
-            as: TaskStartPayload.self
+            as: FileSearchStartPayload.self
         )
         do {
+            // 缺少索引状态不能当作正文搜索成功，更不能悄悄退回名称搜索。
+            if request.searchesContents && start.has_not_index_share == nil {
+                throw AppError(category: .versionUnsupported, isRetryable: false,
+                               safeUserMessage: L10n.string("files.search.contentUnavailable"))
+            }
             var delay: UInt64 = 250_000_000
             while true {
                 try Task.checkCancellation()
@@ -3781,18 +4039,28 @@ public actor DsmFileRepository: FileRepository {
                             as: SearchListPayload.self
                         )
                         let pageFiles = nextPage.files ?? []
-                        guard !pageFiles.isEmpty else { break }
+                        guard !pageFiles.isEmpty else {
+                            throw AppError(category: .invalidResponse, isRetryable: true,
+                                           safeUserMessage: L10n.string("files.search.incomplete"))
+                        }
                         files.append(contentsOf: pageFiles)
                         offset += pageFiles.count
                     }
                     try? await cleanSearch(capability: capability, taskID: start.taskid)
-                    return files.map(makeFileItem)
+                    var seen = Set<String>()
+                    return FileSearchResult(items: files.map(makeFileItem).filter { seen.insert($0.id).inserted },
+                        indexCoverage: request.searchesContents ? (start.has_not_index_share == true ? .incomplete : .complete) : .notRequested)
                 }
                 try await Task.sleep(nanoseconds: delay)
                 delay = min(delay * 2, 1_000_000_000)
             }
         } catch {
-            try? await stopSearch(capability: capability, taskID: start.taskid)
+            // 取消后的清理必须脱离已取消的任务，确保临时搜索结果可以释放。
+            let cleanup = Task { [self] in
+                try? await stopSearch(capability: capability, taskID: start.taskid)
+                try? await cleanSearch(capability: capability, taskID: start.taskid)
+            }
+            await cleanup.value
             throw translate(error)
         }
     }
@@ -4756,6 +5024,26 @@ public actor DsmFileRepository: FileRepository {
     public func createShareLinkResult(
         _ request: FileShareLinkCreateRequest
     ) async throws -> FileShareLinkCreateOutcome {
+        if request.fileRequest != nil {
+            try await requireAdvancedFileWrite()
+            guard request.target.isDirectory, request.target.permissions?.canWrite == true else {
+                throw Self.advancedFileError(.permissionDenied, "files.request.writableFolderRequired")
+            }
+            let key = "request:" + request.target.path
+            guard !activeAdvancedFileChanges.contains(key), !unverifiedAdvancedFileChanges.contains(key) else {
+                throw Self.advancedFileError(.conflict, "files.advanced.pendingChange")
+            }
+            activeAdvancedFileChanges.insert(key)
+            defer { activeAdvancedFileChanges.remove(key) }
+            unverifiedAdvancedFileChanges.insert(key)
+            let result = try await createShareLinkResultImpl(request)
+            if !result.result.requiresRefresh { unverifiedAdvancedFileChanges.remove(key) }
+            return result
+        }
+        return try await createShareLinkResultImpl(request)
+    }
+
+    private func createShareLinkResultImpl(_ request: FileShareLinkCreateRequest) async throws -> FileShareLinkCreateOutcome {
         let operation = "shareLinkCreate"
         if Task.isCancelled {
             return try shareLinkOutcome(
@@ -4839,7 +5127,8 @@ public actor DsmFileRepository: FileRepository {
                 diagnosticTag: "file-station.share-link.baseline-changed"
             )
         }
-        guard observedTarget.permissions?.canRead == true else {
+        guard observedTarget.permissions?.canRead == true,
+              request.fileRequest == nil || (observedTarget.isDirectory && observedTarget.permissions?.canWrite == true) else {
             return try shareLinkOutcome(
                 status: .permissionDenied,
                 operation: operation,
@@ -4878,6 +5167,11 @@ public actor DsmFileRepository: FileRepository {
         }
         if let expiresOn = request.expiresOn {
             parameters["date_expired"] = .string(expiresOn.iso8601)
+        }
+        if let configuration = request.fileRequest {
+            parameters["file_request"] = .boolean(true)
+            parameters["request_name"] = .string(configuration.name)
+            parameters["request_info"] = .string(configuration.message)
         }
 
         var candidateID: String?
@@ -5005,7 +5299,9 @@ public actor DsmFileRepository: FileRepository {
                     $0.id == candidateID &&
                         $0.path == targetPath &&
                         $0.hasPassword == (request.password != nil) &&
-                        $0.expiresAt == request.expiresOn?.iso8601
+                        Self.shareDateMatches($0.expiresAt, request.expiresOn) &&
+                        (request.availableOn == nil || ($0.availabilityDateKnown == true && Self.shareDateMatches($0.availableAt, request.availableOn))) &&
+                        Self.fileRequestMatches($0, request.fileRequest)
                 }
                 confirmed = matches.count == 1 ? matches[0] : nil
             }
@@ -5014,7 +5310,9 @@ public actor DsmFileRepository: FileRepository {
                 !existingIDs.contains($0.id) &&
                     $0.path == targetPath &&
                     $0.hasPassword == (request.password != nil) &&
-                    $0.expiresAt == request.expiresOn?.iso8601
+                    Self.shareDateMatches($0.expiresAt, request.expiresOn) &&
+                        (request.availableOn == nil || ($0.availabilityDateKnown == true && Self.shareDateMatches($0.availableAt, request.availableOn))) &&
+                        Self.fileRequestMatches($0, request.fileRequest)
             }
             confirmed = matches.count == 1 ? matches[0] : nil
         }
@@ -5038,6 +5336,112 @@ public actor DsmFileRepository: FileRepository {
             diagnosticTag: "file-station.share-link.confirmed",
             confirmedLink: confirmed
         )
+    }
+
+    public func editShareLink(_ request: FileShareLinkEditRequest) async throws -> FileShareLinkEditOutcome {
+        if request.advanced != nil || request.baseline.advanced?.isFileRequest == true {
+            guard !unverifiedAdvancedFileChanges.contains("share:" + request.baseline.id) else {
+                throw Self.advancedFileError(.conflict, "files.advanced.pendingChange")
+            }
+            try await requireAdvancedFileWrite()
+        }
+        return try await mutateShareLink(request.baseline, edit: request)
+    }
+
+    public func deleteShareLinkResult(_ link: FileShareLink) async throws -> MutationResult {
+        try await mutateShareLink(link, edit: nil).result
+    }
+
+    private func mutateShareLink(_ baseline: FileShareLink, edit: FileShareLinkEditRequest?) async throws -> FileShareLinkEditOutcome {
+        let operation = edit == nil ? "shareLinkDelete" : "shareLinkEdit"
+        func result(_ status: MutationResultStatus, submitted: Bool, link: FileShareLink? = nil) throws -> FileShareLinkEditOutcome {
+            let success = status == .confirmedSuccess
+            let unknown = status == .submittedButUnverified || status == .cancellationRequestedAfterSubmission
+            return FileShareLinkEditOutcome(result: try makeMutationResult(status: status,
+                operation: operation, submitted: submitted, requiresRefresh: unknown,
+                succeeded: success ? 1 : 0, failed: success || unknown || status == .cancelledBeforeSubmission ? 0 : 1,
+                unknown: unknown ? 1 : 0, diagnosticTag: "file-station.share-link.management"), confirmedLink: link)
+        }
+        guard fileShareLinkAvailability.status == .available,
+              let capability = capabilities[DsmAPIName.fileStationSharing] else {
+            return try result(.unsupported, submitted: false)
+        }
+        let privateKey = "share:" + baseline.id
+        guard !activeShareLinkPaths.contains(baseline.path), !unverifiedAdvancedFileChanges.contains(privateKey) else {
+            return try result(.confirmedFailure, submitted: false)
+        }
+        activeShareLinkPaths.insert(baseline.path)
+        defer { activeShareLinkPaths.remove(baseline.path) }
+        let observed: FileShareLink?
+        do { observed = try await loadAllShareLinks().first { $0.id == baseline.id } }
+        catch { return try result(Task.isCancelled ? .cancelledBeforeSubmission : .confirmedFailure, submitted: false) }
+        guard observed == baseline else { return try result(.confirmedFailure, submitted: false) }
+        if Task.isCancelled { return try result(.cancelledBeforeSubmission, submitted: false) }
+        var parameters: [String: DsmParameterValue] = ["id": .stringArray([baseline.id])]
+        if let edit {
+            if !edit.keepsAvailableDate { parameters["date_available"] = .string(edit.availableOn?.iso8601 ?? "0") }
+            if !edit.keepsExpirationDate { parameters["date_expired"] = .string(edit.expiresOn?.iso8601 ?? "0") }
+            switch edit.password {
+            case .keep: break
+            case .set(let value): parameters["password"] = .string(value)
+            case .remove: parameters["password"] = .string("")
+            }
+            if let change = edit.advanced {
+                parameters.merge(try await advancedShareParameters(change, baseline: baseline)) { _, new in new }
+                // 账号分页检查会挂起任务，写前再次核对分享，防止期间被其他客户端改变。
+                guard try await loadAllShareLinks().first(where: { $0.id == baseline.id }) == baseline else {
+                    return try result(.confirmedFailure, submitted: false)
+                }
+            }
+            if baseline.advanced?.isFileRequest == true { parameters["file_request"] = .boolean(true) }
+        }
+        if Task.isCancelled { return try result(.cancelledBeforeSubmission, submitted: false) }
+        let isPrivate = edit?.advanced != nil || baseline.advanced?.isFileRequest == true
+        if isPrivate { unverifiedAdvancedFileChanges.insert(privateKey) }
+        var acknowledged = false
+        do {
+            try await client.callVoid(path: capability.path, api: capability.name, version: 3,
+                method: edit == nil ? "delete" : "edit", requestFormat: capability.requestFormat,
+                parameters: parameters, credential: credential)
+            acknowledged = true
+        } catch let error as DsmNetworkError {
+            if case .api = error {
+                unverifiedAdvancedFileChanges.remove(privateKey)
+                return try result(DsmErrorMapper.map(error).category == .permissionDenied ? .permissionDenied : .confirmedFailure, submitted: true)
+            }
+            if case .invalidRequest = error {
+                unverifiedAdvancedFileChanges.remove(privateKey)
+                return try result(.confirmedFailure, submitted: false)
+            }
+        } catch { /* 不重放写请求，继续只读核对。 */ }
+        if Task.isCancelled { return try result(.cancellationRequestedAfterSubmission, submitted: true) }
+        let links: [FileShareLink]
+        do { links = try await loadAllShareLinks() }
+        catch { return try result(.submittedButUnverified, submitted: true) }
+        guard let edit else {
+            let success = !links.contains { $0.id == baseline.id }
+            if success { unverifiedAdvancedFileChanges.remove(privateKey) }
+            return try result(success ? .confirmedSuccess : .submittedButUnverified, submitted: true)
+        }
+        guard let updated = links.first(where: { $0.id == baseline.id }),
+              updated.path == baseline.path, updated.url == baseline.url,
+              updated.availabilityDateKnown == true,
+              edit.keepsAvailableDate ? updated.availableAt == baseline.availableAt : Self.shareDateMatches(updated.availableAt, edit.availableOn),
+              edit.keepsExpirationDate ? updated.expiresAt == baseline.expiresAt : Self.shareDateMatches(updated.expiresAt, edit.expiresOn),
+              Self.advancedShareMatches(edit.advanced, baseline: baseline, updated: updated) else { return try result(.submittedButUnverified, submitted: true) }
+        let passwordMatches: Bool
+        switch edit.password {
+        case .keep:
+            if let change = edit.advanced, case .keep = change.audience { passwordMatches = updated.hasPassword == baseline.hasPassword }
+            else if edit.advanced != nil { passwordMatches = !updated.hasPassword }
+            else { passwordMatches = updated.hasPassword == baseline.hasPassword }
+        case .remove: passwordMatches = !updated.hasPassword
+        // 列表不会返回密码；只有成功响应加上密码状态回读，才能确认设置请求被接受。
+        case .set: passwordMatches = acknowledged && updated.hasPassword
+        }
+        if passwordMatches { unverifiedAdvancedFileChanges.remove(privateKey) }
+        return try result(passwordMatches ? .confirmedSuccess : .submittedButUnverified, submitted: true,
+                          link: passwordMatches ? updated : nil)
     }
 
     public func deleteShareLinks(ids: [String]) async throws {
@@ -5158,6 +5562,7 @@ public actor DsmFileRepository: FileRepository {
 
     public func createRemoteMount(_ configuration: RemoteMountConfiguration) async throws {
         try requireRemoteMountManagement()
+        if configuration.automaticMount { try await requireAdvancedFileWrite() }
         let normalized = try Self.validateRemoteMount(configuration)
         let paths: Set<String> = [normalized.mountPoint]
         try reserveRemoteMountPaths(paths)
@@ -5172,6 +5577,7 @@ public actor DsmFileRepository: FileRepository {
 
     public func updateRemoteMount(expectedConnection: RemoteMountConnection, configuration: RemoteMountConfiguration) async throws {
         try requireRemoteMountManagement()
+        if configuration.automaticMount || expectedConnection.automaticMount == true { try await requireAdvancedFileWrite() }
         let currentMountPoint = try Self.validateMountPoint(expectedConnection.mountPoint)
         let normalized = try Self.validateRemoteMount(configuration)
         guard currentMountPoint == normalized.mountPoint ||
@@ -5213,6 +5619,7 @@ public actor DsmFileRepository: FileRepository {
 
     public func removeRemoteMount(expectedConnection: RemoteMountConnection) async throws {
         try requireRemoteMountManagement()
+        if expectedConnection.automaticMount == true { try await requireAdvancedFileWrite() }
         let normalized = try Self.validateMountPoint(expectedConnection.mountPoint)
         let paths: Set<String> = [normalized]
         try reserveRemoteMountPaths(paths)
@@ -5284,6 +5691,9 @@ public actor DsmFileRepository: FileRepository {
 
     private func submitRemoteMountOperationStep(_ id: UUID, connect: Bool, configuration: RemoteMountConfiguration?,
                                                rejectedStage: RemoteMountOperationStage) async throws {
+        if remoteMountOperations[id]?.baseline?.automaticMount == true || remoteMountOperations[id]?.setup?.automaticMount == true {
+            try await requireAdvancedFileWrite()
+        }
         if Task.isCancelled {
             advanceRemoteMountOperation(id, to: rejectedStage == .failed ? .cancelled : rejectedStage)
             throw CancellationError()
@@ -5359,7 +5769,7 @@ public actor DsmFileRepository: FileRepository {
             "server_ip": .string(remoteSource),
             "mount_point": .string(configuration.mountPoint),
             "user_set": .boolean(true),
-            "auto_mount": .boolean(false)
+            "auto_mount": .boolean(configuration.automaticMount)
         ]
         if configuration.protocolType == .smb {
             let account = configuration.domain.isEmpty ? configuration.username : "\(configuration.domain)\\\(configuration.username)"
@@ -5422,7 +5832,13 @@ public actor DsmFileRepository: FileRepository {
         first == second || first.hasPrefix(second + "/") || second.hasPrefix(first + "/")
     }
 
-    private func reserveRemoteMountPaths(_ paths: Set<String>, excluding operationID: UUID? = nil) throws {
+    func reserveRemoteMountPaths(_ paths: Set<String>, excluding operationID: UUID? = nil) throws {
+        guard !pendingFilePermissions.values.contains(where: { pending in
+            paths.contains { Self.remoteMountPathsOverlap(pending.change.baseline.target.path, $0) }
+        }) else { throw Self.advancedFileError(.conflict, "files.advanced.pendingChange") }
+        guard !pendingISOChanges.keys.contains(where: { pending in paths.contains { Self.remoteMountPathsOverlap(pending, $0) } }) else {
+            throw Self.advancedFileError(.conflict, "files.advanced.pendingChange")
+        }
         guard !activeRemoteMountPaths.contains(where: { active in paths.contains { Self.remoteMountPathsOverlap(active, $0) } }) else {
             throw AppError(category: .serverBusy, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
         }
@@ -5458,7 +5874,7 @@ public actor DsmFileRepository: FileRepository {
                 if preservingNewConnection {
                     let source = destination.protocolType == .smb ? "//\(destination.server)/\(destination.remotePath)" : "\(destination.server):/\(destination.remotePath)"
                     let identity = RemoteMountConnection(profileID: profileID, mountPoint: destination.mountPoint,
-                        source: try normalizedRemoteMountSource(source, protocolType: destination.protocolType), protocolType: destination.protocolType, automaticMount: false)
+                        source: try normalizedRemoteMountSource(source, protocolType: destination.protocolType), protocolType: destination.protocolType, automaticMount: destination.automaticMount)
                     guard inventory.connections.contains(identity),
                           try await readRemoteMountPresence(at: identity.mountPoint, expectedProtocol: identity.protocolType) else { throw remoteMountIdentityConflict() }
                 } else {
@@ -5478,7 +5894,8 @@ public actor DsmFileRepository: FileRepository {
         guard inventory.isRemoteMountingEnabled else {
             throw AppError(category: .permissionDenied, isRetryable: false, safeUserMessage: L10n.string("remote-mount.state.unverified"))
         }
-        guard !inventory.connections.contains(where: { Self.remoteMountPathsOverlap($0.mountPoint, destination.mountPoint) }) else { throw remoteMountIdentityConflict() }
+        guard !inventory.connections.contains(where: { Self.remoteMountPathsOverlap($0.mountPoint, destination.mountPoint) }),
+              inventory.isoConnections?.contains(where: { Self.remoteMountPathsOverlap($0.mountPoint, destination.mountPoint) }) != true else { throw remoteMountIdentityConflict() }
         let isMounted = try await readRemoteMountPresence(at: destination.mountPoint, allowMissing: false)
         guard !isMounted else { throw remoteMountIdentityConflict() }
         try Task.checkCancellation()
@@ -5499,7 +5916,14 @@ public actor DsmFileRepository: FileRepository {
                 let source = try normalizedRemoteMountSource(row.source, protocolType: proto)
                 return RemoteMountConnection(profileID: profileID, mountPoint: point, source: source, protocolType: proto, automaticMount: row.automaticMount)
             }
-            return RemoteMountInventory(profileID: profileID, isRemoteMountingEnabled: payload.mountConfig.enabled, connections: connections)
+            let isoConnections = try payload.isoList?.map { row -> FileISOMountConnection in
+                let point = try Self.validateMountPoint(row.mountPoint)
+                let source = try Self.validateMountPoint(row.source)
+                guard point == row.mountPoint, source == row.source, seen.insert(point).inserted else { throw remoteMountReadbackUnknown() }
+                return .init(profileID: profileID, source: source, mountPoint: point, automaticMount: row.automaticMount)
+            }
+            return RemoteMountInventory(profileID: profileID, isRemoteMountingEnabled: payload.mountConfig.enabled, connections: connections,
+                isoConnections: isoConnections, isISOMountingEnabled: payload.mountConfig.isoEnabled)
         } catch let error as DsmNetworkError { throw DsmErrorMapper.map(error, context: .fileStation) }
     }
 
@@ -5536,7 +5960,7 @@ public actor DsmFileRepository: FileRepository {
                     let rawSource = expected.protocolType == .smb ? "//\(expected.server)/\(expected.remotePath)" : "\(expected.server):/\(expected.remotePath)"
                     let identity = RemoteMountConnection(profileID: profileID, mountPoint: mountPoint,
                         source: try normalizedRemoteMountSource(rawSource, protocolType: expected.protocolType),
-                        protocolType: expected.protocolType, automaticMount: false)
+                        protocolType: expected.protocolType, automaticMount: expected.automaticMount)
                     if inventory.connections.contains(identity) { return }
                 } else if !shouldExist, !inventory.connections.contains(where: { $0.mountPoint == mountPoint }) { return }
             }
@@ -5595,7 +6019,9 @@ public actor DsmFileRepository: FileRepository {
             path: payload.path,
             url: payload.url,
             hasPassword: payload.hasPassword,
-            expiresAt: payload.expiresAt
+            expiresAt: payload.expiresAt,
+            availableAt: payload.availableAt, availabilityDateKnown: payload.availabilityDateKnown, status: payload.status,
+            advanced: payload.advanced
         )
     }
 
@@ -5870,7 +6296,8 @@ public actor DsmFileRepository: FileRepository {
             domain: domain,
             readOnly: false,
             nfsVersion: configuration.nfsVersion,
-            nfsTransport: configuration.nfsTransport
+            nfsTransport: configuration.nfsTransport,
+            automaticMount: configuration.automaticMount
         )
     }
 
@@ -5969,7 +6396,9 @@ public actor DsmFileRepository: FileRepository {
             processedItemCount: processedItems,
             totalItemCount: totalItems,
             processedBytes: processedBytes,
-            totalBytes: totalBytes
+            totalBytes: totalBytes,
+            apiVersion: payload.version,
+            method: payload.method
         )
     }
 

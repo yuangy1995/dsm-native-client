@@ -3394,8 +3394,6 @@ struct PullImageSheet: View {
                         .disabled(isSubmitting)
                     }
                     Text(L10n.string("container-image.pull.risk")).font(.caption).foregroundStyle(.secondary)
-                    Toggle(L10n.string("container-image.pull.confirm"), isOn: Binding(get: { tracking.isConfirmed }, set: { tracking.confirm($0) }))
-                        .toggleStyle(.checkbox).disabled(!tracking.canConfirm)
                 }
                 .padding(12)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
@@ -3428,6 +3426,7 @@ struct PullImageSheet: View {
                 } else {
                 Button(L10n.string("ui.ca0af0bbf50d2b45")) {
                     tracking.setTarget(repository: repository, tag: tag)
+                    tracking.confirm(true)
                     guard tracking.canSubmit else { return }
                     isSubmitting = true
                     errorMessage = nil
@@ -3439,7 +3438,7 @@ struct PullImageSheet: View {
                 }
                 .buttonStyle(MacToolbarButtonStyle(prominent: true))
                 .disabled(
-                    !tracking.canSubmit || repository.isEmpty
+                    !tracking.canConfirm || repository.isEmpty
                         || tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || !tags.contains(
                             tag.trimmingCharacters(in: .whitespacesAndNewlines)

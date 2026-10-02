@@ -1,5 +1,5 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-09-20 -->
+<!-- last-reviewed: 2026-10-02 -->
 
 # macOS 语义基线下的 Windows 与 Apple 移动端对齐总控计划
 
@@ -10,12 +10,14 @@ macOS 是 Files、Photos、Chat、Download Station、NAS 管理、桌面云盘�
 核心或受限用户结果。Android 不属于本计划的一般实施线；2026-09-15 用户已单独授权四端 Photos 对齐，因此仅该波次包含 Android，详细账本集中在[照片计划](NATIVE_DSM_PHOTOS_DEVELOPMENT_PLAN_ZH.md)，不扩大其他模块范围。
 
 当前状态见[开发进度](../progress/STATUS.md)，能力边界见[平台功能矩阵](../progress/PLATFORM_MATRIX.md)，
-已结束的阶段性账本见[跨端功能对齐历史](../archive/2026-h2/CROSS_PLATFORM_PARITY_HISTORY.md)。
+已结束的阶段性账本见[跨端功能对齐历史](../archive/2026-h2/RELEASE_VALIDATION_HISTORY.md)。
 
 2026-09-16 Windows 用户明确授权按 macOS 浅深色截图重建视觉与原生交互；当前实现和验收集中在
-[Windows 原生重建账本](WINDOWS_NATIVE_REBUILD_ZH.md)。这不改变 Apple 移动范围，也不开放未经验证的私有写操作。
+[Windows 原生重建账本](WINDOWS_MACOS_PARITY_DEVELOPMENT_PLAN_ZH.md)。这不改变 Apple 移动范围，也不开放未经验证的私有写操作。
 
 ## 基本规则
+
+- 2026-10-02 macOS 文件基线追加：用户已单独授权并完成 [Office 预览与本机编辑自动回传](../../apple/Apps/DsmMac/README.md) 的源码、本机自动化与独立测试包。后续 Windows 对齐须保留内容不变零上传、稳定快照、冲突暂停、未知结果只核查和会话退出边界；本轮没有实现 Windows 同类功能。iPhone/iPad 的外部编辑后自动回传不进入当前移动范围，仍采用既有前台下载/系统分享或另存流程，回传需用户主动上传，两端范围一致；不将未开发能力列为待真机验证。Android 仅记录影响，不扩张到本总控实施线。本次 macOS 授权仅适用于该独立波次，不解除后续跨端任务的只读参考边界。
 
 - 2026-09-20 用户补充：后续所有不涉及真实数据的隔离测试均授权推进，不限于本次
   专用虚拟机测试，不重复询问普通测试步骤。该范围允许本次专用测试 VM 按官方

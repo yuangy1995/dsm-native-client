@@ -1,0 +1,66 @@
+{
+  "success": true,
+  "data": {
+    "is_acl": true,
+    "change_permission": true,
+    "is_inherited": true,
+    "acl": [
+      {
+        "owner_type": "user",
+        "owner_name": "synthetic-user",
+        "owner_id": 1000,
+        "permission_type": "allow",
+        "permission": {
+          "read_data": true,
+          "write_data": true,
+          "exe_file": false,
+          "append_data": false,
+          "delete": false,
+          "delete_sub": false,
+          "read_attr": false,
+          "write_attr": false,
+          "read_ext_attr": false,
+          "write_ext_attr": false,
+          "read_perm": false,
+          "change_perm": false,
+          "take_ownership": false
+        },
+        "inherit": {
+          "child_files": false,
+          "child_folders": false,
+          "this_folder": true,
+          "all_descendants": false
+        },
+        "level": 0
+      },
+      {
+        "owner_type": "group",
+        "owner_name": "synthetic-group",
+        "owner_id": 1000,
+        "permission_type": "allow",
+        "permission": {
+          "read_data": true,
+          "write_data": true,
+          "exe_file": false,
+          "append_data": false,
+          "delete": false,
+          "delete_sub": false,
+          "read_attr": false,
+          "write_attr": false,
+          "read_ext_attr": false,
+          "write_ext_attr": false,
+          "read_perm": false,
+          "change_perm": false,
+          "take_ownership": false
+        },
+        "inherit": {
+          "child_files": false,
+          "child_folders": false,
+          "this_folder": true,
+          "all_descendants": false
+        },
+        "level": 1
+      }
+    ]
+  }
+}
