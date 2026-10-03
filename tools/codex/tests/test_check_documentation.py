@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
 import sys
@@ -55,6 +55,23 @@ class DocumentationCheckTests(unittest.TestCase):
             )
             self.assertTrue(any("doc-role" in error for error in errors))
             self.assertTrue(any("last-reviewed" in error for error in errors))
+
+    def test_documentation_date_is_independent_of_runner_timezone(self) -> None:
+        instant = datetime(2026, 10, 3, 17, 0, tzinfo=timezone.utc)
+        western_time = instant.astimezone(timezone(timedelta(hours=-7)))
+        self.assertEqual(documentation.documentation_date(instant), date(2026, 10, 4))
+        self.assertEqual(documentation.documentation_date(western_time), date(2026, 10, 4))
+
+    def test_cross_midnight_review_is_valid_but_future_review_is_rejected(self) -> None:
+        today = documentation.documentation_date(datetime(2026, 10, 3, 17, 0, tzinfo=timezone.utc))
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            relative = "docs/progress/STATUS.md"
+            self.write(root, relative, self.metadata("status", "2026-10-04") + "# 状态\n")
+            self.assertEqual(documentation.validate_active_metadata(root, {relative: "status"}, today=today), [])
+            self.write(root, relative, self.metadata("status", "2026-10-05") + "# 状态\n")
+            errors = documentation.validate_active_metadata(root, {relative: "status"}, today=today)
+            self.assertTrue(any("不能晚于当前日期" in error for error in errors))
 
     def test_strict_release_enforces_status_and_matrix_freshness(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

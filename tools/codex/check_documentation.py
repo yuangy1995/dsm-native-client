@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import re
 from urllib.parse import unquote
@@ -12,6 +12,13 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[2]
 STATUS_PATH = ROOT / "docs/progress/STATUS.md"
+DOCUMENTATION_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def documentation_date(now: datetime | None = None) -> date:
+    """文档按北京时间记日，本机和 UTC Runner 必须使用同一日历。"""
+    instant = datetime.now(timezone.utc) if now is None else now
+    return instant.astimezone(DOCUMENTATION_TIMEZONE).date()
 
 ACTIVE_DOCUMENTS = {
     "README.md": "entrypoint",
@@ -140,7 +147,7 @@ def validate_active_metadata(
     today: date | None = None,
 ) -> list[str]:
     errors: list[str] = []
-    now = date.today() if today is None else today
+    now = documentation_date() if today is None else today
     for relative, expected_role in active_documents.items():
         path = root / relative
         if not path.is_file():
