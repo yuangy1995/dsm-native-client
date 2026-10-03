@@ -130,7 +130,10 @@ struct NasSettingsView: View {
                     ZRAMView(
                         snapshot: snapshot,
                         isRefreshing: model.isLoading(.zram),
-                        refresh: { await model.activate(.zram, force: true) }
+                        isSaving: model.isSavingServiceSettings,
+                        requiresRefresh: model.settingsNeedingRefresh.contains(.zram),
+                        refresh: { await model.activate(.zram, force: true) },
+                        onSave: { try await model.saveZRAM(enabled: $0, baseline: snapshot) }
                     )
                 }
             }
@@ -230,7 +233,7 @@ struct NasSettingsView: View {
             AdministrationPageContainer(
                 isLoading: model.isLoading(.powerSchedule),
                 hasLoaded: model.hasLoaded(.powerSchedule),
-                hasContent: !(model.powerSchedule?.entries.isEmpty ?? true),
+                hasContent: model.powerSchedule != nil,
                 errorMessage: model.errorMessage(for: .powerSchedule),
                 emptyTitle: L10n.string("power-schedule.empty-title"),
                 emptyDescription: L10n.string("power-schedule.empty-description"),
@@ -240,7 +243,10 @@ struct NasSettingsView: View {
                     PowerScheduleView(
                         snapshot: snapshot,
                         isRefreshing: model.isLoading(.powerSchedule),
-                        refresh: { await model.activate(.powerSchedule, force: true) }
+                        isSaving: model.isSavingServiceSettings,
+                        requiresRefresh: model.settingsNeedingRefresh.contains(.powerSchedule),
+                        refresh: { await model.activate(.powerSchedule, force: true) },
+                        onSave: { try await model.savePowerSchedule($0, baseline: snapshot) }
                     )
                 }
             }
@@ -324,24 +330,7 @@ struct NasSettingsView: View {
                 }
             }
         case .packages:
-            AdministrationPageContainer(
-                isLoading: model.isLoading(.packages),
-                hasLoaded: model.hasLoaded(.packages),
-                hasContent: !model.packages.isEmpty,
-                errorMessage: model.errorMessage(for: .packages),
-                emptyTitle: L10n.string("ui.11479f1067001e82"),
-                emptyDescription: L10n.string("ui.3b75e4e910ab2c64"),
-                retry: { await model.activate(.packages, force: true) }
-            ) {
-                PackageList(
-                    packages: model.packages,
-                    title: L10n.string("ui.7467e8310073e980"),
-                    busyPackageIDs: model.packageOperationIDs,
-                    onControlPackage: { id, action in
-                        _ = try await model.controlPackage(id: id, action: action)
-                    }
-                )
-            }
+            PackageCenterView(model: model)
         case .tasks:
             AdministrationPageContainer(
                 isLoading: model.isLoading(.tasks),
@@ -503,7 +492,20 @@ private func hasZRAMContent(_ snapshot: NasZRAMSnapshot) -> Bool {
 private struct ZRAMView: View {
     let snapshot: NasZRAMSnapshot
     let isRefreshing: Bool
+    let isSaving: Bool
+    let requiresRefresh: Bool
     let refresh: () async -> Void
+    let onSave: (Bool) async throws -> Void
+    @State private var enabled: Bool
+    @State private var confirming = false
+    @State private var feedback: String?
+
+    init(snapshot: NasZRAMSnapshot, isRefreshing: Bool, isSaving: Bool, requiresRefresh: Bool,
+         refresh: @escaping () async -> Void, onSave: @escaping (Bool) async throws -> Void) {
+        self.snapshot = snapshot; self.isRefreshing = isRefreshing; self.isSaving = isSaving
+        self.requiresRefresh = requiresRefresh; self.refresh = refresh; self.onSave = onSave
+        _enabled = State(initialValue: snapshot.isEnabled ?? false)
+    }
 
     var body: some View {
         List {
@@ -531,44 +533,58 @@ private struct ZRAMView: View {
                                 Text(L10n.string("zram.refresh"))
                             }
                         }
-                        .disabled(isRefreshing)
+                        .disabled(isRefreshing || isSaving)
                         .help(L10n.string("zram.refresh-help"))
                     }
-                    Label(L10n.string("zram.read-only"), systemImage: "eye")
-                        .font(.caption.weight(.medium))
                 }
                 .padding(.vertical, 4)
             }
 
             Section(L10n.string("zram.details-title")) {
-                detailRow(
-                    title: L10n.string("zram.status-title"),
-                    value: statusText,
-                    icon: statusIcon
-                )
-                detailRow(
-                    title: L10n.string("zram.capacity-title"),
-                    value: capacityText,
-                    icon: "memorychip"
-                )
-                detailRow(
-                    title: L10n.string("zram.algorithm-title"),
-                    value: algorithmText,
-                    icon: "archivebox"
-                )
+                if snapshot.isEnabled != nil {
+                    Toggle(L10n.string("zram.edit.enable"), isOn: $enabled)
+                        .disabled(isSaving || isRefreshing || requiresRefresh)
+                } else {
+                    detailRow(title: L10n.string("zram.status-title"), value: statusText, icon: statusIcon)
+                }
+                if snapshot.configuredBytes != nil {
+                    detailRow(
+                        title: L10n.string("zram.capacity-title"),
+                        value: capacityText,
+                        icon: "memorychip"
+                    )
+                }
+                if snapshot.algorithm != .unknown {
+                    detailRow(
+                        title: L10n.string("zram.algorithm-title"),
+                        value: algorithmText,
+                        icon: "archivebox"
+                    )
+                }
             }
 
             Section {
-                Label(
-                    L10n.string("zram.manage-in-dsm"),
-                    systemImage: "info.circle"
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                HStack {
+                    Text(L10n.string("zram.edit.restart-note"))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L10n.string("nas.edit.save")) { confirming = true }
+                        .disabled(isSaving || isRefreshing || requiresRefresh || snapshot.isEnabled == nil || snapshot.isEnabled == enabled)
+                }
+                if let feedback { Text(feedback).textSelection(.enabled) }
             }
         }
         .listStyle(.inset)
         .fillsAvailableContentArea(alignment: .topLeading)
+        .onChange(of: snapshot) { _, value in enabled = value.isEnabled ?? false }
+        .confirmationDialog(L10n.string("zram.edit.confirm-title"), isPresented: $confirming, titleVisibility: .visible) {
+            Button(L10n.string("nas.edit.save")) {
+                Task {
+                    do { try await onSave(enabled); feedback = L10n.string("zram.edit.saved") }
+                    catch { feedback = error.localizedDescription }
+                }
+            }
+        } message: { Text(L10n.string("zram.edit.confirm-message")) }
     }
 
     private func detailRow(title: String, value: String, icon: String) -> some View {
@@ -715,12 +731,6 @@ private struct ExternalStorageView: View {
             }
 
             HStack(spacing: 8) {
-                Label(
-                    L10n.string("external-storage.read-only"),
-                    systemImage: "eye"
-                )
-                .font(.caption.weight(.medium))
-
                 Text(
                     L10n.string(
                         "external-storage.count",
@@ -873,18 +883,36 @@ private struct PowerScheduleView: View {
 
     let snapshot: NasPowerScheduleSnapshot
     let isRefreshing: Bool
+    let isSaving: Bool
+    let requiresRefresh: Bool
     let refresh: () async -> Void
+    let onSave: ([NasPowerScheduleEntry]) async throws -> Void
+    @State private var entries: [NasPowerScheduleEntry]
+    @State private var editing: NasPowerScheduleEntry?
+    @State private var confirming = false
+    @State private var confirmingRefresh = false
+    @State private var feedback: String?
+
+    init(snapshot: NasPowerScheduleSnapshot, isRefreshing: Bool, isSaving: Bool, requiresRefresh: Bool,
+         refresh: @escaping () async -> Void, onSave: @escaping ([NasPowerScheduleEntry]) async throws -> Void) {
+        self.snapshot = snapshot; self.isRefreshing = isRefreshing; self.isSaving = isSaving
+        self.requiresRefresh = requiresRefresh; self.refresh = refresh; self.onSave = onSave
+        _entries = State(initialValue: snapshot.entries)
+    }
+
+    private var hasChanges: Bool { entries != snapshot.entries }
+    private var canEdit: Bool { snapshot.canEdit && !isSaving && !isRefreshing && !requiresRefresh }
 
     @State private var filter: Filter = .all
 
     private var filteredEntries: [NasPowerScheduleEntry] {
         switch filter {
         case .all:
-            snapshot.entries
+            entries
         case .enabled:
-            snapshot.entries.filter { $0.isEnabled == true }
+            entries.filter { $0.isEnabled == true }
         case .disabled:
-            snapshot.entries.filter { $0.isEnabled == false }
+            entries.filter { $0.isEnabled == false }
         }
     }
 
@@ -893,7 +921,11 @@ private struct PowerScheduleView: View {
             header
             Divider()
 
-            if filteredEntries.isEmpty {
+            if entries.isEmpty {
+                ContentUnavailableView(L10n.string("power-schedule.empty-title"), systemImage: "calendar.badge.clock",
+                    description: Text(L10n.string("power-schedule.edit.empty")))
+                    .fillsAvailableContentArea()
+            } else if filteredEntries.isEmpty {
                 ContentUnavailableView(
                     L10n.string("power-schedule.filtered-empty-title"),
                     systemImage: "line.3.horizontal.decrease.circle",
@@ -906,7 +938,16 @@ private struct PowerScheduleView: View {
                 List {
                     Section(L10n.string("power-schedule.list-title")) {
                         ForEach(filteredEntries) { entry in
-                            scheduleRow(entry)
+                            HStack {
+                                scheduleRow(entry)
+                                if snapshot.canEdit {
+                                    Button(L10n.string("power-schedule.edit.edit")) { editing = entry }
+                                        .disabled(!canEdit)
+                                    Button(L10n.string("power-schedule.edit.remove"), role: .destructive) {
+                                        entries.removeAll { $0.id == entry.id }
+                                    }.disabled(!canEdit)
+                                }
+                            }
                         }
                     }
                 }
@@ -914,6 +955,27 @@ private struct PowerScheduleView: View {
             }
         }
         .fillsAvailableContentArea(alignment: .topLeading)
+        .onChange(of: snapshot) { _, value in entries = value.entries }
+        .sheet(item: $editing) { entry in
+            PowerScheduleEntryEditor(entry: entry) { value in
+                if let index = entries.firstIndex(where: { $0.id == value.id }) { entries[index] = value }
+                else { entries.append(value) }
+                editing = nil
+            }
+        }
+        .confirmationDialog(L10n.string("power-schedule.edit.confirm-title"), isPresented: $confirming, titleVisibility: .visible) {
+            Button(L10n.string("nas.edit.save"), role: .destructive) {
+                Task {
+                    do { try await onSave(entries); feedback = L10n.string("nas.edit.saved") }
+                    catch { feedback = error.localizedDescription }
+                }
+            }
+        } message: { Text(L10n.string("power-schedule.edit.confirm-message")) }
+        .confirmationDialog(L10n.string("nas.edit.discard-title"), isPresented: $confirmingRefresh, titleVisibility: .visible) {
+            Button(L10n.string("nas.edit.discard-refresh"), role: .destructive) {
+                Task { await refresh(); feedback = nil }
+            }
+        }
     }
 
     private var header: some View {
@@ -931,7 +993,8 @@ private struct PowerScheduleView: View {
                 Spacer(minLength: 12)
 
                 Button {
-                    Task { await refresh() }
+                    if hasChanges { confirmingRefresh = true }
+                    else { Task { await refresh(); feedback = nil } }
                 } label: {
                     HStack(spacing: 6) {
                         if isRefreshing {
@@ -943,21 +1006,36 @@ private struct PowerScheduleView: View {
                         Text(L10n.string("power-schedule.refresh"))
                     }
                 }
-                .disabled(isRefreshing)
+                .disabled(isRefreshing || isSaving)
                 .help(L10n.string("power-schedule.refresh-help"))
             }
 
-            HStack(spacing: 8) {
-                Label(
-                    L10n.string("power-schedule.read-only"),
-                    systemImage: "eye"
-                )
-                .font(.caption.weight(.medium))
+            HStack {
+                Button(L10n.string("power-schedule.edit.add"), systemImage: "plus") {
+                    editing = NasPowerScheduleEntry(id: UUID().uuidString, action: .startup, isEnabled: true,
+                        hour: 8, minute: 0, recurrence: .daily)
+                }.disabled(!canEdit || entries.count >= 200)
+                Button(L10n.string("nas.edit.save")) { confirming = true }
+                    .disabled(!canEdit || !hasChanges || !NasPowerScheduleSnapshot.replacementIsValid(entries))
+                if hasChanges {
+                    Button(L10n.string("nas.edit.revert")) { entries = snapshot.entries; feedback = nil }
+                        .disabled(isSaving)
+                }
+                Spacer()
+            }
+            .buttonStyle(.bordered)
+            if !snapshot.canEdit {
+                Text(L10n.string("power-schedule.edit.unavailable")).foregroundStyle(.secondary)
+            } else if !NasPowerScheduleSnapshot.replacementIsValid(entries) {
+                Text(L10n.string("power-schedule.edit.invalid")).foregroundStyle(.secondary)
+            }
+            if let feedback { Text(feedback).textSelection(.enabled) }
 
+            HStack(spacing: 8) {
                 Text(
                     L10n.string(
                         "power-schedule.count",
-                        String(describing: snapshot.total)
+                        String(describing: entries.count)
                     )
                 )
                 .font(.caption)
@@ -1247,12 +1325,6 @@ private struct ProcessActivityView: View {
             }
 
             HStack(spacing: 8) {
-                Label(
-                    L10n.string("processes.read-only"),
-                    systemImage: "eye"
-                )
-                .font(.caption.weight(.medium))
-
                 Text(
                     L10n.string(
                         "processes.count",
@@ -2010,13 +2082,20 @@ private struct RegionSettingsView: View {
     var body: some View {
         Form {
             Section(L10n.string("ui.d7f9a4bfc466ae21")) {
-                TextField(L10n.string("ui.7530fa1a195df77e"), text: $draft.dateFormat)
-                if draft.normalizedDateFormat.isEmpty {
-                    validationMessage("region.settings.format-required")
+                Picker(L10n.string("ui.7530fa1a195df77e"), selection: $draft.dateFormat) {
+                    ForEach(Self.dateFormats, id: \.value) { option in
+                        Text(L10n.string(option.key)).tag(option.value)
+                    }
+                    if !Self.dateFormats.contains(where: { $0.value == original.dateFormat }) {
+                        Text(L10n.string("region.format.current")).tag(original.dateFormat)
+                    }
                 }
-                TextField(L10n.string("ui.1a83bdb917697ede"), text: $draft.timeFormat)
-                if draft.normalizedTimeFormat.isEmpty {
-                    validationMessage("region.settings.format-required")
+                Picker(L10n.string("ui.1a83bdb917697ede"), selection: $draft.timeFormat) {
+                    Text(L10n.string("region.format.time-12")).tag("h:i a")
+                    Text(L10n.string("region.format.time-24")).tag("H:i")
+                    if !["h:i a", "H:i"].contains(original.timeFormat) {
+                        Text(L10n.string("region.format.current")).tag(original.timeFormat)
+                    }
                 }
                 Picker(L10n.string("ui.b5d72c5c00f2d88e"), selection: $draft.timeZone) {
                     ForEach(draft.timeZones) { zone in
@@ -2098,6 +2177,18 @@ private struct RegionSettingsView: View {
             Text(errorMessage ?? L10n.string("ui.efc81ced18eb3bb0"))
         }
     }
+
+    private static let dateFormats: [(value: String, key: String)] = [
+        ("Y-m-d", "region.format.ymd-dash"),
+        ("Y/m/d", "region.format.ymd-slash"),
+        ("Y.m.d", "region.format.ymd-dot"),
+        ("d-m-Y", "region.format.dmy-dash"),
+        ("d/m/Y", "region.format.dmy-slash"),
+        ("d.m.Y", "region.format.dmy-dot"),
+        ("m-d-Y", "region.format.mdy-dash"),
+        ("m/d/Y", "region.format.mdy-slash"),
+        ("m.d.Y", "region.format.mdy-dot")
+    ]
 
     private var normalizedServers: [String] {
         serverText
@@ -2476,12 +2567,9 @@ private struct HardwareSettingsView: View {
                             set: { draft.fanMode = $0 }
                         )
                     ) {
-                        Text(L10n.string("ui.390ea09574f38da3")).tag("highfan")
-                        Text(L10n.string("ui.0949910fb8c4e07f")).tag("lowfan")
-                        Text(L10n.string("ui.f327f82035eeb44c")).tag("fullfan")
-                        Text(L10n.string("ui.844749143a0da5a0")).tag("coolfan")
-                        Text(L10n.string("ui.5b31e21cdb562f6a")).tag("quietfan")
-                        Text(L10n.string("ui.1b3589f9dbf18de9")).tag("quietstopfan")
+                        ForEach(fanModes, id: \.value) { option in
+                            Text(L10n.string(option.key)).tag(option.value)
+                        }
                     }
                 }
             }
@@ -2662,6 +2750,20 @@ private struct HardwareSettingsView: View {
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )
+    }
+
+    private var fanModes: [(value: String, key: String)] {
+        let options = [
+            (value: "highfan", key: "ui.390ea09574f38da3"),
+            (value: "lowfan", key: "ui.0949910fb8c4e07f"),
+            (value: "fullfan", key: "ui.f327f82035eeb44c"),
+            (value: "coolfan", key: "ui.844749143a0da5a0"),
+            (value: "quietfan", key: "ui.5b31e21cdb562f6a"),
+            (value: "quietstopfan", key: "ui.1b3589f9dbf18de9")
+        ]
+        return options.filter {
+            draft.supportedFanModes?.contains($0.value) != false || $0.value == original.fanMode
+        }
     }
 
     @ViewBuilder
@@ -4866,13 +4968,13 @@ private struct PerformanceDashboard: View {
 
     private var percentageChart: some View {
         Chart(history) { point in
-            AreaMark(
+            LineMark(
                 x: .value(L10n.string("ui.8b6ff498515bcc2f"), point.recordedAt),
                 y: .value(L10n.string("ui.9746ae777abb6dbf"), point.cpuUsage)
             )
             .foregroundStyle(by: .value(L10n.string("ui.b87e67c7dae03991"), L10n.string("ui.43b8de30fe4bab74")))
 
-            AreaMark(
+            LineMark(
                 x: .value(L10n.string("ui.8b6ff498515bcc2f"), point.recordedAt),
                 y: .value(L10n.string("ui.9746ae777abb6dbf"), point.memoryUsage)
             )
@@ -4914,488 +5016,7 @@ private struct PerformanceDashboard: View {
     }
 }
 
-private struct PackageList: View {
-    private struct PendingControl {
-        let package: NasPackage
-        let action: NasPackageAction
-    }
-
-    let packages: [NasPackage]
-    let title: String
-    let busyPackageIDs: Set<String>
-    let onControlPackage: ((String, NasPackageAction) async throws -> Void)?
-
-    init(
-        packages: [NasPackage],
-        title: String,
-        busyPackageIDs: Set<String> = [],
-        onControlPackage: ((String, NasPackageAction) async throws -> Void)? = nil
-    ) {
-        self.packages = packages
-        self.title = title
-        self.busyPackageIDs = busyPackageIDs
-        self.onControlPackage = onControlPackage
-    }
-
-    private enum DisplayMode: String, CaseIterable, Identifiable {
-        case grid = "grid"
-        case list = "list"
-
-        var id: String { rawValue }
-        var icon: String {
-            switch self {
-            case .grid: return "square.grid.2x2"
-            case .list: return "list.bullet"
-            }
-        }
-        var label: String {
-            switch self {
-            case .grid: return L10n.string("ui.fb5640f8e12e3337")
-            case .list: return L10n.string("ui.aedd6814ff8c516c")
-            }
-        }
-    }
-
-    @State private var searchText = ""
-    @State private var packageToUninstall: NasPackage? = nil
-    @State private var pendingControl: PendingControl? = nil
-    @State private var actionError: String? = nil
-    @AppStorage("packageDisplayMode") private var displayModeRaw: String = DisplayMode.grid.rawValue
-
-    private var displayMode: DisplayMode {
-        get { DisplayMode(rawValue: displayModeRaw) ?? .grid }
-        set { displayModeRaw = newValue.rawValue }
-    }
-
-    private var filtered: [NasPackage] {
-        guard !searchText.isEmpty else { return packages }
-        return packages.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText)
-                || $0.id.localizedCaseInsensitiveContains(searchText)
-                || ($0.packageDescription?.localizedCaseInsensitiveContains(searchText) ?? false)
-        }
-    }
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 250, maximum: 380), spacing: 14)
-    ]
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(L10n.string("ui.9b8d987fe9376800", String(describing: filtered.count)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                MacPageTabs(options: DisplayMode.allCases, selection: Binding(get: { displayMode }, set: { displayModeRaw = $0.rawValue }), title: { $0.label }, icon: { $0.icon })
-                    .frame(width: 100)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-
-            Divider()
-
-            if filtered.isEmpty {
-                ContentUnavailableView(L10n.string("ui.47938644fb53e315"), systemImage: "shippingbox", description: Text(L10n.string("ui.db67c6383ce3e747")))
-                    .frame(maxHeight: .infinity)
-            } else {
-                switch displayMode {
-                case .grid:
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 14) {
-                            ForEach(filtered) { package in
-                                PackageCard(
-                                    package: package,
-                                    isBusy: busyPackageIDs.contains(package.id),
-                                    onControl: { action in
-                                        handleAction(package: package, action: action)
-                                    }
-                                )
-                            }
-                        }
-                        .padding(16)
-                    }
-                case .list:
-                    List(filtered) { package in
-                        PackageRow(
-                            package: package,
-                            isBusy: busyPackageIDs.contains(package.id),
-                            onControl: { action in
-                                handleAction(package: package, action: action)
-                            }
-                        )
-                    }
-                    .listStyle(.inset)
-                }
-            }
-        }
-        .navigationTitle(title)
-        .macInlineSearch(text: $searchText, prompt: L10n.string("ui.30f6e9928347c1d6"))
-        .alert(L10n.string("ui.bcdf89eee8276d3f"), isPresented: Binding(
-            get: { packageToUninstall != nil },
-            set: { if !$0 { packageToUninstall = nil } }
-        )) {
-            Button(L10n.string("ui.4fec200ac3f7fc85"), role: .destructive) {
-                if let pkg = packageToUninstall {
-                    packageToUninstall = nil
-                    Task {
-                        do {
-                            try await onControlPackage?(pkg.id, .uninstall)
-                        } catch {
-                            actionError = packageActionError(
-                                error,
-                                packageName: pkg.name,
-                                actionText: L10n.string("ui.06bc14b60f3598a3")
-                            )
-                        }
-                    }
-                }
-            }
-            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
-        } message: {
-            if let pkg = packageToUninstall {
-                Text(L10n.string("ui.f1ff4c701fff6787", String(describing: pkg.name)))
-            }
-        }
-        .alert(controlConfirmationTitle, isPresented: Binding(
-            get: { pendingControl != nil },
-            set: { if !$0 { pendingControl = nil } }
-        )) {
-            if let pendingControl {
-                Button(
-                    controlConfirmationButton(pendingControl.action),
-                    role: pendingControl.action == .stop ? .destructive : nil
-                ) {
-                    self.pendingControl = nil
-                    performControl(
-                        package: pendingControl.package,
-                        action: pendingControl.action
-                    )
-                }
-            }
-            Button(L10n.string("ui.2cd0f3be8738a86c"), role: .cancel) {}
-        } message: {
-            if let pendingControl {
-                Text(
-                    L10n.string(
-                        pendingControl.action == .start
-                            ? "package.start.confirm-message"
-                            : "package.stop.confirm-message",
-                        String(describing: pendingControl.package.name)
-                    )
-                )
-            }
-        }
-        .alert(L10n.string("ui.e147727c86db353b"), isPresented: Binding(
-            get: { actionError != nil },
-            set: { if !$0 { actionError = nil } }
-        )) {
-            Button(L10n.string("ui.fac2a67ad87807c4"), role: .cancel) {}
-        } message: {
-            if let actionError {
-                Text(actionError)
-            }
-        }
-    }
-
-    private func handleAction(package: NasPackage, action: NasPackageAction) {
-        if action == .uninstall {
-            packageToUninstall = package
-            return
-        }
-        if action == .upgrade {
-            performControl(package: package, action: action)
-            return
-        }
-        pendingControl = PendingControl(package: package, action: action)
-    }
-
-    private func performControl(
-        package: NasPackage,
-        action: NasPackageAction
-    ) {
-        Task {
-            do {
-                try await onControlPackage?(package.id, action)
-            } catch {
-                let actionText = action == .stop ? L10n.string("ui.8d12fc0d4eb26021") : (action == .start ? L10n.string("ui.56410fc65314dfb5") : L10n.string("ui.3055a035f0eb7a8b"))
-                actionError = packageActionError(
-                    error,
-                    packageName: package.name,
-                    actionText: actionText
-                )
-            }
-        }
-    }
-
-    private var controlConfirmationTitle: String {
-        guard let pendingControl else { return "" }
-        return L10n.string(
-            pendingControl.action == .start
-                ? "package.start.confirm-title"
-                : "package.stop.confirm-title"
-        )
-    }
-
-    private func controlConfirmationButton(
-        _ action: NasPackageAction
-    ) -> String {
-        L10n.string(
-            action == .start
-                ? "package.start.confirm-button"
-                : "package.stop.confirm-button"
-        )
-    }
-
-    private func packageActionError(
-        _ error: Error,
-        packageName: String,
-        actionText: String
-    ) -> String {
-        let message = (error as? AppError)?.safeUserMessage
-            ?? L10n.string("ui.3c311955d51d6210")
-        return L10n.string("ui.f9e493557350b30d", String(describing: actionText), String(describing: packageName), String(describing: message))
-    }
-}
-
-private struct PackageCard: View {
-    let package: NasPackage
-    let isBusy: Bool
-    let onControl: (NasPackageAction) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                PackageIconView(package: package)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(package.name)
-                        .font(.body.weight(.semibold))
-                        .lineLimit(1)
-                    Text([package.version, package.installType].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-
-            if let description = package.packageDescription, !description.isEmpty {
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
-            } else {
-                Spacer()
-                    .frame(height: 32)
-            }
-
-            HStack(alignment: .center) {
-                StatusPill(
-                    text: package.statusDescription ?? package.status ?? L10n.string("ui.40fae00b7c6d8ac0"),
-                    isWarning: isWarning(package.status)
-                )
-
-                if package.isUpgradeAvailable {
-                    PackageUpgradeAvailabilityLabel()
-                }
-
-                Spacer()
-
-                if isBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityLabel(
-                            L10n.string("package.control.in-progress")
-                        )
-                } else {
-                    HStack(spacing: 6) {
-                        if package.canUpgrade {
-                            Button {
-                                triggerAction(.upgrade)
-                            } label: {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .help(L10n.string("ui.5dafce9fd14a5c3d"))
-                        }
-
-                        if package.canStop {
-                            Button {
-                                triggerAction(.stop)
-                            } label: {
-                                Label(L10n.string("ui.8d12fc0d4eb26021"), systemImage: "pause.fill")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        } else if package.canStart {
-                            Button {
-                                triggerAction(.start)
-                            } label: {
-                                Label(L10n.string("ui.56410fc65314dfb5"), systemImage: "play.fill")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .background(MacGlassSurface(role: .selectionBar))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-        .contextMenu {
-            if package.canStart {
-                Button { triggerAction(.start) } label: {
-                    Label(L10n.string("ui.15e634f8040489f5"), systemImage: "play.fill")
-                }
-            }
-            if package.canStop {
-                Button { triggerAction(.stop) } label: {
-                    Label(L10n.string("ui.eba40655c00d97e6"), systemImage: "pause.fill")
-                }
-            }
-            if package.canUpgrade {
-                Button { triggerAction(.upgrade) } label: {
-                    Label(L10n.string("ui.5dafce9fd14a5c3d"), systemImage: "arrow.triangle.2.circlepath")
-                }
-            }
-            if package.canUninstall {
-                Divider()
-                Button(role: .destructive) { triggerAction(.uninstall) } label: {
-                    Label(L10n.string("ui.330dc1fd06685f18"), systemImage: "trash")
-                }
-            }
-        }
-        .disabled(isBusy)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func triggerAction(_ action: NasPackageAction) {
-        guard !isBusy else { return }
-        onControl(action)
-    }
-}
-
-private struct PackageRow: View {
-    let package: NasPackage
-    let isBusy: Bool
-    let onControl: (NasPackageAction) -> Void
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            PackageIconView(package: package, size: 34)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(package.name).font(.body.weight(.medium))
-                if let description = package.packageDescription, !description.isEmpty {
-                    Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Text([package.version, package.installType].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            Spacer()
-
-            StatusPill(
-                text: package.statusDescription ?? package.status ?? L10n.string("ui.40fae00b7c6d8ac0"),
-                isWarning: isWarning(package.status)
-            )
-
-            if package.isUpgradeAvailable {
-                PackageUpgradeAvailabilityLabel()
-            }
-
-            if isBusy {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(
-                        L10n.string("package.control.in-progress")
-                    )
-            } else {
-                HStack(spacing: 6) {
-                    if package.canUpgrade {
-                        Button {
-                            triggerAction(.upgrade)
-                        } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help(L10n.string("ui.5dafce9fd14a5c3d"))
-                    }
-
-                    if package.canStop {
-                        Button(L10n.string("ui.8d12fc0d4eb26021")) { triggerAction(.stop) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    } else if package.canStart {
-                        Button(L10n.string("ui.56410fc65314dfb5")) { triggerAction(.start) }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 4)
-        .contextMenu {
-            if package.canStart {
-                Button { triggerAction(.start) } label: {
-                    Label(L10n.string("ui.15e634f8040489f5"), systemImage: "play.fill")
-                }
-            }
-            if package.canStop {
-                Button { triggerAction(.stop) } label: {
-                    Label(L10n.string("ui.eba40655c00d97e6"), systemImage: "pause.fill")
-                }
-            }
-            if package.canUpgrade {
-                Button { triggerAction(.upgrade) } label: {
-                    Label(L10n.string("ui.5dafce9fd14a5c3d"), systemImage: "arrow.triangle.2.circlepath")
-                }
-            }
-            if package.canUninstall {
-                Divider()
-                Button(role: .destructive) { triggerAction(.uninstall) } label: {
-                    Label(L10n.string("ui.330dc1fd06685f18"), systemImage: "trash")
-                }
-            }
-        }
-        .disabled(isBusy)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func triggerAction(_ action: NasPackageAction) {
-        guard !isBusy else { return }
-        onControl(action)
-    }
-}
-
-private struct PackageUpgradeAvailabilityLabel: View {
-    var body: some View {
-        Label(
-            L10n.string("package.upgrade.available-in-dsm"),
-            systemImage: "arrow.triangle.2.circlepath"
-        )
-        .font(.caption2.weight(.medium))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(.quaternary, in: Capsule())
-        .help(L10n.string("package.upgrade.read-only-help"))
-        .accessibilityLabel(L10n.string("package.upgrade.available-in-dsm"))
-        .accessibilityHint(L10n.string("package.upgrade.read-only-help"))
-    }
-}
-
-private struct PackageIconView: View {
+struct PackageIconView: View {
     let package: NasPackage
     var size: CGFloat = 40
 

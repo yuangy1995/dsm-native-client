@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.list-catalog.synthetic-settings",
+  "module": "packages",
+  "operation": "listCatalog",
+  "api": {
+    "name": "SYNO.Core.Package.Server",
+    "method": "list",
+    "preferredVersion": 2,
+    "resolvedVersion": 2,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "blforcereload",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "blloadothers",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

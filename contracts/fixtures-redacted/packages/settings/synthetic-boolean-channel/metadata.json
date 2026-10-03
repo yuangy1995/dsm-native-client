@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-boolean-channel",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Package.Setting",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "get"
+  },
+  "scenario": "依据 2026-10-03 字段类型重建的合成读取：update_channel 为 Boolean，单卷时可缺少 default_vol。",
+  "redactedFields": []
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-current-shape",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "get_queue"
+  },
+  "scenario": "官方静态队列结构的合成依赖顺序；没有实际调用安装。",
+  "redactedFields": []
+}

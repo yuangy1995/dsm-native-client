@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": {
+    "poweron_tasks": [],
+    "poweroff_tasks": [
+      {
+        "enabled": false,
+        "weekdays": "0,6",
+        "hour": 23,
+        "min": 30
+      }
+    ]
+  }
+}

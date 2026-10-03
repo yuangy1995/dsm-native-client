@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "data": {
+    "autoupdateall": false,
+    "autoupdateimportant": false,
+    "enable_autoupdate": false,
+    "enable_dsm": true,
+    "enable_email": false,
+    "mailset": true,
+    "trust_level": 0,
+    "update_channel": false,
+    "volume_count": 1,
+    "volume_list": [
+      {
+        "mount_point": "/synthetic-volume",
+        "display": "Synthetic Volume",
+        "desc": "Synthetic storage",
+        "size_free": "1024",
+        "size_total": "2048",
+        "vol_desc": "",
+        "volume_features": []
+      }
+    ],
+    "volume_status": "unknown"
+  }
+}

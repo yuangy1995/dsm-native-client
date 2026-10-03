@@ -1,0 +1,7 @@
+{
+  "success": true,
+  "data": {
+    "is_occupied": false,
+    "volume_count": 0
+  }
+}

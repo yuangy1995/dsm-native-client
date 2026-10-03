@@ -347,6 +347,19 @@ final class NasSettingsModel {
     private(set) var ddns: NasDDNSDirectory?
     private(set) var diskTestStatuses: [String: NasDiskTestStatus] = [:]
     private(set) var packages: [NasPackage] = []
+    private(set) var packageCatalog: NasPackageCatalog?
+    private(set) var packageCatalogError: String?
+    private(set) var isLoadingPackageCatalog = false
+    private(set) var isPreparingPackageInstallation = false
+    private(set) var isAdvancingPackageInstallation = false
+    private(set) var packageInstallPlan: NasPackageInstallPlan?
+    private(set) var packageInstallProgress: NasPackageInstallProgress?
+    private(set) var packageInstallationError: String?
+    @ObservationIgnored private var packageInstallationTask: Task<Void, Never>?
+    @ObservationIgnored private var packagePreparationTask: Task<NasPackageInstallPlan, Error>?
+    @ObservationIgnored private var packagePreparationGeneration = 0
+    @ObservationIgnored private var packageCatalogGeneration = 0
+
     private(set) var tasks: [NasScheduledTask] = []
     private(set) var accounts: NasAccountDirectory?
     private(set) var shareAccess: NasShareAccessDirectory?
@@ -362,6 +375,7 @@ final class NasSettingsModel {
     private(set) var networkOperationIDs: Set<String> = []
     private(set) var performanceIsLoading = false
     private(set) var isSavingServiceSettings = false
+    private(set) var settingsNeedingRefresh: Set<NasSettingsPage> = []
     private(set) var isPerformingPowerAction = false
     private(set) var isModuleEnabled = false
     private var loadingPages: Set<NasSettingsPage> = []
@@ -395,6 +409,11 @@ final class NasSettingsModel {
     func setModuleEnabled(_ enabled: Bool) {
         isModuleEnabled = enabled
         guard !enabled else { return }
+        cancelPackageInstallationPreparation()
+        packageInstallationTask?.cancel()
+        packageInstallationTask = nil
+        packageCatalogGeneration += 1
+        isLoadingPackageCatalog = false
         performanceGeneration += 1
         for page in NasSettingsPage.allCases {
             requestGenerations[page, default: 0] += 1
@@ -463,7 +482,7 @@ final class NasSettingsModel {
         case .zram:
             await loadPage(.zram, operation: { [repository] in
                 try await repository.loadZRAM()
-            }, apply: { zram = $0 })
+            }, apply: { zram = $0; settingsNeedingRefresh.remove(.zram) })
         case .fileServices:
             await loadPage(.fileServices, operation: { [repository] in
                 try await repository.loadFileServiceSettings()
@@ -487,7 +506,7 @@ final class NasSettingsModel {
         case .powerSchedule:
             await loadPage(.powerSchedule, operation: { [repository] in
                 try await repository.loadPowerSchedule()
-            }, apply: { powerSchedule = $0 })
+            }, apply: { powerSchedule = $0; settingsNeedingRefresh.remove(.powerSchedule) })
         case .remoteAccess:
             await loadPage(.remoteAccess, operation: { [repository] in
                 try await repository.loadRemoteAccessSettings()
@@ -768,7 +787,7 @@ final class NasSettingsModel {
             _ = try? await loadDiskTestStatus(diskID: diskID)
         }
         guard diskContextIsCurrent(disk, storageGeneration: storageGeneration) else { throw CancellationError() }
-        if result.status == .confirmedSuccess { return }
+        if result.status == .confirmedSuccess || result.status == .cancelledBeforeSubmission { return }
         guard result.status != .cancelledBeforeSubmission else { return }
         throw diskTestError(for: result.status, isStarting: true)
     }
@@ -868,10 +887,190 @@ final class NasSettingsModel {
         )
     }
 
+    func loadPackageCenterSettings() async throws -> NasPackageCenterSettings {
+        guard isModuleEnabled else { throw packageInstallBusyError() }
+        return try await repository.loadPackageCenterSettings()
+    }
+    func savePackageCenterSettings(_ settings: NasPackageCenterSettings, replacing baseline: NasPackageCenterSettings) async throws -> NasPackageCenterSettings {
+        guard isModuleEnabled, !packageInstallationIsBusy, packageOperationIDs.isEmpty else { throw packageInstallBusyError() }
+        isPreparingPackageInstallation = true
+        defer { isPreparingPackageInstallation = false }
+        let result = try await repository.savePackageCenterSettings(settings, replacing: baseline)
+        await loadPackageCatalog(force: true)
+        return result
+    }
+    func loadPackageSources() async throws -> [NasPackageSource] {
+        guard isModuleEnabled else { throw packageInstallBusyError() }
+        return try await repository.loadPackageSources()
+    }
+    func savePackageSource(_ source: NasPackageSource, replacing baseline: NasPackageSource?) async throws -> [NasPackageSource] {
+        guard isModuleEnabled, !packageInstallationIsBusy, packageOperationIDs.isEmpty else { throw packageInstallBusyError() }
+        isPreparingPackageInstallation = true
+        defer { isPreparingPackageInstallation = false }
+        let result = try await repository.savePackageSource(source, replacing: baseline)
+        await loadPackageCatalog(force: true)
+        return result
+    }
+    func deletePackageSource(_ source: NasPackageSource) async throws -> [NasPackageSource] {
+        guard isModuleEnabled, !packageInstallationIsBusy, packageOperationIDs.isEmpty else { throw packageInstallBusyError() }
+        isPreparingPackageInstallation = true
+        defer { isPreparingPackageInstallation = false }
+        let result = try await repository.deletePackageSource(source)
+        await loadPackageCatalog(force: true)
+        return result
+    }
+
+    var packageInstallationIsBusy: Bool {
+        isPreparingPackageInstallation || isAdvancingPackageInstallation
+            || packageInstallProgress.map { [.downloading, .installing, .needsOptions, .unverified].contains($0.phase) } == true
+    }
+
+    func loadPackageCatalog(force: Bool = false) async {
+        guard isModuleEnabled, !isLoadingPackageCatalog, force || packageCatalog == nil else { return }
+        packageCatalogGeneration += 1
+        let generation = packageCatalogGeneration
+        isLoadingPackageCatalog = true
+        defer { if generation == packageCatalogGeneration { isLoadingPackageCatalog = false } }
+        do {
+            let catalog = try await repository.loadPackageCatalog()
+            guard isModuleEnabled, generation == packageCatalogGeneration else { return }
+            packageCatalog = catalog; packageCatalogError = nil
+        } catch {
+            guard isModuleEnabled, generation == packageCatalogGeneration else { return }
+            packageCatalogError = (error as? AppError)?.safeUserMessage ?? L10n.string("package.center.catalog-failed")
+        }
+    }
+
+    func preparePackageInstallation(_ ids: [String]) async throws {
+        guard isModuleEnabled, !packageInstallationIsBusy, packageOperationIDs.isEmpty else { throw packageInstallBusyError() }
+        packagePreparationGeneration += 1
+        let generation = packagePreparationGeneration
+        isPreparingPackageInstallation = true
+        packageInstallPlan = nil
+        packageInstallationError = nil
+        let task = Task { [repository] in try await repository.preparePackageInstallation(catalogIDs: ids) }
+        packagePreparationTask = task
+        defer {
+            if generation == packagePreparationGeneration {
+                packagePreparationTask = nil
+                isPreparingPackageInstallation = false
+            }
+        }
+        do {
+            let plan = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+            guard generation == packagePreparationGeneration, isModuleEnabled, !Task.isCancelled else { throw CancellationError() }
+            packageInstallPlan = plan
+        } catch {
+            guard generation == packagePreparationGeneration, isModuleEnabled, !Task.isCancelled else { throw CancellationError() }
+            throw error
+        }
+    }
+
+    var canCancelPackagePreparation: Bool { isPreparingPackageInstallation && packagePreparationTask != nil }
+
+    /// 这里只取消只读的安装计划准备；已提交的安装由进度流程继续核对。
+    func cancelPackageInstallationPreparation() {
+        guard let task = packagePreparationTask else { return }
+        packagePreparationGeneration += 1
+        task.cancel()
+        packagePreparationTask = nil
+        packageInstallPlan = nil
+        isPreparingPackageInstallation = false
+    }
+
+    func discardPackageInstallPlan() { packageInstallPlan = nil }
+
+    func startPackageInstallation(volumes: [String: String], startAfterInstall: Bool) async throws {
+        guard isModuleEnabled, !packageInstallationIsBusy, packageOperationIDs.isEmpty, let plan = packageInstallPlan else {
+            throw packageInstallBusyError()
+        }
+        isPreparingPackageInstallation = true
+        defer { isPreparingPackageInstallation = false }
+        packageInstallationError = nil
+        let progress = try await repository.startPackageInstallation(planID: plan.id, volumes: volumes, startAfterInstall: startAfterInstall)
+        packageInstallPlan = nil; packageInstallProgress = progress
+        monitorPackageInstallation()
+    }
+
+    func uploadPackageForInstallation(_ fileURL: URL) async throws {
+        guard isModuleEnabled, !packageInstallationIsBusy, packageOperationIDs.isEmpty else { throw packageInstallBusyError() }
+        isPreparingPackageInstallation = true
+        defer { isPreparingPackageInstallation = false }
+        packageInstallationError = nil
+        packageInstallProgress = try await repository.uploadPackageForInstallation(fileURL: fileURL)
+    }
+
+    func configurePackageInstallation(volumeID: String, startAfterInstall: Bool, licenseAccepted: Bool,
+                                      values: [String: NasPackageOptionValue]) async throws {
+        guard isModuleEnabled, !isAdvancingPackageInstallation, let progress = packageInstallProgress,
+              progress.phase == .needsOptions else { throw packageInstallBusyError() }
+        isAdvancingPackageInstallation = true
+        defer { isAdvancingPackageInstallation = false }
+        packageInstallationError = nil
+        packageInstallProgress = try await repository.configurePackageInstallation(id: progress.id, volumeID: volumeID,
+            startAfterInstall: startAfterInstall, licenseAccepted: licenseAccepted, values: values)
+        monitorPackageInstallation()
+    }
+
+    func cancelPackageInstallation() async throws {
+        guard isModuleEnabled, !isAdvancingPackageInstallation, let progress = packageInstallProgress else { throw packageInstallBusyError() }
+        isAdvancingPackageInstallation = true
+        defer { isAdvancingPackageInstallation = false }
+        packageInstallProgress = try await repository.cancelPackageInstallation(id: progress.id)
+        monitorPackageInstallation()
+    }
+
+    func refreshPackageInstallation() async {
+        guard isModuleEnabled, !isAdvancingPackageInstallation, let progress = packageInstallProgress else { return }
+        isAdvancingPackageInstallation = true
+        defer { isAdvancingPackageInstallation = false }
+        do {
+            packageInstallProgress = try await repository.advancePackageInstallation(id: progress.id)
+            packageInstallationError = nil
+            if packageInstallProgress?.phase == .completed {
+                await loadPage(.packages, operation: { [repository] in
+                    try await repository.loadPackages()
+                }, apply: { packages = $0 })
+                await loadPackageCatalog(force: true)
+            }
+        } catch {
+            packageInstallationError = (error as? AppError)?.safeUserMessage ?? L10n.string("package.center.unverified")
+            packageInstallProgress = NasPackageInstallProgress(id: progress.id, packageName: progress.packageName,
+                completedCount: progress.completedCount, totalCount: progress.totalCount, phase: .unverified,
+                messageKey: "package.center.unverified", canCancel: progress.canCancel)
+        }
+    }
+
+    func resumePackageInstallationMonitoring() async {
+        await refreshPackageInstallation()
+        monitorPackageInstallation()
+    }
+
+    private func monitorPackageInstallation() {
+        packageInstallationTask?.cancel()
+        guard packageInstallProgress?.phase.isActive == true else { return }
+        packageInstallationTask = Task { [weak self] in
+            for _ in 0..<900 {
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                guard let self, self.isModuleEnabled, self.packageInstallProgress?.phase.isActive == true else { return }
+                await self.refreshPackageInstallation()
+            }
+            guard let self, let progress = self.packageInstallProgress, progress.phase.isActive else { return }
+            self.packageInstallProgress = NasPackageInstallProgress(id: progress.id, packageName: progress.packageName,
+                completedCount: progress.completedCount, totalCount: progress.totalCount, phase: .unverified,
+                messageKey: "package.center.unverified")
+        }
+    }
+
+    private func packageInstallBusyError() -> AppError {
+        AppError(category: .serverBusy, isRetryable: false, safeUserMessage: L10n.string("package.center.busy"))
+    }
+
     func controlPackage(
         id: String,
         action: NasPackageAction
     ) async throws -> MutationResult {
+        guard !packageInstallationIsBusy else { throw packageInstallBusyError() }
         guard packageOperationIDs.insert(id).inserted else {
             throw AppError(
                 category: .serverBusy,
@@ -1860,6 +2059,33 @@ final class NasSettingsModel {
             && actual.mtu == expected.mtu
             && actual.isVLANEnabled == expected.isVLANEnabled
             && (!expected.isVLANEnabled || actual.vlanID == expected.vlanID)
+    }
+
+    func saveZRAM(enabled: Bool, baseline: NasZRAMSnapshot) async throws {
+        guard isModuleEnabled else { throw CancellationError() }
+        guard !isSavingServiceSettings, !settingsNeedingRefresh.contains(.zram) else { throw settingsBusyError() }
+        isSavingServiceSettings = true
+        defer { isSavingServiceSettings = false }
+        let result = try await repository.saveZRAMResult(enabled: enabled, replacing: baseline)
+        try finishHardwareEdit(result, page: .zram)
+        await activate(.zram, force: true)
+    }
+
+    func savePowerSchedule(_ entries: [NasPowerScheduleEntry], baseline: NasPowerScheduleSnapshot) async throws {
+        guard isModuleEnabled else { throw CancellationError() }
+        guard !isSavingServiceSettings, !settingsNeedingRefresh.contains(.powerSchedule) else { throw settingsBusyError() }
+        isSavingServiceSettings = true
+        defer { isSavingServiceSettings = false }
+        let result = try await repository.savePowerScheduleResult(entries, replacing: baseline)
+        try finishHardwareEdit(result, page: .powerSchedule)
+        await activate(.powerSchedule, force: true)
+    }
+
+    private func finishHardwareEdit(_ result: MutationResult, page: NasSettingsPage) throws {
+        if result.status == .confirmedSuccess { return }
+        if result.submitted { settingsNeedingRefresh.insert(page) }
+        throw AppError(category: result.status == .permissionDenied ? .permissionDenied : .unknown,
+                       isRetryable: false, safeUserMessage: L10n.string(result.localizationKey ?? "nas.edit.unconfirmed"))
     }
 
     func saveHardware(_ settings: NasHardwareSettings) async throws {

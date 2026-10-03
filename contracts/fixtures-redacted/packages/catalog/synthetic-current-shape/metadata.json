@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-current-shape",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Package.Server",
+    "path": "entry.cgi",
+    "version": 2,
+    "method": "list"
+  },
+  "scenario": "目录最小白名单；由字段观察构造，不是 NAS 响应导出。",
+  "redactedFields": []
+}

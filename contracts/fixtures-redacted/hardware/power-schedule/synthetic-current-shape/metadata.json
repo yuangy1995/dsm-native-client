@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-current-shape",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Hardware.PowerSchedule",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "load"
+  },
+  "scenario": "完整双数组和周日为零；未保存真实计划。",
+  "redactedFields": []
+}

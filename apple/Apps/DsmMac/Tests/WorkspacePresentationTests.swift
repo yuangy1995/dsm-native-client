@@ -5434,6 +5434,7 @@ final class WorkspacePresentationTests: XCTestCase {
                     ("task-results-error", NSSize(width: 720, height: 480), AnyView(ScheduledTaskResultsSheet(task: task, loadResults: { throw PresentationRepositoryError.unexpectedOperation }, loadOutput: { _ in XCTFail("失败记录不应读取输出"); throw PresentationRepositoryError.unexpectedOperation }))),
                     ("storage-volume", NSSize(width: 560, height: 480), AnyView(StorageDetailSheet(selection: .volume(volume), snapshot: nil, testStatus: nil, isDiskBusy: false, loadTestStatus: { _ in XCTFail("卷详情不能读取磁盘测试") }, startTest: { _, _ in XCTFail("不能自动启动磁盘测试") }, stopTest: { _ in XCTFail("不能自动停止磁盘测试") }))),
                     ("ethernet", NSSize(width: 560, height: 520), AnyView(EthernetInterfaceEditor(interface: interface, onCancel: { XCTFail("不能自动取消") }, onSave: { _ in XCTFail("不能自动修改网络") }))),
+                    ("power-schedule", NSSize(width: 480, height: 610), AnyView(PowerScheduleEntryEditor(entry: NasPowerScheduleEntry(id: "synthetic", action: .shutdown, isEnabled: true, hour: 23, minute: 30, recurrence: .weekly([.monday, .friday]))) { _ in XCTFail("不能自动修改电源计划") })),
                     ("ddns", NSSize(width: 520, height: 420), AnyView(DDNSRecordEditor(draft: NasDDNSDraft(providerID: "Synology", hostname: "", username: ""), providers: [NasDDNSProvider(id: "Synology", displayName: "Synology")], onCancel: { XCTFail("不能自动取消") }, onTest: { _ in XCTFail("不能自动测试域名") }, onSave: { _ in XCTFail("不能自动保存域名") }))),
                     ("new-account", NSSize(width: 540, height: 560), AnyView(AccountEditor(initialDraft: NasAccountDraft(groups: []), availableGroups: ["Synthetic group"], onCancel: { XCTFail("不能自动取消") }, onSave: { _ in XCTFail("不能自动创建用户"); return nil }))),
                     ("edit-account", NSSize(width: 540, height: 560), AnyView(AccountEditor(initialDraft: NasAccountDraft(originalName: "Synthetic user", name: "Synthetic user", groups: ["Synthetic group"]), availableGroups: ["Synthetic group"], onCancel: { XCTFail("不能自动取消") }, onSave: { _ in XCTFail("不能自动修改用户"); return nil }))),
@@ -5452,6 +5453,202 @@ final class WorkspacePresentationTests: XCTestCase {
                     try snapshot(host, name: "nas-editor-\(name)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
                     XCTAssertEqual(host.bounds.width, size.width, accuracy: 1)
                 }
+            }
+        }
+    }
+
+    func test照片局部错误双语主题不误报图库且刷新清除提示() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let service = DatePhotoServiceStub()
+                await service.enableManagement()
+                let model = SynologyPhotosModel(repository: service)
+                await model.refresh()
+                await service.failNextManagementPreparation(error: AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("photos.service.invalidResponse")))
+                model.submitMutation(.createAlbum(name: "Synthetic album", photos: []))
+                for _ in 0..<1000 where model.isManaging { try await Task.sleep(for: .milliseconds(1)) }
+                let host = NSHostingView(rootView: SynologyPhotosView(model: model).environment(MacAppearanceStore())
+                    .environment(AppLanguageStore.shared).environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                let window = attach(host, size: .init(width: 1040, height: 700))
+                defer { window.contentView = nil; window.close(); model.setModuleEnabled(false) }
+                window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                XCTAssertEqual(model.managementMessage, L10n.string("photos.manage.failed"))
+                XCTAssertNil(model.errorMessage)
+                XCTAssertFalse(model.items.isEmpty)
+                try snapshot(host, name: "photos-operation-error-\(language.rawValue)-\(scheme)")
+                let refresh = try XCTUnwrap(remoteFlowElements(host).first { $0.value("accessibilityIdentifier") as? String == "photos.refresh" })
+                try click(window, at: window.convertPoint(fromScreen: .init(x: refresh.accessibilityFrame().midX, y: refresh.accessibilityFrame().midY)))
+                try await settle(host)
+                XCTAssertNil(model.managementMessage)
+                XCTAssertNil(model.errorMessage)
+                XCTAssertFalse(model.items.isEmpty)
+                try snapshot(host, name: "photos-refreshed-\(language.rawValue)-\(scheme)")
+                let writes = await service.managementWriteCount
+                XCTAssertEqual(writes, 0)
+            }
+        }
+    }
+
+    func test套件准备窗口双语主题可取消且不提交安装() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previousLanguage; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let repository = NasAdministrationRepositoryStub()
+                await repository.holdNextPackagePreparation()
+                let model = NasSettingsModel(repository: repository)
+                model.setModuleEnabled(true)
+                let preparation = Task { try await model.preparePackageInstallation(["Synthetic:stable"]) }
+                for _ in 0..<100 {
+                    if await repository.isPackagePreparationWaiting() { break }
+                    await Task.yield()
+                }
+                var closed = false
+                let host = NSHostingView(rootView: PackageInstallationSheet(model: model, onClose: { closed = true })
+                    .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                    .environment(\.locale, L10n.locale).preferredColorScheme(scheme))
+                let window = attach(host, size: .init(width: 620, height: 600))
+                defer { window.contentView = nil; window.close(); model.setModuleEnabled(false) }
+                window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                try await settle(host)
+                let button = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("ui.2cd0f3be8738a86c") })
+                XCTAssertEqual(button.value("isAccessibilityEnabled") as? Bool ?? button.value("accessibilityEnabled") as? Bool, true)
+                try snapshot(host, name: "package-prepare-cancel-\(language.rawValue)-\(scheme)")
+                if scheme == .dark {
+                    let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                        windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+                    if !window.performKeyEquivalent(with: escape) { window.sendEvent(escape) }
+                } else {
+                    try click(window, at: window.convertPoint(fromScreen: .init(x: button.accessibilityFrame().midX, y: button.accessibilityFrame().midY)))
+                }
+                try await settle(host)
+                XCTAssertTrue(closed)
+                XCTAssertFalse(model.isPreparingPackageInstallation)
+                await repository.releasePackagePreparation()
+                do { try await preparation.value; XCTFail("取消后不能交付计划") }
+                catch is CancellationError { }
+                XCTAssertNil(model.packageInstallPlan)
+                let counts = await repository.packageInstallationCounts()
+                XCTAssertEqual(counts.0, 0)
+            }
+        }
+    }
+
+    func test套件中心目录搜索与安装设置双语主题不自动写入() async throws {
+        NSApp.setActivationPolicy(.regular)
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        let previousLanguage = AppLanguageStore.shared.selection
+        defer {
+            AppLanguageStore.shared.selection = previousLanguage
+            NSApp.accessibilitySetValue(previousAX, forAttribute: attribute)
+        }
+        let package = NasPackage(id: "Synthetic", name: "Synthetic Backup", version: "1.0", status: "running", statusDescription: "Synthetic running", packageDescription: "Synthetic package description", installType: "user", installedAt: nil, canStart: false, canStop: true, canUninstall: true)
+        let volume = NasPackageInstallVolume(id: "synthetic-volume", name: "Synthetic Volume")
+        let settings = NasPackageCenterSettings(betaEnabled: false, emailNotifications: false, desktopNotifications: true, updatePolicy: .selected,
+            defaultVolumeID: volume.id, volumes: [volume], packageUpdates: [NasPackageUpdatePreference(id: package.id, name: package.name, canUpdateAutomatically: true, policy: .important)])
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                let repository = NasAdministrationRepositoryStub(packages: [package])
+                let model = NasSettingsModel(repository: repository)
+                model.setModuleEnabled(true)
+                await model.activate(.packages)
+                await model.loadPackageCatalog()
+                let entry = try XCTUnwrap(model.packageCatalog?.entries.first)
+                let plan = NasPackageInstallPlan(items: [NasPackageInstallItem(package: entry, volumes: [volume], defaultVolumeID: volume.id)], affectedPackages: ["Synthetic dependency"])
+                let configuration = NasPackageInstallConfiguration(packageName: entry.name, version: entry.version, license: "Synthetic license text. Only fixture content.", fields: [
+                    NasPackageInstallField(id: "text", label: "Synthetic account", kind: .text, required: true),
+                    NasPackageInstallField(id: "password", label: "Synthetic password", kind: .password, required: true),
+                    NasPackageInstallField(id: "flag", label: "Synthetic option", kind: .toggle, defaultValue: .flag(true))
+                ], volumes: [volume], defaultVolumeID: volume.id)
+                let pages: [(String, NSSize, AnyView)] = [
+                    ("center", NSSize(width: 900, height: 660), AnyView(PackageCenterView(model: model))),
+                    ("details", NSSize(width: 620, height: 550), AnyView(PackageDetailsView(installed: package, available: entry, isBusy: false, onInstall: { XCTFail("不能自动安装") }, onControl: { _ in XCTFail("不能自动控制") }, onClose: {}))),
+                    ("plan", NSSize(width: 620, height: 600), AnyView(PackageInstallPlanView(plan: plan, isBusy: false, onCancel: {}, onConfirm: { _, _ in XCTFail("不能自动确认") }).padding(24))),
+                    ("options", NSSize(width: 620, height: 600), AnyView(PackageInstallOptionsView(configuration: configuration, isBusy: false, onCancel: {}, onConfirm: { _, _, _, _ in XCTFail("不能自动接受协议或安装") }).padding(24))),
+                    ("settings", NSSize(width: 660, height: 600), AnyView(PackageCenterSettingsView(loadSettings: { settings }, saveSettings: { _, _ in XCTFail("不能自动保存"); return settings }, loadSources: { [] }, saveSource: { _, _ in XCTFail("不能自动添加来源"); return [] }, deleteSource: { _ in XCTFail("不能自动移除来源"); return [] }, onClose: {}))),
+                    ("settings-error", NSSize(width: 660, height: 600), AnyView(PackageCenterSettingsView(loadSettings: { throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("package.center.incomplete")) }, saveSettings: { _, _ in XCTFail("读取失败不能保存"); return settings }, loadSources: { [] }, saveSource: { _, _ in XCTFail("不能自动添加来源"); return [] }, deleteSource: { _ in XCTFail("不能自动移除来源"); return [] }, onClose: {}))),
+                    ("source", NSSize(width: 520, height: 340), AnyView(PackageSourceEditor(source: NasPackageSource(name: "Synthetic source", url: "https://packages.example.invalid/feed"), isEditing: false, onCancel: {}, onSave: { _ in XCTFail("不能自动信任来源") })))
+                ]
+                for (name, size, page) in pages {
+                    let host = NSHostingView(rootView: page.environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                        .environment(\.locale, AppLanguageStore.shared.locale).preferredColorScheme(scheme))
+                    let window = attach(host, size: size)
+                    defer { window.contentView = nil; window.close() }
+                    window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                    try await settle(host)
+                    try snapshot(host, name: "package-\(name)-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                    if name == "center" {
+                        let detailButton = try XCTUnwrap(remoteFlowElements(host).first { $0.value("accessibilityIdentifier") as? String == "packageCenter.details.Synthetic" })
+                        try click(window, at: window.convertPoint(fromScreen: NSPoint(x: detailButton.accessibilityFrame().midX, y: detailButton.accessibilityFrame().midY)))
+                        try await settle(host)
+                        let detailsWindow = try XCTUnwrap(window.attachedSheet)
+                        let detailsContent = try XCTUnwrap(detailsWindow.contentView)
+                        let stopButton = try XCTUnwrap(remoteFlowElements(detailsContent).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("package.center.stop") })
+                        try click(detailsWindow, at: detailsWindow.convertPoint(fromScreen: NSPoint(x: stopButton.accessibilityFrame().midX, y: stopButton.accessibilityFrame().midY)))
+                        try await settle(host)
+                        let confirmation = try XCTUnwrap(window.attachedSheet)
+                        let cancel = try XCTUnwrap(remoteFlowElements(try XCTUnwrap(confirmation.contentView)).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("ui.2cd0f3be8738a86c") })
+                        try click(confirmation, at: confirmation.convertPoint(fromScreen: NSPoint(x: cancel.accessibilityFrame().midX, y: cancel.accessibilityFrame().midY)))
+                        try await settle(host)
+                        XCTAssertNil(window.attachedSheet)
+                        let controls = await repository.packageControlRequestCount(); XCTAssertEqual(controls, 0)
+                        let settingsButton = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("package.center.settings") })
+                        try click(window, at: window.convertPoint(fromScreen: NSPoint(x: settingsButton.accessibilityFrame().midX, y: settingsButton.accessibilityFrame().midY)))
+                        try await settle(host)
+                        let settingsSheet = try XCTUnwrap(window.attachedSheet), settingsContent = try XCTUnwrap(settingsSheet.contentView)
+                        for _ in 0..<25 {
+                            if remoteFlowElements(settingsContent).contains(where: { ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel()) == L10n.string("package.center.settings-load-failed") }) { break }
+                            try await settle(settingsContent)
+                        }
+                        let settingsElements = remoteFlowElements(settingsContent)
+                        XCTAssertTrue(settingsElements.contains { ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel()) == L10n.string("package.center.settings-load-failed") })
+                        let settingsTitle = try XCTUnwrap(settingsElements.first { $0.accessibilityRole() == .staticText && ($0.value("accessibilityValue") as? String ?? $0.accessibilityLabel()) == L10n.string("package.center.settings") })
+                        let save = try XCTUnwrap(settingsElements.first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("package.center.save-settings") })
+                        XCTAssertLessThan(settingsSheet.frame.maxY - settingsTitle.accessibilityFrame().maxY, 90, "错误内容不能把整个弹窗推到中间")
+                        XCTAssertLessThan(save.accessibilityFrame().minY - settingsSheet.frame.minY, 70, "底部按钮应固定在弹窗下方")
+                        XCTAssertEqual(save.value("isAccessibilityEnabled") as? Bool ?? save.value("accessibilityEnabled") as? Bool, false)
+                        try snapshot(settingsContent, name: "package-settings-error-sheet-\(language.rawValue)-\(scheme)")
+                        let close = try XCTUnwrap(settingsElements.first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("package.center.close") })
+                        try click(settingsSheet, at: settingsSheet.convertPoint(fromScreen: NSPoint(x: close.accessibilityFrame().midX, y: close.accessibilityFrame().midY)))
+                        for _ in 0..<20 where window.attachedSheet != nil { try await settle(host) }
+                        XCTAssertNil(window.attachedSheet)
+                        let all = try XCTUnwrap(remoteFlowElements(host).first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("package.center.section.all") })
+                        try click(window, at: window.convertPoint(fromScreen: NSPoint(x: all.accessibilityFrame().midX, y: all.accessibilityFrame().midY)))
+                        try await settle(host)
+                        try snapshot(host, name: "package-catalog-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                        let field = try XCTUnwrap(nativeViews(host, of: NSTextField.self).first { $0.placeholderString == L10n.string("package.center.search") })
+                        XCTAssertTrue(window.makeFirstResponder(field))
+                        let editor = try XCTUnwrap(window.fieldEditor(true, for: field) as? NSTextView)
+                        editor.insertText("No fixture matches", replacementRange: NSRange(location: NSNotFound, length: 0))
+                        try await settle(host)
+                        try snapshot(host, name: "package-search-empty-\(language.rawValue)-\(scheme == .dark ? "dark" : "light")")
+                    }
+                    if name.hasPrefix("settings") {
+                        let elements = remoteFlowElements(host)
+                        let save = try XCTUnwrap(elements.first { $0.accessibilityRole() == .button && ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("package.center.save-settings") })
+                        XCTAssertEqual(save.value("isAccessibilityEnabled") as? Bool ?? save.value("accessibilityEnabled") as? Bool, false)
+                        XCTAssertFalse(elements.contains { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("package.center.default-volume") }, "只有一个存储位置时不显示选择器")
+                    }
+                    XCTAssertEqual(host.bounds.width, size.width, accuracy: 1)
+                }
+                model.setModuleEnabled(false)
+                let counts = await repository.packageInstallationCounts(); XCTAssertEqual(counts.0, 0)
             }
         }
     }

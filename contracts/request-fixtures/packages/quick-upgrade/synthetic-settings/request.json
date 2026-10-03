@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.quick-upgrade.synthetic-settings",
+  "module": "packages",
+  "operation": "upgradePackage",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "method": "upgrade",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "name",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-package>\""
+    },
+    {
+      "name": "blqinst",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "volume_path",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-volume>\""
+    },
+    {
+      "name": "is_syno",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "beta",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "installrunpackage",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

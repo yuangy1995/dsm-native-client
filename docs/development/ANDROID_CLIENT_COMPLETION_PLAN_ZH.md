@@ -1,7 +1,13 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-03 -->
 
 # Android 原生客户端长期计划
+
+## NAS 设置与套件中心契约影响（2026-10-03）
+
+本轮只实现 macOS，Android 未改代码、未排入当前工作。后续若获授权接入，需同步 enable_zram、提示音 support_*、风扇模式位、防火墙通知 enable_port_check、200 条电源计划完整保存以及 available_operation 对象的含义。安装/更新不能只接一个按钮：须一起实现依赖确认、目标卷、签名/许可、队列互斥、任务查询、未知结果不重放及最终版本核对；手动上传使用 SAF URI 与受控临时文件，长任务遵循 Android 前台/后台限制。自动更新和来源信任须保留具体风险确认。本轮共享样本与静态结构不是 Android 或 NAS 真实验收，资料见 [NAS 设置账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+
+同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](PACKAGE_CENTER_FIX_20261003_ZH.md)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
 
 ## File Station 后续适配影响
 

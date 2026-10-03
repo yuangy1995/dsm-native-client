@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-system-no-volume",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "path": "entry.cgi",
+    "version": 2,
+    "method": "check"
+  },
+  "scenario": "依据官方静态系统套件分支重建的合成响应；系统类型允许没有普通存储列表。本轮没有发起真实安装检查或更新。",
+  "redactedFields": []
+}

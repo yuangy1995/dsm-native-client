@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "data": {
+    "packages": [
+      {
+        "id": "SyntheticPackage",
+        "dname": "Synthetic package",
+        "version": "2.0",
+        "source": "syno",
+        "beta": false,
+        "qinst": true,
+        "qupgrade": true,
+        "size": 1024,
+        "category": [
+          "synthetic-category"
+        ]
+      }
+    ],
+    "beta_packages": [],
+    "categories": [
+      {
+        "id": "synthetic-category",
+        "dname": "Synthetic category"
+      }
+    ]
+  }
+}

@@ -29,7 +29,7 @@
 | --- | --- | --- | --- | --- | --- |
 | AutoBlock `set` | `enable`、`attempts`、`within_mins`、`expire_day` | 多类型 | 是 | 自动封锁开关、失败次数、统计时间与到期天数 | `true`、`5`、`10`、`7` |
 | DoS `get` / `set` | `configs` | `object[]` | 是 | 按网卡标识读取或设置拒绝服务防护 | `eth-synthetic` |
-| Firewall.Conf `set` | `enable_port_check` | `boolean` | 是 | 防端口扫描开关 | `true` |
+| Firewall.Conf `set` | `enable_port_check` | `boolean` | 是 | 防火墙通知开关 | `true` |
 | Firewall `set` | `set_type` | `string` | 关闭时需要 | 使用专用动作关闭防火墙 | `disable` |
 | Firewall.Profile.Apply `start` | `name`、`profile_applying` | 多类型 | 开启时需要 | 应用 NAS 已返回的当前防火墙配置档 | `synthetic-profile`、`false` |
 | Firewall.Profile.Apply `status` | `task_id` | `string` | 任务轮询需要 | 查询配置档应用任务 | 仅使用运行时返回值，不保存 Fixture |
@@ -40,7 +40,7 @@
 ## 响应与错误
 
 读取响应按各接口分别返回自动封锁字段、网卡防护列表、防火墙开关、当前配置档名称和
-防端口扫描开关。配置档应用由 `start` 返回任务标识，随后轮询 `status`，最终调用
+防火墙通知开关。配置档应用由 `start` 返回任务标识，随后轮询 `status`，最终调用
 `stop` 清理已完成的任务上下文。
 
 | 场景 | 错误语义 | 是否可重试 | 降级或恢复 |
@@ -62,7 +62,7 @@
 ## 能力探测与降级
 
 - 启用条件：预检一次性确认所有实际变化所需的 API 与版本，并成功读取当前设置。
-- 新版本默认行为：未记录的新 DSM build 默认关闭内部写入口。
+- macOS 本轮按用户明确授权提供测试入口，以实际接口版本、权限、输入、确认、防重复和结果核查判断可用性，不仅因未实测固定关闭。新 DSM build 的真实行为仍待验证；其他平台以其最新授权和实施状态为准。
 - 接口缺失：只关闭依赖该接口的设置，不阻断文件浏览等主流程。
 - 字段缺失或类型变化：不能构造完整当前状态时不提交猜测值。
 - 权限不足：不提升权限、不切换账号、不继续后续子操作。
@@ -105,3 +105,13 @@
 - Windows 四段安全写/任务核心与表单有合成回归，但生产门关闭、真实副作用未验收；iPhone/iPad
   用户调用链未迁移。Android 仍待真实设备、真实 DSM 和权限矩阵验收，不以本波 Windows
   回归提升其或当前 NAS 的证据等级。
+
+## 2026-10-03 字段语义修正
+
+官方控件 `name=enable_port_check` 绑定 `firewall_enable_port_detect`，当前中文为
+“启用防火墙通知”：服务或应用被防火墙阻挡时通知用户并提供解锁选项。该字段不是
+防端口扫描。macOS 双语文案已修正；共享模型的历史属性名为保持源码兼容暂不重命名，
+不得以属性名推断安全功能。Windows/Android 需在后续 UI 切片同步含义，本轮未修改。
+旧 `security/set-port-scan` 样本路径保留作为稳定标识，仅解释更新，不修改传输字段。
+macOS 按本轮用户授权保留现有可用写入口，去除仅实测证据不足的产品禁用含义；实际
+权限、预检、确认、重复提交与回读不变。没有新增真实安全设置写入证据。

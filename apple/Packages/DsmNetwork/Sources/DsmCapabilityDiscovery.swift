@@ -118,6 +118,14 @@ public enum DsmAPIName {
     /// DSM 存储管理器内部硬盘检测接口；仅在能力发现明确返回时启用。
     public static let coreStorageDisk = "SYNO.Core.Storage.Disk"
     public static let corePackage = "SYNO.Core.Package"
+    /// 套件中心目录、安装及设置均为 DSM 内部接口。
+    public static let corePackageInfo = "SYNO.Core.Package.Info"
+    public static let corePackageFeed = "SYNO.Core.Package.Feed"
+    public static let corePackageServer = "SYNO.Core.Package.Server"
+    public static let corePackageInstallation = "SYNO.Core.Package.Installation"
+    public static let corePackageDownload = "SYNO.Core.Package.Installation.Download"
+    public static let corePackageSetting = "SYNO.Core.Package.Setting"
+    public static let corePackageSettingVolume = "SYNO.Core.Package.Setting.Volume"
     /// DSM 套件启停内部接口。
     public static let corePackageControl = "SYNO.Core.Package.Control"
     /// DSM 套件卸载内部接口。
@@ -148,9 +156,11 @@ public enum DsmAPIName {
     public static let coreNetworkProxy = "SYNO.Core.Network.Proxy"
     /// DSM 控制面板内部接口：断电恢复。
     public static let coreHardwarePowerRecovery = "SYNO.Core.Hardware.PowerRecovery"
-    /// DSM 控制面板内部内存压缩；当前客户端仅启用只读 `get`。
+    /// DSM 控制面板内部内存压缩；保存后另行标记需要重启。
     public static let coreHardwareZRAM = "SYNO.Core.Hardware.ZRAM"
-    /// DSM 控制面板内部电源计划；当前客户端仅启用只读 `load`。
+    /// 内部接口：记录硬件设置需要重启。
+    public static let coreHardwareNeedReboot = "SYNO.Core.Hardware.NeedReboot"
+    /// DSM 控制面板内部电源计划；按完整清单读取和保存。
     public static let coreHardwarePowerSchedule = "SYNO.Core.Hardware.PowerSchedule"
     /// DSM 控制面板内部 USB 存储列表；`eject` 尚未接入。
     public static let coreExternalStorageUSB = "SYNO.Core.ExternalDevice.Storage.USB"
@@ -307,6 +317,13 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.storageVolume,
         DsmAPIName.coreStorageDisk,
         DsmAPIName.corePackage,
+        DsmAPIName.corePackageInfo,
+        DsmAPIName.corePackageFeed,
+        DsmAPIName.corePackageServer,
+        DsmAPIName.corePackageInstallation,
+        DsmAPIName.corePackageDownload,
+        DsmAPIName.corePackageSetting,
+        DsmAPIName.corePackageSettingVolume,
         DsmAPIName.corePackageControl,
         DsmAPIName.corePackageUninstallation,
         DsmAPIName.corePackageThumb,
@@ -326,6 +343,7 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.coreNetworkProxy,
         DsmAPIName.coreHardwarePowerRecovery,
         DsmAPIName.coreHardwareZRAM,
+        DsmAPIName.coreHardwareNeedReboot,
         DsmAPIName.coreHardwarePowerSchedule,
         DsmAPIName.coreExternalStorageUSB,
         DsmAPIName.coreExternalStorageESATA,
@@ -523,6 +541,13 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.storageVolume: 1...1,
         DsmAPIName.coreStorageDisk: 1...1,
         DsmAPIName.corePackage: 1...2,
+        DsmAPIName.corePackageInfo: 1...1,
+        DsmAPIName.corePackageFeed: 1...1,
+        DsmAPIName.corePackageServer: 1...2,
+        DsmAPIName.corePackageInstallation: 1...2,
+        DsmAPIName.corePackageDownload: 1...1,
+        DsmAPIName.corePackageSetting: 1...1,
+        DsmAPIName.corePackageSettingVolume: 1...1,
         DsmAPIName.corePackageControl: 1...1,
         DsmAPIName.corePackageUninstallation: 1...1,
         DsmAPIName.corePackageThumb: 1...1,
@@ -542,6 +567,7 @@ public struct DsmCapabilityDiscovery: Sendable {
         DsmAPIName.coreNetworkProxy: 1...1,
         DsmAPIName.coreHardwarePowerRecovery: 1...1,
         DsmAPIName.coreHardwareZRAM: 1...1,
+        DsmAPIName.coreHardwareNeedReboot: 1...1,
         // 静态目录尚未给出版本矩阵；客户端仅接受最小 v1 范围并要求运行时发现。
         DsmAPIName.coreHardwarePowerSchedule: 1...1,
         DsmAPIName.coreExternalStorageUSB: 1...1,

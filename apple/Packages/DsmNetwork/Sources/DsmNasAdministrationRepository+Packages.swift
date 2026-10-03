@@ -30,16 +30,17 @@ extension DsmNasAdministrationRepository {
 
         // 写后回读也使用此列表；畸形/截断目录不能被解释为目标已经卸载。
         guard let rows = value["packages"]?.array, rows.count < 1_000 else {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.packages.response-incomplete"))
         }
         var seenIDs: Set<String> = []
         var metadata: [String: PackageControlMetadata] = [:]
+        var upgrades: [String: DsmDynamicJSON] = [:]
         var packages = try rows.map { entry -> NasPackage in
             guard let raw = entry.object, case .string(let id)? = raw["id"],
                   !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
                   seenIDs.insert(id).inserted else {
-                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                throw verificationError(L10n.string("nas.packages.response-incomplete"))
             }
             let item = DsmDynamicJSON.object(raw)
             let additional = item["additional"] ?? .object([:])
@@ -54,16 +55,22 @@ extension DsmNasAdministrationRepository {
             let availableOperations = Set(additional.strings(["available_operation"]).map {
                 $0.lowercased()
             })
-            let canStart = startable && isStopped && availableOperations.contains("start")
+            // DSM 7 的对象只携带升级/修复候选，并不是启动、停止许可清单。
+            // 官方页面对启停使用状态与 startable；保留历史数组响应的显式限制。
+            let operationDetails = additional["available_operation"]?.object
+            let canStart = startable && isStopped
+                && (operationDetails != nil || availableOperations.contains("start"))
             let canStop = startable && isRunning
-                && availableOperations.contains("stop")
+                && (operationDetails != nil || availableOperations.contains("stop"))
             let uninstallAllowed: Bool?
             if case .boolean(let flag)? = additional["ctl_uninstall"] { uninstallAllowed = flag }
             else { uninstallAllowed = additional["ctl_uninstall"] == nil ? nil : false }
-            let canUninstall = installType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false && installType?.lowercased() != "system"
+            let canUninstall = installType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false && !["system", "system_hidden"].contains(installType?.lowercased() ?? "")
                 && uninstallAllowed != false
                 && (uninstallAllowed == true || availableOperations.contains("uninstall"))
-            let isUpgradeAvailable = availableOperations.contains("upgrade")
+            if let upgrade = operationDetails?["upgrade"], upgrade.object != nil { upgrades[id] = upgrade }
+            let isUpgradeAvailable = operationDetails?["upgrade"]?.object != nil
+                || availableOperations.contains("upgrade")
 
             metadata[id] = PackageControlMetadata(
                 dsmApps: additional.strings(["dsm_apps"])
@@ -98,6 +105,7 @@ extension DsmNasAdministrationRepository {
         }
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         packageControlMetadata = metadata
+        packageUpgradeCandidates = upgrades
 
         guard includingIcons else { return packages }
         guard let iconCapability = capabilities[DsmAPIName.corePackageThumb],

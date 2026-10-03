@@ -5,6 +5,145 @@ import XCTest
 
 @MainActor
 final class NasAdministrationModelTests: XCTestCase {
+    func test套件准备可立即取消且迟到成功或失败不覆盖新计划() async throws {
+        for fails in [false, true] {
+            let repository = NasAdministrationRepositoryStub()
+            await repository.holdNextPackagePreparation(fails: fails)
+            let model = NasSettingsModel(repository: repository)
+            model.setModuleEnabled(true)
+            let pending = Task { try await model.preparePackageInstallation(["Synthetic:stable"]) }
+            for _ in 0..<100 {
+                if await repository.isPackagePreparationWaiting() { break }
+                await Task.yield()
+            }
+            let waiting = await repository.isPackagePreparationWaiting()
+            XCTAssertTrue(waiting)
+            XCTAssertTrue(model.canCancelPackagePreparation)
+            model.cancelPackageInstallationPreparation()
+            XCTAssertFalse(model.isPreparingPackageInstallation)
+            XCTAssertNil(model.packageInstallPlan)
+            try await model.preparePackageInstallation(["SyntheticNew:stable"])
+            let newPlan = try XCTUnwrap(model.packageInstallPlan)
+            await repository.releasePackagePreparation()
+            do { try await pending.value; XCTFail("取消的准备不能继续交付计划") }
+            catch is CancellationError { }
+            XCTAssertEqual(model.packageInstallPlan, newPlan)
+            XCTAssertNil(model.packageInstallationError)
+            let counts = await repository.packageInstallationCounts()
+            XCTAssertEqual(counts.0, 0)
+        }
+    }
+
+    func test关闭模块取消套件准备且迟到结果不重新显示() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        await repository.holdNextPackagePreparation()
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        let pending = Task { try await model.preparePackageInstallation(["Synthetic:stable"]) }
+        for _ in 0..<100 {
+            if await repository.isPackagePreparationWaiting() { break }
+            await Task.yield()
+        }
+        let waiting = await repository.isPackagePreparationWaiting()
+        XCTAssertTrue(waiting)
+        model.setModuleEnabled(false)
+        XCTAssertFalse(model.isPreparingPackageInstallation)
+        await repository.releasePackagePreparation()
+        do { try await pending.value; XCTFail("停用后不能保留计划") }
+        catch is CancellationError { }
+        XCTAssertNil(model.packageInstallPlan)
+    }
+
+    func test套件未知结果阻止重发与启停并可只读恢复() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        try await model.preparePackageInstallation(["Synthetic:stable"])
+        try await model.startPackageInstallation(volumes: [:], startAfterInstall: true)
+        XCTAssertEqual(model.packageInstallProgress?.phase, .unverified)
+        XCTAssertTrue(model.packageInstallationIsBusy)
+        do { try await model.preparePackageInstallation(["Synthetic:stable"]); XCTFail("不能重发") } catch {}
+        do { _ = try await model.controlPackage(id: "Synthetic", action: .stop); XCTFail("安装结果待确认") } catch {}
+        await model.activate(.hardware)
+        await repository.configurePackageInstallation(phase: .completed)
+        await model.resumePackageInstallationMonitoring()
+        XCTAssertEqual(model.selectedPage, .hardware, "后台完成不能抢走当前页面")
+        XCTAssertEqual(model.packageInstallProgress?.phase, .completed)
+        XCTAssertFalse(model.packageInstallationIsBusy)
+        let counts = await repository.packageInstallationCounts()
+        XCTAssertEqual(counts.0, 1); XCTAssertEqual(counts.1, 1)
+    }
+
+    func test套件目录失败保留已安装列表且禁用模块不提交安装() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        let model = NasSettingsModel(repository: repository)
+        do { try await model.preparePackageInstallation(["Synthetic:stable"]); XCTFail("模块未启用") } catch {}
+        model.setModuleEnabled(true)
+        await model.loadPackageCatalog()
+        let catalog = model.packageCatalog
+        await repository.configurePackageInstallation(catalogFails: true)
+        await model.loadPackageCatalog(force: true)
+        XCTAssertEqual(model.packageCatalog, catalog)
+        XCTAssertNotNil(model.packageCatalogError)
+        let counts = await repository.packageInstallationCounts(); XCTAssertEqual(counts.0, 0)
+    }
+
+    func test套件计划取消和查看不会触发安装() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        try await model.preparePackageInstallation(["SyntheticNew:stable"])
+        XCTAssertEqual(model.packageInstallPlan?.items.count, 1)
+        model.discardPackageInstallPlan()
+        XCTAssertNil(model.packageInstallPlan)
+        let counts = await repository.packageInstallationCounts(); XCTAssertEqual(counts.0, 0)
+    }
+
+    func test内存压缩和电源计划保存后显示新状态() async throws {
+        let repository = NasAdministrationRepositoryStub()
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.zram)
+        try await model.saveZRAM(enabled: false, baseline: XCTUnwrap(model.zram))
+        XCTAssertEqual(model.zram?.isEnabled, false)
+        await model.activate(.powerSchedule)
+        try await model.savePowerSchedule([], baseline: XCTUnwrap(model.powerSchedule))
+        XCTAssertEqual(model.powerSchedule?.entries, [])
+        XCTAssertFalse(model.isSavingServiceSettings)
+        let writes = await repository.hardwareEditRequestCount(); XCTAssertEqual(writes, 2)
+    }
+
+    func test设置结果不明时拒绝重发且刷新失败保留保护() async throws {
+        let repository = NasAdministrationRepositoryStub(hardwareUpdateStatus: .submittedButUnverified)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.zram)
+        let baseline = try XCTUnwrap(model.zram)
+        do { try await model.saveZRAM(enabled: false, baseline: baseline); XCTFail("结果不明不能成功") } catch { }
+        XCTAssertTrue(model.settingsNeedingRefresh.contains(.zram))
+        do { try await model.saveZRAM(enabled: false, baseline: baseline); XCTFail("刷新前不得重发") } catch { }
+        let writes = await repository.hardwareEditRequestCount(); XCTAssertEqual(writes, 1)
+        await repository.setHardwareEditReadFailure(true)
+        await model.activate(.zram, force: true)
+        XCTAssertTrue(model.settingsNeedingRefresh.contains(.zram))
+        await repository.setHardwareEditReadFailure(false)
+        await model.activate(.zram, force: true)
+        XCTAssertFalse(model.settingsNeedingRefresh.contains(.zram))
+        XCTAssertEqual(model.zram?.isEnabled, true)
+    }
+
+    func test电源计划失败不把旧清单当作保存结果() async throws {
+        let repository = NasAdministrationRepositoryStub(hardwareUpdateStatus: .submittedButUnverified)
+        let model = NasSettingsModel(repository: repository)
+        model.setModuleEnabled(true)
+        await model.activate(.powerSchedule)
+        let baseline = try XCTUnwrap(model.powerSchedule)
+        do { try await model.savePowerSchedule([], baseline: baseline); XCTFail("结果不明不能成功") } catch { }
+        XCTAssertEqual(model.powerSchedule, baseline)
+        XCTAssertTrue(model.settingsNeedingRefresh.contains(.powerSchedule))
+        XCTAssertFalse(model.isSavingServiceSettings)
+    }
+
     func test关闭NAS设置后不会发起请求且开启后可以读取() async {
         let repository = NasAdministrationRepositoryStub()
         let model = NasSettingsModel(repository: repository)
@@ -1814,6 +1953,49 @@ private actor ShareAccessRepositoryStub: NasShareAccessRepository {
 actor NasAdministrationRepositoryStub: NasSettingsRepository {
     private var systemRequests = 0
     private var packageControlRequests = 0
+    private var packageInstallationWrites = 0
+    private var packageInstallationReads = 0
+    private var packageInstallationPhase: NasPackageInstallProgress.Phase = .unverified
+    private var packageCatalogReadFails = false
+    private var packageJobID = UUID()
+    private var holdPackagePreparation = false
+    private var heldPreparationFails = false
+    private var packagePreparationContinuation: CheckedContinuation<Void, Never>?
+    func holdNextPackagePreparation(fails: Bool = false) { holdPackagePreparation = true; heldPreparationFails = fails }
+    func isPackagePreparationWaiting() -> Bool { packagePreparationContinuation != nil }
+    func releasePackagePreparation() { packagePreparationContinuation?.resume(); packagePreparationContinuation = nil }
+    func configurePackageInstallation(phase: NasPackageInstallProgress.Phase = .unverified, catalogFails: Bool = false) {
+        packageInstallationPhase = phase; packageCatalogReadFails = catalogFails
+    }
+    func packageInstallationCounts() -> (Int, Int) { (packageInstallationWrites, packageInstallationReads) }
+    func loadPackageCatalog() async throws -> NasPackageCatalog {
+        if packageCatalogReadFails { throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: "Synthetic catalog failure") }
+        return NasPackageCatalog(entries: [
+            NasPackageCatalogEntry(packageID: "Synthetic", name: "Synthetic Backup", version: "2.0", description: "Synthetic package description", releaseNotes: "Synthetic release notes", publisher: "Synthetic publisher", categories: ["backup"], installedVersion: "1.0", isUpdateAvailable: true),
+            NasPackageCatalogEntry(packageID: "SyntheticNew", name: "Synthetic Notes", version: "1.0", description: "Synthetic notes package", publisher: "Synthetic publisher", categories: ["tools"])
+        ], categories: [NasPackageCategory(id: "backup", name: "Synthetic backup"), NasPackageCategory(id: "tools", name: "Synthetic tools")])
+    }
+    func preparePackageInstallation(catalogIDs: [String]) async throws -> NasPackageInstallPlan {
+        if holdPackagePreparation {
+            holdPackagePreparation = false
+            let fails = heldPreparationFails
+            await withCheckedContinuation { packagePreparationContinuation = $0 }
+            if fails { throw AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: "Synthetic preparation failure") }
+        }
+        let catalog = try await loadPackageCatalog()
+        return NasPackageInstallPlan(items: catalog.entries.filter { catalogIDs.contains($0.id) }.map {
+            NasPackageInstallItem(package: $0, volumes: [NasPackageInstallVolume(id: "synthetic-volume", name: "Synthetic Volume")], defaultVolumeID: "synthetic-volume")
+        })
+    }
+    func startPackageInstallation(planID: UUID, volumes: [String: String], startAfterInstall: Bool) async throws -> NasPackageInstallProgress {
+        packageInstallationWrites += 1
+        return NasPackageInstallProgress(id: packageJobID, packageName: "Synthetic Backup", completedCount: 0, totalCount: 1, phase: packageInstallationPhase)
+    }
+    func advancePackageInstallation(id: UUID) async throws -> NasPackageInstallProgress {
+        packageInstallationReads += 1
+        return NasPackageInstallProgress(id: packageJobID, packageName: "Synthetic Backup", completedCount: packageInstallationPhase == .completed ? 1 : 0, totalCount: 1, phase: packageInstallationPhase)
+    }
+
     private var diskTestRequests = 0
     private var powerActionRequests = 0
     private var diskTestStatus = NasDiskTestStatus(diskID: "disk1", isRunning: false)
@@ -2222,7 +2404,7 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
                     || status == .confirmedFailure ? 1 : 0,
                 unknown: isUnknown ? 1 : 0
             ),
-            localizationKey: isUnknown ? "\(prefix).unverified" : nil,
+            localizationKey: isUnknown ? (prefix == "nas.edit" ? "nas.edit.unconfirmed" : "\(prefix).unverified") : nil,
             diagnosticTag: "\(prefix).test"
         )
     }
@@ -2340,8 +2522,7 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         )
     }
 
-    func loadPowerSchedule() async throws -> NasPowerScheduleSnapshot {
-        NasPowerScheduleSnapshot(
+    private var editablePowerSchedule = NasPowerScheduleSnapshot(
             entries: [
                 NasPowerScheduleEntry(
                     id: "synthetic-schedule",
@@ -2354,8 +2535,13 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
             ],
             timeZoneIdentifier: "Asia/Shanghai",
             total: 1,
-            isTruncated: false
+            isTruncated: false,
+            supportsEditing: true
         )
+
+    func loadPowerSchedule() async throws -> NasPowerScheduleSnapshot {
+        if hardwareEditReadFails { throw AppError(category: .networkUnavailable, isRetryable: true, safeUserMessage: "合成读取失败") }
+        return editablePowerSchedule
     }
 
     func loadExternalStorage() async throws -> NasExternalStorageDirectory {
@@ -2376,12 +2562,32 @@ actor NasAdministrationRepositoryStub: NasSettingsRepository {
         )
     }
 
+    private var editableZRAM = NasZRAMSnapshot(isEnabled: true, configuredBytes: 1_073_741_824, algorithm: .lz4)
+    private var hardwareEditWrites = 0
+    private var hardwareEditReadFails = false
+    func setHardwareEditReadFailure(_ value: Bool) { hardwareEditReadFails = value }
+    func hardwareEditRequestCount() -> Int { hardwareEditWrites }
+
     func loadZRAM() async throws -> NasZRAMSnapshot {
-        NasZRAMSnapshot(
-            isEnabled: true,
-            configuredBytes: 1_073_741_824,
-            algorithm: .lz4
-        )
+        if hardwareEditReadFails { throw AppError(category: .networkUnavailable, isRetryable: true, safeUserMessage: "合成读取失败") }
+        return editableZRAM
+    }
+
+    func saveZRAMResult(enabled: Bool, replacing baseline: NasZRAMSnapshot) async throws -> MutationResult {
+        hardwareEditWrites += 1
+        if hardwareUpdateStatus == .confirmedSuccess {
+            editableZRAM = NasZRAMSnapshot(isEnabled: enabled, configuredBytes: nil, algorithm: .unknown)
+        }
+        return try diskMutationResult(status: hardwareUpdateStatus, operation: "zramSave", prefix: "nas.edit")
+    }
+
+    func savePowerScheduleResult(_ entries: [NasPowerScheduleEntry], replacing baseline: NasPowerScheduleSnapshot) async throws -> MutationResult {
+        hardwareEditWrites += 1
+        if hardwareUpdateStatus == .confirmedSuccess {
+            editablePowerSchedule = NasPowerScheduleSnapshot(entries: entries, timeZoneIdentifier: baseline.timeZoneIdentifier,
+                total: entries.count, isTruncated: false, supportsEditing: true)
+        }
+        return try diskMutationResult(status: hardwareUpdateStatus, operation: "powerScheduleSave", prefix: "nas.edit")
     }
 
     func loadConnections(offset: Int, limit: Int) async throws -> NasConnectionPage {

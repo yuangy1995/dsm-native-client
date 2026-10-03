@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dsm-native-client/nas-hardware-editing.schema.json",
+  "title": "nas-hardware-editing",
+  "description": "已记录成功响应的白名单。静态字段与合成样本不构成真实写行为验证。",
+  "type": "object",
+  "required": [
+    "success",
+    "data"
+  ],
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "data": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/zram"
+        },
+        {
+          "$ref": "#/$defs/needReboot"
+        },
+        {
+          "$ref": "#/$defs/powerSchedule"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "zram": {
+      "type": "object",
+      "required": [
+        "enable_zram"
+      ],
+      "properties": {
+        "enable_zram": {
+          "type": "boolean"
+        }
+      }
+    },
+    "needReboot": {
+      "type": "object",
+      "required": [
+        "need_reboot"
+      ],
+      "properties": {
+        "need_reboot": {
+          "type": "boolean"
+        }
+      }
+    },
+    "powerSchedule": {
+      "type": "object",
+      "required": [
+        "poweron_tasks",
+        "poweroff_tasks"
+      ],
+      "properties": {
+        "poweron_tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "enabled",
+              "weekdays",
+              "hour",
+              "min"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "weekdays": {
+                "type": "string",
+                "pattern": "^[0-6](,[0-6])*$"
+              },
+              "hour": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+              },
+              "min": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 59
+              }
+            }
+          }
+        },
+        "poweroff_tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "enabled",
+              "weekdays",
+              "hour",
+              "min"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "weekdays": {
+                "type": "string",
+                "pattern": "^[0-6](,[0-6])*$"
+              },
+              "hour": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+              },
+              "min": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 59
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,18 +13,18 @@ extension DsmNasAdministrationRepository {
         let value = try await call(DsmAPIName.storageOverview, method: "load_info", version: 1)
         try Task.checkCancellation()
         guard generation == storageReadGeneration else { throw CancellationError() }
-        guard case .array(let rawDisks) = value["disks"] else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard case .array(let rawDisks) = value["disks"] else { throw verificationError(L10n.string("nas.storage.response-incomplete")) }
         var diskIDs = Set<String>(), deviceIDs = Set<String>()
         let disks = try rawDisks.enumerated().map { index, item in
             guard case .object = item, case .string(let id) = item["id"], case .string(let device) = item["device"],
                   !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !device.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   diskIDs.insert(id).inserted, deviceIDs.insert(device).inserted else {
-                throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                throw verificationError(L10n.string("nas.storage.response-incomplete"))
             }
             let supportsSmartTest: Bool
             if let support = item["smart_test_support"], support != .null {
-                guard case .boolean(let flag) = support else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+                guard case .boolean(let flag) = support else { throw verificationError(L10n.string("nas.storage.response-incomplete")) }
                 supportsSmartTest = flag
             } else { supportsSmartTest = false }
             let smartStatus = item.string(["smart_status"])

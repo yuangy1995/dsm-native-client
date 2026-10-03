@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.install-prepared.synthetic-settings",
+  "module": "packages",
+  "operation": "installPrepared",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "method": "install",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "volume_path",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-volume>\""
+    },
+    {
+      "name": "extra_values",
+      "valueType": "string",
+      "encodedValue": "\"{\\\"synthetic-option\\\":true}\""
+    },
+    {
+      "name": "type",
+      "valueType": "integer",
+      "encodedValue": "0"
+    },
+    {
+      "name": "check_codesign",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "force",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "installrunpackage",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "task_id",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-upload>\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

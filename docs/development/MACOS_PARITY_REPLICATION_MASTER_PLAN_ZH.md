@@ -1,7 +1,13 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-03 -->
 
 # macOS 语义基线下的 Windows 与 Apple 移动端对齐总控计划
+
+## NAS 设置新基线与五端边界（2026-10-03）
+
+本轮是用户单独授权的 macOS NAS 设置全项核对、内存压缩/电源计划补齐和套件中心实现。只有 macOS 形成新原生流程；共享 Apple 为兼容增量，Windows 与 Android 仅记录契约影响，iPhone/iPad 的复杂 NAS 运维仍为当前不做。后续跨端任务继续遵循 macOS 只读参考边界，不因本次授权解除未来只读限制。新私有写开放供用户测试不等于真实行为已验证；实际能力、权限、签名/许可、确认、互斥和结果核查不可移除。逐端取舍见对应计划，源码、私有端点、合成请求及验证证据集中在 [NAS 设置核对账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+
+同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](PACKAGE_CENTER_FIX_20261003_ZH.md)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
 
 ## 决策摘要
 

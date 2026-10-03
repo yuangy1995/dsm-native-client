@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.save-settings.synthetic-settings",
+  "module": "packages",
+  "operation": "saveSettings",
+  "api": {
+    "name": "SYNO.Core.Package.Setting",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "update_channel",
+      "valueType": "string",
+      "encodedValue": "\"stable\""
+    },
+    {
+      "name": "enable_email",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "enable_dsm",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "enable_autoupdate",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    },
+    {
+      "name": "autoupdateall",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "autoupdateimportant",
+      "valueType": "boolean",
+      "encodedValue": "false"
+    },
+    {
+      "name": "packages",
+      "valueType": "string",
+      "encodedValue": "\"[\\\"<synthetic-package>\\\"]\""
+    },
+    {
+      "name": "packages_important",
+      "valueType": "string",
+      "encodedValue": "\"[]\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

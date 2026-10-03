@@ -1,7 +1,13 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-03 -->
 
 # iPhone 与 iPad 移动精选功能长期计划
+
+## NAS 管理共享增量与移动取舍（2026-10-03）
+
+共享 Apple 增加套件目录/安装模型、Repository 默认不支持方法以及内存压缩/电源计划保存语义；旧移动实现保持源码兼容。本轮未增加 iPhone 或 iPad 页面，二者范围一致：内存压缩、电源计划、套件安装/卸载/自动更新与来源信任等长流程运维均为**当前不做**，不加入移动 DAG，也不标为 PENDING_USER_VALIDATION。用户目标由现有健康/服务摘要加浏览器 DSM 管理替代；不承诺移动后台持续安装监控或照搬桌面表单。共享读取后续需同步 enable_zram、available_operation 对象及正确防火墙通知含义，并继续做 macOS 回归。证据与契约见 [NAS 设置账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+
+同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](PACKAGE_CENTER_FIX_20261003_ZH.md)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
 
 ## File Station 共享接口增量影响
 

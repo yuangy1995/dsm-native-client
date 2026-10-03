@@ -1,7 +1,13 @@
 <!-- doc-role: development-plan -->
-<!-- last-reviewed: 2026-10-02 -->
+<!-- last-reviewed: 2026-10-03 -->
 
 # Windows 对齐 macOS 功能长期计划
+
+## NAS 设置与套件中心新增基线影响（2026-10-03）
+
+macOS 本轮新增内存压缩保存、完整电源计划编辑及套件目录/安装/更新/手动上传/进度/设置/来源管理。Windows 仅记录后续对齐切片，本轮未修改实现，也不标记为仅待真机验收。后续须按 WinUI 文件选择器、列表、对话框和后台状态习惯实现：ZRAM 的 enable_zram 与 NeedReboot 独立标记、200 条双数组电源计划、available_operation 对象、依赖计划确认、签名/许可、未知提交只核查与目标版本确认。enable_port_check 的用户含义是防火墙通知，提示音与风扇按真实设备支持位显示。静态/合成证据不能代替 Windows 构建或真实 NAS 验收。契约及源文件见 [NAS 设置账本](NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)；依赖安装、状态恢复、写入和原生 UI 应作为完整功能切片，不复用旧直接 upgrade 控制。
+
+同日反馈修复补充：套件预检成功可以没有 data；Setting.get 的 update_channel 为 Boolean，set 仍为 stable/beta，单卷 default_vol 可缺省。macOS 已修正并同步应用实际加载的双语资源；其他平台实现范围保持上述取舍。官方单个 MediaServer 更新已成功，但不能代替任何目标客户端的真实提交验收。详见[反馈修复账本](PACKAGE_CENTER_FIX_20261003_ZH.md)。 后续确认 system/system_hidden 可以缺省普通存储列表；安装准备取消须丢弃迟到结果，已提交安装只关闭窗口后台继续。照片过期操作反馈修复仅涉及 macOS 模型，不改变五端照片读取/写入契约。见[二次反馈账本](PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。
 
 ## File Station 新增基线影响
 

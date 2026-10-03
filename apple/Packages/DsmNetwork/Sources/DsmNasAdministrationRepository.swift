@@ -13,7 +13,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private let isConnectedThroughQuickConnectRelay: Bool
     var packageControlMetadata: [String: PackageControlMetadata] = [:]
     var packageIconCache: [String: Data] = [:]
-    private var activePackageMutationIDs: Set<String> = []
+    var activePackageMutationIDs: Set<String> = []
+    var packageCatalogCandidates: [String: PackageCatalogCandidate] = [:]
+    var packageUpgradeCandidates: [String: DsmDynamicJSON] = [:]
+    var packageInstallPlan: PackageInstallationPlanState?
+    var packageInstallJob: PackageInstallationJobState?
+    var packageInstallationRequestActive = false
+    var packageSettingsNeedRefresh = false
+    var packageSourcesNeedRefresh = false
     private var activeAccountDeletionNames: Set<String> = []
     private var activeGroupDeletionNames: Set<String> = []
     private var activeEthernetUpdateIDs: Set<String> = []
@@ -27,6 +34,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
     private var activeDDNSProviderIDs: Set<String> = []
     private var isDDNSRefreshActive = false
     var isPowerActionActive = false
+    var isZRAMUpdateActive = false
+    var isPowerScheduleUpdateActive = false
     private var activeDiskTestIDs: Set<String> = []
     var storageDisks: [String: NasDisk] = [:]
     var storageReadGeneration = 0
@@ -2312,14 +2321,19 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             ledBrightness: led?.number(["led_brightness"]).map(Int.init),
             ledBrightnessRange: range,
             fanMode: fan?.string(["dual_fan_speed"]),
-            isFanFailureAlertEnabled: beep?.boolean(["fan_fail"]),
-            isVolumeFailureAlertEnabled: beep?.boolean([
+            isFanFailureAlertEnabled: beep?.boolean(["support_fan_fail"]) == false
+                ? nil : beep?.boolean(["fan_fail"]),
+            isVolumeFailureAlertEnabled: beep?.boolean(["support_volume_crash"]) == false
+                ? nil : beep?.boolean([
                 "volume_or_cache_crash",
                 "volume_crash"
             ]),
-            isPowerOnSoundEnabled: beep?.boolean(["poweron_beep"]),
-            isPowerOffSoundEnabled: beep?.boolean(["poweroff_beep"]),
-            isResetSoundEnabled: beep?.boolean(["reset_beep"]),
+            isPowerOnSoundEnabled: beep?.boolean(["support_poweron_beep"]) == false
+                ? nil : beep?.boolean(["poweron_beep"]),
+            isPowerOffSoundEnabled: beep?.boolean(["support_poweroff_beep"]) == false
+                ? nil : beep?.boolean(["poweroff_beep"]),
+            isResetSoundEnabled: beep?.boolean(["support_reset_beep"]) == false
+                ? nil : beep?.boolean(["reset_beep"]),
             isExternalDriveDeepSleepEnabled: hibernation?.boolean(["eunit_deep_sleep"]),
             isWakeUpLogEnabled: hibernation?.boolean(["enable_log"]),
             isSATASleepEnabled: hibernation?.boolean(["sata_deep_sleep"]),
@@ -2327,8 +2341,22 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 "ignore_netbios_broadcast"
             ]),
             isAutomaticPowerOffEnabled: hibernation?.boolean(["auto_poweroff_enable"]),
-            ups: Self.upsSettings(from: ups)
+            ups: Self.upsSettings(from: ups),
+            supportedFanModes: Self.supportedFanModes(from: fan)
         )
+    }
+
+    private static func supportedFanModes(from value: DsmDynamicJSON?) -> [String]? {
+        guard let kind = value?.string(["cool_fan"]) else { return nil }
+        if kind == "no" { return ["highfan", "lowfan"] }
+        guard ["yes", "single"].contains(kind),
+              let rawType = value?.number(["fan_type"]),
+              let type = Int(exactly: rawType), type >= 0 else { return nil }
+        // 官方硬件页的 FAN_MODE_ENUM：高 1、低 2、低速停转 4、全速 8。
+        let modes: [(Int, String)] = kind == "single"
+            ? [(8, "fullfan"), (2, "quietfan")]
+            : [(8, "fullfan"), (1, "coolfan"), (2, "quietfan"), (4, "quietstopfan")]
+        return modes.filter { type & $0.0 != 0 }.map(\.1)
     }
 
     public func loadPowerSchedule() async throws -> NasPowerScheduleSnapshot {
@@ -2337,7 +2365,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             method: "load",
             version: 1
         )
-        let maximumEntries = 128
+        let maximumEntries = 200
         let rawRows: [DsmDynamicJSON]
         if value["poweron_tasks"] != nil || value["poweroff_tasks"] != nil {
             // DSM 7 将开机和关机计划分开返回，操作类型由容器决定。
@@ -2414,7 +2442,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             ),
             total: total,
             isTruncated: rawRows.count > maximumEntries || entries.count < min(rawRows.count, maximumEntries)
-                || (reportedTotal.map { $0 > rawRows.count } ?? false)
+                || (reportedTotal.map { $0 > rawRows.count } ?? false),
+            supportsEditing: value["poweron_tasks"]?.array != nil && value["poweroff_tasks"]?.array != nil
         )
     }
 
@@ -2452,7 +2481,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                     $0 >= 0 && $0 <= 1_000_000 ? Int($0) : nil
                 }
                 guard !rows.isEmpty || (reportedTotal ?? 0) == 0 else {
-                    throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+                    throw verificationError(L10n.string("nas.external-storage.response-incomplete"))
                 }
                 total += max(rows.count, reportedTotal ?? rows.count)
                 isTruncated = isTruncated
@@ -2501,7 +2530,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             }
         }
 
-        guard successfulConnections > 0 else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard successfulConnections > 0 else { throw verificationError(L10n.string("nas.external-storage.response-incomplete")) }
         return NasExternalStorageDirectory(
             devices: devices.sorted {
                 if $0.connection != $1.connection {
@@ -2523,9 +2552,14 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             method: "get",
             version: 1
         )
-        guard value.object != nil else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard value.object != nil else {
+            throw verificationError(L10n.string("nas.zram.response-incomplete"))
+        }
         return NasZRAMSnapshot(
-            isEnabled: try? taskReadBoolean(taskCoalescedRead(taskCoalescedRead(value["enable"], value["enabled"]), value["zram_enable"])),
+            isEnabled: try? taskReadBoolean(taskCoalescedRead(
+                taskCoalescedRead(value["enable_zram"], value["zram_enable"]),
+                taskCoalescedRead(value["enable"], value["enabled"])
+            )),
             configuredBytes: Self.externalStorageByteValue(value, keys: ["configured_bytes", "capacity_bytes", "size_bytes"]),
             algorithm: Self.zramAlgorithm(
                 try? taskReadText(taskCoalescedRead(taskCoalescedRead(value["algorithm"], value["compression_algorithm"]), value["compressor"]))
@@ -2768,6 +2802,16 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         _ settings: NasHardwareSettings,
         current: NasHardwareSettings
     ) throws {
+        let soundSettings = [
+            (settings.isFanFailureAlertEnabled, current.isFanFailureAlertEnabled),
+            (settings.isVolumeFailureAlertEnabled, current.isVolumeFailureAlertEnabled),
+            (settings.isPowerOnSoundEnabled, current.isPowerOnSoundEnabled),
+            (settings.isPowerOffSoundEnabled, current.isPowerOffSoundEnabled),
+            (settings.isResetSoundEnabled, current.isResetSoundEnabled)
+        ]
+        guard soundSettings.allSatisfy({ $0.0 == nil || $0.1 != nil }) else {
+            throw verificationError(L10n.string("hardware.settings.sound-unavailable"))
+        }
         if let brightness = settings.ledBrightness,
            brightness != current.ledBrightness {
             guard let range = current.ledBrightnessRange, range.contains(brightness) else {
@@ -2784,7 +2828,8 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
                 "quietfan",
                 "quietstopfan"
             ])
-            guard supportedModes.contains(fanMode) else {
+            guard supportedModes.contains(fanMode),
+                  current.supportedFanModes?.contains(fanMode) != false else {
                 throw verificationError(L10n.string("shared.f57a2aff1b6f5542"))
             }
         }
@@ -6896,19 +6941,19 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         try requireCurrentStorageDisk(disk)
         guard diskStatusReadGenerations[disk.id] == generation else { throw CancellationError() }
         guard case .array(let states) = value["testInfo"], states.count == 1,
-              case .object = states[0] else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+              case .object = states[0] else { throw verificationError(L10n.string("nas.disk-test.response-incomplete")) }
         let latest = states[0]
         if let reportedDevice = try taskReadText(latest["device"]), reportedDevice != disk.deviceID {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.disk-test.response-incomplete"))
         }
         guard let isRunning = try taskReadBoolean(taskCoalescedRead(latest["testing"], latest["is_testing"])) else {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.disk-test.response-incomplete"))
         }
         let ihm = try taskReadBoolean(latest["ihm_testing"])
         let performance = try taskReadBoolean(latest["perf_testing"])
         // 当前模型不能表达未知占用；缺少证据时不能把硬盘判为空闲供启动使用。
         guard isRunning || ihm == true || performance == true || (ihm != nil && performance != nil) else {
-            throw verificationError(L10n.string("shared.db6b9590023d51f5"))
+            throw verificationError(L10n.string("nas.disk-test.response-incomplete"))
         }
         let isBusyWithOtherTest = !isRunning && (ihm == true || performance == true)
         let types = try ["test_type", "testType", "type"].compactMap { key -> String? in
@@ -6916,7 +6961,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             let normalized = text.lowercased()
             return normalized == "extended" ? "extend" : normalized
         }
-        guard Set(types).count <= 1 else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+        guard Set(types).count <= 1 else { throw verificationError(L10n.string("nas.disk-test.response-incomplete")) }
         let rawType = types.first
         let runningType: NasDiskTestType?
         if rawType == "quick" {
@@ -6924,7 +6969,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         } else if rawType == "extend" || rawType == "extended" {
             runningType = .extended
         } else {
-            guard rawType == nil && !isRunning else { throw verificationError(L10n.string("shared.db6b9590023d51f5")) }
+            guard rawType == nil && !isRunning else { throw verificationError(L10n.string("nas.disk-test.response-incomplete")) }
             runningType = nil
         }
         let history: DiskTestHistorySnapshot
@@ -7380,6 +7425,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         id: String,
         action: NasPackageAction
     ) async throws -> MutationResult {
+        guard !packageInstallationRequestActive, packageInstallJob == nil || [.completed, .failed, .cancelled].contains(packageInstallJob!.phase) else {
+            throw packageCenterError("package.center.busy")
+        }
         if action == .uninstall {
             return try await uninstallPackageResult(id: id)
         }
@@ -7536,6 +7584,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.corePackage,
                 method: "feasibility_check",
+                version: 1,
                 parameters: [
                     "type": .string(checkType),
                     "packages": .stringArray([normalizedID])
@@ -7618,6 +7667,9 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
 
     /// 套件卸载属于破坏性操作；请求提交后必须通过套件列表回读确认，未知结果不得自动重放。
     public func uninstallPackageResult(id: String) async throws -> MutationResult {
+        guard !packageInstallationRequestActive, packageInstallJob == nil || [.completed, .failed, .cancelled].contains(packageInstallJob!.phase) else {
+            throw packageCenterError("package.center.busy")
+        }
         let operation = "packageUninstall"
         if Task.isCancelled {
             return try packageMutationResult(
@@ -7682,6 +7734,7 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
             try await callVoid(
                 DsmAPIName.corePackage,
                 method: "feasibility_check",
+                version: 1,
                 parameters: [
                     "type": .string("uninstall_check"),
                     "packages": .stringArray([normalizedID]),
@@ -10165,12 +10218,12 @@ public actor DsmNasAdministrationRepository: NasSettingsRepository {
         for key in keys {
             guard let candidate = value[key], candidate != .null else { continue }
             if let selected, selected != candidate {
-                throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("shared.db6b9590023d51f5"))
+                throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("nas.external-storage.response-incomplete"))
             }
             selected = candidate
         }
         guard case .array(let rows) = selected, rows.allSatisfy({ $0.object != nil }) else {
-            throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("shared.db6b9590023d51f5"))
+            throw AppError(category: .invalidResponse, isRetryable: true, safeUserMessage: L10n.string("nas.external-storage.response-incomplete"))
         }
         return rows.compactMap(\.object)
     }

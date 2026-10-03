@@ -1,144 +1,57 @@
 # DSM 内存压缩（ZRAM）内部 API
 
-## 标识
+## 当前契约
 
-| 字段 | 值 |
-| --- | --- |
-| 端点或端点组标识 | `dsm-zram` |
-| 项目组件标识 | `dsm-core` |
-| 所属范围 | DSM 控制面板 |
-| 能力名称 | 内存压缩只读摘要和设置关闭边界 |
-| 分类 | `internal` |
-| 操作性质 | `mixed`（当前客户端仅 `read`） |
-| 风险等级 | `high`（来自尚未启用的 `set`） |
+稳定标识 `dsm-zram`，组件 `dsm-core`，内部混合读写接口，风险 `high`。
+2026-10-02/03 官方页面确认 DSM 7.2.1-69057 Update 12，成功读取
+`SYNO.Core.Hardware.ZRAM.get` v1 的 `data.enable_zram:Boolean`。本次设备匿名归属待确认，
+不提升旧 lab-a 记录。当前响应没有容量或算法，界面不显示没有信息的行。
 
-## 范围与证据边界
-
-本记录覆盖 DSM 控制面板“硬件和电源”中的内存压缩只读摘要。静态 API 目录显示
-`SYNO.Core.Hardware.ZRAM` 提供 `get` / `set`；2026-08-03 在已登录的官方 DSM
-页面中只读观察到“内存压缩”设置控件存在，但没有捕获或保存对应网络请求、响应或
-任何会话数据。因此 API 版本、路径、参数和响应结构仍是 `static` 候选，不能表述为
-当前 DSM build 已经 `read-verified`。
-
-## 请求契约
-
-| 字段 | 值 |
-| --- | --- |
-| API 名称 | `SYNO.Core.Hardware.ZRAM` |
-| 路径 | 运行时通过 `SYNO.API.Info` 发现 |
-| HTTP 方法 | `POST` |
-| 客户端版本范围 | 保守接受运行时发现的 v1 |
-| 只读方法 | `get` |
-| 写方法 | `set`，当前关闭 |
-| `get` 参数 | 无 |
-| 鉴权 | DSM 会话 Cookie/表单与令牌请求头/表单，不记录值 |
-| 内容类型 | 真实请求未捕获，当前环境未验证 |
-
-客户端不会猜测不存在的版本、路径或参数；能力缺失，或发现范围不包含 v1 时，页面
-独立不可用并保持零请求。
-
-## 响应与错误
-
-当前没有真实脱敏响应。客户端只按 DSM 通用响应外壳读取 `success` / `data`，再从
-`data` 中应用下述字段白名单；实际容器、必需字段和错误码均为未验证。
-
-| 场景 | 已知程度 | 是否可重试 | 降级或恢复 |
-| --- | --- | --- | --- |
-| API 未发现或不含 v1 | 客户端可确定 | 否 | 页面独立不可用，零请求 |
-| 无权限 | 真实错误码未验证 | 否 | 显示通俗错误，不猜测管理员权限 |
-| 网络失败 | 通用传输错误 | 是 | 保留其他 NAS 设置页面，允许手动刷新 |
-| 字段缺失或类型变化 | 合成响应已覆盖 | 读取可重试 | 单字段降级为不可用/未知，不读取未知字段 |
-| `set` | 参数和错误均未验证 | 否 | 客户端无入口，不发送请求 |
-
-## 只读字段白名单
-
-领域模型只保留以下三类摘要：
-
-- 启用状态：`enable`、`enabled` 或 `zram_enable`；
-- 配置容量：只接受单位明确为字节的 `configured_bytes`、`capacity_bytes` 或
-  `size_bytes`，负值和单位不明确的 `size` / `capacity` 不采信；
-- 压缩算法：`algorithm`、`compression_algorithm` 或 `compressor`，只归一为
-  `lz4`（含 `lz4hc`）、`lzo`（含 `lzo-rle` / `lzorle`）、`zstd` 或未知。
-
-内核参数、交换设备名称、设备路径、命令、进程、账号、网络地址及未知字段不会进入
-领域模型，也不会出现在默认界面。
-
-2026-09-17 Windows/Apple 字段读取补充：启用状态仅接受原生 Boolean；容量只接受
-非负整数，不截断小数；同义字段冲突保持未知，非对象 data 为错误。单字段未知
-不清空其他可信摘要，全部不可识别时显示无信息，而不是停用或零容量。
-
-## 写操作关闭边界
-
-`set` 会改变内存管理行为，可能影响内存压力、系统响应、服务稳定性和重启后的状态。
-当前没有把 `set` 加入 Repository 协议、请求 Fixture 或界面。未来启用前必须取得：
-
-- 对应 DSM build 的版本化参数、字段类型和权限错误；
-- 修改是否即时生效、是否要求重启、内存压力和回滚语义；
-- 提交前权限与当前状态预检、明确确认和全局防重复提交；
-- 提交异常时禁止自动重放，并通过最终 `get` 回读确认结果；
-- 专用测试环境中的故障注入、服务稳定性与重启后状态验证。
-
-## 客户端与界面
-
-- Apple 领域：`NasZRAMSnapshot`、`NasZRAMAlgorithm`；
-- Apple Adapter：`DsmNasAdministrationRepository.loadZRAM()`；
-- macOS：NAS 设置中的“内存压缩”只读页，显示启用状态、明确字节容量和受限算法，
-  支持手动刷新以及加载、空内容、错误和正常状态；该标量页面没有筛选场景；
-- Windows：已接固定 v1 读取、标量状态/空信息/错误/不可用与双语只读原生页面，
-  只有合成证据，没有 set 方法或开关。
-- iPhone、iPad、Android：本波不迁移页面，Apple 移动需回归共享严格读取修正。
-
-界面没有开关、保存或其他写入口，并提示需要修改时前往 DSM。状态同时使用文字与系统
-图标，不依赖颜色；中英文用户可见文案均通过语言资源提供。
-
-## 能力探测与降级
-
-- 启用条件：`SYNO.API.Info` 返回该 API，且服务端范围与客户端 v1 相交；
-- 新版本默认行为：只协商共同支持的 v1，不因服务端暴露更高版本而猜测升级；
-- 接口缺失：页面独立不可用且零请求，不阻断其他 NAS 设置；
-- 字段缺失或类型变化：只保留可安全解析的单字段，全部缺失时显示空状态；
-- 权限不足与网络失败：显示可恢复错误并允许手动刷新，不解释为功能已禁用；
-- 替代的官方 API：当前未发现满足同一用途的公开 API；
-- 功能开关：复用 NAS 设置模块开关，关闭模块后不发起请求；`set` 无功能开关且始终关闭。
-
-## 客户端与测试定位
-
-- Apple Adapter：`apple/Packages/DsmNetwork/Sources/DsmNasAdministrationRepository.swift`；
-- Apple 领域：`apple/Packages/DsmCore/Sources/NasAdministration.swift`；
-- macOS 模型与界面：`apple/Apps/DsmMac/Sources/NasAdministrationModel.swift`、
-  `apple/Apps/DsmMac/Sources/NasAdministrationView.swift`；
-- Windows Adapter：`DsmRepository.NasSettings.Zram.cs`；Android 本波未实现；
-- Schema：没有保存真实响应，因此没有响应 Schema；机器兼容索引由
-  `contracts/schemas/private-api-compatibility.schema.json` 校验；
-- 脱敏 fixture：没有真实响应，未创建 fixture；合成响应只存在于正式自动化测试；
-- 自动化测试：`apple/Packages/DsmNetwork/Tests/DsmCapabilityDiscoveryTests.swift`、
-  `apple/Packages/DsmNetwork/Tests/DsmNasAdministrationRepositoryTests.swift`、
-  `apple/Apps/DsmMac/Tests/NasAdministrationModelTests.swift`；
-- 产品兼容矩阵：`docs/compatibility/DSM_COMPATIBILITY_MATRIX.md`；
-- 机器索引：`contracts/private-api/compatibility.json`。
-
-## 安全与副作用
-
-- 会读取的数据类别：内存压缩启用摘要、明确字节容量和受限算法名称；
-- 可能产生的副作用：`get` 预期只读但真实响应未验证；`set` 可能影响内存管理和服务
-  稳定性，因此关闭；
-- 所需权限：真实权限类别与错误码未验证，客户端不推断；
-- 重复提交保护：当前无写请求；未来 `set` 必须全局防重复；
-- 写后结果校验：当前不适用；未来必须通过最终 `get` 回读；
-- 临时数据清理：没有保存 HAR、响应、截图或浏览器导出；构建产物在本批结束前清理。
-
-## 版本验证
-
-| 环境标识 | 证据等级 | 结果 | 日期 | 证据路径 |
+| API / 方法 | 版本 | 业务参数 | 返回 / 用途 | 证据 |
 | --- | --- | --- | --- | --- |
-| `lab-a-dsm-7-2-1-69057-u12-20260729` | `static` | 在同一匿名设备补充观察到官方设置控件；当日未重新核实版本，API 请求、响应和写行为未捕获或执行 | 2026-08-03 | `docs/api/discovery/environments/2026-07-29-lab-a-dsm-69057-u12.md`、`docs/api/DSM_WEB_API_REFERENCE_ZH.md` |
+| `SYNO.Core.Hardware.ZRAM.get` | 1 | 无 | `enable_zram:Boolean` | read-verified |
+| `SYNO.Core.Hardware.ZRAM.set` | 1 | `enable_zram:Boolean` | 保存压缩开关 | static（官方前端） |
+| `SYNO.Core.Hardware.NeedReboot.get` | 1 | 无 | `need_reboot:Boolean` | static（官方前端） |
+| `SYNO.Core.Hardware.NeedReboot.set` | 1 | 无 | 标记重启后生效 | static（官方前端） |
 
-合成响应、字段白名单、v1 协商、能力缺失零请求和零 `set` 测试不能把当前环境提升为
-`observed`、`read-verified` 或 `behavior-verified`。
+路径、版本和请求格式来自运行时 `SYNO.API.Info`。当前环境使用 `entry.cgi` 及 JSON
+参数格式，通过已有 POST 会话构造器发送，不能保存认证内容。
 
-## 未验证事项
+## 保存语义
 
-- 真实 DSM build 的 API 版本、路径、响应容器、字段名、字段类型和权限错误；
-- 容量是否始终以字节返回、算法枚举，以及禁用状态下容量与算法字段的行为；
-- 不同硬件、内存容量、DSM 更新和普通账号下的可用性；
-- `set` 的参数、即时/重启生效、资源影响、取消、超时、回滚和最终状态复查。
+用户已要求提供开关用于测试，macOS 不再因缺少真实写入验收而固定关闭。保存必须：
+
+1. NAS 管理模块可用，ZRAM 与 NeedReboot v1 能力存在，当前启用值可信。
+2. 确认压缩行为将在重启后改变，不在保存流程自动重启 NAS。
+3. 复读 ZRAM，确认仍与编辑基线一致；复读 NeedReboot 确认字段完整。
+4. 只提交一次 `ZRAM.set`，随后 `NeedReboot.set`；不自动重放任何写请求。
+5. 重新读取 ZRAM 和 NeedReboot，开关符合目标且重启标记为 true 才确认保存。
+
+中途断线、设置成功但标记失败或结果不符都显示结果待确认。模型保留刷新要求；失败刷新
+不能解除重复提交保护，成功刷新后才允许按当前状态重新编辑。权限拒绝不绕过。
+
+## 读取兼容与降级
+
+- 主字段为 `enable_zram`；保留 `enable/enabled/zram_enable` 的历史兼容，原生 Boolean
+  以外的值不解释为开关；同义字段冲突保持未知。
+- 历史可选容量只接受单位明确的非负整数 `configured_bytes/capacity_bytes/size_bytes`；
+  算法仅归一 `lz4/lzo/zstd`，缺失不猜默认值。
+- 能力缺失、字段不完整、权限和读取失败只影响此页面。错误不能显示为“已关闭”。
+
+## 五端影响与验证
+
+macOS 实现开关、风险确认、保存、回读和恢复；共享 Apple 新方法有默认不支持实现，
+iPhone/iPad 尚无对应写界面。Windows/Android 本轮未修改，不能将 macOS 新写能力当作
+它们已经具备。未改变持久化、Bundle ID、认证或外部公开 API。
+
+正式测试见 `DsmNasAdministrationRepositoryTests`、`NasAdministrationModelTests`，覆盖
+当前字段、别名冲突、零写拒绝、保存与标记顺序、断线和刷新保护。Schema：
+`contracts/schemas/nas-hardware-editing.schema.json`；请求样本位于
+`contracts/request-fixtures/hardware/set-zram/` 与 `mark-reboot-required/`。
+
+`PENDING_USER_VALIDATION`：在可维护的 NAS 上分别保存关闭/开启，确认提示需要重启、
+保存本身不触发重启，再由用户单独安排重启并检查最终状态、服务和内存表现。回传仅需
+脱敏错误文字、DSM 版本、步骤与结果；不要回传地址、账号、令牌或完整响应。
+
+历史 2026-08-03 lab-a 仅观察控件，保持 static，不能继承本轮读证据。环境见
+[本轮快照](../environments/2026-10-02-nas-settings-web-audit.md)。全部真实 set 行为未验证。

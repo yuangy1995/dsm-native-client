@@ -771,23 +771,26 @@ public struct NasProcessGroup: Identifiable, Equatable, Sendable {
     }
 }
 
-/// 电源计划只读快照。原始命令、路径、账号和地址不得进入领域模型。
+/// 电源计划快照。只有完整的开关机清单允许整体保存。
 public struct NasPowerScheduleSnapshot: Equatable, Sendable {
     public let entries: [NasPowerScheduleEntry]
     public let timeZoneIdentifier: String?
     public let total: Int
     public let isTruncated: Bool
+    public let supportsEditing: Bool
 
     public init(
         entries: [NasPowerScheduleEntry],
         timeZoneIdentifier: String?,
         total: Int,
-        isTruncated: Bool
+        isTruncated: Bool,
+        supportsEditing: Bool = false
     ) {
         self.entries = entries
         self.timeZoneIdentifier = timeZoneIdentifier
         self.total = total
         self.isTruncated = isTruncated
+        self.supportsEditing = supportsEditing
     }
 }
 
@@ -1147,6 +1150,8 @@ public struct NasHardwareSettings: Hashable, Sendable {
     public var ledBrightness: Int?
     public let ledBrightnessRange: ClosedRange<Int>?
     public var fanMode: String?
+    /// 设备明确支持的模式；nil 表示旧响应未提供模式范围。
+    public let supportedFanModes: [String]?
     public var isFanFailureAlertEnabled: Bool?
     public var isVolumeFailureAlertEnabled: Bool?
     public var isPowerOnSoundEnabled: Bool?
@@ -1174,12 +1179,14 @@ public struct NasHardwareSettings: Hashable, Sendable {
         isSATASleepEnabled: Bool? = nil,
         ignoresNetworkDiscoveryDuringSleep: Bool? = nil,
         isAutomaticPowerOffEnabled: Bool? = nil,
-        ups: NasUPSSettings? = nil
+        ups: NasUPSSettings? = nil,
+        supportedFanModes: [String]? = nil
     ) {
         self.restartsAfterPowerFailure = restartsAfterPowerFailure
         self.ledBrightness = ledBrightness
         self.ledBrightnessRange = ledBrightnessRange
         self.fanMode = fanMode
+        self.supportedFanModes = supportedFanModes
         self.isFanFailureAlertEnabled = isFanFailureAlertEnabled
         self.isVolumeFailureAlertEnabled = isVolumeFailureAlertEnabled
         self.isPowerOnSoundEnabled = isPowerOnSoundEnabled
@@ -1233,6 +1240,7 @@ public struct NasSecuritySettings: Hashable, Sendable {
     public var dosProtection: [NasDoSProtectionSetting]
     public var isFirewallEnabled: Bool?
     public var firewallProfileName: String?
+    /// 历史属性名保留兼容；实际对应 DSM 的防火墙通知 enable_port_check。
     public var isPortScanProtectionEnabled: Bool?
 
     public init(
@@ -1507,6 +1515,18 @@ public protocol NasSettingsRepository: Sendable {
     ) async throws -> MutationResult
     func stopDiskTestResult(diskID: String) async throws -> MutationResult
     func loadPackages() async throws -> [NasPackage]
+    func loadPackageCatalog() async throws -> NasPackageCatalog
+    func loadPackageCenterSettings() async throws -> NasPackageCenterSettings
+    func savePackageCenterSettings(_ settings: NasPackageCenterSettings, replacing baseline: NasPackageCenterSettings) async throws -> NasPackageCenterSettings
+    func loadPackageSources() async throws -> [NasPackageSource]
+    func savePackageSource(_ source: NasPackageSource, replacing baseline: NasPackageSource?) async throws -> [NasPackageSource]
+    func deletePackageSource(_ source: NasPackageSource) async throws -> [NasPackageSource]
+    func preparePackageInstallation(catalogIDs: [String]) async throws -> NasPackageInstallPlan
+    func startPackageInstallation(planID: UUID, volumes: [String: String], startAfterInstall: Bool) async throws -> NasPackageInstallProgress
+    func advancePackageInstallation(id: UUID) async throws -> NasPackageInstallProgress
+    func configurePackageInstallation(id: UUID, volumeID: String, startAfterInstall: Bool, licenseAccepted: Bool, values: [String: NasPackageOptionValue]) async throws -> NasPackageInstallProgress
+    func cancelPackageInstallation(id: UUID) async throws -> NasPackageInstallProgress
+    func uploadPackageForInstallation(fileURL: URL) async throws -> NasPackageInstallProgress
     func loadScheduledTasks() async throws -> [NasScheduledTask]
     func loadScheduledTaskDraft(id: Int?, realOwner: String?) async throws -> NasScheduledTaskDraft
     func loadScheduledTaskResults(taskName: String) async throws -> [NasScheduledTaskResult]
@@ -1551,8 +1571,10 @@ public protocol NasSettingsRepository: Sendable {
     ) async throws -> MutationResult
     func loadHardwareSettings() async throws -> NasHardwareSettings
     func loadPowerSchedule() async throws -> NasPowerScheduleSnapshot
+    func savePowerScheduleResult(_ entries: [NasPowerScheduleEntry], replacing baseline: NasPowerScheduleSnapshot) async throws -> MutationResult
     func loadExternalStorage() async throws -> NasExternalStorageDirectory
     func loadZRAM() async throws -> NasZRAMSnapshot
+    func saveZRAMResult(enabled: Bool, replacing baseline: NasZRAMSnapshot) async throws -> MutationResult
     func saveHardwareSettings(_ settings: NasHardwareSettings) async throws
     func saveHardwareSettingsResult(
         _ settings: NasHardwareSettings
@@ -1594,6 +1616,14 @@ public protocol NasSettingsRepository: Sendable {
 }
 
 public extension NasSettingsRepository {
+    func savePowerScheduleResult(_ entries: [NasPowerScheduleEntry], replacing baseline: NasPowerScheduleSnapshot) async throws -> MutationResult {
+        throw unsupportedManagementOperation()
+    }
+
+    func saveZRAMResult(enabled: Bool, replacing baseline: NasZRAMSnapshot) async throws -> MutationResult {
+        throw unsupportedManagementOperation()
+    }
+
     func loadSystemProcesses(start: Int, limit: Int) async throws -> NasProcessDirectory {
         throw unsupportedManagementOperation()
     }

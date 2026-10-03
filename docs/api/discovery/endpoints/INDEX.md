@@ -107,10 +107,8 @@
     仅启用 `list`，USB `eject` 保持关闭。
 - S.M.A.R.T. 稳定记录：[DSM S.M.A.R.T. 检测内部 API](dsm-smart-test.md)。
 - 硬件设置稳定记录：[DSM 硬件与 UPS 设置内部 API](dsm-hardware-settings.md)。
-- 电源计划稳定记录：[DSM 电源计划内部 API](dsm-power-schedule.md)。当前只读取动作、
-  启用状态、时间、命名星期、一次日期和可选时区，最多 128 条，不发送 `save`。
-- 内存压缩稳定记录：[DSM 内存压缩（ZRAM）内部 API](dsm-zram.md)。当前只读取启用
-  状态、明确字节容量和算法白名单，不发送 `set`；官方页面已观察但 API 响应未验证。
+- 电源计划稳定记录：[DSM 电源计划内部 API](dsm-power-schedule.md)。macOS 已按用户授权实现 200 条完整清单的开/关机编辑及 v1 save，保留当前状态预检、明确风险、去重和回读；真实写入待用户验证。
+- 内存压缩稳定记录：[DSM 内存压缩（ZRAM）内部 API](dsm-zram.md)。本轮确认 enable_zram 布尔读取，macOS 已接 ZRAM.set + NeedReboot 标记及结果核对，不自动重启；真实写入待用户验证。
 - 打印机 Bonjour 共享稳定记录：[DSM 打印机 Bonjour 共享内部 API](dsm-printer-bonjour-sharing.md)。
   当前只有静态 API 名称与 `get`，版本、参数和响应均未知，客户端保持关闭且零请求。
 - 外接存储稳定记录：[DSM USB 与 eSATA 外接存储内部 API](dsm-external-storage.md)。
@@ -142,9 +140,9 @@
 - 区域与时间稳定记录：[DSM 区域与时间设置内部 API](dsm-region-time-settings.md)。
 - DDNS 稳定记录：[DSM DDNS 设置内部 API](dsm-ddns-settings.md)。
 - 套件启动与停止稳定记录：[DSM 套件启动与停止内部 API](dsm-package-control.md)。
-- 套件安装与升级边界：[DSM 套件安装与升级内部 API 边界](dsm-package-installation.md)。
-  当前只解释 `Package.list` 明确返回的 `upgrade` 为非交互提示；
-  `Package.Server` 与 `Package.Installation` 保持关闭。
+- 套件安装与升级边界：[DSM 套件中心内部 API](dsm-package-installation.md)。
+  macOS 已接目录、搜索、详情、依赖安装/更新、手动上传、进度、自动更新与来源管理；
+  未知结果不重放，签名/许可/权限不绕过，真实写入待用户验证；其余平台未迁移。
 - 共享访问稳定记录：[DSM 共享文件夹访问权限契约](dsm-share-access.md)。当前仅使用公开
   File Station `list_share` 展示登录账号可见的有效权限；内部
   `SYNO.Core.Share.Permission.list_by_user` 只有静态方法名证据，保持关闭。

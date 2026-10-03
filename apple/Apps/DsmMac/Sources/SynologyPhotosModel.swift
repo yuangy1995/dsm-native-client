@@ -515,7 +515,7 @@ final class SynologyPhotosModel {
                             candidates += tasks.filter { ($0.needsThumbnail || $0.needsVideo) && !self.isFinishedAutomaticPreview($0) &&
                                 (photo.mediaType != "live" || photo.id == self.previewPhoto?.id || $0.typeCode == 0) }
                         } catch is CancellationError { throw CancellationError() }
-                        catch { self.automaticPreviewError = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.automatic.failed") }
+                        catch { self.automaticPreviewError = operationErrorMessage(error, fallback: "photos.automatic.failed") }
                         // 最优等级已找到时才提前结束；高成本格式不能挡住后面的普通照片。
                         if candidates.contains(where: { $0.priority == .standard }) { break }
                     }
@@ -526,7 +526,7 @@ final class SynologyPhotosModel {
                         let tasks = try await service.automaticPreviewTasks(in: space, support: self.previewConversionSupport)
                         candidates += tasks.filter { ($0.needsThumbnail || $0.needsVideo) && !self.isFinishedAutomaticPreview($0) }
                     } catch is CancellationError { throw CancellationError() }
-                    catch { self.automaticPreviewError = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.automatic.failed") }
+                    catch { self.automaticPreviewError = operationErrorMessage(error, fallback: "photos.automatic.failed") }
                 }
                 let priority = self.preferredAutomaticPreview(in: candidates)
                 guard let task = priority, !Task.isCancelled, !self.automaticPreviewPaused else { return }
@@ -550,7 +550,7 @@ final class SynologyPhotosModel {
             catch {
                 guard !Task.isCancelled else { return }
                 if let executingTask { self.automaticPreviewFailed.insert(executingTask) }
-                self.automaticPreviewError = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.automatic.failed")
+                self.automaticPreviewError = operationErrorMessage(error, fallback: "photos.automatic.failed")
             }
         }
         automaticPreviewOperation = operation
@@ -730,6 +730,15 @@ final class SynologyPhotosModel {
     private func refresh(space: SynologyPhotoSpace? = nil, afterFolderMutation: Bool) async {
         guard isModuleEnabled, !isDeleting, !isPreparingSimilarBatch,
               !isBrowsingBlocked || afterFolderMutation else { return }
+        if !afterFolderMutation {
+            if !isSaving { saveMessage = nil }
+            // 刷新可以清理已结束操作的提示，但待核对、分批继续和分享清理不能被隐藏。
+            if (!isManaging || isGeneratingAutomaticPreview), (pendingMutationID == nil || hasPendingAutomaticPreview), retryableManagementMutation == nil,
+               temporarySharingCleanup == nil, similarBatchQueue.isEmpty {
+                managementMessage = nil
+                managementLink = nil
+            }
+        }
         if isSlideshowPresented { closePreview() }
         clearSelection(); deletionCandidates = []; preparedDeletionPhotos = []
         pagedPhotoIDs = []
@@ -919,7 +928,7 @@ final class SynologyPhotosModel {
                 var sort = SynologyPhotoSort(direction: .descending)
                 if managementFeatures.contains(.albumSorting) {
                     do { sort = try await repository.albumSort(id: album.id) }
-                    catch { managementMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.manage.failed") }
+                    catch { managementMessage = operationErrorMessage(error, fallback: "photos.manage.failed") }
                     guard current == generation, !Task.isCancelled else { return }
                 }
                 query = .album(id: album.id, sort: sort)
@@ -1584,7 +1593,7 @@ final class SynologyPhotosModel {
                 try await DownloadedFileExporter.export(from: staging, to: url, replaceExisting: true)
                 self.saveMessage = L10n.string("photos.media.saved")
             } catch is CancellationError { self.saveMessage = nil }
-            catch { self.saveMessage = Task.isCancelled ? nil : ((error as? AppError)?.safeUserMessage ?? L10n.string("photos.media.saveFailed")) }
+            catch { self.saveMessage = Task.isCancelled ? nil : self.operationErrorMessage(error, fallback: "photos.media.saveFailed") }
         }
     }
 
@@ -1609,7 +1618,7 @@ final class SynologyPhotosModel {
                 try await DownloadedFileExporter.export(from: staging, to: url, replaceExisting: true)
                 self.saveMessage = L10n.string("photos.media.saved")
             } catch is CancellationError { self.saveMessage = nil }
-            catch { self.saveMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.media.saveFailed") }
+            catch { self.saveMessage = self.operationErrorMessage(error, fallback: "photos.media.saveFailed") }
         }
     }
 
@@ -1750,7 +1759,7 @@ final class SynologyPhotosModel {
                     guard result?.state == .confirmed else { break }
                     self.similarBatchQueue.removeFirst()
                 } catch {
-                    self.managementMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.manage.failed")
+                    self.managementMessage = operationErrorMessage(error, fallback: "photos.manage.failed")
                     break
                 }
             }
@@ -1806,7 +1815,7 @@ final class SynologyPhotosModel {
                 // 新操作只有提交前错误才会抛出；提交后的未知状态由结果返回。
                 self.pendingMutationID = nil; self.pendingMutation = nil
                 if isContinuation { self.retryableManagementMutation = mutation }
-                self.managementMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.manage.failed")
+                self.managementMessage = self.operationErrorMessage(error, fallback: "photos.manage.failed")
             }
         }
     }
@@ -1876,7 +1885,7 @@ final class SynologyPhotosModel {
                 // 离开照片页暂停，保留阶段；回到页面再继续，已提交操作先核对。
             } catch {
                 self.temporarySharingCleanupNeedsRetry = true
-                self.managementMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.temporary.retryHint")
+                self.managementMessage = operationErrorMessage(error, fallback: "photos.temporary.retryHint")
             }
         }
     }
@@ -2104,7 +2113,7 @@ final class SynologyPhotosModel {
             } catch {
                 self.pendingBackgroundMutationID = nil
                 if self.isModuleEnabled && !Task.isCancelled {
-                    self.backgroundTaskMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.manage.failed")
+                    self.backgroundTaskMessage = operationErrorMessage(error, fallback: "photos.manage.failed")
                 }
             }
         }
@@ -2614,7 +2623,7 @@ final class SynologyPhotosModel {
                             break
                         }
                         self.uploadQueue[row].state = Task.isCancelled ? .cancelled : .failed
-                        self.uploadQueue[row].error = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.manage.failed")
+                        self.uploadQueue[row].error = operationErrorMessage(error, fallback: "photos.manage.failed")
                         self.pendingUploadID = nil
                         self.pendingUploadDirectory = nil
                     }
@@ -3408,6 +3417,12 @@ final class SynologyPhotosModel {
     private func present(_ error: Error) {
         if error is CancellationError { return }
         errorMessage = (error as? AppError)?.safeUserMessage ?? L10n.string("photos.service.invalidResponse")
+    }
+
+    /// 通用解析错误不能让保存或预览失败被误报为整个照片库无法加载。
+    private func operationErrorMessage(_ error: Error, fallback: String) -> String {
+        guard let error = error as? AppError, error.category != .invalidResponse else { return L10n.string(fallback) }
+        return error.safeUserMessage
     }
 
     private(set) var selectedFolderIDs: Set<Int> = []

@@ -6,6 +6,66 @@ import XCTest
 
 @MainActor
 final class SynologyPhotosModelTests: XCTestCase {
+    func test局部操作解析失败不误报图库失败且刷新清除过期提示() async throws {
+        let service = DatePhotoServiceStub()
+        await service.enableManagement()
+        let model = SynologyPhotosModel(repository: service, deletionReviewDelay: { _ in })
+        await model.refresh()
+        let photos = model.items
+        XCTAssertFalse(photos.isEmpty)
+        await service.failNextManagementPreparation(error: AppError(category: .invalidResponse, isRetryable: false,
+            safeUserMessage: L10n.string("photos.service.invalidResponse")))
+        model.submitMutation(.createAlbum(name: "Synthetic album", photos: []))
+        await waitForManagement(model)
+        XCTAssertEqual(model.managementMessage, L10n.string("photos.manage.failed"))
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.items, photos)
+        let writes = await service.managementWriteCount
+        XCTAssertEqual(writes, 0)
+        await model.refresh()
+        XCTAssertNil(model.managementMessage)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.items, photos)
+    }
+
+    func test刷新不隐藏待确认或需要继续的照片操作() async throws {
+        for pending in [true, false] {
+            let service = DatePhotoServiceStub()
+            await service.enableManagement(pending: pending, partial: !pending)
+            let model = SynologyPhotosModel(repository: service, pageSize: 2, deletionReviewDelay: { _ in })
+            await model.refresh()
+            model.submitMutation(.shiftDates(model.items, seconds: 60))
+            await waitForManagement(model)
+            let message = try XCTUnwrap(model.managementMessage)
+            let operation = model.pendingMutationID
+            let remaining = model.retryableManagementMutation
+            if pending { XCTAssertNotNil(operation) } else { XCTAssertNotNil(remaining) }
+            await model.refresh()
+            XCTAssertEqual(model.managementMessage, message)
+            XCTAssertEqual(model.pendingMutationID, operation)
+            XCTAssertEqual(model.retryableManagementMutation, remaining)
+        }
+    }
+
+    func test原件保存解析失败仅提示保存错误且刷新后清除() async throws {
+        let service = PhotoServiceStub(pages: [[Self.photo], [Self.photo]])
+        await service.failSaving(AppError(category: .invalidResponse, isRetryable: false, safeUserMessage: L10n.string("photos.service.invalidResponse")))
+        let model = SynologyPhotosModel(repository: service)
+        await model.refresh()
+        let photo = try XCTUnwrap(model.items.first)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("SyntheticPhoto-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: file) }
+        model.save(photo, to: file)
+        for _ in 0..<1000 where model.isSaving { try await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertFalse(model.isSaving)
+        XCTAssertEqual(model.saveMessage, L10n.string("photos.media.saveFailed"))
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        await model.refresh()
+        XCTAssertNil(model.saveMessage)
+        XCTAssertFalse(model.items.isEmpty)
+    }
+
     func test相册编辑角色个人提供者可编辑但不取得原件删除搬移权() async throws {
         for provider in [12, 99] {
             let service = PhotoUploadServiceStub(), photo = collaborationPhoto(provider: provider)
@@ -4462,7 +4522,8 @@ actor DatePhotoServiceStub: SynologyPhotosServing {
     var managementCommands: [SynologyPhotosMutation] = []
     private var partialManagement = false
     private var failsManagementPreparation = false
-    func failNextManagementPreparation() { failsManagementPreparation = true }
+    private var managementPreparationError: AppError?
+    func failNextManagementPreparation(error: AppError? = nil) { failsManagementPreparation = true; managementPreparationError = error }
     func enableManagement(pending: Bool = false, partial: Bool = false) { features = Set(SynologyPhotosManagementFeature.allCases); pendingManagement = pending; partialManagement = partial }
     func managementFeatures() async -> Set<SynologyPhotosManagementFeature> { sharingOnlyPersonal && librarySpace == .shared ? features.subtracting([.sharing]) : features }
     func managementFeatures(in space: SynologyPhotoSpace) async -> Set<SynologyPhotosManagementFeature> {
@@ -4470,7 +4531,11 @@ actor DatePhotoServiceStub: SynologyPhotosServing {
         return sharingOnlyPersonal && space == .shared ? features.subtracting([.sharing]) : features
     }
     func prepareMutation(_ mutation: SynologyPhotosMutation) async throws {
-        if failsManagementPreparation { failsManagementPreparation = false; throw URLError(.notConnectedToInternet) }
+        if failsManagementPreparation {
+            failsManagementPreparation = false
+            if let error = managementPreparationError { managementPreparationError = nil; throw error }
+            throw URLError(.notConnectedToInternet)
+        }
     }
     func performMutation(_ mutation: SynologyPhotosMutation, operationID: UUID, progress: @escaping FileTransferProgress) async throws -> SynologyPhotosMutationResult {
         managementWriteCount += 1; managementCommand = mutation; managementCommands.append(mutation)
@@ -4742,8 +4807,11 @@ private actor PhotoServiceStub: SynologyPhotosServing {
 
     func holdNextPage() { holdsFirstPage = true }
 
+    private var savingError: AppError?
+    func failSaving(_ error: AppError) { savingError = error }
     func downloadOriginal(_ photo: SynologyPhoto, to destination: URL, progress: @escaping FileTransferProgress) async throws {
         savedURLs.append(destination)
+        if let savingError { throw savingError }
         guard let saveData else { throw URLError(.networkConnectionLost) }
         try saveData.write(to: destination)
         progress(Int64(saveData.count), Int64(saveData.count))

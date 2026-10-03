@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "hardware.save-power-schedule.synthetic-settings",
+  "module": "hardware",
+  "operation": "savePowerSchedule",
+  "api": {
+    "name": "SYNO.Core.Hardware.PowerSchedule",
+    "method": "save",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "poweron_tasks",
+      "valueType": "objectArray",
+      "encodedValue": "[]"
+    },
+    {
+      "name": "poweroff_tasks",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"enabled\":false,\"weekdays\":\"0,6\",\"hour\":23,\"min\":30}]"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

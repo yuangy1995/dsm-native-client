@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.check-download.synthetic-settings",
+  "module": "packages",
+  "operation": "checkDownload",
+  "api": {
+    "name": "SYNO.Core.Package.Installation.Download",
+    "method": "check",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "taskid",
+      "valueType": "string",
+      "encodedValue": "\"@SYNOPKG_DOWNLOAD_<synthetic-package>\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

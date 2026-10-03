@@ -5,6 +5,146 @@ import XCTest
 @testable import DsmNetwork
 
 final class DsmNasAdministrationRepositoryTests: XCTestCase {
+    func test套件对象操作字段保留启停与升级提示() async throws {
+        for (status, start, stop) in [("running", false, true), ("stopped", true, false)] {
+            let transport = MockHTTPTransport(responses: [response("""
+                {"success":true,"data":{"packages":[{"id":"Synthetic","name":"Synthetic Package","version":"1.0","additional":{"status":"\(status)","startable":true,"install_type":"user","ctl_uninstall":true,"available_operation":{"upgrade":{"id":"Synthetic","version":"2.0"}}}}]}}
+                """)])
+            let repository = try makeRepository(apiNames: [DsmAPIName.corePackage], transport: transport)
+            let packages = try await repository.loadPackages()
+            let package = try XCTUnwrap(packages.first)
+            XCTAssertEqual(package.canStart, start); XCTAssertEqual(package.canStop, stop)
+            XCTAssertTrue(package.isUpgradeAvailable); XCTAssertTrue(package.canUninstall)
+        }
+    }
+
+    func test内存压缩保存确认重启标记且不自动重启() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"enable_zram":false}}"#),
+            response(#"{"success":true,"data":{"need_reboot":false}}"#),
+            response(#"{"success":true}"#), response(#"{"success":true}"#),
+            response(#"{"success":true,"data":{"enable_zram":true}}"#),
+            response(#"{"success":true,"data":{"need_reboot":true}}"#)
+        ])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot], transport: transport)
+        let result = try await repository.saveZRAMResult(enabled: true, replacing: zramEditingBaseline)
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["get", "get", "set", "set", "get", "get"])
+        XCTAssertEqual(requestValue("enable_zram", in: requests[2]), "true")
+        XCTAssertEqual(requestValue("api", in: requests[3]), DsmAPIName.coreHardwareNeedReboot)
+        XCTAssertFalse(requests.contains { requestValue("api", in: $0) == DsmAPIName.coreSystem })
+    }
+
+    func test内存压缩缺少重启标记能力或当前值变化时不写入() async throws {
+        let missing = MockHTTPTransport(responses: [])
+        let unsupported = try makeRepository(apiNames: [DsmAPIName.coreHardwareZRAM], transport: missing)
+        do { _ = try await unsupported.saveZRAMResult(enabled: true, replacing: zramEditingBaseline); XCTFail("缺少必要能力") }
+        catch let error as AppError { XCTAssertEqual(error.category, .apiUnavailable) }
+        let missingRequests = await missing.recordedRequests(); XCTAssertTrue(missingRequests.isEmpty)
+        let changed = MockHTTPTransport(responses: [response(#"{"success":true,"data":{"enable_zram":true}}"#)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot], transport: changed)
+        do { _ = try await repository.saveZRAMResult(enabled: true, replacing: zramEditingBaseline); XCTFail("不能覆盖他人修改") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        let changedRequests = await changed.recordedRequests(); XCTAssertEqual(changedRequests.count, 1)
+    }
+
+    func test内存压缩中断和重启标记失败都不重发() async throws {
+        for failMarker in [false, true] {
+            var steps: [MockHTTPTransport.Step] = [
+                .response(response(#"{"success":true,"data":{"enable_zram":false}}"#)),
+                .response(response(#"{"success":true,"data":{"need_reboot":false}}"#))
+            ]
+            if failMarker { steps.append(.response(response(#"{"success":true}"#))) }
+            steps.append(.urlError(.networkConnectionLost))
+            let transport = MockHTTPTransport(steps: steps)
+            let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwareZRAM, DsmAPIName.coreHardwareNeedReboot], transport: transport)
+            let result = try await repository.saveZRAMResult(enabled: true, replacing: zramEditingBaseline)
+            XCTAssertEqual(result.status, .submittedButUnverified); XCTAssertTrue(result.requiresRefresh)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, failMarker ? 4 : 3)
+            XCTAssertEqual(requests.filter { requestValue("api", in: $0) == DsmAPIName.coreHardwareZRAM && requestValue("method", in: $0) == "set" }.count, 1)
+        }
+    }
+
+    func test电源计划保存两个完整数组并确认星期与状态() async throws {
+        let expected = NasPowerScheduleEntry(id: "draft", action: .shutdown, isEnabled: false,
+            hour: 23, minute: 5, recurrence: .weekly([.sunday, .monday]))
+        let updated = #"{"success":true,"data":{"poweron_tasks":[],"poweroff_tasks":[{"enabled":false,"weekdays":"1,0","hour":23,"min":5}]}}"#
+        let transport = MockHTTPTransport(responses: [response(emptyPowerSchedule), response(#"{"success":true}"#), response(updated)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerSchedule], transport: transport)
+        let result = try await repository.savePowerScheduleResult([expected], replacing: emptyPowerBaseline)
+        XCTAssertEqual(result.status, .confirmedSuccess)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { requestValue("method", in: $0) }, ["load", "save", "load"])
+        XCTAssertEqual(requestValue("poweron_tasks", in: requests[1]), "[]")
+        let json = try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(requestValue("poweroff_tasks", in: requests[1])).utf8)) as? [[String: Any]]
+        XCTAssertEqual(json?.first?["weekdays"] as? String, "0,1")
+        XCTAssertEqual(json?.first?["enabled"] as? Bool, false)
+        XCTAssertEqual(json?.first?["hour"] as? Int, 23)
+        XCTAssertEqual(json?.first?["min"] as? Int, 5)
+        XCTAssertEqual(Set(json?.first?.keys.map { $0 } ?? []), ["enabled", "weekdays", "hour", "min"])
+    }
+
+    func test电源计划并发修改和未知条目拒绝全表覆盖() async throws {
+        let changed = #"{"success":true,"data":{"poweron_tasks":[{"enabled":true,"weekdays":"0","hour":8,"min":0}],"poweroff_tasks":[]}}"#
+        let transport = MockHTTPTransport(responses: [response(changed)])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerSchedule], transport: transport)
+        do { _ = try await repository.savePowerScheduleResult([editingPowerEntry], replacing: emptyPowerBaseline); XCTFail("当前清单已变化") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        let requests = await transport.recordedRequests(); XCTAssertEqual(requests.count, 1)
+        let unknown = NasPowerScheduleSnapshot(entries: [], timeZoneIdentifier: nil, total: 1, isTruncated: true, supportsEditing: true)
+        do { _ = try await repository.savePowerScheduleResult([], replacing: unknown); XCTFail("不能覆盖不完整清单") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        let after = await transport.recordedRequests(); XCTAssertEqual(after.count, 1)
+    }
+
+    func test电源计划重叠与超过200条均零请求() async throws {
+        let transport = MockHTTPTransport(responses: [])
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerSchedule], transport: transport)
+        for entries in [[editingPowerEntry, editingPowerEntry], Array(repeating: editingPowerEntry, count: 201)] {
+            do { _ = try await repository.savePowerScheduleResult(entries, replacing: emptyPowerBaseline); XCTFail("非法清单") }
+            catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        }
+        let requests = await transport.recordedRequests(); XCTAssertTrue(requests.isEmpty)
+    }
+
+    func test电源计划提交中断或回读不符不误报成功() async throws {
+        for disconnect in [false, true] {
+            let steps: [MockHTTPTransport.Step] = disconnect
+                ? [.response(response(emptyPowerSchedule)), .urlError(.networkConnectionLost)]
+                : [.response(response(emptyPowerSchedule)), .response(response(#"{"success":true}"#)), .response(response(emptyPowerSchedule))]
+            let transport = MockHTTPTransport(steps: steps)
+            let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerSchedule], transport: transport)
+            let result = try await repository.savePowerScheduleResult([editingPowerEntry], replacing: emptyPowerBaseline)
+            XCTAssertEqual(result.status, .submittedButUnverified)
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.filter { requestValue("method", in: $0) == "save" }.count, 1)
+        }
+    }
+
+    func test电源计划保存进行中拒绝第二次提交() async throws {
+        let updated = #"{"success":true,"data":{"poweron_tasks":[{"enabled":true,"weekdays":"0,1,2,3,4,5,6","hour":8,"min":0}],"poweroff_tasks":[]}}"#
+        let transport = DiskReadGateTransport(responses: [response(emptyPowerSchedule), response(#"{"success":true}"#), response(updated)], pausedCall: 1)
+        let repository = try makeRepository(apiNames: [DsmAPIName.coreHardwarePowerSchedule], transport: transport)
+        let entry = editingPowerEntry; let baseline = emptyPowerBaseline
+        let first = Task { try await repository.savePowerScheduleResult([entry], replacing: baseline) }
+        while !(await transport.isSuspended()) { await Task.yield() }
+        do { _ = try await repository.savePowerScheduleResult([editingPowerEntry], replacing: emptyPowerBaseline); XCTFail("重复提交") }
+        catch let error as AppError { XCTAssertEqual(error.category, .conflict) }
+        await transport.resume()
+        let result = try await first.value; XCTAssertEqual(result.status, .confirmedSuccess)
+    }
+
+    private var zramEditingBaseline: NasZRAMSnapshot { NasZRAMSnapshot(isEnabled: false, configuredBytes: nil, algorithm: .unknown) }
+    private var emptyPowerSchedule: String { #"{"success":true,"data":{"poweron_tasks":[],"poweroff_tasks":[]}}"# }
+    private var emptyPowerBaseline: NasPowerScheduleSnapshot {
+        NasPowerScheduleSnapshot(entries: [], timeZoneIdentifier: nil, total: 0, isTruncated: false, supportsEditing: true)
+    }
+    private var editingPowerEntry: NasPowerScheduleEntry {
+        NasPowerScheduleEntry(id: "draft", action: .startup, isEnabled: true, hour: 8, minute: 0, recurrence: .daily)
+    }
+
     func test缓存过的硬盘启动前仍重新核对设备() async throws {
         let transport = MockHTTPTransport(responses: [response(syntheticStorageDisk), response(syntheticStorageDisk),
             response(syntheticDiskTestStatus(running: false)), response(#"{"success":true}"#),
@@ -2378,6 +2518,86 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
         XCTAssertTrue(requests.isEmpty)
     }
 
+    func test提示音遵循设备明确返回的支持标记() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"fan_fail":true,"support_fan_fail":true,"volume_crash":true,"support_volume_crash":true,"poweron_beep":true,"support_poweron_beep":false,"poweroff_beep":false,"reset_beep":true,"support_reset_beep":false}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.coreHardwareBeepControl], transport: transport
+        )
+
+        let settings = try await repository.loadHardwareSettings()
+
+        XCTAssertEqual(settings.isFanFailureAlertEnabled, true)
+        XCTAssertEqual(settings.isVolumeFailureAlertEnabled, true)
+        XCTAssertNil(settings.isPowerOnSoundEnabled)
+        XCTAssertEqual(settings.isPowerOffSoundEnabled, false)
+        XCTAssertNil(settings.isResetSoundEnabled)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requestValue("method", in: requests[0]), "get")
+    }
+
+    func test风扇模式按官方设备类型与位标记读取() async throws {
+        let examples: [(String, [String])] = [
+            (#"{"cool_fan":"yes","fan_type":11,"dual_fan_speed":"quietfan"}"#,
+             ["fullfan", "coolfan", "quietfan"]),
+            (#"{"cool_fan":"single","fan_type":15,"dual_fan_speed":"quietfan"}"#,
+             ["fullfan", "quietfan"]),
+            (#"{"cool_fan":"no","dual_fan_speed":"lowfan"}"#,
+             ["highfan", "lowfan"])
+        ]
+        for (data, expected) in examples {
+            let transport = MockHTTPTransport(responses: [
+                response("{\"success\":true,\"data\":\(data)}")
+            ])
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.coreHardwareFanSpeed], transport: transport
+            )
+            let settings = try await repository.loadHardwareSettings()
+            XCTAssertEqual(settings.supportedFanModes, expected)
+        }
+    }
+
+    func test硬件设置不向设备明确不支持的风扇档位写入() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"cool_fan":"yes","fan_type":11,"dual_fan_speed":"quietfan"}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.coreHardwareFanSpeed], transport: transport
+        )
+        let result = try await repository.saveHardwareSettingsResult(
+            NasHardwareSettings(
+                restartsAfterPowerFailure: nil, ledBrightness: nil,
+                ledBrightnessRange: nil, fanMode: "quietstopfan"
+            )
+        )
+        XCTAssertEqual(result.status, .confirmedFailure)
+        XCTAssertFalse(result.submitted)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requestValue("method", in: requests[0]), "get")
+    }
+
+    func test提示音支持状态变化后保存前拒绝写入() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"reset_beep":true,"support_reset_beep":false}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.coreHardwareBeepControl], transport: transport
+        )
+        let result = try await repository.saveHardwareSettingsResult(
+            NasHardwareSettings(
+                restartsAfterPowerFailure: nil, ledBrightness: nil,
+                ledBrightnessRange: nil, isResetSoundEnabled: false
+            )
+        )
+        XCTAssertEqual(result.status, .confirmedFailure)
+        XCTAssertFalse(result.submitted)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+    }
+
     func test硬件设置使用设备范围并在提交后回读确认() async throws {
         let transport = MockHTTPTransport(responses: [
             response(#"{"success":true,"data":{"rc_power_config":false}}"#),
@@ -4252,6 +4472,34 @@ final class DsmNasAdministrationRepositoryTests: XCTestCase {
         XCTAssertEqual(requestValue("version", in: requests[0]), "1")
         XCTAssertEqual(requestValue("method", in: requests[0]), "get")
         XCTAssertFalse(requests.contains { requestValue("method", in: $0) == "set" })
+    }
+
+    func testZRAM读取DSM实际启用字段且不要求容量或算法() async throws {
+        for enabled in [true, false] {
+            let transport = MockHTTPTransport(responses: [
+                response("{\"success\":true,\"data\":{\"enable_zram\":\(enabled)}}")
+            ])
+            let repository = try makeRepository(
+                apiNames: [DsmAPIName.coreHardwareZRAM], transport: transport
+            )
+
+            let snapshot = try await repository.loadZRAM()
+
+            XCTAssertEqual(snapshot.isEnabled, enabled)
+            XCTAssertNil(snapshot.configuredBytes)
+            XCTAssertEqual(snapshot.algorithm, .unknown)
+        }
+    }
+
+    func testZRAM实际字段与兼容字段冲突时保持未知() async throws {
+        let transport = MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"enable_zram":true,"enable":false}}"#)
+        ])
+        let repository = try makeRepository(
+            apiNames: [DsmAPIName.coreHardwareZRAM], transport: transport
+        )
+        let snapshot = try await repository.loadZRAM()
+        XCTAssertNil(snapshot.isEnabled)
     }
 
     func testZRAM拒绝单位不明确容量和未知算法() async throws {

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.edit-source.synthetic-settings",
+  "module": "packages",
+  "operation": "editSource",
+  "api": {
+    "name": "SYNO.Core.Package.Feed",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "list",
+      "valueType": "string",
+      "encodedValue": "\"{\\\"name\\\":\\\"Synthetic source\\\",\\\"feed\\\":\\\"<synthetic-feed-url>\\\",\\\"orifeed\\\":\\\"<synthetic-old-feed-url>\\\"}\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

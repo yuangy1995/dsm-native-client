@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-current-shape",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Hardware.ZRAM",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "get"
+  },
+  "scenario": "官方字段形态的完全合成样本；没有真实设备数据。",
+  "redactedFields": []
+}

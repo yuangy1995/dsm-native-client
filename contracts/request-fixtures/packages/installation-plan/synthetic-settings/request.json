@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.installation-plan.synthetic-settings",
+  "module": "packages",
+  "operation": "prepareInstallation",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "method": "get_queue",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "pkgs",
+      "valueType": "objectArray",
+      "encodedValue": "[{\"pkg\":\"<synthetic-package>\",\"operation\":\"install\",\"version\":\"2.0\",\"beta\":false}]"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.installation-status.synthetic-settings",
+  "module": "packages",
+  "operation": "installationStatus",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "method": "status",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "task_id",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-task>\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "never",
+    "risk": "read",
+    "readbackPolicy": "none"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

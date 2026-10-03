@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/dsm-native-client/nas-package-center.schema.json",
+  "title": "nas-package-center",
+  "description": "套件中心成功响应白名单；feasibility_check 等命令允许没有 data，读取方法仍必须验证各自数据结构。合成样本不构成真实写行为验证。",
+  "type": "object",
+  "required": [
+    "success"
+  ],
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "data": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/catalog"
+        },
+        {
+          "$ref": "#/$defs/queue"
+        },
+        {
+          "$ref": "#/$defs/environment"
+        },
+        {
+          "$ref": "#/$defs/task"
+        },
+        {
+          "$ref": "#/$defs/submitted"
+        },
+        {
+          "$ref": "#/$defs/settings"
+        },
+        {
+          "$ref": "#/$defs/sources"
+        },
+        {
+          "$ref": "#/$defs/upload"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "catalog": {
+      "type": "object",
+      "required": [
+        "packages",
+        "beta_packages",
+        "categories"
+      ],
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "dname",
+              "version"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "dname": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "beta": {
+                "type": "boolean"
+              },
+              "qinst": {
+                "type": "boolean"
+              },
+              "qupgrade": {
+                "type": "boolean"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "category": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "beta_packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "dname",
+              "version"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "dname": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "beta": {
+                "type": "boolean"
+              },
+              "qinst": {
+                "type": "boolean"
+              },
+              "qupgrade": {
+                "type": "boolean"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "category": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "dname"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "dname": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "queue": {
+      "type": "object",
+      "required": [
+        "queue",
+        "non_exist_pkgs",
+        "conflicted_pkgs",
+        "broken_pkgs",
+        "replaced_pkgs",
+        "paused_pkgs"
+      ],
+      "properties": {
+        "queue": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "pkg",
+              "beta"
+            ],
+            "properties": {
+              "pkg": {
+                "type": "string"
+              },
+              "beta": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "non_exist_pkgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conflicted_pkgs": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "object"
+            ]
+          }
+        },
+        "broken_pkgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "replaced_pkgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "paused_pkgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "is_occupied"
+      ],
+      "properties": {
+        "is_occupied": {
+          "type": "boolean"
+        },
+        "volume_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "volume_list": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "required": [
+              "mount_point",
+              "display"
+            ],
+            "properties": {
+              "mount_point": {
+                "type": "string"
+              },
+              "display": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "volume_path": {
+          "type": "string"
+        }
+      },
+      "description": "系统套件可省略普通存储位置字段；客户端仍结合目录 install_type 判断，不能把普通套件的缺失位置当成可安装。"
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "finished"
+      ],
+      "properties": {
+        "finished": {
+          "type": "boolean"
+        },
+        "progress": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "success": {
+          "type": "boolean"
+        }
+      }
+    },
+    "submitted": {
+      "type": "object",
+      "required": [
+        "taskid",
+        "progress"
+      ],
+      "properties": {
+        "taskid": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "required": [
+        "update_channel",
+        "enable_email",
+        "enable_dsm",
+        "enable_autoupdate",
+        "autoupdateall",
+        "autoupdateimportant",
+        "volume_list"
+      ],
+      "properties": {
+        "update_channel": {
+          "type": "boolean",
+          "description": "Setting.get 返回布尔值；Setting.set 请求仍使用 stable 或 beta 字符串。"
+        },
+        "enable_email": {
+          "type": "boolean"
+        },
+        "enable_dsm": {
+          "type": "boolean"
+        },
+        "enable_autoupdate": {
+          "type": "boolean"
+        },
+        "autoupdateall": {
+          "type": "boolean"
+        },
+        "autoupdateimportant": {
+          "type": "boolean"
+        },
+        "default_vol": {
+          "type": "string"
+        },
+        "volume_list": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "mount_point",
+              "display"
+            ],
+            "properties": {
+              "mount_point": {
+                "type": "string"
+              },
+              "display": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "feed"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "feed": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "upload": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "additional": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "licence": {
+              "type": "string"
+            },
+            "install_pages": {
+              "type": [
+                "array",
+                "string"
+              ]
+            },
+            "startable": {
+              "type": "boolean"
+            },
+            "install_reboot": {
+              "type": "boolean"
+            }
+          }
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "id",
+                "name",
+                "version"
+              ]
+            },
+            {
+              "required": [
+                "additional"
+              ],
+              "properties": {
+                "additional": {
+                  "required": [
+                    "id",
+                    "name",
+                    "version"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "filename"
+              ]
+            },
+            {
+              "required": [
+                "task_id"
+              ]
+            },
+            {
+              "required": [
+                "additional"
+              ],
+              "properties": {
+                "additional": {
+                  "required": [
+                    "task_id"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

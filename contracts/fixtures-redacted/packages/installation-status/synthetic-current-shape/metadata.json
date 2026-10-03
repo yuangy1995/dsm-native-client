@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-current-shape",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "status"
+  },
+  "scenario": "任务完成仍必须核对安装版本，不能将此合成响应作为实际成功证据。",
+  "redactedFields": []
+}

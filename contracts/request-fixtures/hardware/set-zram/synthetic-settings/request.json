@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "hardware.set-zram.synthetic-settings",
+  "module": "hardware",
+  "operation": "setZram",
+  "api": {
+    "name": "SYNO.Core.Hardware.ZRAM",
+    "method": "set",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "enable_zram",
+      "valueType": "boolean",
+      "encodedValue": "true"
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}

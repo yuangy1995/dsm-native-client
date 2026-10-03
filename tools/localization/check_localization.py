@@ -233,6 +233,17 @@ def main() -> None:
     apple_en = read_apple_strings(apple_root / "en.lproj/Localizable.strings", validation)
     apple_zh = read_apple_strings(apple_root / "zh-Hans.lproj/Localizable.strings", validation)
     compare_resources("Apple", apple_en, apple_zh, APPLE_FORMAT, validation)
+    # L10n 先读取主应用资源；旧副本会覆盖共享包的正确翻译，必须同时检查。
+    mac_root = ROOT / "apple/Apps/DsmMac/Resources"
+    mac_en = read_apple_strings(mac_root / "en.lproj/Localizable.strings", validation)
+    mac_zh = read_apple_strings(mac_root / "zh-Hans.lproj/Localizable.strings", validation)
+    compare_resources("macOS 主应用", mac_en, mac_zh, APPLE_FORMAT, validation)
+    for locale, app_strings, shared_strings in [("en", mac_en, apple_en), ("zh-Hans", mac_zh, apple_zh)]:
+        for key in app_strings.keys() & shared_strings.keys():
+            validation.require(
+                app_strings[key] == shared_strings[key],
+                f"macOS 主应用 {locale} 的 {key} 覆盖了不同的共享翻译，请同步两份资源",
+            )
     for key, value in apple_en.items():
         validation.require(
             not HAN.search(value) or key == "language.simplified_chinese",

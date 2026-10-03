@@ -108,11 +108,11 @@
 | --- | --- | --- | --- | --- |
 | DSM 系统/系统活动/当前连接 | DSM 7.2.1-69057 Update 12 | 官方网页可见 + `SYNO.API.Info` + 已登录会话只读响应结构核对 + DSM 前端静态请求；进程 API 目前仅有静态目录 | 已确认 `System.info`、`System.Utilization.get(resource=all,type=current)`、`Upgrade.Server.check` v3、`CurrentConnection.list/kick_connection` 和 `SyslogClient.Log.list`；Android 已按固定 v1 接入每 2 秒采样、最近 120 点内存历史及离页停止的处理器/内存/网络/存储趋势，并与 macOS 对齐固定 v3 更新检查参数、候选版本/说明解析及无候选/失败边界；macOS 系统活动页已实现只接受运行时发现 v1、最多 500 项、字段白名单和服务组失败降级，但真实进程响应未验证；更新下载/安装和结束进程保持关闭；连接断开具备确认、防重复和复查 | Android 真实采样耗电/流量、后台切换、普通账号权限、多网卡与空字段；进程/服务组真实版本与响应、无更新/分阶段更新/重大版本、更新服务离线/代理、长时间采样和连接消失竞态；更新下载/安装和连接断开尚未对真实会话执行 |
 | DSM 远程访问设置 | DSM 7.2.1-69057 Update 12 | 官方页面请求线索与已记录环境为 `observed / degraded`；Android 仅完成合成请求、故障注入、领域和 Compose 测试 | Android 第 55 批正式 Repository 固定 `SYNO.Core.QuickConnect.get_misc_config/set_misc_config` v3 与 `SYNO.Core.QuickConnect.Upnp.get/set` v1，严格 Boolean、单项 `null` 降级、已记录环境写门禁、可信中继关闭保护、实际变化字段提交、取消/断线不重放、专项回读与持久八状态/三计数反馈；专项 36 项 JVM 与 12 项 Compose 通过 | 未在真实 NAS 或路由器执行中继和自动端口映射写操作；不同 build、路由器、权限、断线与最终状态仍需专用目标验收；登录、QuickConnect 隧道和 `SYNO.API.Info` 证据不能外推为本设置写入证据 |
-| DSM 电源计划 | DSM 7.2.1-69057 Update 12 | 仅有静态 API 目录与客户端合成响应；未保存真实响应 | macOS 已候选接入运行时发现的 v1 `load`，最多 128 条，只保留动作、启用状态、合法时间、命名星期、一次日期和可选时区；能力缺失零请求，`save` 保持关闭 | 真实版本、路径、字段、动作与重复枚举、时区/夏令时、权限、数量上限和排序；保存操作尚无版本化契约 |
+| DSM 电源计划 | DSM 7.2.1-69057 Update 12（本轮设备待归属） | 官方页面/读取结构及前端 save 参数；写行为 static，合成测试 | macOS 读取完整开关机数组，最多 200 条；支持新增、编辑、停用、移除和整表确认保存，基线比较/去重/回读保留；Windows/Android 未迁移写入 | PENDING_USER_VALIDATION：维护时段停用计划的保存/编辑/清空、普通账号、无人值守开关机、时区与夏令时 |
 | DSM USB/eSATA 外接存储 | DSM 7.2.1-69057 Update 12 | 仅有静态 API 目录与客户端合成响应；未保存真实设备响应 | macOS 已候选接入两个运行时发现的 v1 `list`，每类最多 64 项，只保留受限标识/名称、归一状态和单位明确的字节容量；单项失败独立降级，USB `eject` 保持关闭 | 真实版本、路径、容器、字段、权限、多分区/扩展坞/热插拔身份、容量单位与排序；安全弹出尚无版本化契约 |
-| DSM 内存压缩（ZRAM） | DSM 7.2.1-69057 Update 12 | 静态目录确认 `get/set`；2026-08-03 已在官方 DSM 页面只读观察到设置，但未捕获 API 请求或响应 | macOS 已候选接入运行时发现的 v1 `get`，只保留启用状态、单位明确的字节容量和 `lz4`/`lzo`/`zstd` 算法白名单；能力缺失零请求，`set` 保持关闭 | 真实版本、路径、容器、字段、权限、禁用状态、算法枚举和不同硬件可用性；设置操作尚无版本化参数、资源影响、重启/即时生效与最终回读契约 |
+| DSM 内存压缩（ZRAM） | DSM 7.2.1-69057 Update 12（本轮设备待归属） | enable_zram 原生布尔成功读取；set/NeedReboot 为官方前端静态证据 | macOS 按用户授权提供开关、变更确认、ZRAM.set + NeedReboot.set 和结果回读；不自动重启；其他四端未迁移写入 | PENDING_USER_VALIDATION：开/关保存、权限与断线、用户另行重启后的实际状态和服务表现 |
 | DSM 打印机 Bonjour 共享 | DSM 7.2.1-69057 Update 12 | 仅有静态目录中的 API 名称和 `get`；没有在当前环境观察或调用 | 客户端保持关闭，不注册版本、领域模型或 Adapter，不复用通用 Bonjour/Avahi 字段，零猜测请求 | 运行时 API 是否存在、版本、路径、参数、响应容器、布尔语义、权限，以及是否包含打印机/队列/设备/网络字段 |
-| DSM 存储/套件/任务/账号 | DSM 7.2.1-69057 Update 12 | `SYNO.API.Info` + 已登录会话只读响应结构核对 + DSM 前端静态请求 | 已确认 `Storage.Disk.get_smart_test_log/disk_test_log_get/do_smart_test` v1：请求使用 `load_info.disks[].device`，状态取 `testInfo[0]`，历史取 `testLog`，并识别其他检测占用；同时确认 `EventScheduler.result_list/result_get_file` v1、套件管理、任务管理以及用户/群组管理；macOS 已实现硬盘检测启停、真实历史记录、任务运行记录和其他受保护流程；套件启动/停止另已实现列表状态与可行性预检、同 ID 防重复、写后轮询及提交异常只回读不重放；`available_operation=upgrade` 仅显示 DSM 只读提示，安装/升级保持关闭 | 不同 RAID/SSD/扩展柜、普通账号、空目录和大清单；硬盘检测、套件启停及其他写操作仍需用专用测试目标完成权限、依赖阻止、忙碌、重复提交、超时与最终状态实机验收；套件来源、安装队列、取消和最终版本回读未验证 |
+| DSM 存储/套件/任务/账号 | DSM 7.2.1-69057 Update 12 | `SYNO.API.Info` + 已登录会话只读响应结构核对 + DSM 前端静态请求 | 已确认 `Storage.Disk.get_smart_test_log/disk_test_log_get/do_smart_test` v1：请求使用 `load_info.disks[].device`，状态取 `testInfo[0]`，历史取 `testLog`，并识别其他检测占用；同时确认 `EventScheduler.result_list/result_get_file` v1、套件管理、任务管理以及用户/群组管理；macOS 已实现硬盘检测启停、真实历史记录、任务运行记录和其他受保护流程；套件启动/停止另已实现列表状态与可行性预检、同 ID 防重复、写后轮询及提交异常只回读不重放；本轮修正 available_operation 对象；macOS 套件中心新增目录/安装/更新/上传、依赖计划、进度、自动更新和来源管理，详见独立端点记录 | 不同 RAID/SSD/扩展柜、普通账号、空目录和大清单；硬盘检测、套件启停及其他写操作仍需用专用测试目标完成权限、依赖阻止、忙碌、重复提交、超时与最终状态实机验收；新增套件流程的真实安装、来源、依赖队列、取消与最终版本核对为 PENDING_USER_VALIDATION；其他四端未迁移写入 |
 | Virtual Machine Manager | 2.6.5-12202 | 官方网页可见 + `SYNO.API.Info` + Synology 官方 VMM API 指南 + 2026-07-27 已登录页面只读导航、创建/修改请求发送前拦截、日志页面与前端读取契约核对和 noVNC 地址生成逻辑核对 | macOS 已接入官方 `SYNO.Virtualization.API.*` v1 优先和内部接口隔离降级；Android 可创建总计最多 8 块空白/映像混合磁盘和多网卡（含未连接网卡），但 `Guest.get` 缺少源映像 ID，含映像盘结果只标记需刷新核对。Task.Info 最多读取 100 项，仅在任务页可见且仍有未结束任务时每 2 秒独立刷新；清理以全量 `list/get` 基线为准，只逐项 `clear` 未漂移的已结束任务。NAS 既有文件和系统 `OpenDocument` 本机文件均可沿公开 `Guest.Image.create` 创建；本机文件先经 File Station 无覆盖暂存，跨进程恢复记录使用加密存储，写边界不明时不重放，终态按完整基线删除临时文件 | 新增能力仅增加公开指南驱动的合成契约、JVM、编译与模拟器界面证据，不升级真实环境证据等级；真实 NAS 的多磁盘/多网卡字段、映像来源、任务字段、清理权限与副作用，以及系统文件授权、后台限制、格式、权限、存储和临时文件删除待用户打包验证。高级硬件编辑、迁移、克隆、映像编辑/导出和内部网络修改/删除仍需稳定契约或专用目标 |
 | Container Manager | 24.0.2-1535 | 官方网页可见 + `SYNO.API.Info` + 2026-07-27 已登录页面只读导航、脱敏请求结构核对和下载请求发送前拦截 | 已确认 `SYNO.Docker.Container.list` v1 需要 `offset=0`、`limit=-1`、`type=all`；镜像仓库使用 `SYNO.Docker.Registry.search(offset,limit,page_size,q)` 与 `tags(repo)`，下载使用 `SYNO.Docker.Image.pull_start(repository,tag)`；macOS 已实现搜索、结果选择、标签筛选和下载启动，并将映像、网络、项目和活动记录隔离为可降级附属读取 | 下载请求在发送前终止，未对真实 NAS 执行拉取；其他写操作尚未在专用目标执行；环境变量、挂载路径、容器日志正文与 Registry 凭据未读取 |
 | Download Station | 4.1.2-5012 | 官方公开指南 + 2026-07-27 已登录页面只读导航与脱敏字段核对 + 2026-07-29 套件中心版本复核 | macOS 官方 `SYNO.DownloadStation.*` 优先，当前 NAS 的 `SYNO.DownloadStation2.*` 独立降级；Android 已接入 Tracker/Peer、RSS 浏览/单站点刷新和结构化任务控制。Android、Apple shared/mobile 与 Windows Domain/Infrastructure/ViewModel/WinUI 均已按官方 `SYNO.DownloadStation.BTSearch` v1 接入提供方/类别目录、全部/仅启用/指定提供方范围、类别、标题、七类排序与方向、有界列表和临时任务清理，不回退到 `DownloadStation2`；正式提交 `5850f4c` 已通过 Apple、Android、Windows 与 Repository 四组云端门禁，但不构成新的真实 NAS 证据。Android、Windows 与 Apple 公开 Download Station 路径的当前活动摘要使用官方 `SYNO.DownloadStation.Statistic.getinfo` v1；Apple 既有 `DownloadStation2` 降级路径仍 best-effort 使用内部 `SYNO.DownloadStation2.Task.Statistic.get`。两条 Apple 路径都只显示标准任务/eMule 当前聚合速率，读取失败不替换任务列表，也不升级真实 NAS 证据。第 78 批另新增官方 Task.edit v1 单任务保存位置：任务/可写目录双基线、单次提交、严格回读、断线/取消不重放及持久反馈 | 新增能力只增加公开指南驱动的合成请求、领域、自动化、模拟器和云端构建证据，不升级真实环境或写行为等级；真实 NAS 的搜索提供方/类别、清理、速率字段、权限与版本差异，以及文件移动副作用和断线边界待用户打包验收。官方指南仍未公开 RSS 完整编辑或文件优先级写参数；BT 协议高级设置、监听目录、NZB、RSS 与通知设置仍需契约和专用目标验收 |
@@ -132,3 +132,21 @@ macOS 已完成上传、相册/分享、元数据、人物/主题/相似组、�
 - `PENDING_USER_VALIDATION`：真实 App 会话、媒体、共享非空数据、权限撤销、断网/取消/重启、上传覆盖/移动删除、云授权回调、容器/虚拟机及系统设置副作用；步骤与预期见对应功能计划，不能用另一平台或版本代替。
 - 回收恢复必须覆盖删除、进入回收站、恢复和同名冲突；缓存/后台任务清理不得冒充 NAS 文件删除或恢复。
 - 记录仅保留版本、日期、平台、权限/连接类别、用例、结果和脱敏失败。禁止真实路径、主机、账号、名称、消息、凭据和原始响应；证书只记公共 CA/自签名/私有 CA 类别。
+
+### 2026-10-03 NAS 设置五端适配补充
+
+macOS 本轮覆盖 21 个页面并新增 ZRAM、电源计划和套件中心流程；共享 Apple 只添加兼容
+模型/Repository 默认方法，iPhone 与 iPad 未新增界面；Windows、Android 未改实现。三项
+新写能力按用户授权开放供测试，不以 PENDING_USER_VALIDATION 作为固定禁用标记，实际
+权限、能力、危险确认、签名/许可、去重及最终状态核查必须保留。其他平台后续迁移需
+同步 200 条电源清单、enable_zram、available_operation 对象和防火墙通知的正确含义。
+本轮没有真实写入，不变更历史 lab-a 的验证等级。完整范围、例外和测试结果见
+[NAS 设置核对账本](../development/NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+
+
+### 2026-10-03 套件中心反馈复验
+
+同一 DSM 版本的官方页面已完成用户授权的单个 MediaServer 2.2.1-3406 → 2.2.2-3412 更新，最终“已启动”。此次单目标官方行为为 behavior-verified；岚仓新包真实提交、其他套件、复杂依赖、取消与设置保存仍待验。预检成功无 data、Setting.get 频道为 Boolean、单卷 default_vol 可缺省的实际结构已修正并补合成 fixture；set 仍发送 stable/beta。五端影响与资源覆盖修复见[反馈修复账本](../development/PACKAGE_CENTER_FIX_20261003_ZH.md)。不归并匿名关系未确认的 lab-a 历史记录。
+
+
+同日二次反馈：官方清单的系统套件类型与前端允许缺省普通存储位置的逻辑已核对；Apple 共享网络层仅对 system/system_hidden 接受缺省/null 的 volume_list，macOS 准备阶段增加取消与迟到结果保护。照片错误归属及刷新清理仅是 macOS 模型修复，不是新的照片 API 或真实写验证。五端取舍、合成回归与待验收条件见[二次反馈账本](../development/PHOTOS_PACKAGE_FOLLOWUP_20261003_ZH.md)。

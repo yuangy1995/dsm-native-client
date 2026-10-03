@@ -33,9 +33,11 @@
 		46CE97C3D80547D7061224F2 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9DB7D94AFC947DE39DF8D1 /* LoginView.swift */; };
 		4991FA2CB347811AEB834677 /* PhotoLibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */; };
 		4B1D1A6C8E02EE02141476E3 /* PhotoManagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */; };
+		4B65EEBA4D0C1F045540B122 /* PackageInstallationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC5286412623A4EDA73F469 /* PackageInstallationSheet.swift */; };
 		59342F280657F1325F5695BE /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA6302CE9BBDA37379FCC9A /* AppUpdateController.swift */; };
 		594AFC19D37245019FAA3E1C /* OfficeDocumentEditingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */; };
 		59C06DE7124461270B9173C6 /* ChatWorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2A90B20C76F1C8B23067D1 /* ChatWorkspaceModel.swift */; };
+		63DC646A757815086EB81E87 /* PowerScheduleEntryEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADD12D65EC6ADCDBA5EE892 /* PowerScheduleEntryEditor.swift */; };
 		68495D7E6E950B08AD84115A /* FileShareAdvancedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB44615EFDB0A63A46354E68 /* FileShareAdvancedView.swift */; };
 		6C000BB5EE82DE0A02E6E858 /* FileLocationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20D1575DF13DD10E0CD1EC3A /* FileLocationPicker.swift */; };
 		6C6EE7AF31CE7819C5075FC2 /* DesktopDriveDomainController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D983F7627104AB0720B16971 /* DesktopDriveDomainController.swift */; };
@@ -43,6 +45,7 @@
 		6E494C113B6C2491904BC781 /* ChatWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF1EB3904279ABE52505A57B /* ChatWorkspaceView.swift */; };
 		756071EA5D77E4C53C9FCF75 /* AppIcon.png in Resources */ = {isa = PBXBuildFile; fileRef = 903CFF29712CF8E5FC9DAB8F /* AppIcon.png */; };
 		7A69FF0E5AC572DB1C2EE0D5 /* PhotoUploadRecoveryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74943FAB49D2FB051152CBEE /* PhotoUploadRecoveryStore.swift */; };
+		7B3B9091FCBA0AAE6FF1ADDF /* PackageCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51009F5F9BE9AC8A9AA347AF /* PackageCenterView.swift */; };
 		7DED1007E77ED31FE27F7E62 /* ServiceManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */; };
 		7FFC8B0166B4B16D77EE1D90 /* DsmCore in Frameworks */ = {isa = PBXBuildFile; productRef = 367CFE0D29884F7F90B0E0D6 /* DsmCore */; };
 		836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */; };
@@ -81,6 +84,7 @@
 		E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */; };
 		E64E34C2F0F804681A008881 /* ProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 867D32EDC1609777EE056B6B /* ProviderItem.swift */; };
 		E6BE5B8B9C8EBE612DD198CD /* ContainerImagePullModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA801D49D6F2CE2300B5374A /* ContainerImagePullModel.swift */; };
+		EAD9392C707659F2DAA7E29C /* PackageCenterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CEA4FE573C206036BCDC35 /* PackageCenterSettingsView.swift */; };
 		ED5CE92C2E629DA8387E9E20 /* FileStationThemeImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */; };
 		F06931669E2EB893B31BBBE0 /* LoginViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */; };
 		F7F5489C7BAA445C74E15F68 /* ArchiveExtractionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12CB8707A3C36F92BC55DBE /* ArchiveExtractionView.swift */; };
@@ -137,9 +141,12 @@
 		46A9227A5E05161F8B71FDF4 /* DsmMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DsmMacApp.swift; sourceTree = "<group>"; };
 		4D54FCCE59BEF04898E541CE /* LoginViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModel.swift; sourceTree = "<group>"; };
 		4E1F96609F0323DC19D30EC7 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		50CEA4FE573C206036BCDC35 /* PackageCenterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageCenterSettingsView.swift; sourceTree = "<group>"; };
+		51009F5F9BE9AC8A9AA347AF /* PackageCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageCenterView.swift; sourceTree = "<group>"; };
 		53594B9C2C06D07097ADB39C /* FileUploadViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadViews.swift; sourceTree = "<group>"; };
 		56647EE10C3078E5D2FC80B0 /* FileVFSForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileVFSForm.swift; sourceTree = "<group>"; };
 		5A126F343F524361735CE974 /* FileISOMountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileISOMountView.swift; sourceTree = "<group>"; };
+		5ADD12D65EC6ADCDBA5EE892 /* PowerScheduleEntryEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerScheduleEntryEditor.swift; sourceTree = "<group>"; };
 		5B149137C8E1B05C6CAFD572 /* FileShareCreationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareCreationView.swift; sourceTree = "<group>"; };
 		5B2EB7CAB40E81F9AA56CD9A /* FileStationThemeImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationThemeImagePicker.swift; sourceTree = "<group>"; };
 		5DAD2EBEC5B471DB87A73E25 /* DesktopDriveWritebackSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveWritebackSettingsSheet.swift; sourceTree = "<group>"; };
@@ -178,6 +185,7 @@
 		C2C17F633E7A97A64BD09425 /* FileStationPendingChangesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStationPendingChangesView.swift; sourceTree = "<group>"; };
 		CA801D49D6F2CE2300B5374A /* ContainerImagePullModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerImagePullModel.swift; sourceTree = "<group>"; };
 		CA993277E25000CAE41B0447 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CBC5286412623A4EDA73F469 /* PackageInstallationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageInstallationSheet.swift; sourceTree = "<group>"; };
 		CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManagementView.swift; sourceTree = "<group>"; };
 		D983F7627104AB0720B16971 /* DesktopDriveDomainController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDriveDomainController.swift; sourceTree = "<group>"; };
 		DBCFF89B4F9AF650B541BA15 /* FilePermissionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePermissionEditor.swift; sourceTree = "<group>"; };
@@ -297,12 +305,16 @@
 				1769392F5A94D9F749E5C0D1 /* OfficeDocumentEditing.swift */,
 				F69DD3E71DCD020D41515EDC /* OfficeDocumentEditingView.swift */,
 				34FD4C5D753F85BAD2C18CC8 /* OfficeDocumentPreview.swift */,
+				50CEA4FE573C206036BCDC35 /* PackageCenterSettingsView.swift */,
+				51009F5F9BE9AC8A9AA347AF /* PackageCenterView.swift */,
+				CBC5286412623A4EDA73F469 /* PackageInstallationSheet.swift */,
 				AE8A84A73C0B512AF504E7AD /* PhotoFolderDestinationPicker.swift */,
 				1F424D8AB691E25447A263E5 /* PhotoLibraryModel.swift */,
 				27CC848C4E842FE9081B6B85 /* PhotoLibraryView.swift */,
 				7F81E8889172BBA148AAF813 /* PhotoManagementPanel.swift */,
 				8BC9C9961187B8013EEE5911 /* PhotoMetadataExtractor.swift */,
 				74943FAB49D2FB051152CBEE /* PhotoUploadRecoveryStore.swift */,
+				5ADD12D65EC6ADCDBA5EE892 /* PowerScheduleEntryEditor.swift */,
 				3879993A5ED04BE900402F59 /* RemoteMountRecoveryView.swift */,
 				2578503BB6C863138963CE6B /* ServiceManagementModel.swift */,
 				CC9DA1CDE1FC236E9AC8DEDB /* ServiceManagementView.swift */,
@@ -424,8 +436,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A4FE15DAB3C35747621D9326 /* DsmMac */,
 				6E7F102405CE46BF9FADEA71 /* DsmFileProvider */,
+				A4FE15DAB3C35747621D9326 /* DsmMac */,
 			);
 		};
 /* End PBXProject section */
@@ -510,12 +522,16 @@
 				441AF1825FA0812DDFC6AA03 /* OfficeDocumentEditing.swift in Sources */,
 				594AFC19D37245019FAA3E1C /* OfficeDocumentEditingView.swift in Sources */,
 				D42D3EED63F88A4010CE8666 /* OfficeDocumentPreview.swift in Sources */,
+				EAD9392C707659F2DAA7E29C /* PackageCenterSettingsView.swift in Sources */,
+				7B3B9091FCBA0AAE6FF1ADDF /* PackageCenterView.swift in Sources */,
+				4B65EEBA4D0C1F045540B122 /* PackageInstallationSheet.swift in Sources */,
 				836B31D0C4FF095E4FC1EFCF /* PhotoFolderDestinationPicker.swift in Sources */,
 				4991FA2CB347811AEB834677 /* PhotoLibraryModel.swift in Sources */,
 				E53088EB1BE1BCBA9B672B12 /* PhotoLibraryView.swift in Sources */,
 				4B1D1A6C8E02EE02141476E3 /* PhotoManagementPanel.swift in Sources */,
 				D733D79BB2B46B2F6E5C06E9 /* PhotoMetadataExtractor.swift in Sources */,
 				7A69FF0E5AC572DB1C2EE0D5 /* PhotoUploadRecoveryStore.swift in Sources */,
+				63DC646A757815086EB81E87 /* PowerScheduleEntryEditor.swift in Sources */,
 				9B3EFFB8C8D9612E2180DE97 /* RemoteMountRecoveryView.swift in Sources */,
 				AB278A90DA574E3C49D06481 /* ServiceManagementModel.swift in Sources */,
 				7DED1007E77ED31FE27F7E62 /* ServiceManagementView.swift in Sources */,

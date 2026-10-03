@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/private-api-compatibility.schema.json",
   "schemaVersion": 1,
-  "updatedAt": "2026-10-02",
+  "updatedAt": "2026-10-03",
   "environments": [
     {
       "id": "lab-a-dsm-7-2-1-69057-u12-20260729",
@@ -636,7 +636,7 @@
       "id": "dsm-power-schedule",
       "componentId": "dsm-core",
       "scope": "DSM 控制面板",
-      "capability": "电源计划只读摘要与保存禁用边界",
+      "capability": "电源计划读取及开机/关机计划完整清单编辑",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
@@ -649,7 +649,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或 v1 不在发现范围时页面独立不可用且零请求；save 始终保持关闭。 2026-09-26 Apple 只读兼容 poweron_tasks/poweroff_tasks 与 min，save 无实现不开放。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 已核对数字星期字符串每天及周六，Apple 仅在独立开关机容器中解析；旧数字数组保持未知。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
+      "fallback": "2026-10-03 macOS 按用户授权接入 v1 load/save，两个原生数组完整且不超过 200 条才可编辑；未知动作、时间、星期、状态或缺失条目拒绝覆盖。保存前完整基线比较，明确关机风险、全局去重并回读整表；未知结果仅刷新，不重放。Windows/Android 未迁移写入，历史验证不升级。本轮官方前端 static 及读取证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。",
       "documentRef": "docs/api/discovery/endpoints/dsm-power-schedule.md",
       "verifications": [
         {
@@ -710,12 +710,13 @@
       "id": "dsm-zram",
       "componentId": "dsm-core",
       "scope": "DSM 控制面板",
-      "capability": "内存压缩启用状态、明确字节容量与算法白名单只读摘要",
+      "capability": "内存压缩启用状态、开关保存及重启要求",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
       "apiNames": [
-        "SYNO.Core.Hardware.ZRAM"
+        "SYNO.Core.Hardware.ZRAM",
+        "SYNO.Core.Hardware.NeedReboot"
       ],
       "paths": [
         "runtime-discovered-via-SYNO.API.Info"
@@ -723,7 +724,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "能力缺失或 v1 不在发现范围时页面独立不可用且零请求；单位不明确的容量和未知算法降级；set 始终关闭。",
+      "fallback": "2026-10-03 macOS 使用 enable_zram 原生布尔，缺失或冲突保持未知。按用户授权提供开关；必须预检 ZRAM/NeedReboot v1、比较编辑基线、分别提交 set 并回读目标值和重启标记，不自动重启。断线或回读失败禁止自动重放；其他页面独立可用。其他四端未迁移写入，不升级历史验证。本轮证据见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。",
       "documentRef": "docs/api/discovery/endpoints/dsm-zram.md",
       "verifications": [
         {
@@ -805,7 +806,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。",
+      "fallback": "以 Storage.load_info 为主；单项接口失败时保留其他有效数据并关闭对应写入口。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-10-03 macOS 以 BeepControl support_* 过滤不可编辑提示音，FanSpeed cool_fan/fan_type 决定支持模式；未知设备组合与扩展网卡限制由 NAS 拒绝，未执行实际硬件写入。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {
@@ -946,13 +947,19 @@
       "id": "dsm-package-installation",
       "componentId": "dsm-core",
       "scope": "DSM 套件中心",
-      "capability": "套件来源、安装队列、安装、升级与取消",
+      "capability": "套件目录、依赖计划、安装/更新、手动上传、进度、取消下载、自动更新与来源管理",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",
       "apiNames": [
+        "SYNO.Core.Package",
         "SYNO.Core.Package.Server",
-        "SYNO.Core.Package.Installation"
+        "SYNO.Core.Package.Info",
+        "SYNO.Core.Package.Installation",
+        "SYNO.Core.Package.Installation.Download",
+        "SYNO.Core.Package.Setting",
+        "SYNO.Core.Package.Setting.Volume",
+        "SYNO.Core.Package.Feed"
       ],
       "paths": [
         "runtime-discovered-via-SYNO.API.Info"
@@ -960,7 +967,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "安装与升级入口保持关闭；仅使用 Package.list 明确返回的 upgrade 操作显示非交互提示。",
+      "fallback": "2026-10-03 macOS 按用户授权接入官方目录和安装流程。更新由 available_operation.upgrade 对象进入完整计划；运行时能力、权限、签名、许可、风险确认、互斥和精确版本核对必需，未知提交只查询，不重放。第三方目录独立降级；付费/首次测试版协议/浏览器专属安装表单明确交由 DSM。其他平台没有迁移写入。当前目录结构 read-verified、写结构 static/合成测试，真实行为 PENDING_USER_VALIDATION；不改变 lab-a 历史等级。见 docs/api/discovery/environments/2026-10-02-nas-settings-web-audit.md。 2026-10-03 后续修复：feasibility_check 成功允许没有 data；Setting.get.update_channel 为 Boolean、set 仍为 stable/beta，default_vol 可缺省。官方网页单次 MediaServer 2.2.1-3406→2.2.2-3412 更新及最终运行状态已验证；仅此目标为 behavior-verified，客户端真实提交与其他写操作仍待验，匿名设备未归属，历史 verifications 不变。见 docs/api/discovery/environments/2026-10-03-package-center-followup.md。 同日二次反馈：官方系统安装分支允许 system/system_hidden 缺省普通 volume_list，macOS 已按类型修正且保留普通套件位置要求；只读准备支持取消并丢弃迟到结果，已确认提交仅关闭窗口后台继续。本轮没有新增 NAS 写验证，见 docs/api/discovery/environments/2026-10-03-photos-package-followup.md。",
       "documentRef": "docs/api/discovery/endpoints/dsm-package-installation.md",
       "verifications": [
         {
@@ -1021,7 +1028,7 @@
       "methods": [
         "POST"
       ],
-      "fallback": "按能力逐项隐藏或只读降级；不得自动尝试管理员权限或批量回写完整配置。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 新建脚本任务使用本地空白草稿，仍检查 v4 能力，已有任务严格读取及保存保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 官方已有脚本任务 get v4 字段与当前严格解析匹配，未保存或执行。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。",
+      "fallback": "按能力逐项隐藏或只读降级；不得自动尝试管理员权限或批量回写完整配置。 2026-09-19 Windows 已实现的专用系统管理入口按用户授权开放，以明确管理员、接口、确认/预检/防重复/回读判断，不再依单一 DSM build 或行为验收常量关闭；旧无确认辅助和未实现能力不开放，不提升真实验证。 2026-09-26 Apple 新建脚本任务使用本地空白草稿，仍检查 v4 能力，已有任务严格读取及保存保护不变。 观察与限制见 docs/api/discovery/environments/2026-09-26-nas-settings-read-observation.md；不提升既有环境证据等级。 2026-09-27 官方已有脚本任务 get v4 字段与当前严格解析匹配，未保存或执行。 证据见 docs/api/discovery/environments/2026-09-27-nas-settings-live-validation.md；不冒用历史设备归属。 2026-10-03 macOS 将 enable_port_check 更正为防火墙通知（不是防端口扫描）；已安装 available_operation 兼容对象。新增安装流程见 dsm-package-installation；其他平台只记录适配影响，真实写证据不升级。",
       "documentRef": "docs/api/discovery/endpoints/INDEX.md",
       "verifications": [
         {

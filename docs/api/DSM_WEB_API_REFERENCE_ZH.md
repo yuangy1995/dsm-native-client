@@ -184,7 +184,7 @@ Windows 当前仍关闭远程位置写入：现有 create/update/delete 及其�
 | `SYNO.Storage.CGI.Smart` | `get_health_info` | SMART 健康摘要 | 低 |
 | `SYNO.Core.Storage.Volume` | `list` | 存储空间列表 | 低 |
 | `SYNO.Core.Storage.Disk` | `disk_test_log_get`, `get_smart_test_log`, `do_smart_test` | SMART 测试与日志 | 中 |
-| `SYNO.Core.Hardware.ZRAM` | `get`, `set` | 客户端仅候选接入运行时发现的 v1 `get`，只保留启用状态、明确字节容量与算法白名单；`set` 保持关闭 | 高 |
+| `SYNO.Core.Hardware.ZRAM` | `get`, `set` | macOS 读取 enable_zram 并按用户授权实现 set，与 NeedReboot 标记共同回读，不自动重启 | 高 |
 | `SYNO.Core.Hardware.PowerRecovery` | `get`, `set` | 来电自启 | 高 |
 | `SYNO.Core.Hardware.BeepControl` | `get`, `set` | 蜂鸣器 | 中 |
 | `SYNO.Core.Hardware.FanSpeed` | `get`, `set` | 风扇模式 | 高 |
@@ -200,7 +200,7 @@ Windows 当前仍关闭远程位置写入：现有 create/update/delete 及其�
 
 当前 macOS 已按设备能力接入断电恢复、LED 亮度、风扇模式、设备提示音、外接存储深度休眠、唤醒日志、SATA 深度休眠、休眠时忽略发现流量、闲置自动关机和 UPS 基础安全关机设置。UPS 支持 DSM 返回的 USB、网络从属与 SNMP 三种模式，以及等待时间、低电量策略和关机联动；不猜测未返回的 SNMP v3 密钥或 ACL 字段。只显示 DSM 实际返回的字段，保存后重新读取所有已修改字段。
 
-内存压缩当前使用 `SYNO.Core.Hardware.ZRAM` 候选 v1 `get` 显示只读摘要。2026-08-03 已在官方 DSM 页面只读观察到该设置，但没有捕获对应 API 请求或响应，因此真实版本与字段仍未验证。客户端只接受布尔启用状态、字段名明确为字节的配置容量，以及 `lz4`、`lzo`、`zstd` 算法白名单；单位不明确的容量和其他算法均降级为不可用/未知，`set` 不进入 Repository 或界面。稳定记录见 [`dsm-zram.md`](discovery/endpoints/dsm-zram.md)。
+内存压缩在 2026-10-02/03 官方成功响应中确认 `enable_zram:Boolean`；macOS 已按用户授权接入 v1 `set` 及 `NeedReboot.set/get`，保留基线比较、明确确认、防重复和两项结果核对，不自动重启。容量与算法只在服务端提供可信字段时显示。写参数来自官方前端 static 证据，真实保存及重启后状态仍待用户验证。见 [`dsm-zram.md`](discovery/endpoints/dsm-zram.md)。
 
 打印机 Bonjour 共享目前只完成静态审计。既有目录仅列出 `SYNO.Core.ExternalDevice.Printer.BonjourSharing.get`，没有版本、路径、参数或响应证据；它不能与文件服务的通用 Bonjour/Avahi 设置混用。客户端不注册该能力、不发送请求，也不推断打印机清单、共享状态或设备字段。稳定记录见 [`dsm-printer-bonjour-sharing.md`](discovery/endpoints/dsm-printer-bonjour-sharing.md)。
 
@@ -231,13 +231,10 @@ S.M.A.R.T. 检测使用能力发现返回的 `SYNO.Core.Storage.Disk` v1。`Stor
 
 当前 macOS 与 Android 使用 `Package.list` v2，并请求 `status`、`description`、`install_type`、`startable`、`dsm_apps`、`available_operation` 和 `ctl_uninstall` 附加字段，展示真实套件名称、版本、状态与说明。两端套件图标使用 `Package.Thumb.get` v1 读取，认证信息只放在 Cookie 与请求头，不写入图片 URL；Android 另以 2 MiB 流式上限、PNG/JPEG/GIF/WebP 签名和 Bitmap 解码约束响应，只在内存保留 4 MiB LRU，失败时使用本地通用图标。
 
-`available_operation` 明确包含 `upgrade` 时，macOS 与 Android 只显示“DSM 中有可用更新”的只读
-提示，`canUpgrade` 仍保持关闭。`Package.Server.list` 和
-`Package.Installation.install/status/get_queue/cancel` 目前只有静态方法目录，没有
-版本化来源、参数、队列响应、取消和最终版本回读证据，客户端不探测也不调用。
+2026-10-03 已确认 `available_operation` 是可携带 `upgrade` 候选对象的对象，不是启停许可数组。macOS 已接 `Package.Server.list` v2 目录、安装依赖计划、安装/更新/上传、进度和取消下载、自动更新设置与来源管理；直接 `.upgrade` 控制继续拒绝，统一走有确认的安装计划。目录和设置 get 为只读证据；同日按授权通过官方网页完成单个 MediaServer 更新。已确认预检成功可没有 data，Setting.get.update_channel 为 Boolean、set 仍为 stable/beta。客户端真实提交及其他写操作仍待用户验证。Android/Windows 仍保留旧更新提示，iPhone/iPad 未迁移。详见 [`dsm-package-installation.md`](discovery/endpoints/dsm-package-installation.md)。
 
 启动与暂停每次都先重新调用 `Package.list` v2，按稳定套件 ID 核对目标仍存在且
-`canStart/canStop` 与当前状态一致，再调用 `Package.feasibility_check` v2 和
+`canStart/canStop` 与当前状态一致，再调用 `Package.feasibility_check` v1 和
 `Package.Control.start/stop` v1。同一套件 ID 的启动、停止与卸载在 Repository 和
 macOS 模型两层防重复；界面提交前说明影响并确认，执行中显示进度且禁用重复操作。
 写请求明确成功后最多轮询列表十次；提交超时、断线或响应无效时只读取列表核对，不重放
@@ -289,7 +286,7 @@ macOS 模型两层防重复；界面提交前说明影响并确认，执行中�
 | `SYNO.Core.FileServ.ServiceDiscovery` | `get`, `set`；服务发现与 SMB Time Machine | 中 |
 | `SYNO.Core.ACL` | `get_bypass_traverse` | 中 |
 | `SYNO.Core.Security.Firewall` | `get`, `set`；防火墙状态 | 高 |
-| `SYNO.Core.Security.Firewall.Conf` | `get`, `set`；端口扫描防护 | 高 |
+| `SYNO.Core.Security.Firewall.Conf` | `get`, `set`；防火墙通知 | 高 |
 | `SYNO.Core.Security.Firewall.Profile.Apply` | `start`, `status`, `stop`；应用当前配置 | 高 |
 | `SYNO.Core.Security.Firewall.Rules.Serv` | `policy_check` | 中 |
 | `SYNO.Backup.Service.NetworkBackup` | `get` | 中 |
@@ -303,7 +300,7 @@ macOS 模型两层防重复；界面提交前说明影响并确认，执行中�
 
 网络与 DDNS 响应可能包含公网 IP、域名、账号和代理配置。抓包样本必须删除这些字段后才能共享。
 
-当前 macOS 已将 SMB、NFS、FTP/FTPS、SFTP、互联网代理、物理网卡、DDNS 和防火墙基础控制加入运行时能力发现。物理网卡编辑支持 DHCP/静态 IPv4、网关、DNS、默认网关、MTU 与 VLAN；提交前明确提示可能断开当前连接，提交时只发送目标网卡 `configs`，随后按 `ifname` 回读。DDNS 将服务商连接测试、记录新建/编辑、立即更新和删除拆为四个独立操作；密码/密钥仅用于当次测试或保存请求，保存和删除后重新列出记录核对，测试成功不代表已经保存，立即更新被接受也不代表公网 DNS 已完成传播。防火墙支持启停当前配置和端口扫描防护；启用通过 `Profile.Apply` 任务轮询，失败或超时不报告成功。完整防火墙规则编辑仍需服务端口、网卡策略、配置保存和应用任务组成原子流程，当前不提供半成品入口。
+当前 macOS 已将 SMB、NFS、FTP/FTPS、SFTP、互联网代理、物理网卡、DDNS 和防火墙基础控制加入运行时能力发现。物理网卡编辑支持 DHCP/静态 IPv4、网关、DNS、默认网关、MTU 与 VLAN；提交前明确提示可能断开当前连接，提交时只发送目标网卡 `configs`，随后按 `ifname` 回读。DDNS 将服务商连接测试、记录新建/编辑、立即更新和删除拆为四个独立操作；密码/密钥仅用于当次测试或保存请求，保存和删除后重新列出记录核对，测试成功不代表已经保存，立即更新被接受也不代表公网 DNS 已完成传播。防火墙支持启停当前配置和防火墙通知（enable_port_check）；启用通过 `Profile.Apply` 任务轮询，失败或超时不报告成功。完整防火墙规则编辑仍需服务端口、网卡策略、配置保存和应用任务组成原子流程，当前不提供半成品入口。
 
 局域网服务发现同时接入 `SYNO.Core.Web.DSM` v2 的 `enable_ssdp`、`enable_avahi` 与 `SYNO.Core.FileServ.ServiceDiscovery` v1 的 `enable_smb_time_machine`，按实际变化分别提交并回读。
 
@@ -423,3 +420,12 @@ macOS 模型两层防重复；界面提交前说明影响并确认，执行中�
 | 系统控制 | [`lib/models/Syno/Core`](https://gitee.com/apaipai/dsm_helper/tree/dev/lib/models/Syno/Core) |
 | VMM | [`lib/models/Syno/Virtualization`](https://gitee.com/apaipai/dsm_helper/tree/dev/lib/models/Syno/Virtualization) |
 | Photos | [`lib/models/photos`](https://gitee.com/apaipai/dsm_helper/tree/dev/lib/models/photos) |
+
+## 2026-10-03 NAS 设置全项核对
+
+本轮检查 21 个官方对应页面，修正性能图 CPU/内存叠加、提示音支持位、风扇档位、
+日期/时间格式选择、ZRAM 字段及防火墙通知含义。电源计划已按官方前端完整双数组
+`load/save` v1 和 200 条上限实现本地草稿与整表确认；详见
+[电源计划记录](discovery/endpoints/dsm-power-schedule.md)和
+[实施/验证账本](../development/NAS_SETTINGS_WEB_AUDIT_20261002_ZH.md)。
+新写入口遵循用户本轮授权，未执行真实 NAS 写入；静态/合成结论不提升历史环境等级。

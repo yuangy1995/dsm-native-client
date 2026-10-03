@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "data": {
+    "queue": [
+      {
+        "pkg": "SyntheticDependency",
+        "beta": false
+      },
+      {
+        "pkg": "SyntheticPackage",
+        "beta": false
+      }
+    ],
+    "non_exist_pkgs": [],
+    "conflicted_pkgs": [],
+    "broken_pkgs": [],
+    "replaced_pkgs": [],
+    "paused_pkgs": []
+  }
+}

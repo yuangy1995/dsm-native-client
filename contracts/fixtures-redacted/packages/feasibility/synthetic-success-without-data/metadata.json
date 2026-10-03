@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "synthetic-success-without-data",
+  "sourceKind": "synthetic",
+  "environment": {
+    "alias": "synthetic",
+    "dsmVersion": "7.2.1",
+    "build": "00000",
+    "update": "none",
+    "architecture": "unknown"
+  },
+  "accountRole": "administrator",
+  "connectionType": "unknown",
+  "evidenceLevel": "static",
+  "api": {
+    "name": "SYNO.Core.Package",
+    "path": "entry.cgi",
+    "version": 1,
+    "method": "feasibility_check"
+  },
+  "scenario": "依据 2026-10-03 观察重建的合成成功预检：无 data。样本不含真实请求或设备数据。",
+  "redactedFields": []
+}

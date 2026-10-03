@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "packages.cancel-download.synthetic-settings",
+  "module": "packages",
+  "operation": "cancelDownload",
+  "api": {
+    "name": "SYNO.Core.Package.Installation",
+    "method": "cancel",
+    "preferredVersion": 1,
+    "resolvedVersion": 1,
+    "resolvedPath": "entry.cgi"
+  },
+  "transport": {
+    "httpMethod": "POST",
+    "requestFormat": "json"
+  },
+  "parameters": [
+    {
+      "name": "taskid",
+      "valueType": "string",
+      "encodedValue": "\"<synthetic-task>\""
+    }
+  ],
+  "authentication": {
+    "required": true,
+    "synoTokenRequired": false,
+    "sessionLocations": [
+      "cookie",
+      "form"
+    ],
+    "synoTokenLocations": [
+      "header",
+      "form"
+    ]
+  },
+  "policy": {
+    "retryPolicy": "queryStateBeforeDecision",
+    "risk": "highRisk",
+    "readbackPolicy": "required"
+  },
+  "source": {
+    "kind": "synthetic",
+    "evidence": "sourceReviewed"
+  }
+}
