@@ -7,6 +7,79 @@ import XCTest
 
 @MainActor
 extension ChatWorkspaceModelTests {
+    func test语音点击即播放支持暂停继续且离开后删除临时音频() async throws {
+        let data = silentVoiceData()
+        let repository = ChatRepositoryStub(conversations: [conversation(id: "one", title: "合成", activity: Date())],
+                                            downloadedAttachmentData: data)
+        let model = ChatWorkspaceModel(repository: repository)
+        await model.loadIfNeeded()
+        let selection = ChatMediaSelection(message: message(id: "voice", conversationID: "one", date: Date()),
+            attachment: ChatAttachment(id: "voice", kind: .voice, fileName: "synthetic.wav", sizeBytes: Int64(data.count)))
+        let playback = ChatVoicePlayback()
+        defer { playback.stop(); model.cancelAllWork() }
+        await playback.toggle(selection, model: model)
+        XCTAssertTrue(playback.isPlaying)
+        XCTAssertFalse(playback.isLoading)
+        XCTAssertNil(playback.errorMessage)
+        await playback.toggle(selection, model: model)
+        XCTAssertFalse(playback.isPlaying)
+        await playback.toggle(selection, model: model)
+        XCTAssertTrue(playback.isPlaying)
+        let deadline = Date().addingTimeInterval(2)
+        while playback.isPlaying && Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(playback.isPlaying, "播完后应恢复播放按钮")
+        await playback.toggle(selection, model: model)
+        XCTAssertTrue(playback.isPlaying, "播完可从头重播")
+        let files = await repository.downloadedAttachmentDestinations()
+        XCTAssertEqual(files.count, 1, "暂停与继续不重复下载")
+        let file = try XCTUnwrap(files.first)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        playback.stop()
+        XCTAssertFalse(playback.isPlaying)
+        XCTAssertNil(playback.selectionID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func test离开会话会取消正在加载的语音且不会迟到自动播放() async throws {
+        let data = silentVoiceData()
+        let repository = ChatRepositoryStub(conversations: [conversation(id: "one", title: "合成", activity: Date())],
+            downloadedAttachmentData: data, attachmentDownloadDelay: .seconds(5))
+        let model = ChatWorkspaceModel(repository: repository)
+        await model.loadIfNeeded()
+        let playback = ChatVoicePlayback()
+        let selection = ChatMediaSelection(message: message(id: "voice", conversationID: "one", date: Date()),
+            attachment: ChatAttachment(id: "voice", kind: .voice, fileName: "synthetic.wav", sizeBytes: Int64(data.count)))
+        let loading = Task { await playback.toggle(selection, model: model) }
+        let deadline = Date().addingTimeInterval(1)
+        while await repository.downloadedAttachmentDestinations().isEmpty && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(playback.isLoading)
+        playback.stop()
+        await loading.value
+        XCTAssertFalse(playback.isLoading)
+        XCTAssertFalse(playback.isPlaying)
+        XCTAssertNil(playback.selectionID)
+        let files = await repository.downloadedAttachmentDestinations()
+        XCTAssertEqual(files.count, 1)
+        XCTAssertTrue(files.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+        model.cancelAllWork()
+    }
+
+    private func silentVoiceData() -> Data {
+        // 一秒静音 PCM，测试不采集麦克风，也不发出提示音。
+        var data = Data("RIFF".utf8)
+        func append<T: FixedWidthInteger>(_ value: T) {
+            var little = value.littleEndian
+            withUnsafeBytes(of: &little) { data.append(contentsOf: $0) }
+        }
+        append(UInt32(32_036)); data.append(Data("WAVEfmt ".utf8))
+        append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
+        append(UInt32(16_000)); append(UInt32(32_000)); append(UInt16(2)); append(UInt16(16))
+        data.append(Data("data".utf8)); append(UInt32(32_000)); data.append(Data(repeating: 0, count: 32_000))
+        return data
+    }
+
     func test模块启用后不进入页面也保持连接离开页面不停止而关闭模块停止() async throws {
         let repository = ChatRepositoryStub(conversations: [])
         let model = ChatWorkspaceModel(repository: repository)

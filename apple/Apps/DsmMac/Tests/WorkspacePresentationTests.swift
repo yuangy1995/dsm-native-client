@@ -4314,6 +4314,152 @@ final class WorkspacePresentationTests: XCTestCase {
         }
     }
 
+    func test反馈面包屑只在空间不足时折叠双语双主题() async throws {
+        NSApp.setActivationPolicy(.regular)
+        defer { NSApp.setActivationPolicy(.accessory) }
+        let previousLanguage = AppLanguageStore.shared.selection
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { AppLanguageStore.shared.selection = previousLanguage; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for width in [1100.0, 420.0] {
+                    let fixture = try WorkspaceViewFixture(count: 3)
+                    fixture.model.currentPath = "/Projects/Quarter/Reports/Drafts/Current"
+                    fixture.model.section = .files(fixture.model.currentPath)
+                    let host = makeHost(fixture: fixture, mode: .list, scheme: scheme)
+                    let window = attach(host, size: .init(width: width, height: 640))
+                    defer { window.contentView = nil; window.close(); fixture.model.cancelAllWork(); fixture.cleanPreferences() }
+                    window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                    try await settle(host)
+                    let elements = remoteFlowElements(host)
+                    let paths = elements.filter { ($0.value("accessibilityIdentifier") as? String)?.hasPrefix("files.path.") == true }
+                    let labels = Set(paths.compactMap { $0.accessibilityLabel() ?? $0.accessibilityTitle() })
+                    XCTAssertTrue(labels.contains("Current"))
+                    if width > 1000 {
+                        for name in ["Projects", "Quarter", "Reports", "Drafts"] { XCTAssertTrue(labels.contains(name), name) }
+                    } else {
+                        XCTAssertFalse(labels.contains("Projects"), "空间不足才折叠较早目录")
+                        let menu = elements
+                        XCTAssertTrue(menu.contains {
+                            [$0.accessibilityLabel(), $0.accessibilityTitle(), $0.value("accessibilityHelp") as? String]
+                                .compactMap { $0 }.contains(L10n.string("navigation.parentFolders"))
+                        }, "父目录菜单辅助功能：\(menu.map { [$0.accessibilityRole()?.rawValue, $0.accessibilityLabel(), $0.accessibilityTitle(), $0.value("accessibilityHelp") as? String] })")
+                    }
+                    for path in paths {
+                        XCTAssertGreaterThanOrEqual(path.accessibilityFrame().height, 32)
+                    }
+                    try snapshot(host, name: "feedback-breadcrumb-\(language.rawValue)-\(scheme)-\(Int(width))")
+                }
+            }
+        }
+    }
+
+    func test反馈已开启通知隐藏入口且本人最新语音可同步已读() async throws {
+        NSApp.setActivationPolicy(.regular)
+        defer { NSApp.setActivationPolicy(.accessory) }
+        let previousLanguage = AppLanguageStore.shared.selection
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { AppLanguageStore.shared.selection = previousLanguage; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for enabled in [true, false] {
+                    let date = Date(timeIntervalSince1970: 1_800_000_000)
+                    let conversation = ChatConversation(id: "sample", kind: .direct, title: "Synthetic conversation", memberIDs: [], unreadCount: 1)
+                    var messages: [ChatMessage] = []
+                    for index in 0..<39 {
+                        messages.append(ChatMessage(id: "message-\(index)", conversationID: "sample", senderID: "user-1",
+                            isFromCurrentUser: true, sentAt: date.addingTimeInterval(Double(index)), text: "Synthetic message \(index)"))
+                    }
+                    let voice = ChatAttachment(id: "voice", kind: .voice, fileName: "synthetic.aac", sizeBytes: 100)
+                    messages.append(ChatMessage(id: "message-39", conversationID: "sample", senderID: "user-1", isFromCurrentUser: true,
+                        sentAt: date.addingTimeInterval(39), attachments: [voice]))
+                    let repository = ChatRepositoryStub(conversations: [conversation], messagesByConversation: ["sample": messages])
+                    let model = ChatWorkspaceModel(repository: repository)
+                    await model.loadIfNeeded()
+                    let host = NSHostingView(rootView: ChatWorkspaceView(model: model, readNotificationPermission: { enabled })
+                        .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                        .environment(\.locale, AppLanguageStore.shared.locale)
+                        .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: 900, height: 620))
+                    defer { model.cancelAllWork(); window.contentView = nil; window.close() }
+                    window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                    for _ in 0..<5 { try await settle(host) }
+                    let elements = remoteFlowElements(host)
+                    let enableVisible = elements.contains { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("chat.notification.enable") }
+                    XCTAssertEqual(enableVisible, !enabled)
+                    XCTAssertTrue(elements.contains { $0.value("accessibilityIdentifier") as? String == "chat.media.playback" })
+                    XCTAssertNil(window.attachedSheet)
+                    XCTAssertTrue(model.isConversationAtBottom, "真实末条消息在可视区域时必须被识别")
+                    model.isChatWindowActive = true
+                    await model.synchronizeVisibleReadState()
+                    let markers = await repository.recordedReadMarkers()
+                    XCTAssertEqual(markers.last?.1, messages.last?.sentAt)
+                    XCTAssertEqual(model.totalUnreadCount, 0)
+                    try snapshot(host, name: "feedback-chat-\(language.rawValue)-\(scheme)-\(enabled)")
+                    let scroll = try XCTUnwrap(nativeViews(host, of: NSScrollView.self).first {
+                        ($0.documentView?.bounds.height ?? 0) > $0.contentView.bounds.height + 100
+                    })
+                    scroll.contentView.scroll(to: .zero)
+                    scroll.reflectScrolledClipView(scroll.contentView)
+                    try await settle(host)
+                    XCTAssertFalse(model.isConversationAtBottom, "向上阅读历史时不再标记最新消息可见")
+                    let incoming = ChatMessage(id: "incoming", conversationID: "sample", senderID: "other", isFromCurrentUser: false,
+                        sentAt: date.addingTimeInterval(40), text: "Synthetic incoming message")
+                    await repository.replaceMessages(messages + [incoming], in: "sample")
+                    await model.refreshCurrentConversation()
+                    try await settle(host)
+                    XCTAssertFalse(model.isConversationAtBottom, "阅读旧消息时收到新消息不自动跳到底部")
+                    let afterIncoming = await repository.recordedReadMarkers()
+                    XCTAssertEqual(afterIncoming.count, markers.count)
+
+                }
+            }
+        }
+    }
+
+    func test反馈总览头部紧凑排列与窄窗口换行() async throws {
+        NSApp.setActivationPolicy(.regular)
+        defer { NSApp.setActivationPolicy(.accessory) }
+        let previousLanguage = AppLanguageStore.shared.selection
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { AppLanguageStore.shared.selection = previousLanguage; NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            for scheme in [ColorScheme.light, .dark] {
+                for width in [1000.0, 460.0] {
+                    let host = NSHostingView(rootView: PerformanceDashboard(
+                        overview: NasSystemOverview(serverName: "Synthetic NAS", model: "Test Model", version: "DSM 7.x"),
+                        history: [], connections: nil, isPaused: .constant(false), refresh: {}, onNavigateToConnections: {},
+                        isPowerActionBusy: false, onPerformPowerAction: nil, onCheckSystemUpdate: nil)
+                        .environment(MacAppearanceStore()).environment(AppLanguageStore.shared)
+                        .environment(\.locale, AppLanguageStore.shared.locale)
+                        .background(MacAppearancePalette(scheme: scheme, increasedContrast: false).content).preferredColorScheme(scheme))
+                    let window = attach(host, size: .init(width: width, height: 620))
+                    defer { window.contentView = nil; window.close() }
+                    window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+                    try await settle(host)
+                    let elements = remoteFlowElements(host)
+                    let refresh = try XCTUnwrap(elements.first { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("ui.aee88743413144a2") })
+                    let pause = try XCTUnwrap(elements.first { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("ui.8c78e736df180bf3") })
+                    let update = try XCTUnwrap(elements.first { ($0.accessibilityLabel() ?? $0.accessibilityTitle()) == L10n.string("ui.48954b3a9a918624") })
+                    XCTAssertEqual(refresh.accessibilityFrame().midY, pause.accessibilityFrame().midY, accuracy: 1)
+                    XCTAssertLessThan(pause.accessibilityFrame().minX - refresh.accessibilityFrame().maxX, 20)
+                    if width > 900 { XCTAssertEqual(update.accessibilityFrame().midY, refresh.accessibilityFrame().midY, accuracy: 1) }
+                    for control in [refresh, pause, update] { XCTAssertGreaterThanOrEqual(control.accessibilityFrame().height, 36) }
+                    try snapshot(host, name: "feedback-dashboard-\(language.rawValue)-\(scheme)-\(Int(width))")
+                }
+            }
+        }
+    }
+
     func test语言与文件排序菜单双语双主题不铺原生白底() async throws {
         let originalAppearance = NSApp.appearance
         let originalLanguage = AppLanguageStore.shared.selection
@@ -4435,6 +4581,12 @@ final class WorkspacePresentationTests: XCTestCase {
     }
 
     func test文件面包屑从长目录返回时显示目标目录首项() async throws {
+        NSApp.setActivationPolicy(.regular)
+        defer { NSApp.setActivationPolicy(.accessory) }
+        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        let previousAX = NSApp.accessibilityAttributeValue(attribute)
+        NSApp.accessibilitySetValue(true, forAttribute: attribute)
+        defer { NSApp.accessibilitySetValue(previousAX, forAttribute: attribute) }
         for scheme in [ColorScheme.light, .dark] {
             for mode in [FileViewMode.grid, .list] {
                 let fixture = try WorkspaceViewFixture(count: 160)
@@ -4450,7 +4602,7 @@ final class WorkspacePresentationTests: XCTestCase {
                 let host = makeHost(fixture: fixture, mode: mode, scheme: scheme, showsInspector: .constant(true))
                 let window = attach(host, size: NSSize(width: 1100, height: 640))
                 defer { fixture.model.cancelAllWork(); window.contentView = nil; window.close(); fixture.cleanPreferences() }
-                window.makeKeyAndOrderFront(nil); try await settle(host)
+                window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); try await settle(host)
                 let scroll = try XCTUnwrap(nativeViews(host, of: NSScrollView.self).first)
                 let document = try XCTUnwrap(scroll.documentView)
                 let topOrigin = scroll.contentView.bounds.minY
@@ -4458,8 +4610,10 @@ final class WorkspacePresentationTests: XCTestCase {
                 scroll.reflectScrolledClipView(scroll.contentView); try await settle(host)
                 XCTAssertGreaterThan(scroll.contentView.bounds.minY, 100, "先滚动长目录，再通过真实面包屑跳转")
                 try snapshot(host, name: "files-before-breadcrumb-\(mode)-\(scheme)")
-                // 1100×640合成窗口底栏中可见的父目录按钮。
-                try click(window, at: NSPoint(x: 105, y: 21))
+                let parent = try XCTUnwrap(remoteFlowElements(host).first {
+                    ($0.value("accessibilityIdentifier") as? String) == "files.path.parent" && $0.accessibilityLabel() == "synthetic"
+                })
+                try click(window, at: window.convertPoint(fromScreen: .init(x: parent.accessibilityFrame().midX, y: parent.accessibilityFrame().midY)))
                 try await settle(host)
                 XCTAssertEqual(fixture.model.currentPath, "/synthetic")
                 XCTAssertEqual(fixture.model.filteredItems, destination)
@@ -4472,7 +4626,9 @@ final class WorkspacePresentationTests: XCTestCase {
                 await fixture.model.refresh(); try await settle(host)
                 XCTAssertEqual(currentScroll.contentView.bounds.minY, beforeRefresh, accuracy: 1, "刷新同一目录应保留浏览位置")
                 // 返回只有12项的根目录，不能留下旧网格的空白区域。
-                try click(window, at: NSPoint(x: 85, y: 21)); try await settle(host)
+                let root = try XCTUnwrap(remoteFlowElements(host).first { ($0.value("accessibilityIdentifier") as? String) == "files.path.parent" })
+                try click(window, at: window.convertPoint(fromScreen: .init(x: root.accessibilityFrame().midX, y: root.accessibilityFrame().midY)))
+                try await settle(host)
                 XCTAssertEqual(fixture.model.currentPath, "/"); XCTAssertEqual(fixture.model.filteredItems.count, 12)
                 let rootScroll = try XCTUnwrap(nativeViews(host, of: NSScrollView.self).first)
                 XCTAssertEqual(rootScroll.contentView.bounds.minY, topOrigin, accuracy: 1)

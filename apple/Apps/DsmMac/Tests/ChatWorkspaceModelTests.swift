@@ -802,6 +802,9 @@ actor ChatRepositoryStub: ChatRepository {
     private var storedScheduledMessages: [ChatScheduledMessage] = []
     private let attachmentThumbnailShouldFail: Bool
     private let downloadedAttachmentData: Data
+    private let attachmentDownloadDelay: Duration?
+    private var attachmentDestinations: [URL] = []
+    func downloadedAttachmentDestinations() -> [URL] { attachmentDestinations }
     private var realtimeStartCount = 0
     private var realtimeStopCount = 0
     func realtimeCounts() -> (started: Int, stopped: Int) { (realtimeStartCount, realtimeStopCount) }
@@ -815,6 +818,7 @@ actor ChatRepositoryStub: ChatRepository {
         sendFailuresRemaining: Int = 0,
         attachmentThumbnailShouldFail: Bool = false,
         downloadedAttachmentData: Data = Data("attachment".utf8),
+        attachmentDownloadDelay: Duration? = nil,
         availableFeatures: Set<ChatFeature> = [
             .directConversation,
             .groupConversation,
@@ -843,6 +847,7 @@ actor ChatRepositoryStub: ChatRepository {
         self.sendFailuresRemaining = sendFailuresRemaining
         self.attachmentThumbnailShouldFail = attachmentThumbnailShouldFail
         self.downloadedAttachmentData = downloadedAttachmentData
+        self.attachmentDownloadDelay = attachmentDownloadDelay
         self.availableFeatures = availableFeatures
     }
 
@@ -1125,6 +1130,8 @@ actor ChatRepositoryStub: ChatRepository {
         to destinationURL: URL,
         progress: @escaping FileTransferProgress
     ) async throws {
+        attachmentDestinations.append(destinationURL)
+        if let attachmentDownloadDelay { try await Task.sleep(for: attachmentDownloadDelay) }
         let data = downloadedAttachmentData
         progress(0, Int64(data.count))
         try data.write(to: destinationURL, options: .atomic)

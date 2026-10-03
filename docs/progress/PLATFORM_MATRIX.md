@@ -126,3 +126,7 @@ macOS 已实现搜索旧消息、本人编辑、文字线程回复、参与投�
 2026-10-03 用户追加开放策略：macOS 已实现功能按实际能力与权限提供，Chat 新增交互移除精确 DSM/套件版本白名单；照片删除和容器网络创建在 macOS 组合根已经开放。保留系统安全、危险操作确认、并发去重与写后回读；不声称其他版本或其他平台已经验证。完整范围见 `docs/development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md`。
 
 2026-10-03 本地磁盘挂载修复：macOS 修正普通文件空挂载类型误判，以及编辑/删除授权变化后 Finder 权限元数据和增量锚点未更新。共享 Apple 文件解析同步影响 iPhone/iPad，通用模拟器构建通过；移动端仍不实现桌面挂载。Windows/Android 未改代码，只记录空挂载类型语义供后续对齐。没有新增公开请求或私有 API；正式签名包的 Finder 保存/删除验收为 `PENDING_USER_VALIDATION`，见[专项账本](../development/MACOS_MOUNT_WRITABILITY_FIX_20261003_ZH.md)。
+
+## 2026-10-03 macOS 七项使用反馈
+
+本轮修正消息内语音播放、通知入口、置顶读取、可见位置已读、面包屑、下载速度空值和总览头部。置顶 Post.search 的会话条件改用数字 in 数组，已完成当前官方页面只读复验；共享 Apple 受影响，iOS/iPadOS 不新增界面，Android/Windows 仅登记后续修正。实际测试、构建和待用户验证以[账本](../development/MACOS_SEVEN_FEEDBACK_FIX_20261003_ZH.md)为准，不将页面存在或网页结果代替目标客户端验收。

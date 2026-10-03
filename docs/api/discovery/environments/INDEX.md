@@ -70,3 +70,5 @@
 - [2026-09-30 Photos 1.9.1-10928 官方公开包](2026-09-30-photos-1-9-1-official-package.md)与[1.7.0-0795归档包](2026-09-30-photos-1-7-0-official-package.md)：标准归档工具未能读取内部脚本，没有新增API证据或设备基线；未安装、执行、解密或访问NAS。
 
 - [2026-10-02 File Station 官方页面续查](2026-10-02-file-station-live-observation.md)：DSM 7.2.1-69057 Update 12 / File Station 1.4.1-1559；待归属；全文 start 与设置读取、静态扩展契约，无真实写验证。
+
+- [2026-10-03 置顶搜索复验](2026-10-03-chat-pinned-read-observation.md)：旧 channel_id 过滤失效，in 数字数组只读验证有效；待归属，不提升旧基线。

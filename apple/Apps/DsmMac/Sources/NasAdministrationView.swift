@@ -4668,7 +4668,7 @@ private struct DetailValueRow: View {
     }
 }
 
-private struct PerformanceDashboard: View {
+struct PerformanceDashboard: View {
     let overview: NasSystemOverview?
     let history: [NasPerformanceSnapshot]
     let connections: NasConnectionPage?
@@ -4781,96 +4781,28 @@ private struct PerformanceDashboard: View {
 
     private var dashboardHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(overview?.serverName ?? "NAS")
-                            .font(.title.weight(.bold))
-                            .textSelection(.enabled)
-
-                        if let model = overview?.model {
-                            Text(model)
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.accentColor.opacity(0.12), in: Capsule())
-                                .foregroundStyle(Color.accentColor)
-                        }
-
-                        if let version = overview?.version {
-                            Text(version)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    dashboardName
+                    dashboardVersion
+                }.fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .leading, spacing: 6) {
+                    dashboardName
+                    dashboardVersion
                 }
-                Spacer()
             }
-
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), alignment: .leading)], alignment: .leading, spacing: 8) {
-                    Button {
-                        checkSystemUpdate()
-                    } label: {
-                        Label(
-                            L10n.string("ui.48954b3a9a918624"),
-                            systemImage: "arrow.triangle.2.circlepath"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isCheckingSystemUpdate)
-
-                    Menu {
-                        Button(role: .destructive) {
-                            showRebootConfirm = true
-                        } label: {
-                            Label(L10n.string("ui.301353687f12cedf"), systemImage: "arrow.clockwise.circle")
-                        }
-
-                        Button(role: .destructive) {
-                            showShutdownConfirm = true
-                        } label: {
-                            Label(L10n.string("ui.5acf2082d7fd4f9e"), systemImage: "power")
-                        }
-                    } label: {
-                        if isPowerActionBusy {
-                            HStack(spacing: 6) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text(L10n.string("power.action.sending"))
-                            }
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel(
-                                L10n.string("power.action.sending")
-                            )
-                        } else {
-                            Label(
-                                L10n.string("ui.ec8d59ceec9ed48e"),
-                                systemImage: "power"
-                            )
-                        }
-                    }
-                    .macThemedMenu()
-                    .controlSize(.small)
-                    .disabled(isPowerActionBusy || isCheckingSystemUpdate)
-
-                    Button {
-                        isPaused.toggle()
-                    } label: {
-                        Label(isPaused ? L10n.string("ui.a6d2451928165b24") : L10n.string("ui.8c78e736df180bf3"), systemImage: isPaused ? "play.fill" : "pause.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help(isPaused ? L10n.string("ui.55a1c68a11cec535") : L10n.string("ui.3520cd6a732829bb"))
-
-                    Button {
-                        Task { await refresh() }
-                    } label: {
-                        Label(L10n.string("ui.aee88743413144a2"), systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    dashboardRefreshButton
+                    dashboardPauseButton
+                    dashboardUpdateButton
+                    dashboardPowerMenu
+                }.fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) { dashboardRefreshButton; dashboardPauseButton }
+                    HStack(spacing: 8) { dashboardUpdateButton; dashboardPowerMenu }
                 }
+            }
 
             if let overview {
                 HStack(spacing: 16) {
@@ -4890,6 +4822,98 @@ private struct PerformanceDashboard: View {
                 .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
+    }
+
+    private var dashboardName: some View {
+        Text(overview?.serverName ?? L10n.string("nas.overview.defaultName"))
+            .font(.title.weight(.bold)).textSelection(.enabled)
+            .lineLimit(2)
+    }
+
+    private var dashboardVersion: some View {
+        HStack(spacing: 8) {
+            if let model = overview?.model {
+                Text(model).font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    .foregroundStyle(Color.accentColor)
+            }
+            if let version = overview?.version {
+                Text(version).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var dashboardUpdateButton: some View {
+        Button {
+            checkSystemUpdate()
+        } label: {
+            Label(
+                L10n.string("ui.48954b3a9a918624"),
+                systemImage: "arrow.triangle.2.circlepath"
+            )
+        }
+        .buttonStyle(MacToolbarButtonStyle())
+        .controlSize(.small)
+        .disabled(isCheckingSystemUpdate)
+    }
+
+    private var dashboardPowerMenu: some View {
+        Menu {
+            Button(role: .destructive) {
+                showRebootConfirm = true
+            } label: {
+                Label(L10n.string("ui.301353687f12cedf"), systemImage: "arrow.clockwise.circle")
+            }
+
+            Button(role: .destructive) {
+                showShutdownConfirm = true
+            } label: {
+                Label(L10n.string("ui.5acf2082d7fd4f9e"), systemImage: "power")
+            }
+        } label: {
+            if isPowerActionBusy {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(L10n.string("power.action.sending"))
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    L10n.string("power.action.sending")
+                )
+            } else {
+                Label(
+                    L10n.string("ui.ec8d59ceec9ed48e"),
+                    systemImage: "power"
+                )
+            }
+        }
+        .font(.system(size: 16))
+        .frame(minHeight: 20)
+        .macThemedMenu()
+        .disabled(isPowerActionBusy || isCheckingSystemUpdate)
+    }
+
+    private var dashboardPauseButton: some View {
+        Button {
+            isPaused.toggle()
+        } label: {
+            Label(isPaused ? L10n.string("ui.a6d2451928165b24") : L10n.string("ui.8c78e736df180bf3"), systemImage: isPaused ? "play.fill" : "pause.fill")
+        }
+        .buttonStyle(MacToolbarButtonStyle())
+        .controlSize(.small)
+        .help(isPaused ? L10n.string("ui.55a1c68a11cec535") : L10n.string("ui.3520cd6a732829bb"))
+    }
+
+    private var dashboardRefreshButton: some View {
+        Button {
+            Task { await refresh() }
+        } label: {
+            Label(L10n.string("ui.aee88743413144a2"), systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(MacToolbarButtonStyle())
+        .controlSize(.small)
     }
 
     private func powerActionError(_ error: Error) -> String {

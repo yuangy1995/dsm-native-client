@@ -3,6 +3,11 @@
 
 # Windows 对齐 macOS 功能长期计划
 
+## 置顶读取更正（2026-10-03）
+
+当前官方页面只读证据确认 Post.search 的 channel_id 不能限定置顶会话，正确字段为数字 in 数组。本平台本轮不改代码；现有同类请求需后续授权切片修正，不能标为仅待真机。 参数、失败语义与五端边界见[消息交互记录](../api/discovery/endpoints/chat-message-interaction.md#2026-10-03-置顶搜索修正)。
+
+
 ## Chat 五组新基线影响（2026-10-03）
 
 macOS 新增旧消息搜索、本人编辑、文字线程回复、参与投票、媒体/录音和通知/跨端已读。本轮 Windows 只登记后续对齐切片，未改代码，不标成仅待真机验收；按 WinUI 列表、键盘、原生媒体及通知完成独立实现和自动化。当前真实契约纠正：Post.list 使用 post_id/prev_count/next_count，投票创建 choices 为 text 对象数组、options 为对象，真实投票在 props.vote；旧 Windows 请求/解析需要后续核实。保留 Windows 既有用户授权的能力策略，不依据 macOS 的设备记录扩大 Windows 的验证结论。详见[消息交互契约](../api/discovery/endpoints/chat-message-interaction.md)与[功能账本](MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)。

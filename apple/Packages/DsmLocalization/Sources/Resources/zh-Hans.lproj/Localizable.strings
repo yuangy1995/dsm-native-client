@@ -5769,3 +5769,8 @@
 "container-image.tags.retry" = "重新加载版本";
 "container-image.pull.close" = "关闭";
 "container-image.pull.download-failed" = "下载失败，NAS 未能取得镜像。请检查 NAS 的网络连接和可用空间，或在 Container Manager 查看详细原因。";
+"chat.media.pause" = "暂停";
+"chat.pinned.loadFailed" = "无法载入置顶消息";
+"download.speed.none" = "--";
+"nas.overview.defaultName" = "NAS";
+"download.remaining.none" = "--";

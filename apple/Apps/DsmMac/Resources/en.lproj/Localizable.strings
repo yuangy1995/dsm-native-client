@@ -2200,3 +2200,8 @@
 "remote-mount.recovery.nfs-options" = "Connection options: %@ / %@";
 "remote-mount.recovery.confirm-required" = "Choose the connection operation to continue.";
 "remote-mount.recovery.session-limit" = "Records last only for this NAS session. Check unconfirmed operations on the NAS website before reconnecting or quitting the app.";
+"chat.media.pause" = "Pause";
+"chat.pinned.loadFailed" = "Couldn’t load pinned messages";
+"download.speed.none" = "--";
+"nas.overview.defaultName" = "NAS";
+"download.remaining.none" = "--";

@@ -19,7 +19,7 @@
 | `SYNO.Chat.Post` / 5 | forward | post_id 字符串；channel_ids 为数字数组，不是字符串数组 |
 | 同上 | pin / unpin | post_id 字符串；仅未加密群聊 |
 | 同上 | delete | post_id 字符串；仅当前会话内本人消息，删除前复核内容基线 |
-| 同上 | search | channel_id、offset、limit=100、has=["pin"]、sort_by=last_pin_at、sort_by_array=["is_sticky","last_pin_at"] |
+| 同上 | search | in 为数字会话数组、offset、limit=100、has=["pin"]、sort_by=last_pin_at、sort_by_array=["is_sticky","last_pin_at"] |
 
 `options` 内容为 `add_option=false`、`anonymous`、`multiple`。FORM 发送原始字符串与
 序列化数组；JSON 声明下字符串再作 JSON 字符串编码，数组仍是数组，不把 `[]` 编码为文本。
@@ -131,3 +131,7 @@ macOS/iPhone/iPad 已有共享解析与编码，不修改源码；Android 需后
 与一个新联系人转发；人为断开连接后先核对，再明确确认继续，已成功项不能重发。测试旧
 历史页删除、部分无权限、关闭后的本地置顶、刷新失败及窗口销毁；只回传动作/数量/错误
 类别，不回传消息、成员或文件名。真实分页并发变化仍可能要求重新核对，不视为成功。
+
+## 2026-10-03 置顶搜索更正
+
+上表旧版 `channel_id` 来自源码静态线索，并非已验证的会话过滤字段。本次只读复验确认它被搜索忽略，导致返回其他会话的置顶项；改用 `in=[数字会话ID]` 后范围正确。历史静态证据不提升为行为验证。macOS/共享 Apple 已修正请求，并保留逐项会话校验；Windows/Android 需要后续实现修正。完整参数、失败语义、权限和五端范围见 [消息交互记录](chat-message-interaction.md#2026-10-03-置顶搜索修正)。

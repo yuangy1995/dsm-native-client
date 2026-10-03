@@ -721,21 +721,21 @@ private struct DownloadStationView: View {
 }
 
 @MainActor
-private enum MacDownloadFormat {
+enum MacDownloadFormat {
     static var unknown: String { L10n.string("download.workspace.unknown") }
     static func bytes(_ value: Int64?) -> String {
         guard let value, value >= 0 else { return unknown }
         return value.formatted(.byteCount(style: .file, spellsOutZero: false).locale(AppLanguageStore.shared.locale))
     }
     static func speed(_ value: Int64?) -> String {
-        guard let value, value >= 0 else { return unknown }
+        guard let value, value >= 0 else { return L10n.string("download.speed.none") }
         return L10n.string("ui.3b14d1af77ab3e3e", bytes(value))
     }
     static func percent(_ value: Double) -> String {
         value.formatted(.percent.precision(.fractionLength(0)).locale(AppLanguageStore.shared.locale))
     }
     static func remaining(_ value: Double?) -> String {
-        guard let value else { return unknown }
+        guard let value else { return L10n.string("download.remaining.none") }
         let formatter = DateComponentsFormatter()
         var calendar = Calendar.current
         calendar.locale = AppLanguageStore.shared.locale
@@ -743,7 +743,7 @@ private enum MacDownloadFormat {
         formatter.allowedUnits = [.day, .hour, .minute, .second]
         formatter.maximumUnitCount = 2
         formatter.unitsStyle = .abbreviated
-        return formatter.string(from: value) ?? unknown
+        return formatter.string(from: value) ?? L10n.string("download.remaining.none")
     }
 }
 

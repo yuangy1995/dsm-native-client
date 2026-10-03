@@ -230,6 +230,7 @@ struct ChatDiscussionSheet: View {
     @State private var edit: ChatMessage?
     @State private var vote: ChatMessage?
     @State private var media: ChatMediaSelection?
+    @State private var voicePlayback = ChatVoicePlayback()
     @State private var atBottom = false
     @State private var visibleReplyID: String?
     @State private var isWindowActive = false
@@ -321,7 +322,7 @@ struct ChatDiscussionSheet: View {
                     if !isLoading, !isLoadingMore { await load() }
                 }
             }
-            .onDisappear { isWindowActive = false; atBottom = false; visibleReplyID = nil }
+            .onDisappear { voicePlayback.stop(); isWindowActive = false; atBottom = false; visibleReplyID = nil }
             .onChange(of: isWindowActive) { _, active in
                 if active, let root { Task { await model.synchronizeThreadRead(root, lastMessageID: visibleReplyID, isVisible: atBottom) } }
             }
@@ -342,7 +343,16 @@ struct ChatDiscussionSheet: View {
             if let body = message.text { Text(body).textSelection(.enabled) }
             ForEach(message.attachments) { attachment in
                 if attachment.kind == .video || attachment.kind == .voice {
-                    Button(attachment.fileName, systemImage: "play.circle") { media = ChatMediaSelection(message: message, attachment: attachment) }
+                    let selection = ChatMediaSelection(message: message, attachment: attachment)
+                    Text(attachment.fileName).font(.callout)
+                    ChatMediaPlaybackButton(selection: selection, playback: voicePlayback) {
+                        if attachment.kind == .voice {
+                            Task { await voicePlayback.toggle(selection, model: model) }
+                        } else {
+                            voicePlayback.stop()
+                            media = selection
+                        }
+                    }
                 } else { Label(attachment.fileName, systemImage: "paperclip") }
             }
             if message.poll != nil {

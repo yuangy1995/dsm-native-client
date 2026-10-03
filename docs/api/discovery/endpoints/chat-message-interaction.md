@@ -89,3 +89,19 @@
 本轮未确认匿名投票、关闭投票操作、普通账号、其他 DSM/Chat 版本及 QuickConnect 中继组合。
 来源、源码、正式测试及 `PENDING_USER_VALIDATION` 条件见
 [五组功能账本](../../../development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)。
+
+## 2026-10-03 置顶搜索修正
+
+- 内部只读接口：`SYNO.Chat.Post` / `search` / v5，POST，路径由 `SYNO.API.Info` 发现；要求当前账号能访问目标未加密会话，不扩大置顶/取消置顶写权限。
+- 参数：`in=[数字会话ID]`、`has=["pin"]`、`offset=0` 起、`limit=100`、`sort_by="last_pin_at"`、`sort_by_array=["is_sticky","last_pin_at"]`。FORM/JSON 声明均保持 `in` 为数字数组，不能传字符串数组或 `channel_id`。
+- 当前响应：`search_results` 消息数组，`total/offset/limit` 数字；置顶时间为 `last_pin_at`，大于零才作为有效置顶。短页或总数边界结束分页，保留既有日期映射和降序呈现。
+- 当前环境只读复验：旧 `channel_id` 请求成功但含其他会话，属于过滤失效；`in` 结果全部属于请求会话。证据为 [2026-10-03 观察](../environments/2026-10-03-chat-pinned-read-observation.md)，不替换历史匿名环境或证明置顶写入。
+- 客户端仍拒绝跨会话/重复/坏结构，不通过丢弃越界项掩盖请求错误。读取失败显示可重试的置顶错误，合法空数组显示没有置顶消息，不阻断聊天正文。无响应模型或持久化 Schema 变更。
+- 自动化：`DsmChatFiveFeatureTests` 覆盖 FORM/JSON 数字数组、101 项分页、空列表与跨会话拒绝；`DsmChatRepositoryTests` 保留 pin 后回读；合成请求 fixture 在 `contracts/request-fixtures/chat/list-pinned/synthetic-channel/request.json`。
+
+| 平台 | 本次影响 |
+| --- | --- |
+| macOS | 共享请求修正；消息内语音、通知入口、可见位置已读另见七项反馈账本；已读写契约不变 |
+| iOS / iPadOS | 共享 Apple 请求获得修正；两端均不增加置顶页面、录音或桌面通知功能，保持既有移动范围 |
+| Android | 不改实现；若已有置顶搜索使用 channel_id，后续授权切片改为数字 in 并运行目标平台测试 |
+| Windows | 既有高级动作置顶读取同样需后续修正；本轮只登记影响，不宣称已对齐或仅缺真机 |

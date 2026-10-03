@@ -7,8 +7,10 @@ import DsmLocalization
 struct ChatWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reducesMotion
     @Bindable var model: ChatWorkspaceModel
+    var readNotificationPermission: @MainActor () async -> Bool = ChatNotificationService.isEnabled
     @State private var presentsSearch = false
     @State private var notificationMessage: String?
+    @State private var notificationsEnabled: Bool?
     @State private var presentsNewConversation = false
     @State private var selectedConversationIDs: Set<String> = []
     @State private var pendingConversationDeletion: Set<String> = []
@@ -20,13 +22,17 @@ struct ChatWorkspaceView: View {
                 Button { presentsSearch = true } label: {
                     Label(L10n.string("chat.search.title"), systemImage: "magnifyingglass")
                 }.disabled(!model.canSearchMessages)
-                Button {
-                    Task {
-                        notificationMessage = L10n.string(await ChatNotificationService.enable()
-                            ? "chat.notification.enabled" : "chat.notification.denied")
+                if notificationsEnabled == false {
+                    Button {
+                        Task {
+                            notificationsEnabled = await ChatNotificationService.enable()
+                            if notificationsEnabled == false {
+                                notificationMessage = L10n.string("chat.notification.denied")
+                            }
+                        }
+                    } label: {
+                        Label(L10n.string("chat.notification.enable"), systemImage: "bell")
                     }
-                } label: {
-                    Label(L10n.string("chat.notification.enable"), systemImage: "bell")
                 }
                 Button {
                     Task { await model.reload() }
@@ -68,12 +74,18 @@ struct ChatWorkspaceView: View {
             value: model.activeToast?.id
         )
         .task {
+            notificationsEnabled = await readNotificationPermission()
             await model.loadIfNeeded()
             await model.refreshForegroundChat()
         }
         .background(ChatWindowActivity { active in
             model.isChatWindowActive = active
-            if active { Task { await model.synchronizeVisibleReadState() } }
+            if active {
+                Task {
+                    notificationsEnabled = await readNotificationPermission()
+                    await model.synchronizeVisibleReadState()
+                }
+            }
         })
         .onAppear { model.setChatVisibility(true) }
         .onDisappear { model.setChatVisibility(false) }
@@ -435,6 +447,7 @@ private struct ChatConversationView: View {
     @State private var replyingTo: ChatMessage?
     @State private var votingMessage: ChatMessage?
     @State private var playingMedia: ChatMediaSelection?
+    @State private var voicePlayback = ChatVoicePlayback()
     @State private var presentsVoiceRecorder = false
     @State private var attachmentSelectionConversationID: String?
     @State private var presentsFileImporter = false
@@ -541,11 +554,38 @@ private struct ChatConversationView: View {
                                     onSaveAttachment: { attachment in
                                         saveAttachment(message: message, attachment: attachment)
                                     },
-                                    onReply: model.canReply ? { replyingTo = message } : nil,
+                                    onReply: model.canReply ? { voicePlayback.stop(); replyingTo = message } : nil,
                                     onVote: model.canVote ? { votingMessage = message } : nil,
-                                    onPlayMedia: { attachment in playingMedia = ChatMediaSelection(message: message, attachment: attachment) }
+                                    onPlayMedia: { attachment in
+                                        let selection = ChatMediaSelection(message: message, attachment: attachment)
+                                        if attachment.kind == .voice {
+                                            Task { await voicePlayback.toggle(selection, model: model) }
+                                        } else {
+                                            voicePlayback.stop()
+                                            playingMedia = selection
+                                        }
+                                    },
+                                    voicePlayback: voicePlayback
                                 )
                                     .id(message.id)
+                                    .background {
+                                        if message.id == model.messages.last(where: { $0.deliveryState == .sent })?.id {
+                                            GeometryReader { geometry in
+                                                let bottom = geometry.frame(in: .named("chat-message-scroll")).maxY
+                                                let visibleID = bottom > 0 && bottom <= viewport.size.height + 2 ? message.id : nil
+                                                Color.clear
+                                                    .onChange(of: visibleID, initial: true) { _, id in
+                                                        model.updateVisibleMessage(id)
+                                                        if id != nil { Task { await model.synchronizeVisibleReadState() } }
+                                                    }
+                                                    .onDisappear {
+                                                        if message.id == model.messages.last(where: { $0.deliveryState == .sent })?.id {
+                                                            model.updateVisibleMessage(nil)
+                                                        }
+                                                    }
+                                            }
+                                        }
+                                    }
                                     .contentShape(Rectangle())
                                     .onTapGesture {
                                         selectMessage(message)
@@ -651,27 +691,19 @@ private struct ChatConversationView: View {
                                         }
                                     }
                             }
-                            Color.clear.frame(height: 1)
-                                .background(GeometryReader { geometry in
-                                    Color.clear.preference(key: ChatBottomPreference.self,
-                                        value: ChatVisibleMessage(messageID: model.messages.last(where: { $0.deliveryState == .sent })?.id,
-                                            bottom: geometry.frame(in: .named("chat-message-scroll")).maxY))
-                                })
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 16)
                         .frame(maxWidth: .infinity)
                     }
+                    .defaultScrollAnchor(.bottom)
                     .coordinateSpace(name: "chat-message-scroll")
-                    .onPreferenceChange(ChatBottomPreference.self) { position in
-                        let visible = position.bottom > 0 && position.bottom <= viewport.size.height + 2
-                        model.updateVisibleMessage(visible ? position.messageID : nil)
-                        if visible { Task { await model.synchronizeVisibleReadState() } }
-                    }
                     .macThemedScrollContent()
                     .background(MacGlassSurface(role: .content))
-                    .task(id: conversation.id) {
+                    .task(id: viewport.size.height > 0 ? conversation.id : nil) {
+                        guard viewport.size.height > 0 else { return }
                         await Task.yield()
+                        guard !Task.isCancelled else { return }
                         if let lastID = model.messages.last?.id {
                             proxy.scrollTo(lastID, anchor: .bottom)
                         }
@@ -766,6 +798,8 @@ private struct ChatConversationView: View {
             Text(L10n.string("ui.e7f653c71078a6ce"))
         }
         .onChange(of: conversation.id) { _, _ in
+            voicePlayback.stop()
+            playingMedia = nil
             selectedMessageIDs = []
             presentsForwardSheet = false
             presentsImagePreview = false
@@ -778,6 +812,7 @@ private struct ChatConversationView: View {
             if !isPresented { imagePreviewTask?.cancel(); previewedImage = nil }
         }
         .onDisappear {
+            voicePlayback.stop()
             imagePreviewTask?.cancel()
             presentsFileImporter = false
             attachmentSelectionConversationID = nil
@@ -1023,7 +1058,7 @@ private struct ChatConversationView: View {
                 .help(L10n.string("ui.9692543077ef0182"))
                 .accessibilityLabel(L10n.string("ui.d405f59076940eb3"))
 
-                Button { presentsVoiceRecorder = true } label: {
+                Button { voicePlayback.stop(); presentsVoiceRecorder = true } label: {
                     Label(L10n.string("chat.voice.title"), systemImage: "mic")
                         .labelStyle(.iconOnly).frame(width: 28, height: 28)
                 }.disabled(!model.canRecordVoice || model.isPerformingAction)
@@ -1603,7 +1638,7 @@ struct PinnedMessagesSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = model.pinnedMessageLoadError {
                 ContentUnavailableView {
-                    Label(L10n.string("ui.d93afe72592b384f"), systemImage: "pin.slash")
+                    Label(L10n.string("chat.pinned.loadFailed"), systemImage: "pin.slash")
                 } description: {
                     Text(error)
                 } actions: {
@@ -2218,6 +2253,7 @@ private struct ChatMessageRow: View {
     var onReply: (() -> Void)? = nil
     var onVote: (() -> Void)? = nil
     var onPlayMedia: ((ChatAttachment) -> Void)? = nil
+    var voicePlayback: ChatVoicePlayback? = nil
 
     private var senderName: String {
         if isCurrentUser { return L10n.string("ui.a0c7716669b5ded0") }
@@ -2389,8 +2425,8 @@ private struct ChatMessageRow: View {
                 .accessibilityLabel(L10n.string("ui.d4c051bc4e2432c0", String(describing: attachment.fileName)))
             }
             if canDownloadAttachments, attachment.kind == .video || attachment.kind == .voice, let onPlayMedia {
-                Button(L10n.string("chat.media.play"), systemImage: "play.circle.fill") { onPlayMedia(attachment) }
-                    .buttonStyle(.bordered)
+                ChatMediaPlaybackButton(selection: ChatMediaSelection(message: message, attachment: attachment),
+                    playback: voicePlayback, isCurrentUser: isCurrentUser) { onPlayMedia(attachment) }
             }
             HStack(spacing: 8) {
                 Label(attachment.fileName, systemImage: attachmentIcon(attachment.kind))

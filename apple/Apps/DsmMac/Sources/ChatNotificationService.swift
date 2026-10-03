@@ -22,6 +22,12 @@ enum ChatNotificationService {
         return settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
     }
 
+    static func isEnabled() async -> Bool {
+        guard !isRunningTests else { return false }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        return settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+    }
+
     static func post(conversationTitle: String, conversationID: String, scope: String, messageID: String) {
         guard !isRunningTests else { return }
         Task {

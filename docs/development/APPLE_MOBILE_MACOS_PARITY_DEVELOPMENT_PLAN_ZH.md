@@ -3,6 +3,11 @@
 
 # iPhone 与 iPad 移动精选功能长期计划
 
+## 置顶读取更正（2026-10-03）
+
+共享 Apple 已改用 Post.search 的数字 in 数组限定置顶会话；iPhone/iPad 均保持既有受限能力，不新增本轮桌面入口。 参数、失败语义与五端边界见[消息交互记录](../api/discovery/endpoints/chat-message-interaction.md#2026-10-03-置顶搜索修正)。
+
+
 ## Chat 共享增量影响（2026-10-03）
 
 共享 Apple 网络修正历史定位分页、投票创建对象和 props.vote 解析，领域模型添加可选线程/编辑/阅读字段与默认拒绝的新方法。本轮 iPhone/iPad 保持现有受限聊天能力，未增加搜索、编辑、投票参与、录音、常驻通知入口或权限，也不把这些尚未实现的能力列为 PENDING_USER_VALIDATION。未来需要移动端独立范围授权，并采用触控消息菜单、系统麦克风/媒体、前台阅读同步及系统后台约束；不能复制桌面常驻连接保证。两种设备本轮范围相同，替代路径为官方 Chat；本轮共享回归与模拟器构建结果见[功能账本](MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md)，协议以[消息交互契约](../api/discovery/endpoints/chat-message-interaction.md)为准。

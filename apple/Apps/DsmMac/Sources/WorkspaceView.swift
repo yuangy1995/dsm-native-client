@@ -2006,10 +2006,24 @@ struct FileBrowserView: View {
     }
 
     private var fileBreadcrumbs: some View {
-        HStack(spacing: 2) {
-            if breadcrumbItems.count > 2 {
+        ViewThatFits(in: .horizontal) {
+            ForEach((1...breadcrumbItems.count).reversed(), id: \.self) { visibleCount in
+                breadcrumbTrail(visibleCount: visibleCount)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            breadcrumbTrail(visibleCount: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("files.path")
+    }
+
+    private func breadcrumbTrail(visibleCount: Int) -> some View {
+        let visibleItems = breadcrumbItems.suffix(visibleCount)
+        let hiddenItems = breadcrumbItems.dropLast(visibleCount)
+        return HStack(spacing: 2) {
+            if !hiddenItems.isEmpty {
                 Menu {
-                    ForEach(breadcrumbItems.dropLast(2)) { item in
+                    ForEach(hiddenItems) { item in
                         Button(item.name) { Task { await model.navigate(to: item.path) } }
                     }
                 } label: {
@@ -2017,10 +2031,12 @@ struct FileBrowserView: View {
                 }.labelStyle(.iconOnly).menuStyle(.borderlessButton).fixedSize()
                     .frame(minWidth: 32, minHeight: 32)
                     .help(L10n.string("navigation.parentFolders"))
+                    .accessibilityLabel(L10n.string("navigation.parentFolders"))
             }
-            ForEach(breadcrumbItems.suffix(2)) { item in
-                if item.path != breadcrumbItems.suffix(2).first?.path || breadcrumbItems.count > 2 {
+            ForEach(visibleItems) { item in
+                if item.path != visibleItems.first?.path || !hiddenItems.isEmpty {
                     Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
                 Button { Task { await model.navigate(to: item.path) } } label: {
                     Text(item.name).lineLimit(1).truncationMode(.middle)
@@ -2028,7 +2044,7 @@ struct FileBrowserView: View {
                     .help(item.name).accessibilityLabel(item.name)
                     .accessibilityIdentifier(item.isLast ? "files.path.current" : "files.path.parent")
             }
-        }.accessibilityIdentifier("files.path")
+        }
     }
 
     private var showsCompressionSheet: Binding<Bool> {

@@ -1656,7 +1656,7 @@
       "id": "chat-message-interaction",
       "componentId": "synology-chat-server",
       "scope": "Synology Chat 消息交互",
-      "capability": "历史定位分页、关键词搜索、本人编辑、线程回复、投票参与和跨设备已读。2026-10-03 待归属观察包含受控合成消息的行为证据；因设备别名未确认，不伪造 environmentId 或提升历史基线。",
+      "capability": "历史定位分页、关键词搜索、本人编辑、线程回复、投票参与和跨设备已读。2026-10-03 待归属观察包含受控合成消息的行为证据；因设备别名未确认，不伪造 environmentId 或提升历史基线。 同日置顶只读复验：Post.search 的 channel_id 不限定会话，in 数字数组有效；修复与待归属证据见稳定记录。",
       "classification": "internal",
       "operation": "mixed",
       "risk": "high",

@@ -4,6 +4,44 @@ import XCTest
 @testable import DsmNetwork
 
 extension DsmChatRepositoryTests {
+    func test置顶搜索按数字会话数组筛选并保留分页() async throws {
+        let rows = (0..<100).map { index in
+            "{\"post_id\":\"\(index)\",\"channel_id\":27,\"creator_id\":2,\"message\":\"合成置顶\",\"create_at\":1700000000000,\"last_pin_at\":1700000001000}"
+        }.joined(separator: ",")
+        for format in [DsmRequestFormat.form, .json] {
+            let transport = MockHTTPTransport(responses: [
+                response("{\"success\":true,\"data\":{\"search_results\":[\(rows)],\"total\":101}}"),
+                response(#"{"success":true,"data":{"search_results":[{"post_id":"100","channel_id":27,"creator_id":2,"message":"最后一条合成置顶","create_at":1700000000000,"last_pin_at":1700000002000}],"total":101}}"#)
+            ])
+            let repository = try makeRepository(transport: transport, chatRequestFormat: format)
+            let messages = try await repository.listPinnedMessages(conversationID: "27")
+            XCTAssertEqual(messages.count, 101)
+            XCTAssertEqual(messages.first?.id, "100")
+            let requests = await transport.recordedRequests()
+            XCTAssertEqual(requests.count, 2)
+            for (index, request) in requests.enumerated() {
+                let fields = try decodeForm(request.httpBody)
+                XCTAssertEqual(fields["in"], "[27]")
+                XCTAssertNil(fields["channel_id"])
+                XCTAssertEqual(fields["has"], #"["pin"]"#)
+                XCTAssertEqual(fields["offset"], String(index * 100))
+            }
+        }
+    }
+
+    func test置顶搜索跨会话结果仍拒绝且空结果正常返回() async throws {
+        let invalid = try makeRepository(transport: MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"search_results":[{"post_id":"1","channel_id":28,"message":"合成","create_at":1700000000000,"last_pin_at":1700000001000}],"total":1}}"#)
+        ]))
+        do { _ = try await invalid.listPinnedMessages(conversationID: "27"); XCTFail("不得混入其他会话") }
+        catch let error as AppError { XCTAssertEqual(error.category, .invalidResponse) }
+        let empty = try makeRepository(transport: MockHTTPTransport(responses: [
+            response(#"{"success":true,"data":{"search_results":[],"total":0}}"#)
+        ]))
+        let messages = try await empty.listPinnedMessages(conversationID: "27")
+        XCTAssertTrue(messages.isEmpty)
+    }
+
     private var ownChatUser: DsmHTTPResponse {
         response(#"{"success":true,"data":{"users":[{"user_id":1,"username":"testaccount","nickname":"合成用户"}]}}"#)
     }

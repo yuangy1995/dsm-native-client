@@ -160,3 +160,7 @@ macOS 本轮覆盖 21 个页面并新增 ZRAM、电源计划和套件中心流�
 2026-10-03 macOS 容器搜索下载修复：Registry.search 固定 v1；暂时读取失败自动恢复，NAS 明确下载失败不再卡在核查提示。DSM 7.2.1-69057 U12 / Container Manager 24.0.2-1535 的受控下载已复现 1202 失败、无新增镜像；成功终态仍待用户验证。见 `docs/development/MACOS_CONTAINER_IMAGE_PULL_FIX_20261003_ZH.md`。不提升其他端或旧匿名设备的验证等级。
 
 2026-10-03 用户追加开放策略：macOS 已实现功能按实际能力与权限提供，Chat 新增交互移除精确 DSM/套件版本白名单；照片删除和容器网络创建在 macOS 组合根已经开放。保留系统安全、危险操作确认、并发去重与写后回读；不声称其他版本或其他平台已经验证。完整范围见 `docs/development/MACOS_CHAT_FIVE_FEATURES_20261003_ZH.md`。
+
+### 2026-10-03 置顶读取反馈
+
+当前 7.2.1-69057 Update12 / Chat2.4.1-22111 的 Post.search 使用 channel_id 不能限定会话；改为 in 数字数组已完成只读验证。macOS/共享 Apple 已修正，其他平台不宣告通过；已读写接口不变。证据与范围见[消息交互记录](../api/discovery/endpoints/chat-message-interaction.md#2026-10-03-置顶搜索修正)，原生包待验见[七项反馈账本](../development/MACOS_SEVEN_FEEDBACK_FIX_20261003_ZH.md)。

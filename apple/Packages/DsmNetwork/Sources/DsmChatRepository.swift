@@ -224,13 +224,14 @@ public actor DsmChatRepository: ChatRepository {
     public func listPinnedMessages(conversationID: String) async throws -> [ChatMessage] {
         let normalizedID = conversationID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedID.isEmpty else { throw ChatContractError.emptyConversationID }
+        guard let channelID = Int(normalizedID) else { throw invalidChatResponse() }
         var offset = 0
         var messages: [ChatMessage] = []
         var seen: Set<String> = []
         while true {
             try Task.checkCancellation()
             let payload = try await call(DsmAPIName.chatPost, method: "search", parameters: [
-                "channel_id": .string(normalizedID), "offset": .integer(offset), "limit": .integer(100),
+                "in": .integerArray([channelID]), "offset": .integer(offset), "limit": .integer(100),
                 "has": .stringArray(["pin"]), "sort_by": .string("last_pin_at"),
                 "sort_by_array": .stringArray(["is_sticky", "last_pin_at"])
             ], version: 5)

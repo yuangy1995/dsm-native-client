@@ -342,3 +342,5 @@
 - [文件所有者、POSIX 与 ACL](file-station-file-permissions.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。
 - [VFS 远程协议与云盘连接](file-station-vfs-connections.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。
 - [套件设置、挂载/分享授权、带宽与分享页面](file-station-package-settings.md)：按方法区分只读观察和静态候选；匿名设备待归属，不写入旧 lab-a verification。
+
+- 2026-10-03 [置顶搜索修正](chat-message-interaction.md#2026-10-03-置顶搜索修正)：按数字 in 限定会话，保留跨会话拒绝；更新高级动作旧静态参数。

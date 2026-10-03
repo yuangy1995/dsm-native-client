@@ -5769,3 +5769,8 @@
 "container-image.tags.retry" = "Reload tags";
 "container-image.pull.close" = "Close";
 "container-image.pull.download-failed" = "The NAS could not download this image. Check its network connection and available storage, or open Container Manager for details.";
+"chat.media.pause" = "Pause";
+"chat.pinned.loadFailed" = "Couldn’t load pinned messages";
+"download.speed.none" = "--";
+"nas.overview.defaultName" = "NAS";
+"download.remaining.none" = "--";

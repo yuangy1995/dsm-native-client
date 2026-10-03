@@ -178,6 +178,125 @@ struct ChatMediaSelection: Identifiable {
     var id: String { message.id + ":" + attachment.id }
 }
 
+/// 每个会话只播放一段语音；下载与播放始终留在应用内。
+@MainActor
+@Observable
+final class ChatVoicePlayback: NSObject, AVAudioPlayerDelegate {
+    private(set) var selectionID: String?
+    private(set) var isLoading = false
+    private(set) var isPlaying = false
+    private(set) var errorMessage: String?
+    @ObservationIgnored private var player: AVAudioPlayer?
+    @ObservationIgnored private var loadingTask: Task<URL, Error>?
+    @ObservationIgnored private var localFile: URL?
+    @ObservationIgnored private var generation = UUID()
+
+    func toggle(_ selection: ChatMediaSelection, model: ChatWorkspaceModel) async {
+        if selectionID == selection.id, let player {
+            if player.isPlaying {
+                player.pause()
+                isPlaying = false
+            } else {
+                isPlaying = player.play()
+                if !isPlaying { errorMessage = L10n.string("chat.media.recovery") }
+            }
+            return
+        }
+        guard selectionID != selection.id || !isLoading else { return }
+        stop()
+        selectionID = selection.id
+        isLoading = true
+        let request = generation
+        let task = Task { try await model.prepareMedia(message: selection.message, attachment: selection.attachment) }
+        loadingTask = task
+        do {
+            let file = try await task.value
+            guard generation == request, !Task.isCancelled else {
+                model.discardTemporaryMedia(file)
+                if generation == request { stop() }
+                return
+            }
+            localFile = file
+            let audio = try AVAudioPlayer(contentsOf: file)
+            audio.delegate = self
+            guard audio.prepareToPlay(), audio.play() else { throw CocoaError(.fileReadCorruptFile) }
+            player = audio
+            isPlaying = true
+            isLoading = false
+            loadingTask = nil
+        } catch {
+            guard generation == request else { return }
+            stop()
+            if !(error is CancellationError) {
+                selectionID = selection.id
+                errorMessage = L10n.string("chat.media.recovery")
+            }
+        }
+    }
+
+    func stop() {
+        generation = UUID()
+        loadingTask?.cancel()
+        loadingTask = nil
+        player?.stop()
+        player = nil
+        if let localFile { try? FileManager.default.removeItem(at: localFile) }
+        localFile = nil
+        selectionID = nil
+        isLoading = false
+        isPlaying = false
+        errorMessage = nil
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let identity = ObjectIdentifier(player)
+        Task { @MainActor [weak self] in
+            guard let self, let currentPlayer = self.player, ObjectIdentifier(currentPlayer) == identity else { return }
+            self.isPlaying = false
+            currentPlayer.currentTime = 0
+            if !flag { self.errorMessage = L10n.string("chat.media.recovery") }
+        }
+    }
+
+    deinit {
+        loadingTask?.cancel()
+        if let localFile { try? FileManager.default.removeItem(at: localFile) }
+    }
+}
+
+struct ChatMediaPlaybackButton: View {
+    let selection: ChatMediaSelection
+    let playback: ChatVoicePlayback?
+    var isCurrentUser = false
+    let onPlay: () -> Void
+
+    var body: some View {
+        let active = playback?.selectionID == selection.id
+        let loading = active && playback?.isLoading == true
+        let playing = active && playback?.isPlaying == true
+        VStack(alignment: .leading, spacing: 7) {
+            Button(action: onPlay) {
+                HStack(spacing: 8) {
+                    if loading { ProgressView().controlSize(.small) }
+                    Label(L10n.string(loading ? "chat.media.loading" : playing ? "chat.media.pause" : "chat.media.play"),
+                          systemImage: playing ? "pause.circle.fill" : "play.circle.fill")
+                }
+                .padding(.horizontal, 10).frame(minHeight: 32)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isCurrentUser ? Color.white : Color.accentColor)
+            .background(isCurrentUser ? Color.white.opacity(0.12) : Color.accentColor.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 7))
+            .disabled(loading)
+            .accessibilityIdentifier("chat.media.playback")
+            if active, let error = playback?.errorMessage {
+                Text(error).font(.caption).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
 struct ChatMediaSheet: View {
     @Environment(\.dismiss) private var dismiss
     let model: ChatWorkspaceModel

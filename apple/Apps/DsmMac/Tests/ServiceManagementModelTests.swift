@@ -6,6 +6,20 @@ import XCTest
 
 @MainActor
 final class ServiceManagementModelTests: XCTestCase {
+    func test下载速度和剩余时间缺失显示横线但零速保留数值() {
+        let previous = AppLanguageStore.shared.selection
+        defer { AppLanguageStore.shared.selection = previous }
+        for language in [AppLanguageSelection.simplifiedChinese, .english] {
+            AppLanguageStore.shared.selection = language
+            XCTAssertEqual(MacDownloadFormat.speed(nil), "--")
+            XCTAssertEqual(MacDownloadFormat.remaining(nil), "--")
+            XCTAssertNotEqual(MacDownloadFormat.speed(0), "--")
+            XCTAssertNotEqual(MacDownloadFormat.speed(1_024), "--")
+            XCTAssertNotEqual(MacDownloadFormat.remaining(60), "--")
+            XCTAssertEqual(MacDownloadFormat.bytes(nil), L10n.string("download.workspace.unknown"))
+        }
+    }
+
     func test下载完成进度不依赖缺失传输字节() {
         let complete = MacDownloadRow(task: .init(id: "done", title: "Synthetic", status: "finished", sizeBytes: 1024))
         XCTAssertEqual(complete.progress, 1)

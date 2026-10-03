@@ -2200,3 +2200,8 @@
 "remote-mount.recovery.nfs-options" = "连接选项：%@ / %@";
 "remote-mount.recovery.confirm-required" = "请选择要继续的连接操作。";
 "remote-mount.recovery.session-limit" = "记录仅保留在本次连接内；重新连接或退出应用前，请在 NAS 网页检查未确认的操作。";
+"chat.media.pause" = "暂停";
+"chat.pinned.loadFailed" = "无法载入置顶消息";
+"download.speed.none" = "--";
+"nas.overview.defaultName" = "NAS";
+"download.remaining.none" = "--";
