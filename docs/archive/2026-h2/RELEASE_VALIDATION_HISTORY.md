@@ -426,4 +426,18 @@ SHA-256：`2f585372c284a50d721bc72c439b6848f7dcc7427cc9170d7699649833894db3`。
 
 发现此前 Apple Build 在工程生成一致性检查失败：本机 XcodeGen 2.45.4 与仓库锁定的 2.46.0 对 target 排序不同。此次使用经仓库既有 SHA-256 验证的 2.46.0 重新生成并确认重复生成一致；不手改生成文件，不修改工具链锁定或放宽门禁。版本、构建号与说明更新后由正式工作流重新测试及构建。
 
-发布状态：准备完成，云端正式签名、公证、双架构安装包及在线更新源结果将在完成后补记。`PENDING_USER_VALIDATION`：升级后 Finder 实际保存/删除、Intel/Apple Silicon/Rosetta 升级保持配置与挂载、系统麦克风与通知、真实 NAS 异常路径；发布自动化不替代这些设备行为。
+发布完成：北京时间 2026-10-03 22:26:08 公开 [macOS 1.0.14](https://github.com/yuangy1995/dsm-native-client/releases/tag/macos/v1.0.14)，非草稿、非预发布。正式标签 `macos/v1.0.14` 指向已推送到 `main` 的 `e069cb3d665683e7fbca9782517b7f3667ac4177`；全程没有创建或使用测试/功能分支，没有改写已发布标签或附件。
+
+[macOS Release 37127867041](https://github.com/yuangy1995/dsm-native-client/actions/runs/37127867041) 成功：重新运行 2,417 XCTest（169 既有条件跳过、0 失败）、12 Swift Testing 和 32 项发布回归，完成两种架构主 App/挂载扩展构建、Developer ID 签名、Apple 公证 Accepted、装订、正式包门禁、上传回读和签名更新源发布。两份正式包均包含 File Provider，区别于此前本机临时测试包。
+
+| 正式附件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `LanStash-1.0.14-arm64.dmg` | 33,427,743 | `ac13256335492838c6fa6f45c3dd30cadf49425912bf4c44bbae8b686744622f` |
+| `LanStash-1.0.14-x86_64.dmg` | 36,878,723 | `716a5b0e00d12cfb023f26a1341f9fbf751970dba7cd977baaa0524f40bb8ec9` |
+| `appcast.xml` | 9,446 | `6bd217a0f07eca34342d713c16fba9cc9f7628268f942cc31c6b26ed1ca3f85d` |
+
+发布后本机重新下载两份 DMG、`SHA256SUMS.txt` 及版本内的 `appcast.xml`，逐项 SHA-256 一致；另读 `macos-updates/appcast.xml`，与版本附件逐字节一致。更新源首两项均为 1.0.14（24），arm64 条件项在前、Intel 项在后，公开附件地址、字节数与签名字段正确；签名验签由正式工作流执行。未在用户电脑安装或启动正式包，未操作 NAS 文件。
+
+同提交的 Repository Check、Documentation & Quality Preflight、Community Compatibility 和 Windows Build 已通过。Android Build 在 `main` 与发布标签均失败；标签运行 [37127867031](https://github.com/yuangy1995/dsm-native-client/actions/runs/37127867031) 显示 1,436 测试中 1 项创建投票断言失败。根因是 Android 仍编码旧字符串选项/旧 options，与已根据 NAS 实际行为修正的共享请求样本不符；这是 [Chat 勘误](../../api/discovery/endpoints/chat-advanced-actions.md)已记录的未对齐项。本次只发布 macOS，未改 Android 源码、恢复错误样本或降低断言，不宣称全平台门禁通过。Apple Build 的独立通用构建和 iPhone/iPad 合成回归已通过，常规 macOS 打包检查另见[主线运行](https://github.com/yuangy1995/dsm-native-client/actions/runs/37127844011)。
+
+`PENDING_USER_VALIDATION`：升级后 Finder 实际保存/删除、Intel/Apple Silicon/Rosetta 升级保持配置与挂载、系统麦克风与通知、真实 NAS 异常路径；正式发布、签名与自动化不替代这些设备行为。临时下载、工具和日志在核对并记录后清理，既有测试包保留；发布结果文档继续以普通提交推送到 `main`，正式标签保持指向上述源码提交。
